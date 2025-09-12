@@ -1,0 +1,245 @@
+"""
+Configuration management for Music Minion CLI
+"""
+
+import os
+import tomllib
+from pathlib import Path
+from typing import List, Optional
+from dataclasses import dataclass, field
+
+
+@dataclass
+class MusicConfig:
+    """Configuration for music library settings."""
+    library_paths: List[str] = field(default_factory=lambda: [str(Path.home() / "Music")])
+    supported_formats: List[str] = field(default_factory=lambda: [".mp3", ".m4a", ".wav", ".flac"])
+    scan_recursive: bool = True
+
+
+@dataclass 
+class PlayerConfig:
+    """Configuration for music player settings."""
+    mpv_socket_path: Optional[str] = None
+    volume: int = 50
+    shuffle_on_start: bool = True
+
+
+@dataclass
+class AIConfig:
+    """Configuration for AI integration."""
+    openai_api_key: Optional[str] = None
+    model: str = "gpt-4o-mini"
+    auto_process_notes: bool = True
+    enabled: bool = False
+
+
+@dataclass
+class UIConfig:
+    """Configuration for user interface."""
+    show_progress_bar: bool = True
+    show_recent_history: bool = True
+    history_length: int = 10
+    use_colors: bool = True
+
+
+@dataclass
+class Config:
+    """Main configuration object."""
+    music: MusicConfig = field(default_factory=MusicConfig)
+    player: PlayerConfig = field(default_factory=PlayerConfig)
+    ai: AIConfig = field(default_factory=AIConfig)
+    ui: UIConfig = field(default_factory=UIConfig)
+
+
+def get_config_dir() -> Path:
+    """Get the configuration directory path."""
+    config_home = os.environ.get("XDG_CONFIG_HOME")
+    if config_home:
+        return Path(config_home) / "music-minion"
+    return Path.home() / ".config" / "music-minion"
+
+
+def get_config_path() -> Path:
+    """Get the main configuration file path."""
+    return get_config_dir() / "config.toml"
+
+
+def get_data_dir() -> Path:
+    """Get the data directory path."""
+    data_home = os.environ.get("XDG_DATA_HOME")
+    if data_home:
+        return Path(data_home) / "music-minion"
+    return Path.home() / ".local" / "share" / "music-minion"
+
+
+def create_default_config() -> str:
+    """Create a default configuration TOML content."""
+    return """
+# Music Minion CLI Configuration
+
+[music]
+# Paths to scan for music files
+library_paths = ["~/Music"]
+
+# Supported audio file formats
+supported_formats = [".mp3", ".m4a", ".wav", ".flac"]
+
+# Recursively scan subdirectories
+scan_recursive = true
+
+[player]
+# Path for mpv socket (auto-detected if not specified)
+# mpv_socket_path = "/tmp/mpv-socket"
+
+# Default volume (0-100)
+volume = 50
+
+# Start in shuffle mode
+shuffle_on_start = true
+
+[ai]
+# OpenAI API key for note processing (optional)
+# openai_api_key = "your-api-key-here"
+
+# AI model to use
+model = "gpt-4o-mini"
+
+# Automatically process notes after songs
+auto_process_notes = true
+
+# Enable AI features
+enabled = false
+
+[ui]
+# Show progress bar for current song
+show_progress_bar = true
+
+# Show recent song history
+show_recent_history = true
+
+# Number of recent songs to display
+history_length = 10
+
+# Use colors in terminal output
+use_colors = true
+""".strip()
+
+
+def load_config() -> Config:
+    """Load configuration from file or create default."""
+    config_path = get_config_path()
+    
+    if not config_path.exists():
+        # Create config directory and default file
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(config_path, 'w', encoding='utf-8') as f:
+            f.write(create_default_config())
+        print(f"Created default configuration at: {config_path}")
+        return Config()
+    
+    try:
+        with open(config_path, 'rb') as f:
+            toml_data = tomllib.load(f)
+        
+        # Parse configuration sections
+        config = Config()
+        
+        if 'music' in toml_data:
+            music_data = toml_data['music']
+            config.music = MusicConfig(
+                library_paths=[str(Path(p).expanduser()) for p in music_data.get('library_paths', config.music.library_paths)],
+                supported_formats=music_data.get('supported_formats', config.music.supported_formats),
+                scan_recursive=music_data.get('scan_recursive', config.music.scan_recursive)
+            )
+        
+        if 'player' in toml_data:
+            player_data = toml_data['player']
+            config.player = PlayerConfig(
+                mpv_socket_path=player_data.get('mpv_socket_path'),
+                volume=player_data.get('volume', config.player.volume),
+                shuffle_on_start=player_data.get('shuffle_on_start', config.player.shuffle_on_start)
+            )
+        
+        if 'ai' in toml_data:
+            ai_data = toml_data['ai']
+            config.ai = AIConfig(
+                openai_api_key=ai_data.get('openai_api_key'),
+                model=ai_data.get('model', config.ai.model),
+                auto_process_notes=ai_data.get('auto_process_notes', config.ai.auto_process_notes),
+                enabled=ai_data.get('enabled', config.ai.enabled)
+            )
+        
+        if 'ui' in toml_data:
+            ui_data = toml_data['ui']
+            config.ui = UIConfig(
+                show_progress_bar=ui_data.get('show_progress_bar', config.ui.show_progress_bar),
+                show_recent_history=ui_data.get('show_recent_history', config.ui.show_recent_history),
+                history_length=ui_data.get('history_length', config.ui.history_length),
+                use_colors=ui_data.get('use_colors', config.ui.use_colors)
+            )
+        
+        return config
+        
+    except Exception as e:
+        print(f"Error loading configuration from {config_path}: {e}")
+        print("Using default configuration.")
+        return Config()
+
+
+def save_config(config: Config) -> bool:
+    """Save configuration to file."""
+    config_path = get_config_path()
+    
+    try:
+        # Create config directory if it doesn't exist
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Convert config to TOML format
+        toml_content = f"""# Music Minion CLI Configuration
+
+[music]
+library_paths = {config.music.library_paths!r}
+supported_formats = {config.music.supported_formats!r}
+scan_recursive = {config.music.scan_recursive!r}
+
+[player]
+volume = {config.player.volume}
+shuffle_on_start = {config.player.shuffle_on_start!r}"""
+
+        if config.player.mpv_socket_path:
+            toml_content += f'\nmpv_socket_path = "{config.player.mpv_socket_path}"'
+
+        toml_content += f"""
+
+[ai]
+model = "{config.ai.model}"
+auto_process_notes = {config.ai.auto_process_notes!r}
+enabled = {config.ai.enabled!r}"""
+
+        if config.ai.openai_api_key:
+            toml_content += f'\nopenai_api_key = "{config.ai.openai_api_key}"'
+
+        toml_content += f"""
+
+[ui]
+show_progress_bar = {config.ui.show_progress_bar!r}
+show_recent_history = {config.ui.show_recent_history!r}
+history_length = {config.ui.history_length}
+use_colors = {config.ui.use_colors!r}
+"""
+
+        with open(config_path, 'w', encoding='utf-8') as f:
+            f.write(toml_content)
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error saving configuration to {config_path}: {e}")
+        return False
+
+
+def ensure_directories() -> None:
+    """Ensure all necessary directories exist."""
+    get_config_dir().mkdir(parents=True, exist_ok=True)
+    get_data_dir().mkdir(parents=True, exist_ok=True)

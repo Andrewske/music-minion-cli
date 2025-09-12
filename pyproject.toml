@@ -1,0 +1,28 @@
+[project]
+name = "music-minion"
+version = "0.1.0"
+description = "A CLI music player focused on contextual music curation through real-time feedback and learning user preferences over time"
+readme = "README.md"
+authors = [
+    { name = "Kevin", email = "andrewskevin92@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "mutagen>=1.47.0",    # MP3/M4A metadata handling
+    "openai>=1.0.0",      # AI integration (optional)
+    "rich>=13.0.0",       # Terminal UI formatting
+    "textual>=0.40.0",    # Advanced terminal UI components
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+music-minion = "music_minion:main"
+
+[build-system]
+requires = ["uv_build>=0.8.15,<0.9.0"]
+build-backend = "uv_build"

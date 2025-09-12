@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+
+# UV
+.uv/
+
+# IDE
+.vscode/
+.idea/
+
+# Environment files
+.env
+
+# Database files
+*.sqlite
+*.db
+
+# Logs
+*.log
+
+# Other files
+todo.md
+notes.md
+music-minion-cli-plan.md
