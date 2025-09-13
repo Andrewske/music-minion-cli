@@ -126,10 +126,10 @@ def create_progress_bar(position: float, duration: float) -> str:
     return f"{bar} {current} ──── {total}"
 
 
-def create_progress_bar_responsive(position: float, duration: float, bar_width: int = 40) -> str:
-    """Create a responsive progress bar that adapts to console width."""
+def create_progress_bar_responsive(position: float, duration: float, bar_width: int = 40) -> Text:
+    """Create a responsive progress bar with color gradients."""
     if duration <= 0:
-        return "─" * bar_width
+        return Text("─" * bar_width, style="dim")
     
     percentage = min(position / duration, 1.0)
     
@@ -139,14 +139,31 @@ def create_progress_bar_responsive(position: float, duration: float, bar_width: 
     
     filled = int(actual_bar_width * percentage)
     
-    # Use block characters for filled/empty
-    bar = "█" * filled + "░" * (actual_bar_width - filled)
+    # Create colored progress bar
+    progress_text = Text()
+    
+    # Filled portion with gradient
+    for i in range(filled):
+        char_percentage = (i + 1) / actual_bar_width
+        if char_percentage < 0.33:
+            progress_text.append("█", style="green")
+        elif char_percentage < 0.66:
+            progress_text.append("█", style="yellow")
+        else:
+            progress_text.append("█", style="red")
+    
+    # Empty portion
+    progress_text.append("░" * (actual_bar_width - filled), style="dim")
     
     # Add time displays
     current = format_time(position)
     total = format_time(duration)
     
-    return f"{bar} {current} ──── {total}"
+    progress_text.append(f" {current} ", style="white")
+    progress_text.append("━━━━", style="cyan")
+    progress_text.append(f" {total}", style="white")
+    
+    return progress_text
 
 
 def format_track_display(track_info: Dict[str, Any]) -> List[str]:
@@ -291,22 +308,51 @@ def render_dashboard(player_state: Any, track_metadata: Optional[Dict] = None,
     # Build display lines
     lines = []
     
-    # Header with clock - adjust spacing based on console width
+    # Header with clock - colorful and dynamic
     current_time = datetime.now().strftime("%H:%M:%S")
     header = Text()
-    header.append(f"{ICONS['music']} MUSIC MINION", style="bold cyan")
+    
+    # Colorful title with gradient effect
+    header.append(f"{ICONS['music']} ", style="bold magenta")
+    header.append("MUSIC", style="bold cyan")
+    header.append(" ", style="white")
+    header.append("MINION", style="bold blue")
+    header.append(f" {ICONS['music']}", style="bold magenta")
     
     # Calculate spacer dynamically based on console width
-    header_text = f"{ICONS['music']} MUSIC MINION"
+    header_text = f"{ICONS['music']} MUSIC MINION {ICONS['music']}"
     time_text = f"[{current_time}]"
-    spacer_width = max(console_width - len(header_text) - len(time_text) - 4, 2)
+    spacer_width = max(console_width - len(header_text) - len(time_text) - 8, 2)
     header.append(" " * spacer_width)
-    header.append(time_text, style="dim")
+    
+    # Time with color based on time of day
+    hour = datetime.now().hour
+    if 6 <= hour < 12:
+        time_style = "bold yellow"  # Morning
+    elif 12 <= hour < 18:
+        time_style = "bold blue"    # Afternoon  
+    elif 18 <= hour < 22:
+        time_style = "bold orange3"  # Evening
+    else:
+        time_style = "bold purple"  # Night
+    
+    header.append(f"[{current_time}]", style=time_style)
     lines.append(header)
     
-    # Separator adjusted to console width
-    separator_width = min(console_width - 4, 60)
-    lines.append(Text("─" * separator_width, style="dim"))
+    # Colorful separator adjusted to console width  
+    separator_width = console_width - 8  # Account for panel padding
+    # Create a gradient-like separator
+    separator = Text()
+    for i in range(separator_width):
+        if i % 4 == 0:
+            separator.append("━", style="cyan")
+        elif i % 4 == 1:
+            separator.append("━", style="blue")
+        elif i % 4 == 2:
+            separator.append("━", style="magenta")
+        else:
+            separator.append("━", style="purple")
+    lines.append(separator)
     
     # Empty line for spacing
     lines.append("")
@@ -320,10 +366,15 @@ def render_dashboard(player_state: Any, track_metadata: Optional[Dict] = None,
             track_info.update(track_metadata)
     
     track_lines = format_track_display(track_info)
-    for line in track_lines:
+    for i, line in enumerate(track_lines):
         # Truncate long lines to fit console width
         truncated_line = line[:console_width - 6] + "..." if len(line) > console_width - 3 else line
-        lines.append(Text(truncated_line, style="white"))
+        
+        # Color code different track info lines
+        if i == 0:  # Artist - Title line
+            lines.append(Text(truncated_line, style="bold white"))
+        else:  # Album/details line
+            lines.append(Text(truncated_line, style="bright_blue"))
     
     lines.append("")  # Spacing
     
@@ -336,17 +387,28 @@ def render_dashboard(player_state: Any, track_metadata: Optional[Dict] = None,
             player_state.duration,
             bar_width
         )
-        lines.append(Text(progress, style="cyan"))
+        lines.append(progress)
         
-        # BPM visualizer
+        # BPM visualizer with pulsing colors
         bpm = track_metadata.get("bpm", 120) if track_metadata else 120
         visualizer = get_bpm_visualizer(bpm)
+        
+        # Color BPM based on tempo
+        if bpm < 90:
+            bpm_color = "blue"      # Slow/chill
+        elif bpm < 120:
+            bpm_color = "cyan"      # Medium
+        elif bpm < 140:
+            bpm_color = "yellow"    # Upbeat
+        else:
+            bpm_color = "red"       # Fast/energetic
+            
         bpm_line = f"{ICONS['music']} {visualizer} {bpm} BPM {ICONS['music']}"
-        lines.append(Text(bpm_line[:console_width - 6], style="magenta"))
+        lines.append(Text(bpm_line[:console_width - 6], style=f"bold {bpm_color}"))
     else:
         bar_width = min(max(console_width - 10, 20), 40)
         lines.append(Text("─" * bar_width, style="dim"))
-        lines.append(Text("⏸ Paused", style="yellow"))
+        lines.append(Text("⏸ Paused", style="bold yellow on red"))
     
     lines.append("")  # Spacing
     
@@ -358,23 +420,56 @@ def render_dashboard(player_state: Any, track_metadata: Optional[Dict] = None,
         for line in tag_lines:
             # Truncate tag lines to fit
             truncated_line = line[:console_width - 6] + "..." if len(line) > console_width - 3 else line
-            lines.append(Text(truncated_line, style="blue"))
+            
+            # Color tags and notes differently
+            if line.startswith(ICONS.get('tag', '#')):
+                lines.append(Text(truncated_line, style="bold bright_blue"))
+            elif line.startswith(ICONS.get('memo', '>')):
+                lines.append(Text(truncated_line, style="italic bright_green"))
+            else:
+                lines.append(Text(truncated_line, style="blue"))
         
-        # Rating and statistics
+        # Rating and statistics with color coding
         rating = db_info.get("rating")
         last_played = db_info.get("last_played")
         play_count = db_info.get("play_count", 0)
         rating_line = format_rating_display(rating, last_played, play_count)
         if rating_line:
             truncated_rating = rating_line[:console_width - 6] + "..." if len(rating_line) > console_width - 3 else rating_line
-            lines.append(Text(truncated_rating, style="yellow"))
+            
+            # Color rating based on score
+            if rating and rating >= 80:
+                rating_style = "bold bright_red"      # Love
+            elif rating and rating >= 60:
+                rating_style = "bold bright_yellow"   # Like
+            elif rating and rating <= 20:
+                rating_style = "dim"                  # Archive/skip
+            else:
+                rating_style = "white"                # Default
+                
+            lines.append(Text(truncated_rating, style=rating_style))
     
     lines.append("")  # Spacing
     
     # Feedback message or previous track
     if feedback := get_feedback():
         truncated_feedback = feedback[:console_width - 6] + "..." if len(feedback) > console_width - 3 else feedback
-        lines.append(Text(truncated_feedback, style="bold green"))
+        
+        # Color feedback based on content
+        if "loved" in feedback.lower() or "❤️" in feedback:
+            feedback_style = "bold bright_red on black"
+        elif "liked" in feedback.lower() or "👍" in feedback:
+            feedback_style = "bold bright_yellow on black"
+        elif "archived" in feedback.lower():
+            feedback_style = "bold bright_black on red"
+        elif "skipped" in feedback.lower():
+            feedback_style = "bold cyan on black"
+        elif "note" in feedback.lower():
+            feedback_style = "bold bright_green on black"
+        else:
+            feedback_style = "bold bright_white on blue"
+            
+        lines.append(Text(truncated_feedback, style=feedback_style))
     elif ui_state["previous_track"]:
         # Calculate time ago
         if ui_state["previous_time"]:
@@ -390,20 +485,25 @@ def render_dashboard(player_state: Any, track_metadata: Optional[Dict] = None,
             ui_state["previous_rating"]
         )
         truncated_prev = prev_line[:console_width - 6] + "..." if len(prev_line) > console_width - 3 else prev_line
-        lines.append(Text(truncated_prev, style="dim"))
+        lines.append(Text(truncated_prev, style="dim bright_black"))
     
     # Create panel with all lines
     content = "\n".join(str(line) for line in lines)
     
-    # Calculate panel width to fit console
-    panel_width = min(console_width, 80)
+    # Use full console width for the panel
+    panel_width = console_width
     
     panel = Panel(
         content,
-        border_style="bright_white",
+        border_style="bold bright_cyan",
         padding=(1, 2),
         width=panel_width,
-        height=None,  # Let height be dynamic based on content
+        height=18,  # Fixed height for consistent space reservation
+        expand=True,  # Ensure full width usage
+        title="🎵 MUSIC MINION DASHBOARD 🎵",
+        title_align="center",
+        subtitle="Now Playing",
+        subtitle_align="center",
     )
     
     return panel

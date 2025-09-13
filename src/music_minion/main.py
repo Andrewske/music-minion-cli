@@ -1267,12 +1267,33 @@ def interactive_mode_with_dashboard() -> None:
                                 console.file.write("\033[s")
                                 console.file.flush()
                                 
-                                # Move to top and update dashboard efficiently
+                                # Move to top and clear the entire dashboard area
                                 console.file.write("\033[H")
                                 
-                                # Render dashboard in one operation to reduce flicker
+                                # Clear dashboard area completely (20 lines to be safe)
+                                for i in range(20):
+                                    console.file.write("\033[2K")  # Clear entire line
+                                    if i < 19:
+                                        console.file.write("\033[B")  # Move down
+                                
+                                # Return to top and render new dashboard
+                                console.file.write("\033[H")
+                                console.file.flush()
+                                
+                                # Render dashboard in one operation
                                 console.print(dashboard, end="")
-                                console.print("─" * console.size.width)
+                                
+                                # Add full-width colorful separator
+                                from rich.text import Text
+                                separator_text = Text()
+                                for i in range(console.size.width):
+                                    if i % 3 == 0:
+                                        separator_text.append("─", style="cyan")
+                                    elif i % 3 == 1:
+                                        separator_text.append("─", style="blue") 
+                                    else:
+                                        separator_text.append("─", style="magenta")
+                                console.print(separator_text)
                                 
                                 # Restore cursor position
                                 console.file.write("\033[u")
