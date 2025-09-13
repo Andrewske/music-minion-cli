@@ -29,6 +29,12 @@ venv/
 # Logs
 *.log
 
+# Music Minion data and config
+ai-test-reports/
+*.md
+!README.md
+!.env.example
+
 # Other files
 todo.md
 notes.md

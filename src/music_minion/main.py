@@ -10,6 +10,7 @@ from . import config
 from . import database
 from . import library
 from . import player
+from . import ai
 
 # Global state for interactive mode
 current_player_state: player.PlayerState = player.PlayerState()
@@ -34,6 +35,21 @@ Available commands:
   love              Rate current song as loved
   note <text>       Add a note to the current song
   status            Show current song and player status
+  stats             Show library and rating statistics
+  scan              Scan library and populate database
+  
+AI Commands:
+  ai setup <key>    Set up OpenAI API key for AI analysis
+  ai analyze        Analyze current track with AI and add tags
+  ai test           Test AI prompt with a random track and save report
+  ai usage          Show total AI usage and costs
+  ai usage today    Show today's AI usage
+  ai usage month    Show last 30 days usage
+  
+Tag Commands:
+  tag remove <tag>  Remove/blacklist a tag from current track
+  tag list          Show all tags for current track
+  
   init              Initialize configuration and scan library
   help              Show this help message
   quit, exit        Exit the program
@@ -188,6 +204,58 @@ def play_track(track: library.Track) -> bool:
         print("Failed to play track")
     
     return True
+
+
+def check_and_handle_track_completion() -> None:
+    """Check if current track has completed and handle auto-analysis."""
+    global current_player_state, music_tracks
+    
+    if not current_player_state.current_track:
+        return
+    
+    if not player.is_mpv_running(current_player_state):
+        return
+    
+    # Check if track is still playing
+    status = player.get_player_status(current_player_state)
+    position, duration, percent = player.get_progress_info(current_player_state)
+    
+    # If track has ended (reached 100% or very close), trigger analysis
+    if duration > 0 and percent >= 99.0 and not status.get('playing', False):
+        # Find the track that just finished
+        finished_track = None
+        for track in music_tracks:
+            if track.file_path == current_player_state.current_track:
+                finished_track = track
+                break
+        
+        if finished_track:
+            # Check if track is archived (don't analyze archived tracks)
+            track_id = get_current_track_id()
+            if track_id:
+                # Check if track is archived
+                archived_tracks = database.get_archived_tracks()
+                if track_id not in archived_tracks:
+                    # Trigger auto-analysis in background
+                    try:
+                        print(f"🤖 Auto-analyzing completed track...")
+                        result = ai.analyze_and_tag_track(finished_track, 'auto_analysis')
+                        
+                        if result['success'] and result['tags_added']:
+                            print(f"✅ Added {len(result['tags_added'])} AI tags: {', '.join(result['tags_added'])}")
+                        elif not result['success']:
+                            error_msg = result.get('error', 'Unknown error')
+                            # Show brief error message but don't be too intrusive
+                            if 'API key' in error_msg:
+                                print("⚠️  AI analysis skipped: No API key configured (use 'ai setup <key>')")
+                            else:
+                                print(f"⚠️  AI analysis failed: {error_msg}")
+                    except Exception as e:
+                        # Don't interrupt user experience with detailed errors
+                        print(f"⚠️  AI analysis error: {str(e)}")
+        
+        # Clear current track since it's finished
+        current_player_state = current_player_state._replace(current_track=None)
 
 
 def handle_pause_command() -> bool:
@@ -683,6 +751,229 @@ def handle_scan_command() -> bool:
         return False
 
 
+def handle_ai_setup_command(args: List[str]) -> bool:
+    """Handle ai setup command - configure OpenAI API key."""
+    if not args:
+        print("Error: Please provide an API key. Usage: ai setup <key>")
+        return True
+    
+    api_key = args[0]
+    
+    try:
+        ai.store_api_key(api_key)
+        print("✅ OpenAI API key stored successfully")
+        print("   Key stored in ~/.config/music-minion/.env")
+        print("   You can also set OPENAI_API_KEY environment variable or create .env in project root")
+        print("   You can now use AI analysis features")
+    except Exception as e:
+        print(f"❌ Error storing API key: {e}")
+    
+    return True
+
+
+def handle_ai_analyze_command() -> bool:
+    """Handle ai analyze command - analyze current track with AI."""
+    global current_player_state, music_tracks
+    
+    if not current_player_state.current_track:
+        print("No track is currently playing")
+        return True
+    
+    # Find current track
+    current_track = None
+    for track in music_tracks:
+        if track.file_path == current_player_state.current_track:
+            current_track = track
+            break
+    
+    if not current_track:
+        print("Could not find current track information")
+        return True
+    
+    print(f"🤖 Analyzing track: {library.get_display_name(current_track)}")
+    
+    try:
+        result = ai.analyze_and_tag_track(current_track, 'manual_analysis')
+        
+        if result['success']:
+            tags_added = result['tags_added']
+            if tags_added:
+                print(f"✅ Added {len(tags_added)} tags: {', '.join(tags_added)}")
+            else:
+                print("✅ Analysis complete - no new tags suggested")
+            
+            # Show token usage
+            usage = result.get('token_usage', {})
+            if usage:
+                print(f"   Tokens used: {usage.get('prompt_tokens', 0)} prompt + {usage.get('completion_tokens', 0)} completion")
+                print(f"   Response time: {usage.get('response_time_ms', 0)}ms")
+        else:
+            error_msg = result.get('error', 'Unknown error')
+            print(f"❌ AI analysis failed: {error_msg}")
+    
+    except Exception as e:
+        print(f"❌ Error during AI analysis: {e}")
+    
+    return True
+
+
+def handle_ai_test_command() -> bool:
+    """Handle ai test command - test AI prompt with random track."""
+    try:
+        print("🧪 Running AI prompt test with random track...")
+        
+        # Run the test
+        test_results = ai.test_ai_prompt_with_random_track()
+        
+        if test_results['success']:
+            # Save report
+            report_file = ai.save_test_report(test_results)
+            
+            # Show summary
+            track_info = test_results['track_info']
+            print(f"✅ Test completed successfully!")
+            print(f"   Track: {track_info.get('artist', 'Unknown')} - {track_info.get('title', 'Unknown')}")
+            print(f"   Generated tags: {', '.join(test_results.get('ai_output_tags', []))}")
+            
+            token_usage = test_results.get('token_usage', {})
+            print(f"   Tokens used: {token_usage.get('prompt_tokens', 0)} prompt + {token_usage.get('completion_tokens', 0)} completion")
+            print(f"   Response time: {token_usage.get('response_time_ms', 0)}ms")
+            
+            print(f"📄 Full report saved: {report_file}")
+            
+        else:
+            # Save report even for failed tests
+            report_file = ai.save_test_report(test_results)
+            error_msg = test_results.get('error', 'Unknown error')
+            print(f"❌ Test failed: {error_msg}")
+            print(f"📄 Report with input data saved: {report_file}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error during AI test: {e}")
+        return True
+
+
+def handle_ai_usage_command(args: List[str]) -> bool:
+    """Handle ai usage command - show AI usage statistics."""
+    try:
+        if args and args[0] == 'today':
+            stats = database.get_ai_usage_stats(days=1)
+            usage_text = ai.format_usage_stats(stats, "Today's")
+        elif args and args[0] == 'month':
+            stats = database.get_ai_usage_stats(days=30)
+            usage_text = ai.format_usage_stats(stats, "Last 30 Days")
+        else:
+            stats = database.get_ai_usage_stats()
+            usage_text = ai.format_usage_stats(stats, "Total")
+        
+        print(usage_text)
+        
+        return True
+    except Exception as e:
+        print(f"❌ Error getting AI usage stats: {e}")
+        return True
+
+
+def handle_tag_remove_command(args: List[str]) -> bool:
+    """Handle tag remove command - blacklist a tag from current track."""
+    global current_player_state, music_tracks
+    
+    if not args:
+        print("Error: Please specify a tag to remove. Usage: tag remove <tag>")
+        return True
+    
+    if not current_player_state.current_track:
+        print("No track is currently playing")
+        return True
+    
+    # Find current track
+    current_track = None
+    for track in music_tracks:
+        if track.file_path == current_player_state.current_track:
+            current_track = track
+            break
+    
+    if not current_track:
+        print("Could not find current track information")
+        return True
+    
+    # Get track ID
+    track_id = get_current_track_id()
+    if not track_id:
+        print("Could not find track in database")
+        return True
+    
+    tag_name = ' '.join(args).lower()
+    
+    try:
+        # Try to blacklist the tag
+        if database.blacklist_tag(track_id, tag_name):
+            print(f"🚫 Blacklisted tag '{tag_name}' from: {library.get_display_name(current_track)}")
+            print("   This tag will not be suggested by AI for this track again")
+        else:
+            print(f"❌ Tag '{tag_name}' not found on this track")
+    except Exception as e:
+        print(f"❌ Error removing tag: {e}")
+    
+    return True
+
+
+def handle_tag_list_command() -> bool:
+    """Handle tag list command - show all tags for current track."""
+    global current_player_state, music_tracks
+    
+    if not current_player_state.current_track:
+        print("No track is currently playing")
+        return True
+    
+    # Find current track
+    current_track = None
+    for track in music_tracks:
+        if track.file_path == current_player_state.current_track:
+            current_track = track
+            break
+    
+    if not current_track:
+        print("Could not find current track information")
+        return True
+    
+    # Get track ID
+    track_id = get_current_track_id()
+    if not track_id:
+        print("Could not find track in database")
+        return True
+    
+    try:
+        tags = database.get_track_tags(track_id, include_blacklisted=False)
+        blacklisted_tags = database.get_track_tags(track_id, include_blacklisted=True)
+        blacklisted_tags = [t for t in blacklisted_tags if t['blacklisted']]
+        
+        print(f"🏷️  Tags for: {library.get_display_name(current_track)}")
+        
+        if tags:
+            # Group tags by source
+            ai_tags = [t for t in tags if t['source'] == 'ai']
+            user_tags = [t for t in tags if t['source'] == 'user']
+            
+            if ai_tags:
+                print(f"   🤖 AI tags ({len(ai_tags)}): {', '.join(t['tag_name'] for t in ai_tags)}")
+            
+            if user_tags:
+                print(f"   👤 User tags ({len(user_tags)}): {', '.join(t['tag_name'] for t in user_tags)}")
+        else:
+            print("   No tags found")
+        
+        if blacklisted_tags:
+            print(f"   🚫 Blacklisted ({len(blacklisted_tags)}): {', '.join(t['tag_name'] for t in blacklisted_tags)}")
+        
+    except Exception as e:
+        print(f"❌ Error getting tags: {e}")
+    
+    return True
+
+
 def handle_command(command: str, args: List[str]) -> bool:
     """
     Handle a single command.
@@ -750,6 +1041,30 @@ def handle_command(command: str, args: List[str]) -> bool:
     elif command == 'scan':
         return handle_scan_command()
     
+    elif command == 'ai':
+        if not args:
+            print("Error: AI command requires a subcommand. Usage: ai <setup|analyze|test|usage>")
+        elif args[0] == 'setup':
+            return handle_ai_setup_command(args[1:])
+        elif args[0] == 'analyze':
+            return handle_ai_analyze_command()
+        elif args[0] == 'test':
+            return handle_ai_test_command()
+        elif args[0] == 'usage':
+            return handle_ai_usage_command(args[1:])
+        else:
+            print(f"Unknown AI subcommand: '{args[0]}'. Available: setup, analyze, test, usage")
+    
+    elif command == 'tag':
+        if not args:
+            print("Error: Tag command requires a subcommand. Usage: tag <remove|list>")
+        elif args[0] == 'remove':
+            return handle_tag_remove_command(args[1:])
+        elif args[0] == 'list':
+            return handle_tag_list_command()
+        else:
+            print(f"Unknown tag subcommand: '{args[0]}'. Available: remove, list")
+    
     elif command == '':
         # Empty command, do nothing
         pass
@@ -766,14 +1081,29 @@ def interactive_mode() -> None:
     print("Type 'help' for available commands, or 'quit' to exit.")
     print()
     
+    import select
+    import sys
+    
     try:
         while True:
             try:
-                user_input = input("music-minion> ").strip()
-                command, args = parse_command(user_input)
+                # Check for track completion periodically
+                check_and_handle_track_completion()
                 
-                if not handle_command(command, args):
-                    break
+                # Check if there's input available (non-blocking)
+                print("music-minion> ", end='', flush=True)
+                
+                # Use select to check for input with timeout (for periodic checks)
+                if sys.stdin in select.select([sys.stdin], [], [], 1.0)[0]:
+                    user_input = input().strip()
+                    command, args = parse_command(user_input)
+                    
+                    if not handle_command(command, args):
+                        break
+                else:
+                    # No input available, just continue the loop for periodic checks
+                    print('\r', end='', flush=True)  # Clear the prompt line
+                    continue
                     
             except KeyboardInterrupt:
                 print("\nUse 'quit' or 'exit' to leave gracefully.")

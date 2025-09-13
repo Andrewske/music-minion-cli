@@ -10,6 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
     "mutagen>=1.47.0",    # MP3/M4A metadata handling
     "openai>=1.0.0",      # AI integration (optional)
+    "python-dotenv>=1.0.0", # Environment variable management
     "rich>=13.0.0",       # Terminal UI formatting
     "textual>=0.40.0",    # Advanced terminal UI components
 ]

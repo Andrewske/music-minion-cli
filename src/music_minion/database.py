@@ -12,7 +12,7 @@ from .config import Config, get_data_dir
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def get_database_path() -> Path:
@@ -105,6 +105,39 @@ def init_database() -> None:
             )
         """)
         
+        # Create tags table for AI and user tags
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                track_id INTEGER NOT NULL,
+                tag_name TEXT NOT NULL,
+                source TEXT NOT NULL, -- 'user' | 'ai'
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                confidence REAL, -- AI confidence score (0.0-1.0)
+                blacklisted BOOLEAN DEFAULT FALSE,
+                FOREIGN KEY (track_id) REFERENCES tracks (id) ON DELETE CASCADE
+            )
+        """)
+        
+        # Create ai_requests table for token usage tracking
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ai_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                track_id INTEGER NOT NULL,
+                request_type TEXT NOT NULL, -- 'auto_analysis' | 'manual_analysis'
+                model_name TEXT DEFAULT 'gpt-4o-mini',
+                prompt_tokens INTEGER,
+                completion_tokens INTEGER,
+                total_tokens INTEGER,
+                cost_estimate REAL, -- Calculated cost in USD
+                request_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                response_time_ms INTEGER,
+                success BOOLEAN DEFAULT TRUE,
+                error_message TEXT,
+                FOREIGN KEY (track_id) REFERENCES tracks (id) ON DELETE CASCADE
+            )
+        """)
+        
         # Create indexes for performance
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_file_path ON tracks (file_path)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks (artist)")
@@ -113,6 +146,11 @@ def init_database() -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ratings_type ON ratings (rating_type)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_notes_track_id ON notes (track_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_track_id ON playback_sessions (track_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tags_track_id ON tags (track_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tags_name ON tags (tag_name)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tags_source ON tags (source)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ai_requests_track_id ON ai_requests (track_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ai_requests_timestamp ON ai_requests (request_timestamp)")
         
         # Set schema version
         conn.execute("INSERT OR REPLACE INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
@@ -460,3 +498,157 @@ def db_track_to_library_track(db_track: Dict[str, Any]):
         key=db_track['key_signature'],
         bpm=db_track['bpm']
     )
+
+
+# Tag management functions
+
+def add_tags(track_id: int, tags: List[str], source: str = 'user', 
+             confidence: Optional[float] = None) -> None:
+    """Add multiple tags to a track."""
+    with get_db_connection() as conn:
+        for tag in tags:
+            conn.execute("""
+                INSERT OR IGNORE INTO tags (track_id, tag_name, source, confidence)
+                VALUES (?, ?, ?, ?)
+            """, (track_id, tag.strip().lower(), source, confidence))
+        conn.commit()
+
+
+def get_track_tags(track_id: int, include_blacklisted: bool = False) -> List[Dict[str, Any]]:
+    """Get all tags for a track."""
+    blacklist_filter = "" if include_blacklisted else "AND blacklisted = FALSE"
+    
+    with get_db_connection() as conn:
+        cursor = conn.execute(f"""
+            SELECT tag_name, source, confidence, created_at, blacklisted
+            FROM tags 
+            WHERE track_id = ? {blacklist_filter}
+            ORDER BY created_at DESC
+        """, (track_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def blacklist_tag(track_id: int, tag_name: str) -> bool:
+    """Blacklist a tag for a specific track. Returns True if tag was found and blacklisted."""
+    with get_db_connection() as conn:
+        cursor = conn.execute("""
+            UPDATE tags SET blacklisted = TRUE
+            WHERE track_id = ? AND tag_name = ? AND blacklisted = FALSE
+        """, (track_id, tag_name.strip().lower()))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def remove_tag(track_id: int, tag_name: str) -> bool:
+    """Completely remove a tag from a track. Returns True if tag was found and removed."""
+    with get_db_connection() as conn:
+        cursor = conn.execute("""
+            DELETE FROM tags
+            WHERE track_id = ? AND tag_name = ?
+        """, (track_id, tag_name.strip().lower()))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+# AI request logging functions
+
+def log_ai_request(track_id: int, request_type: str, model_name: str,
+                   prompt_tokens: int, completion_tokens: int, 
+                   response_time_ms: int, success: bool = True,
+                   error_message: Optional[str] = None) -> int:
+    """Log an AI request and return the request ID."""
+    total_tokens = prompt_tokens + completion_tokens
+    
+    # Hard-coded pricing for gpt-4o-mini (per 1M tokens)
+    # Input: $0.15, Output: $0.60
+    cost_estimate = (prompt_tokens * 0.15 / 1_000_000) + (completion_tokens * 0.60 / 1_000_000)
+    
+    with get_db_connection() as conn:
+        cursor = conn.execute("""
+            INSERT INTO ai_requests (
+                track_id, request_type, model_name, prompt_tokens, 
+                completion_tokens, total_tokens, cost_estimate,
+                response_time_ms, success, error_message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (track_id, request_type, model_name, prompt_tokens, 
+              completion_tokens, total_tokens, cost_estimate,
+              response_time_ms, success, error_message))
+        conn.commit()
+        return cursor.lastrowid
+
+
+def get_ai_usage_stats(days: Optional[int] = None) -> Dict[str, Any]:
+    """Get AI usage statistics. If days is provided, filter to last N days."""
+    date_filter = ""
+    params = []
+    
+    if days:
+        date_filter = "WHERE request_timestamp >= datetime('now', '-{} days')".format(days)
+    
+    with get_db_connection() as conn:
+        # Total requests and tokens
+        cursor = conn.execute(f"""
+            SELECT 
+                COUNT(*) as total_requests,
+                SUM(prompt_tokens) as total_prompt_tokens,
+                SUM(completion_tokens) as total_completion_tokens,
+                SUM(total_tokens) as total_tokens,
+                SUM(cost_estimate) as total_cost,
+                AVG(response_time_ms) as avg_response_time,
+                SUM(CASE WHEN success = TRUE THEN 1 ELSE 0 END) as successful_requests
+            FROM ai_requests 
+            {date_filter}
+        """, params)
+        stats = dict(cursor.fetchone())
+        
+        # Request type breakdown
+        cursor = conn.execute(f"""
+            SELECT request_type, COUNT(*) as count, SUM(cost_estimate) as cost
+            FROM ai_requests 
+            {date_filter}
+            GROUP BY request_type
+        """, params)
+        request_types = {row['request_type']: {'count': row['count'], 'cost': row['cost']} 
+                        for row in cursor.fetchall()}
+        
+        # Daily breakdown if not filtering by days
+        daily_stats = []
+        if not days or days > 1:
+            cursor = conn.execute(f"""
+                SELECT 
+                    DATE(request_timestamp) as date,
+                    COUNT(*) as requests,
+                    SUM(cost_estimate) as cost
+                FROM ai_requests 
+                {date_filter}
+                GROUP BY DATE(request_timestamp)
+                ORDER BY date DESC
+                LIMIT 30
+            """, params)
+            daily_stats = [dict(row) for row in cursor.fetchall()]
+        
+        stats['request_types'] = request_types
+        stats['daily_breakdown'] = daily_stats
+        
+        # Convert None values to 0 for display
+        for key in ['total_prompt_tokens', 'total_completion_tokens', 'total_tokens', 'total_cost']:
+            if stats[key] is None:
+                stats[key] = 0
+                
+        return stats
+
+
+def get_tracks_needing_analysis() -> List[Dict[str, Any]]:
+    """Get tracks that need AI analysis (have notes but no AI tags)."""
+    with get_db_connection() as conn:
+        cursor = conn.execute("""
+            SELECT DISTINCT t.*
+            FROM tracks t
+            INNER JOIN notes n ON t.id = n.track_id
+            LEFT JOIN tags tag ON t.id = tag.track_id AND tag.source = 'ai'
+            LEFT JOIN ratings r ON t.id = r.track_id AND r.rating_type = 'archive'
+            WHERE tag.id IS NULL 
+            AND r.id IS NULL
+            ORDER BY n.timestamp DESC
+        """)
+        return [dict(row) for row in cursor.fetchall()]
