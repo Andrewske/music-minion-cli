@@ -34,8 +34,4 @@ ai-test-reports/
 *.md
 !README.md
 !.env.example
-
-# Other files
-todo.md
-notes.md
-music-minion-cli-plan.md
+!CLAUDE.md

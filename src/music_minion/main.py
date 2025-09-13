@@ -11,11 +11,30 @@ from . import database
 from . import library
 from . import player
 from . import ai
+from . import ui
 
 # Global state for interactive mode
 current_player_state: player.PlayerState = player.PlayerState()
 music_tracks: List[library.Track] = []
 current_config: config.Config = config.Config()
+
+# Global console for Rich output
+try:
+    from rich.console import Console
+    console = Console()
+except ImportError:
+    # Fallback if Rich is not available
+    console = None
+
+def safe_print(message: str, style: str = None) -> None:
+    """Print using Rich Console if available, otherwise fallback to regular print."""
+    if console:
+        if style:
+            console.print(message, style=style)
+        else:
+            console.print(message)
+    else:
+        print(message)
 
 
 def print_help() -> None:
@@ -95,7 +114,7 @@ def ensure_library_loaded() -> bool:
     global music_tracks, current_config
     
     if not music_tracks:
-        print("Loading music library...")
+        safe_print("Loading music library...", "blue")
         current_config = config.load_config()
         
         # Try to load from database first (much faster)
@@ -109,19 +128,19 @@ def ensure_library_loaded() -> bool:
                 if Path(track.file_path).exists():
                     existing_tracks.append(track)
             music_tracks = existing_tracks
-            print(f"Loaded {len(music_tracks)} tracks from database")
+            safe_print(f"Loaded {len(music_tracks)} tracks from database", "green")
         
         # If no database tracks or very few, fall back to filesystem scan
         if not music_tracks:
-            print("No tracks in database, scanning filesystem...")
+            safe_print("No tracks in database, scanning filesystem...", "yellow")
             music_tracks = library.scan_music_library(current_config, show_progress=False)
             
             if not music_tracks:
-                print("No music files found in configured library paths.")
-                print("Run 'music-minion scan' to populate the database, or 'music-minion init' to set up library paths.")
+                safe_print("No music files found in configured library paths.", "red")
+                safe_print("Run 'music-minion scan' to populate the database, or 'music-minion init' to set up library paths.", "yellow")
                 return False
             
-            print(f"Scanned {len(music_tracks)} tracks from filesystem")
+            safe_print(f"Scanned {len(music_tracks)} tracks from filesystem", "green")
     
     return True
 
@@ -140,9 +159,9 @@ def handle_play_command(args: List[str]) -> bool:
             new_state, success = player.resume_playback(current_player_state)
             current_player_state = new_state
             if success:
-                print("Resumed playback")
+                safe_print("▶ Resumed playback", "green")
             else:
-                print("Failed to resume playback")
+                safe_print("❌ Failed to resume playback", "red")
         else:
             # Play random track from available (non-archived) tracks
             available_tracks = get_available_tracks()
@@ -184,13 +203,13 @@ def play_track(track: library.Track) -> bool:
     current_player_state = new_state
     
     if success:
-        print(f"♪ Now playing: {library.get_display_name(track)}")
+        safe_print(f"♪ Now playing: {library.get_display_name(track)}", "cyan")
         if track.duration:
-            print(f"   Duration: {library.get_duration_str(track)}")
+            safe_print(f"   Duration: {library.get_duration_str(track)}", "blue")
         
         dj_info = library.get_dj_info(track)
         if dj_info != "No DJ metadata":
-            print(f"   {dj_info}")
+            safe_print(f"   {dj_info}", "magenta")
         
         # Store track in database
         track_id = database.get_or_create_track(
@@ -201,7 +220,7 @@ def play_track(track: library.Track) -> bool:
         # Start playback session
         database.start_playback_session(track_id)
     else:
-        print("Failed to play track")
+        safe_print("❌ Failed to play track", "red")
     
     return True
 
@@ -982,6 +1001,11 @@ def handle_command(command: str, args: List[str]) -> bool:
         True if the program should continue, False if it should exit
     """
     if command in ['quit', 'exit']:
+        # Clean up MPV player before exiting
+        global current_player_state
+        if player.is_mpv_running(current_player_state):
+            print("Stopping music player...")
+            player.stop_mpv(current_player_state)
         print("Goodbye!")
         return False
     
@@ -1075,44 +1099,336 @@ def handle_command(command: str, args: List[str]) -> bool:
     return True
 
 
-def interactive_mode() -> None:
-    """Run the interactive command loop."""
-    print("Welcome to Music Minion CLI!")
-    print("Type 'help' for available commands, or 'quit' to exit.")
-    print()
+def interactive_mode_with_dashboard() -> None:
+    """Run the interactive command loop with fixed top dashboard and scrolling commands."""
+    import time
+    import signal
+    import threading
+    import os
+    from rich.console import Console
     
-    import select
-    import sys
+    global current_config
+    
+    console = Console()
+    
+    # Pass config to UI module
+    ui.set_ui_config(current_config.ui)
+    
+    # Clear session state
+    ui.clear_session()
+    
+    # Shared state for dashboard updates
+    dashboard_state = {
+        "should_update": True,
+        "running": True,
+        "last_track": None,
+        "dashboard_content": None,
+    }
+    
+    def get_current_track_metadata():
+        """Get metadata for the current track."""
+        global current_player_state, music_tracks
+        
+        if not current_player_state.current_track:
+            return None
+        
+        # Find track in library
+        track = None
+        for t in music_tracks:
+            if str(t.file_path) == current_player_state.current_track:
+                track = t
+                break
+        
+        if not track:
+            return None
+        
+        # Get metadata
+        metadata = {
+            "title": track.title or "Unknown",
+            "artist": track.artist or "Unknown",
+            "album": track.album,
+            "year": track.year,
+            "genre": track.genre,
+            "bpm": track.bpm,
+            "key": track.key,
+        }
+        
+        return metadata
+    
+    def get_current_track_db_info():
+        """Get database info for current track."""
+        global current_player_state
+        
+        if not current_player_state.current_track:
+            return None
+        
+        try:
+            # Find track in library first to get metadata
+            track = None
+            for t in music_tracks:
+                if str(t.file_path) == current_player_state.current_track:
+                    track = t
+                    break
+            
+            if not track:
+                return None
+            
+            # Get track ID from database
+            track_id = database.get_or_create_track(
+                track.file_path, track.title, track.artist, track.album,
+                track.genre, track.year, track.duration, track.key, track.bpm
+            )
+            
+            # Get tags
+            tags_data = database.get_track_tags(track_id)
+            tags = [t['tag_name'] for t in tags_data if not t.get('blacklisted', False)]
+            
+            # Get latest rating
+            ratings = database.get_track_ratings(track_id)
+            latest_rating = None
+            if ratings:
+                # Convert rating type to numeric score
+                rating_map = {"archive": 0, "skip": 25, "like": 60, "love": 85}
+                latest_rating = rating_map.get(ratings[0]['rating_type'], 50)
+            
+            # Get notes
+            notes_data = database.get_track_notes(track_id)
+            latest_note = notes_data[0]['note'] if notes_data else ""
+            
+            # Get play stats
+            play_count = len(ratings)
+            last_played = ratings[0]['created_at'] if ratings else None
+            
+            return {
+                "tags": tags,
+                "notes": latest_note,
+                "rating": latest_rating,
+                "last_played": last_played,
+                "play_count": play_count,
+            }
+        except:
+            return None
+
+    def dashboard_updater():
+        """Background thread to update dashboard in real-time."""
+        global current_player_state
+        last_update_time = time.time()
+        last_terminal_size = None
+        
+        while dashboard_state["running"]:
+            try:
+                current_time = time.time()
+                
+                # Check for track completion
+                check_and_handle_track_completion()
+                
+                # Update player state
+                if current_player_state.process:
+                    current_player_state = player.update_player_status(current_player_state)
+                
+                # Check if terminal was resized
+                current_size = (console.size.width, console.size.height)
+                terminal_resized = last_terminal_size != current_size
+                if terminal_resized:
+                    last_terminal_size = current_size
+                
+                # Check if track changed
+                track_changed = dashboard_state["last_track"] != current_player_state.current_track
+                if track_changed:
+                    if dashboard_state["last_track"] and current_player_state.current_track:
+                        # Get proper track info for previous track display
+                        prev_track_info = get_current_track_metadata()
+                        if prev_track_info:
+                            ui.store_previous_track(prev_track_info, "played")
+                    dashboard_state["last_track"] = current_player_state.current_track
+                
+                # Determine if we should update
+                force_update = dashboard_state["should_update"]
+                time_based_update = (current_time - last_update_time) >= 1.0
+                should_update = force_update or track_changed or terminal_resized or time_based_update
+                
+                if should_update:
+                    # Get metadata and database info
+                    track_metadata = get_current_track_metadata()
+                    db_info = get_current_track_db_info()
+                    
+                    # Update the live dashboard
+                    try:
+                        dashboard = ui.render_dashboard(current_player_state, track_metadata, db_info, console.size.width)
+                        
+                        # Only update in interactive terminals with proper support
+                        if console.is_terminal and not console.is_dumb_terminal:
+                            try:
+                                # Hide cursor to prevent blinking
+                                console.file.write("\033[?25l")
+                                console.file.flush()
+                                
+                                # Save cursor position
+                                console.file.write("\033[s")
+                                console.file.flush()
+                                
+                                # Move to top and update dashboard efficiently
+                                console.file.write("\033[H")
+                                
+                                # Render dashboard in one operation to reduce flicker
+                                console.print(dashboard, end="")
+                                console.print("─" * console.size.width)
+                                
+                                # Restore cursor position
+                                console.file.write("\033[u")
+                                
+                                # Show cursor again
+                                console.file.write("\033[?25h")
+                                console.file.flush()
+                                
+                            except Exception:
+                                # If cursor positioning fails, skip real-time updates
+                                pass
+                    except Exception:
+                        # Fallback if dashboard rendering fails
+                        pass
+                    
+                    dashboard_state["should_update"] = False
+                    last_update_time = current_time
+                
+                # Update more frequently during playback
+                update_interval = 1.0 if (current_player_state.is_playing and current_player_state.current_track) else 3.0
+                time.sleep(update_interval)
+                
+            except Exception:
+                # Silently handle errors to prevent crash
+                time.sleep(1.0)
+    
+    # Reserve space for dashboard at top
+    console.clear()
+    dashboard = ui.render_dashboard(None, None, None, console.size.width)
+    console.print(dashboard)
+    console.print("─" * console.size.width)
+    console.print()
+    
+    # Show welcome message in command area
+    console.print("[bold green]Welcome to Music Minion CLI![/bold green]")
+    console.print("Type 'help' for available commands, or 'quit' to exit.")
+    console.print()
+    
+    # Start background dashboard updater
+    updater_thread = threading.Thread(target=dashboard_updater, daemon=True)
+    updater_thread.start()
     
     try:
         while True:
             try:
-                # Check for track completion periodically
-                check_and_handle_track_completion()
+                user_input = input("music-minion> ").strip()
+                command, args = parse_command(user_input)
                 
-                # Check if there's input available (non-blocking)
-                print("music-minion> ", end='', flush=True)
+                # Add UI feedback for certain commands
+                if command == "love":
+                    ui.flash_love()
+                elif command == "like":
+                    ui.flash_like()
+                elif command == "skip":
+                    ui.flash_skip()
+                elif command == "archive":
+                    ui.flash_archive()
+                elif command == "note" and args:
+                    ui.flash_note_added()
                 
-                # Use select to check for input with timeout (for periodic checks)
-                if sys.stdin in select.select([sys.stdin], [], [], 1.0)[0]:
-                    user_input = input().strip()
-                    command, args = parse_command(user_input)
+                if not handle_command(command, args):
+                    break
+                
+                # For state-changing commands, update dashboard immediately
+                state_changing_commands = ["play", "pause", "resume", "stop", "skip", "archive", "like", "love", "note"]
+                if command in state_changing_commands:
+                    # Trigger immediate dashboard update
+                    dashboard_state["should_update"] = True
+                    # Give a moment for the command to take effect
+                    time.sleep(0.1)
                     
-                    if not handle_command(command, args):
-                        break
-                else:
-                    # No input available, just continue the loop for periodic checks
-                    print('\r', end='', flush=True)  # Clear the prompt line
-                    continue
-                    
+                    # Manual dashboard refresh for state changes
+                    try:
+                        # Update player state first
+                        if current_player_state.process:
+                            current_player_state = player.update_player_status(current_player_state)
+                        
+                        track_metadata = get_current_track_metadata()
+                        db_info = get_current_track_db_info()
+                        dashboard = ui.render_dashboard(current_player_state, track_metadata, db_info, console.size.width)
+                        
+                        # Show updated dashboard after state change
+                        console.print("\n" + "─" * console.size.width)
+                        console.print("📍 Current Status:")
+                        console.print(dashboard)
+                        console.print("─" * console.size.width)
+                        
+                        # Also trigger the background updater to update the top dashboard
+                        dashboard_state["should_update"] = True
+                        dashboard_state["last_track"] = current_player_state.current_track
+                        
+                    except Exception as e:
+                        # Silently handle errors
+                        pass
+                
             except KeyboardInterrupt:
-                print("\nUse 'quit' or 'exit' to leave gracefully.")
+                console.print("\n[yellow]Use 'quit' or 'exit' to leave gracefully.[/yellow]")
             except EOFError:
-                print("\nGoodbye!")
+                console.print("\n[green]Goodbye![/green]")
                 break
                 
     except Exception as e:
-        print(f"An unexpected error occurred: {e}")
+        console.print(f"[red]Dashboard error: {e}[/red]")
+    finally:
+        # Stop background updater
+        dashboard_state["running"] = False
+
+
+def interactive_mode() -> None:
+    """Run the interactive command loop."""
+    global current_config
+    
+    # Load config if not already loaded
+    if not current_config.music.library_paths:
+        current_config = config.load_config()
+    
+    # Check if dashboard is enabled and Rich is available
+    if current_config.ui.enable_dashboard:
+        try:
+            from rich.console import Console
+            # Use dashboard mode if Rich is available (don't require terminal detection)
+            interactive_mode_with_dashboard()
+            return
+        except ImportError:
+            # Rich not available, fall back to simple mode
+            pass
+    
+    # Fallback to simple mode with Rich Console for consistent styling
+    from rich.console import Console
+    console = Console()
+    
+    console.print("[bold green]Welcome to Music Minion CLI![/bold green]")
+    console.print("Type 'help' for available commands, or 'quit' to exit.")
+    console.print()
+    
+    try:
+        while True:
+            # Check for track completion periodically
+            check_and_handle_track_completion()
+            
+            try:
+                user_input = input("music-minion> ").strip()
+                command, args = parse_command(user_input)
+                
+                if not handle_command(command, args):
+                    break
+                    
+            except KeyboardInterrupt:
+                console.print("\n[yellow]Use 'quit' or 'exit' to leave gracefully.[/yellow]")
+            except EOFError:
+                console.print("\n[green]Goodbye![/green]")
+                break
+                
+    except Exception as e:
+        console.print(f"[red]An unexpected error occurred: {e}[/red]")
+        import sys
         sys.exit(1)
 
 

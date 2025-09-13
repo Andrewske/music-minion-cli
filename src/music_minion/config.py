@@ -41,6 +41,10 @@ class UIConfig:
     show_recent_history: bool = True
     history_length: int = 10
     use_colors: bool = True
+    enable_dashboard: bool = True
+    use_emoji: bool = True
+    bpm_visualizer: bool = True
+    refresh_rate: int = 1
 
 
 @dataclass
@@ -123,6 +127,18 @@ history_length = 10
 
 # Use colors in terminal output
 use_colors = true
+
+# Enable rich dashboard UI (disable for simple mode)
+enable_dashboard = true
+
+# Use emoji in UI (disable for ASCII-only)
+use_emoji = true
+
+# Show BPM visualizer animation
+bpm_visualizer = true
+
+# Dashboard refresh rate in Hz
+refresh_rate = 1
 """.strip()
 
 
@@ -176,7 +192,11 @@ def load_config() -> Config:
                 show_progress_bar=ui_data.get('show_progress_bar', config.ui.show_progress_bar),
                 show_recent_history=ui_data.get('show_recent_history', config.ui.show_recent_history),
                 history_length=ui_data.get('history_length', config.ui.history_length),
-                use_colors=ui_data.get('use_colors', config.ui.use_colors)
+                use_colors=ui_data.get('use_colors', config.ui.use_colors),
+                enable_dashboard=ui_data.get('enable_dashboard', config.ui.enable_dashboard),
+                use_emoji=ui_data.get('use_emoji', config.ui.use_emoji),
+                bpm_visualizer=ui_data.get('bpm_visualizer', config.ui.bpm_visualizer),
+                refresh_rate=ui_data.get('refresh_rate', config.ui.refresh_rate)
             )
         
         return config
@@ -227,6 +247,10 @@ show_progress_bar = {config.ui.show_progress_bar!r}
 show_recent_history = {config.ui.show_recent_history!r}
 history_length = {config.ui.history_length}
 use_colors = {config.ui.use_colors!r}
+enable_dashboard = {config.ui.enable_dashboard!r}
+use_emoji = {config.ui.use_emoji!r}
+bpm_visualizer = {config.ui.bpm_visualizer!r}
+refresh_rate = {config.ui.refresh_rate}
 """
 
         with open(config_path, 'w', encoding='utf-8') as f:
