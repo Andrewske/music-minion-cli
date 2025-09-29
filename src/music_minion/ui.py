@@ -166,6 +166,44 @@ def create_progress_bar_responsive(position: float, duration: float, bar_width: 
     return progress_text
 
 
+def parse_artists(artist_string: str) -> List[str]:
+    """Parse multiple artists from a single artist string."""
+    if not artist_string:
+        return ["Unknown Artist"]
+    
+    # Common separators for multiple artists
+    separators = [
+        ' feat. ', ' ft. ', ' featuring ', ' Feat. ', ' Ft. ', ' Featuring ',
+        ' & ', ' and ', ' And ', ' x ', ' X ', ' vs. ', ' vs ', ' Vs. ', ' VS ',
+        ', ', ' with ', ' With '
+    ]
+    
+    # Start with the original string
+    artists = [artist_string]
+    
+    # Split by each separator
+    for separator in separators:
+        new_artists = []
+        for artist in artists:
+            if separator in artist:
+                parts = artist.split(separator)
+                new_artists.extend(parts)
+            else:
+                new_artists.append(artist)
+        artists = new_artists
+    
+    # Clean up each artist name
+    cleaned = []
+    for artist in artists:
+        artist = artist.strip()
+        # Remove common suffixes/prefixes that might remain
+        artist = artist.strip('(),[]')
+        if artist and artist not in cleaned:  # Avoid duplicates
+            cleaned.append(artist)
+    
+    return cleaned if cleaned else ["Unknown Artist"]
+
+
 def format_track_display(track_info: Dict[str, Any]) -> List[str]:
     """Format track information for display."""
     lines = []
@@ -175,10 +213,21 @@ def format_track_display(track_info: Dict[str, Any]) -> List[str]:
         lines.append("  Waiting for music...")
         return lines
     
-    # Artist - Title
-    artist = track_info.get("artist", "Unknown Artist")
+    # Title on its own line
     title = track_info.get("title", "Unknown Title")
-    lines.append(f"{ICONS['note']} {artist} - {title}")
+    lines.append(f"{ICONS['note']} {title}")
+    
+    # Artists on separate line(s)
+    artist_string = track_info.get("artist", "Unknown Artist")
+    artists = parse_artists(artist_string)
+    
+    if len(artists) == 1:
+        lines.append(f"  by {artists[0]}")
+    else:
+        # Multiple artists - show them nicely formatted
+        lines.append(f"  by {artists[0]}")
+        for artist in artists[1:]:
+            lines.append(f"     {artist}")
     
     # Album, year, genre, BPM, key
     details = []
@@ -243,8 +292,12 @@ def format_previous_track(track_info: Optional[Dict], rating: Optional[str]) -> 
     if not track_info:
         return ""
     
-    artist = track_info.get("artist", "Unknown")
+    artist_string = track_info.get("artist", "Unknown")
     title = track_info.get("title", "Unknown")
+    
+    # For previous track, show all artists inline with separators
+    artists = parse_artists(artist_string)
+    artist_display = " & ".join(artists) if len(artists) > 1 else artists[0]
     
     rating_str = ""
     if rating == "love":
@@ -258,7 +311,7 @@ def format_previous_track(track_info: Optional[Dict], rating: Optional[str]) -> 
     
     time_ago = track_info.get("time_ago", "just now")
     
-    return f"{ICONS['scroll']} Previous: {artist} - {title} ({rating_str} • {time_ago})"
+    return f"{ICONS['scroll']} Previous: {artist_display} - {title} ({rating_str} • {time_ago})"
 
 
 def set_feedback(message: str, icon: str = None) -> None:

@@ -228,18 +228,18 @@ def play_track(track: library.Track) -> bool:
 def check_and_handle_track_completion() -> None:
     """Check if current track has completed and handle auto-analysis."""
     global current_player_state, music_tracks
-    
+
     if not current_player_state.current_track:
-        return
-    
+        return  # No message needed - track already handled
+
     if not player.is_mpv_running(current_player_state):
-        return
-    
+        return  # Player not running, nothing to check
+
     # Check if track is still playing
     status = player.get_player_status(current_player_state)
     position, duration, percent = player.get_progress_info(current_player_state)
-    
-    # If track has ended (reached 100% or very close), trigger analysis
+
+    # If track has ended (reached 100% or very close), trigger analysis and play next
     if duration > 0 and percent >= 99.0 and not status.get('playing', False):
         # Find the track that just finished
         finished_track = None
@@ -247,8 +247,10 @@ def check_and_handle_track_completion() -> None:
             if track.file_path == current_player_state.current_track:
                 finished_track = track
                 break
-        
+
         if finished_track:
+            safe_print(f"✅ Finished: {library.get_display_name(finished_track)}", "green")
+
             # Check if track is archived (don't analyze archived tracks)
             track_id = get_current_track_id()
             if track_id:
@@ -257,24 +259,41 @@ def check_and_handle_track_completion() -> None:
                 if track_id not in archived_tracks:
                     # Trigger auto-analysis in background
                     try:
-                        print(f"🤖 Auto-analyzing completed track...")
+                        safe_print(f"🤖 Auto-analyzing completed track...", "cyan")
                         result = ai.analyze_and_tag_track(finished_track, 'auto_analysis')
-                        
+
                         if result['success'] and result['tags_added']:
-                            print(f"✅ Added {len(result['tags_added'])} AI tags: {', '.join(result['tags_added'])}")
+                            safe_print(f"✅ Added {len(result['tags_added'])} AI tags: {', '.join(result['tags_added'])}", "green")
                         elif not result['success']:
                             error_msg = result.get('error', 'Unknown error')
                             # Show brief error message but don't be too intrusive
                             if 'API key' in error_msg:
-                                print("⚠️  AI analysis skipped: No API key configured (use 'ai setup <key>')")
+                                safe_print("⚠️  AI analysis skipped: No API key configured (use 'ai setup <key>')", "yellow")
                             else:
-                                print(f"⚠️  AI analysis failed: {error_msg}")
+                                safe_print(f"⚠️  AI analysis failed: {error_msg}", "yellow")
                     except Exception as e:
                         # Don't interrupt user experience with detailed errors
-                        print(f"⚠️  AI analysis error: {str(e)}")
-        
-        # Clear current track since it's finished
+                        safe_print(f"⚠️  AI analysis error: {str(e)}", "yellow")
+
+        # Clear current track and play next track automatically
         current_player_state = current_player_state._replace(current_track=None)
+
+        # Auto-play next track if continuous playback is enabled
+        safe_print("⏭️  Auto-playing next track...", "blue")
+
+        # Get available tracks (excluding archived ones)
+        available_tracks = get_available_tracks()
+
+        # Remove the track that just finished from options if possible
+        if finished_track and len(available_tracks) > 1:
+            available_tracks = [t for t in available_tracks if t.file_path != finished_track.file_path]
+
+        if available_tracks:
+            next_track = library.get_random_track(available_tracks)
+            if next_track:
+                play_track(next_track)
+        else:
+            safe_print("No more tracks to play (all may be archived)", "red")
 
 
 def handle_pause_command() -> bool:

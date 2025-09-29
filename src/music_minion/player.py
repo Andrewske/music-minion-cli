@@ -189,23 +189,28 @@ def play_file(state: PlayerState, file_path: str) -> Tuple[PlayerState, bool]:
     """Play a specific audio file and return updated state."""
     if not is_mpv_running(state):
         return state, False
-    
+
     success = send_mpv_command(state.socket_path, {
         'command': ['loadfile', file_path, 'replace']
     })
-    
+
     if success:
         # Give MPV a moment to load the file
         import time
         time.sleep(0.5)
-        
+
+        # Explicitly unpause to ensure playback starts
+        send_mpv_command(state.socket_path, {
+            'command': ['set_property', 'pause', False]
+        })
+
         # Update status to get actual playback state
         updated_state = update_player_status(state._replace(
             current_track=file_path,
             is_playing=True
         ))
         return updated_state, True
-    
+
     return state, False
 
 
