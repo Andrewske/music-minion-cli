@@ -39,6 +39,59 @@ def safe_print(message: str, style: str = None) -> None:
         print(message)
 
 
+def parse_quoted_args(args: List[str]) -> List[str]:
+    """
+    Parse command arguments respecting quoted strings.
+    Handles both single and double quotes.
+
+    Args:
+        args: Raw argument list from command split
+
+    Returns:
+        List of parsed arguments with quotes removed
+
+    Example:
+        ['playlist', 'rename', '"Old', 'Name"', '"New', 'Name"']
+        -> ['playlist', 'rename', 'Old Name', 'New Name']
+    """
+    parsed = []
+    current = []
+    in_quote = False
+    quote_char = None
+
+    for arg in args:
+        # Check if this arg starts a quote
+        if not in_quote and arg and arg[0] in ('"', "'"):
+            quote_char = arg[0]
+            in_quote = True
+            # Check if quote also ends in same arg
+            if len(arg) > 1 and arg[-1] == quote_char:
+                parsed.append(arg[1:-1])
+                in_quote = False
+                quote_char = None
+            else:
+                current.append(arg[1:])
+        # Check if this arg ends the current quote
+        elif in_quote and arg and arg[-1] == quote_char:
+            current.append(arg[:-1])
+            parsed.append(' '.join(current))
+            current = []
+            in_quote = False
+            quote_char = None
+        # Inside a quote
+        elif in_quote:
+            current.append(arg)
+        # Regular arg outside quotes
+        else:
+            parsed.append(arg)
+
+    # If we have unclosed quotes, join what we have
+    if current:
+        parsed.append(' '.join(current))
+
+    return parsed
+
+
 def print_help() -> None:
     """Display help information for available commands."""
     help_text = """
@@ -58,13 +111,14 @@ Available commands:
   status            Show current song and player status
   stats             Show library and rating statistics
   scan              Scan library and populate database
+  migrate           Run database migrations (if needed)
 
 Playlist Commands:
   playlist                        List all playlists
   playlist new manual <name>      Create manual playlist
   playlist new smart <name>       Create smart playlist (filter wizard)
   playlist delete <name>          Delete playlist
-  playlist rename <old> <new>     Rename playlist
+  playlist rename "old" "new"     Rename playlist (use quotes)
   playlist show <name>            Show playlist tracks
   playlist active <name>          Set active playlist
   playlist active none            Clear active playlist
@@ -1221,6 +1275,9 @@ def smart_playlist_wizard(name: str) -> bool:
             print("❌ Smart playlist cancelled")
             return True
 
+        # Update track count for the smart playlist
+        playlist.update_playlist_track_count(playlist_id)
+
         print(f"\n✅ Created smart playlist: {name}")
         print(f"   {count} tracks match your filters")
         print(f"   Set as active with: playlist active \"{name}\"")
@@ -1303,21 +1360,19 @@ def handle_playlist_rename_command(args: List[str]) -> bool:
     """Handle playlist rename command - rename a playlist."""
     if len(args) < 2:
         print("Error: Please specify old and new names")
-        print("Usage: playlist rename <old_name> <new_name>")
+        print('Usage: playlist rename "old name" "new name"')
         return True
 
-    # Find the split point - assuming last word is new name if simple,
-    # or we need better parsing
-    # For now, split at the middle
-    if len(args) == 2:
-        old_name = args[0]
-        new_name = args[1]
-    else:
-        # If more args, assume format like: playlist rename "Old Name" "New Name"
-        # or playlist rename Old Name New Name (take last word as new name)
-        mid = len(args) // 2
-        old_name = ' '.join(args[:mid])
-        new_name = ' '.join(args[mid:])
+    # Parse quoted args to handle multi-word playlist names
+    parsed_args = parse_quoted_args(args)
+
+    if len(parsed_args) < 2:
+        print("Error: Please specify both old and new names")
+        print('Usage: playlist rename "old name" "new name"')
+        return True
+
+    old_name = parsed_args[0]
+    new_name = parsed_args[1]
 
     pl = playlist.get_playlist_by_name(old_name)
     if not pl:
@@ -1595,7 +1650,13 @@ def handle_command(command: str, args: List[str]) -> bool:
     
     elif command == 'scan':
         return handle_scan_command()
-    
+
+    elif command == 'migrate':
+        print("Running database migrations...")
+        database.init_database()
+        print("✅ Database migrations complete")
+        return True
+
     elif command == 'playlist':
         if not args:
             return handle_playlist_list_command()
@@ -1659,9 +1720,12 @@ def interactive_mode_with_dashboard() -> None:
     import threading
     import os
     from rich.console import Console
-    
+
     global current_config
-    
+
+    # Run database migrations on startup
+    database.init_database()
+
     console = Console()
     
     # Pass config to UI module
@@ -1958,11 +2022,14 @@ def interactive_mode_with_dashboard() -> None:
 def interactive_mode() -> None:
     """Run the interactive command loop."""
     global current_config
-    
+
     # Load config if not already loaded
     if not current_config.music.library_paths:
         current_config = config.load_config()
-    
+
+    # Run database migrations on startup
+    database.init_database()
+
     # Check if dashboard is enabled and Rich is available
     if current_config.ui.enable_dashboard:
         try:

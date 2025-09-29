@@ -42,6 +42,41 @@ def create_playlist(name: str, playlist_type: str, description: Optional[str] = 
             raise
 
 
+def update_playlist_track_count(playlist_id: int) -> None:
+    """
+    Update the track_count field for a playlist.
+    For manual playlists, counts rows in playlist_tracks.
+    For smart playlists, evaluates filters and counts matching tracks.
+
+    Args:
+        playlist_id: ID of playlist to update
+    """
+    playlist = get_playlist_by_id(playlist_id)
+    if not playlist:
+        return
+
+    with get_db_connection() as conn:
+        if playlist['type'] == 'manual':
+            # Count tracks in playlist_tracks table
+            cursor = conn.execute("""
+                SELECT COUNT(*) as count
+                FROM playlist_tracks
+                WHERE playlist_id = ?
+            """, (playlist_id,))
+            count = cursor.fetchone()['count']
+        else:
+            # Smart playlist - evaluate filters
+            matching_tracks = playlist_filters.evaluate_filters(playlist_id)
+            count = len(matching_tracks)
+
+        conn.execute("""
+            UPDATE playlists
+            SET track_count = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (count, playlist_id))
+        conn.commit()
+
+
 def delete_playlist(playlist_id: int) -> bool:
     """
     Delete a playlist and all associated data.
@@ -53,16 +88,24 @@ def delete_playlist(playlist_id: int) -> bool:
         True if playlist was deleted, False if not found
     """
     with get_db_connection() as conn:
-        # Clear active playlist if this is the active one
-        cursor = conn.execute("SELECT playlist_id FROM active_playlist WHERE id = 1")
-        row = cursor.fetchone()
-        if row and row['playlist_id'] == playlist_id:
-            conn.execute("DELETE FROM active_playlist WHERE id = 1")
+        # Begin explicit transaction for atomicity
+        conn.execute("BEGIN")
+        try:
+            # Clear active playlist if this is the active one
+            cursor = conn.execute("SELECT playlist_id FROM active_playlist WHERE id = 1")
+            row = cursor.fetchone()
+            if row and row['playlist_id'] == playlist_id:
+                conn.execute("DELETE FROM active_playlist WHERE id = 1")
 
-        # Delete playlist (CASCADE will handle playlist_tracks and playlist_filters)
-        cursor = conn.execute("DELETE FROM playlists WHERE id = ?", (playlist_id,))
-        conn.commit()
-        return cursor.rowcount > 0
+            # Delete playlist (CASCADE will handle playlist_tracks and playlist_filters)
+            cursor = conn.execute("DELETE FROM playlists WHERE id = ?", (playlist_id,))
+            deleted = cursor.rowcount > 0
+
+            conn.commit()
+            return deleted
+        except Exception:
+            conn.rollback()
+            raise
 
 
 def rename_playlist(playlist_id: int, new_name: str) -> bool:
@@ -104,17 +147,15 @@ def get_all_playlists() -> List[Dict[str, Any]]:
     with get_db_connection() as conn:
         cursor = conn.execute("""
             SELECT
-                p.id,
-                p.name,
-                p.type,
-                p.description,
-                p.created_at,
-                p.updated_at,
-                COUNT(pt.id) as track_count
-            FROM playlists p
-            LEFT JOIN playlist_tracks pt ON p.id = pt.playlist_id
-            GROUP BY p.id
-            ORDER BY p.name
+                id,
+                name,
+                type,
+                description,
+                track_count,
+                created_at,
+                updated_at
+            FROM playlists
+            ORDER BY name
         """)
         return [dict(row) for row in cursor.fetchall()]
 
@@ -238,10 +279,10 @@ def add_track_to_playlist(playlist_id: int, track_id: int) -> bool:
             VALUES (?, ?, ?)
         """, (playlist_id, track_id, next_position))
 
-        # Update playlist updated_at
+        # Update playlist updated_at and track_count
         conn.execute("""
             UPDATE playlists
-            SET updated_at = CURRENT_TIMESTAMP
+            SET updated_at = CURRENT_TIMESTAMP, track_count = track_count + 1
             WHERE id = ?
         """, (playlist_id,))
 
@@ -271,36 +312,47 @@ def remove_track_from_playlist(playlist_id: int, track_id: int) -> bool:
         raise ValueError("Cannot manually remove tracks from smart playlists")
 
     with get_db_connection() as conn:
-        # Remove track
-        cursor = conn.execute("""
-            DELETE FROM playlist_tracks
-            WHERE playlist_id = ? AND track_id = ?
-        """, (playlist_id, track_id))
+        # Begin explicit transaction for atomicity
+        conn.execute("BEGIN")
+        try:
+            # Remove track
+            cursor = conn.execute("""
+                DELETE FROM playlist_tracks
+                WHERE playlist_id = ? AND track_id = ?
+            """, (playlist_id, track_id))
 
-        if cursor.rowcount == 0:
-            return False  # Track wasn't in playlist
+            if cursor.rowcount == 0:
+                conn.rollback()
+                return False  # Track wasn't in playlist
 
-        # Reorder remaining tracks to fill gap
-        conn.execute("""
-            UPDATE playlist_tracks
-            SET position = (
-                SELECT COUNT(*)
-                FROM playlist_tracks pt2
-                WHERE pt2.playlist_id = playlist_tracks.playlist_id
-                AND pt2.id < playlist_tracks.id
-            )
-            WHERE playlist_id = ?
-        """, (playlist_id,))
+            # Reorder remaining tracks to fill gap (O(n) instead of O(n²))
+            cursor = conn.execute("""
+                SELECT id FROM playlist_tracks
+                WHERE playlist_id = ?
+                ORDER BY position
+            """, (playlist_id,))
+            remaining_track_ids = [row['id'] for row in cursor.fetchall()]
 
-        # Update playlist updated_at
-        conn.execute("""
-            UPDATE playlists
-            SET updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        """, (playlist_id,))
+            # Update positions in order
+            for new_position, track_id in enumerate(remaining_track_ids):
+                conn.execute("""
+                    UPDATE playlist_tracks
+                    SET position = ?
+                    WHERE id = ?
+                """, (new_position, track_id))
 
-        conn.commit()
-        return True
+            # Update playlist updated_at and track_count
+            conn.execute("""
+                UPDATE playlists
+                SET updated_at = CURRENT_TIMESTAMP, track_count = track_count - 1
+                WHERE id = ?
+            """, (playlist_id,))
+
+            conn.commit()
+            return True
+        except Exception:
+            conn.rollback()
+            raise
 
 
 def reorder_playlist_track(playlist_id: int, from_pos: int, to_pos: int) -> bool:
@@ -316,38 +368,45 @@ def reorder_playlist_track(playlist_id: int, from_pos: int, to_pos: int) -> bool
         True if reordered successfully, False if positions invalid
     """
     with get_db_connection() as conn:
-        # Get all tracks in order
-        cursor = conn.execute("""
-            SELECT id, position FROM playlist_tracks
-            WHERE playlist_id = ?
-            ORDER BY position
-        """, (playlist_id,))
-        tracks = [dict(row) for row in cursor.fetchall()]
+        # Begin explicit transaction for atomicity
+        conn.execute("BEGIN")
+        try:
+            # Get all tracks in order
+            cursor = conn.execute("""
+                SELECT id, position FROM playlist_tracks
+                WHERE playlist_id = ?
+                ORDER BY position
+            """, (playlist_id,))
+            tracks = [dict(row) for row in cursor.fetchall()]
 
-        if not tracks or from_pos >= len(tracks) or to_pos >= len(tracks):
-            return False
+            if not tracks or from_pos >= len(tracks) or to_pos >= len(tracks):
+                conn.rollback()
+                return False
 
-        # Move track from from_pos to to_pos
-        track_to_move = tracks.pop(from_pos)
-        tracks.insert(to_pos, track_to_move)
+            # Move track from from_pos to to_pos
+            track_to_move = tracks.pop(from_pos)
+            tracks.insert(to_pos, track_to_move)
 
-        # Update all positions
-        for i, track in enumerate(tracks):
+            # Update all positions
+            for i, track in enumerate(tracks):
+                conn.execute("""
+                    UPDATE playlist_tracks
+                    SET position = ?
+                    WHERE id = ?
+                """, (i, track['id']))
+
+            # Update playlist updated_at
             conn.execute("""
-                UPDATE playlist_tracks
-                SET position = ?
+                UPDATE playlists
+                SET updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-            """, (i, track['id']))
+            """, (playlist_id,))
 
-        # Update playlist updated_at
-        conn.execute("""
-            UPDATE playlists
-            SET updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        """, (playlist_id,))
-
-        conn.commit()
-        return True
+            conn.commit()
+            return True
+        except Exception:
+            conn.rollback()
+            raise
 
 
 def set_active_playlist(playlist_id: int) -> bool:

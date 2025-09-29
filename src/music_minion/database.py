@@ -12,7 +12,7 @@ from .config import Config, get_data_dir
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def get_database_path() -> Path:
@@ -42,6 +42,7 @@ def migrate_database(conn, current_version: int) -> None:
                 name TEXT UNIQUE NOT NULL,
                 type TEXT NOT NULL, -- 'manual' or 'smart'
                 description TEXT,
+                track_count INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -67,7 +68,7 @@ def migrate_database(conn, current_version: int) -> None:
                 field TEXT NOT NULL, -- 'title', 'artist', 'album', 'genre', 'year', 'bpm', 'key'
                 operator TEXT NOT NULL, -- 'contains', 'starts_with', 'ends_with', 'equals', 'not_equals', 'gt', 'lt', 'gte', 'lte'
                 value TEXT NOT NULL,
-                conjunction TEXT DEFAULT 'AND', -- 'AND' or 'OR' for combining with next filter
+                conjunction TEXT NOT NULL DEFAULT 'AND', -- 'AND' or 'OR' for combining with next filter
                 FOREIGN KEY (playlist_id) REFERENCES playlists (id) ON DELETE CASCADE
             )
         """)
@@ -81,10 +82,47 @@ def migrate_database(conn, current_version: int) -> None:
             )
         """)
 
-        # Create indexes for performance
+        # Create indexes for playlist performance
         conn.execute("CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist_id ON playlist_tracks (playlist_id, position)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track_id ON playlist_tracks (track_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_playlist_filters_playlist_id ON playlist_filters (playlist_id)")
+
+        # Create indexes on tracks table for smart playlist filtering performance
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_year ON tracks (year)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks (album)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_genre ON tracks (genre)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_bpm ON tracks (bpm)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_key ON tracks (key_signature)")
+
+        conn.commit()
+
+    if current_version < 4:
+        # Migration from v3 to v4: Add track_count column and fix conjunction constraint
+        # Add track_count column to playlists table
+        try:
+            conn.execute("ALTER TABLE playlists ADD COLUMN track_count INTEGER DEFAULT 0")
+        except Exception:
+            # Column might already exist if user is on modified v3
+            pass
+
+        # Initialize track_count for existing playlists
+        # For manual playlists, count actual tracks
+        conn.execute("""
+            UPDATE playlists
+            SET track_count = (
+                SELECT COUNT(*)
+                FROM playlist_tracks
+                WHERE playlist_tracks.playlist_id = playlists.id
+            )
+            WHERE type = 'manual'
+        """)
+
+        # For smart playlists, set to 0 initially (will be updated when they view/use them)
+        conn.execute("""
+            UPDATE playlists
+            SET track_count = 0
+            WHERE type = 'smart'
+        """)
 
         conn.commit()
 

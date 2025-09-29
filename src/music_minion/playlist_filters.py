@@ -8,7 +8,7 @@ This module handles filter rules for smart playlists, including:
 """
 
 from typing import List, Dict, Any, Tuple, Optional
-from music_minion.database import get_db_connection
+from .database import get_db_connection
 
 
 # Valid filter fields (must match tracks table columns)
@@ -30,6 +30,17 @@ NUMERIC_OPERATORS = {
 NUMERIC_FIELDS = {'year', 'bpm'}
 TEXT_FIELDS = {'title', 'artist', 'album', 'genre', 'key'}
 
+# Field name to column name mapping (for SQL safety)
+FIELD_TO_COLUMN = {
+    'title': 'title',
+    'artist': 'artist',
+    'album': 'album',
+    'genre': 'genre',
+    'year': 'year',
+    'bpm': 'bpm',
+    'key': 'key_signature'  # Note: database column is key_signature
+}
+
 
 def validate_filter(field: str, operator: str, value: str) -> None:
     """Validate filter field, operator, and value compatibility.
@@ -40,7 +51,8 @@ def validate_filter(field: str, operator: str, value: str) -> None:
         value: Filter value
 
     Raises:
-        ValueError: If field is invalid or operator incompatible with field type
+        ValueError: If field is invalid, operator incompatible with field type,
+                   or value is invalid for numeric fields
     """
     if field not in VALID_FIELDS:
         raise ValueError(f"Invalid field: {field}. Must be one of {VALID_FIELDS}")
@@ -51,6 +63,17 @@ def validate_filter(field: str, operator: str, value: str) -> None:
             raise ValueError(
                 f"Operator '{operator}' not valid for numeric field '{field}'. "
                 f"Use one of: {NUMERIC_OPERATORS}"
+            )
+        # Validate that value is numeric
+        try:
+            if field == 'bpm':
+                float(value)  # BPM can be float (e.g., 128.5)
+            else:
+                int(value)  # Year must be integer
+        except ValueError:
+            raise ValueError(
+                f"Value '{value}' is not a valid number for numeric field '{field}'. "
+                f"Expected a {'decimal' if field == 'bpm' else 'whole'} number."
             )
     elif field in TEXT_FIELDS:
         if operator not in TEXT_OPERATORS:
@@ -90,8 +113,7 @@ def add_filter(
 
     # Verify playlist exists and is smart type
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
+        cursor = conn.execute(
             "SELECT type FROM playlists WHERE id = ?",
             (playlist_id,)
         )
@@ -107,7 +129,7 @@ def add_filter(
             )
 
         # Insert filter
-        cursor.execute(
+        cursor = conn.execute(
             """
             INSERT INTO playlist_filters (playlist_id, field, operator, value, conjunction)
             VALUES (?, ?, ?, ?, ?)
@@ -128,8 +150,7 @@ def remove_filter(filter_id: int) -> bool:
         True if filter was removed, False if not found
     """
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM playlist_filters WHERE id = ?", (filter_id,))
+        cursor = conn.execute("DELETE FROM playlist_filters WHERE id = ?", (filter_id,))
         conn.commit()
         return cursor.rowcount > 0
 
@@ -158,8 +179,7 @@ def update_filter(
     """
     # Get current filter
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM playlist_filters WHERE id = ?", (filter_id,))
+        cursor = conn.execute("SELECT * FROM playlist_filters WHERE id = ?", (filter_id,))
         row = cursor.fetchone()
 
         if not row:
@@ -178,7 +198,7 @@ def update_filter(
             raise ValueError(f"Conjunction must be 'AND' or 'OR', got: {new_conjunction}")
 
         # Update filter
-        cursor.execute(
+        cursor = conn.execute(
             """
             UPDATE playlist_filters
             SET field = ?, operator = ?, value = ?, conjunction = ?
@@ -200,8 +220,7 @@ def get_playlist_filters(playlist_id: int) -> List[Dict[str, Any]]:
         List of filter dictionaries with keys: id, field, operator, value, conjunction
     """
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
+        cursor = conn.execute(
             """
             SELECT id, field, operator, value, conjunction
             FROM playlist_filters
@@ -252,21 +271,28 @@ def build_filter_query(filters: List[Dict[str, Any]]) -> Tuple[str, List[str]]:
         field = f['field']
         operator = f['operator']
         value = f['value']
+
+        # Map field name to actual column name (SQL injection prevention)
+        column_name = FIELD_TO_COLUMN.get(field)
+        if not column_name:
+            # This should never happen if validation works correctly
+            raise ValueError(f"Invalid field '{field}' - not in field mapping")
+
         sql_op = operator_map.get(operator, '=')
 
         # Handle LIKE operators with wildcards
         if operator == 'contains':
-            where_parts.append(f"{field} {sql_op} ?")
+            where_parts.append(f"{column_name} {sql_op} ?")
             params.append(f"%{value}%")
         elif operator == 'starts_with':
-            where_parts.append(f"{field} {sql_op} ?")
+            where_parts.append(f"{column_name} {sql_op} ?")
             params.append(f"{value}%")
         elif operator == 'ends_with':
-            where_parts.append(f"{field} {sql_op} ?")
+            where_parts.append(f"{column_name} {sql_op} ?")
             params.append(f"%{value}")
         else:
             # Direct comparison
-            where_parts.append(f"{field} {sql_op} ?")
+            where_parts.append(f"{column_name} {sql_op} ?")
             params.append(value)
 
     # Join with conjunctions (default to AND for first filter)
@@ -300,12 +326,11 @@ def evaluate_filters(playlist_id: int) -> List[Dict[str, Any]]:
 
     # Query tracks
     with get_db_connection() as conn:
-        cursor = conn.cursor()
         query = f"""
             SELECT *
             FROM tracks
             WHERE {where_clause}
             ORDER BY artist, album, title
         """
-        cursor.execute(query, params)
+        cursor = conn.execute(query, params)
         return [dict(row) for row in cursor.fetchall()]
