@@ -14,6 +14,8 @@ from rich.panel import Panel
 from rich.text import Text
 from rich.align import Align
 
+from . import playlist
+
 console = Console()
 
 # BPM visualizer patterns
@@ -539,7 +541,14 @@ def render_dashboard(player_state: Any, track_metadata: Optional[Dict] = None,
         )
         truncated_prev = prev_line[:console_width - 6] + "..." if len(prev_line) > console_width - 3 else prev_line
         lines.append(Text(truncated_prev, style="dim bright_black"))
-    
+
+    # Active playlist info
+    active_pl = playlist.get_active_playlist()
+    if active_pl:
+        playlist_line = f"📋 Playlist: {active_pl['name']}"
+        truncated_pl = playlist_line[:console_width - 6] + "..." if len(playlist_line) > console_width - 3 else playlist_line
+        lines.append(Text(truncated_pl, style="bold cyan"))
+
     # Create panel with all lines
     content = "\n".join(str(line) for line in lines)
     

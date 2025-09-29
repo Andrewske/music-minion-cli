@@ -12,7 +12,7 @@ from .config import Config, get_data_dir
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def get_database_path() -> Path:
@@ -32,13 +32,70 @@ def get_db_connection():
         conn.close()
 
 
+def migrate_database(conn, current_version: int) -> None:
+    """Migrate database from current_version to latest schema."""
+    if current_version < 3:
+        # Migration from v2 to v3: Add playlist tables
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS playlists (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                type TEXT NOT NULL, -- 'manual' or 'smart'
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS playlist_tracks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                playlist_id INTEGER NOT NULL,
+                track_id INTEGER NOT NULL,
+                position INTEGER NOT NULL,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (playlist_id) REFERENCES playlists (id) ON DELETE CASCADE,
+                FOREIGN KEY (track_id) REFERENCES tracks (id) ON DELETE CASCADE,
+                UNIQUE (playlist_id, track_id)
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS playlist_filters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                playlist_id INTEGER NOT NULL,
+                field TEXT NOT NULL, -- 'title', 'artist', 'album', 'genre', 'year', 'bpm', 'key'
+                operator TEXT NOT NULL, -- 'contains', 'starts_with', 'ends_with', 'equals', 'not_equals', 'gt', 'lt', 'gte', 'lte'
+                value TEXT NOT NULL,
+                conjunction TEXT DEFAULT 'AND', -- 'AND' or 'OR' for combining with next filter
+                FOREIGN KEY (playlist_id) REFERENCES playlists (id) ON DELETE CASCADE
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS active_playlist (
+                id INTEGER PRIMARY KEY CHECK (id = 1), -- Ensure only one row
+                playlist_id INTEGER,
+                activated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (playlist_id) REFERENCES playlists (id) ON DELETE SET NULL
+            )
+        """)
+
+        # Create indexes for performance
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist_id ON playlist_tracks (playlist_id, position)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track_id ON playlist_tracks (track_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_playlist_filters_playlist_id ON playlist_filters (playlist_id)")
+
+        conn.commit()
+
+
 def init_database() -> None:
     """Initialize the database with required tables."""
     db_path = get_database_path()
-    
+
     # Ensure data directory exists
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     with get_db_connection() as conn:
         # Create schema version table
         conn.execute("""
@@ -151,10 +208,18 @@ def init_database() -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tags_source ON tags (source)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ai_requests_track_id ON ai_requests (track_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ai_requests_timestamp ON ai_requests (request_timestamp)")
-        
+
+        # Check current schema version and run migrations if needed
+        cursor = conn.execute("SELECT version FROM schema_version")
+        row = cursor.fetchone()
+        current_version = row['version'] if row else 0
+
+        if current_version < SCHEMA_VERSION:
+            migrate_database(conn, current_version)
+
         # Set schema version
         conn.execute("INSERT OR REPLACE INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
-        
+
         conn.commit()
 
 

@@ -31,7 +31,8 @@ venv/
 
 # Music Minion data and config
 ai-test-reports/
-*.md
+notes.md
+
 !README.md
 !.env.example
 !CLAUDE.md
