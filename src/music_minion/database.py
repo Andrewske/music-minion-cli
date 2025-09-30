@@ -12,7 +12,7 @@ from .config import Config, get_data_dir
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 def get_database_path() -> Path:
@@ -173,6 +173,31 @@ def migrate_database(conn, current_version: int) -> None:
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_active_playlist_track
             ON active_playlist(last_played_track_id)
+        """)
+
+        conn.commit()
+
+    if current_version < 7:
+        # Migration from v6 to v7: Add sync tracking columns (Phase 7)
+
+        # Add file modification time tracking
+        try:
+            conn.execute("ALTER TABLE tracks ADD COLUMN file_mtime INTEGER")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+
+        # Add last sync timestamp
+        try:
+            conn.execute("ALTER TABLE tracks ADD COLUMN last_synced_at TIMESTAMP")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+
+        # Create index for quick change detection
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_tracks_mtime
+            ON tracks(file_mtime)
         """)
 
         conn.commit()

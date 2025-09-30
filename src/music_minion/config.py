@@ -73,6 +73,17 @@ class PlaylistConfig:
 
 
 @dataclass
+class SyncConfig:
+    """Configuration for metadata sync and file watching."""
+    auto_sync_on_startup: bool = True
+    write_tags_to_metadata: bool = True
+    metadata_tag_field: str = "COMMENT"  # Field to store tags (COMMENT or custom)
+    tag_prefix: str = "mm:"  # Prefix for Music Minion tags in metadata
+    sync_method: str = "manual"  # 'manual' or 'syncthing' (future)
+    auto_watch_files: bool = False  # Watch for file changes (future)
+
+
+@dataclass
 class Config:
     """Main configuration object."""
     music: MusicConfig = field(default_factory=MusicConfig)
@@ -80,6 +91,7 @@ class Config:
     ai: AIConfig = field(default_factory=AIConfig)
     ui: UIConfig = field(default_factory=UIConfig)
     playlists: PlaylistConfig = field(default_factory=PlaylistConfig)
+    sync: SyncConfig = field(default_factory=SyncConfig)
 
 
 def get_config_dir() -> Path:
@@ -179,6 +191,25 @@ export_formats = ["m3u8", "crate"]
 
 # Use relative paths for M3U8 files (for cross-platform compatibility)
 use_relative_paths = true
+
+[sync]
+# Auto-sync file metadata on startup
+auto_sync_on_startup = true
+
+# Write tags to file metadata
+write_tags_to_metadata = true
+
+# Metadata field to use for tags (COMMENT is standard)
+metadata_tag_field = "COMMENT"
+
+# Prefix for Music Minion tags in metadata
+tag_prefix = "mm:"
+
+# Sync method (manual or syncthing)
+sync_method = "manual"
+
+# Auto-watch files for changes (future feature)
+auto_watch_files = false
 """.strip()
 
 
@@ -256,6 +287,17 @@ def load_config() -> Config:
                 print("Using default playlist configuration.")
                 config.playlists = PlaylistConfig()
 
+        if 'sync' in toml_data:
+            sync_data = toml_data['sync']
+            config.sync = SyncConfig(
+                auto_sync_on_startup=sync_data.get('auto_sync_on_startup', config.sync.auto_sync_on_startup),
+                write_tags_to_metadata=sync_data.get('write_tags_to_metadata', config.sync.write_tags_to_metadata),
+                metadata_tag_field=sync_data.get('metadata_tag_field', config.sync.metadata_tag_field),
+                tag_prefix=sync_data.get('tag_prefix', config.sync.tag_prefix),
+                sync_method=sync_data.get('sync_method', config.sync.sync_method),
+                auto_watch_files=sync_data.get('auto_watch_files', config.sync.auto_watch_files)
+            )
+
         return config
         
     except Exception as e:
@@ -315,6 +357,14 @@ refresh_rate = {config.ui.refresh_rate}
 auto_export = {config.playlists.auto_export!r}
 export_formats = {config.playlists.export_formats!r}
 use_relative_paths = {config.playlists.use_relative_paths!r}
+
+[sync]
+auto_sync_on_startup = {config.sync.auto_sync_on_startup!r}
+write_tags_to_metadata = {config.sync.write_tags_to_metadata!r}
+metadata_tag_field = "{config.sync.metadata_tag_field}"
+tag_prefix = "{config.sync.tag_prefix}"
+sync_method = "{config.sync.sync_method}"
+auto_watch_files = {config.sync.auto_watch_files!r}
 """
 
         with open(config_path, 'w', encoding='utf-8') as f:
