@@ -2097,11 +2097,15 @@ for tag in tags_to_remove:
 
 **Impact**: User loses all ID3 tags on corrupted files, no recovery possible.
 
-**Fix**: Write to temp file first, then atomic rename:
+**Fix**: Copy to temp, modify temp, then atomic rename (mutagen requires file to exist):
 ```python
+import shutil
+
 temp_path = file_path + '.tmp'
-audio.save(temp_path)
-os.replace(temp_path, file_path)  # Atomic on Unix/Windows
+shutil.copy2(file_path, temp_path)  # Copy original to temp
+audio = MutagenFile(temp_path)      # Load temp file
+audio.save()                         # Save in place
+os.replace(temp_path, file_path)    # Atomic replace on Unix/Windows
 ```
 
 **Location**: `sync.py:92-106`
@@ -2316,15 +2320,20 @@ for tag in tags_to_remove:
 **What We Learned**:
 - Power failures, crashes, and kill signals happen
 - Partial writes corrupt metadata permanently
-- Temp file + atomic rename is standard practice
+- Mutagen requires file to exist before saving (opens with 'rb+' mode)
+- Copy → modify temp → atomic rename is the correct pattern
 - `os.replace()` is atomic on both Unix and Windows
 
 **Pattern**:
 ```python
+import shutil
+
 temp_path = file_path + '.tmp'
 try:
-    audio.save(temp_path)
-    os.replace(temp_path, file_path)  # Atomic
+    shutil.copy2(file_path, temp_path)  # Copy original to temp
+    audio = MutagenFile(temp_path)      # Load temp file
+    audio.save()                         # Save in place
+    os.replace(temp_path, file_path)    # Atomic replace
 except Exception:
     os.remove(temp_path)  # Cleanup on failure
 ```

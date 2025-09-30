@@ -55,12 +55,17 @@ if current_version < N:
 
 ### File Operations
 
-**Pattern**: Always use atomic writes for user data
+**Pattern**: Always use atomic writes for user data (mutagen requires file to exist)
 ```python
+import shutil
+
 temp_path = file_path + '.tmp'
 try:
-    audio.save(temp_path)
-    os.replace(temp_path, file_path)  # Atomic
+    shutil.copy2(file_path, temp_path)  # Copy original to temp
+    audio = MutagenFile(temp_path)      # Load temp file
+    # ... modify audio tags ...
+    audio.save()                         # Save in place (no filename)
+    os.replace(temp_path, file_path)    # Atomic replace
 except Exception:
     if os.path.exists(temp_path):
         os.remove(temp_path)
@@ -175,11 +180,15 @@ if tag_source == 'file':
 ### Pitfall 2: File Corruption on Crash
 **Problem**: Direct file writes can corrupt on interruption
 
-**Solution**: Atomic writes (temp file + rename)
+**Solution**: Atomic writes (copy → modify temp → rename)
 ```python
+import shutil
+
 temp_path = file_path + '.tmp'
-audio.save(temp_path)
-os.replace(temp_path, file_path)  # Atomic
+shutil.copy2(file_path, temp_path)  # Copy original to temp
+audio = MutagenFile(temp_path)      # Load temp file
+audio.save()                         # Save in place
+os.replace(temp_path, file_path)    # Atomic replace
 ```
 
 ### Pitfall 3: Race Conditions in mtime Tracking
@@ -543,14 +552,19 @@ for tag in tags_to_remove:
 
 ### 2. Atomic Operations Prevent Corruption
 
-**CRITICAL**: File operations modifying user data MUST be atomic.
+**CRITICAL**: File operations modifying user data MUST be atomic. Mutagen requires target file to exist.
 
 **Pattern**:
 ```python
+import shutil
+
 temp_path = file_path + '.tmp'
 try:
-    audio.save(temp_path)
-    os.replace(temp_path, file_path)  # Atomic on Unix/Windows
+    shutil.copy2(file_path, temp_path)  # Copy original to temp
+    audio = MutagenFile(temp_path)      # Load temp file
+    # ... modify audio tags ...
+    audio.save()                         # Save in place (no filename)
+    os.replace(temp_path, file_path)    # Atomic replace on Unix/Windows
 except Exception:
     if os.path.exists(temp_path):
         os.remove(temp_path)
@@ -559,7 +573,7 @@ except Exception:
 
 **Why**: Crashes during write corrupt metadata permanently. No recovery possible without atomic writes.
 
-**Learning**: `os.replace()` is atomic on both Unix and Windows. Use temp file + rename pattern for all writes.
+**Learning**: `os.replace()` is atomic on both Unix and Windows. Mutagen's `save(filename)` expects the file to exist (opens with 'rb+' mode), so copy first, then modify the temp file in place.
 
 ### 3. Race Conditions in Change Detection
 

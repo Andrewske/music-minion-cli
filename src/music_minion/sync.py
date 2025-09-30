@@ -6,6 +6,7 @@ Supports reading/writing tags to MP3 (ID3) and M4A files.
 """
 
 import os
+import shutil
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
@@ -55,47 +56,58 @@ def write_tags_to_file(file_path: str, tags: List[str], config: Config) -> bool:
         return False
 
     try:
+        # Validate file format first (only MP3 and M4A supported)
         audio = MutagenFile(file_path, easy=False)
         if audio is None:
             print(f"Error: Could not open file {file_path}")
             return False
 
-        # Validate file format (only MP3 and M4A supported)
         if not isinstance(audio, (MP4, ID3)) and not hasattr(audio, 'tags'):
             print(f"Unsupported format for {file_path} (only MP3/M4A supported)")
             return False
 
-        # Format tags with prefix
-        tag_prefix = config.sync.tag_prefix
-        formatted_tags = [f"{tag_prefix}{tag}" for tag in tags]
-        tag_string = ", ".join(formatted_tags)
-
-        if isinstance(audio, MP4):
-            # M4A file - use \xa9cmt for comment
-            audio["\xa9cmt"] = tag_string
-        else:
-            # MP3 file - use ID3 COMM frame
-            # Check if tags exist, add them if not
-            if not hasattr(audio, 'tags') or audio.tags is None:
-                try:
-                    audio.add_tags()
-                except Exception as e:
-                    print(f"Error adding ID3 tags to {file_path}: {e}")
-                    return False
-
-            # Remove existing COMM frames to avoid duplicates
-            if audio.tags:
-                audio.tags.delall("COMM")
-                # Add new COMM frame
-                audio.tags.add(COMM(encoding=3, lang='eng', desc='', text=tag_string))
-
-        # Atomic write: save to temp file first, then rename
+        # Atomic write: copy to temp, modify temp, then replace original
         temp_path = file_path + '.tmp'
         try:
-            audio.save(temp_path)
-            # Atomic rename (works on Unix and Windows)
+            # Step 1: Copy original to temp
+            shutil.copy2(file_path, temp_path)
+
+            # Step 2: Load temp file for modification
+            audio = MutagenFile(temp_path, easy=False)
+            if audio is None:
+                raise Exception("Could not open temp file")
+
+            # Step 3: Modify tags in temp file
+            # Format tags with prefix
+            tag_prefix = config.sync.tag_prefix
+            formatted_tags = [f"{tag_prefix}{tag}" for tag in tags]
+            tag_string = ", ".join(formatted_tags)
+
+            if isinstance(audio, MP4):
+                # M4A file - use \xa9cmt for comment
+                audio["\xa9cmt"] = tag_string
+            else:
+                # MP3 file - use ID3 COMM frame
+                # Check if tags exist, add them if not
+                if not hasattr(audio, 'tags') or audio.tags is None:
+                    try:
+                        audio.add_tags()
+                    except Exception as e:
+                        raise Exception(f"Error adding ID3 tags: {e}")
+
+                # Remove existing COMM frames to avoid duplicates
+                if audio.tags:
+                    audio.tags.delall("COMM")
+                    # Add new COMM frame
+                    audio.tags.add(COMM(encoding=3, lang='eng', desc='', text=tag_string))
+
+            # Step 4: Save temp file in place (no filename = saves to same file)
+            audio.save()
+
+            # Step 5: Atomically replace original with temp
             os.replace(temp_path, file_path)
             return True
+
         except Exception as e:
             # Clean up temp file on failure
             if os.path.exists(temp_path):

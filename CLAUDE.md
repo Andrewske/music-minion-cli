@@ -153,12 +153,17 @@ music-minion/
 - See `ai-learnings.md` section "Data Loss Prevention Through Ownership Tracking"
 
 ### Atomic File Operations
-**CRITICAL**: All file writes must be atomic:
+**CRITICAL**: All file writes must be atomic. Mutagen requires files to exist before saving, so copy first:
 ```python
+import shutil
+
 temp_path = file_path + '.tmp'
 try:
-    audio.save(temp_path)
-    os.replace(temp_path, file_path)  # Atomic on Unix/Windows
+    shutil.copy2(file_path, temp_path)  # Copy original to temp
+    audio = MutagenFile(temp_path)      # Load temp file
+    # ... modify audio tags ...
+    audio.save()                         # Save in place (no filename)
+    os.replace(temp_path, file_path)    # Atomic replace on Unix/Windows
 except Exception:
     if os.path.exists(temp_path):
         os.remove(temp_path)

@@ -207,38 +207,8 @@ This document tracks incomplete features, known limitations, and planned enhance
 
 Based on Phase 7 code review and learnings:
 
-### 1. Comprehensive Test Suite
-- **Coverage Areas**:
-  - Unit tests for all sync functions
-  - Integration tests for import/export workflows
-  - Load tests with 10k+ track libraries
-  - Concurrent access tests (multiple users/processes)
-- **Test Data**:
-  - Mock MP3/M4A files with various tag formats
-  - Edge cases: empty files, unsupported formats, duplicates
-  - Performance: 100+ files for progress reporting
-- **Priority**: High for production stability
 
-### 2. File Watching Implementation
-- **Approach**: Use `watchdog` library for filesystem events
-- **Implementation**:
-  ```python
-  from watchdog.observers import Observer
-  from watchdog.events import FileSystemEventHandler
-
-  class LibraryWatcher(FileSystemEventHandler):
-      def on_modified(self, event):
-          if event.src_path.endswith(('.mp3', '.m4a')):
-              # Debounce and queue for sync
-              schedule_sync(event.src_path)
-  ```
-- **Considerations**:
-  - Debounce rapid changes (wait 500ms)
-  - Handle Serato file locking on Windows
-  - Run in background thread
-- **Priority**: Medium (nice quality of life improvement)
-
-### 3. Conflict Detection UI
+### 1. Conflict Detection UI
 - **Flow**:
   1. Detect when both DB and file changed since last sync
   2. Show diff: `DB: [energetic, buildup]` vs `File: [energetic, heavy-bass]`
@@ -361,13 +331,7 @@ These features were discussed but are beyond the current project scope:
    - Useful for DJ set preparation
    - Priority: Medium
 
-4. **`sync watch` Command**
-   - Start file watching daemon
-   - Monitors library for changes
-   - Auto-imports on modification
-   - Priority: Medium (Phase 8)
-
-5. **`sync conflicts` Command**
+4. **`sync conflicts` Command**
    - Show detected conflicts
    - Allow manual resolution
    - Export conflict report
