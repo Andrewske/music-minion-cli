@@ -30,6 +30,7 @@ from . import playlist_export
 from . import playback
 from . import sync
 from . import completers
+from . import command_palette
 
 # Global state for interactive mode
 current_player_state: player.PlayerState = player.PlayerState()
@@ -2728,87 +2729,25 @@ def interactive_mode_with_dashboard() -> None:
     updater_thread.start()
 
     # Create prompt_toolkit session with styling
-    prompt_style = Style.from_dict({
-        'prompt': '#00aa00 bold',  # Green prompt to match rich theme
-        # Transparent background completion menu styling (Claude Code style)
-        'completion-menu.completion': '',  # Empty = fully transparent
-        'completion-menu.completion.current': 'bg:#00aaaa #000000 bold',  # Highlighted item
-        'completion-menu.meta': '#888888',  # Description text
-        'completion-menu.meta.current': 'bg:#00aaaa #ffffff',  # Highlighted description
-        'scrollbar.background': '',  # Transparent scrollbar
-        'scrollbar.button': '',
-    })
-
-    # Flag to track if we're in command palette mode
-    in_palette_mode = {'active': False}
-
-    # Create custom key bindings
-    kb = KeyBindings()
-
-    @kb.add('/')
-    def show_command_palette(event):
-        """Intercept / key to show interactive command palette."""
-        buffer = event.app.current_buffer
-
-        # If buffer is empty and user types /, trigger full-screen menu
-        if buffer.text == '':
-            in_palette_mode['active'] = True
-            # Exit prompt to show menu
-            event.app.exit(result='__SHOW_COMMAND_PALETTE__')
-        else:
-            # Normal / insertion
-            buffer.insert_text('/')
-
-    # Create session with basic command completer and key bindings
-    session = PromptSession(
-        completer=completers.MusicMinionCompleter(),
-        style=prompt_style,
-        complete_while_typing=True,
-        key_bindings=kb,
-        # Keep completions below the input line (dropdown style)
-        complete_in_thread=False,
-        mouse_support=False,
-        # Use COLUMN style for full-width list display (like Claude Code)
-        complete_style='COLUMN',
-        # Reserve space for completion menu (makes it appear with padding)
-        reserve_space_for_menu=3,
-    )
-
     try:
         while True:
             try:
-                # Get user input (/ key binding handles command palette)
-                user_input = session.prompt("music-minion> ").strip()
+                # Pause background dashboard updates while getting input
+                original_running_state = dashboard_state["running"]
+                dashboard_state["running"] = False
+                time.sleep(0.05)  # Give background thread time to stop
 
-                # Check if command palette was triggered
-                if user_input == '__SHOW_COMMAND_PALETTE__':
-                    # Build menu items
-                    menu_items = []
-                    command_list = []
-                    for cmd, description in sorted(completers.MusicMinionCompleter.COMMANDS.items()):
-                        desc_text = description.split(' ', 1)[1] if ' ' in description else description
-                        menu_items.append(f"/{cmd:<20} {description}")
-                        command_list.append(cmd)
+                try:
+                    # Use command palette as the default input method
+                    user_input = command_palette.show_command_palette()
 
-                    # Show menu without clearing screen
-                    terminal_menu = TerminalMenu(
-                        menu_items,
-                        title=None,  # No title for cleaner look
-                        search_key=None,
-                        show_search_hint=False,
-                        clear_screen=False,  # Don't clear - overlay on existing content
-                        cursor_index=0,
-                        menu_cursor="> ",
-                        menu_cursor_style=("fg_cyan", "bold"),
-                        menu_highlight_style=("bg_cyan", "fg_black"),
-                    )
-
-                    menu_entry_index = terminal_menu.show()
-
-                    if menu_entry_index is not None:
-                        user_input = command_list[menu_entry_index]
-                    else:
+                    if not user_input:
+                        # Cancelled - resume and continue
                         continue
+                finally:
+                    # Resume background dashboard updates
+                    dashboard_state["running"] = original_running_state
+                    dashboard_state["should_update"] = True  # Force redraw
 
                 # Skip empty input
                 if not user_input:

@@ -37,57 +37,68 @@ class MusicMinionCompleter(Completer):
     """
 
     # Command categories for command palette
+    # Format: 'command': ('icon', 'description')
     COMMANDS = {
         # Playback commands
-        'play': '🎵 Start playing music',
-        'pause': '⏸️  Pause current track',
-        'resume': '▶️  Resume playback',
-        'stop': '⏹️  Stop playback',
-        'skip': '⏭️  Skip to next track',
-        'shuffle': '🔀 Toggle shuffle mode',
+        'play': ('▶', 'Start playing music'),
+        'pause': ('⏸', 'Pause current track'),
+        'resume': ('▸', 'Resume playback'),
+        'stop': ('■', 'Stop playback'),
+        'skip': ('⏭', 'Skip to next track'),
+        'shuffle': ('🔀', 'Toggle shuffle mode'),
 
         # Rating commands
-        'love': '❤️  Love current track',
-        'like': '👍 Like current track',
-        'archive': '📦 Archive track (remove from rotation)',
-        'note': '📝 Add note to current track',
+        'love': ('❤️', 'Love current track'),
+        'like': ('👍', 'Like current track'),
+        'archive': ('📦', 'Archive track (remove from rotation)'),
+        'note': ('📝', 'Add note to current track'),
 
         # Playlist commands
-        'playlist': '📋 Browse and select playlists',
-        'add': '➕ Add current track to playlist',
-        'remove': '➖ Remove current track from playlist',
+        'playlist': ('📋', 'Browse and select playlists'),
+        'add': ('➕', 'Add current track to playlist'),
+        'remove': ('➖', 'Remove current track from playlist'),
 
         # Library commands
-        'scan': '🔍 Scan library for new tracks',
-        'stats': '📊 Show library statistics',
+        'scan': ('🔍', 'Scan library for new tracks'),
+        'stats': ('📊', 'Show library statistics'),
 
         # AI commands
-        'ai': '🤖 AI-powered features',
+        'ai': ('🤖', 'AI-powered features'),
 
         # Sync commands
-        'sync': '🔄 Sync metadata with files',
+        'sync': ('🔄', 'Sync metadata with files'),
 
         # Tag commands
-        'tag': '🏷️  Manage track tags',
+        'tag': ('🏷️', 'Manage track tags'),
 
         # System commands
-        'help': '❓ Show help',
-        'quit': '👋 Exit Music Minion',
-        'exit': '👋 Exit Music Minion',
+        'help': ('❓', 'Show help'),
+        'quit': ('👋', 'Exit Music Minion'),
+        'exit': ('👋', 'Exit Music Minion'),
     }
 
     def get_completions(self, document: Document, complete_event) -> Iterable[Completion]:
         """Generate command completions with descriptions."""
-        word = document.get_word_before_cursor()
+        # Get the word being typed (strip any leading /)
+        text = document.text_before_cursor.lstrip('/')
+        word = text.lower()
 
-        for command, description in self.COMMANDS.items():
-            if command.startswith(word.lower()):
-                yield Completion(
-                    command,
-                    start_position=-len(word),
-                    display=f"{command}",
-                    display_meta=description
-                )
+        # Collect matching completions
+        matches = []
+        for command, (icon, description) in self.COMMANDS.items():
+            # Only match against the command name, not the description
+            if command.lower().startswith(word):
+                matches.append((command, icon, description))
+
+        # Sort and limit to prevent overwhelming display
+        matches.sort()
+        for command, icon, description in matches[:10]:  # Limit to 10 results
+            yield Completion(
+                command,
+                start_position=-len(text),
+                display=command,
+                display_meta=f"{icon}\t{description}"
+            )
 
 
 class CommandPaletteCompleter(Completer):
@@ -122,15 +133,12 @@ class CommandPaletteCompleter(Completer):
         for category, commands in self.CATEGORIES.items():
             for command in commands:
                 if not word or command.startswith(word):
-                    description = MusicMinionCompleter.COMMANDS.get(command, '')
-                    # Format with padding to make menu wider (closer to full width)
-                    # Keep the command name narrow so description has more room
-                    display_text = f"/{command:<18}"
+                    icon, description = MusicMinionCompleter.COMMANDS.get(command, ('', ''))
                     yield Completion(
                         command,
                         start_position=-len(word),
-                        display=display_text,
-                        display_meta=description
+                        display=f"/{command}",
+                        display_meta=f"{icon}\t{description}"
                     )
 
 
