@@ -1131,6 +1131,11 @@ def auto_export_if_enabled(playlist_id: int) -> None:
     if not current_config.playlists.auto_export:
         return
 
+    # Validate library paths exist
+    if not current_config.music.library_paths:
+        print("Warning: Cannot auto-export - no library paths configured", file=sys.stderr)
+        return
+
     # Get library root from config
     library_root = Path(current_config.music.library_paths[0]).expanduser()
 
@@ -1142,9 +1147,12 @@ def auto_export_if_enabled(playlist_id: int) -> None:
             library_root=library_root,
             use_relative_paths=current_config.playlists.use_relative_paths
         )
-    except Exception:
-        # Silently fail - auto-export should never interrupt user workflow
-        pass
+    except (ValueError, FileNotFoundError, ImportError, OSError) as e:
+        # Expected errors - log but don't interrupt workflow
+        print(f"Auto-export failed: {e}", file=sys.stderr)
+    except Exception as e:
+        # Unexpected errors - log for debugging
+        print(f"Unexpected error during auto-export: {e}", file=sys.stderr)
 
 
 def handle_playlist_list_command() -> bool:
@@ -1747,6 +1755,10 @@ def handle_playlist_import_command(args: List[str]) -> bool:
         return True
 
     # Get library root from config
+    # Validate library paths exist
+    if not current_config.music.library_paths:
+        print("❌ Error: No library paths configured")
+        return True
     library_root = Path(current_config.music.library_paths[0]).expanduser()
 
     # Auto-detect format and import
@@ -1759,7 +1771,7 @@ def handle_playlist_import_command(args: List[str]) -> bool:
 
         print(f"📂 Importing {format_type.upper()} playlist from: {file_path.name}")
 
-        playlist_id, tracks_added, unresolved = playlist_import.import_playlist(
+        playlist_id, tracks_added, duplicates_skipped, unresolved = playlist_import.import_playlist(
             file_path=file_path,
             playlist_name=None,  # Use filename as default
             library_root=library_root
@@ -1770,6 +1782,8 @@ def handle_playlist_import_command(args: List[str]) -> bool:
         if pl:
             print(f"✅ Created playlist: {pl['name']}")
             print(f"   Tracks added: {tracks_added}")
+            if duplicates_skipped > 0:
+                print(f"   Duplicates skipped: {duplicates_skipped}")
 
             if unresolved:
                 print(f"   ⚠️  Unresolved tracks: {len(unresolved)}")
@@ -1805,26 +1819,34 @@ def handle_playlist_export_command(args: List[str]) -> bool:
         print("Formats: m3u8 (default), crate, all")
         return True
 
-    # Parse arguments
-    if len(args) == 1:
-        playlist_name = args[0]
-        format_type = 'm3u8'  # Default format
-    else:
-        # First arg is playlist name, rest is format (join for multi-word names)
-        # If last arg looks like a format, separate it
-        if args[-1].lower() in ['m3u8', 'm3u', 'crate', 'all']:
-            format_type = args[-1].lower()
-            playlist_name = ' '.join(args[:-1])
-        else:
-            # All args are playlist name, use default format
-            playlist_name = ' '.join(args)
-            format_type = 'm3u8'
+    # Parse arguments with smart format detection
+    # Strategy: Try full name first, then try separating format
+    format_type = 'm3u8'  # Default format
+    playlist_name = ' '.join(args)
+
+    # If more than one arg and last arg looks like a format, try separating
+    if len(args) > 1 and args[-1].lower() in ['m3u8', 'm3u', 'crate', 'all']:
+        # First check if the full name exists as a playlist
+        pl_full = playlist.get_playlist_by_name(playlist_name)
+        if not pl_full:
+            # Full name doesn't exist, try separating the format
+            potential_format = args[-1].lower()
+            potential_name = ' '.join(args[:-1])
+            pl_separated = playlist.get_playlist_by_name(potential_name)
+            if pl_separated:
+                # Playlist exists without the last arg, treat it as format
+                format_type = potential_format
+                playlist_name = potential_name
 
     # Normalize format
     if format_type == 'm3u':
         format_type = 'm3u8'
 
     # Get library root from config
+    # Validate library paths exist
+    if not current_config.music.library_paths:
+        print("❌ Error: No library paths configured")
+        return True
     library_root = Path(current_config.music.library_paths[0]).expanduser()
 
     # Check if playlist exists

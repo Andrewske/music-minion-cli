@@ -73,7 +73,8 @@ def resolve_relative_path(playlist_path: Path, track_path: str, library_root: Pa
                         candidate = library_root / Path(*rel_parts)
                         if candidate.exists():
                             return candidate
-        except:
+        except (ValueError, OSError, IndexError):
+            # Path operations can fail on invalid paths or permissions issues
             pass
         return None
 
@@ -91,12 +92,68 @@ def resolve_relative_path(playlist_path: Path, track_path: str, library_root: Pa
     return None
 
 
+def _add_tracks_from_paths(
+    playlist_id: int,
+    playlist_file_path: Path,
+    track_paths: List[str],
+    library_root: Path
+) -> Tuple[int, int, List[str]]:
+    """
+    Helper function to resolve track paths and add them to a playlist.
+
+    Args:
+        playlist_id: ID of the playlist to add tracks to
+        playlist_file_path: Path to the playlist file (for relative resolution)
+        track_paths: List of track path strings from playlist
+        library_root: Root directory of music library
+
+    Returns:
+        Tuple of (tracks_added, duplicates_skipped, unresolved_paths)
+    """
+    tracks_added = 0
+    duplicates_skipped = 0
+    unresolved_paths = []
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+
+        for track_path_str in track_paths:
+            # Resolve track path
+            resolved_path = resolve_relative_path(playlist_file_path, track_path_str, library_root)
+
+            if resolved_path is None:
+                unresolved_paths.append(track_path_str)
+                continue
+
+            # Look up track in database by file path
+            cursor.execute(
+                "SELECT id FROM tracks WHERE file_path = ?",
+                (str(resolved_path),)
+            )
+            row = cursor.fetchone()
+
+            if row:
+                track_id = row['id']
+                # Add track to playlist
+                try:
+                    add_track_to_playlist(playlist_id, track_id)
+                    tracks_added += 1
+                except ValueError:
+                    # Track already in playlist, skip
+                    duplicates_skipped += 1
+            else:
+                # Track not in database
+                unresolved_paths.append(track_path_str)
+
+    return tracks_added, duplicates_skipped, unresolved_paths
+
+
 def import_m3u(
     file_path: Path,
     playlist_name: str,
     library_root: Path,
     description: Optional[str] = None
-) -> Tuple[int, int, List[str]]:
+) -> Tuple[int, int, int, List[str]]:
     """
     Import an M3U/M3U8 playlist file.
 
@@ -107,9 +164,10 @@ def import_m3u(
         description: Optional description for the playlist
 
     Returns:
-        Tuple of (playlist_id, tracks_added, unresolved_paths)
+        Tuple of (playlist_id, tracks_added, duplicates_skipped, unresolved_paths)
         - playlist_id: ID of created playlist
         - tracks_added: Number of tracks successfully added
+        - duplicates_skipped: Number of duplicate tracks skipped
         - unresolved_paths: List of track paths that couldn't be resolved
     """
     if not file_path.exists():
@@ -152,42 +210,15 @@ def import_m3u(
         description=description or f"Imported from {file_path.name}"
     )
 
-    # Resolve and add tracks
-    tracks_added = 0
-    unresolved_paths = []
+    # Resolve and add tracks using helper function
+    tracks_added, duplicates_skipped, unresolved_paths = _add_tracks_from_paths(
+        playlist_id=playlist_id,
+        playlist_file_path=file_path,
+        track_paths=track_paths,
+        library_root=library_root
+    )
 
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-
-        for track_path_str in track_paths:
-            # Resolve track path
-            resolved_path = resolve_relative_path(file_path, track_path_str, library_root)
-
-            if resolved_path is None:
-                unresolved_paths.append(track_path_str)
-                continue
-
-            # Look up track in database by file path
-            cursor.execute(
-                "SELECT id FROM tracks WHERE file_path = ?",
-                (str(resolved_path),)
-            )
-            row = cursor.fetchone()
-
-            if row:
-                track_id = row['id']
-                # Add track to playlist
-                try:
-                    add_track_to_playlist(playlist_id, track_id)
-                    tracks_added += 1
-                except ValueError:
-                    # Track already in playlist, skip
-                    pass
-            else:
-                # Track not in database
-                unresolved_paths.append(track_path_str)
-
-    return playlist_id, tracks_added, unresolved_paths
+    return playlist_id, tracks_added, duplicates_skipped, unresolved_paths
 
 
 def import_serato_crate(
@@ -195,7 +226,7 @@ def import_serato_crate(
     playlist_name: str,
     library_root: Path,
     description: Optional[str] = None
-) -> Tuple[int, int, List[str]]:
+) -> Tuple[int, int, int, List[str]]:
     """
     Import a Serato .crate playlist file.
 
@@ -206,9 +237,10 @@ def import_serato_crate(
         description: Optional description for the playlist
 
     Returns:
-        Tuple of (playlist_id, tracks_added, unresolved_paths)
+        Tuple of (playlist_id, tracks_added, duplicates_skipped, unresolved_paths)
         - playlist_id: ID of created playlist
         - tracks_added: Number of tracks successfully added
+        - duplicates_skipped: Number of duplicate tracks skipped
         - unresolved_paths: List of track paths that couldn't be resolved
     """
     if not file_path.exists():
@@ -230,13 +262,26 @@ def import_serato_crate(
 
     # Extract track paths from crate
     # Serato crates store tracks with full paths
+    # Note: pyserato object structure may vary by version
     track_paths = []
-    if hasattr(crate, 'tracks'):
-        for track in crate.tracks:
-            if hasattr(track, 'path'):
-                track_paths.append(track.path)
-            elif isinstance(track, str):
-                track_paths.append(track)
+    try:
+        if hasattr(crate, 'tracks'):
+            for track in crate.tracks:
+                if hasattr(track, 'path'):
+                    track_paths.append(track.path)
+                elif isinstance(track, str):
+                    track_paths.append(track)
+
+        # If no tracks found, the crate structure may be different than expected
+        if not track_paths:
+            raise ValueError(
+                "Could not extract tracks from Serato crate. "
+                "The crate file may be in an unsupported format or pyserato library version mismatch."
+            )
+    except AttributeError as e:
+        raise ValueError(
+            f"Failed to extract tracks from Serato crate (pyserato API changed?): {e}"
+        )
 
     # Create playlist
     playlist_id = create_playlist(
@@ -245,42 +290,15 @@ def import_serato_crate(
         description=description or f"Imported from {file_path.name}"
     )
 
-    # Resolve and add tracks
-    tracks_added = 0
-    unresolved_paths = []
+    # Resolve and add tracks using helper function
+    tracks_added, duplicates_skipped, unresolved_paths = _add_tracks_from_paths(
+        playlist_id=playlist_id,
+        playlist_file_path=file_path,
+        track_paths=track_paths,
+        library_root=library_root
+    )
 
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-
-        for track_path_str in track_paths:
-            # Resolve track path
-            resolved_path = resolve_relative_path(file_path, track_path_str, library_root)
-
-            if resolved_path is None:
-                unresolved_paths.append(track_path_str)
-                continue
-
-            # Look up track in database by file path
-            cursor.execute(
-                "SELECT id FROM tracks WHERE file_path = ?",
-                (str(resolved_path),)
-            )
-            row = cursor.fetchone()
-
-            if row:
-                track_id = row['id']
-                # Add track to playlist
-                try:
-                    add_track_to_playlist(playlist_id, track_id)
-                    tracks_added += 1
-                except ValueError:
-                    # Track already in playlist, skip
-                    pass
-            else:
-                # Track not in database
-                unresolved_paths.append(track_path_str)
-
-    return playlist_id, tracks_added, unresolved_paths
+    return playlist_id, tracks_added, duplicates_skipped, unresolved_paths
 
 
 def import_playlist(
@@ -288,7 +306,7 @@ def import_playlist(
     playlist_name: Optional[str] = None,
     library_root: Optional[Path] = None,
     description: Optional[str] = None
-) -> Tuple[int, int, List[str]]:
+) -> Tuple[int, int, int, List[str]]:
     """
     Import a playlist from a file, auto-detecting format.
 
@@ -299,7 +317,11 @@ def import_playlist(
         description: Optional description for the playlist
 
     Returns:
-        Tuple of (playlist_id, tracks_added, unresolved_paths)
+        Tuple of (playlist_id, tracks_added, duplicates_skipped, unresolved_paths)
+        - playlist_id: ID of created playlist
+        - tracks_added: Number of tracks successfully added
+        - duplicates_skipped: Number of duplicate tracks skipped
+        - unresolved_paths: List of track paths that couldn't be resolved
 
     Raises:
         ValueError: If format is unsupported

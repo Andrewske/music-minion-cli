@@ -6,6 +6,7 @@ Supports exporting to M3U/M3U8 and Serato .crate formats.
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+import sys
 
 from .database import get_db_connection
 from .playlist import get_playlist_by_id, get_playlist_by_name, get_playlist_tracks
@@ -258,9 +259,13 @@ def auto_export_playlist(
                 use_relative_paths=use_relative_paths
             )
             results.append((format_type, output_path, tracks_exported))
-        except Exception:
-            # Silently fail for auto-export - don't interrupt user workflow
-            pass
+        except (ValueError, FileNotFoundError, ImportError, OSError) as e:
+            # Expected errors during export - fail silently for auto-export
+            # Write to stderr for debugging without interrupting user workflow
+            print(f"Auto-export failed for format {format_type}: {e}", file=sys.stderr)
+        except Exception as e:
+            # Unexpected errors - log for debugging
+            print(f"Unexpected error during auto-export ({format_type}): {e}", file=sys.stderr)
 
     return results
 

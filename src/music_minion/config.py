@@ -57,6 +57,20 @@ class PlaylistConfig:
     export_formats: List[str] = field(default_factory=lambda: ["m3u8", "crate"])
     use_relative_paths: bool = True
 
+    def validate(self) -> None:
+        """Validate playlist configuration values.
+
+        Raises:
+            ValueError: If configuration values are invalid
+        """
+        valid_formats = {'m3u8', 'crate'}
+        invalid_formats = set(self.export_formats) - valid_formats
+        if invalid_formats:
+            raise ValueError(
+                f"Invalid export formats: {invalid_formats}. "
+                f"Valid formats are: {valid_formats}"
+            )
+
 
 @dataclass
 class Config:
@@ -234,6 +248,13 @@ def load_config() -> Config:
                 export_formats=playlists_data.get('export_formats', config.playlists.export_formats),
                 use_relative_paths=playlists_data.get('use_relative_paths', config.playlists.use_relative_paths)
             )
+            # Validate playlist config
+            try:
+                config.playlists.validate()
+            except ValueError as e:
+                print(f"Warning: Invalid playlist configuration: {e}")
+                print("Using default playlist configuration.")
+                config.playlists = PlaylistConfig()
 
         return config
         
