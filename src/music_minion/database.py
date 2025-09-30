@@ -12,7 +12,7 @@ from .config import Config, get_data_dir
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 def get_database_path() -> Path:
@@ -147,21 +147,33 @@ def migrate_database(conn, current_version: int) -> None:
         # Add position tracking columns to active_playlist table
         try:
             conn.execute("ALTER TABLE active_playlist ADD COLUMN last_played_track_id INTEGER")
-        except Exception:
-            pass  # Column might already exist
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise  # Re-raise if it's not a "column exists" error
 
         try:
             conn.execute("ALTER TABLE active_playlist ADD COLUMN last_played_position INTEGER")
-        except Exception:
-            pass  # Column might already exist
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
 
         try:
             conn.execute("ALTER TABLE active_playlist ADD COLUMN last_played_at TIMESTAMP")
-        except Exception:
-            pass  # Column might already exist
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
 
         # Add foreign key constraint note: SQLite doesn't support ADD CONSTRAINT after table creation
         # The FK constraint for last_played_track_id will be enforced by application logic
+
+        conn.commit()
+
+    if current_version < 6:
+        # Migration from v5 to v6: Add index for position tracking performance
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_active_playlist_track
+            ON active_playlist(last_played_track_id)
+        """)
 
         conn.commit()
 

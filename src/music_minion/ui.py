@@ -543,6 +543,12 @@ def render_dashboard(player_state: Any, track_metadata: Optional[Dict] = None,
         truncated_prev = prev_line[:console_width - 6] + "..." if len(prev_line) > console_width - 3 else prev_line
         lines.append(Text(truncated_prev, style="dim bright_black"))
 
+    # Get shuffle mode once (used in multiple places)
+    try:
+        shuffle_enabled = playback.get_shuffle_mode()
+    except Exception:
+        shuffle_enabled = True  # Default to shuffle on error
+
     # Active playlist info
     active_pl = playlist.get_active_playlist()
     if active_pl:
@@ -551,19 +557,20 @@ def render_dashboard(player_state: Any, track_metadata: Optional[Dict] = None,
         lines.append(Text(truncated_pl, style="bold cyan"))
 
         # Show position if available and in sequential mode
-        shuffle_enabled = playback.get_shuffle_mode()
-        saved_position = playback.get_playlist_position(active_pl['id'])
+        try:
+            saved_position = playback.get_playlist_position(active_pl['id'])
 
-        if saved_position and not shuffle_enabled:
-            _, position = saved_position
-            # Get total track count
-            playlist_tracks = playlist.get_playlist_tracks(active_pl['id'])
-            total_tracks = len(playlist_tracks)
-            position_line = f"   Position: {position + 1}/{total_tracks}"
-            lines.append(Text(position_line, style="cyan"))
+            if saved_position and not shuffle_enabled:
+                _, position = saved_position
+                # Get total track count (optimized - doesn't fetch full track data)
+                total_tracks = playlist.get_playlist_track_count(active_pl['id'])
+                position_line = f"   Position: {position + 1}/{total_tracks}"
+                lines.append(Text(position_line, style="cyan"))
+        except Exception:
+            # Gracefully degrade - skip position display on error
+            pass
 
     # Shuffle mode info
-    shuffle_enabled = playback.get_shuffle_mode()
     shuffle_icon = "🔀" if shuffle_enabled else "🔁"
     shuffle_text = "Shuffle ON" if shuffle_enabled else "Sequential"
     shuffle_line = f"{shuffle_icon} {shuffle_text}"

@@ -235,6 +235,38 @@ def get_playlist_tracks(playlist_id: int) -> List[Dict[str, Any]]:
             return playlist_filters.evaluate_filters(playlist_id)
 
 
+def get_playlist_track_count(playlist_id: int) -> int:
+    """
+    Get the number of tracks in a playlist (optimized - doesn't fetch full track data).
+    For manual playlists, counts tracks in playlist_tracks table.
+    For smart playlists, evaluates filters and counts matching tracks.
+
+    Args:
+        playlist_id: Playlist ID
+
+    Returns:
+        Number of tracks in playlist
+    """
+    playlist = get_playlist_by_id(playlist_id)
+    if not playlist:
+        return 0
+
+    with get_db_connection() as conn:
+        if playlist['type'] == 'manual':
+            # Count tracks directly without fetching data
+            cursor = conn.execute("""
+                SELECT COUNT(*) as count
+                FROM playlist_tracks
+                WHERE playlist_id = ?
+            """, (playlist_id,))
+            row = cursor.fetchone()
+            return row['count'] if row else 0
+        else:
+            # Smart playlist - need to evaluate filters (no way to optimize without duplicating filter logic)
+            tracks = playlist_filters.evaluate_filters(playlist_id)
+            return len(tracks)
+
+
 def add_track_to_playlist(playlist_id: int, track_id: int) -> bool:
     """
     Add a track to a manual playlist.

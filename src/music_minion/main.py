@@ -266,10 +266,19 @@ def handle_play_command(args: List[str]) -> bool:
     return True
 
 
-def play_track(track: library.Track) -> bool:
-    """Play a specific track."""
+def play_track(track: library.Track, playlist_position: Optional[int] = None) -> bool:
+    """
+    Play a specific track.
+
+    Args:
+        track: Track to play
+        playlist_position: Optional 0-based position in active playlist (optimization to avoid lookup)
+
+    Returns:
+        True to continue interactive loop
+    """
     global current_player_state, current_config
-    
+
     # Start MPV if not running
     if not player.is_mpv_running(current_player_state):
         print("Starting music player...")
@@ -278,20 +287,20 @@ def play_track(track: library.Track) -> bool:
             print("Failed to start music player")
             return True
         current_player_state = new_state
-    
+
     # Play the track
     new_state, success = player.play_file(current_player_state, track.file_path)
     current_player_state = new_state
-    
+
     if success:
         safe_print(f"♪ Now playing: {library.get_display_name(track)}", "cyan")
         if track.duration:
             safe_print(f"   Duration: {library.get_duration_str(track)}", "blue")
-        
+
         dj_info = library.get_dj_info(track)
         if dj_info != "No DJ metadata":
             safe_print(f"   {dj_info}", "magenta")
-        
+
         # Store track in database
         track_id = database.get_or_create_track(
             track.file_path, track.title, track.artist, track.album,
@@ -304,14 +313,18 @@ def play_track(track: library.Track) -> bool:
         # Track position if playing from active playlist
         active = playlist.get_active_playlist()
         if active:
-            # Get playlist tracks to find position
-            playlist_tracks = playlist.get_playlist_tracks(active['id'])
-            position = playback.get_track_position_in_playlist(playlist_tracks, track_id)
-            if position is not None:
-                playback.update_playlist_position(active['id'], track_id, position)
+            # Use provided position if available, otherwise compute it
+            if playlist_position is not None:
+                playback.update_playlist_position(active['id'], track_id, playlist_position)
+            else:
+                # Only compute position if not provided
+                playlist_tracks = playlist.get_playlist_tracks(active['id'])
+                position = playback.get_track_position_in_playlist(playlist_tracks, track_id)
+                if position is not None:
+                    playback.update_playlist_position(active['id'], track_id, position)
     else:
         safe_print("❌ Failed to play track", "red")
-    
+
     return True
 
 
@@ -515,20 +528,42 @@ def handle_skip_command() -> bool:
         # Get playlist tracks (in order)
         playlist_tracks = playlist.get_playlist_tracks(active['id'])
 
-        # Convert to database track format for playback.get_next_sequential_track
-        next_db_track = playback.get_next_sequential_track(playlist_tracks, current_track_id)
+        # Build dict for O(1) lookups of available tracks by file path
+        available_tracks_dict = {t.file_path: t for t in available_tracks}
 
-        if next_db_track:
-            # Find the Track object from available_tracks
-            next_track = None
-            for track in available_tracks:
-                if track.file_path == next_db_track['file_path']:
-                    next_track = track
+        # Loop to find next non-archived track
+        attempts = 0
+        max_attempts = len(playlist_tracks)
+
+        while attempts < max_attempts:
+            next_db_track = playback.get_next_sequential_track(playlist_tracks, current_track_id)
+
+            if next_db_track is None:
+                # Track not found in playlist
+                if current_track_id is not None:
+                    # Current track removed from playlist, start from beginning
+                    current_track_id = None
+                    attempts += 1
+                    continue
+                else:
+                    # Empty playlist or other error
                     break
 
+            # Check if track is available (not archived) using O(1) dict lookup
+            next_track = available_tracks_dict.get(next_db_track['file_path'])
             if next_track:
+                # Found non-archived track - get its position for optimization
+                position = playback.get_track_position_in_playlist(playlist_tracks, next_db_track['id'])
                 print("⏭ Next track (sequential)...")
-                return play_track(next_track)
+                return play_track(next_track, position)
+
+            # Track is archived, continue to next
+            current_track_id = next_db_track['id']
+            attempts += 1
+
+        # All tracks in playlist are archived
+        print("No non-archived tracks remaining in playlist")
+        return True
 
     # Shuffle mode or no active playlist: random selection
     # Remove current track from options if possible
@@ -1695,6 +1730,9 @@ def handle_playlist_delete_command(args: List[str]) -> bool:
         return True
 
     try:
+        # Clear position tracking before deleting
+        playback.clear_playlist_position(pl['id'])
+
         if playlist.delete_playlist(pl['id']):
             print(f"✅ Deleted playlist: {name}")
         else:
@@ -1804,6 +1842,11 @@ def handle_playlist_active_command(args: List[str]) -> bool:
 
     if name.lower() == 'none':
         # Clear active playlist
+        # First get the active playlist ID to clear position tracking
+        active = playlist.get_active_playlist()
+        if active:
+            playback.clear_playlist_position(active['id'])
+
         if playlist.clear_active_playlist():
             print("✅ Cleared active playlist (now playing all tracks)")
         else:

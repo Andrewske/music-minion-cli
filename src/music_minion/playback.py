@@ -110,7 +110,8 @@ def get_next_sequential_track(tracks: list[Dict[str, Any]],
         current_track_id: ID of the current track, or None to start from beginning
 
     Returns:
-        Next track dictionary, or None if at end or track not found
+        Next track dictionary, or None if track list is empty or current track not found
+        Note: When current_track_id is None, returns first track (start from beginning)
     """
     if not tracks:
         return None
@@ -128,14 +129,17 @@ def get_next_sequential_track(tracks: list[Dict[str, Any]],
             # At end, loop back to beginning
             return tracks[0]
 
-    # Current track not found in playlist, start from beginning
-    return tracks[0]
+    # Current track not found in playlist - return None to signal error
+    return None
 
 
 def get_track_position_in_playlist(tracks: list[Dict[str, Any]],
                                    track_id: int) -> Optional[int]:
     """
     Get the position (0-based index) of a track in a playlist.
+
+    IMPORTANT: Position is 0-indexed internally (0, 1, 2, ...) but displayed
+    as 1-indexed to users (1, 2, 3, ...). Always add 1 when showing to users.
 
     Args:
         tracks: List of track dictionaries (from get_playlist_tracks)
