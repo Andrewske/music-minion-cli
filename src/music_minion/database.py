@@ -12,7 +12,7 @@ from .config import Config, get_data_dir
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 def get_database_path() -> Path:
@@ -200,6 +200,23 @@ def migrate_database(conn, current_version: int) -> None:
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_tracks_mtime
             ON tracks(file_mtime)
+        """)
+
+        conn.commit()
+
+    if current_version < 8:
+        # Migration from v7 to v8: Add last_played_at tracking to playlists
+
+        try:
+            conn.execute("ALTER TABLE playlists ADD COLUMN last_played_at TIMESTAMP")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+
+        # Create index for sorting by recently played
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_playlists_last_played
+            ON playlists(last_played_at DESC)
         """)
 
         conn.commit()

@@ -153,9 +153,39 @@ def get_all_playlists() -> List[Dict[str, Any]]:
                 description,
                 track_count,
                 created_at,
-                updated_at
+                updated_at,
+                last_played_at
             FROM playlists
             ORDER BY name
+        """)
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def get_playlists_sorted_by_recent() -> List[Dict[str, Any]]:
+    """
+    Get all playlists sorted by recently played/added.
+    Playlists with last_played_at come first (most recent first),
+    then playlists by updated_at (most recent first).
+
+    Returns:
+        List of playlist dicts with id, name, type, description, track_count, created_at, updated_at, last_played_at
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute("""
+            SELECT
+                id,
+                name,
+                type,
+                description,
+                track_count,
+                created_at,
+                updated_at,
+                last_played_at
+            FROM playlists
+            ORDER BY
+                CASE WHEN last_played_at IS NULL THEN 1 ELSE 0 END,
+                last_played_at DESC,
+                updated_at DESC
         """)
         return [dict(row) for row in cursor.fetchall()]
 
@@ -444,6 +474,7 @@ def reorder_playlist_track(playlist_id: int, from_pos: int, to_pos: int) -> bool
 def set_active_playlist(playlist_id: int) -> bool:
     """
     Set a playlist as the active playlist for playback filtering.
+    Also updates last_played_at timestamp on the playlist.
 
     Args:
         playlist_id: Playlist ID to activate
@@ -456,6 +487,13 @@ def set_active_playlist(playlist_id: int) -> bool:
         return False
 
     with get_db_connection() as conn:
+        # Update last_played_at on the playlist
+        conn.execute("""
+            UPDATE playlists
+            SET last_played_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (playlist_id,))
+
         # Insert or update active playlist (only one row allowed)
         conn.execute("""
             INSERT INTO active_playlist (id, playlist_id, activated_at)

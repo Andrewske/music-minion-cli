@@ -9,6 +9,13 @@ import threading
 from pathlib import Path
 from typing import List, Optional
 
+from prompt_toolkit import PromptSession
+from prompt_toolkit.styles import Style
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.filters import Condition
+from prompt_toolkit.layout import Float
+from simple_term_menu import TerminalMenu
+
 from . import config
 from . import database
 from . import library
@@ -22,6 +29,7 @@ from . import playlist_import
 from . import playlist_export
 from . import playback
 from . import sync
+from . import completers
 
 # Global state for interactive mode
 current_player_state: player.PlayerState = player.PlayerState()
@@ -167,9 +175,16 @@ Interactive mode:
   Just run 'music-minion' to enter interactive mode where you can
   type commands directly.
 
+Advanced Features:
+  /                       Command palette - browse all commands by category
+  Tab                     Autocomplete commands and playlist names
+  Ctrl+C                  Cancel current operation
+
 Examples:
   play                    # Play random song
   play daft punk          # Search and play Daft Punk track
+  playlist                # Browse playlists with fuzzy search
+  /                       # Open command palette
   playlist new manual "NYE 2025"  # Create playlist
   add "NYE 2025"          # Add current track to playlist
 """
@@ -1355,9 +1370,12 @@ def auto_export_if_enabled(playlist_id: int) -> None:
 
 
 def handle_playlist_list_command() -> bool:
-    """Handle playlist command - list all playlists."""
+    """
+    Handle playlist command - interactive dropdown with fuzzy search.
+    Uses prompt_toolkit for a smooth autocomplete experience.
+    """
     try:
-        playlists = playlist.get_all_playlists()
+        playlists = playlist.get_playlists_sorted_by_recent()
 
         if not playlists:
             print("No playlists found. Create one with: playlist new manual <name>")
@@ -1367,21 +1385,70 @@ def handle_playlist_list_command() -> bool:
         active = playlist.get_active_playlist()
         active_id = active['id'] if active else None
 
-        print(f"\n📋 Playlists ({len(playlists)} total):")
-        print("=" * 60)
+        print(f"\n📋 Select a playlist ({len(playlists)} available)")
+        print("💡 Tip: Type to search, use arrow keys to navigate, Enter to select, Ctrl+C to cancel")
+        print()
 
-        for pl in playlists:
-            active_marker = " [ACTIVE]" if pl['id'] == active_id else ""
-            type_emoji = "📝" if pl['type'] == 'manual' else "🤖"
-            print(f"{type_emoji} {pl['name']}{active_marker}")
-            print(f"   Type: {pl['type']} | Tracks: {pl['track_count']}")
-            if pl['description']:
-                print(f"   Description: {pl['description']}")
-            print()
+        # Create styled prompt session for playlist selection
+        prompt_style = Style.from_dict({
+            'prompt': '#00aa00 bold',
+            'completion-menu.completion': 'bg:#008888 #ffffff',
+            'completion-menu.completion.current': 'bg:#00aaaa #000000',
+            'completion-menu.meta.completion': '#888888',
+            'completion-menu.meta.completion.current': 'bg:#00aaaa #ffffff',
+        })
+
+        playlist_session = PromptSession(
+            completer=completers.PlaylistCompleter(),
+            style=prompt_style,
+            complete_while_typing=True,
+        )
+
+        try:
+            # Get playlist selection via autocomplete
+            selected_name = playlist_session.prompt("🔍 Search: ").strip()
+
+            if not selected_name:
+                print("No playlist selected")
+                return True
+
+            # Find the selected playlist
+            selected_playlist = None
+            for pl in playlists:
+                if pl['name'] == selected_name:
+                    selected_playlist = pl
+                    break
+
+            if not selected_playlist:
+                print(f"❌ Playlist '{selected_name}' not found")
+                return True
+
+            # Activate playlist
+            if playlist.set_active_playlist(selected_playlist['id']):
+                print(f"\n✅ Activated playlist: {selected_playlist['name']}")
+
+                # Auto-play first track
+                playlist_tracks = playlist.get_playlist_tracks(selected_playlist['id'])
+                if playlist_tracks:
+                    # Convert DB track to library.Track and play
+                    first_track = database.db_track_to_library_track(playlist_tracks[0])
+                    if play_track(first_track, playlist_position=0):
+                        print(f"🎵 Now playing: {library.get_display_name(first_track)}")
+                    else:
+                        print("❌ Failed to play track")
+                else:
+                    print(f"⚠️  Playlist is empty")
+            else:
+                print(f"❌ Failed to activate playlist")
+
+        except KeyboardInterrupt:
+            print("\n⚠️  Playlist selection cancelled")
 
         return True
     except Exception as e:
-        print(f"❌ Error listing playlists: {e}")
+        print(f"❌ Error browsing playlists: {e}")
+        import traceback
+        traceback.print_exc()
         return True
 
 
@@ -2652,17 +2719,105 @@ def interactive_mode_with_dashboard() -> None:
     
     # Show welcome message in command area
     console.print("[bold green]Welcome to Music Minion CLI![/bold green]")
-    console.print("Type 'help' for available commands, or 'quit' to exit.")
+    console.print("Type 'help' for available commands, '/' for command palette, or 'quit' to exit.")
+    console.print("💡 [dim]Tip: Use Tab for autocomplete, type to search playlists and commands[/dim]")
     console.print()
     
     # Start background dashboard updater
     updater_thread = threading.Thread(target=dashboard_updater, daemon=True)
     updater_thread.start()
-    
+
+    # Create prompt_toolkit session with styling
+    prompt_style = Style.from_dict({
+        'prompt': '#00aa00 bold',  # Green prompt to match rich theme
+        # Transparent background completion menu styling (Claude Code style)
+        'completion-menu.completion': '',  # Empty = fully transparent
+        'completion-menu.completion.current': 'bg:#00aaaa #000000 bold',  # Highlighted item
+        'completion-menu.meta': '#888888',  # Description text
+        'completion-menu.meta.current': 'bg:#00aaaa #ffffff',  # Highlighted description
+        'scrollbar.background': '',  # Transparent scrollbar
+        'scrollbar.button': '',
+    })
+
+    # Flag to track if we're in command palette mode
+    in_palette_mode = {'active': False}
+
+    # Create custom key bindings
+    kb = KeyBindings()
+
+    @kb.add('/')
+    def show_command_palette(event):
+        """Intercept / key to show interactive command palette."""
+        buffer = event.app.current_buffer
+
+        # If buffer is empty and user types /, trigger full-screen menu
+        if buffer.text == '':
+            in_palette_mode['active'] = True
+            # Exit prompt to show menu
+            event.app.exit(result='__SHOW_COMMAND_PALETTE__')
+        else:
+            # Normal / insertion
+            buffer.insert_text('/')
+
+    # Create session with basic command completer and key bindings
+    session = PromptSession(
+        completer=completers.MusicMinionCompleter(),
+        style=prompt_style,
+        complete_while_typing=True,
+        key_bindings=kb,
+        # Keep completions below the input line (dropdown style)
+        complete_in_thread=False,
+        mouse_support=False,
+        # Use COLUMN style for full-width list display (like Claude Code)
+        complete_style='COLUMN',
+        # Reserve space for completion menu (makes it appear with padding)
+        reserve_space_for_menu=3,
+    )
+
     try:
         while True:
             try:
-                user_input = input("music-minion> ").strip()
+                # Get user input (/ key binding handles command palette)
+                user_input = session.prompt("music-minion> ").strip()
+
+                # Check if command palette was triggered
+                if user_input == '__SHOW_COMMAND_PALETTE__':
+                    # Build menu items
+                    menu_items = []
+                    command_list = []
+                    for cmd, description in sorted(completers.MusicMinionCompleter.COMMANDS.items()):
+                        desc_text = description.split(' ', 1)[1] if ' ' in description else description
+                        menu_items.append(f"/{cmd:<20} {description}")
+                        command_list.append(cmd)
+
+                    # Show menu without clearing screen
+                    terminal_menu = TerminalMenu(
+                        menu_items,
+                        title=None,  # No title for cleaner look
+                        search_key=None,
+                        show_search_hint=False,
+                        clear_screen=False,  # Don't clear - overlay on existing content
+                        cursor_index=0,
+                        menu_cursor="> ",
+                        menu_cursor_style=("fg_cyan", "bold"),
+                        menu_highlight_style=("bg_cyan", "fg_black"),
+                    )
+
+                    menu_entry_index = terminal_menu.show()
+
+                    if menu_entry_index is not None:
+                        user_input = command_list[menu_entry_index]
+                    else:
+                        continue
+
+                # Skip empty input
+                if not user_input:
+                    continue
+
+                # Strip leading / if present
+                if user_input.startswith('/'):
+                    user_input = user_input[1:]
+
                 command, args = parse_command(user_input)
                 
                 # Add UI feedback for certain commands
