@@ -6,7 +6,7 @@ structured filter rules for smart playlists.
 
 import json
 import time
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, TypedDict
 
 from .ai import get_api_key, AIError
 from .playlist_filters import (
@@ -15,7 +15,33 @@ from .playlist_filters import (
 )
 
 
-def parse_natural_language_to_filters(description: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+# Constants
+CONJUNCTION_AND = "AND"
+CONJUNCTION_OR = "OR"
+DEFAULT_CONJUNCTION = CONJUNCTION_AND
+
+
+# Operator display mapping for prettier output
+OPERATOR_DISPLAY_MAP = {
+    'gte': '>=',
+    'lte': '<=',
+    'gt': '>',
+    'lt': '<',
+    'starts_with': 'starts with',
+    'ends_with': 'ends with',
+    'not_equals': '!=',
+}
+
+
+class FilterDict(TypedDict):
+    """Type definition for filter dictionary."""
+    field: str
+    operator: str
+    value: str
+    conjunction: str
+
+
+def parse_natural_language_to_filters(description: str) -> Tuple[List[FilterDict], Dict[str, Any]]:
     """Parse natural language description into structured filter rules using AI.
 
     Args:
@@ -123,17 +149,13 @@ Parse this into filter rules following the schema provided in the instructions."
         return filters, request_metadata
 
     except openai.APIError as e:
-        end_time = time.time()
-        response_time_ms = int((end_time - start_time) * 1000)
         raise AIError(f"OpenAI API error: {str(e)}")
 
     except Exception as e:
-        end_time = time.time()
-        response_time_ms = int((end_time - start_time) * 1000)
         raise AIError(f"Unexpected error: {str(e)}")
 
 
-def format_filters_for_preview(filters: List[Dict[str, Any]]) -> str:
+def format_filters_for_preview(filters: List[FilterDict]) -> str:
     """Format filter list as numbered display for preview.
 
     Args:
@@ -155,18 +177,10 @@ def format_filters_for_preview(filters: List[Dict[str, Any]]) -> str:
         field = f['field']
         operator = f['operator']
         value = f['value']
-        conjunction = f.get('conjunction', 'AND')
+        conjunction = f.get('conjunction', DEFAULT_CONJUNCTION)
 
-        # Format operator for display
-        op_display = operator.replace('_', ' ')
-        if operator == 'gte':
-            op_display = '>='
-        elif operator == 'lte':
-            op_display = '<='
-        elif operator == 'gt':
-            op_display = '>'
-        elif operator == 'lt':
-            op_display = '<'
+        # Format operator for display using mapping
+        op_display = OPERATOR_DISPLAY_MAP.get(operator, operator.replace('_', ' '))
 
         # Format the line
         line = f"{i}. {field} {op_display} \"{value}\""
@@ -180,7 +194,7 @@ def format_filters_for_preview(filters: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def edit_filters_interactive(filters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def edit_filters_interactive(filters: List[FilterDict]) -> List[FilterDict]:
     """Interactive editor for filter list.
 
     Allows user to:
@@ -332,7 +346,7 @@ def edit_filters_interactive(filters: List[Dict[str, Any]]) -> List[Dict[str, An
             print(f"✅ Removed filter: {removed['field']} {removed['operator']} \"{removed['value']}\"")
 
             if not filters:
-                print("⚠️  No filters remaining. Playlist will match no tracks.")
+                print("⚠️  No filters remaining. Type 'add' to add filters or 'done' to exit.")
 
         else:
             print("❌ Unknown command. Use: edit <n>, remove <n>, add, or done")

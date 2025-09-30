@@ -32,6 +32,9 @@ class AIConfig:
     model: str = "gpt-4o-mini"
     auto_process_notes: bool = True
     enabled: bool = False
+    # API pricing per 1M tokens (in USD)
+    cost_per_1m_input_tokens: float = 0.15
+    cost_per_1m_output_tokens: float = 0.60
 
 
 @dataclass
@@ -115,6 +118,10 @@ auto_process_notes = true
 # Enable AI features
 enabled = false
 
+# API pricing per 1M tokens (in USD) - adjust based on OpenAI pricing
+cost_per_1m_input_tokens = 0.15
+cost_per_1m_output_tokens = 0.60
+
 [ui]
 # Show progress bar for current song
 show_progress_bar = true
@@ -183,7 +190,9 @@ def load_config() -> Config:
                 openai_api_key=ai_data.get('openai_api_key'),
                 model=ai_data.get('model', config.ai.model),
                 auto_process_notes=ai_data.get('auto_process_notes', config.ai.auto_process_notes),
-                enabled=ai_data.get('enabled', config.ai.enabled)
+                enabled=ai_data.get('enabled', config.ai.enabled),
+                cost_per_1m_input_tokens=ai_data.get('cost_per_1m_input_tokens', config.ai.cost_per_1m_input_tokens),
+                cost_per_1m_output_tokens=ai_data.get('cost_per_1m_output_tokens', config.ai.cost_per_1m_output_tokens)
             )
         
         if 'ui' in toml_data:
@@ -235,7 +244,9 @@ shuffle_on_start = {config.player.shuffle_on_start!r}"""
 [ai]
 model = "{config.ai.model}"
 auto_process_notes = {config.ai.auto_process_notes!r}
-enabled = {config.ai.enabled!r}"""
+enabled = {config.ai.enabled!r}
+cost_per_1m_input_tokens = {config.ai.cost_per_1m_input_tokens}
+cost_per_1m_output_tokens = {config.ai.cost_per_1m_output_tokens}"""
 
         if config.ai.openai_api_key:
             toml_content += f'\nopenai_api_key = "{config.ai.openai_api_key}"'

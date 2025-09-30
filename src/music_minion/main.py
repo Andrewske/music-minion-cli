@@ -2,6 +2,8 @@
 Music Minion CLI - Main entry point and interactive loop
 """
 
+import re
+import shlex
 import sys
 from pathlib import Path
 from typing import List, Optional
@@ -1292,6 +1294,24 @@ def smart_playlist_wizard(name: str) -> bool:
     return True
 
 
+def validate_filters_list(filters: List[playlist_ai.FilterDict]) -> List[str]:
+    """Validate all filters and return list of error messages.
+
+    Args:
+        filters: List of filter dictionaries to validate
+
+    Returns:
+        List of validation error messages (empty if all valid)
+    """
+    validation_errors = []
+    for i, f in enumerate(filters, 1):
+        try:
+            playlist_filters.validate_filter(f['field'], f['operator'], f['value'])
+        except ValueError as e:
+            validation_errors.append(f"Filter {i}: {e}")
+    return validation_errors
+
+
 def ai_smart_playlist_wizard(name: str, description: str) -> bool:
     """AI-powered wizard for creating a smart playlist from natural language.
 
@@ -1302,6 +1322,11 @@ def ai_smart_playlist_wizard(name: str, description: str) -> bool:
     Returns:
         True to continue interactive loop
     """
+    # Check API key early before doing anything
+    if not ai.get_api_key():
+        print("❌ No OpenAI API key found. Use 'ai setup <key>' to configure.")
+        return True
+
     print(f"\n🤖 AI Smart Playlist Wizard: {name}")
     print("=" * 60)
     print(f"Description: \"{description}\"")
@@ -1312,6 +1337,12 @@ def ai_smart_playlist_wizard(name: str, description: str) -> bool:
         filters, metadata = playlist_ai.parse_natural_language_to_filters(description)
         print(f"✅ Parsed in {metadata['response_time_ms']}ms")
         print(f"   Tokens: {metadata['prompt_tokens']} prompt + {metadata['completion_tokens']} completion")
+
+        # Calculate and display estimated cost
+        cfg = config.load_config()
+        cost = (metadata['prompt_tokens'] * cfg.ai.cost_per_1m_input_tokens / 1_000_000 +
+                metadata['completion_tokens'] * cfg.ai.cost_per_1m_output_tokens / 1_000_000)
+        print(f"   Estimated cost: ${cost:.6f}")
     except ai.AIError as e:
         print(f"❌ AI Error: {e}")
         return True
@@ -1321,12 +1352,7 @@ def ai_smart_playlist_wizard(name: str, description: str) -> bool:
 
     # Validate all filters
     print("\n🔍 Validating filters...")
-    validation_errors = []
-    for i, f in enumerate(filters, 1):
-        try:
-            playlist_filters.validate_filter(f['field'], f['operator'], f['value'])
-        except ValueError as e:
-            validation_errors.append(f"Filter {i}: {e}")
+    validation_errors = validate_filters_list(filters)
 
     if validation_errors:
         print("❌ Validation errors found:")
@@ -1360,12 +1386,7 @@ def ai_smart_playlist_wizard(name: str, description: str) -> bool:
             return True
 
         # Re-validate after editing
-        validation_errors = []
-        for i, f in enumerate(filters, 1):
-            try:
-                playlist_filters.validate_filter(f['field'], f['operator'], f['value'])
-            except ValueError as e:
-                validation_errors.append(f"Filter {i}: {e}")
+        validation_errors = validate_filters_list(filters)
 
         if validation_errors:
             print("❌ Validation errors after editing:")
@@ -1468,22 +1489,24 @@ def handle_playlist_new_command(args: List[str]) -> bool:
             print("Usage: playlist new smart ai <name> \"<description>\"")
             return True
 
-        # Join everything after 'ai' and try to split on quotes
-        rest = ' '.join(args[2:])
+        # Use shlex for proper shell-like parsing
+        try:
+            # Join everything after 'ai' and parse with shlex
+            rest = ' '.join(args[2:])
+            parts = shlex.split(rest)
 
-        # Try to find quoted description
-        import re
-        # Match: name followed by quoted string
-        match = re.match(r'^(.+?)\s+"(.+)"$', rest)
-        if not match:
-            match = re.match(r"^(.+?)\s+'(.+)'$", rest)
+            if len(parts) >= 2:
+                name = parts[0]
+                description = parts[1]
+                return ai_smart_playlist_wizard(name, description)
+            else:
+                print("Error: Please provide both name and description")
+                print("Usage: playlist new smart ai <name> \"<description>\"")
+                print("Example: playlist new smart ai NYE2025 \"all dubstep from 2025\"")
+                return True
 
-        if match:
-            name = match.group(1).strip()
-            description = match.group(2).strip()
-            return ai_smart_playlist_wizard(name, description)
-        else:
-            print("Error: Invalid format. Description must be in quotes.")
+        except ValueError as e:
+            print(f"Error parsing command: {e}")
             print("Usage: playlist new smart ai <name> \"<description>\"")
             print("Example: playlist new smart ai NYE2025 \"all dubstep from 2025\"")
             return True
@@ -1492,6 +1515,9 @@ def handle_playlist_new_command(args: List[str]) -> bool:
     if playlist_type == 'smart':
         name = ' '.join(args[1:])
         return smart_playlist_wizard(name)
+
+    # Manual playlist - assign name from remaining args
+    name = ' '.join(args[1:])
 
     try:
         playlist_id = playlist.create_playlist(name, playlist_type, description=None)
