@@ -14,6 +14,7 @@ from . import ai
 from . import ui
 from . import playlist
 from . import playlist_filters
+from . import playlist_ai
 
 # Global state for interactive mode
 current_player_state: player.PlayerState = player.PlayerState()
@@ -117,6 +118,7 @@ Playlist Commands:
   playlist                        List all playlists
   playlist new manual <name>      Create manual playlist
   playlist new smart <name>       Create smart playlist (filter wizard)
+  playlist new smart ai <n> "<d>" Create AI smart playlist (natural language)
   playlist delete <name>          Delete playlist
   playlist rename "old" "new"     Rename playlist (use quotes)
   playlist show <name>            Show playlist tracks
@@ -1290,12 +1292,166 @@ def smart_playlist_wizard(name: str) -> bool:
     return True
 
 
+def ai_smart_playlist_wizard(name: str, description: str) -> bool:
+    """AI-powered wizard for creating a smart playlist from natural language.
+
+    Args:
+        name: Name of the playlist to create
+        description: Natural language description of desired playlist
+
+    Returns:
+        True to continue interactive loop
+    """
+    print(f"\n🤖 AI Smart Playlist Wizard: {name}")
+    print("=" * 60)
+    print(f"Description: \"{description}\"")
+    print("\n🧠 Parsing with AI...")
+
+    # Parse description with AI
+    try:
+        filters, metadata = playlist_ai.parse_natural_language_to_filters(description)
+        print(f"✅ Parsed in {metadata['response_time_ms']}ms")
+        print(f"   Tokens: {metadata['prompt_tokens']} prompt + {metadata['completion_tokens']} completion")
+    except ai.AIError as e:
+        print(f"❌ AI Error: {e}")
+        return True
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return True
+
+    # Validate all filters
+    print("\n🔍 Validating filters...")
+    validation_errors = []
+    for i, f in enumerate(filters, 1):
+        try:
+            playlist_filters.validate_filter(f['field'], f['operator'], f['value'])
+        except ValueError as e:
+            validation_errors.append(f"Filter {i}: {e}")
+
+    if validation_errors:
+        print("❌ Validation errors found:")
+        for error in validation_errors:
+            print(f"   {error}")
+        print("\n⚠️  AI generated invalid filters. Please try:")
+        print(f"   1. Use simpler description")
+        print(f"   2. Use manual filter wizard: playlist new smart \"{name}\"")
+        return True
+
+    print(f"✅ All {len(filters)} filters are valid")
+
+    # Show parsed filters
+    print("\n📋 Parsed filters:")
+    print(playlist_ai.format_filters_for_preview(filters))
+
+    # Ask if user wants to edit
+    print("\n" + "=" * 60)
+    edit = input("Edit filters before creating playlist? (y/n) [n]: ").strip().lower()
+
+    if edit == 'y':
+        try:
+            filters = playlist_ai.edit_filters_interactive(filters)
+        except KeyboardInterrupt:
+            print("\n❌ Cancelled")
+            return True
+
+        # Check if filters are empty after editing
+        if not filters:
+            print("❌ No filters remaining. Cannot create empty smart playlist.")
+            return True
+
+        # Re-validate after editing
+        validation_errors = []
+        for i, f in enumerate(filters, 1):
+            try:
+                playlist_filters.validate_filter(f['field'], f['operator'], f['value'])
+            except ValueError as e:
+                validation_errors.append(f"Filter {i}: {e}")
+
+        if validation_errors:
+            print("❌ Validation errors after editing:")
+            for error in validation_errors:
+                print(f"   {error}")
+            return True
+
+    # Create playlist
+    print("\n" + "=" * 60)
+    print(f"Creating smart playlist: {name}")
+
+    try:
+        playlist_id = playlist.create_playlist(name, 'smart', description=description)
+    except ValueError as e:
+        print(f"❌ Error: {e}")
+        return True
+
+    # Add all filters
+    try:
+        for f in filters:
+            playlist_filters.add_filter(
+                playlist_id,
+                f['field'],
+                f['operator'],
+                f['value'],
+                f.get('conjunction', 'AND')
+            )
+    except Exception as e:
+        print(f"❌ Error adding filters: {e}")
+        playlist.delete_playlist(playlist_id)
+        return True
+
+    # Preview matching tracks
+    print("\n📊 Preview: Finding matching tracks...")
+
+    try:
+        matching_tracks = playlist_filters.evaluate_filters(playlist_id)
+        count = len(matching_tracks)
+
+        print(f"\n✅ Found {count} matching tracks")
+
+        if count > 0:
+            print("\nFirst 10 matches:")
+            for i, track in enumerate(matching_tracks[:10], 1):
+                artist = track.get('artist', 'Unknown')
+                title = track.get('title', 'Unknown')
+                album = track.get('album', '')
+                print(f"  {i}. {artist} - {title}")
+                if album:
+                    print(f"     Album: {album}")
+
+        # Show final filters
+        print(f"\n📋 Filter rules for '{name}':")
+        for i, f in enumerate(filters, 1):
+            prefix = f"  {f['conjunction']}" if i > 1 else "  "
+            print(f"{prefix} {f['field']} {f['operator']} '{f['value']}'")
+
+        # Confirm
+        print()
+        confirm = input("Save this smart playlist? (y/n) [y]: ").strip().lower()
+
+        if confirm == 'n':
+            playlist.delete_playlist(playlist_id)
+            print("❌ Smart playlist cancelled")
+            return True
+
+        print(f"\n✅ Created AI smart playlist: {name}")
+        print(f"   {count} tracks match your filters")
+        print(f"   Description: {description}")
+        print(f"   Set as active with: playlist active \"{name}\"")
+
+    except Exception as e:
+        print(f"❌ Error evaluating filters: {e}")
+        playlist.delete_playlist(playlist_id)
+        return True
+
+    return True
+
+
 def handle_playlist_new_command(args: List[str]) -> bool:
     """Handle playlist new command - create a new playlist."""
     if len(args) < 2:
         print("Error: Please specify playlist type and name")
         print("Usage: playlist new manual <name>")
         print("       playlist new smart <name>")
+        print("       playlist new smart ai <name> \"<description>\"")
         return True
 
     playlist_type = args[0].lower()
@@ -1303,10 +1459,38 @@ def handle_playlist_new_command(args: List[str]) -> bool:
         print(f"Error: Invalid playlist type '{playlist_type}'. Must be 'manual' or 'smart'")
         return True
 
-    name = ' '.join(args[1:])
+    # Check for AI smart playlist
+    if playlist_type == 'smart' and len(args) >= 2 and args[1].lower() == 'ai':
+        # Format: smart ai <name> "<description>"
+        # Need to parse name and quoted description
+        if len(args) < 3:
+            print("Error: Please specify playlist name and description")
+            print("Usage: playlist new smart ai <name> \"<description>\"")
+            return True
 
-    # Smart playlist - launch wizard
+        # Join everything after 'ai' and try to split on quotes
+        rest = ' '.join(args[2:])
+
+        # Try to find quoted description
+        import re
+        # Match: name followed by quoted string
+        match = re.match(r'^(.+?)\s+"(.+)"$', rest)
+        if not match:
+            match = re.match(r"^(.+?)\s+'(.+)'$", rest)
+
+        if match:
+            name = match.group(1).strip()
+            description = match.group(2).strip()
+            return ai_smart_playlist_wizard(name, description)
+        else:
+            print("Error: Invalid format. Description must be in quotes.")
+            print("Usage: playlist new smart ai <name> \"<description>\"")
+            print("Example: playlist new smart ai NYE2025 \"all dubstep from 2025\"")
+            return True
+
+    # Regular smart playlist - launch manual wizard
     if playlist_type == 'smart':
+        name = ' '.join(args[1:])
         return smart_playlist_wizard(name)
 
     try:
