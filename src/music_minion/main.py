@@ -5,6 +5,7 @@ Music Minion CLI - Main entry point and interactive loop
 import re
 import shlex
 import sys
+import threading
 from pathlib import Path
 from typing import List, Optional
 
@@ -2395,6 +2396,18 @@ def handle_command(command: str, args: List[str]) -> bool:
     return True
 
 
+def _auto_sync_background(cfg: config.Config) -> None:
+    """Background thread function for auto-sync on startup.
+
+    Runs sync_import silently in the background without blocking UI startup.
+    Any errors are caught and logged without interrupting the main thread.
+    """
+    try:
+        sync.sync_import(cfg, force_all=False, show_progress=False)
+    except Exception as e:
+        print(f"⚠️  Background sync failed: {e}")
+
+
 def interactive_mode_with_dashboard() -> None:
     """Run the interactive command loop with fixed top dashboard and scrolling commands."""
     import time
@@ -2408,14 +2421,16 @@ def interactive_mode_with_dashboard() -> None:
     # Run database migrations on startup
     database.init_database()
 
-    # Auto-sync on startup if enabled
+    # Auto-sync on startup if enabled (run in background thread)
     if current_config.sync.auto_sync_on_startup:
-        try:
-            print("Auto-syncing metadata from files...")
-            sync.sync_import(current_config, force_all=False, show_progress=False)
-            print("✅ Sync complete\n")
-        except Exception as e:
-            print(f"⚠️  Sync failed: {e}\n")
+        print("🔄 Starting background sync...")
+        sync_thread = threading.Thread(
+            target=_auto_sync_background,
+            args=(current_config,),
+            daemon=True,
+            name="AutoSyncThread"
+        )
+        sync_thread.start()
 
     console = Console()
     
@@ -2721,14 +2736,16 @@ def interactive_mode() -> None:
     # Run database migrations on startup
     database.init_database()
 
-    # Auto-sync on startup if enabled
+    # Auto-sync on startup if enabled (run in background thread)
     if current_config.sync.auto_sync_on_startup:
-        try:
-            print("Auto-syncing metadata from files...")
-            sync.sync_import(current_config, force_all=False, show_progress=False)
-            print("✅ Sync complete\n")
-        except Exception as e:
-            print(f"⚠️  Sync failed: {e}\n")
+        print("🔄 Starting background sync...")
+        sync_thread = threading.Thread(
+            target=_auto_sync_background,
+            args=(current_config,),
+            daemon=True,
+            name="AutoSyncThread"
+        )
+        sync_thread.start()
 
     # Check if dashboard is enabled and Rich is available
     if current_config.ui.enable_dashboard:

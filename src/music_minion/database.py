@@ -181,6 +181,8 @@ def migrate_database(conn, current_version: int) -> None:
         # Migration from v6 to v7: Add sync tracking columns (Phase 7)
 
         # Add file modification time tracking
+        # Note: Declared as INTEGER but stores floats for sub-second precision
+        # SQLite's dynamic typing handles this automatically
         try:
             conn.execute("ALTER TABLE tracks ADD COLUMN file_mtime INTEGER")
         except sqlite3.OperationalError as e:
