@@ -15,6 +15,7 @@ from rich.text import Text
 from rich.align import Align
 
 from . import playlist
+from . import playback
 
 console = Console()
 
@@ -548,6 +549,25 @@ def render_dashboard(player_state: Any, track_metadata: Optional[Dict] = None,
         playlist_line = f"📋 Playlist: {active_pl['name']}"
         truncated_pl = playlist_line[:console_width - 6] + "..." if len(playlist_line) > console_width - 3 else playlist_line
         lines.append(Text(truncated_pl, style="bold cyan"))
+
+        # Show position if available and in sequential mode
+        shuffle_enabled = playback.get_shuffle_mode()
+        saved_position = playback.get_playlist_position(active_pl['id'])
+
+        if saved_position and not shuffle_enabled:
+            _, position = saved_position
+            # Get total track count
+            playlist_tracks = playlist.get_playlist_tracks(active_pl['id'])
+            total_tracks = len(playlist_tracks)
+            position_line = f"   Position: {position + 1}/{total_tracks}"
+            lines.append(Text(position_line, style="cyan"))
+
+    # Shuffle mode info
+    shuffle_enabled = playback.get_shuffle_mode()
+    shuffle_icon = "🔀" if shuffle_enabled else "🔁"
+    shuffle_text = "Shuffle ON" if shuffle_enabled else "Sequential"
+    shuffle_line = f"{shuffle_icon} {shuffle_text}"
+    lines.append(Text(shuffle_line, style="bold yellow" if shuffle_enabled else "bold green"))
 
     # Create panel with all lines
     content = "\n".join(str(line) for line in lines)

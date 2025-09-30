@@ -19,6 +19,7 @@ from . import playlist_filters
 from . import playlist_ai
 from . import playlist_import
 from . import playlist_export
+from . import playback
 
 # Global state for interactive mode
 current_player_state: player.PlayerState = player.PlayerState()
@@ -106,7 +107,10 @@ Available commands:
   play [query]      Start playing music (random if no query, or search)
   pause             Pause current playback
   resume            Resume paused playback
-  skip              Skip to next random song
+  skip              Skip to next song
+  shuffle           Show current shuffle mode
+  shuffle on        Enable shuffle mode (random playback)
+  shuffle off       Enable sequential mode (play in order)
   stop              Stop current playback
   killall           Kill all MPV processes (emergency stop)
   archive           Archive current song (never play again)
@@ -293,9 +297,18 @@ def play_track(track: library.Track) -> bool:
             track.file_path, track.title, track.artist, track.album,
             track.genre, track.year, track.duration, track.key, track.bpm
         )
-        
+
         # Start playback session
         database.start_playback_session(track_id)
+
+        # Track position if playing from active playlist
+        active = playlist.get_active_playlist()
+        if active:
+            # Get playlist tracks to find position
+            playlist_tracks = playlist.get_playlist_tracks(active['id'])
+            position = playback.get_track_position_in_playlist(playlist_tracks, track_id)
+            if position is not None:
+                playback.update_playlist_position(active['id'], track_id, position)
     else:
         safe_print("❌ Failed to play track", "red")
     
@@ -473,27 +486,87 @@ def get_available_tracks() -> List[library.Track]:
 
 
 def handle_skip_command() -> bool:
-    """Handle skip command - play next random track."""
+    """Handle skip command - play next track (sequential or random based on shuffle mode)."""
     global current_player_state
-    
+
     if not ensure_library_loaded():
         return True
-    
+
     # Get available tracks (excluding archived ones)
     available_tracks = get_available_tracks()
-    
+
+    if not available_tracks:
+        print("No more tracks to play (all may be archived)")
+        return True
+
+    # Check shuffle mode
+    shuffle_enabled = playback.get_shuffle_mode()
+    active = playlist.get_active_playlist()
+
+    # Sequential mode: play next track in playlist order
+    if not shuffle_enabled and active:
+        # Get current track ID
+        current_track_id = None
+        if current_player_state.current_track:
+            db_track = database.get_track_by_path(current_player_state.current_track)
+            if db_track:
+                current_track_id = db_track['id']
+
+        # Get playlist tracks (in order)
+        playlist_tracks = playlist.get_playlist_tracks(active['id'])
+
+        # Convert to database track format for playback.get_next_sequential_track
+        next_db_track = playback.get_next_sequential_track(playlist_tracks, current_track_id)
+
+        if next_db_track:
+            # Find the Track object from available_tracks
+            next_track = None
+            for track in available_tracks:
+                if track.file_path == next_db_track['file_path']:
+                    next_track = track
+                    break
+
+            if next_track:
+                print("⏭ Next track (sequential)...")
+                return play_track(next_track)
+
+    # Shuffle mode or no active playlist: random selection
     # Remove current track from options if possible
     if current_player_state.current_track and len(available_tracks) > 1:
         available_tracks = [t for t in available_tracks if t.file_path != current_player_state.current_track]
-    
+
     if available_tracks:
         track = library.get_random_track(available_tracks)
         if track:
             print("⏭ Skipping to next track...")
             return play_track(track)
-    
+
     print("No more tracks to play (all may be archived)")
     return True
+
+
+def handle_shuffle_command(args: List[str]) -> bool:
+    """Handle shuffle command - toggle or show shuffle mode."""
+    if not args:
+        # Show current mode
+        shuffle_enabled = playback.get_shuffle_mode()
+        mode = "ON (random playback)" if shuffle_enabled else "OFF (sequential playback)"
+        print(f"🔀 Shuffle mode: {mode}")
+        return True
+
+    # Handle shuffle on/off
+    subcommand = args[0].lower()
+    if subcommand == 'on':
+        playback.set_shuffle_mode(True)
+        print("🔀 Shuffle mode enabled (random playback)")
+        return True
+    elif subcommand == 'off':
+        playback.set_shuffle_mode(False)
+        print("🔁 Sequential mode enabled (play in order)")
+        return True
+    else:
+        print(f"Unknown shuffle option: '{subcommand}'. Use 'shuffle on' or 'shuffle off'")
+        return True
 
 
 def handle_stop_command() -> bool:
@@ -564,8 +637,24 @@ def handle_status_command() -> bool:
     active = playlist.get_active_playlist()
     if active:
         print(f"📋 Active Playlist: {active['name']} ({active['type']})")
+
+        # Show position if available and in sequential mode
+        shuffle_enabled = playback.get_shuffle_mode()
+        saved_position = playback.get_playlist_position(active['id'])
+
+        if saved_position and not shuffle_enabled:
+            _, position = saved_position
+            # Get total track count
+            playlist_tracks = playlist.get_playlist_tracks(active['id'])
+            total_tracks = len(playlist_tracks)
+            print(f"   Position: {position + 1}/{total_tracks}")
     else:
         print("📋 Active Playlist: None (playing all tracks)")
+
+    # Shuffle mode
+    shuffle_enabled = playback.get_shuffle_mode()
+    shuffle_mode = "ON (random playback)" if shuffle_enabled else "OFF (sequential playback)"
+    print(f"🔀 Shuffle: {shuffle_mode}")
 
     # Library stats
     if music_tracks:
@@ -1731,6 +1820,37 @@ def handle_playlist_active_command(args: List[str]) -> bool:
         if playlist.set_active_playlist(pl['id']):
             print(f"✅ Set active playlist: {name}")
             print(f"   Now playing only tracks from this playlist")
+
+            # Check for saved position and offer to resume
+            saved_position = playback.get_playlist_position(pl['id'])
+            shuffle_enabled = playback.get_shuffle_mode()
+
+            if saved_position and not shuffle_enabled:
+                track_id, position = saved_position
+                # Get playlist tracks to find the saved track
+                playlist_tracks = playlist.get_playlist_tracks(pl['id'])
+
+                # Find track info
+                saved_track = None
+                for track in playlist_tracks:
+                    if track['id'] == track_id:
+                        saved_track = track
+                        break
+
+                if saved_track:
+                    print(f"\n💾 Last position: Track {position + 1}/{len(playlist_tracks)}")
+                    print(f"   {saved_track.get('artist', 'Unknown')} - {saved_track.get('title', 'Unknown')}")
+
+                    response = input("   Resume from this position? [Y/n]: ").strip().lower()
+                    if response != 'n':
+                        # Load the track and play it
+                        if ensure_library_loaded():
+                            # Find the Track object from music_tracks
+                            for track in music_tracks:
+                                if track.file_path == saved_track['file_path']:
+                                    print("▶️  Resuming playback...")
+                                    play_track(track)
+                                    break
         else:
             print(f"❌ Failed to set active playlist")
         return True
@@ -2047,7 +2167,10 @@ def handle_command(command: str, args: List[str]) -> bool:
     
     elif command == 'skip':
         return handle_skip_command()
-    
+
+    elif command == 'shuffle':
+        return handle_shuffle_command(args)
+
     elif command == 'stop':
         return handle_stop_command()
     

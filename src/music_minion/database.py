@@ -12,7 +12,7 @@ from .config import Config, get_data_dir
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def get_database_path() -> Path:
@@ -123,6 +123,45 @@ def migrate_database(conn, current_version: int) -> None:
             SET track_count = 0
             WHERE type = 'smart'
         """)
+
+        conn.commit()
+
+    if current_version < 5:
+        # Migration from v4 to v5: Add playback state and position tracking (Phase 6)
+
+        # Create playback_state table for global shuffle mode
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS playback_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                shuffle_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Initialize playback state with shuffle enabled (default behavior)
+        conn.execute("""
+            INSERT OR IGNORE INTO playback_state (id, shuffle_enabled)
+            VALUES (1, TRUE)
+        """)
+
+        # Add position tracking columns to active_playlist table
+        try:
+            conn.execute("ALTER TABLE active_playlist ADD COLUMN last_played_track_id INTEGER")
+        except Exception:
+            pass  # Column might already exist
+
+        try:
+            conn.execute("ALTER TABLE active_playlist ADD COLUMN last_played_position INTEGER")
+        except Exception:
+            pass  # Column might already exist
+
+        try:
+            conn.execute("ALTER TABLE active_playlist ADD COLUMN last_played_at TIMESTAMP")
+        except Exception:
+            pass  # Column might already exist
+
+        # Add foreign key constraint note: SQLite doesn't support ADD CONSTRAINT after table creation
+        # The FK constraint for last_played_track_id will be enforced by application logic
 
         conn.commit()
 
