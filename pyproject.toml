@@ -13,6 +13,7 @@ dependencies = [
     "python-dotenv>=1.0.0", # Environment variable management
     "rich>=13.0.0",       # Terminal UI formatting
     "textual>=0.40.0",    # Advanced terminal UI components
+    "pyserato>=0.1.0",    # Serato crate import/export
 ]
 
 [project.optional-dependencies]

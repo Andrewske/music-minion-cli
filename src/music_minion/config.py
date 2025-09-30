@@ -51,12 +51,21 @@ class UIConfig:
 
 
 @dataclass
+class PlaylistConfig:
+    """Configuration for playlist export and sync."""
+    auto_export: bool = True
+    export_formats: List[str] = field(default_factory=lambda: ["m3u8", "crate"])
+    use_relative_paths: bool = True
+
+
+@dataclass
 class Config:
     """Main configuration object."""
     music: MusicConfig = field(default_factory=MusicConfig)
     player: PlayerConfig = field(default_factory=PlayerConfig)
     ai: AIConfig = field(default_factory=AIConfig)
     ui: UIConfig = field(default_factory=UIConfig)
+    playlists: PlaylistConfig = field(default_factory=PlaylistConfig)
 
 
 def get_config_dir() -> Path:
@@ -146,6 +155,16 @@ bpm_visualizer = true
 
 # Dashboard refresh rate in Hz
 refresh_rate = 1
+
+[playlists]
+# Auto-export playlists when they are modified
+auto_export = true
+
+# Formats to export (m3u8, crate)
+export_formats = ["m3u8", "crate"]
+
+# Use relative paths for M3U8 files (for cross-platform compatibility)
+use_relative_paths = true
 """.strip()
 
 
@@ -207,7 +226,15 @@ def load_config() -> Config:
                 bpm_visualizer=ui_data.get('bpm_visualizer', config.ui.bpm_visualizer),
                 refresh_rate=ui_data.get('refresh_rate', config.ui.refresh_rate)
             )
-        
+
+        if 'playlists' in toml_data:
+            playlists_data = toml_data['playlists']
+            config.playlists = PlaylistConfig(
+                auto_export=playlists_data.get('auto_export', config.playlists.auto_export),
+                export_formats=playlists_data.get('export_formats', config.playlists.export_formats),
+                use_relative_paths=playlists_data.get('use_relative_paths', config.playlists.use_relative_paths)
+            )
+
         return config
         
     except Exception as e:
@@ -262,6 +289,11 @@ enable_dashboard = {config.ui.enable_dashboard!r}
 use_emoji = {config.ui.use_emoji!r}
 bpm_visualizer = {config.ui.bpm_visualizer!r}
 refresh_rate = {config.ui.refresh_rate}
+
+[playlists]
+auto_export = {config.playlists.auto_export!r}
+export_formats = {config.playlists.export_formats!r}
+use_relative_paths = {config.playlists.use_relative_paths!r}
 """
 
         with open(config_path, 'w', encoding='utf-8') as f:

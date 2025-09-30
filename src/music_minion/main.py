@@ -17,6 +17,8 @@ from . import ui
 from . import playlist
 from . import playlist_filters
 from . import playlist_ai
+from . import playlist_import
+from . import playlist_export
 
 # Global state for interactive mode
 current_player_state: player.PlayerState = player.PlayerState()
@@ -126,6 +128,8 @@ Playlist Commands:
   playlist show <name>            Show playlist tracks
   playlist active <name>          Set active playlist
   playlist active none            Clear active playlist
+  playlist import <file>          Import playlist from M3U/M3U8/Serato crate
+  playlist export <name> [format] Export playlist (m3u8/crate/all, default: m3u8)
   add <playlist>                  Add current track to playlist
   remove <playlist>               Remove current track from playlist
 
@@ -1115,6 +1119,34 @@ def handle_tag_list_command() -> bool:
     return True
 
 
+def auto_export_if_enabled(playlist_id: int) -> None:
+    """
+    Auto-export a playlist if auto-export is enabled in config.
+
+    Args:
+        playlist_id: ID of the playlist to export
+    """
+    global current_config
+
+    if not current_config.playlists.auto_export:
+        return
+
+    # Get library root from config
+    library_root = Path(current_config.music.library_paths[0]).expanduser()
+
+    # Silently export in the background - don't interrupt user workflow
+    try:
+        playlist_export.auto_export_playlist(
+            playlist_id=playlist_id,
+            export_formats=current_config.playlists.export_formats,
+            library_root=library_root,
+            use_relative_paths=current_config.playlists.use_relative_paths
+        )
+    except Exception:
+        # Silently fail - auto-export should never interrupt user workflow
+        pass
+
+
 def handle_playlist_list_command() -> bool:
     """Handle playlist command - list all playlists."""
     try:
@@ -1285,6 +1317,9 @@ def smart_playlist_wizard(name: str) -> bool:
         print(f"\n✅ Created smart playlist: {name}")
         print(f"   {count} tracks match your filters")
         print(f"   Set as active with: playlist active \"{name}\"")
+
+        # Auto-export if enabled
+        auto_export_if_enabled(playlist_id)
 
     except Exception as e:
         print(f"❌ Error evaluating filters: {e}")
@@ -1458,6 +1493,9 @@ def ai_smart_playlist_wizard(name: str, description: str) -> bool:
         print(f"   Description: {description}")
         print(f"   Set as active with: playlist active \"{name}\"")
 
+        # Auto-export if enabled
+        auto_export_if_enabled(playlist_id)
+
     except Exception as e:
         print(f"❌ Error evaluating filters: {e}")
         playlist.delete_playlist(playlist_id)
@@ -1524,6 +1562,10 @@ def handle_playlist_new_command(args: List[str]) -> bool:
         print(f"✅ Created {playlist_type} playlist: {name}")
         print(f"   Playlist ID: {playlist_id}")
         print(f"   Add tracks with: add \"{name}\"")
+
+        # Auto-export if enabled
+        auto_export_if_enabled(playlist_id)
+
         return True
     except ValueError as e:
         print(f"❌ Error: {e}")
@@ -1689,6 +1731,150 @@ def handle_playlist_active_command(args: List[str]) -> bool:
         return True
 
 
+def handle_playlist_import_command(args: List[str]) -> bool:
+    """Handle playlist import command - import playlist from file."""
+    if not args:
+        print("Error: Please specify playlist file path")
+        print("Usage: playlist import <file>")
+        print("Supported formats: .m3u, .m3u8, .crate")
+        return True
+
+    file_path_str = ' '.join(args)
+    file_path = Path(file_path_str).expanduser()
+
+    if not file_path.exists():
+        print(f"❌ File not found: {file_path}")
+        return True
+
+    # Get library root from config
+    library_root = Path(current_config.music.library_paths[0]).expanduser()
+
+    # Auto-detect format and import
+    try:
+        format_type = playlist_import.detect_playlist_format(file_path)
+        if not format_type:
+            print(f"❌ Unsupported file format: {file_path.suffix}")
+            print("Supported formats: .m3u, .m3u8, .crate")
+            return True
+
+        print(f"📂 Importing {format_type.upper()} playlist from: {file_path.name}")
+
+        playlist_id, tracks_added, unresolved = playlist_import.import_playlist(
+            file_path=file_path,
+            playlist_name=None,  # Use filename as default
+            library_root=library_root
+        )
+
+        # Get the created playlist info
+        pl = playlist.get_playlist_by_id(playlist_id)
+        if pl:
+            print(f"✅ Created playlist: {pl['name']}")
+            print(f"   Tracks added: {tracks_added}")
+
+            if unresolved:
+                print(f"   ⚠️  Unresolved tracks: {len(unresolved)}")
+                if len(unresolved) <= 5:
+                    print("\n   Could not find these tracks:")
+                    for path in unresolved:
+                        # Show just filename for brevity
+                        print(f"     • {Path(path).name}")
+                else:
+                    print(f"   Run 'playlist show {pl['name']}' to see details")
+
+            # Auto-export if enabled
+            auto_export_if_enabled(playlist_id)
+
+        return True
+
+    except ValueError as e:
+        print(f"❌ Error: {e}")
+        return True
+    except ImportError as e:
+        print(f"❌ Missing dependency: {e}")
+        return True
+    except Exception as e:
+        print(f"❌ Error importing playlist: {e}")
+        return True
+
+
+def handle_playlist_export_command(args: List[str]) -> bool:
+    """Handle playlist export command - export playlist to file."""
+    if not args:
+        print("Error: Please specify playlist name")
+        print("Usage: playlist export <name> [format]")
+        print("Formats: m3u8 (default), crate, all")
+        return True
+
+    # Parse arguments
+    if len(args) == 1:
+        playlist_name = args[0]
+        format_type = 'm3u8'  # Default format
+    else:
+        # First arg is playlist name, rest is format (join for multi-word names)
+        # If last arg looks like a format, separate it
+        if args[-1].lower() in ['m3u8', 'm3u', 'crate', 'all']:
+            format_type = args[-1].lower()
+            playlist_name = ' '.join(args[:-1])
+        else:
+            # All args are playlist name, use default format
+            playlist_name = ' '.join(args)
+            format_type = 'm3u8'
+
+    # Normalize format
+    if format_type == 'm3u':
+        format_type = 'm3u8'
+
+    # Get library root from config
+    library_root = Path(current_config.music.library_paths[0]).expanduser()
+
+    # Check if playlist exists
+    pl = playlist.get_playlist_by_name(playlist_name)
+    if not pl:
+        print(f"❌ Playlist '{playlist_name}' not found")
+        return True
+
+    try:
+        if format_type == 'all':
+            # Export to both formats
+            formats = ['m3u8', 'crate']
+            print(f"📤 Exporting playlist '{playlist_name}' to all formats...")
+
+            for fmt in formats:
+                try:
+                    output_path, tracks_exported = playlist_export.export_playlist(
+                        playlist_name=playlist_name,
+                        format_type=fmt,
+                        library_root=library_root
+                    )
+                    print(f"   ✅ {fmt.upper()}: {output_path} ({tracks_exported} tracks)")
+                except Exception as e:
+                    print(f"   ❌ {fmt.upper()}: {e}")
+
+        else:
+            # Export to single format
+            print(f"📤 Exporting playlist '{playlist_name}' to {format_type.upper()}...")
+
+            output_path, tracks_exported = playlist_export.export_playlist(
+                playlist_name=playlist_name,
+                format_type=format_type,
+                library_root=library_root
+            )
+
+            print(f"✅ Exported {tracks_exported} tracks to: {output_path}")
+
+        return True
+
+    except ValueError as e:
+        print(f"❌ Error: {e}")
+        return True
+    except ImportError as e:
+        print(f"❌ Missing dependency: {e}")
+        return True
+    except Exception as e:
+        print(f"❌ Error exporting playlist: {e}")
+        return True
+
+
 def handle_add_command(args: List[str]) -> bool:
     """Handle add command - add current track to playlist."""
     global current_player_state, music_tracks
@@ -1728,6 +1914,9 @@ def handle_add_command(args: List[str]) -> bool:
                 print(f"✅ Added to '{name}': {library.get_display_name(current_track)}")
             else:
                 print(f"✅ Added current track to playlist: {name}")
+
+            # Auto-export if enabled
+            auto_export_if_enabled(pl['id'])
         else:
             print(f"Track is already in playlist '{name}'")
         return True
@@ -1778,6 +1967,9 @@ def handle_remove_command(args: List[str]) -> bool:
                 print(f"✅ Removed from '{name}': {library.get_display_name(current_track)}")
             else:
                 print(f"✅ Removed current track from playlist: {name}")
+
+            # Auto-export if enabled
+            auto_export_if_enabled(pl['id'])
         else:
             print(f"Track is not in playlist '{name}'")
         return True
@@ -1880,8 +2072,12 @@ def handle_command(command: str, args: List[str]) -> bool:
             return handle_playlist_show_command(args[1:])
         elif args[0] == 'active':
             return handle_playlist_active_command(args[1:])
+        elif args[0] == 'import':
+            return handle_playlist_import_command(args[1:])
+        elif args[0] == 'export':
+            return handle_playlist_export_command(args[1:])
         else:
-            print(f"Unknown playlist subcommand: '{args[0]}'. Available: new, delete, rename, show, active")
+            print(f"Unknown playlist subcommand: '{args[0]}'. Available: new, delete, rename, show, active, import, export")
 
     elif command == 'add':
         return handle_add_command(args)
