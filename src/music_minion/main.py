@@ -2819,6 +2819,98 @@ def interactive_mode_with_dashboard() -> None:
         dashboard_state["running"] = False
 
 
+def interactive_mode_textual() -> None:
+    """Run the interactive mode with Textual UI."""
+    global current_config, current_player_state, music_tracks
+
+    # Load config if not already loaded
+    if not current_config.music.library_paths:
+        current_config = config.load_config()
+
+    # Load music library
+    ensure_library_loaded()
+
+    # Run database migrations on startup
+    database.init_database()
+
+    # Auto-sync on startup if enabled (run in background thread)
+    if current_config.sync.auto_sync_on_startup:
+        sync_thread = threading.Thread(
+            target=_auto_sync_background,
+            args=(current_config,),
+            daemon=True,
+            name="AutoSyncThread"
+        )
+        sync_thread.start()
+
+    # Create the runner with current state
+    from .ui_textual import MusicMinionRunner
+    runner = MusicMinionRunner(current_config, music_tracks, current_player_state)
+
+    # Create command handler wrapper that works with Textual app
+    def textual_command_handler(command: str, args: List[str]) -> bool:
+        """Wrapper for handle_command that integrates with Textual app"""
+        # Get reference to the Textual app for printing
+        app = runner.app
+
+        # Add UI feedback for rating commands
+        if command == "love":
+            runner.app_state.set_feedback("Track loved!", "❤️")
+        elif command == "like":
+            runner.app_state.set_feedback("Track liked!", "👍")
+        elif command == "skip":
+            runner.app_state.set_feedback("Skipped to next track", "⏭")
+        elif command == "archive":
+            runner.app_state.set_feedback("Track archived - won't play again", "🗄")
+        elif command == "note" and args:
+            runner.app_state.set_feedback("Note added to track", "📝")
+
+        # Call the original command handler
+        # Note: We need to redirect print statements to the Textual app
+        import io
+        import sys
+
+        # Capture stdout
+        old_stdout = sys.stdout
+        stdout_capture = io.StringIO()
+        sys.stdout = stdout_capture
+
+        try:
+            result = handle_command(command, args)
+
+            # Get captured output and send to Textual app
+            output = stdout_capture.getvalue()
+            if output:
+                for line in output.rstrip('\n').split('\n'):
+                    if line.strip():
+                        # Color code based on content
+                        if line.startswith('❌') or 'Error' in line or 'Failed' in line:
+                            app.print_error(line)
+                        elif line.startswith('✅') or 'Success' in line:
+                            app.print_success(line)
+                        elif line.startswith('💡') or 'Tip:' in line:
+                            app.print_info(line)
+                        else:
+                            app.print_output(line)
+
+            return result
+
+        finally:
+            # Restore stdout
+            sys.stdout = old_stdout
+
+    # Set the command handler
+    runner.set_command_handler(textual_command_handler)
+
+    # Run the Textual app
+    try:
+        runner.run()
+    finally:
+        # Clean up MPV player
+        if player.is_mpv_running(current_player_state):
+            player.stop_mpv(current_player_state)
+
+
 def interactive_mode() -> None:
     """Run the interactive command loop."""
     global current_config
@@ -2841,16 +2933,21 @@ def interactive_mode() -> None:
         )
         sync_thread.start()
 
-    # Check if dashboard is enabled and Rich is available
+    # Check if dashboard is enabled and use Textual
     if current_config.ui.enable_dashboard:
         try:
-            from rich.console import Console
-            # Use dashboard mode if Rich is available (don't require terminal detection)
-            interactive_mode_with_dashboard()
+            # Try to use Textual UI (new implementation)
+            interactive_mode_textual()
             return
-        except ImportError:
-            # Rich not available, fall back to simple mode
-            pass
+        except ImportError as e:
+            # Textual not available, fall back to old dashboard
+            print(f"⚠️  Textual UI not available ({e}), falling back to legacy dashboard")
+            try:
+                interactive_mode_with_dashboard()
+                return
+            except Exception:
+                # Fall back to simple mode
+                pass
     
     # Fallback to simple mode with Rich Console for consistent styling
     from rich.console import Console
