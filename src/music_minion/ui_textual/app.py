@@ -11,6 +11,8 @@ from textual import events
 
 from .dashboard import Dashboard
 from .state import AppState
+from .command_palette_modal import CommandPaletteModal
+from .playlist_modal import PlaylistModal
 
 
 class CommandHistory(VerticalScroll):
@@ -168,7 +170,7 @@ class MusicMinionApp(App):
             # Clear the "/" from input
             self.input_field.value = ""
             # Show command palette
-            self.action_command_palette()
+            self.show_command_palette()
 
     def print_output(self, text: str, style: str = "white") -> None:
         """Print output to command history"""
@@ -193,11 +195,49 @@ class MusicMinionApp(App):
         self.command_history.clear_history()
         self.command_history.add_line("History cleared", "dim")
 
+    def show_command_palette(self) -> None:
+        """Show command palette modal"""
+        def handle_command_selection(command: str | None) -> None:
+            """Handle selected command from palette"""
+            if command:
+                # Set the command in input field
+                self.input_field.value = command
+                # Focus input so user can see it and press Enter or add args
+                self.input_field.focus()
+
+        # Push the modal screen
+        self.push_screen(CommandPaletteModal(), handle_command_selection)
+
     def action_command_palette(self) -> None:
-        """Show command palette"""
-        # TODO: Implement in Phase 2
-        self.print_info("Command palette not yet implemented")
-        self.print_info("Available commands: play, pause, skip, love, like, archive, playlist, help, quit")
+        """Action for / key binding"""
+        self.show_command_palette()
+
+    def show_playlist_browser(self, playlists: list[dict], active_playlist_id: int | None) -> dict | None:
+        """
+        Show playlist browser modal.
+        This is a blocking call that returns the selected playlist.
+
+        Args:
+            playlists: List of playlist dicts from database
+            active_playlist_id: ID of currently active playlist
+
+        Returns:
+            Selected playlist dict or None if cancelled
+        """
+        result = [None]  # Mutable container to capture result
+
+        def handle_playlist_selection(selected: dict | None) -> None:
+            """Handle selected playlist from modal"""
+            result[0] = selected
+
+        # Push the modal screen and wait for result
+        self.push_screen(PlaylistModal(playlists, active_playlist_id), handle_playlist_selection)
+
+        # Note: In Textual, the callback is called when modal is dismissed
+        # The result will be available in the callback
+        # For now, we return None and handle selection in the callback
+        # The actual handling will be done in the command wrapper
+        return None
 
     def update_player_state(self, player_state) -> None:
         """

@@ -189,10 +189,145 @@ line = Static(rich_text)
 - [ ] Resize handling works
 
 ### Next Phases
-- **Phase 2**: Convert command_palette.py to ModalScreen
-- **Phase 3**: Enhanced PlaylistModal with live preview
 - **Phase 4**: Interactive SmartPlaylistWizard
 - **Phase 5**: State management polish
+
+## Textual UI Migration (Phase 2 - Complete)
+
+### Command Palette as ModalScreen
+
+**Module**: `src/music_minion/ui_textual/command_palette_modal.py`
+
+**Features Implemented**:
+- ✅ Modal screen with centered overlay
+- ✅ Live fuzzy filtering as you type
+- ✅ Keyboard navigation (↑↓ arrows, Enter, Esc)
+- ✅ Categorized command display (7 categories)
+- ✅ Icons and descriptions for each command
+- ✅ Auto-fills input field with selected command
+
+**Key Patterns**:
+
+#### 1. ModalScreen with Bindings
+```python
+class CommandPaletteModal(ModalScreen[str]):
+    BINDINGS = [
+        Binding("escape", "dismiss_none", "Cancel"),
+        Binding("up", "cursor_up", "Up"),
+        Binding("down", "cursor_down", "Down"),
+        Binding("enter", "select", "Select"),
+    ]
+
+    def action_select(self) -> None:
+        selected_command = self.filtered_commands[self.selected_index]
+        self.dismiss(selected_command)  # Returns to parent with result
+```
+
+#### 2. Live Filtering
+```python
+def on_input_changed(self, event: Input.Changed) -> None:
+    query = event.value.lower()
+    self._update_filtered_commands(query)
+    self._refresh_command_list()  # Re-render matching commands
+```
+
+#### 3. Dynamic Re-rendering
+```python
+def _refresh_command_list(self) -> None:
+    commands_list = self.query_one("#commands-list")
+    commands_list.remove_children()  # Clear old widgets
+    for widget in self._render_commands(query):
+        commands_list.mount(widget)  # Add new widgets
+```
+
+**Benefits**:
+- Cleaner than raw terminal mode (~180 lines vs ~130 lines)
+- No manual termios/tty handling
+- Automatic cleanup on dismiss
+- Better keyboard handling
+- Consistent styling with rest of app
+
+**Integration**: Triggered by "/" key in input field or "/" binding in footer
+
+## Textual UI Migration (Phase 3 - Complete)
+
+### Enhanced Playlist Browser Modal
+
+**Module**: `src/music_minion/ui_textual/playlist_modal.py`
+
+**Features Implemented**:
+- ✅ Two-column layout (list + preview pane)
+- ✅ Live fuzzy search filtering
+- ✅ Shows playlist metadata (type, track count, last played)
+- ✅ Active playlist indicator (▶)
+- ✅ Preview pane shows selected playlist details
+- ✅ Keyboard navigation
+- ✅ Auto-play first track on selection
+
+**Key Patterns**:
+
+#### 1. Two-Column Layout
+```python
+with Horizontal(id="main-content"):
+    # Left: Scrollable playlist list
+    with VerticalScroll(id="playlist-list"):
+        yield from self._render_playlist_items()
+
+    # Right: Preview pane
+    with Vertical(id="playlist-preview"):
+        yield from self._render_preview()
+```
+
+#### 2. Coordinated Updates
+```python
+def _refresh_display(self) -> None:
+    # Update both list and preview together
+    self._refresh_playlist_list()
+    self._refresh_preview_pane()
+```
+
+#### 3. Selection Handling with Auto-Play
+```python
+def action_select(self) -> None:
+    selected = self.filtered_playlists[self.selected_index]
+    self.dismiss(selected)  # Return to parent
+
+# In parent (main.py):
+def handle_playlist_selection(selected: dict | None) -> None:
+    if selected:
+        playlist.set_active_playlist(selected['id'])
+        # Auto-play first track...
+```
+
+**Benefits**:
+- Richer UI than prompt_toolkit autocomplete
+- Shows metadata without needing to select
+- Visual indicator for active playlist
+- Preview updates as you navigate
+- Consistent with command palette UX
+
+**Integration**: Intercepted in textual_command_handler when `playlist` command (no args) is executed
+
+### Comparison: Old vs New
+
+| Feature | Old (prompt_toolkit) | New (Textual) |
+|---------|---------------------|---------------|
+| Layout | Single line autocomplete | Two-column with preview |
+| Filtering | Substring match only | Fuzzy filtering |
+| Metadata | In autocomplete dropdown | Dedicated preview pane |
+| Navigation | Tab/arrows in dropdown | Clean arrow navigation |
+| Visual feedback | Text-based | Rich colors, borders, icons |
+| Code complexity | ~70 lines in completers.py | ~300 lines (more features) |
+
+### Testing Notes
+
+Both Phase 2 and Phase 3 components:
+- Import successfully
+- No syntax errors
+- Follow Textual patterns
+- Ready for interactive testing
+
+**Next Steps**: Phase 4 (Smart Playlist Wizard) will build on these modal patterns
 
 ## Code Patterns & Conventions
 

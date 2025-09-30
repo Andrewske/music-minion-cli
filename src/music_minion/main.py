@@ -2853,6 +2853,59 @@ def interactive_mode_textual() -> None:
         # Get reference to the Textual app for printing
         app = runner.app
 
+        # Special handling for "playlist" command - show Textual modal
+        if command == "playlist" and not args:
+            # Show playlist browser modal
+            try:
+                from . import playlist as playlist_module
+
+                playlists = playlist_module.get_playlists_sorted_by_recent()
+
+                if not playlists:
+                    app.print_error("No playlists found. Create one with: playlist new manual <name>")
+                    return True
+
+                # Get active playlist
+                active = playlist_module.get_active_playlist()
+                active_id = active['id'] if active else None
+
+                # Define handler for playlist selection
+                def handle_playlist_selection(selected: dict | None) -> None:
+                    """Handle playlist selection from modal"""
+                    if selected:
+                        # Activate playlist
+                        if playlist_module.set_active_playlist(selected['id']):
+                            app.print_success(f"Activated playlist: {selected['name']}")
+
+                            # Auto-play first track
+                            playlist_tracks = playlist_module.get_playlist_tracks(selected['id'])
+                            if playlist_tracks:
+                                # Convert DB track to library.Track and play
+                                first_track = database.db_track_to_library_track(playlist_tracks[0])
+                                if play_track(first_track, playlist_position=0):
+                                    app.print_info(f"🎵 Now playing: {library.get_display_name(first_track)}")
+                                else:
+                                    app.print_error("Failed to play track")
+                            else:
+                                app.print_info(f"⚠️  Playlist is empty")
+                        else:
+                            app.print_error(f"Failed to activate playlist")
+
+                # Show modal
+                from .ui_textual.playlist_modal import PlaylistModal
+                app.push_screen(
+                    PlaylistModal(playlists, active_id),
+                    handle_playlist_selection
+                )
+
+                return True
+
+            except Exception as e:
+                app.print_error(f"Error browsing playlists: {e}")
+                import traceback
+                traceback.print_exc()
+                return True
+
         # Add UI feedback for rating commands
         if command == "love":
             runner.app_state.set_feedback("Track loved!", "❤️")
