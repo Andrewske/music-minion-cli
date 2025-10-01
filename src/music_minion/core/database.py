@@ -680,8 +680,8 @@ def get_available_tracks() -> List[Dict[str, Any]]:
 def db_track_to_library_track(db_track: Dict[str, Any]):
     """Convert database track record to library.Track object."""
     # Import here to avoid circular imports
-    from . import library
-    
+    from ..domain import library
+
     return library.Track(
         file_path=db_track['file_path'],
         title=db_track['title'],
