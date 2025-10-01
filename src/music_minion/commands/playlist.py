@@ -710,15 +710,14 @@ def handle_playlist_active_command(ctx: AppContext, args: List[str]) -> Tuple[Ap
 
                     response = input("   Resume from this position? [Y/n]: ").strip().lower()
                     if response != 'n':
-                        # Load the track and play it
-                        if ensure_library_loaded():
-                            # Find the Track object from music_tracks
-                            music_tracks = get_music_tracks()
-                            for track in music_tracks:
-                                if track.file_path == saved_track['file_path']:
-                                    print("▶️  Resuming playback...")
-                                    play_track(track)
-                                    break
+                        # Find the Track object from music_tracks
+                        for track in ctx.music_tracks:
+                            if track.file_path == saved_track['file_path']:
+                                print("▶️  Resuming playback...")
+                                # Import play_track from playback commands
+                                from . import playback as playback_commands
+                                ctx, _ = playback_commands.play_track(ctx, track, position)
+                                break
         else:
             print(f"❌ Failed to set active playlist")
         return ctx, True

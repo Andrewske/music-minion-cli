@@ -46,218 +46,6 @@ def safe_print(message: str, style: str = None) -> None:
         print(message)
 
 
-def play_track(track: library.Track, playlist_position: Optional[int] = None) -> bool:
-    """
-    Play a specific track.
-
-    Args:
-        track: Track to play
-        playlist_position: Optional 0-based position in active playlist (optimization to avoid lookup)
-
-    Returns:
-        True to continue interactive loop
-    """
-    global current_player_state, current_config
-
-    # Start MPV if not running
-    if not playback.is_mpv_running(current_player_state):
-        print("Starting music playback...")
-        new_state = playback.start_mpv(current_config)
-        if not new_state:
-            print("Failed to start music player")
-            return True
-        current_player_state = new_state
-
-    # Play the track
-    new_state, success = playback.play_file(current_player_state, track.file_path)
-    current_player_state = new_state
-
-    if success:
-        safe_print(f"♪ Now playing: {library.get_display_name(track)}", "cyan")
-        if track.duration:
-            safe_print(f"   Duration: {library.get_duration_str(track)}", "blue")
-
-        dj_info = library.get_dj_info(track)
-        if dj_info != "No DJ metadata":
-            safe_print(f"   {dj_info}", "magenta")
-
-        # Store track in database
-        track_id = database.get_or_create_track(
-            track.file_path, track.title, track.artist, track.album,
-            track.genre, track.year, track.duration, track.key, track.bpm
-        )
-
-        # Start playback session
-        database.start_playback_session(track_id)
-
-        # Track position if playing from active playlist
-        active = playlists.get_active_playlist()
-        if active:
-            # Use provided position if available, otherwise compute it
-            if playlist_position is not None:
-                playback.update_playlist_position(active['id'], track_id, playlist_position)
-            else:
-                # Only compute position if not provided
-                playlist_tracks = playlists.get_playlist_tracks(active['id'])
-                position = playback.get_track_position_in_playlist(playlist_tracks, track_id)
-                if position is not None:
-                    playback.update_playlist_position(active['id'], track_id, position)
-    else:
-        safe_print("❌ Failed to play track", "red")
-
-    return True
-
-
-def check_and_handle_track_completion() -> None:
-    """Check if current track has completed and handle auto-analysis."""
-    global current_player_state, music_tracks
-
-    if not current_player_state.current_track:
-        return  # No message needed - track already handled
-
-    if not playback.is_mpv_running(current_player_state):
-        return  # Player not running, nothing to check
-
-    # Check if track is still playing
-    status = playback.get_player_status(current_player_state)
-    position, duration, percent = playback.get_progress_info(current_player_state)
-
-    # If track has ended (reached 100% or very close), trigger analysis and play next
-    if duration > 0 and percent >= 99.0 and not status.get('playing', False):
-        # Find the track that just finished
-        finished_track = None
-        for track in music_tracks:
-            if track.file_path == current_player_state.current_track:
-                finished_track = track
-                break
-
-        if finished_track:
-            safe_print(f"✅ Finished: {library.get_display_name(finished_track)}", "green")
-
-            # Check if track is archived (don't analyze archived tracks)
-            track_id = get_current_track_id()
-            if track_id:
-                # Check if track is archived
-                archived_tracks = database.get_archived_tracks()
-                if track_id not in archived_tracks:
-                    # Trigger auto-analysis in background
-                    try:
-                        safe_print(f"🤖 Auto-analyzing completed track...", "cyan")
-                        result = ai.analyze_and_tag_track(finished_track, 'auto_analysis')
-
-                        if result['success'] and result['tags_added']:
-                            safe_print(f"✅ Added {len(result['tags_added'])} AI tags: {', '.join(result['tags_added'])}", "green")
-                        elif not result['success']:
-                            error_msg = result.get('error', 'Unknown error')
-                            # Show brief error message but don't be too intrusive
-                            if 'API key' in error_msg:
-                                safe_print("⚠️  AI analysis skipped: No API key configured (use 'ai setup <key>')", "yellow")
-                            else:
-                                safe_print(f"⚠️  AI analysis failed: {error_msg}", "yellow")
-                    except Exception as e:
-                        # Don't interrupt user experience with detailed errors
-                        safe_print(f"⚠️  AI analysis error: {str(e)}", "yellow")
-
-        # Clear current track and play next track automatically
-        current_player_state = current_player_state._replace(current_track=None)
-
-        # Auto-play next track if continuous playback is enabled
-        safe_print("⏭️  Auto-playing next track...", "blue")
-
-        # Get available tracks (excluding archived ones)
-        available_tracks = get_available_tracks()
-
-        # Remove the track that just finished from options if possible
-        if finished_track and len(available_tracks) > 1:
-            available_tracks = [t for t in available_tracks if t.file_path != finished_track.file_path]
-
-        if available_tracks:
-            next_track = library.get_random_track(available_tracks)
-            if next_track:
-                play_track(next_track)
-        else:
-            safe_print("No more tracks to play (all may be archived)", "red")
-
-
-def get_available_tracks() -> List[library.Track]:
-    """
-    Get tracks that are available for playback.
-    Respects active playlist if one is set, and excludes archived tracks.
-    """
-    global music_tracks
-
-    if not music_tracks:
-        return []
-
-    # Check if there's an active playlist
-    active = playlists.get_active_playlist()
-
-    if active:
-        # Get tracks from active playlist (already excludes archived)
-        playlist_file_paths = set(playlists.get_available_playlist_tracks(active['id']))
-
-        if not playlist_file_paths:
-            return []
-
-        # Convert file paths to Track objects
-        available_tracks = []
-        for track in music_tracks:
-            if track.file_path in playlist_file_paths and Path(track.file_path).exists():
-                available_tracks.append(track)
-
-        return available_tracks
-    else:
-        # No active playlist - use normal behavior (all non-archived tracks)
-        # Try to get available tracks directly from database (faster)
-        try:
-            db_tracks = database.get_available_tracks()
-            if db_tracks:
-                # Convert database tracks to library Track objects and filter existing files
-                available_tracks = []
-                for db_track in db_tracks:
-                    track = database.db_track_to_library_track(db_track)
-                    if Path(track.file_path).exists():
-                        available_tracks.append(track)
-                return available_tracks
-        except Exception:
-            # Fall back to in-memory filtering if database query fails
-            pass
-
-        # Fallback: filter in-memory tracks
-        archived_track_ids = set(database.get_archived_tracks())
-
-        if not archived_track_ids:
-            return music_tracks
-
-        # Filter out archived tracks
-        available_tracks = []
-        for track in music_tracks:
-            # Check if track is archived by getting its database ID
-            track_id = database.get_track_by_path(track.file_path)
-            if not track_id or track_id['id'] not in archived_track_ids:
-                available_tracks.append(track)
-
-        return available_tracks
-
-
-def get_current_track_id() -> Optional[int]:
-    """Get the database ID of the currently playing track."""
-    global current_player_state, music_tracks
-
-    if not current_player_state.current_track:
-        return None
-
-    # Find the track in our library
-    for track in music_tracks:
-        if track.file_path == current_player_state.current_track:
-            # Get or create track ID in database
-            return database.get_or_create_track(
-                track.file_path, track.title, track.artist, track.album,
-                track.genre, track.year, track.duration, track.key, track.bpm
-            )
-
-    return None
-
 
 def _auto_sync_background(cfg: config.Config) -> None:
     """Background thread function for auto-sync on startup.
@@ -397,7 +185,6 @@ def interactive_mode_with_dashboard() -> None:
 
     def dashboard_updater():
         """Background thread to update dashboard in real-time."""
-        global current_player_state
         last_update_time = time.time()
         last_terminal_size = None
 
@@ -405,12 +192,16 @@ def interactive_mode_with_dashboard() -> None:
             try:
                 current_time = time.time()
 
-                # Check for track completion
-                check_and_handle_track_completion()
+                # Check for track completion using context
+                ctx = helpers.create_context_from_globals()
+                ctx = helpers.check_and_handle_track_completion(ctx)
+                helpers.sync_context_to_globals(ctx)
 
                 # Update player state
-                if current_player_state.process:
-                    current_player_state = playback.update_player_status(current_player_state)
+                if ctx.player_state.process:
+                    new_state = playback.update_player_status(ctx.player_state)
+                    ctx = ctx.with_player_state(new_state)
+                    helpers.sync_context_to_globals(ctx)
 
                 # Check if terminal was resized
                 current_size = (console.size.width, console.size.height)
@@ -566,7 +357,12 @@ def interactive_mode_with_dashboard() -> None:
                 elif command == "note" and args:
                     ui.flash_note_added()
 
-                if not router.handle_command(command, args):
+                # Execute command with context
+                ctx = helpers.create_context_from_globals()
+                ctx, should_continue = router.handle_command(ctx, command, args)
+                helpers.sync_context_to_globals(ctx)
+
+                if not should_continue:
                     break
 
                 # For state-changing commands, update dashboard immediately
@@ -622,8 +418,12 @@ def interactive_mode_textual() -> None:
     if not current_config.music.library_paths:
         current_config = config.load_config()
 
-    # Load music library
-    helpers.ensure_library_loaded()
+    # Load music library using context
+    ctx = helpers.create_context_from_globals()
+    ctx, success = helpers.ensure_library_loaded(ctx)
+    helpers.sync_context_to_globals(ctx)
+    if not success:
+        return
 
     # Run database migrations on startup
     database.init_database()
@@ -677,7 +477,11 @@ def interactive_mode_textual() -> None:
                             if playlist_tracks:
                                 # Convert DB track to library.Track and play
                                 first_track = database.db_track_to_library_track(playlist_tracks[0])
-                                if play_track(first_track, playlist_position=0):
+                                from .commands import playback as playback_commands
+                                ctx = helpers.create_context_from_globals()
+                                ctx, success = playback_commands.play_track(ctx, first_track, playlist_position=0)
+                                helpers.sync_context_to_globals(ctx)
+                                if success:
                                     app.print_info(f"🎵 Now playing: {library.get_display_name(first_track)}")
                                 else:
                                     app.print_error("Failed to play track")
@@ -724,7 +528,10 @@ def interactive_mode_textual() -> None:
         sys.stdout = stdout_capture
 
         try:
-            result = router.handle_command(command, args)
+            # Execute command with context
+            ctx = helpers.create_context_from_globals()
+            ctx, should_continue = router.handle_command(ctx, command, args)
+            helpers.sync_context_to_globals(ctx)
 
             # Get captured output and send to Textual app
             output = stdout_capture.getvalue()
@@ -741,7 +548,7 @@ def interactive_mode_textual() -> None:
                         else:
                             app.print_output(line)
 
-            return result
+            return should_continue
 
         finally:
             # Restore stdout
@@ -767,8 +574,12 @@ def interactive_mode_blessed() -> None:
     if not current_config.music.library_paths:
         current_config = config.load_config()
 
-    # Load music library
-    helpers.ensure_library_loaded()
+    # Load music library using context
+    ctx = helpers.create_context_from_globals()
+    ctx, success = helpers.ensure_library_loaded(ctx)
+    helpers.sync_context_to_globals(ctx)
+    if not success:
+        return
 
     # Run database migrations on startup
     database.init_database()
@@ -871,8 +682,8 @@ def interactive_mode() -> None:
     try:
         should_continue = True
         while should_continue:
-            # Check for track completion periodically
-            check_and_handle_track_completion()
+            # Check for track completion periodically (context-based)
+            ctx = helpers.check_and_handle_track_completion(ctx)
 
             try:
                 user_input = input("music-minion> ").strip()
@@ -881,7 +692,7 @@ def interactive_mode() -> None:
                 # Execute command with context
                 ctx, should_continue = router.handle_command(ctx, command, args)
 
-                # Sync global state from context for backward compatibility
+                # Sync global state from context for backward compatibility with dashboard modes
                 current_player_state = ctx.player_state
                 music_tracks = ctx.music_tracks
                 current_config = ctx.config

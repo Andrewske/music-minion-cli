@@ -13,6 +13,7 @@ from .core import config
 from .core import database
 from .domain import library
 from .domain import playback
+from .domain import ai
 from .domain.playlists import exporters as playlist_export
 
 
@@ -184,3 +185,125 @@ def auto_export_if_enabled(playlist_id: int, ctx: Optional[AppContext] = None) -
     except Exception as e:
         # Unexpected errors - log for debugging
         print(f"Unexpected error during auto-export: {e}", file=sys.stderr)
+
+
+def check_and_handle_track_completion(ctx: AppContext) -> AppContext:
+    """Check if current track has completed and handle auto-analysis and next track.
+
+    Args:
+        ctx: Application context
+
+    Returns:
+        Updated context (may have new player state and current track)
+    """
+    if not ctx.player_state.current_track:
+        return ctx  # No track playing
+
+    if not playback.is_mpv_running(ctx.player_state):
+        return ctx  # Player not running
+
+    # Check if track is still playing
+    status = playback.get_player_status(ctx.player_state)
+    position, duration, percent = playback.get_progress_info(ctx.player_state)
+
+    # If track has ended (reached 100% or very close), trigger analysis and play next
+    if duration > 0 and percent >= 99.0 and not status.get('playing', False):
+        # Find the track that just finished
+        finished_track = None
+        for track in ctx.music_tracks:
+            if track.file_path == ctx.player_state.current_track:
+                finished_track = track
+                break
+
+        if finished_track:
+            safe_print(ctx, f"✅ Finished: {library.get_display_name(finished_track)}", "green")
+
+            # Check if track is archived (don't analyze archived tracks)
+            db_track = database.get_track_by_path(ctx.player_state.current_track)
+            if db_track:
+                track_id = db_track['id']
+                archived_tracks = database.get_archived_tracks()
+                if track_id not in archived_tracks:
+                    # Trigger auto-analysis
+                    try:
+                        safe_print(ctx, "🤖 Auto-analyzing completed track...", "cyan")
+                        result = ai.analyze_and_tag_track(finished_track, 'auto_analysis')
+
+                        if result['success'] and result['tags_added']:
+                            safe_print(ctx, f"✅ Added {len(result['tags_added'])} AI tags: {', '.join(result['tags_added'])}", "green")
+                        elif not result['success']:
+                            error_msg = result.get('error', 'Unknown error')
+                            if 'API key' in error_msg:
+                                safe_print(ctx, "⚠️  AI analysis skipped: No API key configured (use 'ai setup <key>')", "yellow")
+                            else:
+                                safe_print(ctx, f"⚠️  AI analysis failed: {error_msg}", "yellow")
+                    except Exception as e:
+                        safe_print(ctx, f"⚠️  AI analysis error: {str(e)}", "yellow")
+
+        # Clear current track and play next track automatically
+        new_player_state = ctx.player_state._replace(current_track=None)
+        ctx = ctx.with_player_state(new_player_state)
+
+        # Auto-play next track
+        safe_print(ctx, "⏭️  Auto-playing next track...", "blue")
+
+        # Get available tracks (using playback commands helper)
+        from .commands import playback as playback_commands
+        available_tracks = playback_commands.get_available_tracks(ctx)
+
+        # Remove the track that just finished from options if possible
+        if finished_track and len(available_tracks) > 1:
+            available_tracks = [t for t in available_tracks if t.file_path != finished_track.file_path]
+
+        if available_tracks:
+            next_track = library.get_random_track(available_tracks)
+            if next_track:
+                ctx, _ = playback_commands.play_track(ctx, next_track)
+        else:
+            safe_print(ctx, "No more tracks to play (all may be archived)", "red")
+
+    return ctx
+
+
+def sync_context_to_globals(ctx: AppContext) -> None:
+    """Sync AppContext state to global variables (for dashboard mode compatibility).
+
+    Args:
+        ctx: Application context to sync from
+    """
+    import sys
+
+    # Get main module
+    if 'music_minion.main' in sys.modules:
+        main_module = sys.modules['music_minion.main']
+        main_module.current_player_state = ctx.player_state
+        main_module.music_tracks = ctx.music_tracks
+        main_module.current_config = ctx.config
+
+
+def create_context_from_globals() -> AppContext:
+    """Create AppContext from global variables (for dashboard mode initialization).
+
+    Returns:
+        AppContext initialized from global state
+    """
+    import sys
+    from rich.console import Console
+
+    # Get main module
+    if 'music_minion.main' in sys.modules:
+        main_module = sys.modules['music_minion.main']
+
+        # Try to get console, create new if not available
+        console = getattr(main_module, 'console', None) or Console()
+
+        return AppContext(
+            config=main_module.current_config,
+            music_tracks=main_module.music_tracks,
+            player_state=main_module.current_player_state,
+            console=console
+        )
+
+    # Fallback: create empty context
+    from .core.config import Config
+    return AppContext.create(Config(), Console())

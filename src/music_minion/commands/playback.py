@@ -28,7 +28,7 @@ def safe_print(ctx: AppContext, message: str, style: Optional[str] = None) -> No
 def get_available_tracks(ctx: AppContext) -> List[library.Track]:
     """Get available tracks (respects active playlist and excludes archived)."""
     # Get archived track IDs
-    archived_ids = set(database.get_archived_track_ids())
+    archived_ids = set(database.get_archived_tracks())
 
     # Filter by active playlist if set
     active = playlists.get_active_playlist()
@@ -42,14 +42,15 @@ def get_available_tracks(ctx: AppContext) -> List[library.Track]:
     else:
         available = ctx.music_tracks
 
-    # Exclude archived tracks
-    available = [
-        t for t in available
-        if database.get_track_by_path(t.file_path) is None
-        or database.get_track_by_path(t.file_path)['id'] not in archived_ids
-    ]
+    # Exclude archived tracks (only check tracks in database)
+    filtered = []
+    for t in available:
+        db_track = database.get_track_by_path(t.file_path)
+        # Include if not in DB yet, or in DB but not archived
+        if db_track is None or db_track['id'] not in archived_ids:
+            filtered.append(t)
 
-    return available
+    return filtered
 
 
 def play_track(ctx: AppContext, track: library.Track, playlist_position: Optional[int] = None) -> Tuple[AppContext, bool]:
