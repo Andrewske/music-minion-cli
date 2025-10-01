@@ -31,8 +31,7 @@ from ..utils import autocomplete
 
 def handle_playlist_list_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     """
-    Handle playlist command - interactive dropdown with fuzzy search.
-    Uses prompt_toolkit for a smooth autocomplete experience.
+    Handle playlist command - signal UI to show playlist palette.
 
     Args:
         ctx: Application context
@@ -40,82 +39,16 @@ def handle_playlist_list_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     Returns:
         (updated_context, should_continue)
     """
-    try:
-        all_playlists = playlists.get_playlists_sorted_by_recent()
+    # Check if there are any playlists
+    all_playlists = playlists.get_playlists_sorted_by_recent()
 
-        if not all_playlists:
-            print("No playlists found. Create one with: playlist new manual <name>")
-            return ctx, True
-
-        # Check which one is active
-        active = playlists.get_active_playlist()
-        active_id = active['id'] if active else None
-
-        print(f"\n📋 Select a playlist ({len(all_playlists)} available)")
-        print("💡 Tip: Type to search, use arrow keys to navigate, Enter to select, Ctrl+C to cancel")
-        print()
-
-        # Create styled prompt session for playlist selection
-        prompt_style = Style.from_dict({
-            'prompt': '#00aa00 bold',
-            'completion-menu.completion': 'bg:#008888 #ffffff',
-            'completion-menu.completion.current': 'bg:#00aaaa #000000',
-            'completion-menu.meta.completion': '#888888',
-            'completion-menu.meta.completion.current': 'bg:#00aaaa #ffffff',
-        })
-
-        playlist_session = PromptSession(
-            completer=autocomplete.PlaylistCompleter(),
-            style=prompt_style,
-            complete_while_typing=True,
-        )
-
-        try:
-            # Get playlist selection via autocomplete
-            selected_name = playlist_session.prompt("🔍 Search: ").strip()
-
-            if not selected_name:
-                print("No playlist selected")
-                return ctx, True
-
-            # Find the selected playlist
-            selected_playlist = None
-            for pl in all_playlists:
-                if pl['name'] == selected_name:
-                    selected_playlist = pl
-                    break
-
-            if not selected_playlist:
-                print(f"❌ Playlist '{selected_name}' not found")
-                return ctx, True
-
-            # Activate playlist
-            if playlists.set_active_playlist(selected_playlist['id']):
-                print(f"\n✅ Activated playlist: {selected_playlist['name']}")
-
-                # Auto-play first track
-                playlist_tracks = playlists.get_playlist_tracks(selected_playlist['id'])
-                if playlist_tracks:
-                    # Convert DB track to library.Track and play
-                    first_track = database.db_track_to_library_track(playlist_tracks[0])
-                    # Import play_track from playback commands
-                    from .playback import play_track
-                    ctx, _ = play_track(ctx, first_track, playlist_position=0)
-                    print(f"🎵 Now playing: {library.get_display_name(first_track)}")
-                else:
-                    print(f"⚠️  Playlist is empty")
-            else:
-                print(f"❌ Failed to activate playlist")
-
-        except KeyboardInterrupt:
-            print("\n⚠️  Playlist selection cancelled")
-
+    if not all_playlists:
+        print("No playlists found. Create one with: playlist new manual <name>")
         return ctx, True
-    except Exception as e:
-        print(f"❌ Error browsing playlists: {e}")
-        import traceback
-        traceback.print_exc()
-        return ctx, True
+
+    # Signal UI to show playlist palette
+    ctx = ctx.with_ui_action({'type': 'show_playlist_palette'})
+    return ctx, True
 
 
 def smart_playlist_wizard(name: str) -> bool:

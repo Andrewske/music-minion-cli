@@ -124,7 +124,16 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10) -> tupl
             # Select item from palette
             if state.palette_selected < len(state.palette_items):
                 selected = state.palette_items[state.palette_selected]
-                command_to_execute = selected[1]  # Command name
+
+                # Different handling based on palette mode
+                if state.palette_mode == 'playlist':
+                    # For playlist mode, send special command with playlist name
+                    playlist_name = selected[1]  # Playlist name
+                    command_to_execute = f"__SELECT_PLAYLIST__ {playlist_name}"
+                else:
+                    # For command mode, just use the command name
+                    command_to_execute = selected[1]  # Command name
+
                 state = hide_palette(state)
                 state = set_input_text(state, "")
         else:

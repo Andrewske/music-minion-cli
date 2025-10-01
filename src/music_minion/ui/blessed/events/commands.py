@@ -3,7 +3,8 @@
 import io
 from contextlib import redirect_stdout, redirect_stderr
 from ....context import AppContext
-from ..state import UIState, add_history_line, set_feedback, add_command_to_history
+from ..state import UIState, add_history_line, set_feedback, add_command_to_history, show_playlist_palette
+from ..components.palette import load_playlist_items
 
 
 def parse_command_line(line: str) -> tuple[str, list[str]]:
@@ -43,6 +44,12 @@ def execute_command(ctx: AppContext, ui_state: UIState, command_line: str) -> tu
     # Special case: QUIT signal from keyboard handler
     if command == 'QUIT':
         return ctx, ui_state, True
+
+    # Special case: Playlist selection from palette
+    if command == '__SELECT_PLAYLIST__':
+        playlist_name = ' '.join(args)
+        ctx, ui_state = _handle_playlist_selection(ctx, ui_state, playlist_name)
+        return ctx, ui_state, False
 
     # Add command to history display
     ui_state = add_history_line(ui_state, f"> {command_line}", 'cyan')
@@ -91,4 +98,85 @@ def execute_command(ctx: AppContext, ui_state: UIState, command_line: str) -> tu
     if command in ['love', 'like', 'archive', 'skip']:
         ui_state = set_feedback(ui_state, f"✓ {command.capitalize()}", "✓")
 
+    # Process UI actions from returned context
+    if ctx.ui_action:
+        ctx, ui_state = _process_ui_action(ctx, ui_state)
+
     return ctx, ui_state, False
+
+
+def _process_ui_action(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, UIState]:
+    """
+    Process UI action from command handler.
+
+    Args:
+        ctx: Application context with ui_action set
+        ui_state: Current UI state
+
+    Returns:
+        Tuple of (updated AppContext with ui_action cleared, updated UIState)
+    """
+    action = ctx.ui_action
+
+    if action['type'] == 'show_playlist_palette':
+        # Load playlists and show palette
+        playlist_items = load_playlist_items()
+        ui_state = show_playlist_palette(ui_state, playlist_items)
+
+    # Clear the ui_action after processing
+    ctx = ctx.with_ui_action(None)
+
+    return ctx, ui_state
+
+
+def _handle_playlist_selection(ctx: AppContext, ui_state: UIState, playlist_name: str) -> tuple[AppContext, UIState]:
+    """
+    Handle playlist selection from palette.
+
+    Args:
+        ctx: Application context
+        ui_state: Current UI state
+        playlist_name: Name of selected playlist
+
+    Returns:
+        Tuple of (updated AppContext, updated UIState)
+    """
+    # Import here to avoid circular dependencies
+    from ....domain import playlists
+    from ....domain import playback
+    from ....core import database
+
+    # Get playlist by name
+    pl = playlists.get_playlist_by_name(playlist_name)
+    if not pl:
+        ui_state = add_history_line(ui_state, f"❌ Playlist '{playlist_name}' not found", 'red')
+        return ctx, ui_state
+
+    # Activate playlist
+    if playlists.set_active_playlist(pl['id']):
+        ui_state = add_history_line(ui_state, f"✅ Activated playlist: {playlist_name}", 'green')
+
+        # Get playlist tracks
+        playlist_tracks = playlists.get_playlist_tracks(pl['id'])
+
+        if playlist_tracks:
+            # Convert first track to library.Track and play
+            first_track = database.db_track_to_library_track(playlist_tracks[0])
+
+            # Import play_track from playback commands
+            from ....commands.playback import play_track
+
+            # Play the first track
+            ctx, _ = play_track(ctx, first_track, playlist_position=0)
+
+            # Show feedback
+            artist = first_track.artist or 'Unknown'
+            title = first_track.title or 'Unknown'
+            ui_state = add_history_line(ui_state, f"🎵 Now playing: {artist} - {title}", 'white')
+            ui_state = set_feedback(ui_state, f"✓ Playing {playlist_name}", "✓")
+        else:
+            ui_state = add_history_line(ui_state, f"⚠️  Playlist is empty", 'yellow')
+    else:
+        ui_state = add_history_line(ui_state, f"❌ Failed to activate playlist", 'red')
+
+    return ctx, ui_state

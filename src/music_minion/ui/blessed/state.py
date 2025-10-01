@@ -69,6 +69,7 @@ class UIState:
 
     # Command palette state
     palette_visible: bool = False
+    palette_mode: str = 'command'  # 'command' or 'playlist'
     palette_query: str = ""
     palette_items: list[tuple[str, str, str, str]] = field(default_factory=list)  # (cat, cmd, icon, desc)
     palette_selected: int = 0
@@ -148,8 +149,13 @@ def show_palette(state: UIState) -> UIState:
 
 
 def hide_palette(state: UIState) -> UIState:
-    """Hide command palette and reset selection."""
-    return replace(state, palette_visible=False, palette_selected=0, palette_scroll=0, palette_query="")
+    """Hide palette and reset selection."""
+    return replace(state, palette_visible=False, palette_mode='command', palette_selected=0, palette_scroll=0, palette_query="")
+
+
+def show_playlist_palette(state: UIState, items: list[tuple[str, str, str, str]]) -> UIState:
+    """Show playlist palette with items."""
+    return replace(state, palette_visible=True, palette_mode='playlist', palette_items=items, palette_selected=0, palette_scroll=0, palette_query="")
 
 
 def update_palette_filter(state: UIState, query: str, items: list[tuple[str, str, str, str]]) -> UIState:

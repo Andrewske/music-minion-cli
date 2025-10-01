@@ -4,6 +4,41 @@ from blessed import Terminal
 from ..state import UIState
 
 
+def load_playlist_items() -> list[tuple[str, str, str, str]]:
+    """
+    Load playlists from database and convert to palette items format.
+
+    Returns:
+        List of palette items: (category, name, icon, description)
+    """
+    # Import here to avoid circular dependencies
+    from ....domain.playlists import crud as playlists
+
+    all_playlists = playlists.get_playlists_sorted_by_recent()
+    active = playlists.get_active_playlist()
+    active_id = active['id'] if active else None
+
+    items = []
+    for pl in all_playlists:
+        # Determine category and icon
+        category = pl['type'].capitalize()
+        icon = "★" if pl['id'] == active_id else "◦"
+
+        # Build description with track count and type
+        track_count = pl.get('track_count', 0)
+        desc = f"{track_count} tracks"
+        if pl['type'] == 'smart':
+            desc = f"Smart • {desc}"
+
+        # Add active indicator to description if active
+        if pl['id'] == active_id:
+            desc = f"ACTIVE • {desc}"
+
+        items.append((category, pl['name'], icon, desc))
+
+    return items
+
+
 def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
     """
     Render command palette with scrolling support.
@@ -30,16 +65,20 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
 
     line_num = 0
 
-    # Header
+    # Header - different based on palette mode
     if line_num < height:
-        header_text = "   Command Palette"
+        if state.palette_mode == 'playlist':
+            header_text = "   📋 Select Playlist"
+        else:
+            header_text = "   Command Palette"
         sys.stdout.write(term.move_xy(0, y + line_num) + term.bold_cyan(header_text))
         line_num += 1
 
-    # Render commands
+    # Render items
     if not filtered_commands:
         if line_num < height:
-            sys.stdout.write(term.move_xy(0, y + line_num) + term.white("  No matching commands"))
+            empty_msg = "  No playlists found" if state.palette_mode == 'playlist' else "  No matching commands"
+            sys.stdout.write(term.move_xy(0, y + line_num) + term.white(empty_msg))
             line_num += 1
     else:
         # Render items with scroll offset
