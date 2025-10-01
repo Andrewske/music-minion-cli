@@ -36,7 +36,7 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
     # Render commands
     if not filtered_commands:
         if line_num < height:
-            print(term.move_xy(0, y + line_num) + term.dim("  No matching commands"))
+            print(term.move_xy(0, y + line_num) + term.white("  No matching commands"))
             line_num += 1
     else:
         current_category = None
@@ -79,7 +79,7 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
                 item_line = (
                     term.bold(f"  {icon} ") +
                     term.cyan(cmd_text) +
-                    term.dim(f" {desc}")
+                    term.white(f" {desc}")
                 )
 
             print(term.move_xy(0, y + line_num) + item_line)
@@ -94,5 +94,5 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
     # Footer help text
     if line_num < height:
         footer = "   ↑↓ navigate  Enter select  Esc cancel"
-        print(term.move_xy(0, y + line_num) + term.dim(footer))
+        print(term.move_xy(0, y + line_num) + term.white(footer))
         line_num += 1

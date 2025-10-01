@@ -51,7 +51,7 @@ def render_dashboard(term: Terminal, state: UIState, y_start: int) -> int:
     elif 12 <= hour < 18:
         time_color = term.bold_blue
     elif 18 <= hour < 22:
-        time_color = term.orange
+        time_color = term.bold_yellow
     else:
         time_color = term.bold_magenta
 
@@ -67,7 +67,7 @@ def render_dashboard(term: Terminal, state: UIState, y_start: int) -> int:
 
     # Colorful separator
     separator_chars = []
-    colors = [term.cyan, term.blue, term.magenta, term.color_magenta]
+    colors = [term.cyan, term.blue, term.magenta, term.yellow]
     for i in range(term.width - 4):
         separator_chars.append(colors[i % 4]("━"))
     lines.append("".join(separator_chars))
@@ -78,8 +78,8 @@ def render_dashboard(term: Terminal, state: UIState, y_start: int) -> int:
         track_lines = format_track_display(metadata, term)
         lines.extend(track_lines)
     else:
-        lines.append(term.dim(f"{ICONS['note']} No track playing"))
-        lines.append(term.dim("  Waiting for music..."))
+        lines.append(term.white(f"{ICONS['note']} No track playing"))
+        lines.append(term.white("  Waiting for music..."))
 
     lines.append("")
 
@@ -93,8 +93,8 @@ def render_dashboard(term: Terminal, state: UIState, y_start: int) -> int:
             bpm_line = format_bpm_line(metadata.bpm, term)
             lines.append(bpm_line)
     else:
-        lines.append(term.dim("─" * 40))
-        lines.append(term.bold_yellow_on_red("⏸ Paused"))
+        lines.append(term.white("─" * 40))
+        lines.append(term.bold_yellow("⏸ Paused"))
 
     lines.append("")
 
@@ -103,9 +103,9 @@ def render_dashboard(term: Terminal, state: UIState, y_start: int) -> int:
         tag_lines = format_tags_and_notes(db_info.tags, db_info.notes, term)
         for line, style in tag_lines:
             if style == 'tag':
-                lines.append(term.bold_bright_blue(line))
+                lines.append(term.bold_blue(line))
             elif style == 'note':
-                lines.append(term.italic_bright_green(line))
+                lines.append(term.bold_green(line))
             else:
                 lines.append(term.blue(line))
 
@@ -113,11 +113,11 @@ def render_dashboard(term: Terminal, state: UIState, y_start: int) -> int:
         if db_info.rating is not None or db_info.last_played:
             rating_line = format_rating(db_info.rating, db_info.last_played, db_info.play_count)
             if db_info.rating and db_info.rating >= 80:
-                rating_style = term.bold_bright_red
+                rating_style = term.bold_red
             elif db_info.rating and db_info.rating >= 60:
-                rating_style = term.bold_bright_yellow
+                rating_style = term.bold_yellow
             elif db_info.rating and db_info.rating <= 20:
-                rating_style = term.dim
+                rating_style = term.white
             else:
                 rating_style = term.white
             lines.append(rating_style(rating_line))
@@ -130,17 +130,17 @@ def render_dashboard(term: Terminal, state: UIState, y_start: int) -> int:
         feedback = state.feedback_message
         if feedback:
             if "loved" in feedback.lower() or "❤️" in feedback:
-                style = term.bold_bright_red_on_black
+                style = term.bold_red
             elif "liked" in feedback.lower() or "👍" in feedback:
-                style = term.bold_bright_yellow_on_black
+                style = term.bold_yellow
             elif "archived" in feedback.lower():
-                style = term.bold_on_red
+                style = term.bold_red
             elif "skipped" in feedback.lower():
-                style = term.bold_cyan_on_black
+                style = term.bold_cyan
             elif "note" in feedback.lower():
-                style = term.bold_bright_green_on_black
+                style = term.bold_green
             else:
-                style = term.bold_bright_white_on_blue
+                style = term.bold_white
             lines.append(style(feedback))
 
     # Active playlist info
@@ -171,7 +171,7 @@ def format_track_display(metadata: TrackMetadata, term: Terminal) -> list[str]:
     """Format track information for display."""
     lines = []
     lines.append(term.bold_white(f"{ICONS['note']} {metadata.title}"))
-    lines.append(term.bright_blue(f"  by {metadata.artist}"))
+    lines.append(term.bold_blue(f"  by {metadata.artist}"))
 
     details = []
     if metadata.album:
@@ -186,7 +186,7 @@ def format_track_display(metadata: TrackMetadata, term: Terminal) -> list[str]:
         details.append(f"| {metadata.key}")
 
     if details:
-        lines.append(term.bright_blue("  " + " ".join(details)))
+        lines.append(term.blue("  " + " ".join(details)))
 
     return lines
 
@@ -194,7 +194,7 @@ def format_track_display(metadata: TrackMetadata, term: Terminal) -> list[str]:
 def create_progress_bar(position: float, duration: float, term: Terminal) -> str:
     """Create a colored progress bar."""
     if duration <= 0:
-        return term.dim("─" * 40)
+        return term.white("─" * 40)
 
     percentage = min(position / duration, 1.0)
     bar_width = 40
@@ -210,7 +210,7 @@ def create_progress_bar(position: float, duration: float, term: Terminal) -> str
         else:
             progress_parts.append(term.red("█"))
 
-    progress_parts.append(term.dim("░" * (bar_width - filled)))
+    progress_parts.append(term.white("░" * (bar_width - filled)))
 
     # Add time displays
     current = format_time(position)
