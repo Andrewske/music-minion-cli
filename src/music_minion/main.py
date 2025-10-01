@@ -808,8 +808,9 @@ def interactive_mode_blessed() -> None:
 
 def interactive_mode() -> None:
     """Run the interactive command loop."""
-    global current_config
+    global current_config, current_player_state, music_tracks
     import os
+    from .context import AppContext
 
     # Load config if not already loaded
     if not current_config.music.library_paths:
@@ -855,14 +856,21 @@ def interactive_mode() -> None:
 
     # Fallback to simple mode with Rich Console for consistent styling
     from rich.console import Console
-    console = Console()
+    console_instance = Console()
 
-    console.print("[bold green]Welcome to Music Minion CLI![/bold green]")
-    console.print("Type 'help' for available commands, or 'quit' to exit.")
-    console.print()
+    # Create initial application context
+    ctx = AppContext.create(current_config, console_instance)
+
+    # Load music library into context
+    ctx = ctx.with_tracks(music_tracks)
+
+    console_instance.print("[bold green]Welcome to Music Minion CLI![/bold green]")
+    console_instance.print("Type 'help' for available commands, or 'quit' to exit.")
+    console_instance.print()
 
     try:
-        while True:
+        should_continue = True
+        while should_continue:
             # Check for track completion periodically
             check_and_handle_track_completion()
 
@@ -870,17 +878,22 @@ def interactive_mode() -> None:
                 user_input = input("music-minion> ").strip()
                 command, args = parsers.parse_command(user_input)
 
-                if not router.handle_command(command, args):
-                    break
+                # Execute command with context
+                ctx, should_continue = router.handle_command(ctx, command, args)
+
+                # Sync global state from context for backward compatibility
+                current_player_state = ctx.player_state
+                music_tracks = ctx.music_tracks
+                current_config = ctx.config
 
             except KeyboardInterrupt:
-                console.print("\n[yellow]Use 'quit' or 'exit' to leave gracefully.[/yellow]")
+                console_instance.print("\n[yellow]Use 'quit' or 'exit' to leave gracefully.[/yellow]")
             except EOFError:
-                console.print("\n[green]Goodbye![/green]")
+                console_instance.print("\n[green]Goodbye![/green]")
                 break
 
     except Exception as e:
-        console.print(f"[red]An unexpected error occurred: {e}[/red]")
+        console_instance.print(f"[red]An unexpected error occurred: {e}[/red]")
         import sys
         sys.exit(1)
 

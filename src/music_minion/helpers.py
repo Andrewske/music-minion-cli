@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
+from .context import AppContext
 from .core import config
 from .core import database
 from .domain import library
@@ -15,22 +16,13 @@ from .domain import playback
 from .domain.playlists import exporters as playlist_export
 
 
-# Rich Console instance (imported from main)
-def get_console():
-    """Get Rich Console instance from main module."""
-    import sys
-    main_module = sys.modules['music_minion.main']
-    return main_module.console
-
-
-def safe_print(message: str, style: str = None) -> None:
+def safe_print(ctx: AppContext, message: str, style: Optional[str] = None) -> None:
     """Print using Rich Console if available, otherwise fallback to regular print."""
-    console = get_console()
-    if console:
+    if ctx.console:
         if style:
-            console.print(message, style=style)
+            ctx.console.print(message, style=style)
         else:
-            console.print(message)
+            ctx.console.print(message)
     else:
         print(message)
 
@@ -112,71 +104,79 @@ def ensure_mpv_available() -> bool:
     return True
 
 
-def ensure_library_loaded() -> bool:
-    """Ensure music library is loaded."""
-    import sys
-    main_module = sys.modules['music_minion.main']
+def ensure_library_loaded(ctx: AppContext) -> tuple[AppContext, bool]:
+    """Ensure music library is loaded.
 
-    if not main_module.music_tracks:
-        safe_print("Loading music library...", "blue")
-        main_module.current_config = config.load_config()
+    Args:
+        ctx: Application context
+
+    Returns:
+        (updated_context, success)
+    """
+    if not ctx.music_tracks:
+        safe_print(ctx, "Loading music library...", "blue")
 
         # Try to load from database first (much faster)
         db_tracks = database.get_all_tracks()
         if db_tracks:
             # Convert database tracks to library Track objects
-            main_module.music_tracks = [database.db_track_to_library_track(track) for track in db_tracks]
+            tracks = [database.db_track_to_library_track(track) for track in db_tracks]
             # Filter out files that no longer exist
             existing_tracks = []
-            for track in main_module.music_tracks:
+            for track in tracks:
                 if Path(track.file_path).exists():
                     existing_tracks.append(track)
-            main_module.music_tracks = existing_tracks
-            safe_print(f"Loaded {len(main_module.music_tracks)} tracks from database", "green")
+            ctx = ctx.with_tracks(existing_tracks)
+            safe_print(ctx, f"Loaded {len(existing_tracks)} tracks from database", "green")
 
         # If no database tracks or very few, fall back to filesystem scan
-        if not main_module.music_tracks:
-            safe_print("No tracks in database, scanning filesystem...", "yellow")
-            main_module.music_tracks = library.scan_music_library(main_module.current_config, show_progress=False)
+        if not ctx.music_tracks:
+            safe_print(ctx, "No tracks in database, scanning filesystem...", "yellow")
+            tracks = library.scan_music_library(ctx.config, show_progress=False)
 
-            if not main_module.music_tracks:
-                safe_print("No music files found in configured library paths.", "red")
-                safe_print("Run 'music-minion scan' to populate the database, or 'music-minion init' to set up library paths.", "yellow")
-                return False
+            if not tracks:
+                safe_print(ctx, "No music files found in configured library paths.", "red")
+                safe_print(ctx, "Run 'music-minion scan' to populate the database, or 'music-minion init' to set up library paths.", "yellow")
+                return ctx, False
 
-            safe_print(f"Scanned {len(main_module.music_tracks)} tracks from filesystem", "green")
+            ctx = ctx.with_tracks(tracks)
+            safe_print(ctx, f"Scanned {len(tracks)} tracks from filesystem", "green")
 
-    return True
+    return ctx, True
 
 
-def auto_export_if_enabled(playlist_id: int) -> None:
+def auto_export_if_enabled(playlist_id: int, ctx: Optional[AppContext] = None) -> None:
     """
     Auto-export a playlist if auto-export is enabled in config.
 
     Args:
         playlist_id: ID of the playlist to export
+        ctx: Optional application context (for config access). If None, loads config.
     """
-    import sys
-    main_module = sys.modules['music_minion.main']
+    # Get config from context or load it
+    if ctx:
+        cfg = ctx.config
+    else:
+        cfg = config.load_config()
 
-    if not main_module.current_config.playlists.auto_export:
+    if not cfg.playlists.auto_export:
         return
 
     # Validate library paths exist
-    if not main_module.current_config.music.library_paths:
+    if not cfg.music.library_paths:
         print("Warning: Cannot auto-export - no library paths configured", file=sys.stderr)
         return
 
     # Get library root from config
-    library_root = Path(main_module.current_config.music.library_paths[0]).expanduser()
+    library_root = Path(cfg.music.library_paths[0]).expanduser()
 
     # Silently export in the background - don't interrupt user workflow
     try:
         playlist_export.auto_export_playlist(
             playlist_id=playlist_id,
-            export_formats=main_module.current_config.playlists.export_formats,
+            export_formats=cfg.playlists.export_formats,
             library_root=library_root,
-            use_relative_paths=main_module.current_config.playlists.use_relative_paths
+            use_relative_paths=cfg.playlists.use_relative_paths
         )
     except (ValueError, FileNotFoundError, ImportError, OSError) as e:
         # Expected errors - log but don't interrupt workflow

@@ -4,8 +4,9 @@ Command routing for Music Minion CLI.
 Routes user commands to appropriate handler functions.
 """
 
-from typing import List
+from typing import List, Tuple
 
+from .context import AppContext
 from .core import config
 from .core import database
 from .domain import playback as playback_domain
@@ -103,142 +104,153 @@ Examples:
     print(help_text.strip())
 
 
-def handle_command(command: str, args: List[str]) -> bool:
+def handle_command(ctx: AppContext, command: str, args: List[str]) -> Tuple[AppContext, bool]:
     """
-    Handle a single command.
+    Handle a single command with explicit state passing.
+
+    Args:
+        ctx: Application context
+        command: Command name
+        args: Command arguments
 
     Returns:
-        True if the program should continue, False if it should exit
+        (updated_context, should_continue) - Updated context and whether to continue
     """
     if command in ['quit', 'exit']:
         # Clean up MPV player before exiting
-        from . import main
-        if playback_domain.is_mpv_running(main.current_player_state):
-            print("Stopping music playback_domain...")
-            playback_domain.stop_mpv(main.current_player_state)
+        if playback_domain.is_mpv_running(ctx.player_state):
+            print("Stopping music playback...")
+            playback_domain.stop_mpv(ctx.player_state)
         print("Goodbye!")
-        return False
+        return ctx, False
 
     elif command == 'help':
         print_help()
+        return ctx, True
 
     elif command == 'init':
-        return admin.handle_init_command()
+        return admin.handle_init_command(ctx)
 
     elif command == 'play':
-        return playback.handle_play_command(args)
+        return playback.handle_play_command(ctx, args)
 
     elif command == 'pause':
-        return playback.handle_pause_command()
+        return playback.handle_pause_command(ctx)
 
     elif command == 'resume':
-        return playback.handle_resume_command()
+        return playback.handle_resume_command(ctx)
 
     elif command == 'skip':
-        return playback.handle_skip_command()
+        return playback.handle_skip_command(ctx)
 
     elif command == 'shuffle':
-        return playback.handle_shuffle_command(args)
+        return playback.handle_shuffle_command(ctx, args)
 
     elif command == 'stop':
-        return playback.handle_stop_command()
+        return playback.handle_stop_command(ctx)
 
     elif command == 'killall':
-        return admin.handle_killall_command()
+        return admin.handle_killall_command(ctx)
 
     elif command == 'archive':
-        return rating.handle_archive_command()
+        return rating.handle_archive_command(ctx)
 
     elif command == 'like':
-        return rating.handle_like_command()
+        return rating.handle_like_command(ctx)
 
     elif command == 'love':
-        return rating.handle_love_command()
+        return rating.handle_love_command(ctx)
 
     elif command == 'note':
-        return rating.handle_note_command(args)
+        return rating.handle_note_command(ctx, args)
 
     elif command == 'status':
-        return playback.handle_status_command()
+        return playback.handle_status_command(ctx)
 
     elif command == 'stats':
-        return admin.handle_stats_command()
+        return admin.handle_stats_command(ctx)
 
     elif command == 'scan':
-        return admin.handle_scan_command()
+        return admin.handle_scan_command(ctx)
 
     elif command == 'migrate':
-        return admin.handle_migrate_command()
+        return admin.handle_migrate_command(ctx)
 
     elif command == 'playlist':
         if not args:
-            return playlist.handle_playlist_list_command()
+            return playlist.handle_playlist_list_command(ctx)
         elif args[0] == 'new':
-            return playlist.handle_playlist_new_command(args[1:])
+            return playlist.handle_playlist_new_command(ctx, args[1:])
         elif args[0] == 'delete':
-            return playlist.handle_playlist_delete_command(args[1:])
+            return playlist.handle_playlist_delete_command(ctx, args[1:])
         elif args[0] == 'rename':
-            return playlist.handle_playlist_rename_command(args[1:])
+            return playlist.handle_playlist_rename_command(ctx, args[1:])
         elif args[0] == 'show':
-            return playlist.handle_playlist_show_command(args[1:])
+            return playlist.handle_playlist_show_command(ctx, args[1:])
         elif args[0] == 'active':
-            return playlist.handle_playlist_active_command(args[1:])
+            return playlist.handle_playlist_active_command(ctx, args[1:])
         elif args[0] == 'import':
-            return playlist.handle_playlist_import_command(args[1:])
+            return playlist.handle_playlist_import_command(ctx, args[1:])
         elif args[0] == 'export':
-            return playlist.handle_playlist_export_command(args[1:])
+            return playlist.handle_playlist_export_command(ctx, args[1:])
         else:
             print(f"Unknown playlist subcommand: '{args[0]}'. Available: new, delete, rename, show, active, import, export")
+            return ctx, True
 
     elif command == 'add':
-        return track.handle_add_command(args)
+        return track.handle_add_command(ctx, args)
 
     elif command == 'remove':
-        return track.handle_remove_command(args)
+        return track.handle_remove_command(ctx, args)
 
     elif command == 'ai':
         if not args:
             print("Error: AI command requires a subcommand. Usage: ai <setup|analyze|test|usage>")
+            return ctx, True
         elif args[0] == 'setup':
-            return ai.handle_ai_setup_command(args[1:])
+            return ai.handle_ai_setup_command(ctx, args[1:])
         elif args[0] == 'analyze':
-            return ai.handle_ai_analyze_command()
+            return ai.handle_ai_analyze_command(ctx)
         elif args[0] == 'test':
-            return ai.handle_ai_test_command()
+            return ai.handle_ai_test_command(ctx)
         elif args[0] == 'usage':
-            return ai.handle_ai_usage_command(args[1:])
+            return ai.handle_ai_usage_command(ctx, args[1:])
         else:
             print(f"Unknown AI subcommand: '{args[0]}'. Available: setup, analyze, test, usage")
+            return ctx, True
 
     elif command == 'tag':
         if not args:
             print("Error: Tag command requires a subcommand. Usage: tag <remove|list>")
+            return ctx, True
         elif args[0] == 'remove':
-            return admin.handle_tag_remove_command(args[1:])
+            return admin.handle_tag_remove_command(ctx, args[1:])
         elif args[0] == 'list':
-            return admin.handle_tag_list_command()
+            return admin.handle_tag_list_command(ctx)
         else:
             print(f"Unknown tag subcommand: '{args[0]}'. Available: remove, list")
+            return ctx, True
 
     elif command == 'sync':
         if not args:
             print("Error: Sync command requires a subcommand. Usage: sync <export|import|status|rescan>")
+            return ctx, True
         elif args[0] == 'export':
-            return sync.handle_sync_export_command()
+            return sync.handle_sync_export_command(ctx)
         elif args[0] == 'import':
-            return sync.handle_sync_import_command(args[1:])
+            return sync.handle_sync_import_command(ctx, args[1:])
         elif args[0] == 'status':
-            return sync.handle_sync_status_command()
+            return sync.handle_sync_status_command(ctx)
         elif args[0] == 'rescan':
-            return sync.handle_sync_rescan_command(args[1:])
+            return sync.handle_sync_rescan_command(ctx, args[1:])
         else:
             print(f"Unknown sync subcommand: '{args[0]}'. Available: export, import, status, rescan")
+            return ctx, True
 
     elif command == '':
         # Empty command, do nothing
-        pass
+        return ctx, True
 
     else:
         print(f"Unknown command: '{command}'. Type 'help' for available commands.")
-
-    return True
+        return ctx, True

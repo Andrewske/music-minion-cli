@@ -4,30 +4,27 @@ AI command handlers for Music Minion CLI.
 Handles: ai setup, ai analyze, ai test, ai usage
 """
 
-from typing import List
+from typing import List, Tuple
 
+from ..context import AppContext
 from ..domain import ai
 from ..core import database
 from ..domain import library
 
 
-def get_player_state():
-    """Get current player state from main module."""
-    from .. import main
-    return main.current_player_state
+def handle_ai_setup_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
+    """Handle ai setup command - configure OpenAI API key.
 
+    Args:
+        ctx: Application context
+        args: Command arguments
 
-def get_music_tracks():
-    """Get music tracks from main module."""
-    from .. import main
-    return main.music_tracks
-
-
-def handle_ai_setup_command(args: List[str]) -> bool:
-    """Handle ai setup command - configure OpenAI API key."""
+    Returns:
+        (updated_context, should_continue)
+    """
     if not args:
         print("Error: Please provide an API key. Usage: ai setup <key>")
-        return True
+        return ctx, True
 
     api_key = args[0]
 
@@ -40,28 +37,32 @@ def handle_ai_setup_command(args: List[str]) -> bool:
     except Exception as e:
         print(f"❌ Error storing API key: {e}")
 
-    return True
+    return ctx, True
 
 
-def handle_ai_analyze_command() -> bool:
-    """Handle ai analyze command - analyze current track with AI."""
-    current_player_state = get_player_state()
-    music_tracks = get_music_tracks()
+def handle_ai_analyze_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+    """Handle ai analyze command - analyze current track with AI.
 
-    if not current_player_state.current_track:
+    Args:
+        ctx: Application context
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    if not ctx.player_state.current_track:
         print("No track is currently playing")
-        return True
+        return ctx, True
 
     # Find current track
     current_track = None
-    for track in music_tracks:
-        if track.file_path == current_player_state.current_track:
+    for track in ctx.music_tracks:
+        if track.file_path == ctx.player_state.current_track:
             current_track = track
             break
 
     if not current_track:
         print("Could not find current track information")
-        return True
+        return ctx, True
 
     print(f"🤖 Analyzing track: {library.get_display_name(current_track)}")
 
@@ -87,11 +88,18 @@ def handle_ai_analyze_command() -> bool:
     except Exception as e:
         print(f"❌ Error during AI analysis: {e}")
 
-    return True
+    return ctx, True
 
 
-def handle_ai_test_command() -> bool:
-    """Handle ai test command - test AI prompt with random track."""
+def handle_ai_test_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+    """Handle ai test command - test AI prompt with random track.
+
+    Args:
+        ctx: Application context
+
+    Returns:
+        (updated_context, should_continue)
+    """
     try:
         print("🧪 Running AI prompt test with random track...")
 
@@ -121,15 +129,23 @@ def handle_ai_test_command() -> bool:
             print(f"❌ Test failed: {error_msg}")
             print(f"📄 Report with input data saved: {report_file}")
 
-        return True
+        return ctx, True
 
     except Exception as e:
         print(f"❌ Error during AI test: {e}")
-        return True
+        return ctx, True
 
 
-def handle_ai_usage_command(args: List[str]) -> bool:
-    """Handle ai usage command - show AI usage statistics."""
+def handle_ai_usage_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
+    """Handle ai usage command - show AI usage statistics.
+
+    Args:
+        ctx: Application context
+        args: Command arguments
+
+    Returns:
+        (updated_context, should_continue)
+    """
     try:
         if args and args[0] == 'today':
             stats = database.get_ai_usage_stats(days=1)
@@ -143,7 +159,7 @@ def handle_ai_usage_command(args: List[str]) -> bool:
 
         print(usage_text)
 
-        return True
+        return ctx, True
     except Exception as e:
         print(f"❌ Error getting AI usage stats: {e}")
-        return True
+        return ctx, True

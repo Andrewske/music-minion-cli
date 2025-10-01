@@ -7,33 +7,23 @@ Handles: init, scan, migrate, killall, stats, tag (remove/list)
 import subprocess
 import glob
 import os
-from typing import List
+from typing import List, Tuple
 
+from ..context import AppContext
 from ..core import config
 from ..core import database
 from ..domain import library
 
 
-def get_player_state():
-    """Get current player state from main module."""
-    from .. import main
-    return main.current_player_state
+def handle_init_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+    """Handle init command - initialize Music Minion configuration.
 
+    Args:
+        ctx: Application context
 
-def get_music_tracks():
-    """Get music tracks from main module."""
-    from .. import main
-    return main.music_tracks
-
-
-def get_current_track_id():
-    """Get current track database ID."""
-    from .. import main
-    return main.get_current_track_id()
-
-
-def handle_init_command() -> bool:
-    """Handle init command - initialize Music Minion configuration."""
+    Returns:
+        (updated_context, should_continue)
+    """
     print("Initializing Music Minion configuration...")
     config.ensure_directories()
     cfg = config.load_config()
@@ -46,11 +36,21 @@ def handle_init_command() -> bool:
 
     print(f"Library paths: {cfg.music.library_paths}")
     print("Music Minion is ready to use!")
-    return True
+
+    # Update context with loaded config
+    ctx = ctx.with_config(cfg)
+    return ctx, True
 
 
-def handle_killall_command() -> bool:
-    """Kill all MPV processes (emergency stop)."""
+def handle_killall_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+    """Kill all MPV processes (emergency stop).
+
+    Args:
+        ctx: Application context
+
+    Returns:
+        (updated_context, should_continue)
+    """
     try:
         result = subprocess.run(['pkill', 'mpv'], capture_output=True)
         if result.returncode == 0:
@@ -71,11 +71,18 @@ def handle_killall_command() -> bool:
     except Exception as e:
         print(f"Error killing MPV: {e}")
 
-    return True
+    return ctx, True
 
 
-def handle_stats_command() -> bool:
-    """Handle stats command - show database statistics."""
+def handle_stats_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+    """Handle stats command - show database statistics.
+
+    Args:
+        ctx: Application context
+
+    Returns:
+        (updated_context, should_continue)
+    """
     try:
         analytics = database.get_library_analytics()
 
@@ -97,24 +104,30 @@ def handle_stats_command() -> bool:
                 track_info = f"{track_data['artist']} - {track_data['title']}" if track_data['artist'] else track_data['title']
                 print(f"  {track_data['rating_count']} ratings: {track_info}")
 
-        return True
+        return ctx, True
     except Exception as e:
         print(f"❌ Error getting statistics: {e}")
-        return True
+        return ctx, True
 
 
-def handle_scan_command() -> bool:
-    """Handle scan command - scan library and populate database."""
+def handle_scan_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+    """Handle scan command - scan library and populate database.
+
+    Args:
+        ctx: Application context
+
+    Returns:
+        (updated_context, should_continue)
+    """
     print("🔍 Starting library scan...")
 
     try:
-        # Load config and scan library
-        cfg = config.load_config()
-        tracks = library.scan_music_library(cfg, show_progress=True)
+        # Scan library
+        tracks = library.scan_music_library(ctx.config, show_progress=True)
 
         if not tracks:
             print("❌ No music files found in configured library paths")
-            return True
+            return ctx, True
 
         # Add all tracks to database
         print(f"\n💾 Adding {len(tracks)} tracks to database...")
@@ -166,53 +179,68 @@ def handle_scan_command() -> bool:
             print(f"  Average BPM: {stats['avg_bpm']:.1f}")
             print(f"  Tracks with key: {stats['tracks_with_key']}")
 
-        return True
+        # Update context with scanned tracks
+        ctx = ctx.with_tracks(tracks)
+        return ctx, True
 
     except Exception as e:
         print(f"❌ Error scanning library: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        return ctx, False
 
 
-def handle_migrate_command() -> bool:
-    """Handle migrate command - run database migrations."""
+def handle_migrate_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+    """Handle migrate command - run database migrations.
+
+    Args:
+        ctx: Application context
+
+    Returns:
+        (updated_context, should_continue)
+    """
     print("Running database migrations...")
     database.init_database()
     print("✅ Database migrations complete")
-    return True
+    return ctx, True
 
 
-def handle_tag_remove_command(args: List[str]) -> bool:
-    """Handle tag remove command - blacklist a tag from current track."""
-    current_player_state = get_player_state()
-    music_tracks = get_music_tracks()
+def handle_tag_remove_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
+    """Handle tag remove command - blacklist a tag from current track.
 
+    Args:
+        ctx: Application context
+        args: Command arguments
+
+    Returns:
+        (updated_context, should_continue)
+    """
     if not args:
         print("Error: Please specify a tag to remove. Usage: tag remove <tag>")
-        return True
+        return ctx, True
 
-    if not current_player_state.current_track:
+    if not ctx.player_state.current_track:
         print("No track is currently playing")
-        return True
+        return ctx, True
 
     # Find current track
     current_track = None
-    for track in music_tracks:
-        if track.file_path == current_player_state.current_track:
+    for track in ctx.music_tracks:
+        if track.file_path == ctx.player_state.current_track:
             current_track = track
             break
 
     if not current_track:
         print("Could not find current track information")
-        return True
+        return ctx, True
 
     # Get track ID
-    track_id = get_current_track_id()
-    if not track_id:
+    db_track = database.get_track_by_path(ctx.player_state.current_track)
+    if not db_track:
         print("Could not find track in database")
-        return True
+        return ctx, True
 
+    track_id = db_track['id']
     tag_name = ' '.join(args).lower()
 
     try:
@@ -225,34 +253,40 @@ def handle_tag_remove_command(args: List[str]) -> bool:
     except Exception as e:
         print(f"❌ Error removing tag: {e}")
 
-    return True
+    return ctx, True
 
 
-def handle_tag_list_command() -> bool:
-    """Handle tag list command - show all tags for current track."""
-    current_player_state = get_player_state()
-    music_tracks = get_music_tracks()
+def handle_tag_list_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+    """Handle tag list command - show all tags for current track.
 
-    if not current_player_state.current_track:
+    Args:
+        ctx: Application context
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    if not ctx.player_state.current_track:
         print("No track is currently playing")
-        return True
+        return ctx, True
 
     # Find current track
     current_track = None
-    for track in music_tracks:
-        if track.file_path == current_player_state.current_track:
+    for track in ctx.music_tracks:
+        if track.file_path == ctx.player_state.current_track:
             current_track = track
             break
 
     if not current_track:
         print("Could not find current track information")
-        return True
+        return ctx, True
 
     # Get track ID
-    track_id = get_current_track_id()
-    if not track_id:
+    db_track = database.get_track_by_path(ctx.player_state.current_track)
+    if not db_track:
         print("Could not find track in database")
-        return True
+        return ctx, True
+
+    track_id = db_track['id']
 
     try:
         tags = database.get_track_tags(track_id, include_blacklisted=False)
@@ -280,4 +314,4 @@ def handle_tag_list_command() -> bool:
     except Exception as e:
         print(f"❌ Error getting tags: {e}")
 
-    return True
+    return ctx, True

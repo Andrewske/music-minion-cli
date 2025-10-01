@@ -5,114 +5,92 @@ Handles: play, pause, resume, stop, skip, shuffle, status
 """
 
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
-from ..core import config
+from ..context import AppContext
 from ..core import database
 from ..domain import library
 from ..domain import playback
-from ..domain import ai
 from ..domain import playlists
 
 
-def get_player_state():
-    """Get current player state from main module."""
-    from .. import main
-    return main.current_player_state
-
-
-def set_player_state(state):
-    """Set player state in main module."""
-    from .. import main
-    main.current_player_state = state
-
-
-def get_music_tracks():
-    """Get music tracks from main module."""
-    from .. import main
-    return main.music_tracks
-
-
-def get_config():
-    """Get current config from main module."""
-    from .. import main
-    return main.current_config
-
-
-def safe_print(message: str, style: str = None) -> None:
+def safe_print(ctx: AppContext, message: str, style: Optional[str] = None) -> None:
     """Print using Rich Console if available."""
-    from .. import main
-    main.safe_print(message, style)
+    if ctx.console:
+        if style:
+            ctx.console.print(message, style=style)
+        else:
+            ctx.console.print(message)
+    else:
+        print(message)
 
 
-def ensure_mpv_available() -> bool:
-    """Ensure MPV is available."""
-    from .. import helpers
-    return helpers.ensure_mpv_available()
-
-
-def ensure_library_loaded() -> bool:
-    """Ensure music library is loaded."""
-    from .. import helpers
-    return helpers.ensure_library_loaded()
-
-
-def get_available_tracks() -> List[library.Track]:
+def get_available_tracks(ctx: AppContext) -> List[library.Track]:
     """Get available tracks (respects active playlist and excludes archived)."""
-    from .. import main
-    return main.get_available_tracks()
+    # Get archived track IDs
+    archived_ids = set(database.get_archived_track_ids())
+
+    # Filter by active playlist if set
+    active = playlists.get_active_playlist()
+    if active:
+        playlist_tracks = playlists.get_playlist_tracks(active['id'])
+        playlist_paths = {t['file_path'] for t in playlist_tracks}
+        available = [
+            t for t in ctx.music_tracks
+            if t.file_path in playlist_paths
+        ]
+    else:
+        available = ctx.music_tracks
+
+    # Exclude archived tracks
+    available = [
+        t for t in available
+        if database.get_track_by_path(t.file_path) is None
+        or database.get_track_by_path(t.file_path)['id'] not in archived_ids
+    ]
+
+    return available
 
 
-def get_current_track_id() -> Optional[int]:
-    """Get current track database ID."""
-    from .. import main
-    return main.get_current_track_id()
-
-
-def play_track(track: library.Track, playlist_position: Optional[int] = None) -> bool:
+def play_track(ctx: AppContext, track: library.Track, playlist_position: Optional[int] = None) -> Tuple[AppContext, bool]:
     """
     Play a specific track.
 
     Args:
+        ctx: Application context
         track: Track to play
         playlist_position: Optional 0-based position in active playlist
 
     Returns:
-        True to continue interactive loop
+        (updated_context, should_continue)
     """
-    from pathlib import Path
-
-    current_player_state = get_player_state()
-    current_config = get_config()
-
     # Validate track file exists before attempting playback
     if not Path(track.file_path).exists():
-        safe_print(f"❌ File not found: {track.file_path}", "red")
-        safe_print("Track may have been moved or deleted", "yellow")
-        return True
+        safe_print(ctx, f"❌ File not found: {track.file_path}", "red")
+        safe_print(ctx, "Track may have been moved or deleted", "yellow")
+        return ctx, True
 
     # Start MPV if not running
-    if not playback.is_mpv_running(current_player_state):
+    if not playback.is_mpv_running(ctx.player_state):
         print("Starting music playback...")
-        new_state = playback.start_mpv(current_config)
+        new_state = playback.start_mpv(ctx.config)
         if not new_state:
             print("Failed to start music player")
-            return True
-        current_player_state = new_state
-        set_player_state(current_player_state)
+            return ctx, True
+        ctx = ctx.with_player_state(new_state)
 
     # Play the track
-    new_state, success = playback.play_file(current_player_state, track.file_path)
-    set_player_state(new_state)
+    new_state, success = playback.play_file(ctx.player_state, track.file_path)
+    ctx = ctx.with_player_state(new_state)
 
     if success:
-        safe_print(f"♪ Now playing: {library.get_display_name(track)}", "cyan")
+        safe_print(ctx, f"♪ Now playing: {library.get_display_name(track)}", "cyan")
         if track.duration:
-            safe_print(f"   Duration: {library.get_duration_str(track)}", "blue")
+            safe_print(ctx, f"   Duration: {library.get_duration_str(track)}", "blue")
 
         dj_info = library.get_dj_info(track)
         if dj_info != "No DJ metadata":
-            safe_print(f"   {dj_info}", "magenta")
+            safe_print(ctx, f"   {dj_info}", "magenta")
 
         # Store track in database
         track_id = database.get_or_create_track(
@@ -136,103 +114,132 @@ def play_track(track: library.Track, playlist_position: Optional[int] = None) ->
                 if position is not None:
                     playback.update_playlist_position(active['id'], track_id, position)
     else:
-        safe_print("❌ Failed to play track", "red")
+        safe_print(ctx, "❌ Failed to play track", "red")
 
-    return True
+    return ctx, True
 
 
-def handle_play_command(args: List[str]) -> bool:
-    """Handle play command - start playback or play specific track."""
-    current_player_state = get_player_state()
-    music_tracks = get_music_tracks()
+def handle_play_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
+    """Handle play command - start playback or play specific track.
 
-    if not ensure_mpv_available() or not ensure_library_loaded():
-        return True
+    Args:
+        ctx: Application context
+        args: Command arguments
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    # Check MPV availability
+    if not playback.check_mpv_available():
+        print("Error: MPV is not installed or not available in PATH.")
+        return ctx, True
+
+    # Ensure library is loaded
+    if not ctx.music_tracks:
+        print("No music library loaded. Please run 'scan' command first.")
+        return ctx, True
 
     # If no arguments, play random track or resume current
     if not args:
-        if current_player_state.current_track:
+        if ctx.player_state.current_track:
             # Resume current track
-            new_state, success = playback.resume_playback(current_player_state)
-            set_player_state(new_state)
+            new_state, success = playback.resume_playback(ctx.player_state)
+            ctx = ctx.with_player_state(new_state)
             if success:
-                safe_print("▶ Resumed playback", "green")
+                safe_print(ctx, "▶ Resumed playback", "green")
             else:
-                safe_print("❌ Failed to resume playback", "red")
+                safe_print(ctx, "❌ Failed to resume playback", "red")
         else:
             # Play random track from available (non-archived) tracks
-            available_tracks = get_available_tracks()
+            available_tracks = get_available_tracks(ctx)
             if available_tracks:
                 track = library.get_random_track(available_tracks)
-                return play_track(track)
+                return play_track(ctx, track)
             else:
                 print("No tracks available to play (all may be archived)")
     else:
         # Search for track by query
         query = ' '.join(args)
-        results = library.search_tracks(music_tracks, query)
+        results = library.search_tracks(ctx.music_tracks, query)
 
         if results:
             track = results[0]  # Play first match
             print(f"Playing: {library.get_display_name(track)}")
-            return play_track(track)
+            return play_track(ctx, track)
         else:
             print(f"No tracks found matching: {query}")
 
-    return True
+    return ctx, True
 
 
-def handle_pause_command() -> bool:
-    """Handle pause command."""
-    current_player_state = get_player_state()
+def handle_pause_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+    """Handle pause command.
 
-    if not playback.is_mpv_running(current_player_state):
+    Args:
+        ctx: Application context
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    if not playback.is_mpv_running(ctx.player_state):
         print("No music is currently playing")
-        return True
+        return ctx, True
 
-    new_state, success = playback.pause_playback(current_player_state)
-    set_player_state(new_state)
+    new_state, success = playback.pause_playback(ctx.player_state)
+    ctx = ctx.with_player_state(new_state)
 
     if success:
         print("⏸ Paused")
     else:
         print("Failed to pause playback")
 
-    return True
+    return ctx, True
 
 
-def handle_resume_command() -> bool:
-    """Handle resume command."""
-    current_player_state = get_player_state()
+def handle_resume_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+    """Handle resume command.
 
-    if not playback.is_mpv_running(current_player_state):
+    Args:
+        ctx: Application context
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    if not playback.is_mpv_running(ctx.player_state):
         print("No music player is running")
-        return True
+        return ctx, True
 
-    new_state, success = playback.resume_playback(current_player_state)
-    set_player_state(new_state)
+    new_state, success = playback.resume_playback(ctx.player_state)
+    ctx = ctx.with_player_state(new_state)
 
     if success:
         print("▶ Resumed")
     else:
         print("Failed to resume playback")
 
-    return True
+    return ctx, True
 
 
-def handle_skip_command() -> bool:
-    """Handle skip command - play next track (sequential or random based on shuffle mode)."""
-    current_player_state = get_player_state()
+def handle_skip_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+    """Handle skip command - play next track (sequential or random based on shuffle mode).
 
-    if not ensure_library_loaded():
-        return True
+    Args:
+        ctx: Application context
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    # Ensure library is loaded
+    if not ctx.music_tracks:
+        print("No music library loaded. Please run 'scan' command first.")
+        return ctx, True
 
     # Get available tracks (excluding archived ones)
-    available_tracks = get_available_tracks()
+    available_tracks = get_available_tracks(ctx)
 
     if not available_tracks:
         print("No more tracks to play (all may be archived)")
-        return True
+        return ctx, True
 
     # Check shuffle mode
     shuffle_enabled = playback.get_shuffle_mode()
@@ -242,8 +249,8 @@ def handle_skip_command() -> bool:
     if not shuffle_enabled and active:
         # Get current track ID
         current_track_id = None
-        if current_player_state.current_track:
-            db_track = database.get_track_by_path(current_player_state.current_track)
+        if ctx.player_state.current_track:
+            db_track = database.get_track_by_path(ctx.player_state.current_track)
             if db_track:
                 current_track_id = db_track['id']
 
@@ -278,7 +285,7 @@ def handle_skip_command() -> bool:
                 # Found non-archived track - get its position for optimization
                 position = playback.get_track_position_in_playlist(playlist_tracks, next_db_track['id'])
                 print("⏭ Next track (sequential)...")
-                return play_track(next_track, position)
+                return play_track(ctx, next_track, position)
 
             # Track is archived, continue to next
             current_track_id = next_db_track['id']
@@ -286,89 +293,106 @@ def handle_skip_command() -> bool:
 
         # All tracks in playlist are archived
         print("No non-archived tracks remaining in playlist")
-        return True
+        return ctx, True
 
     # Shuffle mode or no active playlist: random selection
     # Remove current track from options if possible
-    if current_player_state.current_track and len(available_tracks) > 1:
-        available_tracks = [t for t in available_tracks if t.file_path != current_player_state.current_track]
+    if ctx.player_state.current_track and len(available_tracks) > 1:
+        available_tracks = [t for t in available_tracks if t.file_path != ctx.player_state.current_track]
 
     if available_tracks:
         track = library.get_random_track(available_tracks)
         if track:
             print("⏭ Skipping to next track...")
-            return play_track(track)
+            return play_track(ctx, track)
 
     print("No more tracks to play (all may be archived)")
-    return True
+    return ctx, True
 
 
-def handle_shuffle_command(args: List[str]) -> bool:
-    """Handle shuffle command - toggle or show shuffle mode."""
+def handle_shuffle_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
+    """Handle shuffle command - toggle or show shuffle mode.
+
+    Args:
+        ctx: Application context
+        args: Command arguments
+
+    Returns:
+        (updated_context, should_continue)
+    """
     if not args:
         # Show current mode
         shuffle_enabled = playback.get_shuffle_mode()
         mode = "ON (random playback)" if shuffle_enabled else "OFF (sequential playback)"
         print(f"🔀 Shuffle mode: {mode}")
-        return True
+        return ctx, True
 
     # Handle shuffle on/off
     subcommand = args[0].lower()
     if subcommand == 'on':
         playback.set_shuffle_mode(True)
         print("🔀 Shuffle mode enabled (random playback)")
-        return True
+        return ctx, True
     elif subcommand == 'off':
         playback.set_shuffle_mode(False)
         print("🔁 Sequential mode enabled (play in order)")
-        return True
+        return ctx, True
     else:
         print(f"Unknown shuffle option: '{subcommand}'. Use 'shuffle on' or 'shuffle off'")
-        return True
+        return ctx, True
 
 
-def handle_stop_command() -> bool:
-    """Handle stop command."""
-    current_player_state = get_player_state()
+def handle_stop_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+    """Handle stop command.
 
-    if not playback.is_mpv_running(current_player_state):
+    Args:
+        ctx: Application context
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    if not playback.is_mpv_running(ctx.player_state):
         print("No music is currently playing")
-        return True
+        return ctx, True
 
-    new_state, success = playback.stop_playback(current_player_state)
-    set_player_state(new_state)
+    new_state, success = playback.stop_playback(ctx.player_state)
+    ctx = ctx.with_player_state(new_state)
 
     if success:
         print("⏹ Stopped")
     else:
         print("Failed to stop playback")
 
-    return True
+    return ctx, True
 
 
-def handle_status_command() -> bool:
-    """Handle status command - show current player and track status."""
-    current_player_state = get_player_state()
-    music_tracks = get_music_tracks()
+def handle_status_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+    """Handle status command - show current player and track status.
 
+    Args:
+        ctx: Application context
+
+    Returns:
+        (updated_context, should_continue)
+    """
     print("Music Minion Status:")
     print("─" * 40)
 
-    if not playback.is_mpv_running(current_player_state):
+    if not playback.is_mpv_running(ctx.player_state):
         print("♪ Player: Not running")
         print("♫ Track: None")
-        return True
+        return ctx, True
 
     # Get current status from player
-    status = playback.get_player_status(current_player_state)
-    position, duration, percent = playback.get_progress_info(current_player_state)
+    status = playback.get_player_status(ctx.player_state)
+    position, duration, percent = playback.get_progress_info(ctx.player_state)
 
     print(f"♪ Player: {'Playing' if status['playing'] else 'Paused'}")
 
     if status['file']:
         # Find track info
         current_track = None
-        for track in music_tracks:
+        for track in ctx.music_tracks:
             if track.file_path == status['file']:
                 current_track = track
                 break
@@ -416,8 +440,8 @@ def handle_status_command() -> bool:
     print(f"🔀 Shuffle: {shuffle_mode}")
 
     # Library stats
-    if music_tracks:
-        available = get_available_tracks()
-        print(f"📚 Library: {len(music_tracks)} tracks loaded, {len(available)} available for playback")
+    if ctx.music_tracks:
+        available = get_available_tracks(ctx)
+        print(f"📚 Library: {len(ctx.music_tracks)} tracks loaded, {len(available)} available for playback")
 
-    return True
+    return ctx, True

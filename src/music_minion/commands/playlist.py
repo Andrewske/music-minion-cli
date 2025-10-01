@@ -8,17 +8,19 @@ Handles: playlist list, playlist new, playlist delete, playlist rename,
 import shlex
 import sys
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.styles import Style
 
+from ..context import AppContext
 from ..core import config
 from ..core import database
 from ..domain import library
 from ..domain import playback
 from ..domain import ai
 from .. import ui
+from .. import helpers
 from ..domain import playlists
 from ..domain.playlists import filters as playlist_filters
 from ..domain.playlists import ai_parser as playlist_ai
@@ -27,101 +29,29 @@ from ..domain.playlists import exporters as playlist_export
 from ..utils import autocomplete
 
 
-def get_player_state() -> playback.PlayerState:
-    """Get current player state from main module."""
-    from .. import main
-    return main.current_player_state
-
-
-def get_music_tracks() -> List[library.Track]:
-    """Get music tracks from main module."""
-    from .. import main
-    return main.music_tracks
-
-
-def get_config() -> config.Config:
-    """Get current config from main module."""
-    from .. import main
-    return main.current_config
-
-
-def safe_print(message: str, style: str = None) -> None:
-    """Print using Rich Console if available."""
-    from .. import main
-    return main.safe_print(message, style)
-
-
-def parse_quoted_args(args: List[str]) -> List[str]:
-    """Parse command arguments respecting quoted strings."""
-    from .. import main
-    return main.parse_quoted_args(args)
-
-
-def play_track(track: library.Track, playlist_position: int = None) -> bool:
-    """Play a specific track."""
-    from .. import main
-    return main.play_track(track, playlist_position)
-
-
-def ensure_library_loaded() -> bool:
-    """Ensure music library is loaded."""
-    from .. import main
-    return main.ensure_library_loaded()
-
-
-def auto_export_if_enabled(playlist_id: int) -> None:
-    """
-    Auto-export a playlist if auto-export is enabled in config.
-
-    Args:
-        playlist_id: ID of the playlist to export
-    """
-    current_config = get_config()
-
-    if not current_config.playlists.auto_export:
-        return
-
-    # Validate library paths exist
-    if not current_config.music.library_paths:
-        print("Warning: Cannot auto-export - no library paths configured", file=sys.stderr)
-        return
-
-    # Get library root from config
-    library_root = Path(current_config.music.library_paths[0]).expanduser()
-
-    # Silently export in the background - don't interrupt user workflow
-    try:
-        playlist_export.auto_export_playlist(
-            playlist_id=playlist_id,
-            export_formats=current_config.playlists.export_formats,
-            library_root=library_root,
-            use_relative_paths=current_config.playlists.use_relative_paths
-        )
-    except (ValueError, FileNotFoundError, ImportError, OSError) as e:
-        # Expected errors - log but don't interrupt workflow
-        print(f"Auto-export failed: {e}", file=sys.stderr)
-    except Exception as e:
-        # Unexpected errors - log for debugging
-        print(f"Unexpected error during auto-export: {e}", file=sys.stderr)
-
-
-def handle_playlist_list_command() -> bool:
+def handle_playlist_list_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     """
     Handle playlist command - interactive dropdown with fuzzy search.
     Uses prompt_toolkit for a smooth autocomplete experience.
+
+    Args:
+        ctx: Application context
+
+    Returns:
+        (updated_context, should_continue)
     """
     try:
-        playlists = playlists.get_playlists_sorted_by_recent()
+        all_playlists = playlists.get_playlists_sorted_by_recent()
 
-        if not playlists:
+        if not all_playlists:
             print("No playlists found. Create one with: playlist new manual <name>")
-            return True
+            return ctx, True
 
         # Check which one is active
         active = playlists.get_active_playlist()
         active_id = active['id'] if active else None
 
-        print(f"\n📋 Select a playlist ({len(playlists)} available)")
+        print(f"\n📋 Select a playlist ({len(all_playlists)} available)")
         print("💡 Tip: Type to search, use arrow keys to navigate, Enter to select, Ctrl+C to cancel")
         print()
 
@@ -146,18 +76,18 @@ def handle_playlist_list_command() -> bool:
 
             if not selected_name:
                 print("No playlist selected")
-                return True
+                return ctx, True
 
             # Find the selected playlist
             selected_playlist = None
-            for pl in playlists:
+            for pl in all_playlists:
                 if pl['name'] == selected_name:
                     selected_playlist = pl
                     break
 
             if not selected_playlist:
                 print(f"❌ Playlist '{selected_name}' not found")
-                return True
+                return ctx, True
 
             # Activate playlist
             if playlists.set_active_playlist(selected_playlist['id']):
@@ -168,10 +98,10 @@ def handle_playlist_list_command() -> bool:
                 if playlist_tracks:
                     # Convert DB track to library.Track and play
                     first_track = database.db_track_to_library_track(playlist_tracks[0])
-                    if play_track(first_track, playlist_position=0):
-                        print(f"🎵 Now playing: {library.get_display_name(first_track)}")
-                    else:
-                        print("❌ Failed to play track")
+                    # Import play_track from playback commands
+                    from .playback import play_track
+                    ctx, _ = play_track(ctx, first_track, playlist_position=0)
+                    print(f"🎵 Now playing: {library.get_display_name(first_track)}")
                 else:
                     print(f"⚠️  Playlist is empty")
             else:
@@ -180,12 +110,12 @@ def handle_playlist_list_command() -> bool:
         except KeyboardInterrupt:
             print("\n⚠️  Playlist selection cancelled")
 
-        return True
+        return ctx, True
     except Exception as e:
         print(f"❌ Error browsing playlists: {e}")
         import traceback
         traceback.print_exc()
-        return True
+        return ctx, True
 
 
 def smart_playlist_wizard(name: str) -> bool:
@@ -206,7 +136,7 @@ def smart_playlist_wizard(name: str) -> bool:
         playlist_id = playlists.create_playlist(name, 'smart', description=None)
     except ValueError as e:
         print(f"❌ Error: {e}")
-        return True
+        return ctx, True
 
     filters_added = []
 
@@ -230,7 +160,7 @@ def smart_playlist_wizard(name: str) -> bool:
                 print("❌ You must add at least one filter for a smart playlist")
                 # Delete the empty playlist
                 playlists.delete_playlist(playlist_id)
-                return True
+                return ctx, True
             break
 
         if field not in playlist_filters.VALID_FIELDS:
@@ -319,7 +249,7 @@ def smart_playlist_wizard(name: str) -> bool:
         if confirm == 'n':
             playlists.delete_playlist(playlist_id)
             print("❌ Smart playlist cancelled")
-            return True
+            return ctx, True
 
         # Update track count for the smart playlist
         playlists.update_playlist_track_count(playlist_id)
@@ -334,9 +264,9 @@ def smart_playlist_wizard(name: str) -> bool:
     except Exception as e:
         print(f"❌ Error evaluating filters: {e}")
         playlists.delete_playlist(playlist_id)
-        return True
+        return ctx, True
 
-    return True
+    return ctx, True
 
 
 def validate_filters_list(filters: List[playlist_ai.FilterDict]) -> List[str]:
@@ -370,7 +300,7 @@ def ai_smart_playlist_wizard(name: str, description: str) -> bool:
     # Check API key early before doing anything
     if not ai.get_api_key():
         print("❌ No OpenAI API key found. Use 'ai setup <key>' to configure.")
-        return True
+        return ctx, True
 
     print(f"\n🤖 AI Smart Playlist Wizard: {name}")
     print("=" * 60)
@@ -390,10 +320,10 @@ def ai_smart_playlist_wizard(name: str, description: str) -> bool:
         print(f"   Estimated cost: ${cost:.6f}")
     except ai.AIError as e:
         print(f"❌ AI Error: {e}")
-        return True
+        return ctx, True
     except Exception as e:
         print(f"❌ Error: {e}")
-        return True
+        return ctx, True
 
     # Validate all filters
     print("\n🔍 Validating filters...")
@@ -406,7 +336,7 @@ def ai_smart_playlist_wizard(name: str, description: str) -> bool:
         print("\n⚠️  AI generated invalid filters. Please try:")
         print(f"   1. Use simpler description")
         print(f"   2. Use manual filter wizard: playlist new smart \"{name}\"")
-        return True
+        return ctx, True
 
     print(f"✅ All {len(filters)} filters are valid")
 
@@ -423,12 +353,12 @@ def ai_smart_playlist_wizard(name: str, description: str) -> bool:
             filters = playlist_ai.edit_filters_interactive(filters)
         except KeyboardInterrupt:
             print("\n❌ Cancelled")
-            return True
+            return ctx, True
 
         # Check if filters are empty after editing
         if not filters:
             print("❌ No filters remaining. Cannot create empty smart playlists.")
-            return True
+            return ctx, True
 
         # Re-validate after editing
         validation_errors = validate_filters_list(filters)
@@ -437,7 +367,7 @@ def ai_smart_playlist_wizard(name: str, description: str) -> bool:
             print("❌ Validation errors after editing:")
             for error in validation_errors:
                 print(f"   {error}")
-            return True
+            return ctx, True
 
     # Create playlist
     print("\n" + "=" * 60)
@@ -447,7 +377,7 @@ def ai_smart_playlist_wizard(name: str, description: str) -> bool:
         playlist_id = playlists.create_playlist(name, 'smart', description=description)
     except ValueError as e:
         print(f"❌ Error: {e}")
-        return True
+        return ctx, True
 
     # Add all filters
     try:
@@ -462,7 +392,7 @@ def ai_smart_playlist_wizard(name: str, description: str) -> bool:
     except Exception as e:
         print(f"❌ Error adding filters: {e}")
         playlists.delete_playlist(playlist_id)
-        return True
+        return ctx, True
 
     # Preview matching tracks
     print("\n📊 Preview: Finding matching tracks...")
@@ -496,7 +426,7 @@ def ai_smart_playlist_wizard(name: str, description: str) -> bool:
         if confirm == 'n':
             playlists.delete_playlist(playlist_id)
             print("❌ Smart playlist cancelled")
-            return True
+            return ctx, True
 
         print(f"\n✅ Created AI smart playlist: {name}")
         print(f"   {count} tracks match your filters")
@@ -509,24 +439,32 @@ def ai_smart_playlist_wizard(name: str, description: str) -> bool:
     except Exception as e:
         print(f"❌ Error evaluating filters: {e}")
         playlists.delete_playlist(playlist_id)
-        return True
+        return ctx, True
 
-    return True
+    return ctx, True
 
 
-def handle_playlist_new_command(args: List[str]) -> bool:
-    """Handle playlist new command - create a new playlists."""
+def handle_playlist_new_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
+    """Handle playlist new command - create a new playlists.
+
+    Args:
+        ctx: Application context
+        args: Command arguments
+
+    Returns:
+        (updated_context, should_continue)
+    """
     if len(args) < 2:
         print("Error: Please specify playlist type and name")
         print("Usage: playlist new manual <name>")
         print("       playlist new smart <name>")
         print("       playlist new smart ai <name> \"<description>\"")
-        return True
+        return ctx, True
 
     playlist_type = args[0].lower()
     if playlist_type not in ['manual', 'smart']:
         print(f"Error: Invalid playlist type '{playlist_type}'. Must be 'manual' or 'smart'")
-        return True
+        return ctx, True
 
     # Check for AI smart playlist
     if playlist_type == 'smart' and len(args) >= 2 and args[1].lower() == 'ai':
@@ -535,7 +473,7 @@ def handle_playlist_new_command(args: List[str]) -> bool:
         if len(args) < 3:
             print("Error: Please specify playlist name and description")
             print("Usage: playlist new smart ai <name> \"<description>\"")
-            return True
+            return ctx, True
 
         # Use shlex for proper shell-like parsing
         try:
@@ -551,13 +489,13 @@ def handle_playlist_new_command(args: List[str]) -> bool:
                 print("Error: Please provide both name and description")
                 print("Usage: playlist new smart ai <name> \"<description>\"")
                 print("Example: playlist new smart ai NYE2025 \"all dubstep from 2025\"")
-                return True
+                return ctx, True
 
         except ValueError as e:
             print(f"Error parsing command: {e}")
             print("Usage: playlist new smart ai <name> \"<description>\"")
             print("Example: playlist new smart ai NYE2025 \"all dubstep from 2025\"")
-            return True
+            return ctx, True
 
     # Regular smart playlist - launch manual wizard
     if playlist_type == 'smart':
@@ -576,28 +514,36 @@ def handle_playlist_new_command(args: List[str]) -> bool:
         # Auto-export if enabled
         auto_export_if_enabled(playlist_id)
 
-        return True
+        return ctx, True
     except ValueError as e:
         print(f"❌ Error: {e}")
-        return True
+        return ctx, True
     except Exception as e:
         print(f"❌ Error creating playlist: {e}")
-        return True
+        return ctx, True
 
 
-def handle_playlist_delete_command(args: List[str]) -> bool:
-    """Handle playlist delete command - delete a playlists."""
+def handle_playlist_delete_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
+    """Handle playlist delete command - delete a playlists.
+
+    Args:
+        ctx: Application context
+        args: Command arguments
+
+    Returns:
+        (updated_context, should_continue)
+    """
     if not args:
         print("Error: Please specify playlist name")
         print("Usage: playlist delete <name>")
-        return True
+        return ctx, True
 
     name = ' '.join(args)
     pl = playlists.get_playlist_by_name(name)
 
     if not pl:
         print(f"❌ Playlist '{name}' not found")
-        return True
+        return ctx, True
 
     # Confirm deletion
     print(f"⚠️  Delete playlist '{name}'? This cannot be undone.")
@@ -605,7 +551,7 @@ def handle_playlist_delete_command(args: List[str]) -> bool:
 
     if confirm != 'yes':
         print("Deletion cancelled")
-        return True
+        return ctx, True
 
     try:
         # Clear position tracking before deleting
@@ -615,26 +561,26 @@ def handle_playlist_delete_command(args: List[str]) -> bool:
             print(f"✅ Deleted playlist: {name}")
         else:
             print(f"❌ Failed to delete playlist: {name}")
-        return True
+        return ctx, True
     except Exception as e:
         print(f"❌ Error deleting playlist: {e}")
-        return True
+        return ctx, True
 
 
-def handle_playlist_rename_command(args: List[str]) -> bool:
+def handle_playlist_rename_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
     """Handle playlist rename command - rename a playlists."""
     if len(args) < 2:
         print("Error: Please specify old and new names")
         print('Usage: playlist rename "old name" "new name"')
-        return True
+        return ctx, True
 
     # Parse quoted args to handle multi-word playlist names
-    parsed_args = parse_quoted_args(args)
+    parsed_args = helpers.parse_quoted_args(args)
 
     if len(parsed_args) < 2:
         print("Error: Please specify both old and new names")
         print('Usage: playlist rename "old name" "new name"')
-        return True
+        return ctx, True
 
     old_name = parsed_args[0]
     new_name = parsed_args[1]
@@ -642,35 +588,35 @@ def handle_playlist_rename_command(args: List[str]) -> bool:
     pl = playlists.get_playlist_by_name(old_name)
     if not pl:
         print(f"❌ Playlist '{old_name}' not found")
-        return True
+        return ctx, True
 
     try:
         if playlists.rename_playlist(pl['id'], new_name):
             print(f"✅ Renamed playlist: '{old_name}' → '{new_name}'")
         else:
             print(f"❌ Failed to rename playlist")
-        return True
+        return ctx, True
     except ValueError as e:
         print(f"❌ Error: {e}")
-        return True
+        return ctx, True
     except Exception as e:
         print(f"❌ Error renaming playlist: {e}")
-        return True
+        return ctx, True
 
 
-def handle_playlist_show_command(args: List[str]) -> bool:
+def handle_playlist_show_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
     """Handle playlist show command - show playlist details and tracks."""
     if not args:
         print("Error: Please specify playlist name")
         print("Usage: playlist show <name>")
-        return True
+        return ctx, True
 
     name = ' '.join(args)
     pl = playlists.get_playlist_by_name(name)
 
     if not pl:
         print(f"❌ Playlist '{name}' not found")
-        return True
+        return ctx, True
 
     try:
         tracks = playlists.get_playlist_tracks(pl['id'])
@@ -699,13 +645,13 @@ def handle_playlist_show_command(args: List[str]) -> bool:
                 if album:
                     print(f"     Album: {album}")
 
-        return True
+        return ctx, True
     except Exception as e:
         print(f"❌ Error showing playlist: {e}")
-        return True
+        return ctx, True
 
 
-def handle_playlist_active_command(args: List[str]) -> bool:
+def handle_playlist_active_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
     """Handle playlist active command - set or clear active playlists."""
     if not args:
         # Show current active playlist
@@ -714,7 +660,7 @@ def handle_playlist_active_command(args: List[str]) -> bool:
             print(f"Active playlist: {active['name']}")
         else:
             print("No active playlist (playing all tracks)")
-        return True
+        return ctx, True
 
     name = ' '.join(args)
 
@@ -729,13 +675,13 @@ def handle_playlist_active_command(args: List[str]) -> bool:
             print("✅ Cleared active playlist (now playing all tracks)")
         else:
             print("No active playlist was set")
-        return True
+        return ctx, True
 
     # Set active playlist
     pl = playlists.get_playlist_by_name(name)
     if not pl:
         print(f"❌ Playlist '{name}' not found")
-        return True
+        return ctx, True
 
     try:
         if playlists.set_active_playlist(pl['id']):
@@ -775,34 +721,34 @@ def handle_playlist_active_command(args: List[str]) -> bool:
                                     break
         else:
             print(f"❌ Failed to set active playlist")
-        return True
+        return ctx, True
     except Exception as e:
         print(f"❌ Error setting active playlist: {e}")
-        return True
+        return ctx, True
 
 
-def handle_playlist_import_command(args: List[str]) -> bool:
+def handle_playlist_import_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
     """Handle playlist import command - import playlist from file."""
-    current_config = get_config()
+    current_config = ctx.config
 
     if not args:
         print("Error: Please specify playlist file path")
         print("Usage: playlist import <file>")
         print("Supported formats: .m3u, .m3u8, .crate")
-        return True
+        return ctx, True
 
     file_path_str = ' '.join(args)
     file_path = Path(file_path_str).expanduser()
 
     if not file_path.exists():
         print(f"❌ File not found: {file_path}")
-        return True
+        return ctx, True
 
     # Get library root from config
     # Validate library paths exist
     if not current_config.music.library_paths:
         print("❌ Error: No library paths configured")
-        return True
+        return ctx, True
     library_root = Path(current_config.music.library_paths[0]).expanduser()
 
     # Auto-detect format and import
@@ -811,7 +757,7 @@ def handle_playlist_import_command(args: List[str]) -> bool:
         if not format_type:
             print(f"❌ Unsupported file format: {file_path.suffix}")
             print("Supported formats: .m3u, .m3u8, .crate")
-            return True
+            return ctx, True
 
         print(f"📂 Importing {format_type.upper()} playlist from: {file_path.name}")
 
@@ -842,28 +788,28 @@ def handle_playlist_import_command(args: List[str]) -> bool:
             # Auto-export if enabled
             auto_export_if_enabled(playlist_id)
 
-        return True
+        return ctx, True
 
     except ValueError as e:
         print(f"❌ Error: {e}")
-        return True
+        return ctx, True
     except ImportError as e:
         print(f"❌ Missing dependency: {e}")
-        return True
+        return ctx, True
     except Exception as e:
         print(f"❌ Error importing playlist: {e}")
-        return True
+        return ctx, True
 
 
-def handle_playlist_export_command(args: List[str]) -> bool:
+def handle_playlist_export_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
     """Handle playlist export command - export playlist to file."""
-    current_config = get_config()
+    current_config = ctx.config
 
     if not args:
         print("Error: Please specify playlist name")
         print("Usage: playlist export <name> [format]")
         print("Formats: m3u8 (default), crate, all")
-        return True
+        return ctx, True
 
     # Parse arguments with smart format detection
     # Strategy: Try full name first, then try separating format
@@ -892,14 +838,14 @@ def handle_playlist_export_command(args: List[str]) -> bool:
     # Validate library paths exist
     if not current_config.music.library_paths:
         print("❌ Error: No library paths configured")
-        return True
+        return ctx, True
     library_root = Path(current_config.music.library_paths[0]).expanduser()
 
     # Check if playlist exists
     pl = playlists.get_playlist_by_name(playlist_name)
     if not pl:
         print(f"❌ Playlist '{playlist_name}' not found")
-        return True
+        return ctx, True
 
     try:
         if format_type == 'all':
@@ -930,14 +876,14 @@ def handle_playlist_export_command(args: List[str]) -> bool:
 
             print(f"✅ Exported {tracks_exported} tracks to: {output_path}")
 
-        return True
+        return ctx, True
 
     except ValueError as e:
         print(f"❌ Error: {e}")
-        return True
+        return ctx, True
     except ImportError as e:
         print(f"❌ Missing dependency: {e}")
-        return True
+        return ctx, True
     except Exception as e:
         print(f"❌ Error exporting playlist: {e}")
-        return True
+        return ctx, True
