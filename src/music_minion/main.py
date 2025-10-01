@@ -14,7 +14,7 @@ from .domain import library
 from . import player
 from . import ai
 from . import ui
-from . import playlist
+from .domain import playlists
 from . import playback
 from . import sync
 from . import command_palette
@@ -91,14 +91,14 @@ def play_track(track: library.Track, playlist_position: Optional[int] = None) ->
         database.start_playback_session(track_id)
 
         # Track position if playing from active playlist
-        active = playlist.get_active_playlist()
+        active = playlists.get_active_playlist()
         if active:
             # Use provided position if available, otherwise compute it
             if playlist_position is not None:
                 playback.update_playlist_position(active['id'], track_id, playlist_position)
             else:
                 # Only compute position if not provided
-                playlist_tracks = playlist.get_playlist_tracks(active['id'])
+                playlist_tracks = playlists.get_playlist_tracks(active['id'])
                 position = playback.get_track_position_in_playlist(playlist_tracks, track_id)
                 if position is not None:
                     playback.update_playlist_position(active['id'], track_id, position)
@@ -190,11 +190,11 @@ def get_available_tracks() -> List[library.Track]:
         return []
 
     # Check if there's an active playlist
-    active = playlist.get_active_playlist()
+    active = playlists.get_active_playlist()
 
     if active:
         # Get tracks from active playlist (already excludes archived)
-        playlist_file_paths = set(playlist.get_available_playlist_tracks(active['id']))
+        playlist_file_paths = set(playlists.get_available_playlist_tracks(active['id']))
 
         if not playlist_file_paths:
             return []

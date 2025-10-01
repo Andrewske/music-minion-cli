@@ -7,7 +7,7 @@ from typing import Iterable, Dict, Any
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.document import Document
 
-from . import playlist
+from .domain import playlists as playlist_module
 
 
 # FUTURE ENHANCEMENT: Add custom keybindings
@@ -161,7 +161,7 @@ class PlaylistCompleter(Completer):
 
         try:
             # Fetch playlists sorted by recently played
-            playlists = playlist.get_playlists_sorted_by_recent()
+            playlists = playlist_module.get_playlists_sorted_by_recent()
 
             for pl in playlists:
                 name = pl['name']

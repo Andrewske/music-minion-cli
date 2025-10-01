@@ -12,7 +12,7 @@ from .core import config
 from .core import database
 from .domain import library
 from . import player
-from . import playlist_export
+from .domain.playlists import exporters as playlist_export
 
 
 # Rich Console instance (imported from main)

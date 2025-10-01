@@ -12,7 +12,7 @@ from ..core import database
 from ..domain import library
 from .. import player
 from .. import ai
-from .. import playlist
+from ..domain import playlists
 from .. import playback
 
 

@@ -14,7 +14,7 @@ from rich.panel import Panel
 from rich.text import Text
 from rich.align import Align
 
-from . import playlist
+from .domain import playlists
 from . import playback
 
 console = Console()
@@ -550,7 +550,7 @@ def render_dashboard(player_state: Any, track_metadata: Optional[Dict] = None,
         shuffle_enabled = True  # Default to shuffle on error
 
     # Active playlist info
-    active_pl = playlist.get_active_playlist()
+    active_pl = playlists.get_active_playlist()
     if active_pl:
         playlist_line = f"📋 Playlist: {active_pl['name']}"
         truncated_pl = playlist_line[:console_width - 6] + "..." if len(playlist_line) > console_width - 3 else playlist_line
@@ -563,7 +563,7 @@ def render_dashboard(player_state: Any, track_metadata: Optional[Dict] = None,
             if saved_position and not shuffle_enabled:
                 _, position = saved_position
                 # Get total track count (optimized - doesn't fetch full track data)
-                total_tracks = playlist.get_playlist_track_count(active_pl['id'])
+                total_tracks = playlists.get_playlist_track_count(active_pl['id'])
                 position_line = f"   Position: {position + 1}/{total_tracks}"
                 lines.append(Text(position_line, style="cyan"))
         except Exception:

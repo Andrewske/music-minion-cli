@@ -6,7 +6,7 @@ Handles: add, remove (adding/removing tracks to/from playlists)
 
 from typing import List
 
-from .. import playlist
+from ..domain import playlists
 from ..domain import library
 
 

@@ -19,11 +19,11 @@ from ..domain import library
 from .. import player
 from .. import ai
 from .. import ui
-from .. import playlist
-from .. import playlist_filters
-from .. import playlist_ai
-from .. import playlist_import
-from .. import playlist_export
+from ..domain import playlists
+from ..domain.playlists import filters as playlist_filters
+from ..domain.playlists import ai_parser as playlist_ai
+from ..domain.playlists import importers as playlist_import
+from ..domain.playlists import exporters as playlist_export
 from .. import playback
 from .. import completers
 
@@ -112,14 +112,14 @@ def handle_playlist_list_command() -> bool:
     Uses prompt_toolkit for a smooth autocomplete experience.
     """
     try:
-        playlists = playlist.get_playlists_sorted_by_recent()
+        playlists = playlists.get_playlists_sorted_by_recent()
 
         if not playlists:
             print("No playlists found. Create one with: playlist new manual <name>")
             return True
 
         # Check which one is active
-        active = playlist.get_active_playlist()
+        active = playlists.get_active_playlist()
         active_id = active['id'] if active else None
 
         print(f"\n📋 Select a playlist ({len(playlists)} available)")
@@ -161,11 +161,11 @@ def handle_playlist_list_command() -> bool:
                 return True
 
             # Activate playlist
-            if playlist.set_active_playlist(selected_playlist['id']):
+            if playlists.set_active_playlist(selected_playlist['id']):
                 print(f"\n✅ Activated playlist: {selected_playlist['name']}")
 
                 # Auto-play first track
-                playlist_tracks = playlist.get_playlist_tracks(selected_playlist['id'])
+                playlist_tracks = playlists.get_playlist_tracks(selected_playlist['id'])
                 if playlist_tracks:
                     # Convert DB track to library.Track and play
                     first_track = database.db_track_to_library_track(playlist_tracks[0])
@@ -204,7 +204,7 @@ def smart_playlist_wizard(name: str) -> bool:
 
     # Create the playlist first
     try:
-        playlist_id = playlist.create_playlist(name, 'smart', description=None)
+        playlist_id = playlists.create_playlist(name, 'smart', description=None)
     except ValueError as e:
         print(f"❌ Error: {e}")
         return True
@@ -230,7 +230,7 @@ def smart_playlist_wizard(name: str) -> bool:
             if not filters_added:
                 print("❌ You must add at least one filter for a smart playlist")
                 # Delete the empty playlist
-                playlist.delete_playlist(playlist_id)
+                playlists.delete_playlist(playlist_id)
                 return True
             break
 
@@ -318,12 +318,12 @@ def smart_playlist_wizard(name: str) -> bool:
         confirm = input("Save this smart playlist? (y/n) [y]: ").strip().lower()
 
         if confirm == 'n':
-            playlist.delete_playlist(playlist_id)
+            playlists.delete_playlist(playlist_id)
             print("❌ Smart playlist cancelled")
             return True
 
         # Update track count for the smart playlist
-        playlist.update_playlist_track_count(playlist_id)
+        playlists.update_playlist_track_count(playlist_id)
 
         print(f"\n✅ Created smart playlist: {name}")
         print(f"   {count} tracks match your filters")
@@ -334,7 +334,7 @@ def smart_playlist_wizard(name: str) -> bool:
 
     except Exception as e:
         print(f"❌ Error evaluating filters: {e}")
-        playlist.delete_playlist(playlist_id)
+        playlists.delete_playlist(playlist_id)
         return True
 
     return True
@@ -428,7 +428,7 @@ def ai_smart_playlist_wizard(name: str, description: str) -> bool:
 
         # Check if filters are empty after editing
         if not filters:
-            print("❌ No filters remaining. Cannot create empty smart playlist.")
+            print("❌ No filters remaining. Cannot create empty smart playlists.")
             return True
 
         # Re-validate after editing
@@ -445,7 +445,7 @@ def ai_smart_playlist_wizard(name: str, description: str) -> bool:
     print(f"Creating smart playlist: {name}")
 
     try:
-        playlist_id = playlist.create_playlist(name, 'smart', description=description)
+        playlist_id = playlists.create_playlist(name, 'smart', description=description)
     except ValueError as e:
         print(f"❌ Error: {e}")
         return True
@@ -462,7 +462,7 @@ def ai_smart_playlist_wizard(name: str, description: str) -> bool:
             )
     except Exception as e:
         print(f"❌ Error adding filters: {e}")
-        playlist.delete_playlist(playlist_id)
+        playlists.delete_playlist(playlist_id)
         return True
 
     # Preview matching tracks
@@ -495,7 +495,7 @@ def ai_smart_playlist_wizard(name: str, description: str) -> bool:
         confirm = input("Save this smart playlist? (y/n) [y]: ").strip().lower()
 
         if confirm == 'n':
-            playlist.delete_playlist(playlist_id)
+            playlists.delete_playlist(playlist_id)
             print("❌ Smart playlist cancelled")
             return True
 
@@ -509,14 +509,14 @@ def ai_smart_playlist_wizard(name: str, description: str) -> bool:
 
     except Exception as e:
         print(f"❌ Error evaluating filters: {e}")
-        playlist.delete_playlist(playlist_id)
+        playlists.delete_playlist(playlist_id)
         return True
 
     return True
 
 
 def handle_playlist_new_command(args: List[str]) -> bool:
-    """Handle playlist new command - create a new playlist."""
+    """Handle playlist new command - create a new playlists."""
     if len(args) < 2:
         print("Error: Please specify playlist type and name")
         print("Usage: playlist new manual <name>")
@@ -569,7 +569,7 @@ def handle_playlist_new_command(args: List[str]) -> bool:
     name = ' '.join(args[1:])
 
     try:
-        playlist_id = playlist.create_playlist(name, playlist_type, description=None)
+        playlist_id = playlists.create_playlist(name, playlist_type, description=None)
         print(f"✅ Created {playlist_type} playlist: {name}")
         print(f"   Playlist ID: {playlist_id}")
         print(f"   Add tracks with: add \"{name}\"")
@@ -587,14 +587,14 @@ def handle_playlist_new_command(args: List[str]) -> bool:
 
 
 def handle_playlist_delete_command(args: List[str]) -> bool:
-    """Handle playlist delete command - delete a playlist."""
+    """Handle playlist delete command - delete a playlists."""
     if not args:
         print("Error: Please specify playlist name")
         print("Usage: playlist delete <name>")
         return True
 
     name = ' '.join(args)
-    pl = playlist.get_playlist_by_name(name)
+    pl = playlists.get_playlist_by_name(name)
 
     if not pl:
         print(f"❌ Playlist '{name}' not found")
@@ -612,7 +612,7 @@ def handle_playlist_delete_command(args: List[str]) -> bool:
         # Clear position tracking before deleting
         playback.clear_playlist_position(pl['id'])
 
-        if playlist.delete_playlist(pl['id']):
+        if playlists.delete_playlist(pl['id']):
             print(f"✅ Deleted playlist: {name}")
         else:
             print(f"❌ Failed to delete playlist: {name}")
@@ -623,7 +623,7 @@ def handle_playlist_delete_command(args: List[str]) -> bool:
 
 
 def handle_playlist_rename_command(args: List[str]) -> bool:
-    """Handle playlist rename command - rename a playlist."""
+    """Handle playlist rename command - rename a playlists."""
     if len(args) < 2:
         print("Error: Please specify old and new names")
         print('Usage: playlist rename "old name" "new name"')
@@ -640,13 +640,13 @@ def handle_playlist_rename_command(args: List[str]) -> bool:
     old_name = parsed_args[0]
     new_name = parsed_args[1]
 
-    pl = playlist.get_playlist_by_name(old_name)
+    pl = playlists.get_playlist_by_name(old_name)
     if not pl:
         print(f"❌ Playlist '{old_name}' not found")
         return True
 
     try:
-        if playlist.rename_playlist(pl['id'], new_name):
+        if playlists.rename_playlist(pl['id'], new_name):
             print(f"✅ Renamed playlist: '{old_name}' → '{new_name}'")
         else:
             print(f"❌ Failed to rename playlist")
@@ -667,14 +667,14 @@ def handle_playlist_show_command(args: List[str]) -> bool:
         return True
 
     name = ' '.join(args)
-    pl = playlist.get_playlist_by_name(name)
+    pl = playlists.get_playlist_by_name(name)
 
     if not pl:
         print(f"❌ Playlist '{name}' not found")
         return True
 
     try:
-        tracks = playlist.get_playlist_tracks(pl['id'])
+        tracks = playlists.get_playlist_tracks(pl['id'])
 
         print(f"\n📋 Playlist: {pl['name']}")
         print("=" * 60)
@@ -707,10 +707,10 @@ def handle_playlist_show_command(args: List[str]) -> bool:
 
 
 def handle_playlist_active_command(args: List[str]) -> bool:
-    """Handle playlist active command - set or clear active playlist."""
+    """Handle playlist active command - set or clear active playlists."""
     if not args:
         # Show current active playlist
-        active = playlist.get_active_playlist()
+        active = playlists.get_active_playlist()
         if active:
             print(f"Active playlist: {active['name']}")
         else:
@@ -722,24 +722,24 @@ def handle_playlist_active_command(args: List[str]) -> bool:
     if name.lower() == 'none':
         # Clear active playlist
         # First get the active playlist ID to clear position tracking
-        active = playlist.get_active_playlist()
+        active = playlists.get_active_playlist()
         if active:
             playback.clear_playlist_position(active['id'])
 
-        if playlist.clear_active_playlist():
+        if playlists.clear_active_playlist():
             print("✅ Cleared active playlist (now playing all tracks)")
         else:
             print("No active playlist was set")
         return True
 
     # Set active playlist
-    pl = playlist.get_playlist_by_name(name)
+    pl = playlists.get_playlist_by_name(name)
     if not pl:
         print(f"❌ Playlist '{name}' not found")
         return True
 
     try:
-        if playlist.set_active_playlist(pl['id']):
+        if playlists.set_active_playlist(pl['id']):
             print(f"✅ Set active playlist: {name}")
             print(f"   Now playing only tracks from this playlist")
 
@@ -750,7 +750,7 @@ def handle_playlist_active_command(args: List[str]) -> bool:
             if saved_position and not shuffle_enabled:
                 track_id, position = saved_position
                 # Get playlist tracks to find the saved track
-                playlist_tracks = playlist.get_playlist_tracks(pl['id'])
+                playlist_tracks = playlists.get_playlist_tracks(pl['id'])
 
                 # Find track info
                 saved_track = None
@@ -823,7 +823,7 @@ def handle_playlist_import_command(args: List[str]) -> bool:
         )
 
         # Get the created playlist info
-        pl = playlist.get_playlist_by_id(playlist_id)
+        pl = playlists.get_playlist_by_id(playlist_id)
         if pl:
             print(f"✅ Created playlist: {pl['name']}")
             print(f"   Tracks added: {tracks_added}")
@@ -874,12 +874,12 @@ def handle_playlist_export_command(args: List[str]) -> bool:
     # If more than one arg and last arg looks like a format, try separating
     if len(args) > 1 and args[-1].lower() in ['m3u8', 'm3u', 'crate', 'all']:
         # First check if the full name exists as a playlist
-        pl_full = playlist.get_playlist_by_name(playlist_name)
+        pl_full = playlists.get_playlist_by_name(playlist_name)
         if not pl_full:
             # Full name doesn't exist, try separating the format
             potential_format = args[-1].lower()
             potential_name = ' '.join(args[:-1])
-            pl_separated = playlist.get_playlist_by_name(potential_name)
+            pl_separated = playlists.get_playlist_by_name(potential_name)
             if pl_separated:
                 # Playlist exists without the last arg, treat it as format
                 format_type = potential_format
@@ -897,7 +897,7 @@ def handle_playlist_export_command(args: List[str]) -> bool:
     library_root = Path(current_config.music.library_paths[0]).expanduser()
 
     # Check if playlist exists
-    pl = playlist.get_playlist_by_name(playlist_name)
+    pl = playlists.get_playlist_by_name(playlist_name)
     if not pl:
         print(f"❌ Playlist '{playlist_name}' not found")
         return True
