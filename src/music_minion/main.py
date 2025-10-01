@@ -10,7 +10,7 @@ from typing import List, Optional
 
 from .core import config
 from .core import database
-from . import library
+from .domain import library
 from . import player
 from . import ai
 from . import ui

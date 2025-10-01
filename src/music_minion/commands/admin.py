@@ -11,7 +11,7 @@ from typing import List
 
 from ..core import config
 from ..core import database
-from .. import library
+from ..domain import library
 
 
 def get_player_state():

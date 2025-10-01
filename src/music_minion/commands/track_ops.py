@@ -7,7 +7,7 @@ Handles: add, remove (adding/removing tracks to/from playlists)
 from typing import List
 
 from .. import playlist
-from .. import library
+from ..domain import library
 
 
 def get_player_state():

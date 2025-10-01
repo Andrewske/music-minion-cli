@@ -8,7 +8,7 @@ from typing import List
 from datetime import datetime
 
 from ..core import database
-from .. import library
+from ..domain import library
 
 
 def get_player_state():

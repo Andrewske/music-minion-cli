@@ -12,7 +12,7 @@ from .core.database import (
     get_track_by_path, get_track_notes, get_track_tags,
     add_tags, log_ai_request
 )
-from .library import Track
+from .domain.library import Track
 
 
 class AIError(Exception):

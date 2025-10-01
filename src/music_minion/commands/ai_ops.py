@@ -8,7 +8,7 @@ from typing import List
 
 from .. import ai
 from ..core import database
-from .. import library
+from ..domain import library
 
 
 def get_player_state():
