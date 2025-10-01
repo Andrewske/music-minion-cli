@@ -6,7 +6,7 @@ Handles: sync export, sync import, sync status, sync rescan
 
 from typing import List
 
-from .. import sync
+from ..domain import sync
 
 
 def get_config():

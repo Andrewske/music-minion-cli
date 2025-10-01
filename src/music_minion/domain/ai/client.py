@@ -7,12 +7,12 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 
-from .core.config import get_config_dir
-from .core.database import (
+from ...core.config import get_config_dir
+from ...core.database import (
     get_track_by_path, get_track_notes, get_track_tags,
     add_tags, log_ai_request
 )
-from .domain.library import Track
+from ..library import Track
 
 
 class AIError(Exception):
@@ -385,7 +385,7 @@ def test_ai_prompt_with_random_track() -> Dict[str, Any]:
     Returns:
         Dictionary with test results, input, output, and metadata
     """
-    from .core.database import get_all_tracks, get_track_notes, get_track_tags, db_track_to_library_track
+    from ...core.database import get_all_tracks, get_track_notes, get_track_tags, db_track_to_library_track
     import random
     from datetime import datetime
     
