@@ -329,6 +329,65 @@ Both Phase 2 and Phase 3 components:
 
 **Next Steps**: Phase 4 (Smart Playlist Wizard) will build on these modal patterns
 
+### Inline Command Palette Layout Pattern
+
+**Module**: `src/music_minion/ui_textual/command_palette_inline.py`
+
+**Goal**: Command palette slides in between command history and input, pushing input upward
+
+**Wrong Approach - Using layers or multiple docks**:
+```python
+# WRONG: Command palette gets hidden behind input
+#command-palette-inline {
+    dock: bottom;
+    layer: overlay;  # Doesn't help with flow layout
+}
+
+#input-container {
+    dock: bottom;
+    layer: base;
+}
+```
+
+**Correct Approach - Flow layout with dock only on final bottom widget**:
+```python
+# Correct compose order:
+def compose(self) -> ComposeResult:
+    yield Dashboard()              # Top (docked)
+    yield CommandHistory()         # Middle (flexible height: 1fr)
+    yield CommandPaletteInline()   # Slides in (NO dock)
+    yield InputContainer()         # Bottom (docked)
+
+# CSS:
+#command-palette-inline {
+    height: 0;           # Hidden by default
+    display: none;
+}
+
+#command-palette-inline.visible {
+    height: auto;        # Takes space when visible
+    display: block;      # Pushes docked input up
+}
+
+#input-container {
+    dock: bottom;        # Only the real bottom widget docks
+}
+```
+
+**Key Insights**:
+- **Widget order matters**: Widgets are composed top-to-bottom in document flow
+- **Only dock the final bottom widget**: Middle widgets that slide in should NOT use `dock: bottom`
+- **Toggle height, not layers**: Use `height: 0` → `height: auto` to show/hide
+- **Layers don't affect flow**: `layer` controls z-index for overlays, not flow positioning
+
+**Benefits**:
+- Natural document flow
+- Input stays on screen (gets pushed up, not covered)
+- Clean CSS without z-index hacks
+- Matches Claude Code command palette behavior
+
+**Use Case**: Any UI where a panel needs to slide in between fixed elements
+
 ## Code Patterns & Conventions
 
 ### Database Operations

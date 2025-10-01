@@ -5,13 +5,13 @@ Implements fixed header dashboard, scrollable command history, and fixed input f
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, VerticalScroll
-from textual.widgets import Header, Footer, Input, Static
+from textual.widgets import Input, Static
 from textual.binding import Binding
 from textual import events
 
 from .dashboard import Dashboard
 from .state import AppState
-from .command_palette_modal import CommandPaletteModal
+from .command_palette_inline import CommandPaletteInline
 from .playlist_modal import PlaylistModal
 
 
@@ -50,6 +50,11 @@ class MusicMinionApp(App):
     """
 
     CSS = """
+    Screen {
+        margin: 0;
+        padding: 0;
+    }
+
     Dashboard {
         dock: top;
         height: auto;
@@ -62,26 +67,53 @@ class MusicMinionApp(App):
         padding: 1;
     }
 
+    #command-palette-inline {
+        height: 0;
+        max-height: 20;
+        display: none;
+    }
+
+    #command-palette-inline.visible {
+        height: auto;
+        display: block;
+        border: solid $primary;
+        padding: 1;
+    }
+
+    #commands-scroll {
+        height: auto;
+        max-height: 18;
+    }
+
+    .command-item {
+        padding: 0 1;
+    }
+
+    .command-selected {
+        background: $accent;
+        color: $text;
+    }
+
+    .category-header {
+        color: $primary;
+        text-style: bold;
+        padding: 1 0 0 0;
+    }
+
     #input-container {
-        dock: bottom;
         height: 3;
-        background: $surface;
         padding: 0 1;
     }
 
     Input {
         width: 1fr;
     }
-
-    Footer {
-        dock: bottom;
-    }
     """
 
     BINDINGS = [
-        Binding("ctrl+c", "quit", "Quit", show=True),
-        Binding("ctrl+l", "clear", "Clear", show=True),
-        Binding("/", "command_palette", "Commands", show=True),
+        Binding("ctrl+c", "quit", "Quit", show=False),
+        Binding("ctrl+l", "clear", "Clear", show=False),
+        Binding("escape", "hide_palette", "Hide", show=False),
     ]
 
     def __init__(self, app_state: AppState, command_handler: callable):
@@ -98,6 +130,8 @@ class MusicMinionApp(App):
         self.dashboard = None
         self.command_history = None
         self.input_field = None
+        self.command_palette = None
+        self.palette_active = False
 
     def compose(self) -> ComposeResult:
         """Create child widgets"""
@@ -110,13 +144,15 @@ class MusicMinionApp(App):
         self.command_history.id = "command-history"
         yield self.command_history
 
-        # Fixed input at bottom
-        with Container(id="input-container"):
+        # Fixed input (before palette so it appears above)
+        with Container(id="input-container") as input_container:
             self.input_field = Input(placeholder="Type a command or / for menu...")
             yield self.input_field
 
-        # Footer with key bindings
-        yield Footer()
+        # Command palette (initially hidden, slides in below input)
+        self.command_palette = CommandPaletteInline()
+        self.command_palette.id = "command-palette-inline"
+        yield self.command_palette
 
     def on_mount(self) -> None:
         """Called when app is mounted"""
@@ -130,6 +166,39 @@ class MusicMinionApp(App):
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle input submission"""
+        # If palette is active, select from palette and execute immediately
+        if self.palette_active:
+            selected = self.command_palette.get_selected_command()
+            if selected:
+                # Hide palette first
+                self.palette_active = False
+                self.command_palette.hide_palette()
+                self.input_field.value = ""
+
+                # Execute the selected command immediately
+                self.command_history.add_line(f"> {selected}", "bold green")
+
+                # Handle exit commands
+                if selected in ['quit', 'exit']:
+                    self.exit()
+                    return
+
+                # Handle clear command
+                if selected == 'clear':
+                    self.action_clear()
+                    return
+
+                # Delegate to command handler
+                try:
+                    continue_running = self.command_handler(selected, [])
+                    if not continue_running:
+                        self.exit()
+                except Exception as e:
+                    self.print_output(f"Error: {e}", "red")
+
+                self.input_field.focus()
+            return
+
         command_text = event.value.strip()
 
         if not command_text:
@@ -169,8 +238,12 @@ class MusicMinionApp(App):
         if event.value == "/":
             # Clear the "/" from input
             self.input_field.value = ""
-            # Show command palette
-            self.show_command_palette()
+            # Show command palette inline
+            self.palette_active = True
+            self.command_palette.show_palette("")
+        elif self.palette_active:
+            # Update palette filter with current input
+            self.command_palette.update_filter(event.value)
 
     def print_output(self, text: str, style: str = "white") -> None:
         """Print output to command history"""
@@ -195,22 +268,25 @@ class MusicMinionApp(App):
         self.command_history.clear_history()
         self.command_history.add_line("History cleared", "dim")
 
-    def show_command_palette(self) -> None:
-        """Show command palette modal"""
-        def handle_command_selection(command: str | None) -> None:
-            """Handle selected command from palette"""
-            if command:
-                # Set the command in input field
-                self.input_field.value = command
-                # Focus input so user can see it and press Enter or add args
-                self.input_field.focus()
+    def action_hide_palette(self) -> None:
+        """Hide the command palette"""
+        if self.palette_active:
+            self.palette_active = False
+            self.command_palette.hide_palette()
+            self.input_field.focus()
 
-        # Push the modal screen
-        self.push_screen(CommandPaletteModal(), handle_command_selection)
-
-    def action_command_palette(self) -> None:
-        """Action for / key binding"""
-        self.show_command_palette()
+    def on_key(self, event: events.Key) -> None:
+        """Handle key events for palette navigation"""
+        if self.palette_active:
+            if event.key == "up":
+                self.command_palette.move_selection_up()
+                event.prevent_default()
+            elif event.key == "down":
+                self.command_palette.move_selection_down()
+                event.prevent_default()
+            elif event.key == "escape":
+                self.action_hide_palette()
+                event.prevent_default()
 
     def show_playlist_browser(self, playlists: list[dict], active_playlist_id: int | None) -> dict | None:
         """

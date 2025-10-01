@@ -33,7 +33,6 @@ class PlaylistModal(ModalScreen[dict]):
         width: 90;
         height: auto;
         max-height: 35;
-        background: $panel;
         border: thick $primary;
         padding: 1;
     }
