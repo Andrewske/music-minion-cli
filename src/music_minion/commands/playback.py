@@ -194,6 +194,7 @@ def handle_pause_command(ctx: AppContext) -> Tuple[AppContext, bool]:
 
     if success:
         print("⏸ Paused")
+
     else:
         print("Failed to pause playback")
 

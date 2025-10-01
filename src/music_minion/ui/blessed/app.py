@@ -1,6 +1,7 @@
 """Main event loop and entry point for blessed UI."""
 
 import sys
+from pathlib import Path
 from blessed import Terminal
 from ...context import AppContext
 from .state import UIState, update_track_info
@@ -13,6 +14,27 @@ from .components import (
 )
 from .events.keyboard import handle_key
 from .events.commands import execute_command
+
+
+def _check_and_reload_files() -> None:
+    """Check for pending file changes and reload if needed."""
+    # Import main module to access global file watcher
+    from ... import main
+
+    if main.file_watcher_handler:
+        try:
+            from ... import dev_reload
+
+            ready_files = main.file_watcher_handler.check_pending_changes()
+            for filepath in ready_files:
+                success = dev_reload.reload_module(filepath)
+                if success:
+                    filename = Path(filepath).name
+                    # Note: Can't use safe_print here as it would interfere with blessed UI
+                    # Reload happens silently in blessed mode
+        except Exception:
+            # Silently ignore errors in hot-reload to not break UI
+            pass
 
 
 def poll_player_state(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, UIState]:
@@ -143,6 +165,9 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
     dashboard_line_mapping = {}  # Store line offsets from last full dashboard render
 
     while not should_quit:
+        # Check for file changes if hot-reload is enabled
+        _check_and_reload_files()
+
         # Poll player state every 10 frames (~1 second at 0.1s timeout)
         should_poll = frame_count % 10 == 0
         if should_poll:

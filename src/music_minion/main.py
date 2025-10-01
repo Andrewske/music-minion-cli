@@ -26,6 +26,10 @@ current_player_state: playback.PlayerState = playback.PlayerState()
 music_tracks: List[library.Track] = []
 current_config: config.Config = config.Config()
 
+# Global hot-reload state (when --dev flag is used)
+file_watcher_observer = None
+file_watcher_handler = None
+
 # Global console for Rich output
 try:
     from rich.console import Console
@@ -451,6 +455,7 @@ def interactive_mode_blessed() -> None:
 def interactive_mode() -> None:
     """Run the interactive command loop."""
     global current_config, current_player_state, music_tracks
+    global file_watcher_observer, file_watcher_handler
     import os
     from .context import AppContext
 
@@ -460,6 +465,31 @@ def interactive_mode() -> None:
 
     # Run database migrations on startup
     database.init_database()
+
+    # Setup hot-reload if --dev flag was passed
+    dev_mode = os.environ.get('MUSIC_MINION_DEV_MODE') == '1'
+
+    if dev_mode:
+        try:
+            from . import dev_reload
+
+            def on_file_change(filepath: str) -> None:
+                """Callback for file changes - reload the module."""
+                success = dev_reload.reload_module(filepath)
+                if success:
+                    filename = Path(filepath).name
+                    safe_print(f"🔄 Reloaded: {filename}", style="cyan")
+
+            observer_result = dev_reload.setup_file_watcher(on_file_change)
+
+            if observer_result:
+                file_watcher_observer, file_watcher_handler = observer_result
+                safe_print("🔥 Hot-reload enabled", style="green bold")
+            else:
+                safe_print("⚠️  Hot-reload setup failed", style="yellow")
+        except ImportError:
+            safe_print("⚠️  watchdog not installed - hot-reload disabled", style="yellow")
+            safe_print("   Install with: uv pip install watchdog", style="dim")
 
     # Auto-sync on startup if enabled (run in background thread)
     if current_config.sync.auto_sync_on_startup:
@@ -477,16 +507,20 @@ def interactive_mode() -> None:
         try:
             # Use blessed UI (new implementation)
             interactive_mode_blessed()
-            return
         except ImportError as e:
             # blessed not available, fall back to old dashboard
             print(f"⚠️  blessed UI not available ({e}), falling back to legacy dashboard")
             try:
                 interactive_mode_with_dashboard()
-                return
             except Exception:
                 # Fall back to simple mode
                 pass
+        finally:
+            # Clean up file watcher if enabled
+            if file_watcher_observer:
+                from . import dev_reload
+                dev_reload.stop_file_watcher(file_watcher_observer)
+        return
 
     # Fallback to simple mode with Rich Console for consistent styling
     from rich.console import Console
@@ -507,6 +541,19 @@ def interactive_mode() -> None:
         while should_continue:
             # Check for track completion periodically (context-based)
             ctx = helpers.check_and_handle_track_completion(ctx)
+
+            # Process pending file changes if in dev mode
+            if file_watcher_handler:
+                try:
+                    from . import dev_reload
+                    ready_files = file_watcher_handler.check_pending_changes()
+                    for filepath in ready_files:
+                        success = dev_reload.reload_module(filepath)
+                        if success:
+                            filename = Path(filepath).name
+                            console_instance.print(f"🔄 Reloaded: {filename}", style="cyan")
+                except Exception:
+                    pass  # Silently ignore reload errors
 
             try:
                 user_input = input("music-minion> ").strip()
@@ -530,5 +577,10 @@ def interactive_mode() -> None:
         console_instance.print(f"[red]An unexpected error occurred: {e}[/red]")
         import sys
         sys.exit(1)
+    finally:
+        # Clean up file watcher if enabled
+        if file_watcher_observer:
+            from . import dev_reload
+            dev_reload.stop_file_watcher(file_watcher_observer)
 
 
