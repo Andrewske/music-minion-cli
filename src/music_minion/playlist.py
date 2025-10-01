@@ -6,7 +6,7 @@ Functional approach with explicit state passing
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
-from .database import get_db_connection
+from .core.database import get_db_connection
 from . import playlist_filters
 
 

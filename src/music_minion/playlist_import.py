@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 import urllib.parse
 
-from .database import get_db_connection
+from .core.database import get_db_connection
 from .playlist import create_playlist, add_track_to_playlist
 
 

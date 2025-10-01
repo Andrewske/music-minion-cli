@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from .core import config
-from . import database
+from .core import database
 from . import library
 from . import player
 from . import ai

@@ -7,7 +7,7 @@ Handles: archive, like, love, note
 from typing import List
 from datetime import datetime
 
-from .. import database
+from ..core import database
 from .. import library
 
 

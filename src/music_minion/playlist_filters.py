@@ -8,7 +8,7 @@ This module handles filter rules for smart playlists, including:
 """
 
 from typing import List, Dict, Any, Tuple, Optional
-from .database import get_db_connection
+from .core.database import get_db_connection
 
 
 # Valid filter fields (must match tracks table columns)

@@ -14,7 +14,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.styles import Style
 
 from ..core import config
-from .. import database
+from ..core import database
 from .. import library
 from .. import player
 from .. import ai

@@ -10,7 +10,7 @@ import os
 from typing import List
 
 from ..core import config
-from .. import database
+from ..core import database
 from .. import library
 
 

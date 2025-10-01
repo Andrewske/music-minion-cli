@@ -8,7 +8,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 import sys
 
-from .database import get_db_connection
+from .core.database import get_db_connection
 from .playlist import get_playlist_by_id, get_playlist_by_name, get_playlist_tracks
 
 
