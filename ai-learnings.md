@@ -1118,3 +1118,248 @@ Based on Phase 7 learnings:
 ---
 
 **Last Updated**: 2025-09-29 after extracting learnings from playlist-system-plan.md
+## blessed UI Implementation (Tasks 1-8 Complete)
+
+### Architecture Decision: Pure Functions + Immutable State
+
+**Pattern**: Functional approach with blessed (lower-level than Textual)
+
+```
+ui_blessed/
+├── state.py              # Immutable state with dataclasses.replace()
+├── main.py               # Event loop
+├── rendering/            # Pure rendering functions
+│   ├── dashboard.py
+│   ├── history.py
+│   ├── input.py
+│   ├── palette.py
+│   └── layout.py
+├── events/               # Event handlers
+│   ├── keyboard.py
+│   └── commands.py
+└── data/                 # Static data and utilities
+    ├── palette.py
+    └── formatting.py
+```
+
+### Key Patterns
+
+#### 1. Immutable State Updates
+**Pattern**: All state transformations return new instances
+```python
+def append_input_char(state: UIState, char: str) -> UIState:
+    from dataclasses import replace
+    new_text = state.input_text + char
+    return replace(state, input_text=new_text, cursor_pos=len(new_text))
+```
+
+**Learning**: Immutable updates make state changes traceable and testable. Use `dataclasses.replace()` instead of mutation.
+
+#### 2. Pure Rendering Functions
+**Pattern**: Render functions take terminal, state, position - no side effects except terminal output
+```python
+def render_dashboard(term: Terminal, state: UIState, y_start: int) -> int:
+    lines = []
+    # Build lines from state
+    for i, line in enumerate(lines):
+        print(term.move_xy(0, y_start + i) + line)
+    return len(lines)  # Height used
+```
+
+**Learning**: Pure functions = easier testing. Return heights for layout calculations.
+
+#### 3. Terminal Color Application
+**Pattern**: blessed colors are functions that wrap strings
+```python
+# Build colored text by chaining function calls
+header = (
+    term.bold_magenta(ICONS['music']) + " " +
+    term.bold_cyan("MUSIC") + " " +
+    term.bold_blue("MINION")
+)
+```
+
+**Learning**: blessed colors compose naturally. Build strings incrementally, apply colors per-segment.
+
+#### 4. Dynamic Layout Calculation
+**Pattern**: Calculate all positions in single function
+```python
+def calculate_layout(term: Terminal, state: UIState) -> dict[str, int]:
+    dashboard_height = 20
+    input_height = 3
+    palette_height = 22 if state.palette_visible else 0
+    
+    return {
+        'dashboard_y': 0,
+        'history_y': dashboard_height,
+        'history_height': term.height - dashboard_height - input_height - palette_height,
+        'input_y': term.height - input_height - palette_height,
+        'palette_y': term.height - palette_height,
+    }
+```
+
+**Learning**: Single layout function makes position logic visible. Heights adjust based on state (palette visible/hidden).
+
+#### 5. Keyboard Event Parsing
+**Pattern**: Two-stage processing - parse then handle
+```python
+def parse_key(key: Keystroke) -> dict:
+    # Normalize various key representations
+    if key.name == 'KEY_ENTER':
+        return {'type': 'enter'}
+    elif key == '\x03':  # Ctrl+C
+        return {'type': 'ctrl_c'}
+    # ...
+    
+def handle_key(state: UIState, key: Keystroke) -> tuple[UIState, str | None]:
+    event = parse_key(key)
+    # Handle by event type
+    if event['type'] == 'ctrl_c':
+        return state, 'QUIT'
+    # ...
+```
+
+**Learning**: Separate parsing (normalization) from handling (business logic). Returns (new_state, command_or_none).
+
+#### 6. Live Palette Filtering
+**Pattern**: Update filtered items on every keypress
+```python
+if event['type'] == 'char':
+    state = append_input_char(state, char)
+    
+    if state.palette_visible:
+        query = state.input_text[1:]  # Remove "/" prefix
+        filtered = filter_commands(query, COMMAND_DEFINITIONS)
+        state = update_palette_filter(state, query, filtered)
+```
+
+**Learning**: Instant feedback feels responsive. Filter on command name only for predictable results.
+
+#### 7. Box Drawing Characters
+**Pattern**: Use Unicode box-drawing for borders
+```python
+# Top border
+border = "─" * (term.width - 2)
+print(term.cyan(f"┌{border}┐"))
+
+# Side borders
+print(term.cyan("│ ") + content + term.cyan(" │"))
+
+# Bottom border
+print(term.cyan(f"└{border}┘"))
+```
+
+**Learning**: `┌─┐│└┘` look better than ASCII `+-|`. Terminals support Unicode.
+
+#### 8. Cursor Positioning
+**Pattern**: Use `term.move_xy(x, y)` before each line
+```python
+for i, line in enumerate(lines):
+    print(term.move_xy(0, y_start + i) + line)
+```
+
+**Learning**: Explicit positioning prevents line wrap issues. Always move before printing.
+
+### blessed vs Textual Trade-offs
+
+**blessed Advantages**:
+- ✅ Lightweight (no framework overhead)
+- ✅ Full control over rendering
+- ✅ Easier to reason about (explicit state flow)
+- ✅ No "magic" - direct terminal control
+
+**blessed Disadvantages**:
+- ❌ More manual work (no automatic layouts)
+- ❌ Must handle flickering manually
+- ❌ No built-in widgets (write everything)
+
+**Textual Advantages**:
+- ✅ Differential rendering (no flicker)
+- ✅ Automatic layout management
+- ✅ Built-in widgets and reactive system
+
+**Textual Disadvantages**:
+- ❌ Heavier framework
+- ❌ Less control (framework makes decisions)
+- ❌ Steeper learning curve
+
+**Decision**: blessed is appropriate for full control and functional style. Textual is better for complex UIs with many widgets.
+
+### Terminal Color Notes
+
+blessed color names:
+- Basic: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`
+- Bright: `bright_red`, `bright_green`, etc.
+- Modifiers: `bold`, `dim`, `italic`, `underline`
+- Backgrounds: `on_black`, `on_red`, `bold_white_on_blue`, etc.
+
+**Learning**: Combine with underscores: `term.bold_bright_red_on_black("text")`
+
+### Progress Bar Gradient Pattern
+
+**Pattern**: Apply different colors based on percentage
+```python
+for i in range(filled):
+    char_percentage = (i + 1) / bar_width
+    if char_percentage < 0.33:
+        progress_parts.append(term.green("█"))
+    elif char_percentage < 0.66:
+        progress_parts.append(term.yellow("█"))
+    else:
+        progress_parts.append(term.red("█"))
+```
+
+**Learning**: Character-by-character coloring creates smooth gradients. Use block characters `█░` for solid look.
+
+### Command Palette Selection Highlighting
+
+**Pattern**: Use inverted colors for selected item
+```python
+if is_selected:
+    item_line = term.black_on_cyan(f"  {icon} {cmd:<20} {desc}")
+else:
+    item_line = term.cyan(cmd) + term.dim(desc)
+```
+
+**Learning**: Background color (not just bold) makes selection obvious. Consistent padding aligns columns.
+
+### State Update Function Naming
+
+**Pattern**: Verb-noun naming for clarity
+```python
+# Good: Clear action
+append_input_char(state, char)
+delete_input_char(state)
+set_input_text(state, text)
+show_palette(state)
+hide_palette(state)
+
+# Bad: Unclear
+modify_input(state, 'append', char)
+palette_state(state, True)
+```
+
+**Learning**: Specific function names > generic functions with mode parameter. More functions, clearer intent.
+
+### Event Handling Return Pattern
+
+**Pattern**: Return (new_state, optional_command)
+```python
+def handle_key(state, key) -> tuple[UIState, str | None]:
+    # Most events: update state only
+    if event['type'] == 'char':
+        state = append_input_char(state, char)
+        return state, None
+    
+    # Some events: update state AND trigger command
+    if event['type'] == 'enter':
+        command = state.input_text
+        state = set_input_text(state, "")
+        return state, command
+```
+
+**Learning**: Tuple return allows state updates + optional side effects. `None` means no command to execute.
+
+---
+
+**Last Updated**: 2025-09-30 after implementing blessed UI Tasks 1-8

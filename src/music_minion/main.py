@@ -2964,9 +2964,57 @@ def interactive_mode_textual() -> None:
             player.stop_mpv(current_player_state)
 
 
+def interactive_mode_blessed() -> None:
+    """Run the interactive mode with blessed UI."""
+    global current_config, current_player_state, music_tracks
+
+    # Load config if not already loaded
+    if not current_config.music.library_paths:
+        current_config = config.load_config()
+
+    # Load music library
+    ensure_library_loaded()
+
+    # Run database migrations on startup
+    database.init_database()
+
+    # Auto-sync on startup if enabled (run in background thread)
+    if current_config.sync.auto_sync_on_startup:
+        sync_thread = threading.Thread(
+            target=_auto_sync_background,
+            args=(current_config,),
+            daemon=True,
+            name="AutoSyncThread"
+        )
+        sync_thread.start()
+
+    # Create initial UI state
+    from .ui_blessed.state import create_initial_state
+    from dataclasses import replace
+
+    initial_state = create_initial_state()
+    # Populate state with config and library
+    initial_state = replace(
+        initial_state,
+        config=current_config,
+        music_tracks=music_tracks,
+        shuffle_enabled=True,  # Default shuffle on
+    )
+
+    # Run blessed UI
+    try:
+        from .ui_blessed import run_interactive_ui
+        run_interactive_ui(initial_state, current_player_state)
+    finally:
+        # Clean up MPV player
+        if player.is_mpv_running(current_player_state):
+            player.stop_mpv(current_player_state)
+
+
 def interactive_mode() -> None:
     """Run the interactive command loop."""
     global current_config
+    import os
 
     # Load config if not already loaded
     if not current_config.music.library_paths:
@@ -2986,15 +3034,23 @@ def interactive_mode() -> None:
         )
         sync_thread.start()
 
-    # Check if dashboard is enabled and use Textual
+    # Check for UI mode preference (environment variable or default)
+    ui_mode = os.environ.get('MUSIC_MINION_UI', 'blessed').lower()
+
+    # Check if dashboard is enabled
     if current_config.ui.enable_dashboard:
         try:
-            # Try to use Textual UI (new implementation)
-            interactive_mode_textual()
-            return
+            # Use blessed UI by default (new implementation)
+            if ui_mode == 'blessed':
+                interactive_mode_blessed()
+                return
+            elif ui_mode == 'textual':
+                # Use Textual UI if specifically requested
+                interactive_mode_textual()
+                return
         except ImportError as e:
-            # Textual not available, fall back to old dashboard
-            print(f"⚠️  Textual UI not available ({e}), falling back to legacy dashboard")
+            # blessed/Textual not available, fall back to old dashboard
+            print(f"⚠️  {ui_mode.title()} UI not available ({e}), falling back to legacy dashboard")
             try:
                 interactive_mode_with_dashboard()
                 return
