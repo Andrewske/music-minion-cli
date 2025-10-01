@@ -18,7 +18,7 @@ from .domain import playlists
 from .domain import sync
 from . import command_palette
 from . import router
-from . import core
+from . import helpers
 from .utils import parsers
 
 # Global state for interactive mode
@@ -623,7 +623,7 @@ def interactive_mode_textual() -> None:
         current_config = config.load_config()
 
     # Load music library
-    core.ensure_library_loaded()
+    helpers.ensure_library_loaded()
 
     # Run database migrations on startup
     database.init_database()
@@ -768,7 +768,7 @@ def interactive_mode_blessed() -> None:
         current_config = config.load_config()
 
     # Load music library
-    core.ensure_library_loaded()
+    helpers.ensure_library_loaded()
 
     # Run database migrations on startup
     database.init_database()

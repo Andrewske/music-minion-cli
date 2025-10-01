@@ -18,8 +18,9 @@ from .domain.playlists import exporters as playlist_export
 # Rich Console instance (imported from main)
 def get_console():
     """Get Rich Console instance from main module."""
-    from . import main
-    return main.console
+    import sys
+    main_module = sys.modules['music_minion.main']
+    return main_module.console
 
 
 def safe_print(message: str, style: str = None) -> None:
@@ -113,36 +114,37 @@ def ensure_mpv_available() -> bool:
 
 def ensure_library_loaded() -> bool:
     """Ensure music library is loaded."""
-    from . import main
+    import sys
+    main_module = sys.modules['music_minion.main']
 
-    if not main.music_tracks:
+    if not main_module.music_tracks:
         safe_print("Loading music library...", "blue")
-        main.current_config = config.load_config()
+        main_module.current_config = config.load_config()
 
         # Try to load from database first (much faster)
         db_tracks = database.get_all_tracks()
         if db_tracks:
             # Convert database tracks to library Track objects
-            main.music_tracks = [database.db_track_to_library_track(track) for track in db_tracks]
+            main_module.music_tracks = [database.db_track_to_library_track(track) for track in db_tracks]
             # Filter out files that no longer exist
             existing_tracks = []
-            for track in main.music_tracks:
+            for track in main_module.music_tracks:
                 if Path(track.file_path).exists():
                     existing_tracks.append(track)
-            main.music_tracks = existing_tracks
-            safe_print(f"Loaded {len(main.music_tracks)} tracks from database", "green")
+            main_module.music_tracks = existing_tracks
+            safe_print(f"Loaded {len(main_module.music_tracks)} tracks from database", "green")
 
         # If no database tracks or very few, fall back to filesystem scan
-        if not main.music_tracks:
+        if not main_module.music_tracks:
             safe_print("No tracks in database, scanning filesystem...", "yellow")
-            main.music_tracks = library.scan_music_library(main.current_config, show_progress=False)
+            main_module.music_tracks = library.scan_music_library(main_module.current_config, show_progress=False)
 
-            if not main.music_tracks:
+            if not main_module.music_tracks:
                 safe_print("No music files found in configured library paths.", "red")
                 safe_print("Run 'music-minion scan' to populate the database, or 'music-minion init' to set up library paths.", "yellow")
                 return False
 
-            safe_print(f"Scanned {len(main.music_tracks)} tracks from filesystem", "green")
+            safe_print(f"Scanned {len(main_module.music_tracks)} tracks from filesystem", "green")
 
     return True
 
@@ -154,26 +156,27 @@ def auto_export_if_enabled(playlist_id: int) -> None:
     Args:
         playlist_id: ID of the playlist to export
     """
-    from . import main
+    import sys
+    main_module = sys.modules['music_minion.main']
 
-    if not main.current_config.playlists.auto_export:
+    if not main_module.current_config.playlists.auto_export:
         return
 
     # Validate library paths exist
-    if not main.current_config.music.library_paths:
+    if not main_module.current_config.music.library_paths:
         print("Warning: Cannot auto-export - no library paths configured", file=sys.stderr)
         return
 
     # Get library root from config
-    library_root = Path(main.current_config.music.library_paths[0]).expanduser()
+    library_root = Path(main_module.current_config.music.library_paths[0]).expanduser()
 
     # Silently export in the background - don't interrupt user workflow
     try:
         playlist_export.auto_export_playlist(
             playlist_id=playlist_id,
-            export_formats=main.current_config.playlists.export_formats,
+            export_formats=main_module.current_config.playlists.export_formats,
             library_root=library_root,
-            use_relative_paths=main.current_config.playlists.use_relative_paths
+            use_relative_paths=main_module.current_config.playlists.use_relative_paths
         )
     except (ValueError, FileNotFoundError, ImportError, OSError) as e:
         # Expected errors - log but don't interrupt workflow
