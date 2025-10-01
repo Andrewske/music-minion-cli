@@ -885,22 +885,3 @@ def interactive_mode() -> None:
         sys.exit(1)
 
 
-def main() -> None:
-    """Main entry point for the music-minion command."""
-
-    # Only run interactive mode for now until we have a way to manage state across sessions
-    interactive_mode()
-    # if len(sys.argv) == 1:
-    #     # No arguments provided, start interactive mode
-    #     interactive_mode()
-    # else:
-    #     # Command line arguments provided, execute single command
-    #     command_parts = sys.argv[1:]
-    #     command = command_parts[0].lower() if command_parts else ""
-    #     args = command_parts[1:] if len(command_parts) > 1 else []
-
-    #     handle_command(command, args)
-
-
-if __name__ == "__main__":
-    main()
