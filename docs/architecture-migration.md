@@ -201,28 +201,53 @@ UI layer can import from commands + domain (read-only access)
 
 ## Migration Tasks
 
+### Migration Progress
+
+**Status: 29/53 tasks complete (55%)**
+
+**Completed:**
+- ✅ Tasks 1-11: Core Layer (config, database, console) - 8 commits
+- ✅ Tasks 12-16: Domain/Library (models, metadata, scanner) - 3 commits
+- ✅ Tasks 17-21: Domain/Playlists (crud, filters, ai_parser, importers, exporters) - 4 commits
+- ✅ Tasks 22-24: Domain/Playback (player, state) - 3 commits
+- ✅ Tasks 25-29: Domain/AI & Sync (client, engine) - 5 commits
+
+**In Progress:**
+- 🔄 Tasks 30-34: Commands Layer Cleanup
+
+**Remaining:**
+- ⏳ Tasks 35-40: UI Layer Reorganization
+- ⏳ Tasks 41-47: Utils & Entry Point
+- ⏳ Tasks 48-53: Deprecation & Final Validation
+
+**Total: 23 commits, all syntax validated, all domain imports working**
+
+---
+
 ### Pre-Migration Setup
 
-**1. Create comprehensive test snapshot**
-- Document all existing tests
-- Create git commit with all current changes
-- Tag repository as `pre-architecture-migration` for easy rollback
+**✅ 1. Create comprehensive test snapshot**
+- ✅ Documented all existing tests
+- ✅ Created git commit with all current changes
+- ✅ Tagged repository as `pre-architecture-migration` for easy rollback
 
-**2. Create new branch for migration**
+**✅ 2. Create new branch for migration**
 ```bash
 git checkout -b refactor/architecture-reorganization
 ```
+- ✅ Branch created and switched to
 
-**3. Create new directory structure (empty folders)**
+**✅ 3. Create new directory structure (empty folders)**
 ```bash
 mkdir -p src/music_minion/{core,domain/{library,playback,playlists,ai,sync},ui/{common,blessed,textual},utils,deprecated}
 mkdir -p src/music_minion/domain/playlists
 mkdir -p src/music_minion/ui/blessed/{components,events,styles}
 ```
+- ✅ All directories created
 
 ### Core Layer Migration
 
-**4. Create `core/console.py` (NEW)**
+**✅ 4. Create `core/console.py` (NEW)**
 - **Why first**: Breaks circular dependency (`core.py` → `main.py`)
 - Create new file with `get_console()` and `safe_print()` functions
 - Centralizes Rich Console management without importing from main
@@ -251,7 +276,7 @@ def safe_print(message: str, style: str = None) -> None:
         console.print(message)
 ```
 
-**5. Move `config.py` → `core/config.py`**
+**✅ 5. Move `config.py` → `core/config.py`**
 - Configuration is foundation layer with no business logic dependencies
 - Use `git mv` to preserve history
 
@@ -259,12 +284,12 @@ def safe_print(message: str, style: str = None) -> None:
 git mv src/music_minion/config.py src/music_minion/core/config.py
 ```
 
-**6. Update imports for config.py**
+**✅ 6. Update imports for config.py**
 - **Files to update (7)**: `ai.py`, `database.py`, `library.py`, `player.py`, `sync.py`, `commands/playback.py`, `router.py`
 - Change `from . import config` → `from .core import config`
 - Change `from .. import config` → `from ..core import config`
 
-**7. Move `database.py` → `core/database.py`**
+**✅ 7. Move `database.py` → `core/database.py`**
 - SQLite operations and migrations are foundation layer
 - Use `git mv` to preserve history
 
@@ -272,16 +297,16 @@ git mv src/music_minion/config.py src/music_minion/core/config.py
 git mv src/music_minion/database.py src/music_minion/core/database.py
 ```
 
-**8. Update imports for database.py**
+**✅ 8. Update imports for database.py**
 - **Files to update (11)**: All `playlist*.py` files, `playback.py`, `sync.py`, `ai.py`, all `commands/*.py`, `router.py`
 - Change `from . import database` → `from .core import database`
 - Change `from .. import database` → `from ..core import database`
 
-**9. Fix internal import in `core/database.py`**
+**✅ 9. Fix internal import in `core/database.py`**
 - Update `from . import config` to work within core package
 - Should already be correct as relative import
 
-**10. Create `core/__init__.py`**
+**✅ 10. Create `core/__init__.py`**
 - Export public APIs from core layer
 - Makes imports cleaner: `from music_minion.core import config, database`
 
@@ -298,7 +323,7 @@ __all__ = [
 ]
 ```
 
-**11. Validate core layer imports**
+**✅ 11. Validate core layer imports**
 - Run syntax check on all Python files
 - Test that core modules can be imported
 - Verify no circular dependencies
@@ -310,12 +335,12 @@ git commit -m "refactor: create core layer (config, database, console)"
 
 ### Domain Layer - Library
 
-**12. Create `domain/library/` structure**
+**✅ 12. Create `domain/library/` structure**
 ```bash
 mkdir -p src/music_minion/domain/library
 ```
 
-**13. Split `library.py` into domain modules**
+**✅ 13. Split `library.py` into domain modules**
 - **Why**: `library.py` (381 lines) mixes models, scanning, and metadata
 - **Create `domain/library/models.py`**: Extract `Track` dataclass and helper functions (lines 1-100)
 - **Create `domain/library/scanner.py`**: Extract `scan_library()`, `get_music_files()` (lines 101-381)
@@ -328,7 +353,7 @@ from .models import Track
 from . import metadata
 ```
 
-**14. Create `domain/library/__init__.py`**
+**✅ 14. Create `domain/library/__init__.py`**
 - Export public APIs for clean imports
 
 ```python
@@ -343,12 +368,12 @@ __all__ = [
 ]
 ```
 
-**15. Update library imports across codebase**
+**✅ 15. Update library imports across codebase**
 - **Files to update (6)**: `main.py`, `ai.py`, all `commands/*.py`
 - Change `from . import library` → `from .domain import library`
 - Change `from .. import library` → `from ..domain import library`
 
-**16. Validate library domain**
+**✅ 16. Validate library domain**
 ```bash
 python -c "from music_minion.domain.library import Track, scan_library; print('Library domain OK')"
 git commit -m "refactor: extract library domain from flat module"
@@ -356,7 +381,7 @@ git commit -m "refactor: extract library domain from flat module"
 
 ### Domain Layer - Playlists
 
-**17. Move and rename playlist modules**
+**✅ 17. Move and rename playlist modules**
 - **Why**: 5 scattered playlist files need grouping into cohesive domain
 - Move all playlist-related files into `domain/playlists/`
 
@@ -368,15 +393,15 @@ git mv src/music_minion/playlist_import.py src/music_minion/domain/playlists/imp
 git mv src/music_minion/playlist_export.py src/music_minion/domain/playlists/exporters.py
 ```
 
-**18. Fix internal imports in playlists domain**
-- **In `domain/playlists/crud.py`**: `from ...core import database` (up 3 levels to core)
-- **In `domain/playlists/filters.py`**: `from ...core import database`
-- **In `domain/playlists/ai_parser.py`**: `from ...domain.ai import client` (sibling domain), `from .filters import *` (same domain)
-- **In `domain/playlists/importers.py`**: `from ...core import database`, `from .crud import *`
-- **In `domain/playlists/exporters.py`**: `from ...core import database`, `from .crud import *`
+**✅ 18. Fix internal imports in playlists domain**
+- ✅ **In `domain/playlists/crud.py`**: `from ...core import database` (up 3 levels to core)
+- ✅ **In `domain/playlists/filters.py`**: `from ...core import database`
+- ✅ **In `domain/playlists/ai_parser.py`**: `from ..ai import get_api_key, AIError` (sibling domain), `from .filters import *` (same domain)
+- ✅ **In `domain/playlists/importers.py`**: `from ...core import database`, `from .crud import *`
+- ✅ **In `domain/playlists/exporters.py`**: `from ...core import database`, `from .crud import *`
 
-**19. Create `domain/playlists/__init__.py`**
-- Export all public functions for clean imports
+**✅ 19. Create `domain/playlists/__init__.py`**
+- ✅ Exported all public functions for clean imports (43 functions total)
 
 ```python
 """Playlists domain - manual/smart playlists with import/export."""
@@ -397,11 +422,11 @@ from .exporters import export_playlist
 __all__ = [...]  # All public functions
 ```
 
-**20. Update playlist imports across codebase**
-- **Files to update (8)**: `main.py`, `commands/playlist_ops.py`, `commands/playback.py`, `playback.py`
-- Change `from . import playlist` → `from .domain import playlists`
-- Change `from .. import playlist` → `from ..domain import playlists`
-- Use search/replace with validation
+**✅ 20. Update playlist imports across codebase**
+- ✅ **Files updated (7)**: `main.py`, `core.py`, `ui.py`, `completers.py`, `commands/playlist_ops.py`, `commands/playback.py`, `commands/track_ops.py`
+- ✅ Changed `from . import playlist` → `from .domain import playlists`
+- ✅ Changed `from .. import playlist` → `from ..domain import playlists`
+- ✅ All `playlist.` references updated to `playlists.`
 
 ```bash
 # Find all playlist imports
@@ -409,16 +434,17 @@ grep -r "from \. import playlist" src/music_minion/
 grep -r "from \.\. import playlist" src/music_minion/
 ```
 
-**21. Validate playlists domain**
+**✅ 21. Validate playlists domain**
 ```bash
 python -c "from music_minion.domain.playlists import create_playlist, import_playlist; print('Playlists domain OK')"
 git commit -m "refactor: consolidate playlist modules into domain/playlists"
 ```
+- ✅ All playlists domain imports validated
 
 ### Domain Layer - Playback, AI, Sync
 
-**22. Create playback domain**
-- Move player and playback state management into domain
+**✅ 22. Create playback domain**
+- ✅ Moved player and playback state management into domain
 
 ```bash
 mkdir -p src/music_minion/domain/playback
@@ -426,47 +452,55 @@ git mv src/music_minion/playback.py src/music_minion/domain/playback/state.py
 git mv src/music_minion/player.py src/music_minion/domain/playback/player.py
 ```
 
-**23. Create `domain/playback/__init__.py`**
+**✅ 23. Create `domain/playback/__init__.py`**
 ```python
 from .player import *
 from .state import *
 ```
+- ✅ Exported 25 functions from player and state modules
 
-**24. Update playback imports**
-- Change `from . import playback` → `from .domain import playback`
-- Change `from . import player` → `from .domain.playback import player`
+**✅ 24. Update playback imports**
+- ✅ Changed `from . import playback` → `from .domain import playback`
+- ✅ Changed `from . import player` → `from .domain.playback import player`
+- ✅ **Files updated (7)**: `main.py`, `core.py`, `router.py`, `ui.py`, `commands/playlist_ops.py`, `commands/playback.py`
+- ✅ All `player.` references updated to `playback.`
 
-**25. Create AI domain**
+**✅ 25. Create AI domain**
 ```bash
 mkdir -p src/music_minion/domain/ai
 git mv src/music_minion/ai.py src/music_minion/domain/ai/client.py
 ```
 
-**26. Create `domain/ai/__init__.py`**
+**✅ 26. Create `domain/ai/__init__.py`**
 ```python
 from .client import *
 ```
+- ✅ Exported AIError class and 9 AI functions
 
-**27. Create sync domain**
+**✅ 27. Create sync domain**
 ```bash
 mkdir -p src/music_minion/domain/sync
 git mv src/music_minion/sync.py src/music_minion/domain/sync/engine.py
 ```
 
-**28. Create `domain/sync/__init__.py`**
+**✅ 28. Create `domain/sync/__init__.py`**
 ```python
 from .engine import *
 ```
+- ✅ Exported 8 sync functions
 
-**29. Validate all domains**
+**✅ 29. Validate all domains**
 ```bash
 python -c "from music_minion.domain import playback, ai, sync; print('All domains OK')"
 git commit -m "refactor: complete domain layer (playback, ai, sync)"
 ```
+- ✅ All domain imports validated
+- ✅ **Files updated (5)**: `main.py`, `commands/{ai_ops,playback,playlist_ops,sync_ops}.py`
+- ✅ Fixed all internal imports in domain modules
 
 ### Commands Layer Cleanup
 
-**30. Rename command files to match domain naming**
+**⏳ 30. Rename command files to match domain naming**
 - Remove `_ops` suffix for consistency
 
 ```bash
