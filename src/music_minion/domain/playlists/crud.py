@@ -56,25 +56,31 @@ def update_playlist_track_count(playlist_id: int) -> None:
         return
 
     with get_db_connection() as conn:
-        if playlist['type'] == 'manual':
-            # Count tracks in playlist_tracks table
-            cursor = conn.execute("""
-                SELECT COUNT(*) as count
-                FROM playlist_tracks
-                WHERE playlist_id = ?
-            """, (playlist_id,))
-            count = cursor.fetchone()['count']
-        else:
-            # Smart playlist - evaluate filters
-            matching_tracks = filters.evaluate_filters(playlist_id)
-            count = len(matching_tracks)
+        # Begin explicit transaction for atomicity
+        conn.execute("BEGIN")
+        try:
+            if playlist['type'] == 'manual':
+                # Count tracks in playlist_tracks table
+                cursor = conn.execute("""
+                    SELECT COUNT(*) as count
+                    FROM playlist_tracks
+                    WHERE playlist_id = ?
+                """, (playlist_id,))
+                count = cursor.fetchone()['count']
+            else:
+                # Smart playlist - evaluate filters
+                matching_tracks = filters.evaluate_filters(playlist_id)
+                count = len(matching_tracks)
 
-        conn.execute("""
-            UPDATE playlists
-            SET track_count = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        """, (count, playlist_id))
-        conn.commit()
+            conn.execute("""
+                UPDATE playlists
+                SET track_count = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (count, playlist_id))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
 
 def delete_playlist(playlist_id: int) -> bool:
@@ -327,9 +333,9 @@ def add_track_to_playlist(playlist_id: int, track_id: int) -> bool:
         if cursor.fetchone():
             return False  # Already in playlist
 
-        # Get next position
+        # Get next position (0 if playlist is empty, otherwise max + 1)
         cursor = conn.execute("""
-            SELECT COALESCE(MAX(position), -1) + 1 as next_position
+            SELECT COALESCE(MAX(position) + 1, 0) as next_position
             FROM playlist_tracks
             WHERE playlist_id = ?
         """, (playlist_id,))
@@ -567,13 +573,15 @@ def get_available_playlist_tracks(playlist_id: int) -> List[str]:
             return [row['file_path'] for row in cursor.fetchall()]
         else:
             # Smart playlist - evaluate filters
-            filters = filters.get_filters(playlist_id)
-            if not filters:
+            playlist_filters = filters.get_playlist_filters(playlist_id)
+            if not playlist_filters:
                 return []
 
-            where_clause, params = filters.build_filter_query(filters)
+            where_clause, params = filters.build_filter_query(playlist_filters)
 
             # Query with filter and exclude archived tracks
+            # Note: f-string is safe here because build_filter_query() validates column names
+            # via FIELD_TO_COLUMN whitelist and returns parameterized WHERE clause with ? placeholders
             cursor = conn.execute(f"""
                 SELECT DISTINCT t.file_path
                 FROM tracks t

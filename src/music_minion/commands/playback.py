@@ -47,14 +47,14 @@ def safe_print(message: str, style: str = None) -> None:
 
 def ensure_mpv_available() -> bool:
     """Ensure MPV is available."""
-    from .. import main
-    return main.ensure_mpv_available()
+    from .. import helpers
+    return helpers.ensure_mpv_available()
 
 
 def ensure_library_loaded() -> bool:
     """Ensure music library is loaded."""
-    from .. import main
-    return main.ensure_library_loaded()
+    from .. import helpers
+    return helpers.ensure_library_loaded()
 
 
 def get_available_tracks() -> List[library.Track]:
@@ -80,8 +80,16 @@ def play_track(track: library.Track, playlist_position: Optional[int] = None) ->
     Returns:
         True to continue interactive loop
     """
+    from pathlib import Path
+
     current_player_state = get_player_state()
     current_config = get_config()
+
+    # Validate track file exists before attempting playback
+    if not Path(track.file_path).exists():
+        safe_print(f"❌ File not found: {track.file_path}", "red")
+        safe_print("Track may have been moved or deleted", "yellow")
+        return True
 
     # Start MPV if not running
     if not playback.is_mpv_running(current_player_state):
@@ -264,8 +272,9 @@ def handle_skip_command() -> bool:
                     break
 
             # Check if track is available (not archived) using O(1) dict lookup
+            # Also verify file still exists on disk
             next_track = available_tracks_dict.get(next_db_track['file_path'])
-            if next_track:
+            if next_track and Path(next_track.file_path).exists():
                 # Found non-archived track - get its position for optimization
                 position = playback.get_track_position_in_playlist(playlist_tracks, next_db_track['id'])
                 print("⏭ Next track (sequential)...")

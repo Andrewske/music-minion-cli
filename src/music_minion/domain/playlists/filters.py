@@ -325,6 +325,8 @@ def evaluate_filters(playlist_id: int) -> List[Dict[str, Any]]:
     where_clause, params = build_filter_query(filters)
 
     # Query tracks
+    # Note: f-string is safe here because build_filter_query() validates column names
+    # via FIELD_TO_COLUMN whitelist and returns parameterized WHERE clause with ? placeholders
     with get_db_connection() as conn:
         query = f"""
             SELECT *

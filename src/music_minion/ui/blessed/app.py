@@ -77,9 +77,18 @@ def poll_player_state(state: UIState, player_state: Any) -> UIState:
 
                 state = update_track_info(state, track_data)
 
-    except Exception:
-        # Don't crash on polling errors
+    except (OSError, ConnectionError, IOError) as e:
+        # Expected errors - player not running, socket issues
+        # Silently continue - UI will show "not playing"
         pass
+    except (database.sqlite3.Error, KeyError, ValueError) as e:
+        # Database or data errors - log to stderr but don't crash
+        import sys
+        print(f"Warning: Error polling player state: {e}", file=sys.stderr)
+    except Exception as e:
+        # Unexpected errors - log for debugging
+        import sys
+        print(f"Unexpected error polling player state: {type(e).__name__}: {e}", file=sys.stderr)
 
     return state
 
@@ -121,25 +130,29 @@ def main_loop(term: Terminal, state: UIState, player_state: Any = None) -> None:
 
     while not should_quit:
         # Poll player state every 10 frames (~1 second at 0.1s timeout)
-        if player_state and frame_count % 10 == 0:
+        should_poll = player_state and frame_count % 10 == 0
+        if should_poll:
             state = poll_player_state(state, player_state)
 
         # Check if state changed (only redraw if needed)
-        current_state_hash = hash((
-            state.player.current_track,
-            state.player.is_playing,
-            int(state.player.current_position),  # Floor to avoid constant changes
-            state.player.duration,
-            len(state.history),
-            state.feedback_message,
-        ))
+        # Only compute hash when we polled or when other state changes might have occurred
+        current_state_hash = None
+        if should_poll or last_state_hash is None:
+            current_state_hash = hash((
+                state.player.current_track,
+                state.player.is_playing,
+                int(state.player.current_position),  # Floor to avoid constant changes
+                state.player.duration,
+                len(state.history),
+                state.feedback_message,
+            ))
 
         # Check for input-only changes (no full redraw needed)
         input_changed = state.input_text != last_input_text
         palette_state_changed = (state.palette_visible, state.palette_selected) != last_palette_state
 
         # Determine if we need a full redraw
-        needs_full_redraw = needs_full_redraw or (current_state_hash != last_state_hash)
+        needs_full_redraw = needs_full_redraw or (current_state_hash is not None and current_state_hash != last_state_hash)
 
         if needs_full_redraw:
             # Full screen redraw
