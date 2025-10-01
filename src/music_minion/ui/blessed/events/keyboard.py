@@ -86,13 +86,21 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10) -> tupl
     # Calculate visible items (subtract header and footer lines)
     visible_items = max(1, palette_height - 2)
 
-    # Handle arrows (palette navigation)
+    # Handle arrows (palette navigation with autofill)
     if event['type'] == 'arrow_up' and state.palette_visible:
         state = move_palette_selection(state, -1, visible_items)
+        # Autofill input with selected command
+        if state.palette_items and state.palette_selected < len(state.palette_items):
+            selected_cmd = state.palette_items[state.palette_selected][1]  # Command name
+            state = set_input_text(state, selected_cmd)
         return state, None
 
     if event['type'] == 'arrow_down' and state.palette_visible:
         state = move_palette_selection(state, 1, visible_items)
+        # Autofill input with selected command
+        if state.palette_items and state.palette_selected < len(state.palette_items):
+            selected_cmd = state.palette_items[state.palette_selected][1]  # Command name
+            state = set_input_text(state, selected_cmd)
         return state, None
 
     # Handle Enter (execute command or select palette item)
@@ -128,6 +136,12 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10) -> tupl
     # Handle regular characters
     if event['type'] == 'char' and event['char']:
         char = event['char']
+
+        # Check if space closes palette after selection
+        if char == ' ' and state.palette_visible and state.input_text:
+            state = hide_palette(state)
+            state = append_input_char(state, char)
+            return state, None
 
         # Check if "/" triggers palette
         if char == '/' and not state.input_text:
