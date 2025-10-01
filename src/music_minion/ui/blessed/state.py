@@ -5,17 +5,6 @@ from typing import Optional, Any
 
 
 @dataclass
-class PlayerState:
-    """Player state snapshot."""
-    current_track: Optional[str] = None
-    is_playing: bool = False
-    is_paused: bool = False
-    current_position: float = 0.0
-    duration: float = 0.0
-    process: Any = None
-
-
-@dataclass
 class TrackMetadata:
     """Track metadata from file."""
     title: str = "Unknown"
@@ -50,60 +39,40 @@ class PlaylistInfo:
 @dataclass
 class UIState:
     """
-    Complete UI state - immutable updates only.
+    UI-specific state - immutable updates only.
 
     All state transformations return new UIState instances.
+    Application state (config, tracks, player) is in AppContext, not here.
     """
-    # Dashboard data
-    player: PlayerState = field(default_factory=PlayerState)
+    # UI-derived dashboard cache (queried from DB/files for display)
     track_metadata: Optional[TrackMetadata] = None
     track_db_info: Optional[TrackDBInfo] = None
     playlist_info: PlaylistInfo = field(default_factory=PlaylistInfo)
+    shuffle_enabled: bool = True  # Cached from database for display
 
-    # History
+    # Command history display
     history: list[tuple[str, str]] = field(default_factory=list)  # (text, color)
     history_scroll: int = 0
 
-    # Input
+    # Input field state
     input_text: str = ""
     cursor_pos: int = 0
 
-    # Palette
+    # Command palette state
     palette_visible: bool = False
     palette_query: str = ""
     palette_items: list[tuple[str, str, str, str]] = field(default_factory=list)  # (cat, cmd, icon, desc)
     palette_selected: int = 0
     palette_scroll: int = 0
 
-    # UI feedback
+    # UI feedback (toast notifications)
     feedback_message: Optional[str] = None
     feedback_time: Optional[float] = None
-
-    # Shuffle state
-    shuffle_enabled: bool = True
-
-    # Library and config
-    music_tracks: list[Any] = field(default_factory=list)
-    config: Any = None
 
 
 def create_initial_state() -> UIState:
     """Create the initial UI state."""
     return UIState()
-
-
-def update_player_state(state: UIState, player_data: dict[str, Any]) -> UIState:
-    """Update player state from player data."""
-    from dataclasses import replace
-    new_player = replace(
-        state.player,
-        current_track=player_data.get('current_track', state.player.current_track),
-        is_playing=player_data.get('is_playing', state.player.is_playing),
-        is_paused=player_data.get('is_paused', state.player.is_paused),
-        current_position=player_data.get('current_position', state.player.current_position),
-        duration=player_data.get('duration', state.player.duration),
-    )
-    return replace(state, player=new_player)
 
 
 def update_track_info(state: UIState, track_data: dict[str, Any]) -> UIState:

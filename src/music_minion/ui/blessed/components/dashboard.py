@@ -3,7 +3,8 @@
 from datetime import datetime
 from typing import Optional
 from blessed import Terminal
-from ..state import UIState, TrackMetadata, TrackDBInfo, PlayerState
+from ....domain.playback.player import PlayerState
+from ..state import UIState, TrackMetadata, TrackDBInfo
 
 
 # Icon constants
@@ -18,22 +19,22 @@ ICONS = {
 }
 
 
-def render_dashboard(term: Terminal, state: UIState, y_start: int) -> int:
+def render_dashboard(term: Terminal, player_state: PlayerState, ui_state: UIState, y_start: int) -> int:
     """
     Render dashboard section.
 
     Args:
         term: blessed Terminal instance
-        state: Current UI state
+        player_state: Player state from AppContext
+        ui_state: UI state with cached display data
         y_start: Starting y position
 
     Returns:
         Height used by dashboard
     """
     lines = []
-    player = state.player
-    metadata = state.track_metadata
-    db_info = state.track_db_info
+    metadata = ui_state.track_metadata
+    db_info = ui_state.track_db_info
 
     # Header with clock
     current_time = datetime.now().strftime("%H:%M:%S")
@@ -74,7 +75,7 @@ def render_dashboard(term: Terminal, state: UIState, y_start: int) -> int:
     lines.append("")
 
     # Track information
-    if player.current_track and metadata:
+    if player_state.current_track and metadata:
         track_lines = format_track_display(metadata, term)
         lines.extend(track_lines)
     else:
@@ -84,8 +85,8 @@ def render_dashboard(term: Terminal, state: UIState, y_start: int) -> int:
     lines.append("")
 
     # Progress bar
-    if player.is_playing:
-        progress = create_progress_bar(player.current_position, player.duration, term)
+    if player_state.is_playing:
+        progress = create_progress_bar(player_state.current_position, player_state.duration, term)
         lines.append(progress)
 
         # BPM visualizer
@@ -126,8 +127,8 @@ def render_dashboard(term: Terminal, state: UIState, y_start: int) -> int:
 
     # Feedback
     from ..state import should_show_feedback
-    if should_show_feedback(state):
-        feedback = state.feedback_message
+    if should_show_feedback(ui_state):
+        feedback = ui_state.feedback_message
         if feedback:
             if "loved" in feedback.lower() or "❤️" in feedback:
                 style = term.bold_red
@@ -144,20 +145,20 @@ def render_dashboard(term: Terminal, state: UIState, y_start: int) -> int:
             lines.append(style(feedback))
 
     # Active playlist info
-    playlist_info = state.playlist_info
+    playlist_info = ui_state.playlist_info
     if playlist_info.name:
         playlist_line = f"📋 Playlist: {playlist_info.name}"
         lines.append(term.bold_cyan(playlist_line))
 
-        if playlist_info.current_position is not None and not state.shuffle_enabled:
+        if playlist_info.current_position is not None and not ui_state.shuffle_enabled:
             position_line = f"   Position: {playlist_info.current_position + 1}/{playlist_info.track_count}"
             lines.append(term.cyan(position_line))
 
     # Shuffle mode
-    shuffle_icon = "🔀" if state.shuffle_enabled else "🔁"
-    shuffle_text = "Shuffle ON" if state.shuffle_enabled else "Sequential"
+    shuffle_icon = "🔀" if ui_state.shuffle_enabled else "🔁"
+    shuffle_text = "Shuffle ON" if ui_state.shuffle_enabled else "Sequential"
     shuffle_line = f"{shuffle_icon} {shuffle_text}"
-    shuffle_style = term.bold_yellow if state.shuffle_enabled else term.bold_green
+    shuffle_style = term.bold_yellow if ui_state.shuffle_enabled else term.bold_green
     lines.append(shuffle_style(shuffle_line))
 
     # Render all lines

@@ -438,27 +438,16 @@ def interactive_mode_blessed() -> None:
         )
         sync_thread.start()
 
-    # Create initial UI state
-    from .ui.blessed.state import create_initial_state
-    from dataclasses import replace
-
-    initial_state = create_initial_state()
-    # Populate state with config and library
-    initial_state = replace(
-        initial_state,
-        config=current_config,
-        music_tracks=music_tracks,
-        shuffle_enabled=True,  # Default shuffle on
-    )
-
-    # Run blessed UI
+    # Run blessed UI with AppContext
     try:
         from .ui.blessed import run_interactive_ui
-        run_interactive_ui(initial_state, current_player_state)
+        ctx = run_interactive_ui(ctx)
+        # Sync updated context back to globals
+        helpers.sync_context_to_globals(ctx)
     finally:
         # Clean up MPV player
-        if playback.is_mpv_running(current_player_state):
-            playback.stop_mpv(current_player_state)
+        if playback.is_mpv_running(ctx.player_state):
+            playback.stop_mpv(ctx.player_state)
 
 
 def interactive_mode() -> None:
