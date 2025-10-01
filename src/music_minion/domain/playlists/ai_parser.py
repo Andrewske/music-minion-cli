@@ -8,7 +8,7 @@ import json
 import time
 from typing import List, Dict, Any, Tuple, TypedDict
 
-from ...ai import get_api_key, AIError
+from ..ai import get_api_key, AIError
 from .filters import (
     VALID_FIELDS, TEXT_OPERATORS, NUMERIC_OPERATORS,
     NUMERIC_FIELDS, TEXT_FIELDS, validate_filter
