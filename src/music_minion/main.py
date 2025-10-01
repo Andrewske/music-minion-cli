@@ -2,19 +2,11 @@
 Music Minion CLI - Main entry point and interactive loop
 """
 
-import re
-import shlex
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import List, Optional
-
-from prompt_toolkit import PromptSession
-from prompt_toolkit.styles import Style
-from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.filters import Condition
-from prompt_toolkit.layout import Float
-from simple_term_menu import TerminalMenu
 
 from . import config
 from . import database
@@ -23,14 +15,11 @@ from . import player
 from . import ai
 from . import ui
 from . import playlist
-from . import playlist_filters
-from . import playlist_ai
-from . import playlist_import
-from . import playlist_export
 from . import playback
 from . import sync
-from . import completers
 from . import command_palette
+from . import router
+from . import core
 
 # Global state for interactive mode
 current_player_state: player.PlayerState = player.PlayerState()
@@ -45,6 +34,7 @@ except ImportError:
     # Fallback if Rich is not available
     console = None
 
+
 def safe_print(message: str, style: str = None) -> None:
     """Print using Rich Console if available, otherwise fallback to regular print."""
     if console:
@@ -54,242 +44,6 @@ def safe_print(message: str, style: str = None) -> None:
             console.print(message)
     else:
         print(message)
-
-
-def parse_quoted_args(args: List[str]) -> List[str]:
-    """
-    Parse command arguments respecting quoted strings.
-    Handles both single and double quotes.
-
-    Args:
-        args: Raw argument list from command split
-
-    Returns:
-        List of parsed arguments with quotes removed
-
-    Example:
-        ['playlist', 'rename', '"Old', 'Name"', '"New', 'Name"']
-        -> ['playlist', 'rename', 'Old Name', 'New Name']
-    """
-    parsed = []
-    current = []
-    in_quote = False
-    quote_char = None
-
-    for arg in args:
-        # Check if this arg starts a quote
-        if not in_quote and arg and arg[0] in ('"', "'"):
-            quote_char = arg[0]
-            in_quote = True
-            # Check if quote also ends in same arg
-            if len(arg) > 1 and arg[-1] == quote_char:
-                parsed.append(arg[1:-1])
-                in_quote = False
-                quote_char = None
-            else:
-                current.append(arg[1:])
-        # Check if this arg ends the current quote
-        elif in_quote and arg and arg[-1] == quote_char:
-            current.append(arg[:-1])
-            parsed.append(' '.join(current))
-            current = []
-            in_quote = False
-            quote_char = None
-        # Inside a quote
-        elif in_quote:
-            current.append(arg)
-        # Regular arg outside quotes
-        else:
-            parsed.append(arg)
-
-    # If we have unclosed quotes, join what we have
-    if current:
-        parsed.append(' '.join(current))
-
-    return parsed
-
-
-def print_help() -> None:
-    """Display help information for available commands."""
-    help_text = """
-Music Minion CLI - Contextual Music Curation
-
-Available commands:
-  play [query]      Start playing music (random if no query, or search)
-  pause             Pause current playback
-  resume            Resume paused playback
-  skip              Skip to next song
-  shuffle           Show current shuffle mode
-  shuffle on        Enable shuffle mode (random playback)
-  shuffle off       Enable sequential mode (play in order)
-  stop              Stop current playback
-  killall           Kill all MPV processes (emergency stop)
-  archive           Archive current song (never play again)
-  like              Rate current song as liked
-  love              Rate current song as loved
-  note <text>       Add a note to the current song
-  status            Show current song and player status
-  stats             Show library and rating statistics
-  scan              Scan library and populate database
-  migrate           Run database migrations (if needed)
-
-Playlist Commands:
-  playlist                        List all playlists
-  playlist new manual <name>      Create manual playlist
-  playlist new smart <name>       Create smart playlist (filter wizard)
-  playlist new smart ai <n> "<d>" Create AI smart playlist (natural language)
-  playlist delete <name>          Delete playlist
-  playlist rename "old" "new"     Rename playlist (use quotes)
-  playlist show <name>            Show playlist tracks
-  playlist active <name>          Set active playlist
-  playlist active none            Clear active playlist
-  playlist import <file>          Import playlist from M3U/M3U8/Serato crate
-  playlist export <name> [format] Export playlist (m3u8/crate/all, default: m3u8)
-  add <playlist>                  Add current track to playlist
-  remove <playlist>               Remove current track from playlist
-
-AI Commands:
-  ai setup <key>    Set up OpenAI API key for AI analysis
-  ai analyze        Analyze current track with AI and add tags
-  ai test           Test AI prompt with a random track and save report
-  ai usage          Show total AI usage and costs
-  ai usage today    Show today's AI usage
-  ai usage month    Show last 30 days usage
-
-Tag Commands:
-  tag remove <tag>  Remove/blacklist a tag from current track
-  tag list          Show all tags for current track
-
-Sync Commands:
-  sync export       Write all database tags to file metadata
-  sync import       Read tags from changed files to database
-  sync import --all Import from all files (force full import)
-  sync status       Show sync status and pending changes
-  sync rescan       Rescan library for file changes (incremental)
-  sync rescan --full Full library rescan (all files)
-
-  init              Initialize configuration and scan library
-  help              Show this help message
-  quit, exit        Exit the program
-
-Interactive mode:
-  Just run 'music-minion' to enter interactive mode where you can
-  type commands directly.
-
-Advanced Features:
-  /                       Command palette - browse all commands by category
-  Tab                     Autocomplete commands and playlist names
-  Ctrl+C                  Cancel current operation
-
-Examples:
-  play                    # Play random song
-  play daft punk          # Search and play Daft Punk track
-  playlist                # Browse playlists with fuzzy search
-  /                       # Open command palette
-  playlist new manual "NYE 2025"  # Create playlist
-  add "NYE 2025"          # Add current track to playlist
-"""
-    print(help_text.strip())
-
-
-def parse_command(user_input: str) -> tuple[str, List[str]]:
-    """Parse user input into command and arguments."""
-    parts = user_input.strip().split()
-    if not parts:
-        return "", []
-    
-    command = parts[0].lower()
-    args = parts[1:] if len(parts) > 1 else []
-    return command, args
-
-
-def ensure_mpv_available() -> bool:
-    """Check if MPV is available and warn if not."""
-    if not player.check_mpv_available():
-        print("Error: MPV is not installed or not available in PATH.")
-        print("Please install MPV to use playback features.")
-        print("On Ubuntu/Debian: sudo apt install mpv")
-        print("On Arch Linux: sudo pacman -S mpv") 
-        print("On macOS: brew install mpv")
-        print("On Windows: Download from https://mpv.io/installation/ or use 'winget install mpv'")
-        return False
-    return True
-
-
-def ensure_library_loaded() -> bool:
-    """Ensure music library is loaded."""
-    global music_tracks, current_config
-    
-    if not music_tracks:
-        safe_print("Loading music library...", "blue")
-        current_config = config.load_config()
-        
-        # Try to load from database first (much faster)
-        db_tracks = database.get_all_tracks()
-        if db_tracks:
-            # Convert database tracks to library Track objects
-            music_tracks = [database.db_track_to_library_track(track) for track in db_tracks]
-            # Filter out files that no longer exist
-            existing_tracks = []
-            for track in music_tracks:
-                if Path(track.file_path).exists():
-                    existing_tracks.append(track)
-            music_tracks = existing_tracks
-            safe_print(f"Loaded {len(music_tracks)} tracks from database", "green")
-        
-        # If no database tracks or very few, fall back to filesystem scan
-        if not music_tracks:
-            safe_print("No tracks in database, scanning filesystem...", "yellow")
-            music_tracks = library.scan_music_library(current_config, show_progress=False)
-            
-            if not music_tracks:
-                safe_print("No music files found in configured library paths.", "red")
-                safe_print("Run 'music-minion scan' to populate the database, or 'music-minion init' to set up library paths.", "yellow")
-                return False
-            
-            safe_print(f"Scanned {len(music_tracks)} tracks from filesystem", "green")
-    
-    return True
-
-
-def handle_play_command(args: List[str]) -> bool:
-    """Handle play command - start playback or play specific track."""
-    global current_player_state, current_config
-    
-    if not ensure_mpv_available() or not ensure_library_loaded():
-        return True
-    
-    # If no arguments, play random track or resume current
-    if not args:
-        if current_player_state.current_track:
-            # Resume current track
-            new_state, success = player.resume_playback(current_player_state)
-            current_player_state = new_state
-            if success:
-                safe_print("▶ Resumed playback", "green")
-            else:
-                safe_print("❌ Failed to resume playback", "red")
-        else:
-            # Play random track from available (non-archived) tracks
-            available_tracks = get_available_tracks()
-            if available_tracks:
-                track = library.get_random_track(available_tracks)
-                return play_track(track)
-            else:
-                print("No tracks available to play (all may be archived)")
-    else:
-        # Search for track by query
-        query = ' '.join(args)
-        results = library.search_tracks(music_tracks, query)
-        
-        if results:
-            track = results[0]  # Play first match
-            print(f"Playing: {library.get_display_name(track)}")
-            return play_track(track)
-        else:
-            print(f"No tracks found matching: {query}")
-    
-    return True
 
 
 def play_track(track: library.Track, playlist_position: Optional[int] = None) -> bool:
@@ -425,44 +179,6 @@ def check_and_handle_track_completion() -> None:
             safe_print("No more tracks to play (all may be archived)", "red")
 
 
-def handle_pause_command() -> bool:
-    """Handle pause command."""
-    global current_player_state
-    
-    if not player.is_mpv_running(current_player_state):
-        print("No music is currently playing")
-        return True
-    
-    new_state, success = player.pause_playback(current_player_state)
-    current_player_state = new_state
-    
-    if success:
-        print("⏸ Paused")
-    else:
-        print("Failed to pause playback")
-    
-    return True
-
-
-def handle_resume_command() -> bool:
-    """Handle resume command."""
-    global current_player_state
-    
-    if not player.is_mpv_running(current_player_state):
-        print("No music player is running")
-        return True
-    
-    new_state, success = player.resume_playback(current_player_state)
-    current_player_state = new_state
-    
-    if success:
-        print("▶ Resumed")
-    else:
-        print("Failed to resume playback")
-    
-    return True
-
-
 def get_available_tracks() -> List[library.Track]:
     """
     Get tracks that are available for playback.
@@ -524,214 +240,13 @@ def get_available_tracks() -> List[library.Track]:
         return available_tracks
 
 
-def handle_skip_command() -> bool:
-    """Handle skip command - play next track (sequential or random based on shuffle mode)."""
-    global current_player_state
-
-    if not ensure_library_loaded():
-        return True
-
-    # Get available tracks (excluding archived ones)
-    available_tracks = get_available_tracks()
-
-    if not available_tracks:
-        print("No more tracks to play (all may be archived)")
-        return True
-
-    # Check shuffle mode
-    shuffle_enabled = playback.get_shuffle_mode()
-    active = playlist.get_active_playlist()
-
-    # Sequential mode: play next track in playlist order
-    if not shuffle_enabled and active:
-        # Get current track ID
-        current_track_id = None
-        if current_player_state.current_track:
-            db_track = database.get_track_by_path(current_player_state.current_track)
-            if db_track:
-                current_track_id = db_track['id']
-
-        # Get playlist tracks (in order)
-        playlist_tracks = playlist.get_playlist_tracks(active['id'])
-
-        # Build dict for O(1) lookups of available tracks by file path
-        available_tracks_dict = {t.file_path: t for t in available_tracks}
-
-        # Loop to find next non-archived track
-        attempts = 0
-        max_attempts = len(playlist_tracks)
-
-        while attempts < max_attempts:
-            next_db_track = playback.get_next_sequential_track(playlist_tracks, current_track_id)
-
-            if next_db_track is None:
-                # Track not found in playlist
-                if current_track_id is not None:
-                    # Current track removed from playlist, start from beginning
-                    current_track_id = None
-                    attempts += 1
-                    continue
-                else:
-                    # Empty playlist or other error
-                    break
-
-            # Check if track is available (not archived) using O(1) dict lookup
-            next_track = available_tracks_dict.get(next_db_track['file_path'])
-            if next_track:
-                # Found non-archived track - get its position for optimization
-                position = playback.get_track_position_in_playlist(playlist_tracks, next_db_track['id'])
-                print("⏭ Next track (sequential)...")
-                return play_track(next_track, position)
-
-            # Track is archived, continue to next
-            current_track_id = next_db_track['id']
-            attempts += 1
-
-        # All tracks in playlist are archived
-        print("No non-archived tracks remaining in playlist")
-        return True
-
-    # Shuffle mode or no active playlist: random selection
-    # Remove current track from options if possible
-    if current_player_state.current_track and len(available_tracks) > 1:
-        available_tracks = [t for t in available_tracks if t.file_path != current_player_state.current_track]
-
-    if available_tracks:
-        track = library.get_random_track(available_tracks)
-        if track:
-            print("⏭ Skipping to next track...")
-            return play_track(track)
-
-    print("No more tracks to play (all may be archived)")
-    return True
-
-
-def handle_shuffle_command(args: List[str]) -> bool:
-    """Handle shuffle command - toggle or show shuffle mode."""
-    if not args:
-        # Show current mode
-        shuffle_enabled = playback.get_shuffle_mode()
-        mode = "ON (random playback)" if shuffle_enabled else "OFF (sequential playback)"
-        print(f"🔀 Shuffle mode: {mode}")
-        return True
-
-    # Handle shuffle on/off
-    subcommand = args[0].lower()
-    if subcommand == 'on':
-        playback.set_shuffle_mode(True)
-        print("🔀 Shuffle mode enabled (random playback)")
-        return True
-    elif subcommand == 'off':
-        playback.set_shuffle_mode(False)
-        print("🔁 Sequential mode enabled (play in order)")
-        return True
-    else:
-        print(f"Unknown shuffle option: '{subcommand}'. Use 'shuffle on' or 'shuffle off'")
-        return True
-
-
-def handle_stop_command() -> bool:
-    """Handle stop command."""
-    global current_player_state
-    
-    if not player.is_mpv_running(current_player_state):
-        print("No music is currently playing")
-        return True
-    
-    new_state, success = player.stop_playback(current_player_state)
-    current_player_state = new_state
-    
-    if success:
-        print("⏹ Stopped")
-    else:
-        print("Failed to stop playback")
-    
-    return True
-
-
-def handle_status_command() -> bool:
-    """Handle status command - show current player and track status."""
-    global current_player_state, music_tracks
-    
-    print("Music Minion Status:")
-    print("─" * 40)
-    
-    if not player.is_mpv_running(current_player_state):
-        print("♪ Player: Not running")
-        print("♫ Track: None")
-        return True
-    
-    # Get current status from player
-    status = player.get_player_status(current_player_state)
-    position, duration, percent = player.get_progress_info(current_player_state)
-    
-    print(f"♪ Player: {'Playing' if status['playing'] else 'Paused'}")
-    
-    if status['file']:
-        # Find track info
-        current_track = None
-        for track in music_tracks:
-            if track.file_path == status['file']:
-                current_track = track
-                break
-        
-        if current_track:
-            print(f"♫ Track: {library.get_display_name(current_track)}")
-            
-            # Progress bar
-            if duration > 0:
-                progress_bar = "▓" * int(percent / 5) + "░" * (20 - int(percent / 5))
-                print(f"⏱  Progress: [{progress_bar}] {player.format_time(position)} / {player.format_time(duration)}")
-            
-            # DJ info
-            dj_info = library.get_dj_info(current_track)
-            if dj_info != "No DJ metadata":
-                print(f"🎵 Info: {dj_info}")
-        else:
-            print(f"♫ Track: {status['file']}")
-    else:
-        print("♫ Track: None")
-    
-    print(f"🔊 Volume: {int(status.get('volume', 0))}%")
-
-    # Active playlist
-    active = playlist.get_active_playlist()
-    if active:
-        print(f"📋 Active Playlist: {active['name']} ({active['type']})")
-
-        # Show position if available and in sequential mode
-        shuffle_enabled = playback.get_shuffle_mode()
-        saved_position = playback.get_playlist_position(active['id'])
-
-        if saved_position and not shuffle_enabled:
-            _, position = saved_position
-            # Get total track count
-            playlist_tracks = playlist.get_playlist_tracks(active['id'])
-            total_tracks = len(playlist_tracks)
-            print(f"   Position: {position + 1}/{total_tracks}")
-    else:
-        print("📋 Active Playlist: None (playing all tracks)")
-
-    # Shuffle mode
-    shuffle_enabled = playback.get_shuffle_mode()
-    shuffle_mode = "ON (random playback)" if shuffle_enabled else "OFF (sequential playback)"
-    print(f"🔀 Shuffle: {shuffle_mode}")
-
-    # Library stats
-    if music_tracks:
-        available = get_available_tracks()
-        print(f"📚 Library: {len(music_tracks)} tracks loaded, {len(available)} available for playback")
-
-    return True
-
-
 def get_current_track_id() -> Optional[int]:
     """Get the database ID of the currently playing track."""
     global current_player_state, music_tracks
-    
+
     if not current_player_state.current_track:
         return None
-    
+
     # Find the track in our library
     for track in music_tracks:
         if track.file_path == current_player_state.current_track:
@@ -740,1728 +255,8 @@ def get_current_track_id() -> Optional[int]:
                 track.file_path, track.title, track.artist, track.album,
                 track.genre, track.year, track.duration, track.key, track.bpm
             )
-    
+
     return None
-
-
-def handle_archive_command() -> bool:
-    """Handle archive command - mark current song to never play again."""
-    global current_player_state, music_tracks
-    
-    if not current_player_state.current_track:
-        print("No track is currently playing")
-        return True
-    
-    # Find current track
-    current_track = None
-    for track in music_tracks:
-        if track.file_path == current_player_state.current_track:
-            current_track = track
-            break
-    
-    if not current_track:
-        print("Could not find current track information")
-        return True
-    
-    # Get track ID and add archive rating
-    track_id = get_current_track_id()
-    if track_id:
-        database.add_rating(track_id, 'archive', 'User archived song')
-        print(f"📦 Archived: {library.get_display_name(current_track)}")
-        print("   This song will not be played in future shuffle sessions")
-        
-        # Skip to next track automatically
-        return handle_skip_command()
-    else:
-        print("Failed to archive track")
-    
-    return True
-
-
-def handle_like_command() -> bool:
-    """Handle like command - rate current song as liked."""
-    global current_player_state, music_tracks
-    
-    if not current_player_state.current_track:
-        print("No track is currently playing")
-        return True
-    
-    # Find current track
-    current_track = None
-    for track in music_tracks:
-        if track.file_path == current_player_state.current_track:
-            current_track = track
-            break
-    
-    if not current_track:
-        print("Could not find current track information")
-        return True
-    
-    # Get track ID and add like rating
-    track_id = get_current_track_id()
-    if track_id:
-        database.add_rating(track_id, 'like', 'User liked song')
-        print(f"👍 Liked: {library.get_display_name(current_track)}")
-        
-        # Show temporal context
-        from datetime import datetime
-        now = datetime.now()
-        time_context = f"{now.strftime('%A')} at {now.hour:02d}:{now.minute:02d}"
-        print(f"   Liked on {time_context}")
-    else:
-        print("Failed to rate track")
-    
-    return True
-
-
-def handle_love_command() -> bool:
-    """Handle love command - rate current song as loved."""
-    global current_player_state, music_tracks
-    
-    if not current_player_state.current_track:
-        print("No track is currently playing")
-        return True
-    
-    # Find current track
-    current_track = None
-    for track in music_tracks:
-        if track.file_path == current_player_state.current_track:
-            current_track = track
-            break
-    
-    if not current_track:
-        print("Could not find current track information")
-        return True
-    
-    # Get track ID and add love rating
-    track_id = get_current_track_id()
-    if track_id:
-        database.add_rating(track_id, 'love', 'User loved song')
-        print(f"❤️  Loved: {library.get_display_name(current_track)}")
-        
-        # Show temporal context and DJ info
-        from datetime import datetime
-        now = datetime.now()
-        time_context = f"{now.strftime('%A')} at {now.hour:02d}:{now.minute:02d}"
-        print(f"   Loved on {time_context}")
-        
-        dj_info = library.get_dj_info(current_track)
-        if dj_info != "No DJ metadata":
-            print(f"   {dj_info}")
-    else:
-        print("Failed to rate track")
-    
-    return True
-
-
-def handle_note_command(args: List[str]) -> bool:
-    """Handle note command - add a note to the current song."""
-    global current_player_state, music_tracks
-    
-    if not args:
-        print("Error: Please provide a note. Usage: note <text>")
-        return True
-    
-    if not current_player_state.current_track:
-        print("No track is currently playing")
-        return True
-    
-    # Find current track
-    current_track = None
-    for track in music_tracks:
-        if track.file_path == current_player_state.current_track:
-            current_track = track
-            break
-    
-    if not current_track:
-        print("Could not find current track information")
-        return True
-    
-    # Get track ID and add note
-    track_id = get_current_track_id()
-    if track_id:
-        note_text = ' '.join(args)
-        note_id = database.add_note(track_id, note_text)
-        
-        print(f"📝 Note added to: {library.get_display_name(current_track)}")
-        print(f"   \"{note_text}\"")
-        
-        # Show temporal context
-        from datetime import datetime
-        now = datetime.now()
-        time_context = f"{now.strftime('%A')} at {now.hour:02d}:{now.minute:02d}"
-        print(f"   Added on {time_context}")
-        
-        if note_id:
-            print(f"   Note ID: {note_id} (for AI processing)")
-    else:
-        print("Failed to add note")
-    
-    return True
-
-
-def handle_killall_command() -> bool:
-    """Kill all MPV processes (emergency stop)."""
-    import subprocess
-    try:
-        result = subprocess.run(['pkill', 'mpv'], capture_output=True)
-        if result.returncode == 0:
-            print("⛔ Killed all MPV processes")
-        else:
-            print("No MPV processes found")
-        
-        # Clean up any leftover sockets
-        import os
-        import glob
-        sockets = glob.glob('/tmp/mpv-socket-*')
-        for socket in sockets:
-            try:
-                os.unlink(socket)
-            except OSError:
-                pass
-        if sockets:
-            print(f"Cleaned up {len(sockets)} leftover socket(s)")
-            
-    except Exception as e:
-        print(f"Error killing MPV: {e}")
-    
-    return True
-
-
-def handle_stats_command() -> bool:
-    """Handle stats command - show database statistics."""
-    try:
-        analytics = database.get_library_analytics()
-        
-        print("\n📊 Library Statistics")
-        print("=" * 40)
-        print(f"Total tracks: {analytics['total_tracks']}")
-        print(f"Rated tracks: {analytics['rated_tracks']}")
-        print(f"Total ratings: {analytics['total_ratings']}")
-        
-        if analytics['rating_distribution']:
-            print("\n📈 Rating Distribution:")
-            for rating_type, count in analytics['rating_distribution'].items():
-                emoji = {'archive': '📦', 'skip': '⏭️', 'like': '👍', 'love': '❤️'}.get(rating_type, '❓')
-                print(f"  {emoji} {rating_type}: {count}")
-        
-        if analytics['active_hours']:
-            print("\n🕐 Most Active Hours:")
-            for hour_data in analytics['active_hours'][:3]:
-                hour = hour_data['hour']
-                count = hour_data['count']
-                print(f"  {hour:02d}:00 - {count} ratings")
-        
-        if analytics['active_days']:
-            print("\n📅 Most Active Days:")
-            for day_data in analytics['active_days'][:3]:
-                print(f"  {day_data['day']}: {day_data['count']} ratings")
-        
-        # Show recent ratings
-        recent = database.get_recent_ratings(5)
-        if recent:
-            print("\n🕒 Recent Ratings:")
-            for rating in recent:
-                rating_type = rating['rating_type']
-                emoji = {'archive': '📦', 'skip': '⏭️', 'like': '👍', 'love': '❤️'}.get(rating_type, '❓')
-                title = rating['title'] or 'Unknown'
-                artist = rating['artist'] or 'Unknown'
-                print(f"  {emoji} {artist} - {title}")
-        
-        return True
-    except Exception as e:
-        print(f"❌ Error getting stats: {e}")
-        return False
-
-
-def handle_scan_command() -> bool:
-    """Handle scan command - scan library and populate database."""
-    print("🔍 Starting library scan...")
-    
-    try:
-        # Load config and scan library
-        cfg = config.load_config()
-        tracks = library.scan_music_library(cfg, show_progress=True)
-        
-        if not tracks:
-            print("❌ No music files found in configured library paths")
-            return True
-        
-        # Add all tracks to database
-        print(f"\n💾 Adding {len(tracks)} tracks to database...")
-        added = 0
-        updated = 0
-        errors = 0
-        
-        for track in tracks:
-            try:
-                # Check if track already exists
-                existing = database.get_track_by_path(track.file_path)
-                if existing:
-                    updated += 1
-                else:
-                    added += 1
-                
-                # Add or update track in database
-                database.get_or_create_track(
-                    track.file_path, track.title, track.artist, track.album,
-                    track.genre, track.year, track.duration, track.key, track.bpm
-                )
-            except Exception as e:
-                errors += 1
-                print(f"  Error processing {track.file_path}: {e}")
-        
-        # Show scan results
-        print(f"\n✅ Scan complete!")
-        print(f"  📝 New tracks: {added}")
-        print(f"  🔄 Updated tracks: {updated}")
-        if errors:
-            print(f"  ⚠️  Errors: {errors}")
-        
-        # Show library stats
-        stats = library.get_library_stats(tracks)
-        print(f"\n📚 Library Overview:")
-        print(f"  Total duration: {stats['total_duration_str']}")
-        print(f"  Total size: {stats['total_size_str']}")
-        print(f"  Artists: {stats['artists']}")
-        print(f"  Albums: {stats['albums']}")
-        
-        if stats['formats']:
-            print(f"\n📂 Formats:")
-            for fmt, count in sorted(stats['formats'].items(), key=lambda x: x[1], reverse=True):
-                print(f"  {fmt}: {count} files")
-        
-        if stats['avg_bpm']:
-            print(f"\n🎵 DJ Metadata:")
-            print(f"  Tracks with BPM: {stats['tracks_with_bpm']}")
-            print(f"  Average BPM: {stats['avg_bpm']:.1f}")
-            print(f"  Tracks with key: {stats['tracks_with_key']}")
-        
-        return True
-        
-    except Exception as e:
-        print(f"❌ Error scanning library: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-
-def handle_ai_setup_command(args: List[str]) -> bool:
-    """Handle ai setup command - configure OpenAI API key."""
-    if not args:
-        print("Error: Please provide an API key. Usage: ai setup <key>")
-        return True
-    
-    api_key = args[0]
-    
-    try:
-        ai.store_api_key(api_key)
-        print("✅ OpenAI API key stored successfully")
-        print("   Key stored in ~/.config/music-minion/.env")
-        print("   You can also set OPENAI_API_KEY environment variable or create .env in project root")
-        print("   You can now use AI analysis features")
-    except Exception as e:
-        print(f"❌ Error storing API key: {e}")
-    
-    return True
-
-
-def handle_ai_analyze_command() -> bool:
-    """Handle ai analyze command - analyze current track with AI."""
-    global current_player_state, music_tracks
-    
-    if not current_player_state.current_track:
-        print("No track is currently playing")
-        return True
-    
-    # Find current track
-    current_track = None
-    for track in music_tracks:
-        if track.file_path == current_player_state.current_track:
-            current_track = track
-            break
-    
-    if not current_track:
-        print("Could not find current track information")
-        return True
-    
-    print(f"🤖 Analyzing track: {library.get_display_name(current_track)}")
-    
-    try:
-        result = ai.analyze_and_tag_track(current_track, 'manual_analysis')
-        
-        if result['success']:
-            tags_added = result['tags_added']
-            if tags_added:
-                print(f"✅ Added {len(tags_added)} tags: {', '.join(tags_added)}")
-            else:
-                print("✅ Analysis complete - no new tags suggested")
-            
-            # Show token usage
-            usage = result.get('token_usage', {})
-            if usage:
-                print(f"   Tokens used: {usage.get('prompt_tokens', 0)} prompt + {usage.get('completion_tokens', 0)} completion")
-                print(f"   Response time: {usage.get('response_time_ms', 0)}ms")
-        else:
-            error_msg = result.get('error', 'Unknown error')
-            print(f"❌ AI analysis failed: {error_msg}")
-    
-    except Exception as e:
-        print(f"❌ Error during AI analysis: {e}")
-    
-    return True
-
-
-def handle_ai_test_command() -> bool:
-    """Handle ai test command - test AI prompt with random track."""
-    try:
-        print("🧪 Running AI prompt test with random track...")
-        
-        # Run the test
-        test_results = ai.test_ai_prompt_with_random_track()
-        
-        if test_results['success']:
-            # Save report
-            report_file = ai.save_test_report(test_results)
-            
-            # Show summary
-            track_info = test_results['track_info']
-            print(f"✅ Test completed successfully!")
-            print(f"   Track: {track_info.get('artist', 'Unknown')} - {track_info.get('title', 'Unknown')}")
-            print(f"   Generated tags: {', '.join(test_results.get('ai_output_tags', []))}")
-            
-            token_usage = test_results.get('token_usage', {})
-            print(f"   Tokens used: {token_usage.get('prompt_tokens', 0)} prompt + {token_usage.get('completion_tokens', 0)} completion")
-            print(f"   Response time: {token_usage.get('response_time_ms', 0)}ms")
-            
-            print(f"📄 Full report saved: {report_file}")
-            
-        else:
-            # Save report even for failed tests
-            report_file = ai.save_test_report(test_results)
-            error_msg = test_results.get('error', 'Unknown error')
-            print(f"❌ Test failed: {error_msg}")
-            print(f"📄 Report with input data saved: {report_file}")
-        
-        return True
-        
-    except Exception as e:
-        print(f"❌ Error during AI test: {e}")
-        return True
-
-
-def handle_ai_usage_command(args: List[str]) -> bool:
-    """Handle ai usage command - show AI usage statistics."""
-    try:
-        if args and args[0] == 'today':
-            stats = database.get_ai_usage_stats(days=1)
-            usage_text = ai.format_usage_stats(stats, "Today's")
-        elif args and args[0] == 'month':
-            stats = database.get_ai_usage_stats(days=30)
-            usage_text = ai.format_usage_stats(stats, "Last 30 Days")
-        else:
-            stats = database.get_ai_usage_stats()
-            usage_text = ai.format_usage_stats(stats, "Total")
-        
-        print(usage_text)
-        
-        return True
-    except Exception as e:
-        print(f"❌ Error getting AI usage stats: {e}")
-        return True
-
-
-def handle_tag_remove_command(args: List[str]) -> bool:
-    """Handle tag remove command - blacklist a tag from current track."""
-    global current_player_state, music_tracks
-    
-    if not args:
-        print("Error: Please specify a tag to remove. Usage: tag remove <tag>")
-        return True
-    
-    if not current_player_state.current_track:
-        print("No track is currently playing")
-        return True
-    
-    # Find current track
-    current_track = None
-    for track in music_tracks:
-        if track.file_path == current_player_state.current_track:
-            current_track = track
-            break
-    
-    if not current_track:
-        print("Could not find current track information")
-        return True
-    
-    # Get track ID
-    track_id = get_current_track_id()
-    if not track_id:
-        print("Could not find track in database")
-        return True
-    
-    tag_name = ' '.join(args).lower()
-    
-    try:
-        # Try to blacklist the tag
-        if database.blacklist_tag(track_id, tag_name):
-            print(f"🚫 Blacklisted tag '{tag_name}' from: {library.get_display_name(current_track)}")
-            print("   This tag will not be suggested by AI for this track again")
-        else:
-            print(f"❌ Tag '{tag_name}' not found on this track")
-    except Exception as e:
-        print(f"❌ Error removing tag: {e}")
-    
-    return True
-
-
-def handle_tag_list_command() -> bool:
-    """Handle tag list command - show all tags for current track."""
-    global current_player_state, music_tracks
-    
-    if not current_player_state.current_track:
-        print("No track is currently playing")
-        return True
-    
-    # Find current track
-    current_track = None
-    for track in music_tracks:
-        if track.file_path == current_player_state.current_track:
-            current_track = track
-            break
-    
-    if not current_track:
-        print("Could not find current track information")
-        return True
-    
-    # Get track ID
-    track_id = get_current_track_id()
-    if not track_id:
-        print("Could not find track in database")
-        return True
-    
-    try:
-        tags = database.get_track_tags(track_id, include_blacklisted=False)
-        blacklisted_tags = database.get_track_tags(track_id, include_blacklisted=True)
-        blacklisted_tags = [t for t in blacklisted_tags if t['blacklisted']]
-        
-        print(f"🏷️  Tags for: {library.get_display_name(current_track)}")
-        
-        if tags:
-            # Group tags by source
-            ai_tags = [t for t in tags if t['source'] == 'ai']
-            user_tags = [t for t in tags if t['source'] == 'user']
-            
-            if ai_tags:
-                print(f"   🤖 AI tags ({len(ai_tags)}): {', '.join(t['tag_name'] for t in ai_tags)}")
-            
-            if user_tags:
-                print(f"   👤 User tags ({len(user_tags)}): {', '.join(t['tag_name'] for t in user_tags)}")
-        else:
-            print("   No tags found")
-        
-        if blacklisted_tags:
-            print(f"   🚫 Blacklisted ({len(blacklisted_tags)}): {', '.join(t['tag_name'] for t in blacklisted_tags)}")
-        
-    except Exception as e:
-        print(f"❌ Error getting tags: {e}")
-
-    return True
-
-
-# Sync command handlers
-
-def handle_sync_export_command() -> bool:
-    """Handle sync export command - write all database tags to file metadata."""
-    global current_config
-
-    print("Starting metadata export...")
-    stats = sync.sync_export(current_config, show_progress=True)
-
-    return True
-
-
-def handle_sync_import_command(args: List[str]) -> bool:
-    """Handle sync import command - read tags from file metadata to database."""
-    global current_config
-
-    force_all = '--all' in args or '-a' in args
-
-    if force_all:
-        print("Forcing full import from all files...")
-    else:
-        print("Importing from changed files...")
-
-    stats = sync.sync_import(current_config, force_all=force_all, show_progress=True)
-
-    return True
-
-
-def handle_sync_status_command() -> bool:
-    """Handle sync status command - show sync statistics."""
-    global current_config
-
-    status = sync.get_sync_status(current_config)
-
-    print("\n📊 Sync Status")
-    print("=" * 50)
-    print(f"Total tracks: {status['total_tracks']}")
-    print(f"Changed files needing import: {status['changed_files']}")
-    print(f"Never synced: {status['never_synced']}")
-
-    if status['last_sync']:
-        print(f"Last sync: {status['last_sync']}")
-    else:
-        print("Last sync: Never")
-
-    print(f"Sync enabled: {'✅ Yes' if status['sync_enabled'] else '❌ No'}")
-    print()
-
-    if status['changed_files'] > 0:
-        print(f"💡 Run 'sync import' to import {status['changed_files']} changed file(s)")
-
-    return True
-
-
-def handle_sync_rescan_command(args: List[str]) -> bool:
-    """Handle sync rescan command - rescan library for changes."""
-    global current_config
-
-    full_rescan = '--full' in args or '-f' in args
-
-    stats = sync.rescan_library(current_config, full_rescan=full_rescan, show_progress=True)
-
-    return True
-
-
-def auto_export_if_enabled(playlist_id: int) -> None:
-    """
-    Auto-export a playlist if auto-export is enabled in config.
-
-    Args:
-        playlist_id: ID of the playlist to export
-    """
-    global current_config
-
-    if not current_config.playlists.auto_export:
-        return
-
-    # Validate library paths exist
-    if not current_config.music.library_paths:
-        print("Warning: Cannot auto-export - no library paths configured", file=sys.stderr)
-        return
-
-    # Get library root from config
-    library_root = Path(current_config.music.library_paths[0]).expanduser()
-
-    # Silently export in the background - don't interrupt user workflow
-    try:
-        playlist_export.auto_export_playlist(
-            playlist_id=playlist_id,
-            export_formats=current_config.playlists.export_formats,
-            library_root=library_root,
-            use_relative_paths=current_config.playlists.use_relative_paths
-        )
-    except (ValueError, FileNotFoundError, ImportError, OSError) as e:
-        # Expected errors - log but don't interrupt workflow
-        print(f"Auto-export failed: {e}", file=sys.stderr)
-    except Exception as e:
-        # Unexpected errors - log for debugging
-        print(f"Unexpected error during auto-export: {e}", file=sys.stderr)
-
-
-def handle_playlist_list_command() -> bool:
-    """
-    Handle playlist command - interactive dropdown with fuzzy search.
-    Uses prompt_toolkit for a smooth autocomplete experience.
-    """
-    try:
-        playlists = playlist.get_playlists_sorted_by_recent()
-
-        if not playlists:
-            print("No playlists found. Create one with: playlist new manual <name>")
-            return True
-
-        # Check which one is active
-        active = playlist.get_active_playlist()
-        active_id = active['id'] if active else None
-
-        print(f"\n📋 Select a playlist ({len(playlists)} available)")
-        print("💡 Tip: Type to search, use arrow keys to navigate, Enter to select, Ctrl+C to cancel")
-        print()
-
-        # Create styled prompt session for playlist selection
-        prompt_style = Style.from_dict({
-            'prompt': '#00aa00 bold',
-            'completion-menu.completion': 'bg:#008888 #ffffff',
-            'completion-menu.completion.current': 'bg:#00aaaa #000000',
-            'completion-menu.meta.completion': '#888888',
-            'completion-menu.meta.completion.current': 'bg:#00aaaa #ffffff',
-        })
-
-        playlist_session = PromptSession(
-            completer=completers.PlaylistCompleter(),
-            style=prompt_style,
-            complete_while_typing=True,
-        )
-
-        try:
-            # Get playlist selection via autocomplete
-            selected_name = playlist_session.prompt("🔍 Search: ").strip()
-
-            if not selected_name:
-                print("No playlist selected")
-                return True
-
-            # Find the selected playlist
-            selected_playlist = None
-            for pl in playlists:
-                if pl['name'] == selected_name:
-                    selected_playlist = pl
-                    break
-
-            if not selected_playlist:
-                print(f"❌ Playlist '{selected_name}' not found")
-                return True
-
-            # Activate playlist
-            if playlist.set_active_playlist(selected_playlist['id']):
-                print(f"\n✅ Activated playlist: {selected_playlist['name']}")
-
-                # Auto-play first track
-                playlist_tracks = playlist.get_playlist_tracks(selected_playlist['id'])
-                if playlist_tracks:
-                    # Convert DB track to library.Track and play
-                    first_track = database.db_track_to_library_track(playlist_tracks[0])
-                    if play_track(first_track, playlist_position=0):
-                        print(f"🎵 Now playing: {library.get_display_name(first_track)}")
-                    else:
-                        print("❌ Failed to play track")
-                else:
-                    print(f"⚠️  Playlist is empty")
-            else:
-                print(f"❌ Failed to activate playlist")
-
-        except KeyboardInterrupt:
-            print("\n⚠️  Playlist selection cancelled")
-
-        return True
-    except Exception as e:
-        print(f"❌ Error browsing playlists: {e}")
-        import traceback
-        traceback.print_exc()
-        return True
-
-
-def smart_playlist_wizard(name: str) -> bool:
-    """Interactive wizard for creating a smart playlist with filters.
-
-    Args:
-        name: Name of the playlist to create
-
-    Returns:
-        True to continue interactive loop
-    """
-    print(f"\n🧙 Smart Playlist Wizard: {name}")
-    print("=" * 60)
-    print("Create filters to automatically match tracks.\n")
-
-    # Create the playlist first
-    try:
-        playlist_id = playlist.create_playlist(name, 'smart', description=None)
-    except ValueError as e:
-        print(f"❌ Error: {e}")
-        return True
-
-    filters_added = []
-
-    # Loop to add filters
-    while True:
-        print("\n" + "-" * 60)
-        print("Add a filter rule:")
-        print()
-
-        # Show valid fields
-        print("Available fields:")
-        print("  Text: title, artist, album, genre, key")
-        print("  Numeric: year, bpm")
-        print()
-
-        # Get field
-        field = input("Field (or 'done' to finish): ").strip().lower()
-
-        if field == 'done':
-            if not filters_added:
-                print("❌ You must add at least one filter for a smart playlist")
-                # Delete the empty playlist
-                playlist.delete_playlist(playlist_id)
-                return True
-            break
-
-        if field not in playlist_filters.VALID_FIELDS:
-            print(f"❌ Invalid field. Must be one of: {', '.join(sorted(playlist_filters.VALID_FIELDS))}")
-            continue
-
-        # Show valid operators for this field
-        if field in playlist_filters.NUMERIC_FIELDS:
-            print(f"\nNumeric operators: {', '.join(sorted(playlist_filters.NUMERIC_OPERATORS))}")
-            valid_ops = playlist_filters.NUMERIC_OPERATORS
-        else:
-            print(f"\nText operators: {', '.join(sorted(playlist_filters.TEXT_OPERATORS))}")
-            valid_ops = playlist_filters.TEXT_OPERATORS
-
-        # Get operator
-        operator = input("Operator: ").strip().lower()
-
-        if operator not in valid_ops:
-            print(f"❌ Invalid operator for {field}. Must be one of: {', '.join(sorted(valid_ops))}")
-            continue
-
-        # Get value
-        value = input("Value: ").strip()
-
-        if not value:
-            print("❌ Value cannot be empty")
-            continue
-
-        # Determine conjunction for next filter
-        conjunction = 'AND'
-        if filters_added:
-            conj_input = input("Combine with previous filter using AND or OR? [AND]: ").strip().upper()
-            if conj_input in ('AND', 'OR'):
-                conjunction = conj_input
-
-        # Add filter
-        try:
-            filter_id = playlist_filters.add_filter(playlist_id, field, operator, value, conjunction)
-            filters_added.append({
-                'id': filter_id,
-                'field': field,
-                'operator': operator,
-                'value': value,
-                'conjunction': conjunction
-            })
-            print(f"✅ Added filter: {field} {operator} '{value}'")
-        except ValueError as e:
-            print(f"❌ Error: {e}")
-            continue
-
-        # Ask if they want to add another
-        more = input("\nAdd another filter? (y/n) [n]: ").strip().lower()
-        if more != 'y':
-            break
-
-    # Preview matching tracks
-    print("\n" + "=" * 60)
-    print("📊 Preview: Finding matching tracks...")
-
-    try:
-        matching_tracks = playlist_filters.evaluate_filters(playlist_id)
-        count = len(matching_tracks)
-
-        print(f"\n✅ Found {count} matching tracks")
-
-        if count > 0:
-            print("\nFirst 10 matches:")
-            for i, track in enumerate(matching_tracks[:10], 1):
-                artist = track.get('artist', 'Unknown')
-                title = track.get('title', 'Unknown')
-                album = track.get('album', '')
-                print(f"  {i}. {artist} - {title}")
-                if album:
-                    print(f"     Album: {album}")
-
-        # Show filters
-        print(f"\n📋 Filter rules for '{name}':")
-        for i, f in enumerate(filters_added, 1):
-            prefix = f"  {f['conjunction']}" if i > 1 else "  "
-            print(f"{prefix} {f['field']} {f['operator']} '{f['value']}'")
-
-        # Confirm
-        print()
-        confirm = input("Save this smart playlist? (y/n) [y]: ").strip().lower()
-
-        if confirm == 'n':
-            playlist.delete_playlist(playlist_id)
-            print("❌ Smart playlist cancelled")
-            return True
-
-        # Update track count for the smart playlist
-        playlist.update_playlist_track_count(playlist_id)
-
-        print(f"\n✅ Created smart playlist: {name}")
-        print(f"   {count} tracks match your filters")
-        print(f"   Set as active with: playlist active \"{name}\"")
-
-        # Auto-export if enabled
-        auto_export_if_enabled(playlist_id)
-
-    except Exception as e:
-        print(f"❌ Error evaluating filters: {e}")
-        playlist.delete_playlist(playlist_id)
-        return True
-
-    return True
-
-
-def validate_filters_list(filters: List[playlist_ai.FilterDict]) -> List[str]:
-    """Validate all filters and return list of error messages.
-
-    Args:
-        filters: List of filter dictionaries to validate
-
-    Returns:
-        List of validation error messages (empty if all valid)
-    """
-    validation_errors = []
-    for i, f in enumerate(filters, 1):
-        try:
-            playlist_filters.validate_filter(f['field'], f['operator'], f['value'])
-        except ValueError as e:
-            validation_errors.append(f"Filter {i}: {e}")
-    return validation_errors
-
-
-def ai_smart_playlist_wizard(name: str, description: str) -> bool:
-    """AI-powered wizard for creating a smart playlist from natural language.
-
-    Args:
-        name: Name of the playlist to create
-        description: Natural language description of desired playlist
-
-    Returns:
-        True to continue interactive loop
-    """
-    # Check API key early before doing anything
-    if not ai.get_api_key():
-        print("❌ No OpenAI API key found. Use 'ai setup <key>' to configure.")
-        return True
-
-    print(f"\n🤖 AI Smart Playlist Wizard: {name}")
-    print("=" * 60)
-    print(f"Description: \"{description}\"")
-    print("\n🧠 Parsing with AI...")
-
-    # Parse description with AI
-    try:
-        filters, metadata = playlist_ai.parse_natural_language_to_filters(description)
-        print(f"✅ Parsed in {metadata['response_time_ms']}ms")
-        print(f"   Tokens: {metadata['prompt_tokens']} prompt + {metadata['completion_tokens']} completion")
-
-        # Calculate and display estimated cost
-        cfg = config.load_config()
-        cost = (metadata['prompt_tokens'] * cfg.ai.cost_per_1m_input_tokens / 1_000_000 +
-                metadata['completion_tokens'] * cfg.ai.cost_per_1m_output_tokens / 1_000_000)
-        print(f"   Estimated cost: ${cost:.6f}")
-    except ai.AIError as e:
-        print(f"❌ AI Error: {e}")
-        return True
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        return True
-
-    # Validate all filters
-    print("\n🔍 Validating filters...")
-    validation_errors = validate_filters_list(filters)
-
-    if validation_errors:
-        print("❌ Validation errors found:")
-        for error in validation_errors:
-            print(f"   {error}")
-        print("\n⚠️  AI generated invalid filters. Please try:")
-        print(f"   1. Use simpler description")
-        print(f"   2. Use manual filter wizard: playlist new smart \"{name}\"")
-        return True
-
-    print(f"✅ All {len(filters)} filters are valid")
-
-    # Show parsed filters
-    print("\n📋 Parsed filters:")
-    print(playlist_ai.format_filters_for_preview(filters))
-
-    # Ask if user wants to edit
-    print("\n" + "=" * 60)
-    edit = input("Edit filters before creating playlist? (y/n) [n]: ").strip().lower()
-
-    if edit == 'y':
-        try:
-            filters = playlist_ai.edit_filters_interactive(filters)
-        except KeyboardInterrupt:
-            print("\n❌ Cancelled")
-            return True
-
-        # Check if filters are empty after editing
-        if not filters:
-            print("❌ No filters remaining. Cannot create empty smart playlist.")
-            return True
-
-        # Re-validate after editing
-        validation_errors = validate_filters_list(filters)
-
-        if validation_errors:
-            print("❌ Validation errors after editing:")
-            for error in validation_errors:
-                print(f"   {error}")
-            return True
-
-    # Create playlist
-    print("\n" + "=" * 60)
-    print(f"Creating smart playlist: {name}")
-
-    try:
-        playlist_id = playlist.create_playlist(name, 'smart', description=description)
-    except ValueError as e:
-        print(f"❌ Error: {e}")
-        return True
-
-    # Add all filters
-    try:
-        for f in filters:
-            playlist_filters.add_filter(
-                playlist_id,
-                f['field'],
-                f['operator'],
-                f['value'],
-                f.get('conjunction', 'AND')
-            )
-    except Exception as e:
-        print(f"❌ Error adding filters: {e}")
-        playlist.delete_playlist(playlist_id)
-        return True
-
-    # Preview matching tracks
-    print("\n📊 Preview: Finding matching tracks...")
-
-    try:
-        matching_tracks = playlist_filters.evaluate_filters(playlist_id)
-        count = len(matching_tracks)
-
-        print(f"\n✅ Found {count} matching tracks")
-
-        if count > 0:
-            print("\nFirst 10 matches:")
-            for i, track in enumerate(matching_tracks[:10], 1):
-                artist = track.get('artist', 'Unknown')
-                title = track.get('title', 'Unknown')
-                album = track.get('album', '')
-                print(f"  {i}. {artist} - {title}")
-                if album:
-                    print(f"     Album: {album}")
-
-        # Show final filters
-        print(f"\n📋 Filter rules for '{name}':")
-        for i, f in enumerate(filters, 1):
-            prefix = f"  {f['conjunction']}" if i > 1 else "  "
-            print(f"{prefix} {f['field']} {f['operator']} '{f['value']}'")
-
-        # Confirm
-        print()
-        confirm = input("Save this smart playlist? (y/n) [y]: ").strip().lower()
-
-        if confirm == 'n':
-            playlist.delete_playlist(playlist_id)
-            print("❌ Smart playlist cancelled")
-            return True
-
-        print(f"\n✅ Created AI smart playlist: {name}")
-        print(f"   {count} tracks match your filters")
-        print(f"   Description: {description}")
-        print(f"   Set as active with: playlist active \"{name}\"")
-
-        # Auto-export if enabled
-        auto_export_if_enabled(playlist_id)
-
-    except Exception as e:
-        print(f"❌ Error evaluating filters: {e}")
-        playlist.delete_playlist(playlist_id)
-        return True
-
-    return True
-
-
-def handle_playlist_new_command(args: List[str]) -> bool:
-    """Handle playlist new command - create a new playlist."""
-    if len(args) < 2:
-        print("Error: Please specify playlist type and name")
-        print("Usage: playlist new manual <name>")
-        print("       playlist new smart <name>")
-        print("       playlist new smart ai <name> \"<description>\"")
-        return True
-
-    playlist_type = args[0].lower()
-    if playlist_type not in ['manual', 'smart']:
-        print(f"Error: Invalid playlist type '{playlist_type}'. Must be 'manual' or 'smart'")
-        return True
-
-    # Check for AI smart playlist
-    if playlist_type == 'smart' and len(args) >= 2 and args[1].lower() == 'ai':
-        # Format: smart ai <name> "<description>"
-        # Need to parse name and quoted description
-        if len(args) < 3:
-            print("Error: Please specify playlist name and description")
-            print("Usage: playlist new smart ai <name> \"<description>\"")
-            return True
-
-        # Use shlex for proper shell-like parsing
-        try:
-            # Join everything after 'ai' and parse with shlex
-            rest = ' '.join(args[2:])
-            parts = shlex.split(rest)
-
-            if len(parts) >= 2:
-                name = parts[0]
-                description = parts[1]
-                return ai_smart_playlist_wizard(name, description)
-            else:
-                print("Error: Please provide both name and description")
-                print("Usage: playlist new smart ai <name> \"<description>\"")
-                print("Example: playlist new smart ai NYE2025 \"all dubstep from 2025\"")
-                return True
-
-        except ValueError as e:
-            print(f"Error parsing command: {e}")
-            print("Usage: playlist new smart ai <name> \"<description>\"")
-            print("Example: playlist new smart ai NYE2025 \"all dubstep from 2025\"")
-            return True
-
-    # Regular smart playlist - launch manual wizard
-    if playlist_type == 'smart':
-        name = ' '.join(args[1:])
-        return smart_playlist_wizard(name)
-
-    # Manual playlist - assign name from remaining args
-    name = ' '.join(args[1:])
-
-    try:
-        playlist_id = playlist.create_playlist(name, playlist_type, description=None)
-        print(f"✅ Created {playlist_type} playlist: {name}")
-        print(f"   Playlist ID: {playlist_id}")
-        print(f"   Add tracks with: add \"{name}\"")
-
-        # Auto-export if enabled
-        auto_export_if_enabled(playlist_id)
-
-        return True
-    except ValueError as e:
-        print(f"❌ Error: {e}")
-        return True
-    except Exception as e:
-        print(f"❌ Error creating playlist: {e}")
-        return True
-
-
-def handle_playlist_delete_command(args: List[str]) -> bool:
-    """Handle playlist delete command - delete a playlist."""
-    if not args:
-        print("Error: Please specify playlist name")
-        print("Usage: playlist delete <name>")
-        return True
-
-    name = ' '.join(args)
-    pl = playlist.get_playlist_by_name(name)
-
-    if not pl:
-        print(f"❌ Playlist '{name}' not found")
-        return True
-
-    # Confirm deletion
-    print(f"⚠️  Delete playlist '{name}'? This cannot be undone.")
-    confirm = input("Type 'yes' to confirm: ").strip().lower()
-
-    if confirm != 'yes':
-        print("Deletion cancelled")
-        return True
-
-    try:
-        # Clear position tracking before deleting
-        playback.clear_playlist_position(pl['id'])
-
-        if playlist.delete_playlist(pl['id']):
-            print(f"✅ Deleted playlist: {name}")
-        else:
-            print(f"❌ Failed to delete playlist: {name}")
-        return True
-    except Exception as e:
-        print(f"❌ Error deleting playlist: {e}")
-        return True
-
-
-def handle_playlist_rename_command(args: List[str]) -> bool:
-    """Handle playlist rename command - rename a playlist."""
-    if len(args) < 2:
-        print("Error: Please specify old and new names")
-        print('Usage: playlist rename "old name" "new name"')
-        return True
-
-    # Parse quoted args to handle multi-word playlist names
-    parsed_args = parse_quoted_args(args)
-
-    if len(parsed_args) < 2:
-        print("Error: Please specify both old and new names")
-        print('Usage: playlist rename "old name" "new name"')
-        return True
-
-    old_name = parsed_args[0]
-    new_name = parsed_args[1]
-
-    pl = playlist.get_playlist_by_name(old_name)
-    if not pl:
-        print(f"❌ Playlist '{old_name}' not found")
-        return True
-
-    try:
-        if playlist.rename_playlist(pl['id'], new_name):
-            print(f"✅ Renamed playlist: '{old_name}' → '{new_name}'")
-        else:
-            print(f"❌ Failed to rename playlist")
-        return True
-    except ValueError as e:
-        print(f"❌ Error: {e}")
-        return True
-    except Exception as e:
-        print(f"❌ Error renaming playlist: {e}")
-        return True
-
-
-def handle_playlist_show_command(args: List[str]) -> bool:
-    """Handle playlist show command - show playlist details and tracks."""
-    if not args:
-        print("Error: Please specify playlist name")
-        print("Usage: playlist show <name>")
-        return True
-
-    name = ' '.join(args)
-    pl = playlist.get_playlist_by_name(name)
-
-    if not pl:
-        print(f"❌ Playlist '{name}' not found")
-        return True
-
-    try:
-        tracks = playlist.get_playlist_tracks(pl['id'])
-
-        print(f"\n📋 Playlist: {pl['name']}")
-        print("=" * 60)
-        print(f"Type: {pl['type']}")
-        if pl['description']:
-            print(f"Description: {pl['description']}")
-        print(f"Created: {pl['created_at']}")
-        print(f"Updated: {pl['updated_at']}")
-        print(f"Tracks: {len(tracks)}")
-        print()
-
-        if not tracks:
-            print("No tracks in this playlist")
-            if pl['type'] == 'manual':
-                print(f"Add tracks with: add \"{name}\"")
-        else:
-            print("Tracks:")
-            for i, track in enumerate(tracks, 1):
-                artist = track.get('artist') or 'Unknown'
-                title = track.get('title') or 'Unknown'
-                album = track.get('album', '')
-                print(f"  {i}. {artist} - {title}")
-                if album:
-                    print(f"     Album: {album}")
-
-        return True
-    except Exception as e:
-        print(f"❌ Error showing playlist: {e}")
-        return True
-
-
-def handle_playlist_active_command(args: List[str]) -> bool:
-    """Handle playlist active command - set or clear active playlist."""
-    if not args:
-        # Show current active playlist
-        active = playlist.get_active_playlist()
-        if active:
-            print(f"Active playlist: {active['name']}")
-        else:
-            print("No active playlist (playing all tracks)")
-        return True
-
-    name = ' '.join(args)
-
-    if name.lower() == 'none':
-        # Clear active playlist
-        # First get the active playlist ID to clear position tracking
-        active = playlist.get_active_playlist()
-        if active:
-            playback.clear_playlist_position(active['id'])
-
-        if playlist.clear_active_playlist():
-            print("✅ Cleared active playlist (now playing all tracks)")
-        else:
-            print("No active playlist was set")
-        return True
-
-    # Set active playlist
-    pl = playlist.get_playlist_by_name(name)
-    if not pl:
-        print(f"❌ Playlist '{name}' not found")
-        return True
-
-    try:
-        if playlist.set_active_playlist(pl['id']):
-            print(f"✅ Set active playlist: {name}")
-            print(f"   Now playing only tracks from this playlist")
-
-            # Check for saved position and offer to resume
-            saved_position = playback.get_playlist_position(pl['id'])
-            shuffle_enabled = playback.get_shuffle_mode()
-
-            if saved_position and not shuffle_enabled:
-                track_id, position = saved_position
-                # Get playlist tracks to find the saved track
-                playlist_tracks = playlist.get_playlist_tracks(pl['id'])
-
-                # Find track info
-                saved_track = None
-                for track in playlist_tracks:
-                    if track['id'] == track_id:
-                        saved_track = track
-                        break
-
-                if saved_track:
-                    print(f"\n💾 Last position: Track {position + 1}/{len(playlist_tracks)}")
-                    print(f"   {saved_track.get('artist', 'Unknown')} - {saved_track.get('title', 'Unknown')}")
-
-                    response = input("   Resume from this position? [Y/n]: ").strip().lower()
-                    if response != 'n':
-                        # Load the track and play it
-                        if ensure_library_loaded():
-                            # Find the Track object from music_tracks
-                            for track in music_tracks:
-                                if track.file_path == saved_track['file_path']:
-                                    print("▶️  Resuming playback...")
-                                    play_track(track)
-                                    break
-        else:
-            print(f"❌ Failed to set active playlist")
-        return True
-    except Exception as e:
-        print(f"❌ Error setting active playlist: {e}")
-        return True
-
-
-def handle_playlist_import_command(args: List[str]) -> bool:
-    """Handle playlist import command - import playlist from file."""
-    if not args:
-        print("Error: Please specify playlist file path")
-        print("Usage: playlist import <file>")
-        print("Supported formats: .m3u, .m3u8, .crate")
-        return True
-
-    file_path_str = ' '.join(args)
-    file_path = Path(file_path_str).expanduser()
-
-    if not file_path.exists():
-        print(f"❌ File not found: {file_path}")
-        return True
-
-    # Get library root from config
-    # Validate library paths exist
-    if not current_config.music.library_paths:
-        print("❌ Error: No library paths configured")
-        return True
-    library_root = Path(current_config.music.library_paths[0]).expanduser()
-
-    # Auto-detect format and import
-    try:
-        format_type = playlist_import.detect_playlist_format(file_path)
-        if not format_type:
-            print(f"❌ Unsupported file format: {file_path.suffix}")
-            print("Supported formats: .m3u, .m3u8, .crate")
-            return True
-
-        print(f"📂 Importing {format_type.upper()} playlist from: {file_path.name}")
-
-        playlist_id, tracks_added, duplicates_skipped, unresolved = playlist_import.import_playlist(
-            file_path=file_path,
-            playlist_name=None,  # Use filename as default
-            library_root=library_root
-        )
-
-        # Get the created playlist info
-        pl = playlist.get_playlist_by_id(playlist_id)
-        if pl:
-            print(f"✅ Created playlist: {pl['name']}")
-            print(f"   Tracks added: {tracks_added}")
-            if duplicates_skipped > 0:
-                print(f"   Duplicates skipped: {duplicates_skipped}")
-
-            if unresolved:
-                print(f"   ⚠️  Unresolved tracks: {len(unresolved)}")
-                if len(unresolved) <= 5:
-                    print("\n   Could not find these tracks:")
-                    for path in unresolved:
-                        # Show just filename for brevity
-                        print(f"     • {Path(path).name}")
-                else:
-                    print(f"   Run 'playlist show {pl['name']}' to see details")
-
-            # Auto-export if enabled
-            auto_export_if_enabled(playlist_id)
-
-        return True
-
-    except ValueError as e:
-        print(f"❌ Error: {e}")
-        return True
-    except ImportError as e:
-        print(f"❌ Missing dependency: {e}")
-        return True
-    except Exception as e:
-        print(f"❌ Error importing playlist: {e}")
-        return True
-
-
-def handle_playlist_export_command(args: List[str]) -> bool:
-    """Handle playlist export command - export playlist to file."""
-    if not args:
-        print("Error: Please specify playlist name")
-        print("Usage: playlist export <name> [format]")
-        print("Formats: m3u8 (default), crate, all")
-        return True
-
-    # Parse arguments with smart format detection
-    # Strategy: Try full name first, then try separating format
-    format_type = 'm3u8'  # Default format
-    playlist_name = ' '.join(args)
-
-    # If more than one arg and last arg looks like a format, try separating
-    if len(args) > 1 and args[-1].lower() in ['m3u8', 'm3u', 'crate', 'all']:
-        # First check if the full name exists as a playlist
-        pl_full = playlist.get_playlist_by_name(playlist_name)
-        if not pl_full:
-            # Full name doesn't exist, try separating the format
-            potential_format = args[-1].lower()
-            potential_name = ' '.join(args[:-1])
-            pl_separated = playlist.get_playlist_by_name(potential_name)
-            if pl_separated:
-                # Playlist exists without the last arg, treat it as format
-                format_type = potential_format
-                playlist_name = potential_name
-
-    # Normalize format
-    if format_type == 'm3u':
-        format_type = 'm3u8'
-
-    # Get library root from config
-    # Validate library paths exist
-    if not current_config.music.library_paths:
-        print("❌ Error: No library paths configured")
-        return True
-    library_root = Path(current_config.music.library_paths[0]).expanduser()
-
-    # Check if playlist exists
-    pl = playlist.get_playlist_by_name(playlist_name)
-    if not pl:
-        print(f"❌ Playlist '{playlist_name}' not found")
-        return True
-
-    try:
-        if format_type == 'all':
-            # Export to both formats
-            formats = ['m3u8', 'crate']
-            print(f"📤 Exporting playlist '{playlist_name}' to all formats...")
-
-            for fmt in formats:
-                try:
-                    output_path, tracks_exported = playlist_export.export_playlist(
-                        playlist_name=playlist_name,
-                        format_type=fmt,
-                        library_root=library_root
-                    )
-                    print(f"   ✅ {fmt.upper()}: {output_path} ({tracks_exported} tracks)")
-                except Exception as e:
-                    print(f"   ❌ {fmt.upper()}: {e}")
-
-        else:
-            # Export to single format
-            print(f"📤 Exporting playlist '{playlist_name}' to {format_type.upper()}...")
-
-            output_path, tracks_exported = playlist_export.export_playlist(
-                playlist_name=playlist_name,
-                format_type=format_type,
-                library_root=library_root
-            )
-
-            print(f"✅ Exported {tracks_exported} tracks to: {output_path}")
-
-        return True
-
-    except ValueError as e:
-        print(f"❌ Error: {e}")
-        return True
-    except ImportError as e:
-        print(f"❌ Missing dependency: {e}")
-        return True
-    except Exception as e:
-        print(f"❌ Error exporting playlist: {e}")
-        return True
-
-
-def handle_add_command(args: List[str]) -> bool:
-    """Handle add command - add current track to playlist."""
-    global current_player_state, music_tracks
-
-    if not current_player_state.current_track:
-        print("No track is currently playing")
-        return True
-
-    if not args:
-        print("Error: Please specify playlist name")
-        print("Usage: add <playlist_name>")
-        return True
-
-    name = ' '.join(args)
-    pl = playlist.get_playlist_by_name(name)
-
-    if not pl:
-        print(f"❌ Playlist '{name}' not found")
-        return True
-
-    # Get current track ID
-    track_id = get_current_track_id()
-    if not track_id:
-        print("❌ Could not find current track in database")
-        return True
-
-    try:
-        if playlist.add_track_to_playlist(pl['id'], track_id):
-            # Find current track info for display
-            current_track = None
-            for track in music_tracks:
-                if track.file_path == current_player_state.current_track:
-                    current_track = track
-                    break
-
-            if current_track:
-                print(f"✅ Added to '{name}': {library.get_display_name(current_track)}")
-            else:
-                print(f"✅ Added current track to playlist: {name}")
-
-            # Auto-export if enabled
-            auto_export_if_enabled(pl['id'])
-        else:
-            print(f"Track is already in playlist '{name}'")
-        return True
-    except ValueError as e:
-        print(f"❌ Error: {e}")
-        return True
-    except Exception as e:
-        print(f"❌ Error adding track to playlist: {e}")
-        return True
-
-
-def handle_remove_command(args: List[str]) -> bool:
-    """Handle remove command - remove current track from playlist."""
-    global current_player_state, music_tracks
-
-    if not current_player_state.current_track:
-        print("No track is currently playing")
-        return True
-
-    if not args:
-        print("Error: Please specify playlist name")
-        print("Usage: remove <playlist_name>")
-        return True
-
-    name = ' '.join(args)
-    pl = playlist.get_playlist_by_name(name)
-
-    if not pl:
-        print(f"❌ Playlist '{name}' not found")
-        return True
-
-    # Get current track ID
-    track_id = get_current_track_id()
-    if not track_id:
-        print("❌ Could not find current track in database")
-        return True
-
-    try:
-        if playlist.remove_track_from_playlist(pl['id'], track_id):
-            # Find current track info for display
-            current_track = None
-            for track in music_tracks:
-                if track.file_path == current_player_state.current_track:
-                    current_track = track
-                    break
-
-            if current_track:
-                print(f"✅ Removed from '{name}': {library.get_display_name(current_track)}")
-            else:
-                print(f"✅ Removed current track from playlist: {name}")
-
-            # Auto-export if enabled
-            auto_export_if_enabled(pl['id'])
-        else:
-            print(f"Track is not in playlist '{name}'")
-        return True
-    except ValueError as e:
-        print(f"❌ Error: {e}")
-        return True
-    except Exception as e:
-        print(f"❌ Error removing track from playlist: {e}")
-        return True
-
-
-def handle_command(command: str, args: List[str]) -> bool:
-    """
-    Handle a single command.
-    
-    Returns:
-        True if the program should continue, False if it should exit
-    """
-    if command in ['quit', 'exit']:
-        # Clean up MPV player before exiting
-        global current_player_state
-        if player.is_mpv_running(current_player_state):
-            print("Stopping music player...")
-            player.stop_mpv(current_player_state)
-        print("Goodbye!")
-        return False
-    
-    elif command == 'help':
-        print_help()
-    
-    elif command == 'init':
-        print("Initializing Music Minion configuration...")
-        config.ensure_directories()
-        cfg = config.load_config()
-        print(f"Configuration loaded from: {config.get_config_path()}")
-        print(f"Data directory: {config.get_data_dir()}")
-        
-        print("Setting up database...")
-        database.init_database()
-        print(f"Database initialized at: {database.get_database_path()}")
-        
-        print(f"Library paths: {cfg.music.library_paths}")
-        print("Music Minion is ready to use!")
-    
-    elif command == 'play':
-        return handle_play_command(args)
-    
-    elif command == 'pause':
-        return handle_pause_command()
-    
-    elif command == 'resume':
-        return handle_resume_command()
-    
-    elif command == 'skip':
-        return handle_skip_command()
-
-    elif command == 'shuffle':
-        return handle_shuffle_command(args)
-
-    elif command == 'stop':
-        return handle_stop_command()
-    
-    elif command == 'killall':
-        return handle_killall_command()
-    
-    elif command == 'archive':
-        return handle_archive_command()
-    
-    elif command == 'like':
-        return handle_like_command()
-    
-    elif command == 'love':
-        return handle_love_command()
-    
-    elif command == 'note':
-        return handle_note_command(args)
-    
-    elif command == 'status':
-        return handle_status_command()
-    
-    elif command == 'stats':
-        return handle_stats_command()
-    
-    elif command == 'scan':
-        return handle_scan_command()
-
-    elif command == 'migrate':
-        print("Running database migrations...")
-        database.init_database()
-        print("✅ Database migrations complete")
-        return True
-
-    elif command == 'playlist':
-        if not args:
-            return handle_playlist_list_command()
-        elif args[0] == 'new':
-            return handle_playlist_new_command(args[1:])
-        elif args[0] == 'delete':
-            return handle_playlist_delete_command(args[1:])
-        elif args[0] == 'rename':
-            return handle_playlist_rename_command(args[1:])
-        elif args[0] == 'show':
-            return handle_playlist_show_command(args[1:])
-        elif args[0] == 'active':
-            return handle_playlist_active_command(args[1:])
-        elif args[0] == 'import':
-            return handle_playlist_import_command(args[1:])
-        elif args[0] == 'export':
-            return handle_playlist_export_command(args[1:])
-        else:
-            print(f"Unknown playlist subcommand: '{args[0]}'. Available: new, delete, rename, show, active, import, export")
-
-    elif command == 'add':
-        return handle_add_command(args)
-
-    elif command == 'remove':
-        return handle_remove_command(args)
-
-    elif command == 'ai':
-        if not args:
-            print("Error: AI command requires a subcommand. Usage: ai <setup|analyze|test|usage>")
-        elif args[0] == 'setup':
-            return handle_ai_setup_command(args[1:])
-        elif args[0] == 'analyze':
-            return handle_ai_analyze_command()
-        elif args[0] == 'test':
-            return handle_ai_test_command()
-        elif args[0] == 'usage':
-            return handle_ai_usage_command(args[1:])
-        else:
-            print(f"Unknown AI subcommand: '{args[0]}'. Available: setup, analyze, test, usage")
-
-    elif command == 'tag':
-        if not args:
-            print("Error: Tag command requires a subcommand. Usage: tag <remove|list>")
-        elif args[0] == 'remove':
-            return handle_tag_remove_command(args[1:])
-        elif args[0] == 'list':
-            return handle_tag_list_command()
-        else:
-            print(f"Unknown tag subcommand: '{args[0]}'. Available: remove, list")
-
-    elif command == 'sync':
-        if not args:
-            print("Error: Sync command requires a subcommand. Usage: sync <export|import|status|rescan>")
-        elif args[0] == 'export':
-            return handle_sync_export_command()
-        elif args[0] == 'import':
-            return handle_sync_import_command(args[1:])
-        elif args[0] == 'status':
-            return handle_sync_status_command()
-        elif args[0] == 'rescan':
-            return handle_sync_rescan_command(args[1:])
-        else:
-            print(f"Unknown sync subcommand: '{args[0]}'. Available: export, import, status, rescan")
-
-    elif command == '':
-        # Empty command, do nothing
-        pass
-    
-    else:
-        print(f"Unknown command: '{command}'. Type 'help' for available commands.")
-    
-    return True
 
 
 def _auto_sync_background(cfg: config.Config) -> None:
@@ -2501,13 +296,13 @@ def interactive_mode_with_dashboard() -> None:
         sync_thread.start()
 
     console = Console()
-    
+
     # Pass config to UI module
     ui.set_ui_config(current_config.ui)
-    
+
     # Clear session state
     ui.clear_session()
-    
+
     # Shared state for dashboard updates
     dashboard_state = {
         "should_update": True,
@@ -2515,24 +310,24 @@ def interactive_mode_with_dashboard() -> None:
         "last_track": None,
         "dashboard_content": None,
     }
-    
+
     def get_current_track_metadata():
         """Get metadata for the current track."""
         global current_player_state, music_tracks
-        
+
         if not current_player_state.current_track:
             return None
-        
+
         # Find track in library
         track = None
         for t in music_tracks:
             if str(t.file_path) == current_player_state.current_track:
                 track = t
                 break
-        
+
         if not track:
             return None
-        
+
         # Get metadata
         metadata = {
             "title": track.title or "Unknown",
@@ -2543,16 +338,16 @@ def interactive_mode_with_dashboard() -> None:
             "bpm": track.bpm,
             "key": track.key,
         }
-        
+
         return metadata
-    
+
     def get_current_track_db_info():
         """Get database info for current track."""
         global current_player_state
-        
+
         if not current_player_state.current_track:
             return None
-        
+
         try:
             # Find track in library first to get metadata
             track = None
@@ -2560,20 +355,20 @@ def interactive_mode_with_dashboard() -> None:
                 if str(t.file_path) == current_player_state.current_track:
                     track = t
                     break
-            
+
             if not track:
                 return None
-            
+
             # Get track ID from database
             track_id = database.get_or_create_track(
                 track.file_path, track.title, track.artist, track.album,
                 track.genre, track.year, track.duration, track.key, track.bpm
             )
-            
+
             # Get tags
             tags_data = database.get_track_tags(track_id)
             tags = [t['tag_name'] for t in tags_data if not t.get('blacklisted', False)]
-            
+
             # Get latest rating
             ratings = database.get_track_ratings(track_id)
             latest_rating = None
@@ -2581,15 +376,15 @@ def interactive_mode_with_dashboard() -> None:
                 # Convert rating type to numeric score
                 rating_map = {"archive": 0, "skip": 25, "like": 60, "love": 85}
                 latest_rating = rating_map.get(ratings[0]['rating_type'], 50)
-            
+
             # Get notes
             notes_data = database.get_track_notes(track_id)
             latest_note = notes_data[0]['note'] if notes_data else ""
-            
+
             # Get play stats
             play_count = len(ratings)
             last_played = ratings[0]['created_at'] if ratings else None
-            
+
             return {
                 "tags": tags,
                 "notes": latest_note,
@@ -2605,24 +400,24 @@ def interactive_mode_with_dashboard() -> None:
         global current_player_state
         last_update_time = time.time()
         last_terminal_size = None
-        
+
         while dashboard_state["running"]:
             try:
                 current_time = time.time()
-                
+
                 # Check for track completion
                 check_and_handle_track_completion()
-                
+
                 # Update player state
                 if current_player_state.process:
                     current_player_state = player.update_player_status(current_player_state)
-                
+
                 # Check if terminal was resized
                 current_size = (console.size.width, console.size.height)
                 terminal_resized = last_terminal_size != current_size
                 if terminal_resized:
                     last_terminal_size = current_size
-                
+
                 # Check if track changed
                 track_changed = dashboard_state["last_track"] != current_player_state.current_track
                 if track_changed:
@@ -2632,48 +427,48 @@ def interactive_mode_with_dashboard() -> None:
                         if prev_track_info:
                             ui.store_previous_track(prev_track_info, "played")
                     dashboard_state["last_track"] = current_player_state.current_track
-                
+
                 # Determine if we should update
                 force_update = dashboard_state["should_update"]
                 time_based_update = (current_time - last_update_time) >= 1.0
                 should_update = force_update or track_changed or terminal_resized or time_based_update
-                
+
                 if should_update:
                     # Get metadata and database info
                     track_metadata = get_current_track_metadata()
                     db_info = get_current_track_db_info()
-                    
+
                     # Update the live dashboard
                     try:
                         dashboard = ui.render_dashboard(current_player_state, track_metadata, db_info, console.size.width)
-                        
+
                         # Only update in interactive terminals with proper support
                         if console.is_terminal and not console.is_dumb_terminal:
                             try:
                                 # Hide cursor to prevent blinking
                                 console.file.write("\033[?25l")
                                 console.file.flush()
-                                
+
                                 # Save cursor position
                                 console.file.write("\033[s")
                                 console.file.flush()
-                                
+
                                 # Move to top and clear the entire dashboard area
                                 console.file.write("\033[H")
-                                
+
                                 # Clear dashboard area completely (20 lines to be safe)
                                 for i in range(20):
                                     console.file.write("\033[2K")  # Clear entire line
                                     if i < 19:
                                         console.file.write("\033[B")  # Move down
-                                
+
                                 # Return to top and render new dashboard
                                 console.file.write("\033[H")
                                 console.file.flush()
-                                
+
                                 # Render dashboard in one operation
                                 console.print(dashboard, end="")
-                                
+
                                 # Add full-width colorful separator
                                 from rich.text import Text
                                 separator_text = Text()
@@ -2681,49 +476,49 @@ def interactive_mode_with_dashboard() -> None:
                                     if i % 3 == 0:
                                         separator_text.append("─", style="cyan")
                                     elif i % 3 == 1:
-                                        separator_text.append("─", style="blue") 
+                                        separator_text.append("─", style="blue")
                                     else:
                                         separator_text.append("─", style="magenta")
                                 console.print(separator_text)
-                                
+
                                 # Restore cursor position
                                 console.file.write("\033[u")
-                                
+
                                 # Show cursor again
                                 console.file.write("\033[?25h")
                                 console.file.flush()
-                                
+
                             except Exception:
                                 # If cursor positioning fails, skip real-time updates
                                 pass
                     except Exception:
                         # Fallback if dashboard rendering fails
                         pass
-                    
+
                     dashboard_state["should_update"] = False
                     last_update_time = current_time
-                
+
                 # Update more frequently during playback
                 update_interval = 1.0 if (current_player_state.is_playing and current_player_state.current_track) else 3.0
                 time.sleep(update_interval)
-                
+
             except Exception:
                 # Silently handle errors to prevent crash
                 time.sleep(1.0)
-    
+
     # Reserve space for dashboard at top
     console.clear()
     dashboard = ui.render_dashboard(None, None, None, console.size.width)
     console.print(dashboard)
     console.print("─" * console.size.width)
     console.print()
-    
+
     # Show welcome message in command area
     console.print("[bold green]Welcome to Music Minion CLI![/bold green]")
     console.print("Type 'help' for available commands, '/' for command palette, or 'quit' to exit.")
     console.print("💡 [dim]Tip: Use Tab for autocomplete, type to search playlists and commands[/dim]")
     console.print()
-    
+
     # Start background dashboard updater
     updater_thread = threading.Thread(target=dashboard_updater, daemon=True)
     updater_thread.start()
@@ -2757,8 +552,8 @@ def interactive_mode_with_dashboard() -> None:
                 if user_input.startswith('/'):
                     user_input = user_input[1:]
 
-                command, args = parse_command(user_input)
-                
+                command, args = core.parse_command(user_input)
+
                 # Add UI feedback for certain commands
                 if command == "love":
                     ui.flash_love()
@@ -2770,10 +565,10 @@ def interactive_mode_with_dashboard() -> None:
                     ui.flash_archive()
                 elif command == "note" and args:
                     ui.flash_note_added()
-                
-                if not handle_command(command, args):
+
+                if not router.handle_command(command, args):
                     break
-                
+
                 # For state-changing commands, update dashboard immediately
                 state_changing_commands = ["play", "pause", "resume", "stop", "skip", "archive", "like", "love", "note"]
                 if command in state_changing_commands:
@@ -2781,37 +576,37 @@ def interactive_mode_with_dashboard() -> None:
                     dashboard_state["should_update"] = True
                     # Give a moment for the command to take effect
                     time.sleep(0.1)
-                    
+
                     # Manual dashboard refresh for state changes
                     try:
                         # Update player state first
                         if current_player_state.process:
                             current_player_state = player.update_player_status(current_player_state)
-                        
+
                         track_metadata = get_current_track_metadata()
                         db_info = get_current_track_db_info()
                         dashboard = ui.render_dashboard(current_player_state, track_metadata, db_info, console.size.width)
-                        
+
                         # Show updated dashboard after state change
                         console.print("\n" + "─" * console.size.width)
                         console.print("📍 Current Status:")
                         console.print(dashboard)
                         console.print("─" * console.size.width)
-                        
+
                         # Also trigger the background updater to update the top dashboard
                         dashboard_state["should_update"] = True
                         dashboard_state["last_track"] = current_player_state.current_track
-                        
+
                     except Exception as e:
                         # Silently handle errors
                         pass
-                
+
             except KeyboardInterrupt:
                 console.print("\n[yellow]Use 'quit' or 'exit' to leave gracefully.[/yellow]")
             except EOFError:
                 console.print("\n[green]Goodbye![/green]")
                 break
-                
+
     except Exception as e:
         console.print(f"[red]Dashboard error: {e}[/red]")
     finally:
@@ -2828,7 +623,7 @@ def interactive_mode_textual() -> None:
         current_config = config.load_config()
 
     # Load music library
-    ensure_library_loaded()
+    core.ensure_library_loaded()
 
     # Run database migrations on startup
     database.init_database()
@@ -2929,7 +724,7 @@ def interactive_mode_textual() -> None:
         sys.stdout = stdout_capture
 
         try:
-            result = handle_command(command, args)
+            result = router.handle_command(command, args)
 
             # Get captured output and send to Textual app
             output = stdout_capture.getvalue()
@@ -2973,7 +768,7 @@ def interactive_mode_blessed() -> None:
         current_config = config.load_config()
 
     # Load music library
-    ensure_library_loaded()
+    core.ensure_library_loaded()
 
     # Run database migrations on startup
     database.init_database()
@@ -3057,33 +852,33 @@ def interactive_mode() -> None:
             except Exception:
                 # Fall back to simple mode
                 pass
-    
+
     # Fallback to simple mode with Rich Console for consistent styling
     from rich.console import Console
     console = Console()
-    
+
     console.print("[bold green]Welcome to Music Minion CLI![/bold green]")
     console.print("Type 'help' for available commands, or 'quit' to exit.")
     console.print()
-    
+
     try:
         while True:
             # Check for track completion periodically
             check_and_handle_track_completion()
-            
+
             try:
                 user_input = input("music-minion> ").strip()
-                command, args = parse_command(user_input)
-                
-                if not handle_command(command, args):
+                command, args = core.parse_command(user_input)
+
+                if not router.handle_command(command, args):
                     break
-                    
+
             except KeyboardInterrupt:
                 console.print("\n[yellow]Use 'quit' or 'exit' to leave gracefully.[/yellow]")
             except EOFError:
                 console.print("\n[green]Goodbye![/green]")
                 break
-                
+
     except Exception as e:
         console.print(f"[red]An unexpected error occurred: {e}[/red]")
         import sys
@@ -3103,7 +898,7 @@ def main() -> None:
     #     command_parts = sys.argv[1:]
     #     command = command_parts[0].lower() if command_parts else ""
     #     args = command_parts[1:] if len(command_parts) > 1 else []
-        
+
     #     handle_command(command, args)
 
 
