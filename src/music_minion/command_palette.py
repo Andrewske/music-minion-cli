@@ -10,7 +10,7 @@ from typing import Optional
 
 from rich.console import Console
 
-from . import completers
+from .utils import autocomplete
 
 
 def show_command_palette() -> Optional[str]:
@@ -21,7 +21,7 @@ def show_command_palette() -> Optional[str]:
         Selected command name, or None if cancelled
     """
     console = Console()
-    commands = completers.MusicMinionCompleter.COMMANDS
+    commands = autocomplete.MusicMinionCompleter.COMMANDS
 
     # State
     query = ""

@@ -7,7 +7,7 @@ from typing import Iterable, Dict, Any
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.document import Document
 
-from .domain import playlists as playlist_module
+from ..domain import playlists as playlist_module
 
 
 # FUTURE ENHANCEMENT: Add custom keybindings

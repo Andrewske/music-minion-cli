@@ -24,7 +24,7 @@ from ..domain.playlists import filters as playlist_filters
 from ..domain.playlists import ai_parser as playlist_ai
 from ..domain.playlists import importers as playlist_import
 from ..domain.playlists import exporters as playlist_export
-from .. import completers
+from ..utils import autocomplete
 
 
 def get_player_state() -> playback.PlayerState:
@@ -135,7 +135,7 @@ def handle_playlist_list_command() -> bool:
         })
 
         playlist_session = PromptSession(
-            completer=completers.PlaylistCompleter(),
+            completer=autocomplete.PlaylistCompleter(),
             style=prompt_style,
             complete_while_typing=True,
         )

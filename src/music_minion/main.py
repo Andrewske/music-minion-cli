@@ -19,6 +19,7 @@ from .domain import sync
 from . import command_palette
 from . import router
 from . import core
+from .utils import parsers
 
 # Global state for interactive mode
 current_player_state: playback.PlayerState = playback.PlayerState()
@@ -551,7 +552,7 @@ def interactive_mode_with_dashboard() -> None:
                 if user_input.startswith('/'):
                     user_input = user_input[1:]
 
-                command, args = core.parse_command(user_input)
+                command, args = parsers.parse_command(user_input)
 
                 # Add UI feedback for certain commands
                 if command == "love":
@@ -867,7 +868,7 @@ def interactive_mode() -> None:
 
             try:
                 user_input = input("music-minion> ").strip()
-                command, args = core.parse_command(user_input)
+                command, args = parsers.parse_command(user_input)
 
                 if not router.handle_command(command, args):
                     break
