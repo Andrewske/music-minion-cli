@@ -53,13 +53,14 @@ def parse_key(key: Keystroke) -> dict:
     return event
 
 
-def handle_key(state: UIState, key: Keystroke) -> tuple[UIState, str | None]:
+def handle_key(state: UIState, key: Keystroke, palette_height: int = 10) -> tuple[UIState, str | None]:
     """
     Handle keyboard input and return updated state.
 
     Args:
         state: Current UI state
         key: blessed Keystroke
+        palette_height: Available height for palette (for scroll calculations)
 
     Returns:
         Tuple of (updated state, command to execute or None)
@@ -82,13 +83,16 @@ def handle_key(state: UIState, key: Keystroke) -> tuple[UIState, str | None]:
             state = hide_palette(state)
         return state, None
 
+    # Calculate visible items (subtract header and footer lines)
+    visible_items = max(1, palette_height - 2)
+
     # Handle arrows (palette navigation)
     if event['type'] == 'arrow_up' and state.palette_visible:
-        state = move_palette_selection(state, -1)
+        state = move_palette_selection(state, -1, visible_items)
         return state, None
 
     if event['type'] == 'arrow_down' and state.palette_visible:
-        state = move_palette_selection(state, 1)
+        state = move_palette_selection(state, 1, visible_items)
         return state, None
 
     # Handle Enter (execute command or select palette item)

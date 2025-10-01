@@ -71,8 +71,9 @@ class UIState:
     # Palette
     palette_visible: bool = False
     palette_query: str = ""
-    palette_items: list[tuple[str, str, str]] = field(default_factory=list)  # (cmd, icon, desc)
+    palette_items: list[tuple[str, str, str, str]] = field(default_factory=list)  # (cat, cmd, icon, desc)
     palette_selected: int = 0
+    palette_scroll: int = 0
 
     # UI feedback
     feedback_message: Optional[str] = None
@@ -180,22 +181,42 @@ def show_palette(state: UIState) -> UIState:
 def hide_palette(state: UIState) -> UIState:
     """Hide command palette and reset selection."""
     from dataclasses import replace
-    return replace(state, palette_visible=False, palette_selected=0, palette_query="")
+    return replace(state, palette_visible=False, palette_selected=0, palette_scroll=0, palette_query="")
 
 
-def update_palette_filter(state: UIState, query: str, items: list[tuple[str, str, str]]) -> UIState:
+def update_palette_filter(state: UIState, query: str, items: list[tuple[str, str, str, str]]) -> UIState:
     """Update palette filter query and filtered items."""
     from dataclasses import replace
-    return replace(state, palette_query=query, palette_items=items, palette_selected=0)
+    return replace(state, palette_query=query, palette_items=items, palette_selected=0, palette_scroll=0)
 
 
-def move_palette_selection(state: UIState, delta: int) -> UIState:
-    """Move palette selection up or down."""
+def move_palette_selection(state: UIState, delta: int, visible_items: int = 10) -> UIState:
+    """
+    Move palette selection up or down with scroll adjustment.
+
+    Args:
+        state: Current UI state
+        delta: Direction and amount to move (-1 for up, 1 for down)
+        visible_items: Number of items visible in viewport
+    """
     from dataclasses import replace
     if not state.palette_items:
         return state
+
     new_selected = (state.palette_selected + delta) % len(state.palette_items)
-    return replace(state, palette_selected=new_selected)
+
+    # Adjust scroll to keep selection visible
+    new_scroll = state.palette_scroll
+
+    # Scroll down if selection goes below visible area
+    if new_selected >= state.palette_scroll + visible_items:
+        new_scroll = new_selected - visible_items + 1
+
+    # Scroll up if selection goes above visible area
+    elif new_selected < state.palette_scroll:
+        new_scroll = new_selected
+
+    return replace(state, palette_selected=new_selected, palette_scroll=new_scroll)
 
 
 def set_feedback(state: UIState, message: str, icon: Optional[str] = None) -> UIState:

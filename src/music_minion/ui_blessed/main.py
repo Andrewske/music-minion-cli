@@ -234,7 +234,8 @@ def main_loop(term: Terminal, state: UIState, player_state: Any = None) -> None:
 
         if key:
             # Handle keyboard input
-            state, command_line = handle_key(state, key)
+            palette_height = layout['palette_height'] if layout else 10
+            state, command_line = handle_key(state, key, palette_height)
 
             # Execute command if one was triggered
             if command_line:
