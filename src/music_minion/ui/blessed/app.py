@@ -44,9 +44,10 @@ def poll_player_state(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, U
         ctx = ctx.with_player_state(new_player_state)
 
         # If we have a current track, fetch metadata for UI display
-        if status.get('file'):
+        current_file = status.get('file')
+        if current_file:
             # Get track from database
-            db_track = database.get_track_by_path(status['file'])
+            db_track = database.get_track_by_path(current_file)
 
             if db_track:
                 # Build track data for UI display
@@ -61,19 +62,26 @@ def poll_player_state(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, U
                 }
 
                 # Get additional database info
-                with database.get_db_connection() as conn:
-                    tags = database.get_track_tags(conn, db_track['id'])
-                    notes = database.get_track_notes(conn, db_track['id'])
+                tags = database.get_track_tags(db_track['id'])
+                notes = database.get_track_notes(db_track['id'])
 
-                    track_data.update({
-                        'tags': [t['tag'] for t in tags],
-                        'notes': notes[0]['note'] if notes else '',
-                        'rating': db_track.get('rating'),
-                        'last_played': db_track.get('last_played'),
-                        'play_count': db_track.get('play_count', 0),
-                    })
+                track_data.update({
+                    'tags': [t['tag_name'] for t in tags],
+                    'notes': notes[0]['note_text'] if notes else '',
+                    'rating': db_track.get('rating'),
+                    'last_played': db_track.get('last_played'),
+                    'play_count': db_track.get('play_count', 0),
+                })
 
                 ui_state = update_track_info(ui_state, track_data)
+            else:
+                # Track not in database - clear metadata to show fallback
+                from dataclasses import replace
+                ui_state = replace(ui_state, track_metadata=None, track_db_info=None)
+        else:
+            # No track playing - clear metadata
+            from dataclasses import replace
+            ui_state = replace(ui_state, track_metadata=None, track_db_info=None)
 
     except (OSError, ConnectionError, IOError):
         # Expected errors - player not running, socket issues

@@ -75,9 +75,16 @@ def render_dashboard(term: Terminal, player_state: PlayerState, ui_state: UIStat
     lines.append("")
 
     # Track information
-    if player_state.current_track and metadata:
-        track_lines = format_track_display(metadata, term)
-        lines.extend(track_lines)
+    if player_state.current_track:
+        if metadata:
+            track_lines = format_track_display(metadata, term)
+            lines.extend(track_lines)
+        else:
+            # Track is playing but no metadata yet (not in DB or lookup failed)
+            import os
+            filename = os.path.basename(player_state.current_track)
+            lines.append(term.bold_white(f"{ICONS['note']} {filename}"))
+            lines.append(term.white("  Loading metadata..."))
     else:
         lines.append(term.white(f"{ICONS['note']} No track playing"))
         lines.append(term.white("  Waiting for music..."))
