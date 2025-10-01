@@ -9,7 +9,7 @@ import glob
 import os
 from typing import List
 
-from .. import config
+from ..core import config
 from .. import database
 from .. import library
 

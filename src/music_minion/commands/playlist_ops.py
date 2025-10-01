@@ -13,7 +13,7 @@ from typing import List
 from prompt_toolkit import PromptSession
 from prompt_toolkit.styles import Style
 
-from .. import config
+from ..core import config
 from .. import database
 from .. import library
 from .. import player

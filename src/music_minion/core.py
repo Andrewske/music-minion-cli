@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-from . import config
+from .core import config
 from . import database
 from . import library
 from . import player

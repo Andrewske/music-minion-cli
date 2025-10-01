@@ -6,7 +6,7 @@ Routes user commands to appropriate handler functions.
 
 from typing import List
 
-from . import config
+from .core import config
 from . import database
 from . import player
 
