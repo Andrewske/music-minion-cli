@@ -1,7 +1,11 @@
 """UI state management - immutable state updates."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from time import time
 from typing import Optional, Any
+
+# Maximum number of commands to keep in history
+MAX_COMMAND_HISTORY = 1000
 
 
 @dataclass
@@ -82,8 +86,6 @@ def create_initial_state() -> UIState:
 
 def update_track_info(state: UIState, track_data: dict[str, Any]) -> UIState:
     """Update track metadata and DB info."""
-    from dataclasses import replace
-
     metadata = TrackMetadata(
         title=track_data.get('title', 'Unknown'),
         artist=track_data.get('artist', 'Unknown'),
@@ -107,33 +109,28 @@ def update_track_info(state: UIState, track_data: dict[str, Any]) -> UIState:
 
 def add_history_line(state: UIState, text: str, color: str = 'white') -> UIState:
     """Add a line to command history."""
-    from dataclasses import replace
     new_history = state.history + [(text, color)]
     return replace(state, history=new_history)
 
 
 def clear_history(state: UIState) -> UIState:
     """Clear command history."""
-    from dataclasses import replace
     return replace(state, history=[])
 
 
 def set_input_text(state: UIState, text: str) -> UIState:
     """Set input text and update cursor position."""
-    from dataclasses import replace
     return replace(state, input_text=text, cursor_pos=len(text))
 
 
 def append_input_char(state: UIState, char: str) -> UIState:
     """Append character to input text."""
-    from dataclasses import replace
     new_text = state.input_text + char
     return replace(state, input_text=new_text, cursor_pos=len(new_text))
 
 
 def delete_input_char(state: UIState) -> UIState:
     """Delete last character from input text (backspace)."""
-    from dataclasses import replace
     if not state.input_text:
         return state
     new_text = state.input_text[:-1]
@@ -142,25 +139,21 @@ def delete_input_char(state: UIState) -> UIState:
 
 def toggle_palette(state: UIState) -> UIState:
     """Toggle command palette visibility."""
-    from dataclasses import replace
     return replace(state, palette_visible=not state.palette_visible)
 
 
 def show_palette(state: UIState) -> UIState:
     """Show command palette."""
-    from dataclasses import replace
     return replace(state, palette_visible=True)
 
 
 def hide_palette(state: UIState) -> UIState:
     """Hide command palette and reset selection."""
-    from dataclasses import replace
     return replace(state, palette_visible=False, palette_selected=0, palette_scroll=0, palette_query="")
 
 
 def update_palette_filter(state: UIState, query: str, items: list[tuple[str, str, str, str]]) -> UIState:
     """Update palette filter query and filtered items."""
-    from dataclasses import replace
     return replace(state, palette_query=query, palette_items=items, palette_selected=0, palette_scroll=0)
 
 
@@ -173,7 +166,6 @@ def move_palette_selection(state: UIState, delta: int, visible_items: int = 10) 
         delta: Direction and amount to move (-1 for up, 1 for down)
         visible_items: Number of items visible in viewport
     """
-    from dataclasses import replace
     if not state.palette_items:
         return state
 
@@ -195,15 +187,12 @@ def move_palette_selection(state: UIState, delta: int, visible_items: int = 10) 
 
 def set_feedback(state: UIState, message: str, icon: Optional[str] = None) -> UIState:
     """Set feedback message with optional icon."""
-    from dataclasses import replace
-    from time import time
     msg = f"{icon} {message}" if icon else message
     return replace(state, feedback_message=msg, feedback_time=time())
 
 
 def clear_feedback(state: UIState) -> UIState:
     """Clear feedback message."""
-    from dataclasses import replace
     return replace(state, feedback_message=None, feedback_time=None)
 
 
@@ -211,7 +200,6 @@ def should_show_feedback(state: UIState) -> bool:
     """Check if feedback should still be displayed (4 second window)."""
     if not state.feedback_message or not state.feedback_time:
         return False
-    from time import time
     return (time() - state.feedback_time) < 4.0
 
 
@@ -226,11 +214,17 @@ def add_command_to_history(state: UIState, command: str) -> UIState:
     Returns:
         Updated state with command added
     """
-    from dataclasses import replace
     # Don't add duplicate consecutive commands
     if state.command_history and state.command_history[-1] == command:
         return replace(state, history_index=None, history_temp_input="")
+
+    # Add command to history
     new_history = state.command_history + [command]
+
+    # Enforce history size limit
+    if len(new_history) > MAX_COMMAND_HISTORY:
+        new_history = new_history[-MAX_COMMAND_HISTORY:]
+
     return replace(state, command_history=new_history, history_index=None, history_temp_input="")
 
 
@@ -244,7 +238,6 @@ def navigate_history_up(state: UIState) -> UIState:
     Returns:
         Updated state with older command loaded
     """
-    from dataclasses import replace
     if not state.command_history:
         return state
 
@@ -282,7 +275,6 @@ def navigate_history_down(state: UIState) -> UIState:
     Returns:
         Updated state with newer command loaded
     """
-    from dataclasses import replace
     if state.history_index is None:
         # Not browsing history
         return state
@@ -318,5 +310,4 @@ def reset_history_navigation(state: UIState) -> UIState:
     Returns:
         Updated state with history navigation reset
     """
-    from dataclasses import replace
     return replace(state, history_index=None, history_temp_input="")

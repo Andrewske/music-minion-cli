@@ -42,6 +42,8 @@ def parse_key(key: Keystroke) -> dict:
         event['type'] = 'escape'
     elif key.name == 'KEY_BACKSPACE' or key == '\x7f':
         event['type'] = 'backspace'
+    elif key.name == 'KEY_DELETE':
+        event['type'] = 'delete'
     elif key.name == 'KEY_UP':
         event['type'] = 'arrow_up'
     elif key.name == 'KEY_DOWN':
@@ -135,6 +137,22 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10) -> tupl
     # Handle backspace
     if event['type'] == 'backspace':
         state = delete_input_char(state)
+        state = reset_history_navigation(state)
+
+        # Update palette filter if visible
+        if state.palette_visible:
+            # Remove "/" prefix for filtering
+            query = state.input_text[1:] if state.input_text.startswith("/") else state.input_text
+            filtered = filter_commands(query, COMMAND_DEFINITIONS)
+            # Convert to format expected by state (category, cmd, icon, desc)
+            state = update_palette_filter(state, query, filtered)
+
+        return state, None
+
+    # Handle delete (behaves like backspace since cursor is always at end)
+    if event['type'] == 'delete':
+        state = delete_input_char(state)
+        state = reset_history_navigation(state)
 
         # Update palette filter if visible
         if state.palette_visible:
