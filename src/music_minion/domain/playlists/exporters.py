@@ -8,8 +8,8 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 import sys
 
-from .core.database import get_db_connection
-from .playlist import get_playlist_by_id, get_playlist_by_name, get_playlist_tracks
+from ...core.database import get_db_connection
+from .crud import get_playlist_by_id, get_playlist_by_name, get_playlist_tracks
 
 
 def make_relative_path(track_path: Path, library_root: Path) -> str:

@@ -6,8 +6,8 @@ Functional approach with explicit state passing
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
-from .core.database import get_db_connection
-from . import playlist_filters
+from ...core.database import get_db_connection
+from . import filters
 
 
 def create_playlist(name: str, playlist_type: str, description: Optional[str] = None) -> int:
@@ -66,7 +66,7 @@ def update_playlist_track_count(playlist_id: int) -> None:
             count = cursor.fetchone()['count']
         else:
             # Smart playlist - evaluate filters
-            matching_tracks = playlist_filters.evaluate_filters(playlist_id)
+            matching_tracks = filters.evaluate_filters(playlist_id)
             count = len(matching_tracks)
 
         conn.execute("""
@@ -97,7 +97,7 @@ def delete_playlist(playlist_id: int) -> bool:
             if row and row['playlist_id'] == playlist_id:
                 conn.execute("DELETE FROM active_playlist WHERE id = 1")
 
-            # Delete playlist (CASCADE will handle playlist_tracks and playlist_filters)
+            # Delete playlist (CASCADE will handle playlist_tracks and filters)
             cursor = conn.execute("DELETE FROM playlists WHERE id = ?", (playlist_id,))
             deleted = cursor.rowcount > 0
 
@@ -262,7 +262,7 @@ def get_playlist_tracks(playlist_id: int) -> List[Dict[str, Any]]:
             return [dict(row) for row in cursor.fetchall()]
         else:
             # Smart playlist - evaluate filters
-            return playlist_filters.evaluate_filters(playlist_id)
+            return filters.evaluate_filters(playlist_id)
 
 
 def get_playlist_track_count(playlist_id: int) -> int:
@@ -293,7 +293,7 @@ def get_playlist_track_count(playlist_id: int) -> int:
             return row['count'] if row else 0
         else:
             # Smart playlist - need to evaluate filters (no way to optimize without duplicating filter logic)
-            tracks = playlist_filters.evaluate_filters(playlist_id)
+            tracks = filters.evaluate_filters(playlist_id)
             return len(tracks)
 
 
@@ -567,11 +567,11 @@ def get_available_playlist_tracks(playlist_id: int) -> List[str]:
             return [row['file_path'] for row in cursor.fetchall()]
         else:
             # Smart playlist - evaluate filters
-            filters = playlist_filters.get_playlist_filters(playlist_id)
+            filters = filters.get_filters(playlist_id)
             if not filters:
                 return []
 
-            where_clause, params = playlist_filters.build_filter_query(filters)
+            where_clause, params = filters.build_filter_query(filters)
 
             # Query with filter and exclude archived tracks
             cursor = conn.execute(f"""
