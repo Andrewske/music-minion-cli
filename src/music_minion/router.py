@@ -8,7 +8,7 @@ from typing import List
 
 from .core import config
 from .core import database
-from . import player
+from .domain import playback as playback_domain
 
 # Import command handlers
 from .commands import playback
@@ -113,9 +113,9 @@ def handle_command(command: str, args: List[str]) -> bool:
     if command in ['quit', 'exit']:
         # Clean up MPV player before exiting
         from . import main
-        if player.is_mpv_running(main.current_player_state):
-            print("Stopping music player...")
-            player.stop_mpv(main.current_player_state)
+        if playback_domain.is_mpv_running(main.current_player_state):
+            print("Stopping music playback_domain...")
+            playback_domain.stop_mpv(main.current_player_state)
         print("Goodbye!")
         return False
 

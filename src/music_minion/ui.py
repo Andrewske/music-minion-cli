@@ -15,7 +15,7 @@ from rich.text import Text
 from rich.align import Align
 
 from .domain import playlists
-from . import playback
+from .domain import playback
 
 console = Console()
 

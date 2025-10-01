@@ -10,10 +10,9 @@ from typing import List, Optional
 from ..core import config
 from ..core import database
 from ..domain import library
-from .. import player
+from ..domain import playback
 from .. import ai
 from ..domain import playlists
-from .. import playback
 
 
 def get_player_state():
@@ -85,9 +84,9 @@ def play_track(track: library.Track, playlist_position: Optional[int] = None) ->
     current_config = get_config()
 
     # Start MPV if not running
-    if not player.is_mpv_running(current_player_state):
-        print("Starting music player...")
-        new_state = player.start_mpv(current_config)
+    if not playback.is_mpv_running(current_player_state):
+        print("Starting music playback...")
+        new_state = playback.start_mpv(current_config)
         if not new_state:
             print("Failed to start music player")
             return True
@@ -95,7 +94,7 @@ def play_track(track: library.Track, playlist_position: Optional[int] = None) ->
         set_player_state(current_player_state)
 
     # Play the track
-    new_state, success = player.play_file(current_player_state, track.file_path)
+    new_state, success = playback.play_file(current_player_state, track.file_path)
     set_player_state(new_state)
 
     if success:
@@ -146,7 +145,7 @@ def handle_play_command(args: List[str]) -> bool:
     if not args:
         if current_player_state.current_track:
             # Resume current track
-            new_state, success = player.resume_playback(current_player_state)
+            new_state, success = playback.resume_playback(current_player_state)
             set_player_state(new_state)
             if success:
                 safe_print("▶ Resumed playback", "green")
@@ -179,11 +178,11 @@ def handle_pause_command() -> bool:
     """Handle pause command."""
     current_player_state = get_player_state()
 
-    if not player.is_mpv_running(current_player_state):
+    if not playback.is_mpv_running(current_player_state):
         print("No music is currently playing")
         return True
 
-    new_state, success = player.pause_playback(current_player_state)
+    new_state, success = playback.pause_playback(current_player_state)
     set_player_state(new_state)
 
     if success:
@@ -198,11 +197,11 @@ def handle_resume_command() -> bool:
     """Handle resume command."""
     current_player_state = get_player_state()
 
-    if not player.is_mpv_running(current_player_state):
+    if not playback.is_mpv_running(current_player_state):
         print("No music player is running")
         return True
 
-    new_state, success = player.resume_playback(current_player_state)
+    new_state, success = playback.resume_playback(current_player_state)
     set_player_state(new_state)
 
     if success:
@@ -323,11 +322,11 @@ def handle_stop_command() -> bool:
     """Handle stop command."""
     current_player_state = get_player_state()
 
-    if not player.is_mpv_running(current_player_state):
+    if not playback.is_mpv_running(current_player_state):
         print("No music is currently playing")
         return True
 
-    new_state, success = player.stop_playback(current_player_state)
+    new_state, success = playback.stop_playback(current_player_state)
     set_player_state(new_state)
 
     if success:
@@ -346,14 +345,14 @@ def handle_status_command() -> bool:
     print("Music Minion Status:")
     print("─" * 40)
 
-    if not player.is_mpv_running(current_player_state):
+    if not playback.is_mpv_running(current_player_state):
         print("♪ Player: Not running")
         print("♫ Track: None")
         return True
 
     # Get current status from player
-    status = player.get_player_status(current_player_state)
-    position, duration, percent = player.get_progress_info(current_player_state)
+    status = playback.get_player_status(current_player_state)
+    position, duration, percent = playback.get_progress_info(current_player_state)
 
     print(f"♪ Player: {'Playing' if status['playing'] else 'Paused'}")
 
@@ -371,7 +370,7 @@ def handle_status_command() -> bool:
             # Progress bar
             if duration > 0:
                 progress_bar = "▓" * int(percent / 5) + "░" * (20 - int(percent / 5))
-                print(f"⏱  Progress: [{progress_bar}] {player.format_time(position)} / {player.format_time(duration)}")
+                print(f"⏱  Progress: [{progress_bar}] {playback.format_time(position)} / {playback.format_time(duration)}")
 
             # DJ info
             dj_info = library.get_dj_info(current_track)

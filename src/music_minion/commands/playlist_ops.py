@@ -16,7 +16,7 @@ from prompt_toolkit.styles import Style
 from ..core import config
 from ..core import database
 from ..domain import library
-from .. import player
+from ..domain import playback
 from .. import ai
 from .. import ui
 from ..domain import playlists
@@ -24,11 +24,10 @@ from ..domain.playlists import filters as playlist_filters
 from ..domain.playlists import ai_parser as playlist_ai
 from ..domain.playlists import importers as playlist_import
 from ..domain.playlists import exporters as playlist_export
-from .. import playback
 from .. import completers
 
 
-def get_player_state() -> player.PlayerState:
+def get_player_state() -> playback.PlayerState:
     """Get current player state from main module."""
     from .. import main
     return main.current_player_state

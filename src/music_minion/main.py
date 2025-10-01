@@ -11,18 +11,17 @@ from typing import List, Optional
 from .core import config
 from .core import database
 from .domain import library
-from . import player
+from .domain import playback
 from . import ai
 from . import ui
 from .domain import playlists
-from . import playback
 from . import sync
 from . import command_palette
 from . import router
 from . import core
 
 # Global state for interactive mode
-current_player_state: player.PlayerState = player.PlayerState()
+current_player_state: playback.PlayerState = playback.PlayerState()
 music_tracks: List[library.Track] = []
 current_config: config.Config = config.Config()
 
@@ -60,16 +59,16 @@ def play_track(track: library.Track, playlist_position: Optional[int] = None) ->
     global current_player_state, current_config
 
     # Start MPV if not running
-    if not player.is_mpv_running(current_player_state):
-        print("Starting music player...")
-        new_state = player.start_mpv(current_config)
+    if not playback.is_mpv_running(current_player_state):
+        print("Starting music playback...")
+        new_state = playback.start_mpv(current_config)
         if not new_state:
             print("Failed to start music player")
             return True
         current_player_state = new_state
 
     # Play the track
-    new_state, success = player.play_file(current_player_state, track.file_path)
+    new_state, success = playback.play_file(current_player_state, track.file_path)
     current_player_state = new_state
 
     if success:
@@ -115,12 +114,12 @@ def check_and_handle_track_completion() -> None:
     if not current_player_state.current_track:
         return  # No message needed - track already handled
 
-    if not player.is_mpv_running(current_player_state):
+    if not playback.is_mpv_running(current_player_state):
         return  # Player not running, nothing to check
 
     # Check if track is still playing
-    status = player.get_player_status(current_player_state)
-    position, duration, percent = player.get_progress_info(current_player_state)
+    status = playback.get_player_status(current_player_state)
+    position, duration, percent = playback.get_progress_info(current_player_state)
 
     # If track has ended (reached 100% or very close), trigger analysis and play next
     if duration > 0 and percent >= 99.0 and not status.get('playing', False):
@@ -410,7 +409,7 @@ def interactive_mode_with_dashboard() -> None:
 
                 # Update player state
                 if current_player_state.process:
-                    current_player_state = player.update_player_status(current_player_state)
+                    current_player_state = playback.update_player_status(current_player_state)
 
                 # Check if terminal was resized
                 current_size = (console.size.width, console.size.height)
@@ -581,7 +580,7 @@ def interactive_mode_with_dashboard() -> None:
                     try:
                         # Update player state first
                         if current_player_state.process:
-                            current_player_state = player.update_player_status(current_player_state)
+                            current_player_state = playback.update_player_status(current_player_state)
 
                         track_metadata = get_current_track_metadata()
                         db_info = get_current_track_db_info()
@@ -755,8 +754,8 @@ def interactive_mode_textual() -> None:
         runner.run()
     finally:
         # Clean up MPV player
-        if player.is_mpv_running(current_player_state):
-            player.stop_mpv(current_player_state)
+        if playback.is_mpv_running(current_player_state):
+            playback.stop_mpv(current_player_state)
 
 
 def interactive_mode_blessed() -> None:
@@ -802,8 +801,8 @@ def interactive_mode_blessed() -> None:
         run_interactive_ui(initial_state, current_player_state)
     finally:
         # Clean up MPV player
-        if player.is_mpv_running(current_player_state):
-            player.stop_mpv(current_player_state)
+        if playback.is_mpv_running(current_player_state):
+            playback.stop_mpv(current_player_state)
 
 
 def interactive_mode() -> None:

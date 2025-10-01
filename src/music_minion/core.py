@@ -11,7 +11,7 @@ from typing import List, Optional
 from .core import config
 from .core import database
 from .domain import library
-from . import player
+from .domain import playback
 from .domain.playlists import exporters as playlist_export
 
 
@@ -100,7 +100,7 @@ def parse_command(user_input: str) -> tuple[str, List[str]]:
 
 def ensure_mpv_available() -> bool:
     """Check if MPV is available and warn if not."""
-    if not player.check_mpv_available():
+    if not playback.check_mpv_available():
         print("Error: MPV is not installed or not available in PATH.")
         print("Please install MPV to use playback features.")
         print("On Ubuntu/Debian: sudo apt install mpv")
