@@ -195,9 +195,19 @@ def play_file(state: PlayerState, file_path: str) -> Tuple[PlayerState, bool]:
     })
 
     if success:
-        # Give MPV a moment to load the file
+        # Poll for file load completion instead of blind sleep (faster startup)
         import time
-        time.sleep(0.5)
+        max_wait = 0.5
+        poll_interval = 0.05
+        elapsed = 0.0
+
+        while elapsed < max_wait:
+            # Check if file is loaded by querying duration
+            duration = get_mpv_property(state.socket_path, 'duration')
+            if duration and duration > 0:
+                break
+            time.sleep(poll_interval)
+            elapsed += poll_interval
 
         # Explicitly unpause to ensure playback starts
         send_mpv_command(state.socket_path, {

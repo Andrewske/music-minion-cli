@@ -101,6 +101,64 @@ while running:
 - No hidden state changes
 - Explicit update cycle
 
+#### 4. Partial Rendering for Smooth Updates (Anti-Flashing)
+**Problem**: Full screen redraws every second cause visible flashing when only time-sensitive elements (clock, progress bar) change.
+
+**Solution**: Three-tier update strategy
+```python
+# State hash excludes volatile data (like position)
+state_hash = hash((
+    track_file,          # Include
+    is_playing,          # Include
+    duration,            # Include
+    current_position,    # EXCLUDE - changes every second
+))
+
+# Track position separately
+last_position = None
+
+if needs_full_redraw:
+    # Full redraw: clear screen, render everything
+    print(term.clear)
+    render_dashboard(...)
+    last_position = int(current_position)
+
+elif input_changed:
+    # Input-only update: clear and redraw input area
+    render_input(...)
+
+else:
+    # Partial update: only time-sensitive elements
+    position = int(current_position)
+    if position != last_position:
+        render_dashboard_partial(...)  # Updates clock, progress bar only
+        last_position = position
+```
+
+**Key Implementation**: `render_dashboard_partial()`
+```python
+def render_dashboard_partial(term, player_state, ui_state, y_start):
+    # Update clock (line 0)
+    print(term.move_xy(0, y_start) + term.clear_eol + header, end='')
+
+    # Update progress bar (line 7)
+    progress_y = y_start + 7
+    print(term.move_xy(0, progress_y) + term.clear_eol + progress_bar, end='')
+
+    # No term.clear() - no flashing!
+```
+
+**Benefits**:
+- ✅ Eliminates flashing - static content never redraws
+- ✅ Smooth playback progress updates
+- ✅ Professional UI appearance
+- ✅ Minimal performance overhead
+- ✅ Clock and progress bar update independently
+
+**Files**:
+- `src/music_minion/ui/blessed/app.py` - Main loop with three-tier logic
+- `src/music_minion/ui/blessed/components/dashboard.py` - Full and partial render functions
+
 ## Code Patterns & Conventions
 
 ### Database Operations

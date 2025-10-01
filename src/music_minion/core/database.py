@@ -615,6 +615,19 @@ def get_track_by_path(file_path: str) -> Optional[Dict[str, Any]]:
         return dict(row) if row else None
 
 
+def get_track_path_to_id_map() -> Dict[str, int]:
+    """Get mapping of file_path to track_id for all tracks in database.
+
+    This is optimized for bulk lookups to avoid N+1 query problems.
+
+    Returns:
+        Dictionary mapping file paths to track IDs
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute("SELECT id, file_path FROM tracks")
+        return {row['file_path']: row['id'] for row in cursor.fetchall()}
+
+
 def update_ai_processed_note(note_id: int, ai_tags: str) -> None:
     """Mark a note as processed by AI and store extracted tags."""
     with get_db_connection() as conn:

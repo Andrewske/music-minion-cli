@@ -370,8 +370,6 @@ def interactive_mode_with_dashboard() -> None:
                 if command in state_changing_commands:
                     # Trigger immediate dashboard update
                     dashboard_state["should_update"] = True
-                    # Give a moment for the command to take effect
-                    time.sleep(0.1)
 
                     # Manual dashboard refresh for state changes
                     try:

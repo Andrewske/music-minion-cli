@@ -30,6 +30,9 @@ def get_available_tracks(ctx: AppContext) -> List[library.Track]:
     # Get archived track IDs
     archived_ids = set(database.get_archived_tracks())
 
+    # Get path-to-id mapping for all tracks (single query instead of N queries)
+    path_to_id = database.get_track_path_to_id_map()
+
     # Filter by active playlist if set
     active = playlists.get_active_playlist()
     if active:
@@ -42,12 +45,12 @@ def get_available_tracks(ctx: AppContext) -> List[library.Track]:
     else:
         available = ctx.music_tracks
 
-    # Exclude archived tracks (only check tracks in database)
+    # Exclude archived tracks using O(1) dictionary lookups
     filtered = []
     for t in available:
-        db_track = database.get_track_by_path(t.file_path)
+        track_id = path_to_id.get(t.file_path)
         # Include if not in DB yet, or in DB but not archived
-        if db_track is None or db_track['id'] not in archived_ids:
+        if track_id is None or track_id not in archived_ids:
             filtered.append(t)
 
     return filtered

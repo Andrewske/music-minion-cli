@@ -139,6 +139,8 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
     last_input_text = ""
     last_palette_state = (False, 0)
     layout = None
+    last_position = None  # Track position separately for partial updates
+    dashboard_line_mapping = {}  # Store line offsets from last full dashboard render
 
     while not should_quit:
         # Poll player state every 10 frames (~1 second at 0.1s timeout)
@@ -150,10 +152,11 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         # Only compute hash when we polled or when other state changes might have occurred
         current_state_hash = None
         if should_poll or last_state_hash is None:
+            # Hash excludes current_position to avoid full redraws every second
+            # Position is tracked separately for partial dashboard updates
             current_state_hash = hash((
                 ctx.player_state.current_track,
                 ctx.player_state.is_playing,
-                int(ctx.player_state.current_position),  # Floor to avoid constant changes
                 ctx.player_state.duration,
                 len(ui_state.history),
                 ui_state.feedback_message,
@@ -178,7 +181,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
             layout = calculate_layout(term, ui_state)
 
             # Render all sections
-            render_dashboard(
+            dashboard_height, dashboard_line_mapping = render_dashboard(
                 term,
                 ctx.player_state,
                 ui_state,
@@ -211,6 +214,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
 
             last_input_text = ui_state.input_text
             last_palette_state = (ui_state.palette_visible, ui_state.palette_selected)
+            last_position = int(ctx.player_state.current_position)  # Update position after full redraw
 
         elif input_changed or palette_state_changed:
             # Partial update - only input and palette changed
@@ -251,6 +255,27 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
 
                     last_input_text = ui_state.input_text
                     last_palette_state = (ui_state.palette_visible, ui_state.palette_selected)
+
+        else:
+            # Check if only position changed (partial dashboard update)
+            current_position = int(ctx.player_state.current_position)
+            position_changed = last_position != current_position
+
+            if position_changed and layout and ctx.player_state.is_playing and dashboard_line_mapping:
+                # Partial update - only update time-sensitive dashboard elements
+                # This avoids full screen clear and only updates specific lines
+                from .components.dashboard import render_dashboard_partial
+
+                render_dashboard_partial(
+                    term,
+                    ctx.player_state,
+                    ui_state,
+                    layout['dashboard_y'],
+                    dashboard_line_mapping
+                )
+
+                sys.stdout.flush()
+                last_position = current_position
 
         # Wait for input (with timeout for background updates)
         key = term.inkey(timeout=0.1)

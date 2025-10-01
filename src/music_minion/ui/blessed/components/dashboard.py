@@ -19,7 +19,7 @@ ICONS = {
 }
 
 
-def render_dashboard(term: Terminal, player_state: PlayerState, ui_state: UIState, y_start: int) -> int:
+def render_dashboard(term: Terminal, player_state: PlayerState, ui_state: UIState, y_start: int) -> tuple[int, dict]:
     """
     Render dashboard section.
 
@@ -30,9 +30,13 @@ def render_dashboard(term: Terminal, player_state: PlayerState, ui_state: UIStat
         y_start: Starting y position
 
     Returns:
-        Height used by dashboard
+        Tuple of (height_used, line_mapping) where line_mapping contains:
+        - 'header_line': Line number for header with clock
+        - 'progress_line': Line number for progress bar
+        - 'bpm_line': Line number for BPM visualizer (if present)
     """
     lines = []
+    line_mapping = {}
     metadata = ui_state.track_metadata
     db_info = ui_state.track_db_info
 
@@ -64,6 +68,7 @@ def render_dashboard(term: Terminal, player_state: PlayerState, ui_state: UIStat
         " " * spacer_width +
         time_color(f"[{current_time}]")
     )
+    line_mapping['header_line'] = len(lines)
     lines.append(header)
 
     # Colorful separator
@@ -94,11 +99,13 @@ def render_dashboard(term: Terminal, player_state: PlayerState, ui_state: UIStat
     # Progress bar
     if player_state.is_playing:
         progress = create_progress_bar(player_state.current_position, player_state.duration, term)
+        line_mapping['progress_line'] = len(lines)
         lines.append(progress)
 
         # BPM visualizer
         if metadata and metadata.bpm:
             bpm_line = format_bpm_line(metadata.bpm, term)
+            line_mapping['bpm_line'] = len(lines)
             lines.append(bpm_line)
     else:
         lines.append(term.white("─" * 40))
@@ -168,11 +175,19 @@ def render_dashboard(term: Terminal, player_state: PlayerState, ui_state: UIStat
     shuffle_style = term.bold_yellow if ui_state.shuffle_enabled else term.bold_green
     lines.append(shuffle_style(shuffle_line))
 
+    # Dashboard bottom separator
+    lines.append("")
+    separator_chars = []
+    colors = [term.cyan, term.blue, term.magenta, term.yellow]
+    for i in range(term.width - 4):
+        separator_chars.append(colors[i % 4]("━"))
+    lines.append("".join(separator_chars))
+
     # Render all lines
     for i, line in enumerate(lines):
         print(term.move_xy(0, y_start + i) + line)
 
-    return len(lines)
+    return len(lines), line_mapping
 
 
 def format_track_display(metadata: TrackMetadata, term: Terminal) -> list[str]:
@@ -287,3 +302,67 @@ def format_time(seconds: float) -> str:
     minutes = int(seconds // 60)
     secs = int(seconds % 60)
     return f"{minutes}:{secs:02d}"
+
+
+def render_dashboard_partial(term: Terminal, player_state: PlayerState, ui_state: UIState,
+                           y_start: int, line_mapping: dict) -> None:
+    """
+    Partially update dashboard - only time-sensitive elements.
+
+    This updates only the clock and progress bar without clearing the screen,
+    eliminating flashing when only playback position changes.
+
+    Args:
+        term: blessed Terminal instance
+        player_state: Player state from AppContext
+        ui_state: UI state with cached display data
+        y_start: Starting y position of dashboard
+        line_mapping: Dictionary with line offsets from render_dashboard
+    """
+    metadata = ui_state.track_metadata
+
+    # Update clock in header
+    if 'header_line' in line_mapping:
+        current_time = datetime.now().strftime("%H:%M:%S")
+        header_text = f"{ICONS['music']} MUSIC MINION {ICONS['music']}"
+
+        # Calculate spacer for time alignment
+        header_len = len(header_text)
+        time_len = len(f"[{current_time}]")
+        spacer_width = max(term.width - header_len - time_len - 4, 2)
+
+        # Build header with colors (same as full render)
+        hour = datetime.now().hour
+        if 6 <= hour < 12:
+            time_color = term.bold_yellow
+        elif 12 <= hour < 18:
+            time_color = term.bold_blue
+        elif 18 <= hour < 22:
+            time_color = term.bold_yellow
+        else:
+            time_color = term.bold_magenta
+
+        header = (
+            term.bold_magenta(ICONS['music']) + " " +
+            term.bold_cyan("MUSIC") + " " +
+            term.bold_blue("MINION") + " " +
+            term.bold_magenta(ICONS['music']) +
+            " " * spacer_width +
+            time_color(f"[{current_time}]")
+        )
+
+        # Update clock line - clear and rewrite
+        header_y = y_start + line_mapping['header_line']
+        print(term.move_xy(0, header_y) + term.clear_eol + header, end='')
+
+    # Update progress bar if playing
+    if player_state.is_playing and player_state.current_track and 'progress_line' in line_mapping:
+        progress = create_progress_bar(player_state.current_position, player_state.duration, term)
+        progress_y = y_start + line_mapping['progress_line']
+        print(term.move_xy(0, progress_y) + term.clear_eol + progress, end='')
+
+        # Update BPM line if metadata available
+        if metadata and metadata.bpm and 'bpm_line' in line_mapping:
+            bpm_line = format_bpm_line(metadata.bpm, term)
+            bpm_y = y_start + line_mapping['bpm_line']
+            print(term.move_xy(0, bpm_y) + term.clear_eol + bpm_line, end='')
