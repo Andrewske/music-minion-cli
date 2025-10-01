@@ -9,7 +9,7 @@ from typing import List, Optional, Dict, Any, NamedTuple
 from mutagen import File as MutagenFile
 from mutagen.id3 import ID3NoHeaderError
 
-from .config import Config
+from .core.config import Config
 
 
 class Track(NamedTuple):

@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple, NamedTuple
 
-from .config import Config
+from .core.config import Config
 
 
 class PlayerState(NamedTuple):
