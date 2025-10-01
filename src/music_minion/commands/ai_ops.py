@@ -6,7 +6,7 @@ Handles: ai setup, ai analyze, ai test, ai usage
 
 from typing import List
 
-from .. import ai
+from ..domain import ai
 from ..core import database
 from ..domain import library
 

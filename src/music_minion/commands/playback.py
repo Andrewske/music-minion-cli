@@ -11,7 +11,7 @@ from ..core import config
 from ..core import database
 from ..domain import library
 from ..domain import playback
-from .. import ai
+from ..domain import ai
 from ..domain import playlists
 
 

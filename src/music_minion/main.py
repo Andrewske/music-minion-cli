@@ -12,10 +12,10 @@ from .core import config
 from .core import database
 from .domain import library
 from .domain import playback
-from . import ai
+from .domain import ai
 from . import ui
 from .domain import playlists
-from . import sync
+from .domain import sync
 from . import command_palette
 from . import router
 from . import core
