@@ -13,7 +13,6 @@ dependencies = [
     "python-dotenv>=1.0.0", # Environment variable management
     "rich>=13.0.0",       # Terminal UI formatting
     "blessed>=1.20.0",    # Terminal UI library
-    "textual>=0.40.0",    # Advanced terminal UI components (legacy)
     "pyserato>=0.1.0",    # Serato crate import/export
     "prompt_toolkit>=3.0.0", # Interactive CLI with autocomplete
     "simple-term-menu>=1.6.0", # Interactive arrow-key menus

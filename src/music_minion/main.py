@@ -410,162 +410,6 @@ def interactive_mode_with_dashboard() -> None:
         dashboard_state["running"] = False
 
 
-def interactive_mode_textual() -> None:
-    """Run the interactive mode with Textual UI."""
-    global current_config, current_player_state, music_tracks
-
-    # Load config if not already loaded
-    if not current_config.music.library_paths:
-        current_config = config.load_config()
-
-    # Load music library using context
-    ctx = helpers.create_context_from_globals()
-    ctx, success = helpers.ensure_library_loaded(ctx)
-    helpers.sync_context_to_globals(ctx)
-    if not success:
-        return
-
-    # Run database migrations on startup
-    database.init_database()
-
-    # Auto-sync on startup if enabled (run in background thread)
-    if current_config.sync.auto_sync_on_startup:
-        sync_thread = threading.Thread(
-            target=_auto_sync_background,
-            args=(current_config,),
-            daemon=True,
-            name="AutoSyncThread"
-        )
-        sync_thread.start()
-
-    # Create the runner with current state
-    from .ui_textual import MusicMinionRunner
-    runner = MusicMinionRunner(current_config, music_tracks, current_player_state)
-
-    # Create command handler wrapper that works with Textual app
-    def textual_command_handler(command: str, args: List[str]) -> bool:
-        """Wrapper for handle_command that integrates with Textual app"""
-        # Get reference to the Textual app for printing
-        app = runner.app
-
-        # Special handling for "playlist" command - show Textual modal
-        if command == "playlist" and not args:
-            # Show playlist browser modal
-            try:
-                from . import playlist as playlist_module
-
-                playlists = playlist_module.get_playlists_sorted_by_recent()
-
-                if not playlists:
-                    app.print_error("No playlists found. Create one with: playlist new manual <name>")
-                    return True
-
-                # Get active playlist
-                active = playlist_module.get_active_playlist()
-                active_id = active['id'] if active else None
-
-                # Define handler for playlist selection
-                def handle_playlist_selection(selected: dict | None) -> None:
-                    """Handle playlist selection from modal"""
-                    if selected:
-                        # Activate playlist
-                        if playlist_module.set_active_playlist(selected['id']):
-                            app.print_success(f"Activated playlist: {selected['name']}")
-
-                            # Auto-play first track
-                            playlist_tracks = playlist_module.get_playlist_tracks(selected['id'])
-                            if playlist_tracks:
-                                # Convert DB track to library.Track and play
-                                first_track = database.db_track_to_library_track(playlist_tracks[0])
-                                from .commands import playback as playback_commands
-                                ctx = helpers.create_context_from_globals()
-                                ctx, success = playback_commands.play_track(ctx, first_track, playlist_position=0)
-                                helpers.sync_context_to_globals(ctx)
-                                if success:
-                                    app.print_info(f"🎵 Now playing: {library.get_display_name(first_track)}")
-                                else:
-                                    app.print_error("Failed to play track")
-                            else:
-                                app.print_info(f"⚠️  Playlist is empty")
-                        else:
-                            app.print_error(f"Failed to activate playlist")
-
-                # Show modal
-                from .ui_textual.playlist_modal import PlaylistModal
-                app.push_screen(
-                    PlaylistModal(playlists, active_id),
-                    handle_playlist_selection
-                )
-
-                return True
-
-            except Exception as e:
-                app.print_error(f"Error browsing playlists: {e}")
-                import traceback
-                traceback.print_exc()
-                return True
-
-        # Add UI feedback for rating commands
-        if command == "love":
-            runner.app_state.set_feedback("Track loved!", "❤️")
-        elif command == "like":
-            runner.app_state.set_feedback("Track liked!", "👍")
-        elif command == "skip":
-            runner.app_state.set_feedback("Skipped to next track", "⏭")
-        elif command == "archive":
-            runner.app_state.set_feedback("Track archived - won't play again", "🗄")
-        elif command == "note" and args:
-            runner.app_state.set_feedback("Note added to track", "📝")
-
-        # Call the original command handler
-        # Note: We need to redirect print statements to the Textual app
-        import io
-        import sys
-
-        # Capture stdout
-        old_stdout = sys.stdout
-        stdout_capture = io.StringIO()
-        sys.stdout = stdout_capture
-
-        try:
-            # Execute command with context
-            ctx = helpers.create_context_from_globals()
-            ctx, should_continue = router.handle_command(ctx, command, args)
-            helpers.sync_context_to_globals(ctx)
-
-            # Get captured output and send to Textual app
-            output = stdout_capture.getvalue()
-            if output:
-                for line in output.rstrip('\n').split('\n'):
-                    if line.strip():
-                        # Color code based on content
-                        if line.startswith('❌') or 'Error' in line or 'Failed' in line:
-                            app.print_error(line)
-                        elif line.startswith('✅') or 'Success' in line:
-                            app.print_success(line)
-                        elif line.startswith('💡') or 'Tip:' in line:
-                            app.print_info(line)
-                        else:
-                            app.print_output(line)
-
-            return should_continue
-
-        finally:
-            # Restore stdout
-            sys.stdout = old_stdout
-
-    # Set the command handler
-    runner.set_command_handler(textual_command_handler)
-
-    # Run the Textual app
-    try:
-        runner.run()
-    finally:
-        # Clean up MPV player
-        if playback.is_mpv_running(current_player_state):
-            playback.stop_mpv(current_player_state)
-
-
 def interactive_mode_blessed() -> None:
     """Run the interactive mode with blessed UI."""
     global current_config, current_player_state, music_tracks
@@ -641,23 +485,15 @@ def interactive_mode() -> None:
         )
         sync_thread.start()
 
-    # Check for UI mode preference (environment variable or default)
-    ui_mode = os.environ.get('MUSIC_MINION_UI', 'blessed').lower()
-
     # Check if dashboard is enabled
     if current_config.ui.enable_dashboard:
         try:
-            # Use blessed UI by default (new implementation)
-            if ui_mode == 'blessed':
-                interactive_mode_blessed()
-                return
-            elif ui_mode == 'textual':
-                # Use Textual UI if specifically requested
-                interactive_mode_textual()
-                return
+            # Use blessed UI (new implementation)
+            interactive_mode_blessed()
+            return
         except ImportError as e:
-            # blessed/Textual not available, fall back to old dashboard
-            print(f"⚠️  {ui_mode.title()} UI not available ({e}), falling back to legacy dashboard")
+            # blessed not available, fall back to old dashboard
+            print(f"⚠️  blessed UI not available ({e}), falling back to legacy dashboard")
             try:
                 interactive_mode_with_dashboard()
                 return

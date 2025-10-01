@@ -11,7 +11,7 @@ This file tracks learnings about the project structure, patterns, and best pract
 - **Playlist Filters**: `src/music_minion/playlist_filters.py` - Smart playlist filter logic
 - **Main**: `src/music_minion/main.py` - CLI entry point, command handlers
 - **Config**: `src/music_minion/config.py` - Configuration management (TOML)
-- **UI Textual**: `src/music_minion/ui_textual/` - New Textual-based UI components (Phase 1 complete)
+- **UI blessed**: `src/music_minion/ui/blessed/` - blessed-based interactive UI
 
 ### Test Files
 - Adhoc test scripts in project root (e.g., `test_sync_fixes.py`)
@@ -22,371 +22,84 @@ This file tracks learnings about the project structure, patterns, and best pract
 - **Project Guide**: `CLAUDE.md` - Development guidelines for AI assistants
 - **Global Prefs**: `~/.claude/CLAUDE.md` - User's global development preferences
 
-## Textual UI Migration (Phase 1 - Complete)
+## blessed UI Implementation (Complete)
 
 ### Architecture Overview
-**Decision**: Migrated from manual terminal management (Rich + ANSI codes) to Textual framework
+**Decision**: Migrated from Textual to blessed for full control and functional programming style
 
 **Benefits Achieved**:
-- ✅ Eliminated flicker through differential rendering
-- ✅ Automatic resize handling (no manual calculations)
-- ✅ Clean component-based architecture
+- ✅ Fully functional approach (no classes except data containers)
+- ✅ Direct terminal control without framework overhead
 - ✅ Proper fixed header/scrollable/fixed footer layout
-- ✅ Simplified codebase (~200 lines removed from background updater)
+- ✅ Lightweight and fast
+- ✅ Full keyboard handling with explicit state passing
 
 ### Module Structure
 ```
-src/music_minion/ui_textual/
+src/music_minion/ui/blessed/
 ├── __init__.py           # Module exports
-├── state.py              # Centralized AppState (follows Claude Code pattern)
-├── dashboard.py          # Dashboard widget (reactive updates)
-├── app.py                # Main Textual app with layout
-└── runner.py             # Integration with existing Music Minion logic
+├── dashboard.py          # Main blessed dashboard
+└── command_palette.py    # Command palette widget
 ```
 
 ### Key Patterns
 
-#### 1. Centralized State Management
-**Pattern**: Single `AppState` dataclass holds all mutable state
+#### 1. Functional State Management
+**Pattern**: Explicit state passing with immutable dataclasses
 ```python
-@dataclass
-class AppState:
-    player: PlayerState
+@dataclass(frozen=True)
+class DashboardState:
+    player_state: PlayerState
     track_metadata: Optional[TrackMetadata]
-    track_db_info: Optional[TrackDBInfo]
-    playlist: PlaylistInfo
-    ui: UIState
-    music_tracks: List[Any]
-    config: Any
+    messages: List[str]
+
+# Pure functions that return new state
+def update_state(state: DashboardState, ...) -> DashboardState:
+    return dataclasses.replace(state, ...)
 ```
 
 **Benefits**:
-- Easier testing (single source of truth)
+- Easier testing (pure functions)
 - Clearer data flow
-- Simpler debugging
-- Follows Claude Code's "lightweight shell" pattern
+- No hidden mutations
+- Follows functional programming principles
 
-#### 2. Textual Layout System
-**Pattern**: Use CSS-like layout with dock positioning
+#### 2. Direct Terminal Control
+**Pattern**: Use blessed's terminal capabilities directly
 ```python
-CSS = """
-Dashboard {
-    dock: top;
-    height: auto;
-}
-
-#command-history {
-    height: 1fr;  /* Takes remaining space */
-}
-
-#input-container {
-    dock: bottom;
-    height: 3;
-}
-"""
+with term.hidden_cursor(), term.fullscreen():
+    # Draw dashboard
+    print(term.move(0, 0) + header)
+    print(term.move(term.height - 3, 0) + footer)
 ```
 
 **Benefits**:
-- No manual cursor positioning
-- Automatic resize handling
-- Clean separation of layout from logic
+- Full control over rendering
+- No framework abstraction layer
+- Explicit positioning
+- Lightweight
 
-#### 3. Reactive Updates
-**Pattern**: Textual's reactive system for auto-updates
+#### 3. Event Loop with Explicit State
+**Pattern**: Main loop with explicit state updates
 ```python
-class Dashboard(Static):
-    # Reactive properties trigger re-render
-    current_track = reactive("")
-    is_playing = reactive(False)
+state = DashboardState(...)
+while running:
+    # Poll for input
+    key = term.inkey(timeout=0.5)
 
-    def update_display(self):
-        # Update reactive props from state
-        self.current_track = self.app_state.player.current_track
-        self.refresh()  # Triggers re-render
+    # Update state based on input
+    if key:
+        state = handle_key(state, key)
+
+    # Re-render
+    render(term, state)
 ```
 
 **Benefits**:
-- No manual refresh calls
-- Efficient differential rendering
-- Clean update logic
-
-#### 4. Background State Sync
-**Pattern**: Background thread polls player, updates centralized state
-```python
-def _background_updater(self):
-    while self.running:
-        # Poll player module
-        updated_state = player.update_player_status(...)
-
-        # Update centralized state (triggers Textual updates)
-        self.app_state.player.current_track = updated_state.current_track
-        self.app_state.player.is_playing = updated_state.is_playing
-
-        time.sleep(0.5)
-```
-
-**Benefits**:
-- Separates polling logic from UI
-- State changes automatically propagate to UI
-- Clean separation of concerns
-
-#### 5. Command Handler Integration
-**Pattern**: Wrap existing command handler to capture stdout
-```python
-def textual_command_handler(command: str, args: List[str]) -> bool:
-    # Capture stdout
-    stdout_capture = io.StringIO()
-    sys.stdout = stdout_capture
-
-    try:
-        result = handle_command(command, args)
-        # Send captured output to Textual app
-        for line in stdout_capture.getvalue().split('\n'):
-            app.print_output(line)
-        return result
-    finally:
-        sys.stdout = old_stdout
-```
-
-**Benefits**:
-- Reuses existing command logic
-- No need to refactor all commands
-- Clean integration point
-
-### Critical Fixes
-
-#### Fix 1: PlayerState Compatibility
-**Issue**: `player.PlayerState` is NamedTuple without `is_paused` attribute
-**Solution**: Derive `is_paused` from `is_playing` and `current_track`
-```python
-self.app_state.player.is_paused = (
-    not updated_state.is_playing
-    and updated_state.current_track is not None
-)
-```
-
-#### Fix 2: Rich Style Handling
-**Issue**: Can't pass "bold cyan" as color to `widget.styles.color`
-**Solution**: Use `Rich.Text` with style parameter
-```python
-# Wrong
-line.styles.color = "bold cyan"
-
-# Right
-rich_text = Text(text, style="bold cyan")
-line = Static(rich_text)
-```
-
-### Testing Checklist
-- [x] Import successful
-- [x] App starts without errors
-- [x] Dashboard renders correctly
-- [x] Input field accepts commands
-- [x] Footer shows key bindings
-- [x] No flickering during updates
-- [ ] Commands execute and output displays
-- [ ] Player state updates in real-time
-- [ ] Resize handling works
-
-### Next Phases
-- **Phase 4**: Interactive SmartPlaylistWizard
-- **Phase 5**: State management polish
-
-## Textual UI Migration (Phase 2 - Complete)
-
-### Command Palette as ModalScreen
-
-**Module**: `src/music_minion/ui_textual/command_palette_modal.py`
-
-**Features Implemented**:
-- ✅ Modal screen with centered overlay
-- ✅ Live fuzzy filtering as you type
-- ✅ Keyboard navigation (↑↓ arrows, Enter, Esc)
-- ✅ Categorized command display (7 categories)
-- ✅ Icons and descriptions for each command
-- ✅ Auto-fills input field with selected command
-
-**Key Patterns**:
-
-#### 1. ModalScreen with Bindings
-```python
-class CommandPaletteModal(ModalScreen[str]):
-    BINDINGS = [
-        Binding("escape", "dismiss_none", "Cancel"),
-        Binding("up", "cursor_up", "Up"),
-        Binding("down", "cursor_down", "Down"),
-        Binding("enter", "select", "Select"),
-    ]
-
-    def action_select(self) -> None:
-        selected_command = self.filtered_commands[self.selected_index]
-        self.dismiss(selected_command)  # Returns to parent with result
-```
-
-#### 2. Live Filtering
-```python
-def on_input_changed(self, event: Input.Changed) -> None:
-    query = event.value.lower()
-    self._update_filtered_commands(query)
-    self._refresh_command_list()  # Re-render matching commands
-```
-
-#### 3. Dynamic Re-rendering
-```python
-def _refresh_command_list(self) -> None:
-    commands_list = self.query_one("#commands-list")
-    commands_list.remove_children()  # Clear old widgets
-    for widget in self._render_commands(query):
-        commands_list.mount(widget)  # Add new widgets
-```
-
-**Benefits**:
-- Cleaner than raw terminal mode (~180 lines vs ~130 lines)
-- No manual termios/tty handling
-- Automatic cleanup on dismiss
-- Better keyboard handling
-- Consistent styling with rest of app
-
-**Integration**: Triggered by "/" key in input field or "/" binding in footer
-
-## Textual UI Migration (Phase 3 - Complete)
-
-### Enhanced Playlist Browser Modal
-
-**Module**: `src/music_minion/ui_textual/playlist_modal.py`
-
-**Features Implemented**:
-- ✅ Two-column layout (list + preview pane)
-- ✅ Live fuzzy search filtering
-- ✅ Shows playlist metadata (type, track count, last played)
-- ✅ Active playlist indicator (▶)
-- ✅ Preview pane shows selected playlist details
-- ✅ Keyboard navigation
-- ✅ Auto-play first track on selection
-
-**Key Patterns**:
-
-#### 1. Two-Column Layout
-```python
-with Horizontal(id="main-content"):
-    # Left: Scrollable playlist list
-    with VerticalScroll(id="playlist-list"):
-        yield from self._render_playlist_items()
-
-    # Right: Preview pane
-    with Vertical(id="playlist-preview"):
-        yield from self._render_preview()
-```
-
-#### 2. Coordinated Updates
-```python
-def _refresh_display(self) -> None:
-    # Update both list and preview together
-    self._refresh_playlist_list()
-    self._refresh_preview_pane()
-```
-
-#### 3. Selection Handling with Auto-Play
-```python
-def action_select(self) -> None:
-    selected = self.filtered_playlists[self.selected_index]
-    self.dismiss(selected)  # Return to parent
-
-# In parent (main.py):
-def handle_playlist_selection(selected: dict | None) -> None:
-    if selected:
-        playlist.set_active_playlist(selected['id'])
-        # Auto-play first track...
-```
-
-**Benefits**:
-- Richer UI than prompt_toolkit autocomplete
-- Shows metadata without needing to select
-- Visual indicator for active playlist
-- Preview updates as you navigate
-- Consistent with command palette UX
-
-**Integration**: Intercepted in textual_command_handler when `playlist` command (no args) is executed
-
-### Comparison: Old vs New
-
-| Feature | Old (prompt_toolkit) | New (Textual) |
-|---------|---------------------|---------------|
-| Layout | Single line autocomplete | Two-column with preview |
-| Filtering | Substring match only | Fuzzy filtering |
-| Metadata | In autocomplete dropdown | Dedicated preview pane |
-| Navigation | Tab/arrows in dropdown | Clean arrow navigation |
-| Visual feedback | Text-based | Rich colors, borders, icons |
-| Code complexity | ~70 lines in completers.py | ~300 lines (more features) |
-
-### Testing Notes
-
-Both Phase 2 and Phase 3 components:
-- Import successfully
-- No syntax errors
-- Follow Textual patterns
-- Ready for interactive testing
-
-**Next Steps**: Phase 4 (Smart Playlist Wizard) will build on these modal patterns
-
-### Inline Command Palette Layout Pattern
-
-**Module**: `src/music_minion/ui_textual/command_palette_inline.py`
-
-**Goal**: Command palette slides in between command history and input, pushing input upward
-
-**Wrong Approach - Using layers or multiple docks**:
-```python
-# WRONG: Command palette gets hidden behind input
-#command-palette-inline {
-    dock: bottom;
-    layer: overlay;  # Doesn't help with flow layout
-}
-
-#input-container {
-    dock: bottom;
-    layer: base;
-}
-```
-
-**Correct Approach - Flow layout with dock only on final bottom widget**:
-```python
-# Correct compose order:
-def compose(self) -> ComposeResult:
-    yield Dashboard()              # Top (docked)
-    yield CommandHistory()         # Middle (flexible height: 1fr)
-    yield CommandPaletteInline()   # Slides in (NO dock)
-    yield InputContainer()         # Bottom (docked)
-
-# CSS:
-#command-palette-inline {
-    height: 0;           # Hidden by default
-    display: none;
-}
-
-#command-palette-inline.visible {
-    height: auto;        # Takes space when visible
-    display: block;      # Pushes docked input up
-}
-
-#input-container {
-    dock: bottom;        # Only the real bottom widget docks
-}
-```
-
-**Key Insights**:
-- **Widget order matters**: Widgets are composed top-to-bottom in document flow
-- **Only dock the final bottom widget**: Middle widgets that slide in should NOT use `dock: bottom`
-- **Toggle height, not layers**: Use `height: 0` → `height: auto` to show/hide
-- **Layers don't affect flow**: `layer` controls z-index for overlays, not flow positioning
-
-**Benefits**:
-- Natural document flow
-- Input stays on screen (gets pushed up, not covered)
-- Clean CSS without z-index hacks
-- Matches Claude Code command palette behavior
-
-**Use Case**: Any UI where a panel needs to slide in between fixed elements
+- Clear control flow
+- Easy to debug
+- No hidden state changes
+- Explicit update cycle
 
 ## Code Patterns & Conventions
 
@@ -1260,30 +973,21 @@ for i, line in enumerate(lines):
 
 **Learning**: Explicit positioning prevents line wrap issues. Always move before printing.
 
-### blessed vs Textual Trade-offs
+### blessed Benefits
 
-**blessed Advantages**:
+**Why blessed**:
 - ✅ Lightweight (no framework overhead)
 - ✅ Full control over rendering
 - ✅ Easier to reason about (explicit state flow)
 - ✅ No "magic" - direct terminal control
+- ✅ Functional programming style (pure functions)
 
-**blessed Disadvantages**:
-- ❌ More manual work (no automatic layouts)
-- ❌ Must handle flickering manually
-- ❌ No built-in widgets (write everything)
+**Trade-offs**:
+- Requires manual flickering prevention
+- More explicit rendering code
+- No built-in widgets (build what you need)
 
-**Textual Advantages**:
-- ✅ Differential rendering (no flicker)
-- ✅ Automatic layout management
-- ✅ Built-in widgets and reactive system
-
-**Textual Disadvantages**:
-- ❌ Heavier framework
-- ❌ Less control (framework makes decisions)
-- ❌ Steeper learning curve
-
-**Decision**: blessed is appropriate for full control and functional style. Textual is better for complex UIs with many widgets.
+**Decision**: blessed fits the functional programming philosophy and provides full control without framework complexity.
 
 ### Terminal Color Notes
 
