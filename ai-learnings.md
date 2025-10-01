@@ -888,7 +888,128 @@ Based on Phase 7 learnings:
 
 ---
 
-**Last Updated**: 2025-09-29 after extracting learnings from playlist-system-plan.md
+**Last Updated**: 2025-10-01 after architecture refactoring and blessed UI implementation
+
+## Architecture Refactoring (2025-10-01)
+
+### Layered Architecture with Functional Patterns
+
+**Decision**: Reorganized flat file structure into layered architecture with domain-driven design
+
+**Before**: All modules in `src/music_minion/` (player.py, library.py, playlist.py, etc.)
+
+**After**: Organized into layers:
+```
+src/music_minion/
+├── core/           # Infrastructure (config, database, console)
+├── domain/         # Business logic (library, playback, playlists, sync, ai)
+├── commands/       # Command handlers (pure functions taking AppContext)
+├── ui/             # User interface (blessed UI)
+└── utils/          # Utilities (parsers, autocomplete)
+```
+
+**Benefits**:
+- ✅ Clear separation of concerns
+- ✅ Easier to navigate and understand
+- ✅ Natural import boundaries (no circular dependencies)
+- ✅ Modules grouped by domain instead of technical layer
+- ✅ Easier to test (domain logic isolated from UI/infrastructure)
+
+**Pattern**: Each domain has `__init__.py` that re-exports public API
+```python
+# domain/playlists/__init__.py
+from .crud import create_playlist, get_playlists
+from .filters import apply_filters
+
+# Usage in commands/
+from ..domain import playlists
+playlists.create_playlist(...)
+```
+
+**Learning**: Layered architecture scales better than flat structure. Group by domain (playlists, playback), not by type (models, services).
+
+### AppContext Pattern for Explicit State Passing
+
+**Decision**: Replace global variables with `AppContext` dataclass passed explicitly
+
+**Before**: Global mutable state accessed via imports
+```python
+# main.py
+current_player_state = PlayerState()
+music_tracks = []
+
+# other_module.py
+from main import current_player_state  # Import hack!
+current_player_state.is_playing = True  # Hidden mutation
+```
+
+**After**: Immutable context passed explicitly
+```python
+@dataclass
+class AppContext:
+    config: Config
+    music_tracks: List[Track]
+    player_state: PlayerState
+    console: Console
+
+    def with_player_state(self, state: PlayerState) -> 'AppContext':
+        return AppContext(self.config, self.music_tracks, state, self.console)
+
+# Command handlers
+def handle_play(ctx: AppContext, args: list) -> tuple[AppContext, bool]:
+    new_player_state = start_playback(ctx.player_state)
+    new_ctx = ctx.with_player_state(new_player_state)
+    return new_ctx, True
+```
+
+**Benefits**:
+- ✅ Explicit data flow (no hidden mutations)
+- ✅ Easier testing (pure functions)
+- ✅ No import hacks to access global state
+- ✅ Immutable updates prevent subtle bugs
+- ✅ Clear context boundaries (what functions need what data)
+
+**Pattern**: Command handler signature
+```python
+def handle_command(ctx: AppContext, command: str, args: list) -> tuple[AppContext, bool]:
+    # Returns: (new_context, should_continue)
+    pass
+```
+
+**Learning**: Explicit state passing > global variables. Functions that take context and return new context are easier to reason about, test, and maintain.
+
+### Helper Functions for Context Transitions
+
+**Decision**: Create helpers for context ↔ globals during transition period
+
+**Pattern**: Bidirectional sync during migration
+```python
+# helpers.py
+def create_context_from_globals() -> AppContext:
+    """Convert global state to AppContext."""
+    return AppContext(
+        config=current_config,
+        music_tracks=music_tracks,
+        player_state=current_player_state,
+        console=console
+    )
+
+def sync_context_to_globals(ctx: AppContext) -> None:
+    """Sync AppContext back to globals (for legacy code)."""
+    global current_config, music_tracks, current_player_state
+    current_config = ctx.config
+    music_tracks = ctx.music_tracks
+    current_player_state = ctx.player_state
+```
+
+**Benefits**:
+- ✅ Gradual migration (both patterns work)
+- ✅ Blessed UI uses AppContext fully
+- ✅ Legacy dashboard mode still works
+- ✅ Clear path forward (remove globals eventually)
+
+**Learning**: Helper functions enable gradual refactoring. Don't try to refactor everything at once - create bridges between old and new patterns.
+
 ## blessed UI Implementation (Tasks 1-8 Complete)
 
 ### Architecture Decision: Pure Functions + Immutable State

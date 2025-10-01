@@ -9,9 +9,38 @@ Music Minion CLI is a contextual music curation tool that learns user preference
 
 ### Core Architecture
 - **Functional over Classes**: Use functions and modules, avoid complex class hierarchies. **CRITICAL**: Always question if a class is necessary - prefer functions with explicit state passing over classes with instance variables. Only use classes for simple data containers (NamedTuple, dataclass) or when there's compelling justification that must be explicitly provided and approved.
+- **Explicit State Passing**: Use `AppContext` dataclass to pass state explicitly instead of global variables
+- **Pure Functions**: Functions take context, return new context - no hidden mutations
 - **Single Responsibility**: Each function ≤20 lines, ≤3 nesting levels
 - **Fail Fast**: Critical errors (missing mpv, no music) should exit with clear messages
 - **Graceful Degradation**: Non-critical errors (AI failures, corrupted files) should log and continue
+
+### blessed UI Architecture Patterns
+**Decision**: Migrated from Textual to blessed for full control and functional programming style
+
+**Key Patterns**:
+1. **Immutable State Updates**: All state changes via `dataclasses.replace()`, never mutation
+2. **Pure Rendering Functions**: `(terminal, state, position) -> height_used`
+3. **Partial Rendering**: Three-tier strategy eliminates flashing
+   - Full redraw: Track change, terminal resize, initial render
+   - Input redraw: Typing, command palette filtering
+   - Partial redraw: Clock and progress bar only (every second during playback)
+4. **Event Loop**: `poll input → update state → render → repeat`
+5. **Layout Calculation**: Single function computes all Y positions from heights
+6. **blessed Colors**: Function composition `term.bold_cyan("text")`
+
+**Benefits**:
+- ✅ Fully functional approach (no classes except data containers)
+- ✅ Direct terminal control without framework overhead
+- ✅ Smooth, flicker-free UI updates
+- ✅ Professional appearance with precise positioning
+- ✅ Easy to test (pure functions)
+
+**Files**:
+- `ui/blessed/state.py` - Immutable UIState dataclass
+- `ui/blessed/app.py` - Main event loop with three-tier rendering
+- `ui/blessed/components/dashboard.py` - Full and partial render functions
+- `ui/blessed/events/keyboard.py` - Pure keyboard event handlers
 
 ### Project Structure
 ```
@@ -19,19 +48,75 @@ music-minion/
 ├── src/music_minion/
 │   ├── __init__.py
 │   ├── main.py                 # Entry point and interactive loop
-│   ├── player.py               # mpv integration and control
-│   ├── library.py              # Music scanning and metadata
-│   ├── database.py             # SQLite operations (schema v7)
-│   ├── ai.py                   # OpenAI integration
-│   ├── config.py               # Configuration loading (TOML)
-│   ├── ui.py                   # Terminal display and formatting
-│   ├── playlist.py             # Playlist CRUD operations
-│   ├── playlist_filters.py     # Smart playlist filter logic
-│   ├── playlist_ai.py          # AI natural language parsing
-│   ├── playlist_import.py      # Import M3U/Serato playlists
-│   ├── playlist_export.py      # Export to M3U8/Serato formats
-│   ├── playback.py             # Playback state management
-│   └── sync.py                 # Bidirectional metadata sync
+│   ├── cli.py                  # CLI entry point
+│   ├── context.py              # AppContext for functional state passing
+│   ├── router.py               # Command routing
+│   ├── helpers.py              # Context helpers and utilities
+│   ├── command_palette.py      # Command palette widget
+│   ├── ui.py                   # Legacy UI (deprecated)
+│   │
+│   ├── core/                   # Core infrastructure
+│   │   ├── config.py           # Configuration loading (TOML)
+│   │   ├── database.py         # SQLite operations (schema v7)
+│   │   └── console.py          # Console utilities
+│   │
+│   ├── domain/                 # Business logic (functional)
+│   │   ├── ai/                 # AI integration
+│   │   │   ├── client.py       # OpenAI client
+│   │   │   └── __init__.py
+│   │   ├── library/            # Music library management
+│   │   │   ├── models.py       # Track data models
+│   │   │   ├── scanner.py      # Library scanning
+│   │   │   ├── metadata.py     # Metadata extraction
+│   │   │   └── __init__.py
+│   │   ├── playback/           # Audio playback
+│   │   │   ├── player.py       # MPV integration
+│   │   │   ├── state.py        # Playback state management
+│   │   │   └── __init__.py
+│   │   ├── playlists/          # Playlist management
+│   │   │   ├── crud.py         # Playlist CRUD operations
+│   │   │   ├── filters.py      # Smart playlist filter logic
+│   │   │   ├── ai_parser.py    # AI natural language parsing
+│   │   │   ├── importers.py    # Import M3U/Serato playlists
+│   │   │   ├── exporters.py    # Export to M3U8/Serato formats
+│   │   │   └── __init__.py
+│   │   └── sync/               # Bidirectional metadata sync
+│   │       ├── engine.py       # Sync engine
+│   │       └── __init__.py
+│   │
+│   ├── commands/               # Command handlers
+│   │   ├── admin.py            # Admin commands (quit, help)
+│   │   ├── ai.py               # AI commands
+│   │   ├── playback.py         # Playback commands
+│   │   ├── playlist.py         # Playlist commands
+│   │   ├── rating.py           # Rating commands
+│   │   ├── sync.py             # Sync commands
+│   │   ├── track.py            # Track commands
+│   │   └── __init__.py
+│   │
+│   ├── ui/                     # User interface
+│   │   ├── blessed/            # blessed-based interactive UI
+│   │   │   ├── app.py          # Main blessed app loop
+│   │   │   ├── state.py        # UI state (immutable)
+│   │   │   ├── components/     # UI components
+│   │   │   │   ├── dashboard.py
+│   │   │   │   ├── history.py
+│   │   │   │   ├── input.py
+│   │   │   │   ├── palette.py
+│   │   │   │   └── layout.py
+│   │   │   ├── events/         # Event handlers
+│   │   │   │   ├── keyboard.py
+│   │   │   │   └── commands.py
+│   │   │   └── styles/         # Styling and formatting
+│   │   │       ├── palette.py
+│   │   │       └── formatting.py
+│   │   └── __init__.py
+│   │
+│   └── utils/                  # Utilities
+│       ├── parsers.py          # Command parsing
+│       ├── autocomplete.py     # Autocomplete logic
+│       └── __init__.py
+│
 ├── docs/
 │   ├── playlist-system-plan.md # Implementation plan (Phases 1-7 complete)
 │   └── incomplete-items.md     # Future enhancements and TODOs
@@ -49,7 +134,9 @@ music-minion/
 ### Key Dependencies
 - **mutagen**: MP3/M4A metadata handling, ID3 tag operations
 - **openai**: AI integration (optional) - natural language playlist parsing
-- **rich/textual**: Terminal UI and progress bars
+- **blessed**: Terminal UI library for full-screen interactive dashboard
+- **rich**: Terminal formatting, progress bars, and styling
+- **prompt_toolkit**: Command palette with autocomplete and fuzzy search
 - **pathlib**: Cross-platform path handling
 - **tomllib**: TOML configuration loading (Python 3.11+)
 - **pyserato**: Serato .crate file import/export for DJ integration
@@ -61,6 +148,26 @@ music-minion/
 - Setup command: `music-minion init`
 
 ## Key Technical Decisions
+
+### UI Architecture (blessed)
+- **blessed** for direct terminal control with functional programming style
+- **Immutable State**: All UI state updates return new `UIState` instances (no mutation)
+- **Pure Rendering**: Render functions take terminal, state, position - no side effects
+- **Partial Rendering**: Only update changed regions (clock, progress bar) to eliminate flashing
+- **Three-tier Update Strategy**:
+  1. Full redraw on track change/terminal resize
+  2. Input-only redraw on typing
+  3. Partial redraw for time-sensitive elements (clock, progress)
+- **Layout Calculation**: Single function computes all positions based on state
+- **Event Loop**: Poll keyboard with timeout, update state, re-render
+- **Benefits**: Full control, no framework overhead, functional patterns, professional UX
+
+### AppContext Pattern
+- **Explicit State Passing**: All application state in `AppContext` dataclass
+- **No Global Variables**: Context passed explicitly to all functions
+- **Immutable Updates**: Functions return new context instead of mutating
+- **Command Handler Pattern**: `(AppContext, str, list) -> (AppContext, bool)`
+- **Benefits**: Clear data flow, easier testing, no hidden mutations
 
 ### Audio Integration
 - **MPV with JSON IPC** for cross-platform audio playback
@@ -243,6 +350,11 @@ except Exception:
 - **Phase 5**: Export functionality (M3U8/Serato with auto-export)
 - **Phase 6**: Playback integration (shuffle mode, sequential navigation, position tracking)
 - **Phase 7**: Bidirectional metadata sync (database ↔ file metadata, mtime tracking)
+- **Architecture Refactor**: Reorganized to functional architecture with AppContext
+  - Split flat structure into layered architecture (core, domain, commands, ui)
+  - Migrated to blessed UI with pure functional approach
+  - Implemented partial rendering for smooth, flicker-free updates
+  - Added immutable state management with explicit context passing
 
 ### 🚧 Phase 8: Polish & Testing (Planned)
 - File watching for real-time sync (watchdog library)
@@ -287,22 +399,57 @@ except Exception:
 ### Module Dependencies
 ```
 main.py
-  ├── database.py (lowest level)
-  ├── config.py
-  ├── sync.py → database.py
-  ├── playlist.py → database.py
-  ├── playlist_filters.py → database.py
-  ├── playlist_ai.py → ai.py, playlist_filters.py
-  ├── playlist_import.py → playlist.py, database.py
-  ├── playlist_export.py → playlist.py, database.py
-  └── playback.py → database.py
+  ├── context.py (AppContext dataclass)
+  ├── router.py → commands/
+  ├── helpers.py → context.py
+  │
+  ├── core/
+  │   ├── database.py (lowest level)
+  │   ├── config.py
+  │   └── console.py
+  │
+  ├── domain/
+  │   ├── library/
+  │   │   ├── models.py
+  │   │   ├── scanner.py → models.py
+  │   │   └── metadata.py
+  │   ├── playback/
+  │   │   ├── state.py
+  │   │   └── player.py → state.py
+  │   ├── playlists/
+  │   │   ├── crud.py → core/database.py
+  │   │   ├── filters.py → core/database.py
+  │   │   ├── ai_parser.py → filters.py
+  │   │   ├── importers.py → crud.py
+  │   │   └── exporters.py → crud.py
+  │   ├── sync/
+  │   │   └── engine.py → core/database.py
+  │   └── ai/
+  │       └── client.py
+  │
+  ├── commands/ (all take AppContext, return AppContext)
+  │   ├── admin.py
+  │   ├── ai.py → domain/ai/
+  │   ├── playback.py → domain/playback/
+  │   ├── playlist.py → domain/playlists/
+  │   ├── rating.py → core/database.py
+  │   ├── sync.py → domain/sync/
+  │   └── track.py
+  │
+  └── ui/blessed/
+      ├── app.py → state.py, components/, events/
+      ├── state.py (UIState dataclass)
+      ├── components/ → styles/
+      ├── events/ → context.py, router.py
+      └── styles/
 ```
 
 **Rule**: Modules should only import from lower levels, no circular dependencies
+**Pattern**: All command handlers take `AppContext` and return `(AppContext, bool)` for functional state updates
 
 ### Primary Use Case
 **NYE 2025 DJ Set Preparation**: The playlist and sync systems were built for curating music on Linux (Music Minion) and DJing on Windows (Serato) with seamless bidirectional sync via Syncthing.
 
 ---
 
-**Last Updated**: 2025-09-29 after Phase 7 completion
+**Last Updated**: 2025-10-01 after architecture refactoring and blessed UI implementation
