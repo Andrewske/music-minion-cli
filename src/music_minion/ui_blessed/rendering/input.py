@@ -13,9 +13,11 @@ def render_input(term: Terminal, state: UIState, y: int) -> None:
         state: Current UI state
         y: Y position for input line
     """
+    import sys
+
     # Draw top border
     border = "─" * (term.width - 2)
-    print(term.move_xy(0, y) + term.cyan(f"┌{border}┐"))
+    sys.stdout.write(term.move_xy(0, y) + term.cyan(f"┌{border}┐"))
 
     # Draw input line with prompt and text
     prompt = term.green("> ")
@@ -34,7 +36,7 @@ def render_input(term: Terminal, state: UIState, y: int) -> None:
 
     # Draw input line
     padding = " " * max(0, term.width - len(input_text) - 5)
-    print(term.move_xy(0, y + 1) + term.cyan("│ ") + prompt + input_text + cursor + padding + term.cyan(" │"))
+    sys.stdout.write(term.move_xy(0, y + 1) + term.cyan("│ ") + prompt + input_text + cursor + padding + term.cyan(" │"))
 
     # Draw bottom border
-    print(term.move_xy(0, y + 2) + term.cyan(f"└{border}┘"))
+    sys.stdout.write(term.move_xy(0, y + 2) + term.cyan(f"└{border}┘"))

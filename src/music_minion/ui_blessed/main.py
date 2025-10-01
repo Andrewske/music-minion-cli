@@ -3,7 +3,7 @@
 import sys
 from typing import Any
 from blessed import Terminal
-from .state import UIState, create_initial_state, update_player_state, update_track_info
+from .state import UIState, update_player_state, update_track_info
 from .rendering import (
     render_dashboard,
     render_history,
@@ -80,7 +80,7 @@ def poll_player_state(state: UIState, player_state: Any) -> UIState:
 
                 state = update_track_info(state, track_data)
 
-    except Exception as e:
+    except Exception:
         # Don't crash on polling errors
         pass
 
@@ -116,48 +116,118 @@ def main_loop(term: Terminal, state: UIState, player_state: Any = None) -> None:
     """
     should_quit = False
     frame_count = 0
+    last_state_hash = None
+    needs_full_redraw = True
+    last_input_text = ""
+    last_palette_state = (False, 0)
+    layout = None
 
     while not should_quit:
         # Poll player state every 10 frames (~1 second at 0.1s timeout)
         if player_state and frame_count % 10 == 0:
             state = poll_player_state(state, player_state)
 
-        # Clear screen
-        print(term.clear)
+        # Check if state changed (only redraw if needed)
+        current_state_hash = hash((
+            state.player.current_track,
+            state.player.is_playing,
+            int(state.player.current_position),  # Floor to avoid constant changes
+            state.player.duration,
+            len(state.history),
+            state.feedback_message,
+        ))
 
-        # Calculate layout
-        layout = calculate_layout(term, state)
+        # Check for input-only changes (no full redraw needed)
+        input_changed = state.input_text != last_input_text
+        palette_state_changed = (state.palette_visible, state.palette_selected) != last_palette_state
 
-        # Render all sections
-        dashboard_height = render_dashboard(
-            term,
-            state,
-            layout['dashboard_y']
-        )
+        # Determine if we need a full redraw
+        needs_full_redraw = needs_full_redraw or (current_state_hash != last_state_hash)
 
-        render_history(
-            term,
-            state,
-            layout['history_y'],
-            layout['history_height']
-        )
+        if needs_full_redraw:
+            # Full screen redraw
+            last_state_hash = current_state_hash
+            needs_full_redraw = False
 
-        render_input(
-            term,
-            state,
-            layout['input_y']
-        )
+            # Clear screen
+            print(term.clear)
 
-        if state.palette_visible:
-            render_palette(
+            # Calculate layout
+            layout = calculate_layout(term, state)
+
+            # Render all sections
+            render_dashboard(
                 term,
                 state,
-                layout['palette_y'],
-                layout['palette_height']
+                layout['dashboard_y']
             )
 
-        # Flush output
-        sys.stdout.flush()
+            render_history(
+                term,
+                state,
+                layout['history_y'],
+                layout['history_height']
+            )
+
+            render_input(
+                term,
+                state,
+                layout['input_y']
+            )
+
+            if state.palette_visible:
+                render_palette(
+                    term,
+                    state,
+                    layout['palette_y'],
+                    layout['palette_height']
+                )
+
+            # Flush output
+            sys.stdout.flush()
+
+            last_input_text = state.input_text
+            last_palette_state = (state.palette_visible, state.palette_selected)
+
+        elif input_changed or palette_state_changed:
+            # Partial update - only input and palette changed
+            if layout:
+                # If palette visibility changed, do a full redraw instead
+                if palette_state_changed and state.palette_visible != last_palette_state[0]:
+                    needs_full_redraw = True
+                else:
+                    # Clear input area (3 lines: top border, input, bottom border)
+                    input_y = layout['input_y']
+                    for i in range(3):
+                        sys.stdout.write(term.move_xy(0, input_y + i) + term.clear_eol)
+
+                    # Clear palette area if visible
+                    if state.palette_visible:
+                        palette_y = layout['palette_y']
+                        palette_height = layout['palette_height']
+                        for i in range(palette_height):
+                            sys.stdout.write(term.move_xy(0, palette_y + i) + term.clear_eol)
+
+                    # Re-render
+                    render_input(
+                        term,
+                        state,
+                        layout['input_y']
+                    )
+
+                    if state.palette_visible:
+                        render_palette(
+                            term,
+                            state,
+                            layout['palette_y'],
+                            layout['palette_height']
+                        )
+
+                    # Flush output
+                    sys.stdout.flush()
+
+                    last_input_text = state.input_text
+                    last_palette_state = (state.palette_visible, state.palette_selected)
 
         # Wait for input (with timeout for background updates)
         key = term.inkey(timeout=0.1)
@@ -169,5 +239,7 @@ def main_loop(term: Terminal, state: UIState, player_state: Any = None) -> None:
             # Execute command if one was triggered
             if command_line:
                 state, should_quit = execute_command(state, command_line)
+                # Full redraw after command execution
+                needs_full_redraw = True
 
         frame_count += 1

@@ -14,6 +14,8 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
         y: Starting y position
         height: Available height for palette
     """
+    import sys
+
     if not state.palette_visible or height <= 0:
         return
 
@@ -30,13 +32,13 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
     # Header
     if line_num < height:
         header_text = "   🎵 Playback"
-        print(term.move_xy(0, y + line_num) + term.bold_cyan(header_text))
+        sys.stdout.write(term.move_xy(0, y + line_num) + term.bold_cyan(header_text))
         line_num += 1
 
     # Render commands
     if not filtered_commands:
         if line_num < height:
-            print(term.move_xy(0, y + line_num) + term.white("  No matching commands"))
+            sys.stdout.write(term.move_xy(0, y + line_num) + term.white("  No matching commands"))
             line_num += 1
     else:
         current_category = None
@@ -50,13 +52,13 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
             if cat != current_category:
                 if current_category is not None and line_num < height - footer_lines:
                     # Add spacing between categories
-                    print(term.move_xy(0, y + line_num) + term.clear_eol)
+                    sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
                     line_num += 1
                     if line_num >= height - footer_lines:
                         break
 
                 if line_num < height - footer_lines:
-                    print(term.move_xy(0, y + line_num) + term.bold_cyan(cat))
+                    sys.stdout.write(term.move_xy(0, y + line_num) + term.bold_cyan(cat))
                     line_num += 1
                     current_category = cat
 
@@ -82,17 +84,17 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
                     term.white(f" {desc}")
                 )
 
-            print(term.move_xy(0, y + line_num) + item_line)
+            sys.stdout.write(term.move_xy(0, y + line_num) + item_line)
             line_num += 1
             item_index += 1
 
     # Clear remaining lines
     while line_num < height - footer_lines:
-        print(term.move_xy(0, y + line_num) + term.clear_eol)
+        sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
         line_num += 1
 
     # Footer help text
     if line_num < height:
         footer = "   ↑↓ navigate  Enter select  Esc cancel"
-        print(term.move_xy(0, y + line_num) + term.white(footer))
+        sys.stdout.write(term.move_xy(0, y + line_num) + term.white(footer))
         line_num += 1
