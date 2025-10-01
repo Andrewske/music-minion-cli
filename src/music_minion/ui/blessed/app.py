@@ -26,8 +26,10 @@ def poll_player_state(state: UIState, player_state: Any) -> UIState:
     Returns:
         Updated UI state with latest player data
     """
-    # Import player module (lazy import to avoid circular deps)
-    from music_minion import player, database, library
+    # Import modules (lazy import to avoid circular deps)
+    from ...core import database
+    from ...domain.playback import player
+    from ...domain import library
 
     # Get player status
     try:
@@ -45,38 +47,33 @@ def poll_player_state(state: UIState, player_state: Any) -> UIState:
 
         # If we have a current track, fetch metadata
         if status.get('file'):
-            # Get track from library
-            track = library.get_track_by_path(state.music_tracks, status['file'])
+            # Get track from database
+            db_track = database.get_track_by_path(status['file'])
 
-            if track:
-                # Get metadata from file
+            if db_track:
+                # Build track data from database
                 track_data = {
-                    'title': track.title or 'Unknown',
-                    'artist': track.artist or 'Unknown',
-                    'album': track.album,
-                    'year': track.year,
-                    'genre': track.genre,
-                    'bpm': track.bpm,
-                    'key': track.key,
+                    'title': db_track.get('title') or 'Unknown',
+                    'artist': db_track.get('artist') or 'Unknown',
+                    'album': db_track.get('album'),
+                    'year': db_track.get('year'),
+                    'genre': db_track.get('genre'),
+                    'bpm': db_track.get('bpm'),
+                    'key': db_track.get('key'),
                 }
 
-                # Get database info
+                # Get additional database info
                 with database.get_db_connection() as conn:
-                    db_track = database.get_track_by_path(conn, status['file'])
-                    if db_track:
-                        tags = database.get_track_tags(conn, db_track['id'])
-                        notes = database.get_track_notes(conn, db_track['id'])
-                        rating = db_track.get('rating')
-                        last_played = db_track.get('last_played')
-                        play_count = db_track.get('play_count', 0)
+                    tags = database.get_track_tags(conn, db_track['id'])
+                    notes = database.get_track_notes(conn, db_track['id'])
 
-                        track_data.update({
-                            'tags': [t['tag'] for t in tags],
-                            'notes': notes[0]['note'] if notes else '',
-                            'rating': rating,
-                            'last_played': last_played,
-                            'play_count': play_count,
-                        })
+                    track_data.update({
+                        'tags': [t['tag'] for t in tags],
+                        'notes': notes[0]['note'] if notes else '',
+                        'rating': db_track.get('rating'),
+                        'last_played': db_track.get('last_played'),
+                        'play_count': db_track.get('play_count', 0),
+                    })
 
                 state = update_track_info(state, track_data)
 

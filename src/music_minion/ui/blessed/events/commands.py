@@ -51,12 +51,12 @@ def execute_command(state: UIState, command_line: str) -> tuple[UIState, bool]:
 
     try:
         with redirect_stdout(output_buffer), redirect_stderr(error_buffer):
-            # Import main module's handle_command
+            # Import router for command handling
             # This is a lazy import to avoid circular dependencies
-            from music_minion import main
+            from music_minion import router
 
             # Execute command
-            should_continue = main.handle_command(command, args)
+            should_continue = router.handle_command(command, args)
 
             if not should_continue:
                 # Command requested exit (quit/exit command)

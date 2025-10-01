@@ -116,14 +116,14 @@ def play_track(track: library.Track, playlist_position: Optional[int] = None) ->
         database.start_playback_session(track_id)
 
         # Track position if playing from active playlist
-        active = playlist.get_active_playlist()
+        active = playlists.get_active_playlist()
         if active:
             # Use provided position if available, otherwise compute it
             if playlist_position is not None:
                 playback.update_playlist_position(active['id'], track_id, playlist_position)
             else:
                 # Only compute position if not provided
-                playlist_tracks = playlist.get_playlist_tracks(active['id'])
+                playlist_tracks = playlists.get_playlist_tracks(active['id'])
                 position = playback.get_track_position_in_playlist(playlist_tracks, track_id)
                 if position is not None:
                     playback.update_playlist_position(active['id'], track_id, position)
@@ -228,7 +228,7 @@ def handle_skip_command() -> bool:
 
     # Check shuffle mode
     shuffle_enabled = playback.get_shuffle_mode()
-    active = playlist.get_active_playlist()
+    active = playlists.get_active_playlist()
 
     # Sequential mode: play next track in playlist order
     if not shuffle_enabled and active:
@@ -240,7 +240,7 @@ def handle_skip_command() -> bool:
                 current_track_id = db_track['id']
 
         # Get playlist tracks (in order)
-        playlist_tracks = playlist.get_playlist_tracks(active['id'])
+        playlist_tracks = playlists.get_playlist_tracks(active['id'])
 
         # Build dict for O(1) lookups of available tracks by file path
         available_tracks_dict = {t.file_path: t for t in available_tracks}
@@ -384,7 +384,7 @@ def handle_status_command() -> bool:
     print(f"🔊 Volume: {int(status.get('volume', 0))}%")
 
     # Active playlist
-    active = playlist.get_active_playlist()
+    active = playlists.get_active_playlist()
     if active:
         print(f"📋 Active Playlist: {active['name']} ({active['type']})")
 
@@ -395,7 +395,7 @@ def handle_status_command() -> bool:
         if saved_position and not shuffle_enabled:
             _, position = saved_position
             # Get total track count
-            playlist_tracks = playlist.get_playlist_tracks(active['id'])
+            playlist_tracks = playlists.get_playlist_tracks(active['id'])
             total_tracks = len(playlist_tracks)
             print(f"   Position: {position + 1}/{total_tracks}")
     else:
