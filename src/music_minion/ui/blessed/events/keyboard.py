@@ -11,6 +11,9 @@ from ..state import (
     move_palette_selection,
     update_palette_filter,
     clear_history,
+    navigate_history_up,
+    navigate_history_down,
+    reset_history_navigation,
 )
 from ..styles.palette import filter_commands, COMMAND_DEFINITIONS
 
@@ -86,21 +89,31 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10) -> tupl
     # Calculate visible items (subtract header and footer lines)
     visible_items = max(1, palette_height - 2)
 
-    # Handle arrows (palette navigation with autofill)
-    if event['type'] == 'arrow_up' and state.palette_visible:
-        state = move_palette_selection(state, -1, visible_items)
-        # Autofill input with selected command
-        if state.palette_items and state.palette_selected < len(state.palette_items):
-            selected_cmd = state.palette_items[state.palette_selected][1]  # Command name
-            state = set_input_text(state, selected_cmd)
+    # Handle arrows - palette navigation OR command history navigation
+    if event['type'] == 'arrow_up':
+        if state.palette_visible:
+            # Palette navigation with autofill
+            state = move_palette_selection(state, -1, visible_items)
+            # Autofill input with selected command
+            if state.palette_items and state.palette_selected < len(state.palette_items):
+                selected_cmd = state.palette_items[state.palette_selected][1]  # Command name
+                state = set_input_text(state, selected_cmd)
+        else:
+            # Command history navigation (when palette not visible)
+            state = navigate_history_up(state)
         return state, None
 
-    if event['type'] == 'arrow_down' and state.palette_visible:
-        state = move_palette_selection(state, 1, visible_items)
-        # Autofill input with selected command
-        if state.palette_items and state.palette_selected < len(state.palette_items):
-            selected_cmd = state.palette_items[state.palette_selected][1]  # Command name
-            state = set_input_text(state, selected_cmd)
+    if event['type'] == 'arrow_down':
+        if state.palette_visible:
+            # Palette navigation with autofill
+            state = move_palette_selection(state, 1, visible_items)
+            # Autofill input with selected command
+            if state.palette_items and state.palette_selected < len(state.palette_items):
+                selected_cmd = state.palette_items[state.palette_selected][1]  # Command name
+                state = set_input_text(state, selected_cmd)
+        else:
+            # Command history navigation (when palette not visible)
+            state = navigate_history_down(state)
         return state, None
 
     # Handle Enter (execute command or select palette item)
@@ -136,6 +149,9 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10) -> tupl
     # Handle regular characters
     if event['type'] == 'char' and event['char']:
         char = event['char']
+
+        # Reset history navigation when typing
+        state = reset_history_navigation(state)
 
         # Check if space closes palette after selection
         if char == ' ' and state.palette_visible and state.input_text:

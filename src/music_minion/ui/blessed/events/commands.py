@@ -3,7 +3,7 @@
 import io
 from contextlib import redirect_stdout, redirect_stderr
 from ....context import AppContext
-from ..state import UIState, add_history_line, set_feedback
+from ..state import UIState, add_history_line, set_feedback, add_command_to_history
 
 
 def parse_command_line(line: str) -> tuple[str, list[str]]:
@@ -44,8 +44,11 @@ def execute_command(ctx: AppContext, ui_state: UIState, command_line: str) -> tu
     if command == 'QUIT':
         return ctx, ui_state, True
 
-    # Add command to history
+    # Add command to history display
     ui_state = add_history_line(ui_state, f"> {command_line}", 'cyan')
+
+    # Add command to command history (for up/down arrow navigation)
+    ui_state = add_command_to_history(ui_state, command_line)
 
     # Capture output from command execution
     output_buffer = io.StringIO()

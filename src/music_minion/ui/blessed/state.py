@@ -58,6 +58,11 @@ class UIState:
     input_text: str = ""
     cursor_pos: int = 0
 
+    # Command history navigation (shell-like up/down arrow)
+    command_history: list[str] = field(default_factory=list)  # Executed commands
+    history_index: int | None = None  # Current position in history (None = at prompt)
+    history_temp_input: str = ""  # Saved input when browsing history
+
     # Command palette state
     palette_visible: bool = False
     palette_query: str = ""
@@ -208,3 +213,110 @@ def should_show_feedback(state: UIState) -> bool:
         return False
     from time import time
     return (time() - state.feedback_time) < 4.0
+
+
+def add_command_to_history(state: UIState, command: str) -> UIState:
+    """
+    Add command to history and reset navigation.
+
+    Args:
+        state: Current UI state
+        command: Command to add to history
+
+    Returns:
+        Updated state with command added
+    """
+    from dataclasses import replace
+    # Don't add duplicate consecutive commands
+    if state.command_history and state.command_history[-1] == command:
+        return replace(state, history_index=None, history_temp_input="")
+    new_history = state.command_history + [command]
+    return replace(state, command_history=new_history, history_index=None, history_temp_input="")
+
+
+def navigate_history_up(state: UIState) -> UIState:
+    """
+    Navigate to older command in history (up arrow).
+
+    Args:
+        state: Current UI state
+
+    Returns:
+        Updated state with older command loaded
+    """
+    from dataclasses import replace
+    if not state.command_history:
+        return state
+
+    # If not browsing history yet, save current input
+    if state.history_index is None:
+        new_index = len(state.command_history) - 1
+        new_temp_input = state.input_text
+        new_text = state.command_history[new_index]
+    else:
+        # Already browsing, move to older command
+        if state.history_index > 0:
+            new_index = state.history_index - 1
+            new_text = state.command_history[new_index]
+            new_temp_input = state.history_temp_input
+        else:
+            # Already at oldest command
+            return state
+
+    return replace(
+        state,
+        input_text=new_text,
+        cursor_pos=len(new_text),
+        history_index=new_index,
+        history_temp_input=new_temp_input
+    )
+
+
+def navigate_history_down(state: UIState) -> UIState:
+    """
+    Navigate to newer command in history (down arrow).
+
+    Args:
+        state: Current UI state
+
+    Returns:
+        Updated state with newer command loaded
+    """
+    from dataclasses import replace
+    if state.history_index is None:
+        # Not browsing history
+        return state
+
+    if state.history_index < len(state.command_history) - 1:
+        # Move to newer command
+        new_index = state.history_index + 1
+        new_text = state.command_history[new_index]
+        return replace(
+            state,
+            input_text=new_text,
+            cursor_pos=len(new_text),
+            history_index=new_index
+        )
+    else:
+        # Reached newest command, restore saved input
+        return replace(
+            state,
+            input_text=state.history_temp_input,
+            cursor_pos=len(state.history_temp_input),
+            history_index=None,
+            history_temp_input=""
+        )
+
+
+def reset_history_navigation(state: UIState) -> UIState:
+    """
+    Reset history navigation state (after command execution or typing).
+
+    Args:
+        state: Current UI state
+
+    Returns:
+        Updated state with history navigation reset
+    """
+    from dataclasses import replace
+    return replace(state, history_index=None, history_temp_input="")
