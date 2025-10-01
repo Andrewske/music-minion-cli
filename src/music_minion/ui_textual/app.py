@@ -101,8 +101,8 @@ class MusicMinionApp(App):
     }
 
     #input-container {
-        height: 3;
-        padding: 0 1;
+        height: auto;
+        border: solid $secondary;
     }
 
     Input {
