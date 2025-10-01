@@ -4,18 +4,18 @@ from blessed import Terminal
 from ..state import UIState
 
 
-def calculate_layout(term: Terminal, state: UIState) -> dict[str, int]:
+def calculate_layout(term: Terminal, state: UIState, dashboard_height: int) -> dict[str, int]:
     """
     Pure function: calculate y-positions for all regions.
 
     Args:
         term: blessed Terminal instance
         state: Current UI state
+        dashboard_height: Actual height of rendered dashboard
 
     Returns:
         Dictionary with region positions and heights
     """
-    dashboard_height = 20
     input_height = 3
     palette_height = 22 if state.palette_visible else 0
 

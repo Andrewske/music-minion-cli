@@ -163,6 +163,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
     layout = None
     last_position = None  # Track position separately for partial updates
     dashboard_line_mapping = {}  # Store line offsets from last full dashboard render
+    last_dashboard_height = None  # Track dashboard height to avoid unnecessary clears
 
     while not should_quit:
         # Check for file changes if hot-reload is enabled
@@ -195,24 +196,37 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         needs_full_redraw = needs_full_redraw or (current_state_hash is not None and current_state_hash != last_state_hash)
 
         if needs_full_redraw:
-            # Full screen redraw
-            last_state_hash = current_state_hash
-            needs_full_redraw = False
-
-            # Clear screen
-            print(term.clear)
-
-            # Calculate layout
-            layout = calculate_layout(term, ui_state)
-
-            # Render all sections
+            # Render dashboard first to check if height changed
             dashboard_height, dashboard_line_mapping = render_dashboard(
                 term,
                 ctx.player_state,
                 ui_state,
-                layout['dashboard_y']
+                0  # Dashboard always starts at y=0
             )
 
+            # Only clear screen if dashboard height changed (or first render)
+            height_changed = last_dashboard_height != dashboard_height
+            if height_changed or last_dashboard_height is None:
+                # Clear screen and re-render everything
+                print(term.clear)
+
+                # Re-render dashboard after clear
+                dashboard_height, dashboard_line_mapping = render_dashboard(
+                    term,
+                    ctx.player_state,
+                    ui_state,
+                    0
+                )
+
+            # Update tracking variables
+            last_state_hash = current_state_hash
+            needs_full_redraw = False
+            last_dashboard_height = dashboard_height
+
+            # Calculate layout with actual dashboard height
+            layout = calculate_layout(term, ui_state, dashboard_height)
+
+            # Render remaining sections
             render_history(
                 term,
                 ui_state,
