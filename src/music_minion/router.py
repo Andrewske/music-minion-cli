@@ -14,10 +14,10 @@ from .domain import playback as playback_domain
 from .commands import playback
 from .commands import rating
 from .commands import admin
-from .commands import ai_ops
-from .commands import sync_ops
-from .commands import playlist_ops
-from .commands import track_ops
+from .commands import ai
+from .commands import sync
+from .commands import playlist
+from .commands import track
 
 
 def print_help() -> None:
@@ -172,41 +172,41 @@ def handle_command(command: str, args: List[str]) -> bool:
 
     elif command == 'playlist':
         if not args:
-            return playlist_ops.handle_playlist_list_command()
+            return playlist.handle_playlist_list_command()
         elif args[0] == 'new':
-            return playlist_ops.handle_playlist_new_command(args[1:])
+            return playlist.handle_playlist_new_command(args[1:])
         elif args[0] == 'delete':
-            return playlist_ops.handle_playlist_delete_command(args[1:])
+            return playlist.handle_playlist_delete_command(args[1:])
         elif args[0] == 'rename':
-            return playlist_ops.handle_playlist_rename_command(args[1:])
+            return playlist.handle_playlist_rename_command(args[1:])
         elif args[0] == 'show':
-            return playlist_ops.handle_playlist_show_command(args[1:])
+            return playlist.handle_playlist_show_command(args[1:])
         elif args[0] == 'active':
-            return playlist_ops.handle_playlist_active_command(args[1:])
+            return playlist.handle_playlist_active_command(args[1:])
         elif args[0] == 'import':
-            return playlist_ops.handle_playlist_import_command(args[1:])
+            return playlist.handle_playlist_import_command(args[1:])
         elif args[0] == 'export':
-            return playlist_ops.handle_playlist_export_command(args[1:])
+            return playlist.handle_playlist_export_command(args[1:])
         else:
             print(f"Unknown playlist subcommand: '{args[0]}'. Available: new, delete, rename, show, active, import, export")
 
     elif command == 'add':
-        return track_ops.handle_add_command(args)
+        return track.handle_add_command(args)
 
     elif command == 'remove':
-        return track_ops.handle_remove_command(args)
+        return track.handle_remove_command(args)
 
     elif command == 'ai':
         if not args:
             print("Error: AI command requires a subcommand. Usage: ai <setup|analyze|test|usage>")
         elif args[0] == 'setup':
-            return ai_ops.handle_ai_setup_command(args[1:])
+            return ai.handle_ai_setup_command(args[1:])
         elif args[0] == 'analyze':
-            return ai_ops.handle_ai_analyze_command()
+            return ai.handle_ai_analyze_command()
         elif args[0] == 'test':
-            return ai_ops.handle_ai_test_command()
+            return ai.handle_ai_test_command()
         elif args[0] == 'usage':
-            return ai_ops.handle_ai_usage_command(args[1:])
+            return ai.handle_ai_usage_command(args[1:])
         else:
             print(f"Unknown AI subcommand: '{args[0]}'. Available: setup, analyze, test, usage")
 
@@ -224,13 +224,13 @@ def handle_command(command: str, args: List[str]) -> bool:
         if not args:
             print("Error: Sync command requires a subcommand. Usage: sync <export|import|status|rescan>")
         elif args[0] == 'export':
-            return sync_ops.handle_sync_export_command()
+            return sync.handle_sync_export_command()
         elif args[0] == 'import':
-            return sync_ops.handle_sync_import_command(args[1:])
+            return sync.handle_sync_import_command(args[1:])
         elif args[0] == 'status':
-            return sync_ops.handle_sync_status_command()
+            return sync.handle_sync_status_command()
         elif args[0] == 'rescan':
-            return sync_ops.handle_sync_rescan_command(args[1:])
+            return sync.handle_sync_rescan_command(args[1:])
         else:
             print(f"Unknown sync subcommand: '{args[0]}'. Available: export, import, status, rescan")
 
