@@ -783,7 +783,7 @@ def interactive_mode_blessed() -> None:
         sync_thread.start()
 
     # Create initial UI state
-    from .ui_blessed.state import create_initial_state
+    from .ui.blessed.state import create_initial_state
     from dataclasses import replace
 
     initial_state = create_initial_state()
@@ -797,7 +797,7 @@ def interactive_mode_blessed() -> None:
 
     # Run blessed UI
     try:
-        from .ui_blessed import run_interactive_ui
+        from .ui.blessed import run_interactive_ui
         run_interactive_ui(initial_state, current_player_state)
     finally:
         # Clean up MPV player

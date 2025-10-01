@@ -4,7 +4,7 @@ import sys
 from typing import Any
 from blessed import Terminal
 from .state import UIState, update_player_state, update_track_info
-from .rendering import (
+from .components import (
     render_dashboard,
     render_history,
     render_input,

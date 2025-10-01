@@ -12,7 +12,7 @@ from ..state import (
     update_palette_filter,
     clear_history,
 )
-from ..data.palette import filter_commands, COMMAND_DEFINITIONS
+from ..styles.palette import filter_commands, COMMAND_DEFINITIONS
 
 
 def parse_key(key: Keystroke) -> dict:
