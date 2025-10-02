@@ -17,7 +17,8 @@ def calculate_layout(term: Terminal, state: UIState, dashboard_height: int) -> d
         Dictionary with region positions and heights
     """
     input_height = 3
-    palette_height = 22 if state.palette_visible else 0
+    # Allocate height for palette OR wizard (they're mutually exclusive)
+    palette_height = 22 if (state.palette_visible or state.wizard_active) else 0
 
     return {
         'dashboard_y': 0,

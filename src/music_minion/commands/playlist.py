@@ -51,15 +51,23 @@ def handle_playlist_list_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     return ctx, True
 
 
-def smart_playlist_wizard(name: str) -> bool:
+def smart_playlist_wizard(name: str, ctx: AppContext) -> Tuple[AppContext, bool]:
     """Interactive wizard for creating a smart playlist with filters.
 
     Args:
         name: Name of the playlist to create
+        ctx: Application context
 
     Returns:
-        True to continue interactive loop
+        (updated_context, should_continue)
     """
+    # Check if running in blessed UI mode (stdout is redirected)
+    if not hasattr(sys.stdout, 'isatty') or not sys.stdout.isatty():
+        print("❌ Interactive wizard not available in blessed UI mode")
+        print(f"   Use AI wizard instead: playlist new smart ai {name} \"<description>\"")
+        print("   Example: playlist new smart ai NYE2025 \"dubstep from 2025 with bpm > 140\"")
+        return ctx, True
+
     print(f"\n🧙 Smart Playlist Wizard: {name}")
     print("=" * 60)
     print("Create filters to automatically match tracks.\n")
@@ -192,7 +200,7 @@ def smart_playlist_wizard(name: str) -> bool:
         print(f"   Set as active with: playlist active \"{name}\"")
 
         # Auto-export if enabled
-        auto_export_if_enabled(playlist_id)
+        helpers.auto_export_if_enabled(playlist_id)
 
     except Exception as e:
         print(f"❌ Error evaluating filters: {e}")
@@ -220,16 +228,20 @@ def validate_filters_list(filters: List[playlist_ai.FilterDict]) -> List[str]:
     return validation_errors
 
 
-def ai_smart_playlist_wizard(name: str, description: str) -> bool:
+def ai_smart_playlist_wizard(name: str, description: str, ctx: AppContext) -> Tuple[AppContext, bool]:
     """AI-powered wizard for creating a smart playlist from natural language.
 
     Args:
         name: Name of the playlist to create
         description: Natural language description of desired playlist
+        ctx: Application context
 
     Returns:
-        True to continue interactive loop
+        (updated_context, should_continue)
     """
+    # Check if running in blessed UI mode (stdout is redirected)
+    is_blessed_mode = not hasattr(sys.stdout, 'isatty') or not sys.stdout.isatty()
+
     # Check API key early before doing anything
     if not ai.get_api_key():
         print("❌ No OpenAI API key found. Use 'ai setup <key>' to configure.")
@@ -277,9 +289,11 @@ def ai_smart_playlist_wizard(name: str, description: str) -> bool:
     print("\n📋 Parsed filters:")
     print(playlist_ai.format_filters_for_preview(filters))
 
-    # Ask if user wants to edit
-    print("\n" + "=" * 60)
-    edit = input("Edit filters before creating playlist? (y/n) [n]: ").strip().lower()
+    # Ask if user wants to edit (skip in blessed mode)
+    edit = 'n'
+    if not is_blessed_mode:
+        print("\n" + "=" * 60)
+        edit = input("Edit filters before creating playlist? (y/n) [n]: ").strip().lower()
 
     if edit == 'y':
         try:
@@ -352,9 +366,11 @@ def ai_smart_playlist_wizard(name: str, description: str) -> bool:
             prefix = f"  {f['conjunction']}" if i > 1 else "  "
             print(f"{prefix} {f['field']} {f['operator']} '{f['value']}'")
 
-        # Confirm
-        print()
-        confirm = input("Save this smart playlist? (y/n) [y]: ").strip().lower()
+        # Confirm (skip in blessed mode, default to yes)
+        confirm = 'y'
+        if not is_blessed_mode:
+            print()
+            confirm = input("Save this smart playlist? (y/n) [y]: ").strip().lower()
 
         if confirm == 'n':
             playlists.delete_playlist(playlist_id)
@@ -367,7 +383,7 @@ def ai_smart_playlist_wizard(name: str, description: str) -> bool:
         print(f"   Set as active with: playlist active \"{name}\"")
 
         # Auto-export if enabled
-        auto_export_if_enabled(playlist_id)
+        helpers.auto_export_if_enabled(playlist_id)
 
     except Exception as e:
         print(f"❌ Error evaluating filters: {e}")
@@ -417,7 +433,7 @@ def handle_playlist_new_command(ctx: AppContext, args: List[str]) -> Tuple[AppCo
             if len(parts) >= 2:
                 name = parts[0]
                 description = parts[1]
-                return ai_smart_playlist_wizard(name, description)
+                return ai_smart_playlist_wizard(name, description, ctx)
             else:
                 print("Error: Please provide both name and description")
                 print("Usage: playlist new smart ai <name> \"<description>\"")
@@ -430,10 +446,16 @@ def handle_playlist_new_command(ctx: AppContext, args: List[str]) -> Tuple[AppCo
             print("Example: playlist new smart ai NYE2025 \"all dubstep from 2025\"")
             return ctx, True
 
-    # Regular smart playlist - launch manual wizard
+    # Regular smart playlist - launch blessed wizard via UI action
     if playlist_type == 'smart':
         name = ' '.join(args[1:])
-        return smart_playlist_wizard(name)
+        # Signal UI to start wizard
+        ctx = ctx.with_ui_action({
+            'type': 'start_wizard',
+            'wizard_type': 'smart_playlist',
+            'wizard_data': {'name': name, 'filters': []}
+        })
+        return ctx, True
 
     # Manual playlist - assign name from remaining args
     name = ' '.join(args[1:])
@@ -445,7 +467,7 @@ def handle_playlist_new_command(ctx: AppContext, args: List[str]) -> Tuple[AppCo
         print(f"   Add tracks with: add \"{name}\"")
 
         # Auto-export if enabled
-        auto_export_if_enabled(playlist_id)
+        helpers.auto_export_if_enabled(playlist_id)
 
         return ctx, True
     except ValueError as e:
@@ -718,7 +740,7 @@ def handle_playlist_import_command(ctx: AppContext, args: List[str]) -> Tuple[Ap
                     print(f"   Run 'playlist show {pl['name']}' to see details")
 
             # Auto-export if enabled
-            auto_export_if_enabled(playlist_id)
+            helpers.auto_export_if_enabled(playlist_id)
 
         return ctx, True
 

@@ -80,6 +80,15 @@ class UIState:
     confirmation_type: Optional[str] = None  # 'delete_playlist', etc.
     confirmation_data: Optional[dict[str, Any]] = field(default=None)  # Data for confirmation action
 
+    # Wizard state (for multi-step wizards like smart playlist creation)
+    wizard_active: bool = False
+    wizard_type: Optional[str] = None  # 'smart_playlist', etc.
+    wizard_step: str = 'field'  # Current step: 'field', 'operator', 'value', 'conjunction', 'preview'
+    wizard_data: dict[str, Any] = field(default_factory=dict)  # Wizard working data
+    wizard_error: Optional[str] = None  # Error message for validation feedback
+    wizard_selected: int = 0  # Selected option index (for arrow key navigation)
+    wizard_options: list[str] = field(default_factory=list)  # Available options for current step
+
     # UI feedback (toast notifications)
     feedback_message: Optional[str] = None
     feedback_time: Optional[float] = None
@@ -332,3 +341,140 @@ def reset_history_navigation(state: UIState) -> UIState:
         Updated state with history navigation reset
     """
     return replace(state, history_index=None, history_temp_input="")
+
+
+def start_wizard(state: UIState, wizard_type: str, initial_data: dict[str, Any]) -> UIState:
+    """
+    Start a wizard flow.
+
+    Args:
+        state: Current UI state
+        wizard_type: Type of wizard ('smart_playlist', etc.)
+        initial_data: Initial wizard data
+
+    Returns:
+        Updated state with wizard active
+    """
+    # For smart_playlist, start with field options
+    from ...domain.playlists import filters as playlist_filters
+    initial_options = sorted(list(playlist_filters.VALID_FIELDS))
+
+    return replace(
+        state,
+        wizard_active=True,
+        wizard_type=wizard_type,
+        wizard_step='field',
+        wizard_data=initial_data,
+        wizard_options=initial_options,
+        wizard_selected=0,
+        palette_visible=False,  # Hide palette when wizard starts
+        input_text='',
+        cursor_pos=0
+    )
+
+
+def update_wizard_step(state: UIState, step: str, options: list[str] | None = None) -> UIState:
+    """
+    Update wizard to a new step.
+
+    Args:
+        state: Current UI state
+        step: New step name
+        options: Available options for this step (None = value entry step)
+
+    Returns:
+        Updated state
+    """
+    return replace(
+        state,
+        wizard_step=step,
+        input_text='',
+        cursor_pos=0,
+        wizard_error=None,
+        wizard_selected=0,
+        wizard_options=options or []
+    )
+
+
+def update_wizard_data(state: UIState, data: dict[str, Any]) -> UIState:
+    """
+    Update wizard data (merge with existing).
+
+    Args:
+        state: Current UI state
+        data: Data to merge into wizard_data
+
+    Returns:
+        Updated state
+    """
+    new_data = {**state.wizard_data, **data}
+    return replace(state, wizard_data=new_data)
+
+
+def set_wizard_error(state: UIState, error: str) -> UIState:
+    """
+    Set wizard validation error message.
+
+    Args:
+        state: Current UI state
+        error: Error message to display
+
+    Returns:
+        Updated state with error
+    """
+    return replace(state, wizard_error=error)
+
+
+def clear_wizard_error(state: UIState) -> UIState:
+    """
+    Clear wizard validation error message.
+
+    Args:
+        state: Current UI state
+
+    Returns:
+        Updated state with error cleared
+    """
+    return replace(state, wizard_error=None)
+
+
+def move_wizard_selection(state: UIState, delta: int) -> UIState:
+    """
+    Move wizard selection up or down.
+
+    Args:
+        state: Current UI state
+        delta: Direction to move (-1 for up, 1 for down)
+
+    Returns:
+        Updated state with new selection
+    """
+    if not state.wizard_options:
+        return state
+
+    new_selected = (state.wizard_selected + delta) % len(state.wizard_options)
+    return replace(state, wizard_selected=new_selected)
+
+
+def cancel_wizard(state: UIState) -> UIState:
+    """
+    Cancel and exit wizard.
+
+    Args:
+        state: Current UI state
+
+    Returns:
+        Updated state with wizard deactivated
+    """
+    return replace(
+        state,
+        wizard_active=False,
+        wizard_type=None,
+        wizard_step='field',
+        wizard_data={},
+        wizard_error=None,
+        wizard_selected=0,
+        wizard_options=[],
+        input_text='',
+        cursor_pos=0
+    )

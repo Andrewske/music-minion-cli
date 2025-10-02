@@ -10,6 +10,7 @@ from .components import (
     render_history,
     render_input,
     render_palette,
+    render_smart_playlist_wizard,
     calculate_layout,
 )
 from .events.keyboard import handle_key
@@ -159,7 +160,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
     last_state_hash = None
     needs_full_redraw = True
     last_input_text = ""
-    last_palette_state = (False, 0, False)  # (visible, selected, confirmation_active)
+    last_palette_state = (False, 0, False, False, 0)  # (visible, selected, confirmation_active, wizard_active, wizard_selected)
     layout = None
     last_position = None  # Track position separately for partial updates
     dashboard_line_mapping = {}  # Store line offsets from last full dashboard render
@@ -190,7 +191,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
 
         # Check for input-only changes (no full redraw needed)
         input_changed = ui_state.input_text != last_input_text
-        palette_state_changed = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active) != last_palette_state
+        palette_state_changed = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected) != last_palette_state
 
         # Determine if we need a full redraw
         needs_full_redraw = needs_full_redraw or (current_state_hash is not None and current_state_hash != last_state_hash)
@@ -240,7 +241,15 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 layout['input_y']
             )
 
-            if ui_state.palette_visible:
+            # Render palette OR wizard (mutually exclusive)
+            if ui_state.wizard_active:
+                render_smart_playlist_wizard(
+                    term,
+                    ui_state,
+                    layout['palette_y'],
+                    layout['palette_height']
+                )
+            elif ui_state.palette_visible:
                 render_palette(
                     term,
                     ui_state,
@@ -252,14 +261,14 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
             sys.stdout.flush()
 
             last_input_text = ui_state.input_text
-            last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active)
+            last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected)
             last_position = int(ctx.player_state.current_position)  # Update position after full redraw
 
         elif input_changed or palette_state_changed:
             # Partial update - only input and palette changed
             if layout:
-                # If palette visibility changed, do a full redraw instead
-                if palette_state_changed and ui_state.palette_visible != last_palette_state[0]:
+                # If palette or wizard visibility changed, do a full redraw instead
+                if palette_state_changed and (ui_state.palette_visible != last_palette_state[0] or ui_state.wizard_active != last_palette_state[3]):
                     needs_full_redraw = True
                 else:
                     # Clear input area (3 lines: top border, input, bottom border)
@@ -267,8 +276,8 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     for i in range(3):
                         sys.stdout.write(term.move_xy(0, input_y + i) + term.clear_eol)
 
-                    # Clear palette area if visible
-                    if ui_state.palette_visible:
+                    # Clear palette/wizard area if visible
+                    if ui_state.palette_visible or ui_state.wizard_active:
                         palette_y = layout['palette_y']
                         palette_height = layout['palette_height']
                         for i in range(palette_height):
@@ -281,7 +290,15 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                         layout['input_y']
                     )
 
-                    if ui_state.palette_visible:
+                    # Render palette OR wizard (mutually exclusive)
+                    if ui_state.wizard_active:
+                        render_smart_playlist_wizard(
+                            term,
+                            ui_state,
+                            layout['palette_y'],
+                            layout['palette_height']
+                        )
+                    elif ui_state.palette_visible:
                         render_palette(
                             term,
                             ui_state,
@@ -293,7 +310,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     sys.stdout.flush()
 
                     last_input_text = ui_state.input_text
-                    last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active)
+                    last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected)
 
         else:
             # Check if only position changed (partial dashboard update)

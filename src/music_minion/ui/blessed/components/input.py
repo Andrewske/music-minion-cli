@@ -6,7 +6,7 @@ from ..state import UIState
 
 def render_input(term: Terminal, state: UIState, y: int) -> None:
     """
-    Render input line with cursor.
+    Render input line with cursor and help text.
 
     Args:
         term: blessed Terminal instance
@@ -14,6 +14,7 @@ def render_input(term: Terminal, state: UIState, y: int) -> None:
         y: Y position for input line
     """
     import sys
+    from .wizard import get_wizard_footer_text
 
     # Draw top border
     border = "─" * (term.width - 2)
@@ -38,5 +39,19 @@ def render_input(term: Terminal, state: UIState, y: int) -> None:
     padding = " " * max(0, term.width - len(input_text) - 5)
     sys.stdout.write(term.move_xy(0, y + 1) + term.cyan("│ ") + prompt + input_text + cursor + padding + term.cyan(" │"))
 
-    # Draw bottom border
-    sys.stdout.write(term.move_xy(0, y + 2) + term.cyan(f"└{border}┘"))
+    # Draw bottom border with optional help text
+    if state.wizard_active:
+        # Show wizard-specific help text
+        help_text = get_wizard_footer_text(state)
+        # Truncate if too long
+        max_help_width = term.width - 4
+        if len(help_text) > max_help_width:
+            help_text = help_text[:max_help_width - 3] + "..."
+        # Center the help text in the border
+        padding_left = (term.width - len(help_text) - 2) // 2
+        padding_right = term.width - len(help_text) - padding_left - 2
+        bottom_border = "─" * padding_left + term.white(help_text) + term.cyan("─" * padding_right)
+        sys.stdout.write(term.move_xy(0, y + 2) + term.cyan("└") + bottom_border + term.cyan("┘"))
+    else:
+        # Normal bottom border
+        sys.stdout.write(term.move_xy(0, y + 2) + term.cyan(f"└{border}┘"))

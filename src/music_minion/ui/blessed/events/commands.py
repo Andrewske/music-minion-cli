@@ -3,7 +3,7 @@
 import io
 from contextlib import redirect_stdout, redirect_stderr
 from ....context import AppContext
-from ..state import UIState, add_history_line, set_feedback, add_command_to_history, show_playlist_palette
+from ..state import UIState, add_history_line, set_feedback, add_command_to_history, show_playlist_palette, start_wizard
 from ..components.palette import load_playlist_items
 
 
@@ -55,6 +55,11 @@ def execute_command(ctx: AppContext, ui_state: UIState, command_line: str) -> tu
     if command == '__DELETE_PLAYLIST__':
         playlist_name = ' '.join(args)
         ctx, ui_state = _handle_playlist_deletion(ctx, ui_state, playlist_name)
+        return ctx, ui_state, False
+
+    # Special case: Save wizard playlist
+    if command == '__SAVE_WIZARD_PLAYLIST__':
+        ctx, ui_state = _handle_wizard_save(ctx, ui_state)
         return ctx, ui_state, False
 
     # Add command to history display
@@ -128,6 +133,12 @@ def _process_ui_action(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, 
         # Load playlists and show palette
         playlist_items = load_playlist_items()
         ui_state = show_playlist_palette(ui_state, playlist_items)
+
+    elif action['type'] == 'start_wizard':
+        # Start wizard with provided data
+        wizard_type = action.get('wizard_type', 'smart_playlist')
+        wizard_data = action.get('wizard_data', {})
+        ui_state = start_wizard(ui_state, wizard_type, wizard_data)
 
     # Clear the ui_action after processing
     ctx = ctx.with_ui_action(None)
@@ -239,5 +250,66 @@ def _handle_playlist_deletion(ctx: AppContext, ui_state: UIState, playlist_name:
         new_selected = min(ui_state.palette_selected, len(playlist_items) - 1)
         ui_state = show_playlist_palette(ui_state, playlist_items)
         ui_state = replace(ui_state, palette_selected=new_selected)
+
+    return ctx, ui_state
+
+
+def _handle_wizard_save(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, UIState]:
+    """
+    Handle saving playlist from wizard.
+
+    Args:
+        ctx: Application context
+        ui_state: Current UI state (wizard must be active)
+
+    Returns:
+        Tuple of (updated AppContext, updated UIState)
+    """
+    # Import here to avoid circular dependencies
+    from ....domain import playlists
+    from ....domain.playlists import filters as playlist_filters
+    from ..state import cancel_wizard
+
+    wizard_data = ui_state.wizard_data
+    playlist_name = wizard_data.get('name', 'Untitled')
+    filters = wizard_data.get('filters', [])
+
+    try:
+        # Create the playlist
+        playlist_id = playlists.create_playlist(playlist_name, 'smart', description=None)
+
+        # Add all filters
+        for f in filters:
+            playlist_filters.add_filter(
+                playlist_id,
+                f['field'],
+                f['operator'],
+                f['value'],
+                f.get('conjunction', 'AND')
+            )
+
+        # Update track count
+        playlists.update_playlist_track_count(playlist_id)
+
+        # Success message
+        matching_count = wizard_data.get('matching_count', 0)
+        ui_state = add_history_line(ui_state, f"✅ Created smart playlist: {playlist_name}", 'green')
+        ui_state = add_history_line(ui_state, f"   {matching_count} tracks match your filters", 'white')
+        ui_state = set_feedback(ui_state, f"✓ Created {playlist_name}", "✓")
+
+        # Auto-export if enabled (import from helpers)
+        try:
+            from .... import helpers
+            helpers.auto_export_if_enabled(playlist_id)
+        except Exception:
+            pass  # Ignore auto-export errors
+
+    except ValueError as e:
+        ui_state = add_history_line(ui_state, f"❌ Error: {e}", 'red')
+    except Exception as e:
+        ui_state = add_history_line(ui_state, f"❌ Error creating playlist: {e}", 'red')
+
+    # Close wizard
+    ui_state = cancel_wizard(ui_state)
 
     return ctx, ui_state
