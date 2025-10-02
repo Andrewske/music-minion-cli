@@ -75,6 +75,11 @@ class UIState:
     palette_selected: int = 0
     palette_scroll: int = 0
 
+    # Confirmation dialog state
+    confirmation_active: bool = False
+    confirmation_type: Optional[str] = None  # 'delete_playlist', etc.
+    confirmation_data: Optional[dict[str, Any]] = field(default=None)  # Data for confirmation action
+
     # UI feedback (toast notifications)
     feedback_message: Optional[str] = None
     feedback_time: Optional[float] = None
@@ -189,6 +194,16 @@ def move_palette_selection(state: UIState, delta: int, visible_items: int = 10) 
         new_scroll = new_selected
 
     return replace(state, palette_selected=new_selected, palette_scroll=new_scroll)
+
+
+def show_confirmation(state: UIState, conf_type: str, data: dict[str, Any]) -> UIState:
+    """Show confirmation dialog."""
+    return replace(state, confirmation_active=True, confirmation_type=conf_type, confirmation_data=data)
+
+
+def hide_confirmation(state: UIState) -> UIState:
+    """Hide confirmation dialog."""
+    return replace(state, confirmation_active=False, confirmation_type=None, confirmation_data=None)
 
 
 def set_feedback(state: UIState, message: str, icon: Optional[str] = None) -> UIState:

@@ -51,6 +51,12 @@ def execute_command(ctx: AppContext, ui_state: UIState, command_line: str) -> tu
         ctx, ui_state = _handle_playlist_selection(ctx, ui_state, playlist_name)
         return ctx, ui_state, False
 
+    # Special case: Playlist deletion from palette
+    if command == '__DELETE_PLAYLIST__':
+        playlist_name = ' '.join(args)
+        ctx, ui_state = _handle_playlist_deletion(ctx, ui_state, playlist_name)
+        return ctx, ui_state, False
+
     # Add command to history display
     ui_state = add_history_line(ui_state, f"> {command_line}", 'cyan')
 
@@ -178,5 +184,60 @@ def _handle_playlist_selection(ctx: AppContext, ui_state: UIState, playlist_name
             ui_state = add_history_line(ui_state, f"⚠️  Playlist is empty", 'yellow')
     else:
         ui_state = add_history_line(ui_state, f"❌ Failed to activate playlist", 'red')
+
+    return ctx, ui_state
+
+
+def _handle_playlist_deletion(ctx: AppContext, ui_state: UIState, playlist_name: str) -> tuple[AppContext, UIState]:
+    """
+    Handle playlist deletion from palette.
+
+    Args:
+        ctx: Application context
+        ui_state: Current UI state
+        playlist_name: Name of playlist to delete
+
+    Returns:
+        Tuple of (updated AppContext, updated UIState)
+    """
+    # Import here to avoid circular dependencies
+    from ....domain import playlists
+    from ....domain import playback
+    from dataclasses import replace
+
+    # Get playlist by name
+    pl = playlists.get_playlist_by_name(playlist_name)
+    if not pl:
+        ui_state = add_history_line(ui_state, f"❌ Playlist '{playlist_name}' not found", 'red')
+        # Refresh playlist items
+        playlist_items = load_playlist_items()
+        ui_state = show_playlist_palette(ui_state, playlist_items)
+        return ctx, ui_state
+
+    # Clear position tracking before deleting
+    playback.clear_playlist_position(pl['id'])
+
+    # Delete playlist
+    if playlists.delete_playlist(pl['id']):
+        ui_state = add_history_line(ui_state, f"✅ Deleted playlist: {playlist_name}", 'green')
+        ui_state = set_feedback(ui_state, f"✓ Deleted {playlist_name}", "✓")
+    else:
+        ui_state = add_history_line(ui_state, f"❌ Failed to delete playlist", 'red')
+
+    # Refresh playlist items and stay in palette
+    playlist_items = load_playlist_items()
+
+    # If list is now empty, hide palette
+    if not playlist_items:
+        ui_state = ui_state  # Keep current state but palette will be hidden
+        from ..state import hide_palette
+        ui_state = hide_palette(ui_state)
+        ui_state = add_history_line(ui_state, "No playlists remaining", 'white')
+    else:
+        # Stay in playlist palette with refreshed list
+        # Adjust selection if needed
+        new_selected = min(ui_state.palette_selected, len(playlist_items) - 1)
+        ui_state = show_playlist_palette(ui_state, playlist_items)
+        ui_state = replace(ui_state, palette_selected=new_selected)
 
     return ctx, ui_state

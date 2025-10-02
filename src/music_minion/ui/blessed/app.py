@@ -159,7 +159,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
     last_state_hash = None
     needs_full_redraw = True
     last_input_text = ""
-    last_palette_state = (False, 0)
+    last_palette_state = (False, 0, False)  # (visible, selected, confirmation_active)
     layout = None
     last_position = None  # Track position separately for partial updates
     dashboard_line_mapping = {}  # Store line offsets from last full dashboard render
@@ -190,7 +190,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
 
         # Check for input-only changes (no full redraw needed)
         input_changed = ui_state.input_text != last_input_text
-        palette_state_changed = (ui_state.palette_visible, ui_state.palette_selected) != last_palette_state
+        palette_state_changed = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active) != last_palette_state
 
         # Determine if we need a full redraw
         needs_full_redraw = needs_full_redraw or (current_state_hash is not None and current_state_hash != last_state_hash)
@@ -252,7 +252,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
             sys.stdout.flush()
 
             last_input_text = ui_state.input_text
-            last_palette_state = (ui_state.palette_visible, ui_state.palette_selected)
+            last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active)
             last_position = int(ctx.player_state.current_position)  # Update position after full redraw
 
         elif input_changed or palette_state_changed:
@@ -293,7 +293,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     sys.stdout.flush()
 
                     last_input_text = ui_state.input_text
-                    last_palette_state = (ui_state.palette_visible, ui_state.palette_selected)
+                    last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active)
 
         else:
             # Check if only position changed (partial dashboard update)

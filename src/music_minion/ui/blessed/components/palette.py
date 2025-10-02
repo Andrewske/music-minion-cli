@@ -39,6 +39,31 @@ def load_playlist_items() -> list[tuple[str, str, str, str]]:
     return items
 
 
+def filter_playlist_items(query: str, items: list[tuple[str, str, str, str]]) -> list[tuple[str, str, str, str]]:
+    """
+    Filter playlist items by name (case-insensitive substring match).
+
+    Args:
+        query: Search query string
+        items: List of playlist items to filter
+
+    Returns:
+        Filtered list of items matching query
+    """
+    if not query:
+        return items
+
+    query_lower = query.lower()
+    filtered = []
+    for item in items:
+        cat, name, icon, desc = item
+        # Match against playlist name (case-insensitive)
+        if query_lower in name.lower():
+            filtered.append(item)
+
+    return filtered
+
+
 def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
     """
     Render command palette with scrolling support.
@@ -123,14 +148,30 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
         sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
         line_num += 1
 
-    # Footer help text with scroll indicator
+    # Footer help text - confirmation or normal mode
     if line_num < height:
-        total_items = len(filtered_commands)
-        if total_items > content_height:
-            current_position = min(selected_index + 1, total_items)
-            footer = f"   [{current_position}/{total_items}] ↑↓ navigate  Enter select  Esc cancel"
+        if state.confirmation_active and state.confirmation_type == 'delete_playlist':
+            # Show confirmation prompt
+            playlist_name = state.confirmation_data.get('playlist_name', 'Unknown')
+            footer = f"   Delete '{playlist_name}'? [Enter/Y]es / [N]o"
+            sys.stdout.write(term.move_xy(0, y + line_num) + term.yellow(footer))
         else:
-            footer = "   ↑↓ navigate  Enter select  Esc cancel"
+            # Normal footer with scroll indicator and help text
+            total_items = len(filtered_commands)
+            if state.palette_mode == 'playlist':
+                # Playlist mode footer with delete key help
+                if total_items > content_height:
+                    current_position = min(selected_index + 1, total_items)
+                    footer = f"   [{current_position}/{total_items}] ↑↓ navigate  Enter select  Del delete  Esc cancel"
+                else:
+                    footer = "   ↑↓ navigate  Enter select  Del delete  Esc cancel"
+            else:
+                # Command mode footer
+                if total_items > content_height:
+                    current_position = min(selected_index + 1, total_items)
+                    footer = f"   [{current_position}/{total_items}] ↑↓ navigate  Enter select  Esc cancel"
+                else:
+                    footer = "   ↑↓ navigate  Enter select  Esc cancel"
 
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white(footer))
+            sys.stdout.write(term.move_xy(0, y + line_num) + term.white(footer))
         line_num += 1

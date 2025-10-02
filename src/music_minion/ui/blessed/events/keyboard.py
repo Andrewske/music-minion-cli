@@ -14,6 +14,8 @@ from ..state import (
     navigate_history_up,
     navigate_history_down,
     reset_history_navigation,
+    show_confirmation,
+    hide_confirmation,
 )
 from ..styles.palette import filter_commands, COMMAND_DEFINITIONS
 
@@ -42,7 +44,7 @@ def parse_key(key: Keystroke) -> dict:
         event['type'] = 'escape'
     elif key.name == 'KEY_BACKSPACE' or key == '\x7f':
         event['type'] = 'backspace'
-    elif key.name == 'KEY_DELETE':
+    elif key.name == 'KEY_DELETE' or str(key) == '\x1b[3~':
         event['type'] = 'delete'
     elif key.name == 'KEY_UP':
         event['type'] = 'arrow_up'
@@ -72,6 +74,22 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10) -> tupl
     """
     event = parse_key(key)
     command_to_execute = None
+
+    # Handle confirmation dialog keys (highest priority)
+    if state.confirmation_active:
+        if event['type'] == 'enter' or (event['char'] and event['char'].lower() == 'y'):
+            # Confirmed (Enter defaults to Yes) - trigger action based on confirmation type
+            if state.confirmation_type == 'delete_playlist':
+                playlist_name = state.confirmation_data['playlist_name']
+                command_to_execute = f"__DELETE_PLAYLIST__ {playlist_name}"
+                state = hide_confirmation(state)
+                return state, command_to_execute
+        elif event['char'] and event['char'].lower() == 'n' or event['type'] == 'escape':
+            # Cancelled
+            state = hide_confirmation(state)
+            return state, None
+        # Ignore other keys during confirmation
+        return state, None
 
     # Handle Ctrl+C (quit)
     if event['type'] == 'ctrl_c':
@@ -150,28 +168,48 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10) -> tupl
 
         # Update palette filter if visible
         if state.palette_visible:
-            # Remove "/" prefix for filtering
-            query = state.input_text[1:] if state.input_text.startswith("/") else state.input_text
-            filtered = filter_commands(query, COMMAND_DEFINITIONS)
-            # Convert to format expected by state (category, cmd, icon, desc)
-            state = update_palette_filter(state, query, filtered)
+            if state.palette_mode == 'playlist':
+                # Filter playlists by name
+                from ..components.palette import filter_playlist_items, load_playlist_items
+                all_items = load_playlist_items()
+                filtered = filter_playlist_items(state.input_text, all_items)
+                state = update_palette_filter(state, state.input_text, filtered)
+            else:
+                # Filter commands
+                query = state.input_text[1:] if state.input_text.startswith("/") else state.input_text
+                filtered = filter_commands(query, COMMAND_DEFINITIONS)
+                state = update_palette_filter(state, query, filtered)
 
         return state, None
 
-    # Handle delete (behaves like backspace since cursor is always at end)
+    # Handle delete key
     if event['type'] == 'delete':
-        state = delete_input_char(state)
-        state = reset_history_navigation(state)
+        # Check if in playlist palette mode - delete selected playlist
+        if state.palette_visible and state.palette_mode == 'playlist':
+            # Get selected playlist
+            if state.palette_items and state.palette_selected < len(state.palette_items):
+                selected = state.palette_items[state.palette_selected]
+                playlist_name = selected[1]  # Playlist name
 
-        # Update palette filter if visible
-        if state.palette_visible:
-            # Remove "/" prefix for filtering
-            query = state.input_text[1:] if state.input_text.startswith("/") else state.input_text
-            filtered = filter_commands(query, COMMAND_DEFINITIONS)
-            # Convert to format expected by state (category, cmd, icon, desc)
-            state = update_palette_filter(state, query, filtered)
+                # Show confirmation dialog
+                state = show_confirmation(state, 'delete_playlist', {
+                    'playlist_name': playlist_name
+                })
+            return state, None
+        else:
+            # Normal delete behavior (backspace)
+            state = delete_input_char(state)
+            state = reset_history_navigation(state)
 
-        return state, None
+            # Update palette filter if visible
+            if state.palette_visible:
+                # Remove "/" prefix for filtering
+                query = state.input_text[1:] if state.input_text.startswith("/") else state.input_text
+                filtered = filter_commands(query, COMMAND_DEFINITIONS)
+                # Convert to format expected by state (category, cmd, icon, desc)
+                state = update_palette_filter(state, query, filtered)
+
+            return state, None
 
     # Handle regular characters
     if event['type'] == 'char' and event['char']:
@@ -198,10 +236,17 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10) -> tupl
 
             # Update palette filter if visible
             if state.palette_visible:
-                # Remove "/" prefix for filtering
-                query = state.input_text[1:] if state.input_text.startswith("/") else state.input_text
-                filtered = filter_commands(query, COMMAND_DEFINITIONS)
-                state = update_palette_filter(state, query, filtered)
+                if state.palette_mode == 'playlist':
+                    # Filter playlists by name
+                    from ..components.palette import filter_playlist_items, load_playlist_items
+                    all_items = load_playlist_items()
+                    filtered = filter_playlist_items(state.input_text, all_items)
+                    state = update_palette_filter(state, state.input_text, filtered)
+                else:
+                    # Filter commands
+                    query = state.input_text[1:] if state.input_text.startswith("/") else state.input_text
+                    filtered = filter_commands(query, COMMAND_DEFINITIONS)
+                    state = update_palette_filter(state, query, filtered)
 
         return state, None
 
