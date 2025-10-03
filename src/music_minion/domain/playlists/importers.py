@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 import urllib.parse
 
-from ...core.database import get_db_connection
+from music_minion.core.database import get_db_connection
 from .crud import create_playlist, add_track_to_playlist
 
 

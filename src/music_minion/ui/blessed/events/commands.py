@@ -2,7 +2,7 @@
 
 import io
 from contextlib import redirect_stdout, redirect_stderr
-from ....context import AppContext
+from music_minion.context import AppContext
 from ..state import UIState, add_history_line, set_feedback, add_command_to_history, show_playlist_palette, start_wizard
 from ..components.palette import load_playlist_items
 
@@ -159,9 +159,9 @@ def _handle_playlist_selection(ctx: AppContext, ui_state: UIState, playlist_name
         Tuple of (updated AppContext, updated UIState)
     """
     # Import here to avoid circular dependencies
-    from ....domain import playlists
-    from ....domain import playback
-    from ....core import database
+    from music_minion.domain import playlists
+    from music_minion.domain import playback
+    from music_minion.core import database
 
     # Get playlist by name
     pl = playlists.get_playlist_by_name(playlist_name)
@@ -181,7 +181,7 @@ def _handle_playlist_selection(ctx: AppContext, ui_state: UIState, playlist_name
             first_track = database.db_track_to_library_track(playlist_tracks[0])
 
             # Import play_track from playback commands
-            from ....commands.playback import play_track
+            from music_minion.commands.playback import play_track
 
             # Play the first track
             ctx, _ = play_track(ctx, first_track, playlist_position=0)
@@ -212,8 +212,8 @@ def _handle_playlist_deletion(ctx: AppContext, ui_state: UIState, playlist_name:
         Tuple of (updated AppContext, updated UIState)
     """
     # Import here to avoid circular dependencies
-    from ....domain import playlists
-    from ....domain import playback
+    from music_minion.domain import playlists
+    from music_minion.domain import playback
     from dataclasses import replace
 
     # Get playlist by name
@@ -266,8 +266,8 @@ def _handle_wizard_save(ctx: AppContext, ui_state: UIState) -> tuple[AppContext,
         Tuple of (updated AppContext, updated UIState)
     """
     # Import here to avoid circular dependencies
-    from ....domain import playlists
-    from ....domain.playlists import filters as playlist_filters
+    from music_minion.domain import playlists
+    from music_minion.domain.playlists import filters as playlist_filters
     from ..state import cancel_wizard
 
     wizard_data = ui_state.wizard_data
@@ -299,7 +299,7 @@ def _handle_wizard_save(ctx: AppContext, ui_state: UIState) -> tuple[AppContext,
 
         # Auto-export if enabled (import from helpers)
         try:
-            from .... import helpers
+            from music_minion import helpers
             helpers.auto_export_if_enabled(playlist_id)
         except Exception:
             pass  # Ignore auto-export errors

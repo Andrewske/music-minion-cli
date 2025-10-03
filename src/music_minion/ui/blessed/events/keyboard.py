@@ -38,8 +38,8 @@ from ..state import (
     move_wizard_selection,
 )
 from ..styles.palette import filter_commands, COMMAND_DEFINITIONS
-from ....domain.playlists import filters as playlist_filters
-from ....domain.playlists import crud as playlists
+from music_minion.domain.playlists import filters as playlist_filters
+from music_minion.domain.playlists import crud as playlists
 
 
 def parse_key(key: Keystroke) -> dict:

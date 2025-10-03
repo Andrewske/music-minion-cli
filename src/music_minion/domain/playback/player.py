@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple, NamedTuple
 
-from ...core.config import Config
+from music_minion.core.config import Config
 
 
 class PlayerState(NamedTuple):

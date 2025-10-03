@@ -249,6 +249,11 @@ music-minion/
 - Write docstrings for public functions
 - No circular imports
 - Extract reusable code to `utils/` folder
+- **Import Style**:
+  - Use absolute imports (`from music_minion.core import database`)
+  - Exception: Package-local imports in `__init__.py` files (e.g., `from .crud import create_playlist`)
+  - Exception: Sibling module imports within same package (e.g., `from .models import Track` in `domain/library/`)
+  - Rationale: Absolute imports are clearer, more refactor-safe, and easier for tools to resolve
 
 ## Critical Patterns & Best Practices
 

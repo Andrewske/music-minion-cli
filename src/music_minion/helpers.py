@@ -8,13 +8,13 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-from .context import AppContext
-from .core import config
-from .core import database
-from .domain import library
-from .domain import playback
-from .domain import ai
-from .domain.playlists import exporters as playlist_export
+from music_minion.context import AppContext
+from music_minion.core import config
+from music_minion.core import database
+from music_minion.domain import library
+from music_minion.domain import playback
+from music_minion.domain import ai
+from music_minion.domain.playlists import exporters as playlist_export
 
 
 def safe_print(ctx: AppContext, message: str, style: Optional[str] = None) -> None:

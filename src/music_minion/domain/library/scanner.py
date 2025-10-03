@@ -9,7 +9,7 @@ import random
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
-from ...core.config import Config
+from music_minion.core.config import Config
 from .models import Track
 from .metadata import extract_track_metadata, format_duration, format_size
 

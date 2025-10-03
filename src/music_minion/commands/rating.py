@@ -7,9 +7,9 @@ Handles: archive, like, love, note
 from typing import List, Tuple
 from datetime import datetime
 
-from ..context import AppContext
-from ..core import database
-from ..domain import library
+from music_minion.context import AppContext
+from music_minion.core import database
+from music_minion.domain import library
 
 
 def handle_archive_command(ctx: AppContext) -> Tuple[AppContext, bool]:

@@ -5,7 +5,7 @@ Handles shuffle mode and playlist position tracking for enhanced playback contro
 """
 
 from typing import Optional, Tuple, Dict, Any
-from ...core.database import get_db_connection
+from music_minion.core.database import get_db_connection
 
 
 def get_shuffle_mode() -> bool:

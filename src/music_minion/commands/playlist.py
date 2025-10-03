@@ -13,20 +13,20 @@ from typing import List, Tuple
 from prompt_toolkit import PromptSession
 from prompt_toolkit.styles import Style
 
-from ..context import AppContext
-from ..core import config
-from ..core import database
-from ..domain import library
-from ..domain import playback
-from ..domain import ai
-from .. import ui
-from .. import helpers
-from ..domain import playlists
-from ..domain.playlists import filters as playlist_filters
-from ..domain.playlists import ai_parser as playlist_ai
-from ..domain.playlists import importers as playlist_import
-from ..domain.playlists import exporters as playlist_export
-from ..utils import autocomplete
+from music_minion.context import AppContext
+from music_minion.core import config
+from music_minion.core import database
+from music_minion.domain import library
+from music_minion.domain import playback
+from music_minion.domain import ai
+from music_minion import ui
+from music_minion import helpers
+from music_minion.domain import playlists
+from music_minion.domain.playlists import filters as playlist_filters
+from music_minion.domain.playlists import ai_parser as playlist_ai
+from music_minion.domain.playlists import importers as playlist_import
+from music_minion.domain.playlists import exporters as playlist_export
+from music_minion.utils import autocomplete
 
 
 def handle_playlist_list_command(ctx: AppContext) -> Tuple[AppContext, bool]:

@@ -13,9 +13,9 @@ try:
 except ImportError:
     Console = None
 
-from .core.config import Config
-from .domain.library.models import Track
-from .domain.playback.player import PlayerState
+from music_minion.core.config import Config
+from music_minion.domain.library.models import Track
+from music_minion.domain.playback.player import PlayerState
 
 
 @dataclass

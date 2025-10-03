@@ -15,7 +15,7 @@ from mutagen import File as MutagenFile
 from mutagen.id3 import ID3, COMM, ID3NoHeaderError
 from mutagen.mp4 import MP4
 
-from ...core.database import (
+from music_minion.core.database import (
     get_db_connection,
     get_track_tags,
     add_tags,
@@ -23,7 +23,7 @@ from ...core.database import (
     get_all_tracks,
     get_track_by_path
 )
-from ...core.config import Config
+from music_minion.core.config import Config
 
 
 def get_file_mtime(file_path: str) -> Optional[float]:

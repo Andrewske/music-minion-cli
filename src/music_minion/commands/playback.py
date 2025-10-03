@@ -7,11 +7,11 @@ Handles: play, pause, resume, stop, skip, shuffle, status
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from ..context import AppContext
-from ..core import database
-from ..domain import library
-from ..domain import playback
-from ..domain import playlists
+from music_minion.context import AppContext
+from music_minion.core import database
+from music_minion.domain import library
+from music_minion.domain import playback
+from music_minion.domain import playlists
 
 
 def safe_print(ctx: AppContext, message: str, style: Optional[str] = None) -> None:

@@ -8,18 +8,18 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-from .core import config
-from .core import database
-from .domain import library
-from .domain import playback
-from .domain import ai
-from . import ui
-from .domain import playlists
-from .domain import sync
-from . import command_palette
-from . import router
-from . import helpers
-from .utils import parsers
+from music_minion.core import config
+from music_minion.core import database
+from music_minion.domain import library
+from music_minion.domain import playback
+from music_minion.domain import ai
+from music_minion import ui
+from music_minion.domain import playlists
+from music_minion.domain import sync
+from music_minion import command_palette
+from music_minion import router
+from music_minion import helpers
+from music_minion.utils import parsers
 
 # Global state for interactive mode
 current_player_state: playback.PlayerState = playback.PlayerState()

@@ -7,12 +7,12 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 
-from ...core.config import get_config_dir
-from ...core.database import (
+from music_minion.core.config import get_config_dir
+from music_minion.core.database import (
     get_track_by_path, get_track_notes, get_track_tags,
     add_tags, log_ai_request
 )
-from ..library import Track
+from music_minion.domain.library import Track
 
 
 class AIError(Exception):

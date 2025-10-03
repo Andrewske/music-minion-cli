@@ -6,19 +6,19 @@ Routes user commands to appropriate handler functions.
 
 from typing import List, Tuple
 
-from .context import AppContext
-from .core import config
-from .core import database
-from .domain import playback as playback_domain
+from music_minion.context import AppContext
+from music_minion.core import config
+from music_minion.core import database
+from music_minion.domain import playback as playback_domain
 
 # Import command handlers
-from .commands import playback
-from .commands import rating
-from .commands import admin
-from .commands import ai
-from .commands import sync
-from .commands import playlist
-from .commands import track
+from music_minion.commands import playback
+from music_minion.commands import rating
+from music_minion.commands import admin
+from music_minion.commands import ai
+from music_minion.commands import sync
+from music_minion.commands import playlist
+from music_minion.commands import track
 
 
 def print_help() -> None:

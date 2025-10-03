@@ -10,7 +10,7 @@ from typing import Optional
 
 from rich.console import Console
 
-from .utils import autocomplete
+from music_minion.utils import autocomplete
 
 
 def show_command_palette() -> Optional[str]:

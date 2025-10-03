@@ -6,8 +6,8 @@ Handles: sync export, sync import, sync status, sync rescan
 
 from typing import List, Tuple
 
-from ..context import AppContext
-from ..domain import sync
+from music_minion.context import AppContext
+from music_minion.domain import sync
 
 
 def handle_sync_export_command(ctx: AppContext) -> Tuple[AppContext, bool]:

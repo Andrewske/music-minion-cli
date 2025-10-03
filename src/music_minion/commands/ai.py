@@ -6,10 +6,10 @@ Handles: ai setup, ai analyze, ai test, ai usage
 
 from typing import List, Tuple
 
-from ..context import AppContext
-from ..domain import ai
-from ..core import database
-from ..domain import library
+from music_minion.context import AppContext
+from music_minion.domain import ai
+from music_minion.core import database
+from music_minion.domain import library
 
 
 def handle_ai_setup_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:

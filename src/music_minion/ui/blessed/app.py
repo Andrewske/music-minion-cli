@@ -3,7 +3,7 @@
 import sys
 from pathlib import Path
 from blessed import Terminal
-from ...context import AppContext
+from music_minion.context import AppContext
 from .state import UIState, update_track_info
 from .components import (
     render_dashboard,

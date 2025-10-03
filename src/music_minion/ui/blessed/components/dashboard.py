@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional
 from blessed import Terminal
-from ....domain.playback.player import PlayerState
+from music_minion.domain.playback.player import PlayerState
 from ..state import UIState, TrackMetadata, TrackDBInfo
 
 

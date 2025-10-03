@@ -14,8 +14,8 @@ from rich.panel import Panel
 from rich.text import Text
 from rich.align import Align
 
-from .domain import playlists
-from .domain import playback
+from music_minion.domain import playlists
+from music_minion.domain import playback
 
 console = Console()
 

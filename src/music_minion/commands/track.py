@@ -6,11 +6,11 @@ Handles: add, remove (adding/removing tracks to/from playlists)
 
 from typing import List, Tuple
 
-from ..context import AppContext
-from ..core import database
-from ..domain import playlists
-from ..domain import library
-from .. import helpers
+from music_minion.context import AppContext
+from music_minion.core import database
+from music_minion.domain import playlists
+from music_minion.domain import library
+from music_minion import helpers
 
 
 def handle_add_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:

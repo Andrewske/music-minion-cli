@@ -9,10 +9,10 @@ import glob
 import os
 from typing import List, Tuple
 
-from ..context import AppContext
-from ..core import config
-from ..core import database
-from ..domain import library
+from music_minion.context import AppContext
+from music_minion.core import config
+from music_minion.core import database
+from music_minion.domain import library
 
 
 def handle_init_command(ctx: AppContext) -> Tuple[AppContext, bool]:
