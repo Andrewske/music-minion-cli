@@ -17,6 +17,7 @@ import uuid
 from blessed.keyboard import Keystroke
 from ..state import (
     UIState,
+    InternalCommand,
     append_input_char,
     delete_input_char,
     set_input_text,
@@ -40,6 +41,7 @@ from ..state import (
     move_track_viewer_selection,
 )
 from ..styles.palette import filter_commands, COMMAND_DEFINITIONS
+from ..components.track_viewer import TRACK_VIEWER_HEADER_LINES, TRACK_VIEWER_FOOTER_LINES
 from music_minion.domain.playlists import filters as playlist_filters
 from music_minion.domain.playlists import crud as playlists
 
@@ -327,7 +329,7 @@ def generate_preview_data(state: UIState) -> UIState:
 
 
 
-def handle_track_viewer_key(state: UIState, event: dict, viewer_height: int = 10) -> tuple[UIState | None, str | None]:
+def handle_track_viewer_key(state: UIState, event: dict, viewer_height: int = 10) -> tuple[UIState | None, str | InternalCommand | None]:
     """
     Handle keyboard events for track viewer mode.
 
@@ -344,7 +346,7 @@ def handle_track_viewer_key(state: UIState, event: dict, viewer_height: int = 10
         return hide_track_viewer(state), None
 
     # Calculate visible items (subtract header and footer lines)
-    visible_items = max(1, viewer_height - 3)
+    visible_items = max(1, viewer_height - TRACK_VIEWER_HEADER_LINES - TRACK_VIEWER_FOOTER_LINES)
 
     # Arrow key navigation
     if event['type'] == 'arrow_up':
@@ -357,18 +359,21 @@ def handle_track_viewer_key(state: UIState, event: dict, viewer_height: int = 10
 
     # Enter plays selected track
     if event['type'] == 'enter':
-        if state.track_viewer_tracks and state.track_viewer_selected < len(state.track_viewer_tracks):
-            selected_track = state.track_viewer_tracks[state.track_viewer_selected]
-            playlist_id = state.track_viewer_playlist_id
-            playlist_name = state.track_viewer_playlist_name
-            # Send special command to play track from viewer
-            command = f"__PLAY_TRACK_FROM_VIEWER__ {playlist_id} {state.track_viewer_selected}"
+        if state.track_viewer_selected < len(state.track_viewer_tracks):
+            # Send typed command to play track from viewer
+            command = InternalCommand(
+                action='play_track_from_viewer',
+                data={
+                    'playlist_id': state.track_viewer_playlist_id,
+                    'track_index': state.track_viewer_selected
+                }
+            )
             return state, command
 
     # Delete removes track from manual playlists
     if event['type'] == 'delete':
         if state.track_viewer_playlist_type == 'manual':
-            if state.track_viewer_tracks and state.track_viewer_selected < len(state.track_viewer_tracks):
+            if state.track_viewer_selected < len(state.track_viewer_tracks):
                 selected_track = state.track_viewer_tracks[state.track_viewer_selected]
                 track_id = selected_track['id']
                 playlist_name = state.track_viewer_playlist_name
@@ -386,7 +391,7 @@ def handle_track_viewer_key(state: UIState, event: dict, viewer_height: int = 10
     return state, None
 
 
-def handle_key(state: UIState, key: Keystroke, palette_height: int = 10) -> tuple[UIState, str | None]:
+def handle_key(state: UIState, key: Keystroke, palette_height: int = 10) -> tuple[UIState, str | InternalCommand | None]:
     """
     Handle keyboard input and return updated state.
 
@@ -406,14 +411,20 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10) -> tupl
         if event['type'] == 'enter' or (event['char'] and event['char'].lower() == 'y'):
             # Confirmed (Enter defaults to Yes) - trigger action based on confirmation type
             if state.confirmation_type == 'delete_playlist':
-                playlist_name = state.confirmation_data['playlist_name']
-                command_to_execute = f"__DELETE_PLAYLIST__ {playlist_name}"
+                command_to_execute = InternalCommand(
+                    action='delete_playlist',
+                    data={'playlist_name': state.confirmation_data['playlist_name']}
+                )
                 state = hide_confirmation(state)
                 return state, command_to_execute
             elif state.confirmation_type == 'remove_track_from_playlist':
-                track_id = state.confirmation_data['track_id']
-                playlist_name = state.confirmation_data['playlist_name']
-                command_to_execute = f"__REMOVE_TRACK_FROM_PLAYLIST__ {track_id} {playlist_name}"
+                command_to_execute = InternalCommand(
+                    action='remove_track_from_playlist',
+                    data={
+                        'track_id': state.confirmation_data['track_id'],
+                        'playlist_name': state.confirmation_data['playlist_name']
+                    }
+                )
                 state = hide_confirmation(state)
                 return state, command_to_execute
         elif event['char'] and event['char'].lower() == 'n' or event['type'] == 'escape':

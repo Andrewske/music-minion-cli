@@ -4,6 +4,10 @@ import sys
 from blessed import Terminal
 from ..state import UIState
 
+# Layout constants
+TRACK_VIEWER_HEADER_LINES = 2  # Title + metadata line
+TRACK_VIEWER_FOOTER_LINES = 1
+
 
 def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> None:
     """
@@ -25,9 +29,11 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
     playlist_type = state.track_viewer_playlist_type
 
     # Reserve lines for header and footer
-    header_lines = 2  # Title + metadata line
-    footer_lines = 1
-    content_height = height - header_lines - footer_lines
+    content_height = height - TRACK_VIEWER_HEADER_LINES - TRACK_VIEWER_FOOTER_LINES
+
+    # Calculate max width for track text based on terminal width
+    # Reserve space for: 2 spaces indent + 3 digits position + ". " separator + 2 for safety
+    max_track_width = max(40, term.width - 9)
 
     line_num = 0
 
@@ -62,14 +68,13 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
             if items_rendered >= content_height:
                 break
 
-            if line_num >= height - footer_lines:
+            if line_num >= height - TRACK_VIEWER_FOOTER_LINES:
                 break
 
             # Format track info
             position = track_index + 1
             artist = track.get('artist', 'Unknown')
             title = track.get('title', 'Unknown')
-            album = track.get('album', '')
 
             is_selected = track_index == selected_index
 
@@ -78,17 +83,17 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
 
             if is_selected:
                 # Selected item: highlighted background
-                item_line = term.black_on_cyan(f"  {track_text[:76]}")
+                item_line = term.black_on_cyan(f"  {track_text[:max_track_width]}")
             else:
                 # Normal item
-                item_line = term.white(f"  {track_text[:76]}")
+                item_line = term.white(f"  {track_text[:max_track_width]}")
 
             sys.stdout.write(term.move_xy(0, y + line_num) + item_line)
             line_num += 1
             items_rendered += 1
 
     # Clear remaining lines
-    while line_num < height - footer_lines:
+    while line_num < height - TRACK_VIEWER_FOOTER_LINES:
         sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
         line_num += 1
 

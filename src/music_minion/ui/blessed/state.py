@@ -31,6 +31,13 @@ class TrackDBInfo:
 
 
 @dataclass
+class InternalCommand:
+    """Type-safe internal command protocol for UI -> command handler communication."""
+    action: str  # Command action type
+    data: dict[str, Any] = field(default_factory=dict)  # Command data
+
+
+@dataclass
 class PlaylistInfo:
     """Active playlist information."""
     id: Optional[int] = None
