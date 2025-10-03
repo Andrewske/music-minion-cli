@@ -177,20 +177,57 @@ def _handle_playlist_selection(ctx: AppContext, ui_state: UIState, playlist_name
         playlist_tracks = playlists.get_playlist_tracks(pl['id'])
 
         if playlist_tracks:
-            # Convert first track to library.Track and play
-            first_track = database.db_track_to_library_track(playlist_tracks[0])
+            # Import play_track and helpers from playback commands
+            from music_minion.commands.playback import play_track, get_available_tracks
+            from music_minion.domain import library
 
-            # Import play_track from playback commands
-            from music_minion.commands.playback import play_track
+            # Check shuffle mode to determine which track to play
+            shuffle_enabled = playback.get_shuffle_mode()
 
-            # Play the first track
-            ctx, _ = play_track(ctx, first_track, playlist_position=0)
+            selected_track = None
+            track_position = None
 
-            # Show feedback
-            artist = first_track.artist or 'Unknown'
-            title = first_track.title or 'Unknown'
-            ui_state = add_history_line(ui_state, f"🎵 Now playing: {artist} - {title}", 'white')
-            ui_state = set_feedback(ui_state, f"✓ Playing {playlist_name}", "✓")
+            if shuffle_enabled:
+                # Shuffle mode: Pick random track from available (non-archived) tracks
+                available_tracks = get_available_tracks(ctx)
+                if available_tracks:
+                    # Filter to only tracks in this playlist
+                    playlist_paths = {t['file_path'] for t in playlist_tracks}
+                    playlist_available = [t for t in available_tracks if t.file_path in playlist_paths]
+
+                    if playlist_available:
+                        selected_track = library.get_random_track(playlist_available)
+                        # Don't set position for shuffle mode
+                        track_position = None
+            else:
+                # Sequential mode: Check for saved position, otherwise use first track
+                saved_position = playback.get_playlist_position(pl['id'])
+                if saved_position:
+                    track_id, position = saved_position
+                    # Find the saved track in playlist
+                    for i, t in enumerate(playlist_tracks):
+                        if t['id'] == track_id:
+                            selected_track = database.db_track_to_library_track(t)
+                            track_position = i
+                            break
+
+                # If no saved position or track not found, use first track
+                if selected_track is None:
+                    selected_track = database.db_track_to_library_track(playlist_tracks[0])
+                    track_position = 0
+
+            # Play the selected track
+            if selected_track:
+                ctx, _ = play_track(ctx, selected_track, playlist_position=track_position)
+
+                # Show feedback
+                artist = selected_track.artist or 'Unknown'
+                title = selected_track.title or 'Unknown'
+                mode_indicator = "🔀" if shuffle_enabled else "▶️"
+                ui_state = add_history_line(ui_state, f"{mode_indicator} Now playing: {artist} - {title}", 'white')
+                ui_state = set_feedback(ui_state, f"✓ Playing {playlist_name}", "✓")
+            else:
+                ui_state = add_history_line(ui_state, f"⚠️  No available tracks in playlist", 'yellow')
         else:
             ui_state = add_history_line(ui_state, f"⚠️  Playlist is empty", 'yellow')
     else:

@@ -643,10 +643,14 @@ def handle_playlist_active_command(ctx: AppContext, args: List[str]) -> Tuple[Ap
             print(f"✅ Set active playlist: {name}")
             print(f"   Now playing only tracks from this playlist")
 
-            # Check for saved position and offer to resume
+            # Detect blessed UI mode (stdout redirected)
+            is_blessed_mode = not hasattr(sys.stdout, 'isatty') or not sys.stdout.isatty()
+
+            # Check for saved position and shuffle mode
             saved_position = playback.get_playlist_position(pl['id'])
             shuffle_enabled = playback.get_shuffle_mode()
 
+            # Sequential mode: offer to resume from saved position
             if saved_position and not shuffle_enabled:
                 track_id, position = saved_position
                 # Get playlist tracks to find the saved track
@@ -663,7 +667,12 @@ def handle_playlist_active_command(ctx: AppContext, args: List[str]) -> Tuple[Ap
                     print(f"\n💾 Last position: Track {position + 1}/{len(playlist_tracks)}")
                     print(f"   {saved_track.get('artist', 'Unknown')} - {saved_track.get('title', 'Unknown')}")
 
-                    response = input("   Resume from this position? [Y/n]: ").strip().lower()
+                    # In blessed mode, auto-resume; otherwise prompt
+                    if is_blessed_mode:
+                        response = 'y'  # Auto-resume in blessed UI
+                    else:
+                        response = input("   Resume from this position? [Y/n]: ").strip().lower()
+
                     if response != 'n':
                         # Find the Track object from music_tracks
                         for track in ctx.music_tracks:
@@ -673,6 +682,34 @@ def handle_playlist_active_command(ctx: AppContext, args: List[str]) -> Tuple[Ap
                                 from . import playback as playback_commands
                                 ctx, _ = playback_commands.play_track(ctx, track, position)
                                 break
+
+            # Shuffle mode: offer to start with random track
+            elif shuffle_enabled:
+                # Import playback commands for helper functions
+                from . import playback as playback_commands
+
+                # Get available tracks from this playlist (excluding archived)
+                available_tracks = playback_commands.get_available_tracks(ctx)
+
+                if available_tracks:
+                    print(f"\n🔀 Shuffle mode enabled")
+                    print(f"   {len(available_tracks)} tracks available")
+
+                    # In blessed mode, auto-start; otherwise prompt
+                    if is_blessed_mode:
+                        response = 'y'  # Auto-start in blessed UI
+                    else:
+                        response = input("   Start playback with random track? [Y/n]: ").strip().lower()
+
+                    if response != 'n':
+                        # Pick a random track from available
+                        random_track = library.get_random_track(available_tracks)
+                        if random_track:
+                            print("▶️  Starting shuffle playback...")
+                            ctx, _ = playback_commands.play_track(ctx, random_track)
+                else:
+                    print("\n⚠️  No tracks available in this playlist (all may be archived)")
+
         else:
             print(f"❌ Failed to set active playlist")
         return ctx, True
