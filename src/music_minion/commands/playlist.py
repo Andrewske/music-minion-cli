@@ -560,7 +560,7 @@ def handle_playlist_rename_command(ctx: AppContext, args: List[str]) -> Tuple[Ap
 
 
 def handle_playlist_show_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
-    """Handle playlist show command - show playlist details and tracks."""
+    """Handle playlist show command - signal UI to show track viewer."""
     if not args:
         print("Error: Please specify playlist name")
         print("Usage: playlist show <name>")
@@ -573,37 +573,12 @@ def handle_playlist_show_command(ctx: AppContext, args: List[str]) -> Tuple[AppC
         print(f"❌ Playlist '{name}' not found")
         return ctx, True
 
-    try:
-        tracks = playlists.get_playlist_tracks(pl['id'])
-
-        print(f"\n📋 Playlist: {pl['name']}")
-        print("=" * 60)
-        print(f"Type: {pl['type']}")
-        if pl['description']:
-            print(f"Description: {pl['description']}")
-        print(f"Created: {pl['created_at']}")
-        print(f"Updated: {pl['updated_at']}")
-        print(f"Tracks: {len(tracks)}")
-        print()
-
-        if not tracks:
-            print("No tracks in this playlist")
-            if pl['type'] == 'manual':
-                print(f"Add tracks with: add \"{name}\"")
-        else:
-            print("Tracks:")
-            for i, track in enumerate(tracks, 1):
-                artist = track.get('artist') or 'Unknown'
-                title = track.get('title') or 'Unknown'
-                album = track.get('album', '')
-                print(f"  {i}. {artist} - {title}")
-                if album:
-                    print(f"     Album: {album}")
-
-        return ctx, True
-    except Exception as e:
-        print(f"❌ Error showing playlist: {e}")
-        return ctx, True
+    # Signal UI to show track viewer
+    ctx = ctx.with_ui_action({
+        'type': 'show_track_viewer',
+        'playlist_name': name
+    })
+    return ctx, True
 
 
 def handle_playlist_active_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:

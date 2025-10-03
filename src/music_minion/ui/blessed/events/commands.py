@@ -3,7 +3,16 @@
 import io
 from contextlib import redirect_stdout, redirect_stderr
 from music_minion.context import AppContext
-from ..state import UIState, add_history_line, set_feedback, add_command_to_history, show_playlist_palette, start_wizard
+from ..state import (
+    UIState,
+    add_history_line,
+    set_feedback,
+    add_command_to_history,
+    show_playlist_palette,
+    start_wizard,
+    show_track_viewer,
+    hide_track_viewer
+)
 from ..components.palette import load_playlist_items
 
 
@@ -60,6 +69,28 @@ def execute_command(ctx: AppContext, ui_state: UIState, command_line: str) -> tu
     # Special case: Save wizard playlist
     if command == '__SAVE_WIZARD_PLAYLIST__':
         ctx, ui_state = _handle_wizard_save(ctx, ui_state)
+        return ctx, ui_state, False
+
+    # Special case: Show track viewer
+    if command == '__SHOW_TRACK_VIEWER__':
+        playlist_name = ' '.join(args)
+        ctx, ui_state = _handle_show_track_viewer(ctx, ui_state, playlist_name)
+        return ctx, ui_state, False
+
+    # Special case: Play track from viewer
+    if command == '__PLAY_TRACK_FROM_VIEWER__':
+        if len(args) >= 2:
+            playlist_id = int(args[0])
+            track_index = int(args[1])
+            ctx, ui_state = _handle_play_track_from_viewer(ctx, ui_state, playlist_id, track_index)
+        return ctx, ui_state, False
+
+    # Special case: Remove track from playlist
+    if command == '__REMOVE_TRACK_FROM_PLAYLIST__':
+        if len(args) >= 2:
+            track_id = int(args[0])
+            playlist_name = ' '.join(args[1:])
+            ctx, ui_state = _handle_remove_track_from_playlist(ctx, ui_state, track_id, playlist_name)
         return ctx, ui_state, False
 
     # Add command to history display
@@ -139,6 +170,11 @@ def _process_ui_action(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, 
         wizard_type = action.get('wizard_type', 'smart_playlist')
         wizard_data = action.get('wizard_data', {})
         ui_state = start_wizard(ui_state, wizard_type, wizard_data)
+
+    elif action['type'] == 'show_track_viewer':
+        # Show track viewer for playlist
+        playlist_name = action.get('playlist_name', '')
+        ctx, ui_state = _handle_show_track_viewer(ctx, ui_state, playlist_name)
 
     # Clear the ui_action after processing
     ctx = ctx.with_ui_action(None)
@@ -348,5 +384,138 @@ def _handle_wizard_save(ctx: AppContext, ui_state: UIState) -> tuple[AppContext,
 
     # Close wizard
     ui_state = cancel_wizard(ui_state)
+
+    return ctx, ui_state
+
+
+def _handle_show_track_viewer(ctx: AppContext, ui_state: UIState, playlist_name: str) -> tuple[AppContext, UIState]:
+    """
+    Handle showing track viewer for a playlist.
+
+    Args:
+        ctx: Application context
+        ui_state: Current UI state
+        playlist_name: Name of playlist to view
+
+    Returns:
+        Tuple of (updated AppContext, updated UIState)
+    """
+    from music_minion.domain import playlists
+
+    # Get playlist by name
+    pl = playlists.get_playlist_by_name(playlist_name)
+    if not pl:
+        ui_state = add_history_line(ui_state, f"❌ Playlist '{playlist_name}' not found", 'red')
+        return ctx, ui_state
+
+    # Get playlist tracks
+    tracks = playlists.get_playlist_tracks(pl['id'])
+
+    # Show track viewer
+    ui_state = show_track_viewer(
+        ui_state,
+        playlist_id=pl['id'],
+        playlist_name=pl['name'],
+        playlist_type=pl['type'],
+        tracks=tracks
+    )
+
+    return ctx, ui_state
+
+
+def _handle_play_track_from_viewer(ctx: AppContext, ui_state: UIState, playlist_id: int, track_index: int) -> tuple[AppContext, UIState]:
+    """
+    Handle playing a track from the track viewer.
+
+    Args:
+        ctx: Application context
+        ui_state: Current UI state
+        playlist_id: ID of playlist containing track
+        track_index: Index of track in viewer
+
+    Returns:
+        Tuple of (updated AppContext, updated UIState)
+    """
+    from music_minion.domain import playlists
+    from music_minion.core import database
+    from music_minion.commands.playback import play_track
+
+    # Get playlist tracks
+    tracks = playlists.get_playlist_tracks(playlist_id)
+
+    if track_index >= len(tracks):
+        ui_state = add_history_line(ui_state, f"❌ Invalid track index", 'red')
+        return ctx, ui_state
+
+    # Get the selected track
+    selected_track = tracks[track_index]
+
+    # Convert to library track format
+    library_track = database.db_track_to_library_track(selected_track)
+
+    # Play the track with position for sequential mode
+    ctx, _ = play_track(ctx, library_track, playlist_position=track_index)
+
+    # Add feedback
+    artist = library_track.artist or 'Unknown'
+    title = library_track.title or 'Unknown'
+    ui_state = add_history_line(ui_state, f"▶️  Now playing: {artist} - {title}", 'white')
+    ui_state = set_feedback(ui_state, f"✓ Playing from viewer", "✓")
+
+    # Keep viewer open
+    return ctx, ui_state
+
+
+def _handle_remove_track_from_playlist(ctx: AppContext, ui_state: UIState, track_id: int, playlist_name: str) -> tuple[AppContext, UIState]:
+    """
+    Handle removing a track from a manual playlist.
+
+    Args:
+        ctx: Application context
+        ui_state: Current UI state
+        track_id: ID of track to remove
+        playlist_name: Name of playlist
+
+    Returns:
+        Tuple of (updated AppContext, updated UIState)
+    """
+    from music_minion.domain import playlists
+    from dataclasses import replace
+
+    # Get playlist by name
+    pl = playlists.get_playlist_by_name(playlist_name)
+    if not pl:
+        ui_state = add_history_line(ui_state, f"❌ Playlist '{playlist_name}' not found", 'red')
+        ui_state = hide_track_viewer(ui_state)
+        return ctx, ui_state
+
+    # Remove track from playlist
+    try:
+        playlists.remove_track_from_playlist(pl['id'], track_id)
+        ui_state = add_history_line(ui_state, f"✅ Removed track from playlist", 'green')
+        ui_state = set_feedback(ui_state, f"✓ Removed from {playlist_name}", "✓")
+
+        # Refresh track list in viewer
+        tracks = playlists.get_playlist_tracks(pl['id'])
+
+        if not tracks:
+            # No tracks left, close viewer
+            ui_state = hide_track_viewer(ui_state)
+            ui_state = add_history_line(ui_state, "Playlist is now empty", 'white')
+        else:
+            # Update viewer with new track list
+            # Adjust selection if needed
+            new_selected = min(ui_state.track_viewer_selected, len(tracks) - 1)
+            ui_state = show_track_viewer(
+                ui_state,
+                playlist_id=pl['id'],
+                playlist_name=pl['name'],
+                playlist_type=pl['type'],
+                tracks=tracks
+            )
+            ui_state = replace(ui_state, track_viewer_selected=new_selected)
+
+    except Exception as e:
+        ui_state = add_history_line(ui_state, f"❌ Error removing track: {e}", 'red')
 
     return ctx, ui_state

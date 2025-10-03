@@ -150,11 +150,18 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
 
     # Footer help text - confirmation or normal mode
     if line_num < height:
-        if state.confirmation_active and state.confirmation_type == 'delete_playlist':
-            # Show confirmation prompt
-            playlist_name = state.confirmation_data.get('playlist_name', 'Unknown')
-            footer = f"   Delete '{playlist_name}'? [Enter/Y]es / [N]o"
-            sys.stdout.write(term.move_xy(0, y + line_num) + term.yellow(footer))
+        if state.confirmation_active:
+            if state.confirmation_type == 'delete_playlist':
+                # Show playlist deletion confirmation
+                playlist_name = state.confirmation_data.get('playlist_name', 'Unknown')
+                footer = f"   Delete '{playlist_name}'? [Enter/Y]es / [N]o"
+                sys.stdout.write(term.move_xy(0, y + line_num) + term.yellow(footer))
+            elif state.confirmation_type == 'remove_track_from_playlist':
+                # Show track removal confirmation
+                track_title = state.confirmation_data.get('track_title', 'Unknown')
+                track_artist = state.confirmation_data.get('track_artist', 'Unknown')
+                footer = f"   Remove '{track_artist} - {track_title}'? [Enter/Y]es / [N]o"
+                sys.stdout.write(term.move_xy(0, y + line_num) + term.yellow(footer))
         else:
             # Normal footer with scroll indicator and help text
             total_items = len(filtered_commands)

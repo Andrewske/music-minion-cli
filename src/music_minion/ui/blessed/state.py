@@ -89,6 +89,15 @@ class UIState:
     wizard_selected: int = 0  # Selected option index (for arrow key navigation)
     wizard_options: list[str] = field(default_factory=list)  # Available options for current step
 
+    # Track viewer state (for viewing and interacting with playlist tracks)
+    track_viewer_visible: bool = False
+    track_viewer_playlist_id: Optional[int] = None
+    track_viewer_playlist_name: str = ""
+    track_viewer_playlist_type: str = "manual"
+    track_viewer_tracks: list[dict[str, Any]] = field(default_factory=list)
+    track_viewer_selected: int = 0
+    track_viewer_scroll: int = 0
+
     # UI feedback (toast notifications)
     feedback_message: Optional[str] = None
     feedback_time: Optional[float] = None
@@ -478,3 +487,85 @@ def cancel_wizard(state: UIState) -> UIState:
         input_text='',
         cursor_pos=0
     )
+
+
+def show_track_viewer(state: UIState, playlist_id: int, playlist_name: str, playlist_type: str, tracks: list[dict[str, Any]]) -> UIState:
+    """
+    Show track viewer with playlist tracks.
+
+    Args:
+        state: Current UI state
+        playlist_id: ID of playlist to view
+        playlist_name: Name of playlist
+        playlist_type: Type of playlist ('manual' or 'smart')
+        tracks: List of track dictionaries
+
+    Returns:
+        Updated state with track viewer visible
+    """
+    return replace(
+        state,
+        track_viewer_visible=True,
+        track_viewer_playlist_id=playlist_id,
+        track_viewer_playlist_name=playlist_name,
+        track_viewer_playlist_type=playlist_type,
+        track_viewer_tracks=tracks,
+        track_viewer_selected=0,
+        track_viewer_scroll=0,
+        palette_visible=False,  # Hide palette when viewer opens
+        input_text='',
+        cursor_pos=0
+    )
+
+
+def hide_track_viewer(state: UIState) -> UIState:
+    """
+    Hide track viewer and reset state.
+
+    Args:
+        state: Current UI state
+
+    Returns:
+        Updated state with track viewer hidden
+    """
+    return replace(
+        state,
+        track_viewer_visible=False,
+        track_viewer_playlist_id=None,
+        track_viewer_playlist_name='',
+        track_viewer_playlist_type='manual',
+        track_viewer_tracks=[],
+        track_viewer_selected=0,
+        track_viewer_scroll=0
+    )
+
+
+def move_track_viewer_selection(state: UIState, delta: int, visible_items: int = 10) -> UIState:
+    """
+    Move track viewer selection up or down with scroll adjustment.
+
+    Args:
+        state: Current UI state
+        delta: Direction and amount to move (-1 for up, 1 for down)
+        visible_items: Number of items visible in viewport
+
+    Returns:
+        Updated state with new selection and scroll position
+    """
+    if not state.track_viewer_tracks:
+        return state
+
+    new_selected = (state.track_viewer_selected + delta) % len(state.track_viewer_tracks)
+
+    # Adjust scroll to keep selection visible
+    new_scroll = state.track_viewer_scroll
+
+    # Scroll down if selection goes below visible area
+    if new_selected >= state.track_viewer_scroll + visible_items:
+        new_scroll = new_selected - visible_items + 1
+
+    # Scroll up if selection goes above visible area
+    elif new_selected < state.track_viewer_scroll:
+        new_scroll = new_selected
+
+    return replace(state, track_viewer_selected=new_selected, track_viewer_scroll=new_scroll)

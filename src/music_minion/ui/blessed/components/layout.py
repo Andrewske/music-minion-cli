@@ -17,15 +17,21 @@ def calculate_layout(term: Terminal, state: UIState, dashboard_height: int) -> d
         Dictionary with region positions and heights
     """
     input_height = 3
-    # Allocate height for palette OR wizard (they're mutually exclusive)
-    palette_height = 22 if (state.palette_visible or state.wizard_active) else 0
+    # Allocate height for palette, wizard, or track viewer (mutually exclusive)
+    overlay_height = 0
+    if state.palette_visible or state.wizard_active:
+        overlay_height = 22
+    elif state.track_viewer_visible:
+        overlay_height = 22
 
     return {
         'dashboard_y': 0,
         'dashboard_height': dashboard_height,
         'history_y': dashboard_height,
-        'history_height': term.height - dashboard_height - input_height - palette_height,
-        'input_y': term.height - input_height - palette_height,
-        'palette_y': term.height - palette_height,
-        'palette_height': palette_height,
+        'history_height': term.height - dashboard_height - input_height - overlay_height,
+        'input_y': term.height - input_height - overlay_height,
+        'palette_y': term.height - overlay_height,
+        'palette_height': overlay_height,
+        'track_viewer_y': term.height - overlay_height,
+        'track_viewer_height': overlay_height,
     }
