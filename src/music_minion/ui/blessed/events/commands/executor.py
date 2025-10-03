@@ -4,7 +4,7 @@ import io
 from dataclasses import replace
 from contextlib import redirect_stdout, redirect_stderr
 from music_minion.context import AppContext
-from ...state import (
+from music_minion.ui.blessed.state import (
     UIState,
     InternalCommand,
     add_history_line,
@@ -124,8 +124,8 @@ def execute_command(ctx: AppContext, ui_state: UIState, command_line: str | Inte
     # Execute command through router with captured output
     try:
         with redirect_stdout(output_buffer), redirect_stderr(error_buffer):
-            from music_minion.router import route_command
-            ctx, should_continue = route_command(ctx, command_line)
+            from music_minion.router import handle_command
+            ctx, should_continue = handle_command(ctx, command, args)
 
             if not should_continue:
                 # Command requested exit (quit/exit command)
@@ -167,14 +167,14 @@ def _process_ui_action(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, 
     Returns:
         Tuple of (updated AppContext, updated UIState)
     """
-    from ....components.palette import load_playlist_items
+    from music_minion.ui.blessed.components.palette import load_playlist_items
+    from music_minion.ui.blessed.state import show_playlist_palette
 
     action = ctx.ui_action
 
     if action['type'] == 'show_playlist_palette':
         # Show playlist palette with loaded items
-        items = load_playlist_items(ctx)
-        from ...state import show_playlist_palette
+        items = load_playlist_items()
         ui_state = show_playlist_palette(ui_state, items)
 
     elif action['type'] == 'start_wizard':

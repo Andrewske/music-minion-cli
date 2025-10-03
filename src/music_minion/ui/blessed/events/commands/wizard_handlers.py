@@ -2,7 +2,7 @@
 
 import uuid
 from music_minion.context import AppContext
-from ..state import (
+from music_minion.ui.blessed.state import (
     UIState,
     add_history_line,
     set_feedback,

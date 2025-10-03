@@ -1,13 +1,13 @@
 """Playlist-related command handlers."""
 
 from music_minion.context import AppContext
-from ..state import (
+from music_minion.ui.blessed.state import (
     UIState,
     add_history_line,
     set_feedback,
     show_playlist_palette,
 )
-from ...components.palette import load_playlist_items
+from music_minion.ui.blessed.components.palette import load_playlist_items
 
 
 def handle_playlist_selection(ctx: AppContext, ui_state: UIState, playlist_name: str) -> tuple[AppContext, UIState]:
