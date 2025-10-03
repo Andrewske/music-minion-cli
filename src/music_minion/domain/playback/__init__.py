@@ -27,6 +27,7 @@ from .player import (
     update_player_status,
     get_player_status,
     get_progress_info,
+    is_track_finished,
     format_time,
 )
 
@@ -61,6 +62,7 @@ __all__ = [
     "update_player_status",
     "get_player_status",
     "get_progress_info",
+    "is_track_finished",
     "format_time",
     # State
     "get_shuffle_mode",

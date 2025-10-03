@@ -42,6 +42,8 @@ def poll_player_state(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, U
     """
     Poll player state and update both AppContext and UI state.
 
+    Automatically advances to the next track when the current track finishes.
+
     Args:
         ctx: Application context with player state
         ui_state: UI state with cached display data
@@ -52,6 +54,7 @@ def poll_player_state(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, U
     # Import modules (lazy import to avoid circular deps)
     from ...core import database
     from ...domain.playback import player
+    from ...commands.playback import get_available_tracks, get_next_track, play_track
 
     # Get player status
     try:
@@ -65,6 +68,33 @@ def poll_player_state(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, U
             duration=status.get('duration', 0.0),
         )
         ctx = ctx.with_player_state(new_player_state)
+
+        # Check if track has finished and auto-advance
+        track_changed = False
+        if player.is_track_finished(ctx.player_state) and ctx.music_tracks:
+            # Get available tracks (excluding archived ones)
+            available_tracks = get_available_tracks(ctx)
+
+            if available_tracks:
+                # Get next track based on shuffle mode and active playlist
+                result = get_next_track(ctx, available_tracks)
+
+                if result:
+                    track, position = result
+                    # Play next track silently (no print in UI mode)
+                    ctx, _ = play_track(ctx, track, position)
+                    track_changed = True
+
+        # If track changed, re-query player status to get new track info
+        if track_changed:
+            status = player.get_player_status(ctx.player_state)
+            new_player_state = ctx.player_state._replace(
+                current_track=status.get('file'),
+                is_playing=status.get('playing', False),
+                current_position=status.get('position', 0.0),
+                duration=status.get('duration', 0.0),
+            )
+            ctx = ctx.with_player_state(new_player_state)
 
         # If we have a current track, fetch metadata for UI display
         current_file = status.get('file')

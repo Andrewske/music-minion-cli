@@ -387,11 +387,40 @@ def get_progress_info(state: PlayerState) -> Tuple[float, float, float]:
     return position, duration, percent
 
 
+def is_track_finished(state: PlayerState) -> bool:
+    """
+    Check if the current track has finished playing.
+
+    Args:
+        state: Current player state
+
+    Returns:
+        True if track has ended, False otherwise
+    """
+    if not is_mpv_running(state):
+        return False
+
+    # Check MPV's eof-reached property (most reliable)
+    eof = get_mpv_property(state.socket_path, 'eof-reached')
+    if eof is True:
+        return True
+
+    # Fallback: Check if position is at/near end of duration
+    # Use a 0.5 second threshold to catch tracks that are effectively done
+    position = get_mpv_property(state.socket_path, 'time-pos') or 0.0
+    duration = get_mpv_property(state.socket_path, 'duration') or 0.0
+
+    if duration > 0 and position >= duration - 0.5:
+        return True
+
+    return False
+
+
 def format_time(seconds: float) -> str:
     """Format time in seconds to MM:SS format."""
     if seconds < 0:
         return "00:00"
-    
+
     minutes = int(seconds // 60)
     secs = int(seconds % 60)
     return f"{minutes:02d}:{secs:02d}"

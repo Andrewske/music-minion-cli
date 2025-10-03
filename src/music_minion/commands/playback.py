@@ -225,26 +225,20 @@ def handle_resume_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     return ctx, True
 
 
-def handle_skip_command(ctx: AppContext) -> Tuple[AppContext, bool]:
-    """Handle skip command - play next track (sequential or random based on shuffle mode).
+def get_next_track(ctx: AppContext, available_tracks: List[library.Track]) -> Optional[Tuple[library.Track, Optional[int]]]:
+    """
+    Get the next track to play based on shuffle mode and active playlist.
 
     Args:
         ctx: Application context
+        available_tracks: List of available (non-archived) tracks
 
     Returns:
-        (updated_context, should_continue)
+        Tuple of (track, playlist_position) if found, None otherwise
+        playlist_position is the 0-based index in the active playlist (or None)
     """
-    # Ensure library is loaded
-    if not ctx.music_tracks:
-        print("No music library loaded. Please run 'scan' command first.")
-        return ctx, True
-
-    # Get available tracks (excluding archived ones)
-    available_tracks = get_available_tracks(ctx)
-
     if not available_tracks:
-        print("No more tracks to play (all may be archived)")
-        return ctx, True
+        return None
 
     # Check shuffle mode
     shuffle_enabled = playback.get_shuffle_mode()
@@ -281,24 +275,22 @@ def handle_skip_command(ctx: AppContext) -> Tuple[AppContext, bool]:
                     continue
                 else:
                     # Empty playlist or other error
-                    break
+                    return None
 
             # Check if track is available (not archived) using O(1) dict lookup
             # Also verify file still exists on disk
             next_track = available_tracks_dict.get(next_db_track['file_path'])
             if next_track and Path(next_track.file_path).exists():
-                # Found non-archived track - get its position for optimization
+                # Found non-archived track - get its position
                 position = playback.get_track_position_in_playlist(playlist_tracks, next_db_track['id'])
-                print("⏭ Next track (sequential)...")
-                return play_track(ctx, next_track, position)
+                return (next_track, position)
 
             # Track is archived, continue to next
             current_track_id = next_db_track['id']
             attempts += 1
 
         # All tracks in playlist are archived
-        print("No non-archived tracks remaining in playlist")
-        return ctx, True
+        return None
 
     # Shuffle mode or no active playlist: random selection
     # Remove current track from options if possible
@@ -308,11 +300,52 @@ def handle_skip_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     if available_tracks:
         track = library.get_random_track(available_tracks)
         if track:
-            print("⏭ Skipping to next track...")
-            return play_track(ctx, track)
+            return (track, None)
 
-    print("No more tracks to play (all may be archived)")
-    return ctx, True
+    return None
+
+
+def handle_skip_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+    """Handle skip command - play next track (sequential or random based on shuffle mode).
+
+    Args:
+        ctx: Application context
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    # Ensure library is loaded
+    if not ctx.music_tracks:
+        print("No music library loaded. Please run 'scan' command first.")
+        return ctx, True
+
+    # Get available tracks (excluding archived ones)
+    available_tracks = get_available_tracks(ctx)
+
+    if not available_tracks:
+        print("No more tracks to play (all may be archived)")
+        return ctx, True
+
+    # Get next track
+    result = get_next_track(ctx, available_tracks)
+
+    if result:
+        track, position = result
+        # Check shuffle mode for user message
+        shuffle_enabled = playback.get_shuffle_mode()
+        if shuffle_enabled:
+            print("⏭ Skipping to next track...")
+        else:
+            print("⏭ Next track (sequential)...")
+        return play_track(ctx, track, position)
+    else:
+        # No tracks available
+        active = playlists.get_active_playlist()
+        if active and not playback.get_shuffle_mode():
+            print("No non-archived tracks remaining in playlist")
+        else:
+            print("No more tracks to play (all may be archived)")
+        return ctx, True
 
 
 def handle_shuffle_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
