@@ -14,6 +14,8 @@ Music Minion CLI is a smart music player that goes beyond simple ratings. Instea
 - **Temporal Patterns**: Track when you love vs. skip songs (morning energy vs. evening chill)
 - **Preference Evolution**: See how your relationship with music changes over time
 - **Memory Palace**: Link songs to life moments through contextual notes
+- **AI Review System**: Conversational tag feedback with learning accumulation
+- **Prompt Enhancement**: AI-powered continuous improvement of tagging prompts
 
 ### ⭐ **Interactive Rating System**
 - **Archive**: Remove from rotation permanently
@@ -33,6 +35,12 @@ Music Minion CLI is a smart music player that goes beyond simple ratings. Instea
 - Intelligent shuffling based on preferences
 - Real-time progress tracking
 - Emergency controls (`killall` command)
+
+### 🎨 **Advanced Features**
+- **Smart Playlists**: Filter-based playlists with AI natural language parsing
+- **Track Viewer**: Interactive UI for browsing playlist tracks
+- **Hot-Reload**: Development mode with instant code reloading (`--dev`)
+- **Sync System**: Bidirectional metadata sync (Linux ↔ Windows/Serato)
 
 ## 🚀 Quick Start
 
@@ -186,14 +194,21 @@ history_length = 10               # Recent songs to display
 ```
 music-minion-cli/
 ├── src/music_minion/
-│   ├── main.py          # Interactive shell and command handling
-│   ├── player.py        # MPV integration and playback control
-│   ├── library.py       # Music scanning and metadata extraction
-│   ├── database.py      # SQLite operations and data persistence
-│   ├── config.py        # Configuration management
-│   └── __init__.py      # Package initialization
-├── pyproject.toml       # Project configuration and dependencies
-├── CLAUDE.md           # AI assistant instructions
+│   ├── main.py          # Entry point and interactive loop
+│   ├── cli.py           # CLI entry point
+│   ├── core/            # Core infrastructure (config, database, console)
+│   ├── domain/          # Business logic (ai, library, playback, playlists, sync)
+│   ├── commands/        # Command handlers (functional)
+│   ├── ui/              # User interface (blessed-based)
+│   └── utils/           # Utilities (parsers, autocomplete)
+├── docs/                # Documentation
+│   ├── ai-tag-review-system.md
+│   ├── hot-reload-usage.md
+│   ├── playlist-system-plan.md
+│   └── incomplete-items.md
+├── pyproject.toml       # Project configuration
+├── CLAUDE.md           # Development guide
+├── ai-learnings.md     # Patterns and best practices
 └── README.md           # This file
 ```
 
@@ -202,8 +217,10 @@ music-minion-cli/
 - **Audio**: MPV with JSON IPC for cross-platform playback
 - **Metadata**: Mutagen library for MP3/M4A tag reading/writing
 - **Database**: SQLite for ratings, context, and temporal data
-- **UI**: Rich library for terminal formatting and progress bars
+- **UI**: blessed for full-screen terminal interface with functional patterns
 - **Config**: Python's built-in tomllib for TOML configuration
+- **AI**: OpenAI API for intelligent tagging and learning
+- **Dev Tools**: watchdog for hot-reload during development
 
 ### Database Schema
 
@@ -228,6 +245,9 @@ uv sync --dev
 # Install in development mode
 uv pip install -e .
 
+# Start with hot-reload for development
+music-minion --dev
+
 # Run tests (when available)
 pytest
 
@@ -235,6 +255,14 @@ pytest
 ruff check src/
 ruff format src/
 ```
+
+### Development Resources
+
+- **[CLAUDE.md](CLAUDE.md)** - Comprehensive development guide
+- **[ai-learnings.md](ai-learnings.md)** - Patterns and best practices
+- **[docs/hot-reload-usage.md](docs/hot-reload-usage.md)** - Hot-reload development mode
+- **[docs/ai-tag-review-system.md](docs/ai-tag-review-system.md)** - AI review system
+- **[docs/playlist-system-plan.md](docs/playlist-system-plan.md)** - Implementation history
 
 ### Code Style Guidelines
 
@@ -302,18 +330,32 @@ Logs are written to `~/.local/share/music-minion/logs/`
 
 ## 🗺️ Roadmap
 
-### Near Term
-- [ ] AI-powered note processing and tag extraction
-- [ ] Web UI for mobile control
-- [ ] Playlist export to various formats
-- [ ] Advanced temporal analytics and visualizations
+### ✅ Completed (Phases 1-7)
+- ✅ Core playlist infrastructure (manual & smart playlists)
+- ✅ AI-powered natural language playlist parsing
+- ✅ Import/export (M3U, Serato .crate)
+- ✅ Bidirectional metadata sync
+- ✅ AI tag review with conversational feedback
+- ✅ Prompt enhancement and learning accumulation
+- ✅ Hot-reload development mode
+- ✅ Track viewer and smart playlist wizard
+
+### Phase 8: Polish & Testing (Current)
+- [ ] File watching for real-time sync
+- [ ] Conflict detection UI
+- [ ] Comprehensive test suite
+- [ ] Performance monitoring
+- [ ] Documentation improvements
 
 ### Future Vision
+- [ ] Web UI for mobile control
 - [ ] Global hotkey support (rate from anywhere)
 - [ ] USB button controller integration
 - [ ] Spotify/streaming service integration
+- [ ] Advanced temporal analytics and visualizations
 - [ ] Social sharing of musical discoveries
-- [ ] Health/productivity correlation tracking
+
+See [docs/incomplete-items.md](docs/incomplete-items.md) for detailed roadmap.
 
 ## 📄 License
 

@@ -1243,6 +1243,434 @@ def handle_key(state, key) -> tuple[UIState, str | None]:
 
 **Learning**: Tuple return allows state updates + optional side effects. `None` means no command to execute.
 
+## AI Review System Patterns (2025-10-03)
+
+### Conversational Tag Feedback Loop
+
+**Pattern**: Interactive conversation mode for tag review
+```python
+def ai_review_loop(term: Terminal, track_id: int, ctx: AppContext) -> None:
+    # Load current tags with reasoning
+    tags = get_track_tags(track_id)
+
+    # Display tags and enter conversation mode
+    conversation_history = []
+
+    while True:
+        user_input = get_user_input(term)
+
+        if user_input == "done":
+            break
+
+        # Add to conversation history
+        conversation_history.append({"role": "user", "content": user_input})
+
+        # Get AI response with tag regeneration
+        response = ai_chat_with_context(conversation_history, track_metadata, tags)
+
+        # Extract new tags from response
+        new_tags = parse_tags_from_response(response)
+
+        # Show preview, ask for confirmation
+        if confirm_tags(term, new_tags):
+            save_tags(track_id, new_tags)
+            break
+```
+
+**Key Elements**:
+- Conversation history maintains context
+- Tags included in every prompt for reference
+- "done" keyword exits conversation
+- Preview before saving changes
+- Extract learnings after successful review
+
+### Learning Extraction and Categorization
+
+**Pattern**: AI extracts structured learnings from conversation
+```python
+def extract_learnings(conversation_history: list) -> dict:
+    prompt = f"""
+    Analyze this conversation and extract learnings:
+
+    Categories:
+    - Rules: Things to never tag
+    - Good Vocabulary: Approved terms and their meanings
+    - Bad Vocabulary: Terms to avoid and why
+    - Genre Guidance: Genre-specific tagging rules
+
+    Return as structured markdown.
+    """
+
+    learnings_md = call_ai(prompt + conversation_history)
+    append_to_learnings_file(learnings_md)
+```
+
+**Learning**: AI is good at categorizing feedback. Provide clear categories and it will structure learnings appropriately.
+
+### Prompt Versioning and Enhancement
+
+**Pattern**: Version control for AI prompts with testing
+```python
+def enhance_prompt(current_prompt: str, learnings: str) -> str:
+    # AI proposes improved prompt
+    proposal = ai_suggest_prompt_improvement(current_prompt, learnings)
+
+    # Test on sample tracks
+    test_tracks = get_random_tracks(3)
+
+    before_results = []
+    after_results = []
+
+    for track in test_tracks:
+        before = analyze_with_prompt(track, current_prompt)
+        after = analyze_with_prompt(track, proposal)
+
+        before_results.append(before)
+        after_results.append(after)
+
+    # Show diff and results
+    display_prompt_diff(current_prompt, proposal)
+    display_test_comparison(before_results, after_results)
+
+    # User confirms
+    if confirm("Accept new prompt?"):
+        save_prompt_version(proposal)
+        return proposal
+
+    return current_prompt
+```
+
+**Key Elements**:
+- Versioned prompts with timestamps
+- Test on real data before adopting
+- Show before/after comparison
+- Preserve history for rollback
+- Active prompt symlink
+
+**Learning**: Always test prompt changes on real data. Theoretical improvements may not work in practice.
+
+### Reasoning Storage Pattern
+
+**Pattern**: Store AI explanations alongside tags
+```python
+# Database schema
+"""
+ALTER TABLE tags ADD COLUMN reasoning TEXT;
+"""
+
+# Usage
+def add_tags_with_reasoning(track_id: int, tags_dict: dict):
+    # tags_dict = {"energetic": "Fast tempo (140 BPM)", ...}
+    for tag, reasoning in tags_dict.items():
+        conn.execute(
+            "INSERT INTO tags (track_id, tag_name, source, reasoning) VALUES (?, ?, ?, ?)",
+            (track_id, tag, 'ai', reasoning)
+        )
+```
+
+**Benefits**:
+- Transparency: User sees why AI chose each tag
+- Debugging: Identify prompt issues from reasoning
+- Learning: Reasoning informs prompt improvements
+- Context: Future AI can see past decisions
+
+**Learning**: Reasoning is critical for iterative improvement. Without it, you can't understand why AI made decisions.
+
+## Hot-Reload Development Patterns (2025-10-03)
+
+### Watchdog-Based File Monitoring
+
+**Pattern**: Background thread monitors code changes
+```python
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+import importlib
+import sys
+
+class CodeReloadHandler(FileSystemEventHandler):
+    def __init__(self, debounce_ms=100):
+        self.last_reload = {}
+        self.debounce_ms = debounce_ms
+
+    def on_modified(self, event):
+        if not event.src_path.endswith('.py'):
+            return
+
+        # Debounce rapid changes
+        now = time.time()
+        if event.src_path in self.last_reload:
+            if now - self.last_reload[event.src_path] < self.debounce_ms / 1000:
+                return
+
+        self.last_reload[event.src_path] = now
+
+        # Reload module
+        reload_module(event.src_path)
+
+def start_hot_reload():
+    observer = Observer()
+    handler = CodeReloadHandler()
+    observer.schedule(handler, 'src/music_minion/', recursive=True)
+    observer.start()
+```
+
+**Key Elements**:
+- Debouncing prevents double-reloads
+- Recursive monitoring of src directory
+- Background thread doesn't block main app
+- Filter for .py files only
+
+### Module Reloading Pattern
+
+**Pattern**: Convert file paths to module names and reload
+```python
+def reload_module(file_path: str):
+    # Convert: src/music_minion/commands/playlist.py
+    # To: music_minion.commands.playlist
+
+    module_name = (
+        file_path
+        .replace('src/', '')
+        .replace('/', '.')
+        .replace('.py', '')
+    )
+
+    if module_name not in sys.modules:
+        return  # Not imported yet, skip
+
+    try:
+        importlib.reload(sys.modules[module_name])
+        print(f"🔄 Reloaded: {Path(file_path).name}")
+    except Exception as e:
+        print(f"❌ Failed to reload {module_name}: {e}")
+```
+
+**Learning**: Only reload modules that are already imported. New files require first-time import via normal command execution.
+
+### State Preservation Pattern
+
+**Pattern**: Preserve critical state across reloads
+```python
+# In main.py - state stored in function scope
+def main():
+    # These persist across module reloads
+    ctx = AppContext(...)
+    terminal = Terminal()
+
+    while True:
+        # Code reloads don't affect ctx or terminal
+        command = get_command()
+
+        # This module might get reloaded mid-execution
+        from music_minion.router import route_command
+
+        # But state persists
+        ctx, should_continue = route_command(ctx, command)
+```
+
+**Learning**: Function-scoped variables in main loop survive module reloads. Global variables in reloaded modules get reset.
+
+## Advanced UI Component Patterns
+
+### Track Viewer Navigation
+
+**Pattern**: Scrollable list with vim-like keybindings
+```python
+@dataclass(frozen=True)
+class TrackViewerState:
+    tracks: List[Track]
+    selected_index: int = 0
+    scroll_offset: int = 0
+    visible_height: int = 20
+
+def handle_track_viewer_key(state: TrackViewerState, key: str) -> TrackViewerState:
+    if key == 'j':  # Down
+        new_index = min(state.selected_index + 1, len(state.tracks) - 1)
+        return move_selection(state, new_index)
+
+    elif key == 'k':  # Up
+        new_index = max(state.selected_index - 1, 0)
+        return move_selection(state, new_index)
+
+    elif key == '\n':  # Enter - play track
+        return state  # Signal to play selected track
+
+    return state
+
+def move_selection(state: TrackViewerState, new_index: int) -> TrackViewerState:
+    # Adjust scroll if selection goes off screen
+    if new_index < state.scroll_offset:
+        scroll_offset = new_index
+    elif new_index >= state.scroll_offset + state.visible_height:
+        scroll_offset = new_index - state.visible_height + 1
+    else:
+        scroll_offset = state.scroll_offset
+
+    return dataclasses.replace(
+        state,
+        selected_index=new_index,
+        scroll_offset=scroll_offset
+    )
+```
+
+**Learning**: Track both selection and scroll position. Auto-scroll when selection moves off-screen.
+
+### Wizard Multi-Step Flow Pattern
+
+**Pattern**: State machine for multi-step processes
+```python
+@dataclass(frozen=True)
+class WizardState:
+    step: int = 0
+    data: dict = field(default_factory=dict)
+    complete: bool = False
+
+def wizard_step_handler(state: WizardState, user_input: str) -> WizardState:
+    if state.step == 0:
+        # Step 1: Get playlist name
+        data = {**state.data, 'name': user_input}
+        return dataclasses.replace(state, step=1, data=data)
+
+    elif state.step == 1:
+        # Step 2: Get field to filter
+        data = {**state.data, 'field': user_input}
+        return dataclasses.replace(state, step=2, data=data)
+
+    # ... more steps
+
+    elif state.step == 5:
+        # Final step
+        return dataclasses.replace(state, complete=True)
+```
+
+**Learning**: State machine pattern works well for wizards. Each step validates and advances. Immutable updates make it easy to add "back" functionality.
+
+### InternalCommand Pattern
+
+**Pattern**: Type-safe UI commands separate from user commands
+```python
+@dataclass(frozen=True)
+class InternalCommand:
+    action: str
+    data: dict = field(default_factory=dict)
+
+# Type-safe constructors
+def show_track_viewer(playlist_id: int) -> InternalCommand:
+    return InternalCommand('show_track_viewer', {'playlist_id': playlist_id})
+
+def close_track_viewer() -> InternalCommand:
+    return InternalCommand('close_track_viewer')
+
+# Handler
+def handle_internal_command(state: UIState, cmd: InternalCommand) -> UIState:
+    if cmd.action == 'show_track_viewer':
+        tracks = load_playlist_tracks(cmd.data['playlist_id'])
+        viewer_state = TrackViewerState(tracks=tracks)
+        return dataclasses.replace(state, track_viewer=viewer_state)
+
+    elif cmd.action == 'close_track_viewer':
+        return dataclasses.replace(state, track_viewer=None)
+```
+
+**Benefits**:
+- Type safety vs string commands
+- Clear API for UI interactions
+- Easy to find all usages (grep for constructor)
+- Self-documenting (function name = purpose)
+
+**Learning**: Internal commands reduce bugs from typos in string literals. Constructor functions provide type safety and discoverability.
+
+### Command History Management
+
+**Pattern**: Circular buffer with arrow key navigation
+```python
+@dataclass(frozen=True)
+class UIState:
+    command_history: List[str] = field(default_factory=list)
+    history_index: int = -1  # -1 = not navigating
+    input_text: str = ""
+    temp_input: str = ""  # Save current input while navigating
+
+def handle_up_arrow(state: UIState) -> UIState:
+    if not state.command_history:
+        return state
+
+    # Save current input if starting navigation
+    if state.history_index == -1:
+        temp_input = state.input_text
+    else:
+        temp_input = state.temp_input
+
+    # Navigate up in history
+    new_index = min(state.history_index + 1, len(state.command_history) - 1)
+    text = state.command_history[-(new_index + 1)]
+
+    return dataclasses.replace(
+        state,
+        history_index=new_index,
+        input_text=text,
+        temp_input=temp_input
+    )
+
+def handle_down_arrow(state: UIState) -> UIState:
+    if state.history_index == -1:
+        return state  # Not navigating
+
+    new_index = state.history_index - 1
+
+    if new_index < 0:
+        # Restore temp input
+        return dataclasses.replace(
+            state,
+            history_index=-1,
+            input_text=state.temp_input,
+            temp_input=""
+        )
+
+    text = state.command_history[-(new_index + 1)]
+    return dataclasses.replace(state, history_index=new_index, input_text=text)
+```
+
+**Learning**: Save current input when starting history navigation so user can get back to it. Use -1 to indicate "not navigating" state.
+
+### Review Handler Event Loop
+
+**Pattern**: Dedicated event loop for AI review conversations
+```python
+def ai_review_event_loop(term: Terminal, ctx: AppContext, track_id: int):
+    # Enter raw mode for single-char input
+    with term.raw():
+        conversation = []
+
+        while True:
+            # Display current state
+            render_conversation(term, conversation)
+
+            # Get user input (full line)
+            user_input = get_line_input(term)
+
+            if user_input.lower() == 'done':
+                break
+
+            # Show thinking indicator
+            print(term.move_xy(0, term.height - 1) + "🤔 Thinking...")
+
+            # Call AI
+            response = ai_chat(conversation, user_input, track_metadata)
+            conversation.append({"role": "assistant", "content": response})
+
+            # Check if AI proposed new tags
+            if has_tag_proposal(response):
+                new_tags = extract_tags(response)
+
+                if confirm_tags(term, new_tags):
+                    save_tags(track_id, new_tags)
+                    extract_and_save_learnings(conversation)
+                    break
+```
+
+**Learning**: Separate event loop for complex interactions. Clean entry/exit with context managers. Visual feedback during AI calls.
+
 ---
 
-**Last Updated**: 2025-09-30 after implementing blessed UI Tasks 1-8
+**Last Updated**: 2025-10-03 after AI review system, hot-reload, track viewer, and wizard implementation

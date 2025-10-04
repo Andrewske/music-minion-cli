@@ -48,6 +48,16 @@ class PlaylistInfo:
 
 
 @dataclass
+class ScanProgress:
+    """Library scan progress information."""
+    is_scanning: bool = False
+    files_scanned: int = 0
+    total_files: int = 0
+    current_file: str = ""
+    phase: str = "scanning"  # 'scanning' or 'database'
+
+
+@dataclass
 class UIState:
     """
     UI-specific state - immutable updates only.
@@ -108,6 +118,9 @@ class UIState:
     # AI Review mode state (conversational tag review)
     review_mode: Optional[str] = None  # None, 'conversation', 'confirm'
     review_data: dict[str, Any] = field(default_factory=dict)  # Track, tags, conversation history
+
+    # Library scan progress
+    scan_progress: ScanProgress = field(default_factory=ScanProgress)
 
     # UI feedback (toast notifications)
     feedback_message: Optional[str] = None
@@ -654,3 +667,59 @@ def exit_review_mode(state: UIState) -> UIState:
         input_text='',
         cursor_pos=0
     )
+
+
+def start_scan(state: UIState, total_files: int) -> UIState:
+    """
+    Start library scan with progress tracking.
+
+    Args:
+        state: Current UI state
+        total_files: Total number of files to scan
+
+    Returns:
+        Updated state with scan started
+    """
+    scan_progress = ScanProgress(
+        is_scanning=True,
+        files_scanned=0,
+        total_files=total_files,
+        current_file="",
+        phase="scanning"
+    )
+    return replace(state, scan_progress=scan_progress)
+
+
+def update_scan_progress(state: UIState, files_scanned: int, current_file: str, phase: str = "scanning") -> UIState:
+    """
+    Update scan progress.
+
+    Args:
+        state: Current UI state
+        files_scanned: Number of files scanned so far
+        current_file: Current file being processed
+        phase: Current phase ('scanning' or 'database')
+
+    Returns:
+        Updated state with progress
+    """
+    scan_progress = replace(
+        state.scan_progress,
+        files_scanned=files_scanned,
+        current_file=current_file,
+        phase=phase
+    )
+    return replace(state, scan_progress=scan_progress)
+
+
+def end_scan(state: UIState) -> UIState:
+    """
+    End library scan.
+
+    Args:
+        state: Current UI state
+
+    Returns:
+        Updated state with scan completed
+    """
+    return replace(state, scan_progress=ScanProgress())

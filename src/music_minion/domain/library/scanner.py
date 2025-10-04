@@ -19,8 +19,17 @@ def is_supported_format(file_path: Path, supported_formats: List[str]) -> bool:
     return file_path.suffix.lower() in supported_formats
 
 
-def scan_directory(directory: Path, config: Config) -> List[Track]:
-    """Scan a directory for music files and extract metadata."""
+def scan_directory(directory: Path, config: Config, progress_callback=None) -> List[Track]:
+    """Scan a directory for music files and extract metadata.
+
+    Args:
+        directory: Directory to scan
+        config: Configuration object
+        progress_callback: Optional callback function(file_path, track) for progress updates
+
+    Returns:
+        List of Track objects
+    """
     tracks = []
 
     try:
@@ -35,6 +44,11 @@ def scan_directory(directory: Path, config: Config) -> List[Track]:
                 try:
                     track = extract_track_metadata(str(file_path))
                     tracks.append(track)
+
+                    # Call progress callback if provided
+                    if progress_callback:
+                        progress_callback(str(file_path), track)
+
                 except Exception as e:
                     print(f"Error processing {file_path}: {e}")
 
@@ -46,8 +60,17 @@ def scan_directory(directory: Path, config: Config) -> List[Track]:
     return tracks
 
 
-def scan_music_library(config: Config, show_progress: bool = True) -> List[Track]:
-    """Scan all configured library paths for music files."""
+def scan_music_library(config: Config, show_progress: bool = True, progress_callback=None) -> List[Track]:
+    """Scan all configured library paths for music files.
+
+    Args:
+        config: Configuration object
+        show_progress: Whether to print progress messages (deprecated, use progress_callback)
+        progress_callback: Optional callback function(file_path, track) for progress updates
+
+    Returns:
+        List of Track objects
+    """
     all_tracks = []
 
     if show_progress:
@@ -62,7 +85,7 @@ def scan_music_library(config: Config, show_progress: bool = True) -> List[Track
         if show_progress:
             print(f"Scanning: {path}")
 
-        tracks = scan_directory(path, config)
+        tracks = scan_directory(path, config, progress_callback=progress_callback)
         all_tracks.extend(tracks)
 
     if show_progress:

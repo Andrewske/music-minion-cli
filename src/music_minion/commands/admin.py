@@ -7,12 +7,176 @@ Handles: init, scan, migrate, killall, stats, tag (remove/list)
 import subprocess
 import glob
 import os
-from typing import List, Tuple
+import threading
+from pathlib import Path
+from typing import List, Tuple, Optional, Dict, Any
 
 from music_minion.context import AppContext
 from music_minion.core import config
 from music_minion.core import database
 from music_minion.domain import library
+
+# Global scan state (thread-safe)
+_scan_state_lock = threading.Lock()
+_scan_state: Optional[Dict[str, Any]] = None
+
+
+def get_scan_state() -> Optional[Dict[str, Any]]:
+    """Get current scan state (thread-safe)."""
+    with _scan_state_lock:
+        return _scan_state.copy() if _scan_state else None
+
+
+def _update_scan_state(updates: Dict[str, Any]) -> None:
+    """Update scan state (thread-safe, internal use only)."""
+    global _scan_state
+    with _scan_state_lock:
+        if _scan_state is None:
+            _scan_state = {}
+        _scan_state.update(updates)
+
+
+def _clear_scan_state() -> None:
+    """Clear scan state (thread-safe, internal use only)."""
+    global _scan_state
+    with _scan_state_lock:
+        _scan_state = None
+
+
+def _count_music_files(cfg: config.Config) -> int:
+    """Count total music files before scanning."""
+    total = 0
+    for library_path in cfg.music.library_paths:
+        path = Path(library_path).expanduser()
+        if not path.exists():
+            continue
+
+        try:
+            if cfg.music.scan_recursive:
+                files = path.rglob('*')
+            else:
+                files = path.iterdir()
+
+            for file_path in files:
+                if file_path.is_file() and file_path.suffix.lower() in cfg.music.supported_formats:
+                    total += 1
+        except (PermissionError, Exception):
+            # Silently skip inaccessible directories
+            pass
+
+    return total
+
+
+def _threaded_scan_worker(ctx: AppContext) -> None:
+    """Background worker thread for library scanning."""
+    try:
+        # Initialize state
+        _update_scan_state({
+            'phase': 'counting',
+            'files_scanned': 0,
+            'total_files': 0,
+            'current_file': '',
+            'error': None,
+            'completed': False,
+            'tracks': [],
+            'added': 0,
+            'updated': 0,
+            'errors': 0,
+        })
+
+        # Count files first
+        total_files = _count_music_files(ctx.config)
+        _update_scan_state({'total_files': total_files, 'phase': 'scanning'})
+
+        # Progress callback for scan
+        files_scanned = 0
+
+        def progress_callback(file_path: str, track) -> None:
+            nonlocal files_scanned
+            files_scanned += 1
+            _update_scan_state({
+                'files_scanned': files_scanned,
+                'current_file': Path(file_path).name
+            })
+
+        # Scan library with progress
+        tracks = library.scan_music_library(
+            ctx.config,
+            show_progress=False,
+            progress_callback=progress_callback
+        )
+
+        if not tracks:
+            _update_scan_state({
+                'completed': True,
+                'error': 'No music files found in configured library paths'
+            })
+            return
+
+        # Database phase
+        _update_scan_state({'phase': 'database', 'current_file': ''})
+
+        added = 0
+        updated = 0
+        errors = 0
+        db_processed = 0
+
+        for track in tracks:
+            try:
+                # Check if track already exists
+                existing = database.get_track_by_path(track.file_path)
+                if existing:
+                    updated += 1
+                else:
+                    added += 1
+
+                # Add or update track in database
+                database.get_or_create_track(
+                    track.file_path, track.title, track.artist, track.album,
+                    track.genre, track.year, track.duration, track.key, track.bpm
+                )
+
+                db_processed += 1
+                _update_scan_state({
+                    'files_scanned': db_processed,
+                    'total_files': len(tracks),
+                    'current_file': Path(track.file_path).name,
+                    'added': added,
+                    'updated': updated,
+                    'errors': errors,
+                })
+
+            except Exception as e:
+                errors += 1
+
+        # Compute stats
+        stats = library.get_library_stats(tracks)
+
+        # Mark complete
+        _update_scan_state({
+            'completed': True,
+            'tracks': tracks,
+            'added': added,
+            'updated': updated,
+            'errors': errors,
+            'stats': stats,
+        })
+
+    except Exception as e:
+        _update_scan_state({
+            'completed': True,
+            'error': str(e),
+        })
+
+
+def start_background_scan(ctx: AppContext) -> None:
+    """Start library scan in background thread."""
+    # Clear any previous scan state
+    _clear_scan_state()
+
+    # Start worker thread
+    thread = threading.Thread(target=_threaded_scan_worker, args=(ctx,), daemon=True)
+    thread.start()
 
 
 def handle_init_command(ctx: AppContext) -> Tuple[AppContext, bool]:

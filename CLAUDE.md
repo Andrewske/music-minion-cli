@@ -53,16 +53,20 @@ music-minion/
 │   ├── router.py               # Command routing
 │   ├── helpers.py              # Context helpers and utilities
 │   ├── command_palette.py      # Command palette widget
+│   ├── dev_reload.py           # Hot-reload development mode
 │   ├── ui.py                   # Legacy UI (deprecated)
 │   │
 │   ├── core/                   # Core infrastructure
 │   │   ├── config.py           # Configuration loading (TOML)
-│   │   ├── database.py         # SQLite operations (schema v7)
+│   │   ├── database.py         # SQLite operations (schema v9)
 │   │   └── console.py          # Console utilities
 │   │
 │   ├── domain/                 # Business logic (functional)
 │   │   ├── ai/                 # AI integration
 │   │   │   ├── client.py       # OpenAI client
+│   │   │   ├── prompt_manager.py    # Prompt versioning and learnings
+│   │   │   ├── prompt_enhancement.py # AI prompt improvement
+│   │   │   ├── review.py       # Conversational tag review
 │   │   │   └── __init__.py
 │   │   ├── library/            # Music library management
 │   │   │   ├── models.py       # Track data models
@@ -103,10 +107,17 @@ music-minion/
 │   │   │   │   ├── history.py
 │   │   │   │   ├── input.py
 │   │   │   │   ├── palette.py
-│   │   │   │   └── layout.py
+│   │   │   │   ├── layout.py
+│   │   │   │   ├── wizard.py   # Smart playlist wizard
+│   │   │   │   └── track_viewer.py # Track viewer component
 │   │   │   ├── events/         # Event handlers
 │   │   │   │   ├── keyboard.py
-│   │   │   │   └── commands.py
+│   │   │   │   ├── review_handler.py # AI review event loop
+│   │   │   │   └── commands/   # Modularized command handlers
+│   │   │   │       ├── executor.py
+│   │   │   │       ├── playlist_handlers.py
+│   │   │   │       ├── track_viewer_handlers.py
+│   │   │   │       └── wizard_handlers.py
 │   │   │   └── styles/         # Styling and formatting
 │   │   │       ├── palette.py
 │   │   │       └── formatting.py
@@ -146,6 +157,14 @@ music-minion/
 - Primary command: `music-minion`
 - Interactive mode with commands: `play`, `love`, `skip`, `note "text"`
 - Setup command: `music-minion init`
+- Development mode: `music-minion --dev` (enables hot-reload)
+
+### Development Mode
+- **Hot-reload**: `music-minion --dev` enables automatic code reloading
+- File changes are detected and modules reloaded instantly
+- No need to restart the app during development
+- State preserved (player, tracks, database connections)
+- See `docs/hot-reload-usage.md` for detailed guide
 
 ## Key Technical Decisions
 
@@ -200,6 +219,10 @@ music-minion/
 - `ai setup <key>` - Configure OpenAI API key
 - `ai analyze library` - Batch process existing library
 - `ai process batch` - Process accumulated unprocessed songs
+- `ai review` - Conversational tag review with feedback and learning
+- `ai enhance prompt` - AI-powered prompt improvement with testing
+- `ai test` - Test current prompt on random tracks
+- `ai usage` - View AI token usage and costs
 
 ### Playlist Commands (Phases 1-5 Complete)
 - `playlist` - List all playlists with active indicator
@@ -216,6 +239,12 @@ music-minion/
 - `playlist export <name> [format]` - Export to m3u8, crate, or all
 - `add <playlist_name>` - Add current track to playlist
 - `remove <playlist_name>` - Remove current track from playlist
+
+### Track Viewer
+- Interactive track viewer for browsing playlist tracks
+- Keyboard shortcuts: j/k (down/up), Enter (play), q (close)
+- Shows track metadata: title, artist, album, BPM, key
+- Accessible from playlist show command
 
 ### Playback Commands (Phase 6 Complete)
 - `shuffle` - Show current shuffle mode
@@ -321,13 +350,13 @@ except Exception:
 
 ## Database Schema
 
-### Current Version: v7
-**Location**: `src/music_minion/database.py`
+### Current Version: v9
+**Location**: `src/music_minion/core/database.py`
 
 ### Core Tables
 - `tracks` - Music library metadata (artist, title, album, year, BPM, key, etc.)
 - `ratings` - User ratings with timestamps and context
-- `tags` - Track tags with source tracking ('user', 'ai', 'file')
+- `tags` - Track tags with source tracking ('user', 'ai', 'file') and reasoning (v9)
 - `notes` - Contextual notes about tracks
 
 ### Playlist System Tables (v3+)
@@ -339,6 +368,10 @@ except Exception:
 ### Playback & Sync Tables (v5+)
 - `playback_state` - Singleton table for shuffle mode and position tracking
 - Sync columns in `tracks`: `file_mtime`, `last_synced_at` for change detection
+
+### AI Enhancements (v9)
+- `tags.reasoning` - Stores AI reasoning for each tag (5-10 words)
+- Supports conversational tag review and prompt improvement
 
 ### Migration Pattern
 - Version-based migrations in `migrate_database()`
@@ -384,6 +417,7 @@ except Exception:
   - Critical sections: Data loss prevention, atomic operations, race conditions
   - Database patterns, error handling, threading
   - Import/export patterns, AI integration
+  - UI component patterns (track viewer, wizard, review handler)
 
 - **`docs/playlist-system-plan.md`** - Complete implementation history
   - Phases 1-7 with decisions, learnings, and time estimates
@@ -394,6 +428,17 @@ except Exception:
   - Phase 8 tasks
   - Known limitations by phase
   - Recommendations for enhancements
+
+- **`docs/ai-tag-review-system.md`** - AI review and prompt enhancement
+  - Conversational tag feedback system
+  - Learning accumulation and categorization
+  - Prompt versioning and testing
+  - Database schema v9 (reasoning field)
+
+- **`docs/hot-reload-usage.md`** - Development mode guide
+  - Hot-reload setup and usage
+  - State preservation patterns
+  - Troubleshooting and limitations
 
 ### Before Starting Work
 1. Read `ai-learnings.md` for critical patterns
@@ -457,4 +502,4 @@ main.py
 
 ---
 
-**Last Updated**: 2025-10-01 after architecture refactoring and blessed UI implementation
+**Last Updated**: 2025-10-03 after AI review system, hot-reload, and track viewer implementation

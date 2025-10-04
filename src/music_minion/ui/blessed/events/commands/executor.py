@@ -178,6 +178,20 @@ def execute_command(ctx: AppContext, ui_state: UIState, command_line: str | Inte
     # Add command to command history (for up/down arrow navigation)
     ui_state = add_command_to_history(ui_state, command_line)
 
+    # Special handling for scan command - run in background
+    if command == 'scan':
+        from music_minion.commands import admin
+        from music_minion.ui.blessed.state import start_scan
+
+        # Start background scan
+        admin.start_background_scan(ctx)
+
+        # Initialize scan UI state (actual progress will be polled)
+        ui_state = start_scan(ui_state, 0)
+        ui_state = add_history_line(ui_state, "🔍 Starting library scan in background...", 'cyan')
+
+        return ctx, ui_state, False
+
     # Buffer output
     output_buffer = io.StringIO()
     error_buffer = io.StringIO()

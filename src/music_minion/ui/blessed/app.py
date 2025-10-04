@@ -39,6 +39,84 @@ def _check_and_reload_files() -> None:
             pass
 
 
+def poll_scan_state(ui_state: UIState) -> UIState:
+    """
+    Poll library scan state and update UI state.
+
+    Args:
+        ui_state: Current UI state
+
+    Returns:
+        Updated UI state with scan progress
+    """
+    from dataclasses import replace
+    from ...commands import admin
+    from .state import update_scan_progress, end_scan, add_history_line
+
+    # Get current scan state
+    scan_state = admin.get_scan_state()
+
+    if scan_state is None:
+        # No scan running, clear scan UI if it was showing
+        if ui_state.scan_progress.is_scanning:
+            ui_state = end_scan(ui_state)
+        return ui_state
+
+    # Update UI state with scan progress
+    ui_state = update_scan_progress(
+        ui_state,
+        files_scanned=scan_state.get('files_scanned', 0),
+        current_file=scan_state.get('current_file', ''),
+        phase=scan_state.get('phase', 'scanning')
+    )
+
+    # Start scan UI if not already showing
+    if not ui_state.scan_progress.is_scanning:
+        from .state import start_scan
+        ui_state = start_scan(ui_state, scan_state.get('total_files', 0))
+
+    # Update total files if changed
+    if scan_state.get('total_files', 0) != ui_state.scan_progress.total_files:
+        ui_state = replace(
+            ui_state,
+            scan_progress=replace(
+                ui_state.scan_progress,
+                total_files=scan_state.get('total_files', 0)
+            )
+        )
+
+    # Check if scan completed
+    if scan_state.get('completed', False):
+        # End scan UI
+        ui_state = end_scan(ui_state)
+
+        # Show results in history
+        if scan_state.get('error'):
+            ui_state = add_history_line(ui_state, f"❌ Scan failed: {scan_state['error']}", 'red')
+        else:
+            tracks = scan_state.get('tracks', [])
+            added = scan_state.get('added', 0)
+            updated = scan_state.get('updated', 0)
+            errors = scan_state.get('errors', 0)
+            stats = scan_state.get('stats', {})
+
+            ui_state = add_history_line(ui_state, "✅ Scan complete!", 'green')
+            ui_state = add_history_line(ui_state, f"  📝 New tracks: {added}", 'white')
+            ui_state = add_history_line(ui_state, f"  🔄 Updated tracks: {updated}", 'white')
+            if errors:
+                ui_state = add_history_line(ui_state, f"  ⚠️  Errors: {errors}", 'yellow')
+
+            if stats:
+                ui_state = add_history_line(ui_state, "", 'white')
+                ui_state = add_history_line(ui_state, "📚 Library Overview:", 'cyan')
+                ui_state = add_history_line(ui_state, f"  Total duration: {stats.get('total_duration_str', 'N/A')}", 'white')
+                ui_state = add_history_line(ui_state, f"  Total size: {stats.get('total_size_str', 'N/A')}", 'white')
+                ui_state = add_history_line(ui_state, f"  Artists: {stats.get('artists', 0)}", 'white')
+                ui_state = add_history_line(ui_state, f"  Albums: {stats.get('albums', 0)}", 'white')
+
+    return ui_state
+
+
 def poll_player_state(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, UIState]:
     """
     Poll player state and update both AppContext and UI state.
@@ -228,18 +306,27 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         if should_poll:
             ctx, ui_state = poll_player_state(ctx, ui_state)
 
+        # Poll scan state every 5 frames (~0.5 second) for smoother progress updates
+        should_poll_scan = frame_count % 5 == 0
+        if should_poll_scan:
+            ui_state = poll_scan_state(ui_state)
+
         # Check if state changed (only redraw if needed)
         # Only compute hash when we polled or when other state changes might have occurred
         current_state_hash = None
-        if should_poll or last_state_hash is None:
+        if should_poll or should_poll_scan or last_state_hash is None:
             # Hash excludes current_position to avoid full redraws every second
             # Position is tracked separately for partial dashboard updates
+            # Include scan state for progress updates
             current_state_hash = hash((
                 ctx.player_state.current_track,
                 ctx.player_state.is_playing,
                 ctx.player_state.duration,
                 len(ui_state.history),
                 ui_state.feedback_message,
+                ui_state.scan_progress.is_scanning,
+                ui_state.scan_progress.files_scanned,
+                ui_state.scan_progress.phase,
             ))
 
         # Check for input-only changes (no full redraw needed)

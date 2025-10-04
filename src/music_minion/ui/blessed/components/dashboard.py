@@ -79,8 +79,16 @@ def render_dashboard(term: Terminal, player_state: PlayerState, ui_state: UIStat
     lines.append("".join(separator_chars))
     lines.append("")
 
+    # Scan progress (takes priority over normal display)
+    scan_progress = ui_state.scan_progress
+    if scan_progress.is_scanning:
+        scan_lines = format_scan_progress(scan_progress, term)
+        lines.extend(scan_lines)
+        lines.append("")
+        lines.append("")
+        # Skip normal track display
     # Track information
-    if player_state.current_track:
+    elif player_state.current_track:
         if metadata:
             track_lines = format_track_display(metadata, term)
             lines.extend(track_lines)
@@ -302,6 +310,61 @@ def format_time(seconds: float) -> str:
     minutes = int(seconds // 60)
     secs = int(seconds % 60)
     return f"{minutes}:{secs:02d}"
+
+
+def format_scan_progress(scan_progress, term: Terminal) -> list[str]:
+    """Format library scan progress display.
+
+    Args:
+        scan_progress: ScanProgress object with scan state
+        term: blessed Terminal instance
+
+    Returns:
+        List of formatted lines for display
+    """
+    from ..state import ScanProgress
+
+    lines = []
+
+    # Title
+    lines.append(term.bold_cyan("🔍 Library Scan in Progress"))
+    lines.append("")
+
+    # Phase indicator
+    if scan_progress.phase == 'counting':
+        lines.append(term.yellow("  📊 Counting files..."))
+    elif scan_progress.phase == 'scanning':
+        lines.append(term.yellow("  🎵 Scanning music files..."))
+    elif scan_progress.phase == 'database':
+        lines.append(term.yellow("  💾 Updating database..."))
+
+    # Progress bar
+    if scan_progress.total_files > 0:
+        percentage = min(scan_progress.files_scanned / scan_progress.total_files, 1.0)
+        bar_width = 40
+        filled = int(bar_width * percentage)
+
+        # Create progress bar
+        progress_parts = []
+        for i in range(filled):
+            progress_parts.append(term.cyan("█"))
+        progress_parts.append(term.white("░" * (bar_width - filled)))
+
+        # Add counts
+        progress_parts.append(term.white(f" {scan_progress.files_scanned}/{scan_progress.total_files}"))
+        progress_parts.append(term.yellow(f" ({percentage * 100:.1f}%)"))
+
+        lines.append("  " + "".join(progress_parts))
+
+    # Current file (truncate if too long)
+    if scan_progress.current_file:
+        current_file = scan_progress.current_file
+        max_width = term.width - 10
+        if len(current_file) > max_width:
+            current_file = "..." + current_file[-(max_width - 3):]
+        lines.append(term.white(f"  {current_file}"))
+
+    return lines
 
 
 def render_dashboard_partial(term: Terminal, player_state: PlayerState, ui_state: UIState,
