@@ -1,13 +1,15 @@
 """
 AI command handlers for Music Minion CLI.
 
-Handles: ai setup, ai analyze, ai test, ai usage
+Handles: ai setup, ai analyze, ai test, ai usage, ai review, ai enhance
 """
 
 from typing import List, Tuple
 
 from music_minion.context import AppContext
 from music_minion.domain import ai
+from music_minion.domain.ai import review as ai_review
+from music_minion.domain.ai import prompt_enhancement
 from music_minion.core import database
 from music_minion.domain import library
 
@@ -162,4 +164,111 @@ def handle_ai_usage_command(ctx: AppContext, args: List[str]) -> Tuple[AppContex
         return ctx, True
     except Exception as e:
         print(f"❌ Error getting AI usage stats: {e}")
+        return ctx, True
+
+
+def handle_ai_review_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+    """Handle ai review command - review tags for currently playing track.
+
+    Args:
+        ctx: Application context
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    if not ctx.player_state.current_track:
+        print("❌ No track is currently playing")
+        return ctx, True
+
+    # Find current track
+    current_track = None
+    for track in ctx.music_tracks:
+        if track.file_path == ctx.player_state.current_track:
+            current_track = track
+            break
+
+    if not current_track:
+        print("❌ Could not find current track information")
+        return ctx, True
+
+    print(f"🎵 Reviewing tags for: {library.get_display_name(current_track)}")
+
+    try:
+        # Get or generate tags with reasoning
+        tags_with_reasoning, is_new = ai_review.get_or_generate_tags_with_reasoning(current_track)
+
+        if is_new:
+            print("✨ Generated new tags for this track")
+        else:
+            print("📋 Loaded existing tags")
+
+        print("")
+        print("─" * 60)
+        print("Tags with AI reasoning:")
+        print("")
+        for tag, reasoning in tags_with_reasoning.items():
+            print(f"  • {tag}: \"{reasoning}\"")
+        print("─" * 60)
+        print("")
+        print("💬 Entering conversation mode. Type your feedback, or 'done' to finish.")
+        print("   Example: \"This is half-time, not energetic. Don't tag key.\"")
+        print("")
+
+        # Prepare track data for review mode
+        track_data = {
+            'file_path': str(current_track.file_path),
+            'title': current_track.title,
+            'artist': current_track.artist,
+            'album': current_track.album,
+            'genre': current_track.genre,
+            'year': current_track.year,
+            'bpm': current_track.bpm,
+            'key': current_track.key
+        }
+
+        # Set UI action to start review mode (blessed UI will handle this)
+        ctx = ctx.with_ui_action({
+            'type': 'start_review_mode',
+            'track_data': track_data,
+            'tags_with_reasoning': tags_with_reasoning
+        })
+
+        return ctx, True
+
+    except ai.AIError as e:
+        print(f"❌ AI error: {e}")
+        return ctx, True
+    except Exception as e:
+        print(f"❌ Unexpected error during review: {e}")
+        import traceback
+        traceback.print_exc()
+        return ctx, True
+
+
+def handle_ai_enhance_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
+    """Handle ai enhance prompt command - improve tagging prompt based on learnings.
+
+    Args:
+        ctx: Application context
+        args: Command arguments
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    # Check if subcommand is 'prompt' (optional)
+    if args and args[0] != 'prompt':
+        print(f"❌ Unknown enhance subcommand: '{args[0]}'. Use: ai enhance prompt")
+        return ctx, True
+
+    try:
+        prompt_enhancement.enhance_prompt_interactive()
+        return ctx, True
+
+    except ai.AIError as e:
+        print(f"❌ AI error: {e}")
+        return ctx, True
+    except Exception as e:
+        print(f"❌ Unexpected error during prompt enhancement: {e}")
+        import traceback
+        traceback.print_exc()
         return ctx, True

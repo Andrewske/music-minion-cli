@@ -446,6 +446,17 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10) -> tupl
         if state_updated is not None:
             return state_updated, cmd
 
+    # Handle review mode keys (fourth priority)
+    if state.review_mode:
+        # In review mode, Enter sends input to review handler
+        if event['type'] == 'enter' and state.input_text.strip():
+            # Return special command to trigger review handler
+            user_input = state.input_text.strip()
+            state = set_input_text(state, "")
+            # Use InternalCommand to pass review input
+            from music_minion.ui.blessed.state import InternalCommand
+            return state, InternalCommand(action='review_input', data={'input': user_input})
+
     # Handle Ctrl+C (quit)
     if event['type'] == 'ctrl_c':
         return state, 'QUIT'

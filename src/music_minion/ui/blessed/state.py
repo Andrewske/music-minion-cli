@@ -105,6 +105,10 @@ class UIState:
     track_viewer_selected: int = 0
     track_viewer_scroll: int = 0
 
+    # AI Review mode state (conversational tag review)
+    review_mode: Optional[str] = None  # None, 'conversation', 'confirm'
+    review_data: dict[str, Any] = field(default_factory=dict)  # Track, tags, conversation history
+
     # UI feedback (toast notifications)
     feedback_message: Optional[str] = None
     feedback_time: Optional[float] = None
@@ -576,3 +580,77 @@ def move_track_viewer_selection(state: UIState, delta: int, visible_items: int =
         new_scroll = new_selected
 
     return replace(state, track_viewer_selected=new_selected, track_viewer_scroll=new_scroll)
+
+
+def start_review_mode(state: UIState, track_data: dict[str, Any], tags_with_reasoning: dict[str, str]) -> UIState:
+    """
+    Start AI review mode for tag conversation.
+
+    Args:
+        state: Current UI state
+        track_data: Track information dict
+        tags_with_reasoning: Dict of {tag: reasoning}
+
+    Returns:
+        Updated state with review mode active
+    """
+    conversation_lines = []
+    conversation_lines.append(f"Track: {track_data.get('artist', 'Unknown')} - {track_data.get('title', 'Unknown')}")
+    conversation_lines.append("")
+    conversation_lines.append("Initial tags:")
+    for tag, reasoning in tags_with_reasoning.items():
+        conversation_lines.append(f"  • {tag}: \"{reasoning}\"")
+
+    review_data = {
+        'track': track_data,
+        'initial_tags': tags_with_reasoning,
+        'conversation_lines': conversation_lines
+    }
+
+    return replace(
+        state,
+        review_mode='conversation',
+        review_data=review_data,
+        input_text='',
+        cursor_pos=0
+    )
+
+
+def enter_review_confirm(state: UIState, new_tags: dict[str, str]) -> UIState:
+    """
+    Enter review confirmation mode (waiting for y/n).
+
+    Args:
+        state: Current UI state
+        new_tags: Regenerated tags with reasoning
+
+    Returns:
+        Updated state in confirm mode
+    """
+    new_data = {**state.review_data, 'new_tags': new_tags}
+    return replace(
+        state,
+        review_mode='confirm',
+        review_data=new_data,
+        input_text='',
+        cursor_pos=0
+    )
+
+
+def exit_review_mode(state: UIState) -> UIState:
+    """
+    Exit review mode and reset state.
+
+    Args:
+        state: Current UI state
+
+    Returns:
+        Updated state with review mode exited
+    """
+    return replace(
+        state,
+        review_mode=None,
+        review_data={},
+        input_text='',
+        cursor_pos=0
+    )

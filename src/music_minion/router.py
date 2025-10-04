@@ -64,6 +64,8 @@ Playlist Commands:
 AI Commands:
   ai setup <key>    Set up OpenAI API key for AI analysis
   ai analyze        Analyze current track with AI and add tags
+  ai review         Review and improve tags for current track (conversational)
+  ai enhance prompt Improve tagging prompt based on accumulated learnings
   ai test           Test AI prompt with a random track and save report
   ai usage          Show total AI usage and costs
   ai usage today    Show today's AI usage
@@ -208,18 +210,22 @@ def handle_command(ctx: AppContext, command: str, args: List[str]) -> Tuple[AppC
 
     elif command == 'ai':
         if not args:
-            print("Error: AI command requires a subcommand. Usage: ai <setup|analyze|test|usage>")
+            print("Error: AI command requires a subcommand. Usage: ai <setup|analyze|review|enhance|test|usage>")
             return ctx, True
         elif args[0] == 'setup':
             return ai.handle_ai_setup_command(ctx, args[1:])
         elif args[0] == 'analyze':
             return ai.handle_ai_analyze_command(ctx)
+        elif args[0] == 'review':
+            return ai.handle_ai_review_command(ctx)
+        elif args[0] == 'enhance':
+            return ai.handle_ai_enhance_command(ctx, args[1:])
         elif args[0] == 'test':
             return ai.handle_ai_test_command(ctx)
         elif args[0] == 'usage':
             return ai.handle_ai_usage_command(ctx, args[1:])
         else:
-            print(f"Unknown AI subcommand: '{args[0]}'. Available: setup, analyze, test, usage")
+            print(f"Unknown AI subcommand: '{args[0]}'. Available: setup, analyze, review, enhance, test, usage")
             return ctx, True
 
     elif command == 'tag':

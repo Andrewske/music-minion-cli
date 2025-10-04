@@ -12,7 +12,7 @@ from .config import Config, get_data_dir
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 def get_database_path() -> Path:
@@ -218,6 +218,17 @@ def migrate_database(conn, current_version: int) -> None:
             CREATE INDEX IF NOT EXISTS idx_playlists_last_played
             ON playlists(last_played_at DESC)
         """)
+
+        conn.commit()
+
+    if current_version < 9:
+        # Migration from v8 to v9: Add reasoning field for AI tag explanations
+
+        try:
+            conn.execute("ALTER TABLE tags ADD COLUMN reasoning TEXT")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
 
         conn.commit()
 
@@ -713,26 +724,37 @@ def db_track_to_library_track(db_track: Dict[str, Any]):
 
 # Tag management functions
 
-def add_tags(track_id: int, tags: List[str], source: str = 'user', 
-             confidence: Optional[float] = None) -> None:
-    """Add multiple tags to a track."""
+def add_tags(track_id: int, tags: List[str], source: str = 'user',
+             confidence: Optional[float] = None,
+             reasoning: Optional[Dict[str, str]] = None) -> None:
+    """Add multiple tags to a track.
+
+    Args:
+        track_id: ID of the track
+        tags: List of tag names
+        source: Source of tags ('user', 'ai', 'file')
+        confidence: Optional confidence score
+        reasoning: Optional dict mapping tag names to reasoning text (for AI tags)
+    """
     with get_db_connection() as conn:
         for tag in tags:
+            tag_name = tag.strip().lower()
+            tag_reasoning = reasoning.get(tag_name) if reasoning else None
             conn.execute("""
-                INSERT OR IGNORE INTO tags (track_id, tag_name, source, confidence)
-                VALUES (?, ?, ?, ?)
-            """, (track_id, tag.strip().lower(), source, confidence))
+                INSERT OR IGNORE INTO tags (track_id, tag_name, source, confidence, reasoning)
+                VALUES (?, ?, ?, ?, ?)
+            """, (track_id, tag_name, source, confidence, tag_reasoning))
         conn.commit()
 
 
 def get_track_tags(track_id: int, include_blacklisted: bool = False) -> List[Dict[str, Any]]:
     """Get all tags for a track."""
     blacklist_filter = "" if include_blacklisted else "AND blacklisted = FALSE"
-    
+
     with get_db_connection() as conn:
         cursor = conn.execute(f"""
-            SELECT tag_name, source, confidence, created_at, blacklisted
-            FROM tags 
+            SELECT tag_name, source, confidence, created_at, blacklisted, reasoning
+            FROM tags
             WHERE track_id = ? {blacklist_filter}
             ORDER BY created_at DESC
         """, (track_id,))

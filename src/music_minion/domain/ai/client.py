@@ -194,61 +194,120 @@ Suggest 3-6 specific, discoverable tags that capture this track's unique qualiti
     return input_text
 
 
-def analyze_track_with_ai(track: Track, request_type: str = 'auto_analysis') -> Tuple[List[str], Dict[str, Any]]:
+def analyze_track_with_ai(track: Track, request_type: str = 'auto_analysis',
+                          return_reasoning: bool = True) -> Tuple[List[str], Dict[str, Any], Optional[Dict[str, str]]]:
     """
-    Analyze a track with AI using the Responses API and return tags and request metadata.
-    
+    Analyze a track with AI using the Responses API and return tags with reasoning.
+
+    Args:
+        track: Track to analyze
+        request_type: Type of request for logging
+        return_reasoning: Whether to return reasoning explanations (new format)
+
     Returns:
-        Tuple of (tags_list, request_metadata)
+        Tuple of (tags_list, request_metadata, reasoning_dict)
+        - tags_list: List of tag names
+        - request_metadata: API usage metadata
+        - reasoning_dict: Dict mapping tag names to reasoning (None if return_reasoning=False)
     """
     api_key = get_api_key()
     if not api_key:
         raise AIError("No OpenAI API key found. Use 'ai setup <key>' to configure.")
-    
+
     try:
         import openai
+        import json
     except ImportError:
         raise AIError("OpenAI library not installed. Install with: pip install openai")
-    
+
     # Get track from database to get ID
     db_track = get_track_by_path(track.file_path)
     if not db_track:
         raise AIError("Track not found in database")
-    
+
     track_id = db_track['id']
-    
+
     # Get existing notes and tags
     notes = get_track_notes(track_id)
     existing_tags = get_track_tags(track_id, include_blacklisted=True)
-    
+
     # Build input for Responses API
     input_text = build_analysis_input(track, notes, existing_tags)
-    
+
     # Prepare OpenAI client
     client = openai.OpenAI(api_key=api_key)
-    
+
     start_time = time.time()
-    
+
     try:
-        # Make API request using Responses API - simple text output
-        response = client.responses.create(
-            model="gpt-4o-mini",
-            instructions="Analyze this specific track and suggest 3-6 relevant tags based on the actual metadata, genre, BPM, key, and user notes provided. Focus on what makes THIS track distinctive. Return ONLY a comma-separated list of tags, nothing else. Be specific to the actual track data, not generic.",
-            input=input_text
-        )
-        
-        end_time = time.time()
-        response_time_ms = int((end_time - start_time) * 1000)
-        
-        # Parse response from Responses API - simple comma-separated tags
-        output_text = response.output_text.strip()
-        
-        # Split by comma and clean up tags
-        if output_text:
-            tags = [tag.strip().lower() for tag in output_text.split(',') if tag.strip()]
+        if return_reasoning:
+            # New format: Return JSON with tag:reasoning pairs
+            instructions = """Analyze this specific track and suggest 3-6 relevant tags based on the actual metadata, genre, BPM, key, and user notes provided.
+Focus on what makes THIS track distinctive. Be specific to the actual track data, not generic.
+
+Return a JSON object where each key is a tag and each value is a brief explanation (5-10 words) of WHY you chose that tag based on the track's specific characteristics.
+
+Example format:
+{
+    "energetic": "Fast tempo (140 BPM), driving drums",
+    "synth-heavy": "Dominant synthesizer melodies throughout",
+    "dark": "Minor key with brooding atmosphere"
+}
+
+Use lowercase for tag names. Be specific and reference actual track data."""
+
+            response = client.responses.create(
+                model="gpt-4o-mini",
+                instructions=instructions,
+                input=input_text
+            )
+
+            end_time = time.time()
+            response_time_ms = int((end_time - start_time) * 1000)
+
+            # Parse JSON response
+            output_text = response.output_text.strip()
+
+            try:
+                # Try to parse as JSON
+                tags_with_reasoning = json.loads(output_text)
+                tags = list(tags_with_reasoning.keys())
+                reasoning = {tag.lower(): reason for tag, reason in tags_with_reasoning.items()}
+            except json.JSONDecodeError:
+                # Fallback: try to extract JSON from markdown code block
+                if '```json' in output_text:
+                    json_start = output_text.find('{')
+                    json_end = output_text.rfind('}') + 1
+                    if json_start != -1 and json_end > json_start:
+                        json_text = output_text[json_start:json_end]
+                        tags_with_reasoning = json.loads(json_text)
+                        tags = list(tags_with_reasoning.keys())
+                        reasoning = {tag.lower(): reason for tag, reason in tags_with_reasoning.items()}
+                    else:
+                        raise AIError(f"Failed to parse JSON from AI response: {output_text}")
+                else:
+                    raise AIError(f"Failed to parse JSON from AI response: {output_text}")
         else:
-            tags = []
-        
+            # Legacy format: Simple comma-separated tags
+            response = client.responses.create(
+                model="gpt-4o-mini",
+                instructions="Analyze this specific track and suggest 3-6 relevant tags based on the actual metadata, genre, BPM, key, and user notes provided. Focus on what makes THIS track distinctive. Return ONLY a comma-separated list of tags, nothing else. Be specific to the actual track data, not generic.",
+                input=input_text
+            )
+
+            end_time = time.time()
+            response_time_ms = int((end_time - start_time) * 1000)
+
+            # Parse response - simple comma-separated tags
+            output_text = response.output_text.strip()
+
+            if output_text:
+                tags = [tag.strip().lower() for tag in output_text.split(',') if tag.strip()]
+            else:
+                tags = []
+
+            reasoning = None
+
         # Log successful request
         request_metadata = {
             'prompt_tokens': response.usage.input_tokens,
@@ -256,7 +315,7 @@ def analyze_track_with_ai(track: Track, request_type: str = 'auto_analysis') -> 
             'response_time_ms': response_time_ms,
             'success': True
         }
-        
+
         log_ai_request(
             track_id=track_id,
             request_type=request_type,
@@ -266,15 +325,15 @@ def analyze_track_with_ai(track: Track, request_type: str = 'auto_analysis') -> 
             response_time_ms=response_time_ms,
             success=True
         )
-        
-        return tags, request_metadata
+
+        return tags, request_metadata, reasoning
         
     except openai.APIError as e:
         end_time = time.time()
         response_time_ms = int((end_time - start_time) * 1000)
-        
+
         error_msg = f"OpenAI API error: {str(e)}"
-        
+
         # Log failed request
         log_ai_request(
             track_id=track_id,
@@ -286,15 +345,15 @@ def analyze_track_with_ai(track: Track, request_type: str = 'auto_analysis') -> 
             success=False,
             error_message=error_msg
         )
-        
+
         raise AIError(error_msg)
-    
+
     except Exception as e:
         end_time = time.time()
         response_time_ms = int((end_time - start_time) * 1000)
-        
+
         error_msg = f"Unexpected error: {str(e)}"
-        
+
         log_ai_request(
             track_id=track_id,
             request_type=request_type,
@@ -305,31 +364,38 @@ def analyze_track_with_ai(track: Track, request_type: str = 'auto_analysis') -> 
             success=False,
             error_message=error_msg
         )
-        
+
         raise AIError(error_msg)
 
 
-def analyze_and_tag_track(track: Track, request_type: str = 'auto_analysis') -> Dict[str, Any]:
+def analyze_and_tag_track(track: Track, request_type: str = 'auto_analysis',
+                          return_reasoning: bool = True) -> Dict[str, Any]:
     """
     Analyze a track and automatically add AI tags to the database.
-    
+
+    Args:
+        track: Track to analyze
+        request_type: Type of request for logging
+        return_reasoning: Whether to get and store reasoning with tags
+
     Returns:
         Dictionary with analysis results and metadata
     """
     try:
-        tags, request_metadata = analyze_track_with_ai(track, request_type)
-        
+        tags, request_metadata, reasoning = analyze_track_with_ai(track, request_type, return_reasoning)
+
         if tags:
             # Get track ID
             db_track = get_track_by_path(track.file_path)
             track_id = db_track['id']
-            
-            # Add tags to database
-            add_tags(track_id, tags, source='ai')
-            
+
+            # Add tags to database with reasoning
+            add_tags(track_id, tags, source='ai', reasoning=reasoning)
+
             return {
                 'success': True,
                 'tags_added': tags,
+                'reasoning': reasoning,
                 'token_usage': {
                     'prompt_tokens': request_metadata['prompt_tokens'],
                     'completion_tokens': request_metadata['completion_tokens'],
@@ -340,18 +406,20 @@ def analyze_and_tag_track(track: Track, request_type: str = 'auto_analysis') -> 
             return {
                 'success': True,
                 'tags_added': [],
+                'reasoning': None,
                 'token_usage': {
                     'prompt_tokens': request_metadata['prompt_tokens'],
                     'completion_tokens': request_metadata['completion_tokens'],
                     'response_time_ms': request_metadata['response_time_ms']
                 }
             }
-    
+
     except AIError as e:
         return {
             'success': False,
             'error': str(e),
-            'tags_added': []
+            'tags_added': [],
+            'reasoning': None
         }
 
 
@@ -433,9 +501,9 @@ def test_ai_prompt_with_random_track() -> Dict[str, Any]:
         }
     
     try:
-        # Make the API call
-        tags, request_metadata = analyze_track_with_ai(track, 'test_prompt')
-        
+        # Make the API call with reasoning
+        tags, request_metadata, reasoning = analyze_track_with_ai(track, 'test_prompt', return_reasoning=True)
+
         return {
             'success': True,
             'timestamp': datetime.now().isoformat(),
@@ -454,6 +522,7 @@ def test_ai_prompt_with_random_track() -> Dict[str, Any]:
             'user_prompt': user_prompt,
             'full_input': input_text,
             'ai_output_tags': tags,
+            'ai_reasoning': reasoning,
             'token_usage': {
                 'prompt_tokens': request_metadata['prompt_tokens'],
                 'completion_tokens': request_metadata['completion_tokens'],
@@ -558,13 +627,22 @@ Generated: {test_results.get('timestamp', 'Unknown')}
     if test_results['success']:
         # AI output and usage
         ai_tags = test_results.get('ai_output_tags', [])
+        ai_reasoning = test_results.get('ai_reasoning', {})
         token_usage = test_results.get('token_usage', {})
-        
+
         report_content += f"""
 ## AI Output
-### Generated Tags
-{', '.join(ai_tags) if ai_tags else 'None'}
+### Generated Tags with Reasoning
+"""
 
+        if ai_reasoning:
+            for tag in ai_tags:
+                reasoning_text = ai_reasoning.get(tag, 'No reasoning provided')
+                report_content += f"- **{tag}**: {reasoning_text}\n"
+        else:
+            report_content += f"{', '.join(ai_tags) if ai_tags else 'None'}\n"
+
+        report_content += """
 ### Token Usage
 - **Prompt Tokens**: {token_usage.get('prompt_tokens', 'Unknown')}
 - **Completion Tokens**: {token_usage.get('completion_tokens', 'Unknown')}

@@ -114,6 +114,21 @@ def _handle_internal_command(ctx: AppContext, ui_state: UIState, cmd: InternalCo
             ctx, ui_state = handle_playlist_deletion(ctx, ui_state, playlist_name)
         return ctx, ui_state, False
 
+    elif cmd.action == 'review_input':
+        # Handle review mode input
+        user_input = cmd.data.get('input', '')
+        if user_input:
+            from music_minion.ui.blessed.events.review_handler import (
+                handle_review_input, handle_review_confirmation
+            )
+
+            if ui_state.review_mode == 'conversation':
+                ctx, ui_state = handle_review_input(ctx, ui_state, user_input)
+            elif ui_state.review_mode == 'confirm':
+                ctx, ui_state = handle_review_confirmation(ctx, ui_state, user_input)
+
+        return ctx, ui_state, False
+
     else:
         # Unknown command action, log it and continue
         ui_state = add_history_line(ui_state, f"⚠️ Unknown internal command: {cmd.action}", 'yellow')
@@ -237,6 +252,13 @@ def _process_ui_action(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, 
         # Show track viewer for playlist
         playlist_name = action.get('playlist_name', '')
         ctx, ui_state = handle_show_track_viewer(ctx, ui_state, playlist_name)
+
+    elif action['type'] == 'start_review_mode':
+        # Start AI review mode
+        from music_minion.ui.blessed.state import start_review_mode
+        track_data = action.get('track_data', {})
+        tags_with_reasoning = action.get('tags_with_reasoning', {})
+        ui_state = start_review_mode(ui_state, track_data, tags_with_reasoning)
 
     # Clear the ui_action after processing
     ctx = ctx.with_ui_action(None)
