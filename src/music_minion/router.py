@@ -55,6 +55,7 @@ Playlist Commands:
   playlist show <name>            Show playlist tracks
   playlist active <name>          Set active playlist
   playlist active none            Clear active playlist
+  playlist none                   Clear active playlist (shorthand)
   playlist import <file>          Import playlist from M3U/M3U8/Serato crate
   playlist export <name> [format] Export playlist (m3u8/crate/all, default: m3u8)
   add <playlist>                  Add current track to playlist
@@ -179,6 +180,8 @@ def handle_command(ctx: AppContext, command: str, args: List[str]) -> Tuple[AppC
     elif command == 'playlist':
         if not args:
             return playlist.handle_playlist_list_command(ctx)
+        elif args[0] == 'none':
+            return playlist.handle_playlist_active_command(ctx, ['none'])
         elif args[0] == 'new':
             return playlist.handle_playlist_new_command(ctx, args[1:])
         elif args[0] == 'delete':
@@ -194,7 +197,7 @@ def handle_command(ctx: AppContext, command: str, args: List[str]) -> Tuple[AppC
         elif args[0] == 'export':
             return playlist.handle_playlist_export_command(ctx, args[1:])
         else:
-            print(f"Unknown playlist subcommand: '{args[0]}'. Available: new, delete, rename, show, active, import, export")
+            print(f"Unknown playlist subcommand: '{args[0]}'. Available: new, delete, rename, show, active, none, import, export")
             return ctx, True
 
     elif command == 'add':
