@@ -230,8 +230,18 @@ def enhance_prompt_interactive() -> bool:
 
     learnings = get_learnings()
 
-    # Check if there are any learnings
-    if "<!-- Things that should NOT be tagged" in learnings and "<!--" in learnings:
+    # Check if there are any actual learnings (not just the template)
+    # Count non-empty, non-comment, non-header lines
+    learnings_lines = learnings.split('\n')
+    content_lines = [
+        line.strip() for line in learnings_lines
+        if line.strip()  # Not empty
+        and not line.strip().startswith('#')  # Not header or comment
+        and not line.strip().startswith('<!--')  # Not HTML comment
+        and not line.strip().startswith('Last updated:')  # Not timestamp
+    ]
+
+    if len(content_lines) == 0:
         print("⚠️  No learnings accumulated yet. Use 'ai review' to build up feedback first.")
         return False
 
@@ -247,25 +257,32 @@ def enhance_prompt_interactive() -> bool:
 
     # Temporarily save new prompt to test it
     original_active = current_prompt
-    set_active_prompt(new_prompt, "Testing proposed improvements")
+    approved = False
 
-    print("🧪 Testing new prompt on 3 random tracks...")
-    test_results = test_prompt_on_tracks(new_prompt, num_tracks=3)
+    try:
+        set_active_prompt(new_prompt, "Testing proposed improvements")
 
-    # Display comparison
-    display_prompt_comparison(current_prompt, new_prompt, changes_summary, test_results)
+        print("🧪 Testing new prompt on 3 random tracks...")
+        test_results = test_prompt_on_tracks(new_prompt, num_tracks=3)
 
-    # Ask for approval
-    approve = input("\n💾 Apply these prompt improvements? [y/n]: ").strip().lower()
+        # Display comparison
+        display_prompt_comparison(current_prompt, new_prompt, changes_summary, test_results)
 
-    if approve == 'y':
-        # Save as new version
-        set_active_prompt(new_prompt, f"Applied learnings: {changes_summary[:100]}")
-        print("✅ Prompt updated successfully!")
-        print(f"📁 New prompt saved to: {save_prompt_version(new_prompt, changes_summary)}")
-        return True
-    else:
-        # Restore original
-        set_active_prompt(original_active, "Reverted - proposal rejected")
-        print("❌ Prompt changes rejected. Keeping current prompt.")
-        return False
+        # Ask for approval
+        approve = input("\n💾 Apply these prompt improvements? [y/n]: ").strip().lower()
+
+        if approve == 'y':
+            # Save as new version
+            set_active_prompt(new_prompt, f"Applied learnings: {changes_summary[:100]}")
+            print("✅ Prompt updated successfully!")
+            print(f"📁 New prompt saved to: {save_prompt_version(new_prompt, changes_summary)}")
+            approved = True
+            return True
+        else:
+            # Restore original
+            print("❌ Prompt changes rejected. Keeping current prompt.")
+            return False
+    finally:
+        # Restore original prompt if not approved or on error
+        if not approved:
+            set_active_prompt(original_active, "Reverted - proposal rejected or error occurred")

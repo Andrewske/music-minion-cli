@@ -116,11 +116,13 @@ def append_to_learnings_section(section: str, content: str) -> None:
         lines.insert(next_section_index, content)
         current_content = '\n'.join(lines)
 
-    # Update timestamp
-    current_content = current_content.replace(
-        "Last updated:",
-        f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\nLast updated:"
-    ).replace("Last updated:\n\nLast updated:", "Last updated:")
+    # Update timestamp - find and replace the timestamp line
+    lines = current_content.split('\n')
+    for i, line in enumerate(lines):
+        if line.startswith('Last updated:'):
+            lines[i] = f'Last updated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'
+            break
+    current_content = '\n'.join(lines)
 
     learnings_file.write_text(current_content)
 

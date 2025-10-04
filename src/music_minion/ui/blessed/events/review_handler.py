@@ -1,5 +1,7 @@
 """Review mode handler for conversational AI tag review in blessed UI."""
 
+from dataclasses import replace
+
 from music_minion.context import AppContext
 from music_minion.ui.blessed.state import (
     UIState, add_history_line, enter_review_confirm, exit_review_mode
@@ -42,13 +44,20 @@ def handle_review_input(ctx: AppContext, ui_state: UIState, user_input: str) -> 
             initial_tags = review_data['initial_tags']
             conversation = '\n'.join(conversation_lines)
 
+            # Validate track_data has required fields
+            file_path_str = track_data.get('file_path')
+            if not file_path_str:
+                ui_state = add_history_line(ui_state, "❌ Error: Missing track file path", 'red')
+                ui_state = exit_review_mode(ui_state)
+                return ctx, ui_state
+
             # Convert track_data dict to Track object
             from music_minion.domain.library.models import Track
             from pathlib import Path
             track = Track(
-                file_path=Path(track_data.get('file_path', '')),
-                title=track_data.get('title'),
-                artist=track_data.get('artist'),
+                file_path=Path(file_path_str),
+                title=track_data.get('title') or 'Unknown',
+                artist=track_data.get('artist') or 'Unknown',
                 album=track_data.get('album'),
                 genre=track_data.get('genre'),
                 year=track_data.get('year'),
@@ -76,8 +85,13 @@ def handle_review_input(ctx: AppContext, ui_state: UIState, user_input: str) -> 
                 ui_state = add_history_line(ui_state, "❌ Failed to regenerate tags", 'red')
                 ui_state = exit_review_mode(ui_state)
 
+        except ai_module.AIError as e:
+            ui_state = add_history_line(ui_state, f"❌ AI Error: {e}", 'red')
+            ui_state = exit_review_mode(ui_state)
         except Exception as e:
-            ui_state = add_history_line(ui_state, f"❌ Error: {e}", 'red')
+            ui_state = add_history_line(ui_state, f"❌ Unexpected error: {e}", 'red')
+            import traceback
+            traceback.print_exc()
             ui_state = exit_review_mode(ui_state)
 
         return ctx, ui_state
@@ -145,18 +159,22 @@ Please respond naturally to the user's feedback about the tags. If they suggest 
 
         # Update review data
         new_review_data = {**review_data, 'conversation_lines': conversation_lines}
-        ui_state = ui_state.__class__(**{
-            **ui_state.__dict__,
-            'review_data': new_review_data
-        })
+        ui_state = replace(ui_state, review_data=new_review_data)
 
         # Show AI response in history
         ui_state = add_history_line(ui_state, "", 'white')
         ui_state = add_history_line(ui_state, f"🤖 {ai_response}", 'green')
         ui_state = add_history_line(ui_state, "", 'white')
 
+    except ImportError as e:
+        ui_state = add_history_line(ui_state, f"❌ Missing dependency: {e}", 'red')
+        ui_state = add_history_line(ui_state, "Install with: pip install openai", 'yellow')
+    except ai_module.AIError as e:
+        ui_state = add_history_line(ui_state, f"❌ AI Error: {e}", 'red')
     except Exception as e:
-        ui_state = add_history_line(ui_state, f"❌ Error: {e}", 'red')
+        ui_state = add_history_line(ui_state, f"❌ Unexpected error: {e}", 'red')
+        import traceback
+        traceback.print_exc()
 
     return ctx, ui_state
 
@@ -219,13 +237,20 @@ def handle_review_confirmation(ctx: AppContext, ui_state: UIState, user_input: s
 
             conversation = '\n'.join(conversation_lines)
 
+            # Validate track_data has required fields
+            file_path_str = track_data.get('file_path')
+            if not file_path_str:
+                ui_state = add_history_line(ui_state, "❌ Error: Missing track file path", 'red')
+                ui_state = exit_review_mode(ui_state)
+                return ctx, ui_state
+
             # Convert track_data to Track
             from music_minion.domain.library.models import Track
             from pathlib import Path
             track = Track(
-                file_path=Path(track_data.get('file_path', '')),
-                title=track_data.get('title'),
-                artist=track_data.get('artist'),
+                file_path=Path(file_path_str),
+                title=track_data.get('title') or 'Unknown',
+                artist=track_data.get('artist') or 'Unknown',
                 album=track_data.get('album'),
                 genre=track_data.get('genre'),
                 year=track_data.get('year'),
@@ -243,8 +268,12 @@ def handle_review_confirmation(ctx: AppContext, ui_state: UIState, user_input: s
             else:
                 ui_state = add_history_line(ui_state, "⚠️  Could not extract learnings automatically", 'yellow')
 
+        except ai_module.AIError as e:
+            ui_state = add_history_line(ui_state, f"❌ AI Error saving tags: {e}", 'red')
         except Exception as e:
-            ui_state = add_history_line(ui_state, f"❌ Error saving tags: {e}", 'red')
+            ui_state = add_history_line(ui_state, f"❌ Unexpected error saving tags: {e}", 'red')
+            import traceback
+            traceback.print_exc()
 
         ui_state = exit_review_mode(ui_state)
 
