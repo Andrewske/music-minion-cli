@@ -349,23 +349,28 @@ def handle_skip_command(ctx: AppContext) -> Tuple[AppContext, bool]:
 
 
 def handle_shuffle_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
-    """Handle shuffle command - toggle or show shuffle mode.
+    """Handle shuffle command - toggle or set shuffle mode.
 
     Args:
         ctx: Application context
-        args: Command arguments
+        args: Command arguments (optional: 'on' or 'off')
 
     Returns:
         (updated_context, should_continue)
     """
     if not args:
-        # Show current mode
-        shuffle_enabled = playback.get_shuffle_mode()
-        mode = "ON (random playback)" if shuffle_enabled else "OFF (sequential playback)"
-        print(f"🔀 Shuffle mode: {mode}")
+        # Toggle current mode
+        current = playback.get_shuffle_mode()
+        new_mode = not current
+        playback.set_shuffle_mode(new_mode)
+
+        if new_mode:
+            print("🔀 Shuffle mode enabled (random playback)")
+        else:
+            print("🔁 Sequential mode enabled (play in order)")
         return ctx, True
 
-    # Handle shuffle on/off
+    # Handle explicit shuffle on/off
     subcommand = args[0].lower()
     if subcommand == 'on':
         playback.set_shuffle_mode(True)
@@ -376,7 +381,7 @@ def handle_shuffle_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext
         print("🔁 Sequential mode enabled (play in order)")
         return ctx, True
     else:
-        print(f"Unknown shuffle option: '{subcommand}'. Use 'shuffle on' or 'shuffle off'")
+        print(f"Unknown shuffle option: '{subcommand}'. Use 'shuffle', 'shuffle on', or 'shuffle off'")
         return ctx, True
 
 

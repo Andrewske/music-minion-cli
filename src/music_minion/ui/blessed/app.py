@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from blessed import Terminal
 from music_minion.context import AppContext
-from .state import UIState, update_track_info
+from .state import UIState, PlaylistInfo, update_track_info
 from .components import (
     render_dashboard,
     render_history,
@@ -53,8 +53,10 @@ def poll_player_state(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, U
         Tuple of (updated AppContext, updated UIState)
     """
     # Import modules (lazy import to avoid circular deps)
+    from dataclasses import replace
     from ...core import database
-    from ...domain.playback import player
+    from ...domain.playback import player, state as playback_state
+    from ...domain.playlists import crud as playlists
     from ...commands.playback import get_available_tracks, get_next_track, play_track
 
     # Get player status
@@ -130,12 +132,32 @@ def poll_player_state(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, U
                 ui_state = update_track_info(ui_state, track_data)
             else:
                 # Track not in database - clear metadata to show fallback
-                from dataclasses import replace
                 ui_state = replace(ui_state, track_metadata=None, track_db_info=None)
         else:
             # No track playing - clear metadata
-            from dataclasses import replace
             ui_state = replace(ui_state, track_metadata=None, track_db_info=None)
+
+        # Update shuffle mode state from database
+        shuffle_enabled = playback_state.get_shuffle_mode()
+        ui_state = replace(ui_state, shuffle_enabled=shuffle_enabled)
+
+        # Update playlist info from database
+        active = playlists.get_active_playlist()
+        if active:
+            playlist_tracks = playlists.get_playlist_tracks(active['id'])
+            position_info = playback_state.get_playlist_position(active['id'])
+
+            playlist_info = PlaylistInfo(
+                id=active['id'],
+                name=active['name'],
+                type=active['type'],
+                track_count=len(playlist_tracks),
+                current_position=position_info[1] if position_info else None
+            )
+            ui_state = replace(ui_state, playlist_info=playlist_info)
+        else:
+            # No active playlist
+            ui_state = replace(ui_state, playlist_info=PlaylistInfo())
 
     except (OSError, ConnectionError, IOError):
         # Expected errors - player not running, socket issues

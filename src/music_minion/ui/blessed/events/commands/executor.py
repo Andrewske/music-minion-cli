@@ -7,6 +7,7 @@ from music_minion.context import AppContext
 from music_minion.ui.blessed.state import (
     UIState,
     InternalCommand,
+    PlaylistInfo,
     add_history_line,
     add_command_to_history,
     start_wizard,
@@ -18,6 +19,51 @@ from .track_viewer_handlers import (
     handle_remove_track_from_playlist,
 )
 from .wizard_handlers import handle_wizard_save
+
+
+def _refresh_ui_state_from_db(ui_state: UIState) -> UIState:
+    """
+    Refresh UI state from database.
+
+    Updates shuffle mode and playlist info to reflect latest database state.
+
+    Args:
+        ui_state: Current UI state
+
+    Returns:
+        Updated UI state with fresh database values
+    """
+    try:
+        from music_minion.domain.playback import state as playback_state
+        from music_minion.domain.playlists import crud as playlists
+
+        # Update shuffle mode
+        shuffle_enabled = playback_state.get_shuffle_mode()
+        ui_state = replace(ui_state, shuffle_enabled=shuffle_enabled)
+
+        # Update playlist info
+        active = playlists.get_active_playlist()
+        if active:
+            playlist_tracks = playlists.get_playlist_tracks(active['id'])
+            position_info = playback_state.get_playlist_position(active['id'])
+
+            playlist_info = PlaylistInfo(
+                id=active['id'],
+                name=active['name'],
+                type=active['type'],
+                track_count=len(playlist_tracks),
+                current_position=position_info[1] if position_info else None
+            )
+            ui_state = replace(ui_state, playlist_info=playlist_info)
+        else:
+            # No active playlist
+            ui_state = replace(ui_state, playlist_info=PlaylistInfo())
+
+    except Exception:
+        # Silently ignore errors - don't break UI on refresh failure
+        pass
+
+    return ui_state
 
 
 def parse_command_line(line: str) -> tuple[str, list[str]]:
@@ -152,6 +198,10 @@ def execute_command(ctx: AppContext, ui_state: UIState, command_line: str | Inte
     # Process any UI actions from context
     if ctx.ui_action:
         ctx, ui_state = _process_ui_action(ctx, ui_state)
+
+    # Refresh UI state from database after command execution
+    # This ensures shuffle mode, playlist info, etc. are up-to-date
+    ui_state = _refresh_ui_state_from_db(ui_state)
 
     return ctx, ui_state, False
 

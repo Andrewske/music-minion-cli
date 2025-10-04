@@ -21,7 +21,8 @@ def get_shuffle_mode() -> bool:
         """)
         row = cursor.fetchone()
         # Default to True (shuffle) if not set
-        return row['shuffle_enabled'] if row else True
+        # Convert to explicit bool (database stores as 0/1 integer)
+        return bool(row['shuffle_enabled']) if row else True
 
 
 def set_shuffle_mode(enabled: bool) -> None:
