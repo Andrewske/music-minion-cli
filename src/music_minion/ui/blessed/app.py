@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from blessed import Terminal
 from music_minion.context import AppContext
+from music_minion.commands import admin
 from .state import UIState, PlaylistInfo, update_track_info
 from .components import (
     render_dashboard,
@@ -50,7 +51,6 @@ def poll_scan_state(ui_state: UIState) -> UIState:
         Updated UI state with scan progress
     """
     from dataclasses import replace
-    from ...commands import admin
     from .state import update_scan_progress, end_scan, add_history_line
 
     # Get current scan state
@@ -113,6 +113,9 @@ def poll_scan_state(ui_state: UIState) -> UIState:
                 ui_state = add_history_line(ui_state, f"  Total size: {stats.get('total_size_str', 'N/A')}", 'white')
                 ui_state = add_history_line(ui_state, f"  Artists: {stats.get('artists', 0)}", 'white')
                 ui_state = add_history_line(ui_state, f"  Albums: {stats.get('albums', 0)}", 'white')
+
+        # Clear scan state so completion messages don't repeat on next poll
+        admin._clear_scan_state()
 
     return ui_state
 

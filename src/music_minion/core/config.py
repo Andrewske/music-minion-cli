@@ -103,7 +103,18 @@ def get_config_dir() -> Path:
 
 
 def get_config_path() -> Path:
-    """Get the main configuration file path."""
+    """Get the main configuration file path.
+
+    Checks for config.toml in the following order:
+    1. Current working directory
+    2. XDG_CONFIG_HOME/music-minion (or ~/.config/music-minion)
+    """
+    # Check current directory first
+    local_config = Path.cwd() / "config.toml"
+    if local_config.exists():
+        return local_config
+
+    # Fall back to XDG config directory
     return get_config_dir() / "config.toml"
 
 
