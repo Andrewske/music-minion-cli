@@ -26,7 +26,11 @@ from music_minion.domain.playlists import filters as playlist_filters
 from music_minion.domain.playlists import ai_parser as playlist_ai
 from music_minion.domain.playlists import importers as playlist_import
 from music_minion.domain.playlists import exporters as playlist_export
+from music_minion.domain.playlists import analytics as playlist_analytics
 from music_minion.utils import autocomplete
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
 
 
 def handle_playlist_list_command(ctx: AppContext) -> Tuple[AppContext, bool]:
@@ -854,4 +858,225 @@ def handle_playlist_export_command(ctx: AppContext, args: List[str]) -> Tuple[Ap
         return ctx, True
     except Exception as e:
         print(f"❌ Error exporting playlist: {e}")
+        return ctx, True
+
+
+def handle_playlist_analyze_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
+    """
+    Handle playlist analyze command - show comprehensive analytics.
+
+    Usage:
+      playlist analyze <name>                  - Full analytics report
+      playlist analyze <name> --compact        - Compact summary
+      playlist analyze <name> --section=<name> - Specific section only
+    """
+    if not args:
+        print("Error: Please specify playlist name")
+        print("Usage: playlist analyze <name> [--compact] [--section=<name>]")
+        print("Sections: basic, artists, genres, tags, bpm, keys, years, ratings, quality")
+        return ctx, True
+
+    # Parse arguments
+    compact_mode = '--compact' in args
+    section_filter = None
+
+    # Remove flags from args to get playlist name
+    playlist_args = []
+    for arg in args:
+        if arg == '--compact':
+            continue
+        elif arg.startswith('--section='):
+            section_filter = arg.split('=', 1)[1].strip()
+        else:
+            playlist_args.append(arg)
+
+    if not playlist_args:
+        print("Error: Please specify playlist name")
+        return ctx, True
+
+    playlist_name = ' '.join(playlist_args)
+
+    # Validate playlist exists
+    pl = playlists.get_playlist_by_name(playlist_name)
+    if not pl:
+        print(f"❌ Playlist '{playlist_name}' not found")
+        return ctx, True
+
+    # Validate section if specified
+    valid_sections = ['basic', 'artists', 'genres', 'tags', 'bpm', 'keys', 'years', 'ratings', 'quality']
+    if section_filter and section_filter not in valid_sections:
+        print(f"❌ Invalid section: {section_filter}")
+        print(f"Valid sections: {', '.join(valid_sections)}")
+        return ctx, True
+
+    # Get analytics
+    try:
+        sections_to_run = [section_filter] if section_filter else None
+        analytics = playlist_analytics.get_playlist_analytics(pl['id'], sections=sections_to_run)
+
+        if 'error' in analytics:
+            print(f"❌ Error: {analytics['error']}")
+            return ctx, True
+
+        # Format and display output using Rich
+        console = Console()
+
+        # Header
+        header_text = f"📊 \"{analytics['playlist_name']}\" ({analytics['playlist_type']})"
+        console.print(header_text, style="bold cyan")
+
+        # Basic Stats
+        if 'basic' in analytics:
+            basic = analytics['basic']
+            if basic['total_tracks'] > 0:
+                console.print("📈 BASIC STATS", style="bold yellow")
+                total_secs = int(basic['total_duration'])
+                hours = total_secs // 3600
+                minutes = (total_secs % 3600) // 60
+                seconds = total_secs % 60
+                avg_secs = int(basic['avg_duration'])
+                avg_mins = avg_secs // 60
+                avg_secs_rem = avg_secs % 60
+
+                console.print(f"  Tracks: {basic['total_tracks']}")
+                console.print(f"  Duration: {hours}h {minutes}m {seconds}s (avg: {avg_mins}m {avg_secs_rem}s)")
+                if basic['year_min'] and basic['year_max']:
+                    console.print(f"  Year Range: {basic['year_min']}-{basic['year_max']}")
+            else:
+                console.print("⚠️  No tracks in playlist\n")
+                return ctx, True
+
+        # Artist Analysis
+        if 'artists' in analytics:
+            artists = analytics['artists']
+            if artists['top_artists']:
+                console.print("🎤 TOP ARTISTS", style="bold yellow")
+                limit = 5 if compact_mode else 10
+                for i, artist in enumerate(artists['top_artists'][:limit], 1):
+                    count = artist['track_count']
+                    console.print(f"  {i}. {artist['artist']} - {count} tracks")
+                console.print(f"  Total: {artists['total_unique_artists']} unique artists (avg: {artists['diversity_ratio']:.1f} tracks/artist)")
+
+        # Genre Distribution
+        if 'genres' in analytics:
+            genres = analytics['genres']['genres']
+            if genres:
+                console.print("🎵 GENRE DISTRIBUTION", style="bold yellow")
+                limit = 5 if compact_mode else min(10, len(genres))
+                for genre_data in genres[:limit]:
+                    console.print(f"  {genre_data['genre']}: {genre_data['count']} ({genre_data['percentage']:.1f}%)")
+                if len(genres) > limit:
+                    console.print(f"  ... and {len(genres) - limit} more")
+
+        # Tag Analysis
+        if 'tags' in analytics:
+            tags = analytics['tags']
+            if tags['top_ai_tags'] or tags['top_user_tags']:
+                console.print("#️⃣ TOP TAGS", style="bold yellow")
+                limit = 5 if compact_mode else 10
+
+                if tags['top_ai_tags']:
+                    console.print("  AI Tags:")
+                    for tag in tags['top_ai_tags'][:limit]:
+                        avg_conf = tag.get('avg_confidence')
+                        if avg_conf is not None:
+                            console.print(f"    • {tag['tag_name']} ({tag['count']}) - conf: {avg_conf:.2f}")
+                        else:
+                            console.print(f"    • {tag['tag_name']} ({tag['count']})")
+
+                if tags['top_user_tags']:
+                    console.print("  User Tags:")
+                    for tag in tags['top_user_tags'][:limit]:
+                        console.print(f"    • {tag['tag_name']} ({tag['count']})")
+
+                if tags['top_file_tags']:
+                    console.print("  File Tags:")
+                    for tag in tags['top_file_tags'][:limit]:
+                        console.print(f"    • {tag['tag_name']} ({tag['count']})")
+
+        # BPM Analysis
+        if 'bpm' in analytics:
+            bpm = analytics['bpm']
+            if bpm['min'] is not None:
+                console.print("⚡ BPM ANALYSIS", style="bold yellow")
+                console.print(f"  Range: {bpm['min']:.0f}-{bpm['max']:.0f} BPM (avg: {bpm['avg']:.0f}, median: {bpm['median']:.0f})")
+
+                if not compact_mode:
+                    console.print("  Distribution:")
+                    for range_name, count in bpm['distribution'].items():
+                        if count > 0:
+                            console.print(f"    {range_name} BPM: {count} tracks")
+
+        # Key Distribution
+        if 'keys' in analytics:
+            keys = analytics['keys']
+            if keys['top_keys']:
+                console.print("🔑 KEY DISTRIBUTION", style="bold yellow")
+                console.print(f"  Total: {keys['total_unique_keys']} unique keys")
+                limit = 5 if compact_mode else 10
+                console.print("  Most Common:")
+                for key_data in keys['top_keys'][:limit]:
+                    console.print(f"    • {key_data['key_signature']}: {key_data['count']} tracks")
+                console.print(f"  Harmonic pairs: {keys['harmonic_pairs_count']} compatible transitions")
+
+        # Year Distribution
+        if 'years' in analytics:
+            years = analytics['years']
+            console.print("📅 YEAR DISTRIBUTION", style="bold yellow")
+
+            if not compact_mode:
+                console.print("  By Decade:")
+                for decade, count in years['decade_distribution'].items():
+                    if count > 0:
+                        console.print(f"    {decade}: {count} tracks")
+
+            console.print(f"  Recent (2020+): {years['recent_count']} tracks ({years['recent_percentage']:.1f}%)")
+            console.print(f"  Classic (pre-2020): {years['classic_count']} tracks")
+
+        # Rating Analysis
+        if 'ratings' in analytics:
+            ratings = analytics['ratings']
+            if ratings['rating_counts']:
+                console.print("⭐ RATING ANALYSIS", style="bold yellow")
+                for rating_type, count in ratings['rating_counts'].items():
+                    console.print(f"  {rating_type.capitalize()}: {count} tracks")
+
+                if ratings['most_loved_tracks'] and not compact_mode:
+                    console.print("  Most Loved:")
+                    for i, track in enumerate(ratings['most_loved_tracks'][:5], 1):
+                        console.print(f"    {i}. {track['artist']} - {track['title']}")
+
+        # Quality Metrics
+        if 'quality' in analytics:
+            quality = analytics['quality']
+            console.print("✅ QUALITY METRICS", style="bold yellow")
+            console.print(f"  Completeness Score: {quality['completeness_score']:.1f}%")
+
+            if not compact_mode:
+                total = quality['total_tracks']
+                if total > 0:
+                    console.print("  Missing Metadata:")
+                    if quality['missing_bpm'] > 0:
+                        pct = quality['missing_bpm'] / total * 100
+                        console.print(f"    BPM: {quality['missing_bpm']} tracks ({pct:.1f}%)")
+                    if quality['missing_key'] > 0:
+                        pct = quality['missing_key'] / total * 100
+                        console.print(f"    Key: {quality['missing_key']} tracks ({pct:.1f}%)")
+                    if quality['missing_year'] > 0:
+                        pct = quality['missing_year'] / total * 100
+                        console.print(f"    Year: {quality['missing_year']} tracks ({pct:.1f}%)")
+                    if quality['missing_genre'] > 0:
+                        pct = quality['missing_genre'] / total * 100
+                        console.print(f"    Genre: {quality['missing_genre']} tracks ({pct:.1f}%)")
+                    if quality['without_tags'] > 0:
+                        pct = quality['without_tags'] / total * 100
+                        console.print(f"    Tags: {quality['without_tags']} tracks ({pct:.1f}%)")
+
+        console.print("─" * 60)
+        return ctx, True
+
+    except Exception as e:
+        print(f"❌ Error analyzing playlist: {e}")
+        import traceback
+        traceback.print_exc()
         return ctx, True

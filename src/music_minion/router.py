@@ -53,6 +53,7 @@ Playlist Commands:
   playlist delete <name>          Delete playlist
   playlist rename "old" "new"     Rename playlist (use quotes)
   playlist show <name>            Show playlist tracks
+  playlist analyze <name>         Show comprehensive analytics for playlist
   playlist active <name>          Set active playlist
   playlist active none            Clear active playlist
   playlist none                   Clear active playlist (shorthand)
@@ -192,6 +193,8 @@ def handle_command(ctx: AppContext, command: str, args: List[str]) -> Tuple[AppC
             return playlist.handle_playlist_rename_command(ctx, args[1:])
         elif args[0] == 'show':
             return playlist.handle_playlist_show_command(ctx, args[1:])
+        elif args[0] == 'analyze':
+            return playlist.handle_playlist_analyze_command(ctx, args[1:])
         elif args[0] == 'active':
             return playlist.handle_playlist_active_command(ctx, args[1:])
         elif args[0] == 'import':
@@ -199,7 +202,7 @@ def handle_command(ctx: AppContext, command: str, args: List[str]) -> Tuple[AppC
         elif args[0] == 'export':
             return playlist.handle_playlist_export_command(ctx, args[1:])
         else:
-            print(f"Unknown playlist subcommand: '{args[0]}'. Available: new, delete, rename, show, active, none, import, export")
+            print(f"Unknown playlist subcommand: '{args[0]}'. Available: new, delete, rename, show, analyze, active, none, import, export")
             return ctx, True
 
     elif command == 'add':
