@@ -626,6 +626,16 @@ def get_track_by_path(file_path: str) -> Optional[Dict[str, Any]]:
         return dict(row) if row else None
 
 
+def get_track_by_id(track_id: int) -> Optional[Dict[str, Any]]:
+    """Get track information by ID."""
+    with get_db_connection() as conn:
+        cursor = conn.execute("""
+            SELECT * FROM tracks WHERE id = ?
+        """, (track_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
 def get_track_path_to_id_map() -> Dict[str, int]:
     """Get mapping of file_path to track_id for all tracks in database.
 
@@ -880,8 +890,129 @@ def get_tracks_needing_analysis() -> List[Dict[str, Any]]:
             INNER JOIN notes n ON t.id = n.track_id
             LEFT JOIN tags tag ON t.id = tag.track_id AND tag.source = 'ai'
             LEFT JOIN ratings r ON t.id = r.track_id AND r.rating_type = 'archive'
-            WHERE tag.id IS NULL 
+            WHERE tag.id IS NULL
             AND r.id IS NULL
             ORDER BY n.timestamp DESC
         """)
         return [dict(row) for row in cursor.fetchall()]
+
+
+# Metadata Editor Functions
+
+def update_track_metadata(track_id: int, **fields) -> bool:
+    """Update track metadata fields.
+
+    Args:
+        track_id: Track ID to update
+        **fields: Field name/value pairs (title, artist, album, year, bpm, key_signature, genre)
+
+    Returns:
+        True if successful
+    """
+    if not fields:
+        return False
+
+    # Validate field names
+    valid_fields = {'title', 'artist', 'album', 'year', 'bpm', 'key_signature', 'genre'}
+    invalid_fields = set(fields.keys()) - valid_fields
+    if invalid_fields:
+        raise ValueError(f"Invalid fields: {invalid_fields}")
+
+    # Build UPDATE query dynamically
+    set_clause = ', '.join(f"{field} = ?" for field in fields.keys())
+    values = list(fields.values()) + [track_id]
+
+    with get_db_connection() as conn:
+        conn.execute(f"""
+            UPDATE tracks
+            SET {set_clause}
+            WHERE id = ?
+        """, values)
+        conn.commit()
+
+    return True
+
+
+def delete_rating(track_id: int, rating_timestamp: str) -> bool:
+    """Delete specific rating by timestamp.
+
+    Args:
+        track_id: Track ID
+        rating_timestamp: ISO format timestamp
+
+    Returns:
+        True if rating was deleted
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute("""
+            DELETE FROM ratings
+            WHERE track_id = ? AND timestamp = ?
+        """, (track_id, rating_timestamp))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def update_rating(track_id: int, old_timestamp: str, new_rating_type: str) -> bool:
+    """Update rating type for a specific rating.
+
+    Args:
+        track_id: Track ID
+        old_timestamp: Original timestamp of rating
+        new_rating_type: New rating type (archive, like, love)
+
+    Returns:
+        True if rating was updated
+    """
+    # Validate rating type
+    valid_types = {'archive', 'like', 'love'}
+    if new_rating_type not in valid_types:
+        raise ValueError(f"Invalid rating type. Must be one of: {valid_types}")
+
+    with get_db_connection() as conn:
+        cursor = conn.execute("""
+            UPDATE ratings
+            SET rating_type = ?
+            WHERE track_id = ? AND timestamp = ?
+        """, (new_rating_type, track_id, old_timestamp))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def delete_note(track_id: int, note_timestamp: str) -> bool:
+    """Delete specific note by timestamp.
+
+    Args:
+        track_id: Track ID
+        note_timestamp: ISO format timestamp
+
+    Returns:
+        True if note was deleted
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute("""
+            DELETE FROM notes
+            WHERE track_id = ? AND timestamp = ?
+        """, (track_id, note_timestamp))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def update_note(track_id: int, old_timestamp: str, new_note_text: str) -> bool:
+    """Update note text for a specific note.
+
+    Args:
+        track_id: Track ID
+        old_timestamp: Original timestamp of note
+        new_note_text: New note text
+
+    Returns:
+        True if note was updated
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute("""
+            UPDATE notes
+            SET note_text = ?
+            WHERE track_id = ? AND timestamp = ?
+        """, (new_note_text, track_id, old_timestamp))
+        conn.commit()
+        return cursor.rowcount > 0

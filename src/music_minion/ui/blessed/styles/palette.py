@@ -25,6 +25,7 @@ COMMAND_DEFINITIONS: list[tuple[str, str, str, str]] = [
     ('🔍 Library', 'scan', '🔍', 'Scan library for new tracks'),
     ('🔍 Library', 'stats', '📊', 'Show library statistics'),
     ('🔍 Library', 'sync', '🔄', 'Sync metadata with files'),
+    ('🔍 Library', 'metadata', '🔧', 'Edit track metadata'),
 
     # AI
     ('🤖 AI', 'ai', '🤖', 'AI-powered features'),

@@ -121,6 +121,14 @@ class UIState:
     analytics_viewer_scroll: int = 0  # Scroll offset in lines
     analytics_viewer_total_lines: int = 0  # Total formatted lines (pre-calculated)
 
+    # Metadata editor state (for editing track metadata interactively)
+    editor_visible: bool = False
+    editor_mode: str = 'main'  # 'main' | 'list_editor'
+    editor_data: dict[str, Any] = field(default_factory=dict)  # All editor state in one dict
+    editor_selected: int = 0  # Selected field/item index
+    editor_scroll: int = 0  # Scroll offset
+    editor_changes: dict[str, Any] = field(default_factory=dict)  # Pending changes
+
     # AI Review mode state (conversational tag review)
     review_mode: Optional[str] = None  # None, 'conversation', 'confirm'
     review_data: dict[str, Any] = field(default_factory=dict)  # Track, tags, conversation history
@@ -852,3 +860,114 @@ def end_scan(state: UIState) -> UIState:
         Updated state with scan completed
     """
     return replace(state, scan_progress=ScanProgress())
+
+
+def show_metadata_editor(state: UIState, track_data: dict[str, Any]) -> UIState:
+    """
+    Show metadata editor with track data.
+
+    Args:
+        state: Current UI state
+        track_data: Track data dict with id, metadata fields, ratings, notes, tags
+
+    Returns:
+        Updated state with editor visible
+    """
+    return replace(
+        state,
+        editor_visible=True,
+        editor_mode='main',
+        editor_data=track_data,
+        editor_selected=0,
+        editor_scroll=0,
+        editor_changes={},
+        palette_visible=False,  # Hide palette when editor opens
+        input_text='',
+        cursor_pos=0
+    )
+
+
+def hide_metadata_editor(state: UIState) -> UIState:
+    """
+    Hide metadata editor and reset state.
+
+    Args:
+        state: Current UI state
+
+    Returns:
+        Updated state with editor hidden
+    """
+    return replace(
+        state,
+        editor_visible=False,
+        editor_mode='main',
+        editor_data={},
+        editor_selected=0,
+        editor_scroll=0,
+        editor_changes={}
+    )
+
+
+def move_editor_selection(state: UIState, delta: int, max_items: int) -> UIState:
+    """
+    Move selection in metadata editor.
+
+    Args:
+        state: Current UI state
+        delta: Direction and amount to move (-1 for up, 1 for down)
+        max_items: Maximum number of items
+
+    Returns:
+        Updated state with new selection
+    """
+    if max_items == 0:
+        return state
+
+    new_selected = (state.editor_selected + delta) % max_items
+    return replace(state, editor_selected=new_selected)
+
+
+def set_editor_mode(state: UIState, mode: str, data: dict[str, Any] | None = None) -> UIState:
+    """
+    Set editor mode (main or list_editor).
+
+    Args:
+        state: Current UI state
+        mode: Editor mode ('main' or 'list_editor')
+        data: Optional data to merge into editor_data
+
+    Returns:
+        Updated state with new mode
+    """
+    if data:
+        new_data = {**state.editor_data, **data}
+        return replace(state, editor_mode=mode, editor_data=new_data, editor_selected=0, editor_scroll=0)
+    else:
+        return replace(state, editor_mode=mode, editor_selected=0, editor_scroll=0)
+
+
+def add_editor_change(state: UIState, change_type: str, change_data: Any) -> UIState:
+    """
+    Add a pending change to editor.
+
+    Args:
+        state: Current UI state
+        change_type: Type of change (e.g., 'basic', 'delete_rating', 'add_note')
+        change_data: Change data
+
+    Returns:
+        Updated state with change added
+    """
+    new_changes = {**state.editor_changes}
+
+    # For basic metadata, merge into 'basic' dict
+    if change_type == 'basic':
+        basic = new_changes.get('basic', {})
+        new_changes['basic'] = {**basic, **change_data}
+    else:
+        # For list changes, append to list
+        if change_type not in new_changes:
+            new_changes[change_type] = []
+        new_changes[change_type].append(change_data)
+
+    return replace(state, editor_changes=new_changes)

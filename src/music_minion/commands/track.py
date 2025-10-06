@@ -133,3 +133,42 @@ def handle_remove_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext,
     except Exception as e:
         print(f"❌ Error removing track from playlist: {e}")
         return ctx, True
+
+
+def handle_metadata_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
+    """Handle metadata command - show metadata editor for current track.
+
+    Args:
+        ctx: Application context
+        args: Command arguments (unused)
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    if not ctx.player_state.current_track:
+        print("No track is currently playing")
+        return ctx, True
+
+    # Get track from database
+    db_track = database.get_track_by_path(ctx.player_state.current_track)
+    if not db_track:
+        print("❌ Could not find current track in database")
+        return ctx, True
+
+    track_id = db_track['id']
+
+    # Signal to blessed UI to open metadata editor
+    # This will be handled via InternalCommand in keyboard handler
+    from music_minion.ui.blessed.state import InternalCommand
+    from music_minion.ui.blessed.events.commands.metadata_handlers import handle_show_metadata_editor
+
+    # For non-blessed mode, show error
+    if not hasattr(ctx, 'ui_state'):
+        print("⚠️  Metadata editor only available in blessed UI mode")
+        return ctx, True
+
+    # In blessed mode, this command is handled via internal command
+    # The blessed app will call handle_show_metadata_editor
+    print(f"Opening metadata editor for: {db_track.get('artist')} - {db_track.get('title')}")
+
+    return ctx, True

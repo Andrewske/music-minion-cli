@@ -453,6 +453,61 @@ def handle_analytics_viewer_key(state: UIState, event: dict, viewer_height: int 
     return state, None
 
 
+def handle_metadata_editor_key(state: UIState, event: dict) -> tuple[UIState | None, str | InternalCommand | None]:
+    """
+    Handle keyboard events for metadata editor mode.
+
+    Args:
+        state: Current UI state (metadata editor must be visible)
+        event: Parsed key event from parse_key()
+
+    Returns:
+        Tuple of (updated state or None if not handled, command to execute or None)
+    """
+    from music_minion.ui.blessed.events.commands.metadata_handlers import (
+        handle_metadata_editor_navigation,
+        handle_metadata_editor_enter,
+        handle_metadata_editor_delete,
+        handle_metadata_editor_add,
+        handle_metadata_editor_back,
+    )
+    from music_minion.ui.blessed.state import InternalCommand
+
+    # Escape closes editor with save
+    if event['type'] == 'escape':
+        # Use internal command to trigger save
+        return state, InternalCommand(action='metadata_save')
+
+    # Arrow keys / j/k for navigation
+    if event['type'] == 'arrow_up' or (event['char'] and event['char'] == 'k'):
+        state = handle_metadata_editor_navigation(state, -1)
+        return state, None
+
+    if event['type'] == 'arrow_down' or (event['char'] and event['char'] == 'j'):
+        state = handle_metadata_editor_navigation(state, 1)
+        return state, None
+
+    # Enter - edit selected field
+    if event['type'] == 'enter':
+        return state, InternalCommand(action='metadata_edit')
+
+    # Delete - delete item (list editor only)
+    if event['type'] == 'delete' or (event['char'] and event['char'] == 'd'):
+        return state, InternalCommand(action='metadata_delete')
+
+    # 'a' - add item (list editor only)
+    if event['char'] and event['char'] == 'a':
+        return state, InternalCommand(action='metadata_add')
+
+    # 'q' - back to main editor (from list editor)
+    if event['char'] and event['char'] == 'q':
+        state = handle_metadata_editor_back(state)
+        return state, None
+
+    # For any other key in metadata editor mode, consume it and do nothing
+    return state, None
+
+
 def handle_key(state: UIState, key: Keystroke, palette_height: int = 10, analytics_viewer_height: int = 30) -> tuple[UIState, str | InternalCommand | None]:
     """
     Handle keyboard input and return updated state.
@@ -515,7 +570,13 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10, analyti
         if state_updated is not None:
             return state_updated, cmd
 
-    # Handle review mode keys (fifth priority)
+    # Handle metadata editor keys (fifth priority)
+    if state.editor_visible:
+        state_updated, cmd = handle_metadata_editor_key(state, event)
+        if state_updated is not None:
+            return state_updated, cmd
+
+    # Handle review mode keys (sixth priority)
     if state.review_mode:
         # In review mode, Enter sends input to review handler
         if event['type'] == 'enter' and state.input_text.strip():

@@ -152,6 +152,30 @@ def _handle_internal_command(ctx: AppContext, ui_state: UIState, cmd: InternalCo
         ui_state = _show_analytics_viewer_if_data(ui_state, analytics_data)
         return ctx, ui_state, False
 
+    elif cmd.action == 'metadata_save':
+        # Save metadata and close editor
+        from music_minion.ui.blessed.events.commands.metadata_handlers import handle_metadata_editor_save
+        ctx, ui_state = handle_metadata_editor_save(ctx, ui_state)
+        return ctx, ui_state, False
+
+    elif cmd.action == 'metadata_edit':
+        # Edit selected field
+        from music_minion.ui.blessed.events.commands.metadata_handlers import handle_metadata_editor_enter
+        ctx, ui_state = handle_metadata_editor_enter(ctx, ui_state)
+        return ctx, ui_state, False
+
+    elif cmd.action == 'metadata_delete':
+        # Delete selected item
+        from music_minion.ui.blessed.events.commands.metadata_handlers import handle_metadata_editor_delete
+        ctx, ui_state = handle_metadata_editor_delete(ctx, ui_state)
+        return ctx, ui_state, False
+
+    elif cmd.action == 'metadata_add':
+        # Add new item
+        from music_minion.ui.blessed.events.commands.metadata_handlers import handle_metadata_editor_add
+        ctx, ui_state = handle_metadata_editor_add(ctx, ui_state)
+        return ctx, ui_state, False
+
     else:
         # Unknown command action, log it and continue
         ui_state = add_history_line(ui_state, f"⚠️ Unknown internal command: {cmd.action}", 'yellow')
@@ -212,6 +236,26 @@ def execute_command(ctx: AppContext, ui_state: UIState, command_line: str | Inte
         # Initialize scan UI state (actual progress will be polled)
         ui_state = start_scan(ui_state, 0)
         ui_state = add_history_line(ui_state, "🔍 Starting library scan in background...", 'cyan')
+
+        return ctx, ui_state, False
+
+    # Special handling for metadata command - show editor
+    if command == 'metadata':
+        if not ctx.player_state.current_track:
+            ui_state = add_history_line(ui_state, "No track is currently playing", 'white')
+            return ctx, ui_state, False
+
+        from music_minion.core import database
+        db_track = database.get_track_by_path(ctx.player_state.current_track)
+        if not db_track:
+            ui_state = add_history_line(ui_state, "❌ Could not find current track in database", 'red')
+            return ctx, ui_state, False
+
+        track_id = db_track['id']
+
+        # Show metadata editor
+        from music_minion.ui.blessed.events.commands.metadata_handlers import handle_show_metadata_editor
+        ctx, ui_state = handle_show_metadata_editor(ctx, ui_state, track_id)
 
         return ctx, ui_state, False
 

@@ -16,6 +16,7 @@ from .components import (
     render_analytics_viewer,
 )
 from .components.track_viewer import render_track_viewer
+from .components.metadata_editor import render_metadata_editor
 from .events.keyboard import handle_key
 from .events.commands import execute_command
 
@@ -295,7 +296,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
     last_state_hash = None
     needs_full_redraw = True
     last_input_text = ""
-    last_palette_state = (False, 0, False, False, 0, False, 0, False, 0)  # (palette_visible, palette_selected, confirmation_active, wizard_active, wizard_selected, track_viewer_visible, track_viewer_selected, analytics_viewer_visible, analytics_viewer_scroll)
+    last_palette_state = (False, 0, False, False, 0, False, 0, False, 0, False, 0)  # (palette_visible, palette_selected, confirmation_active, wizard_active, wizard_selected, track_viewer_visible, track_viewer_selected, analytics_viewer_visible, analytics_viewer_scroll, editor_visible, editor_selected)
     layout = None
     last_position = None  # Track position separately for partial updates
     dashboard_line_mapping = {}  # Store line offsets from last full dashboard render
@@ -414,12 +415,19 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     layout['analytics_viewer_y'],
                     layout['analytics_viewer_height']
                 )
+            elif ui_state.editor_visible:
+                render_metadata_editor(
+                    term,
+                    ui_state,
+                    layout['palette_y'],  # Use palette area
+                    layout['palette_height']
+                )
 
             # Flush output
             sys.stdout.flush()
 
             last_input_text = ui_state.input_text
-            last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll)
+            last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll, ui_state.editor_visible, ui_state.editor_selected)
             last_position = int(ctx.player_state.current_position)  # Update position after full redraw
 
         elif input_changed or palette_state_changed:
@@ -477,12 +485,19 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                             layout['analytics_viewer_y'],
                             layout['analytics_viewer_height']
                         )
+                    elif ui_state.editor_visible:
+                        render_metadata_editor(
+                            term,
+                            ui_state,
+                            layout['palette_y'],
+                            layout['palette_height']
+                        )
 
                     # Flush output
                     sys.stdout.flush()
 
                     last_input_text = ui_state.input_text
-                    last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll)
+                    last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll, ui_state.editor_visible, ui_state.editor_selected)
 
         else:
             # Check if only position changed (partial dashboard update)

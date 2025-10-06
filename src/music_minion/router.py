@@ -211,6 +211,9 @@ def handle_command(ctx: AppContext, command: str, args: List[str]) -> Tuple[AppC
     elif command == 'remove':
         return track.handle_remove_command(ctx, args)
 
+    elif command == 'metadata':
+        return track.handle_metadata_command(ctx, args)
+
     elif command == 'ai':
         if not args:
             print("Error: AI command requires a subcommand. Usage: ai <setup|analyze|review|enhance|test|usage>")
