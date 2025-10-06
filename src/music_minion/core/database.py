@@ -918,9 +918,40 @@ def update_track_metadata(track_id: int, **fields) -> bool:
     if invalid_fields:
         raise ValueError(f"Invalid fields: {invalid_fields}")
 
+    # Validate field values
+    validated_fields = {}
+    for field, value in fields.items():
+        # Skip None values (allow clearing fields)
+        if value is None or value == '':
+            validated_fields[field] = None
+            continue
+
+        # Type-specific validation
+        if field == 'year':
+            try:
+                year_val = int(value)
+                if not (1900 <= year_val <= 2100):
+                    raise ValueError(f"Year must be between 1900 and 2100, got {year_val}")
+                validated_fields[field] = year_val
+            except (ValueError, TypeError) as e:
+                raise ValueError(f"Invalid year value '{value}': {e}")
+
+        elif field == 'bpm':
+            try:
+                bpm_val = int(value)
+                if not (1 <= bpm_val <= 300):
+                    raise ValueError(f"BPM must be between 1 and 300, got {bpm_val}")
+                validated_fields[field] = bpm_val
+            except (ValueError, TypeError) as e:
+                raise ValueError(f"Invalid BPM value '{value}': {e}")
+
+        elif field in ('title', 'artist', 'album', 'genre', 'key_signature'):
+            # String fields: just convert to string and trim
+            validated_fields[field] = str(value).strip()
+
     # Build UPDATE query dynamically
-    set_clause = ', '.join(f"{field} = ?" for field in fields.keys())
-    values = list(fields.values()) + [track_id]
+    set_clause = ', '.join(f"{field} = ?" for field in validated_fields.keys())
+    values = list(validated_fields.values()) + [track_id]
 
     with get_db_connection() as conn:
         conn.execute(f"""

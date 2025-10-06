@@ -471,8 +471,65 @@ def handle_metadata_editor_key(state: UIState, event: dict) -> tuple[UIState | N
         handle_metadata_editor_add,
         handle_metadata_editor_back,
     )
-    from music_minion.ui.blessed.state import InternalCommand
+    from music_minion.ui.blessed.state import InternalCommand, save_field_edit, cancel_field_edit, save_add_item, cancel_add_item, replace
 
+    # Special handling for editing_field mode
+    if state.editor_mode == 'editing_field':
+        # Escape cancels editing
+        if event['type'] == 'escape':
+            state = cancel_field_edit(state)
+            return state, None
+
+        # Enter saves field
+        if event['type'] == 'enter':
+            state = save_field_edit(state)
+            return state, None
+
+        # Backspace deletes character
+        if event['type'] == 'backspace':
+            if state.editor_input:
+                new_input = state.editor_input[:-1]
+                state = replace(state, editor_input=new_input)
+            return state, None
+
+        # Regular character: append to input
+        if event['type'] == 'char' and event['char']:
+            new_input = state.editor_input + event['char']
+            state = replace(state, editor_input=new_input)
+            return state, None
+
+        # Consume any other key in editing mode
+        return state, None
+
+    # Special handling for adding_item mode
+    if state.editor_mode == 'adding_item':
+        # Escape cancels adding
+        if event['type'] == 'escape':
+            state = cancel_add_item(state)
+            return state, None
+
+        # Enter saves new item
+        if event['type'] == 'enter':
+            state = save_add_item(state)
+            return state, None
+
+        # Backspace deletes character
+        if event['type'] == 'backspace':
+            if state.editor_input:
+                new_input = state.editor_input[:-1]
+                state = replace(state, editor_input=new_input)
+            return state, None
+
+        # Regular character: append to input
+        if event['type'] == 'char' and event['char']:
+            new_input = state.editor_input + event['char']
+            state = replace(state, editor_input=new_input)
+            return state, None
+
+        # Consume any other key in adding mode
+        return state, None
+
+    # Main editor and list editor modes
     # Escape closes editor with save
     if event['type'] == 'escape':
         # Use internal command to trigger save

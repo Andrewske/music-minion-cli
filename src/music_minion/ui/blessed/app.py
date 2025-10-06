@@ -336,7 +336,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
 
         # Check for input-only changes (no full redraw needed)
         input_changed = ui_state.input_text != last_input_text
-        palette_state_changed = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll) != last_palette_state
+        palette_state_changed = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll, ui_state.editor_visible, ui_state.editor_selected) != last_palette_state
 
         # Determine if we need a full redraw
         needs_full_redraw = needs_full_redraw or (current_state_hash is not None and current_state_hash != last_state_hash)
@@ -430,74 +430,74 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
             last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll, ui_state.editor_visible, ui_state.editor_selected)
             last_position = int(ctx.player_state.current_position)  # Update position after full redraw
 
-        elif input_changed or palette_state_changed:
+        # Check if modal visibility changed (requires full redraw)
+        if palette_state_changed and (ui_state.palette_visible != last_palette_state[0] or ui_state.wizard_active != last_palette_state[3] or ui_state.track_viewer_visible != last_palette_state[5] or ui_state.analytics_viewer_visible != last_palette_state[7] or ui_state.editor_visible != last_palette_state[9]):
+            needs_full_redraw = True
+
+        if input_changed or palette_state_changed:
             # Partial update - only input and palette changed
-            if layout:
-                # If palette, wizard, track viewer, or analytics viewer visibility changed, do a full redraw instead
-                if palette_state_changed and (ui_state.palette_visible != last_palette_state[0] or ui_state.wizard_active != last_palette_state[3] or ui_state.track_viewer_visible != last_palette_state[5] or ui_state.analytics_viewer_visible != last_palette_state[7]):
-                    needs_full_redraw = True
-                else:
-                    # Clear input area (3 lines: top border, input, bottom border)
-                    input_y = layout['input_y']
-                    for i in range(3):
-                        sys.stdout.write(term.move_xy(0, input_y + i) + term.clear_eol)
+            if layout and not needs_full_redraw:
+                # Clear input area (3 lines: top border, input, bottom border)
+                input_y = layout['input_y']
+                for i in range(3):
+                    sys.stdout.write(term.move_xy(0, input_y + i) + term.clear_eol)
 
-                    # Clear palette/wizard/track viewer/analytics viewer area if visible
-                    if ui_state.palette_visible or ui_state.wizard_active or ui_state.track_viewer_visible or ui_state.analytics_viewer_visible:
-                        overlay_y = layout['palette_y']  # Same position for all overlays
-                        overlay_height = layout['palette_height']
-                        for i in range(overlay_height):
-                            sys.stdout.write(term.move_xy(0, overlay_y + i) + term.clear_eol)
+                # Clear palette/wizard/track viewer/analytics viewer/editor area if visible
+                if ui_state.palette_visible or ui_state.wizard_active or ui_state.track_viewer_visible or ui_state.analytics_viewer_visible or ui_state.editor_visible:
+                    overlay_y = layout['palette_y']  # Same position for all overlays
+                    overlay_height = layout['palette_height']
+                    for i in range(overlay_height):
+                        sys.stdout.write(term.move_xy(0, overlay_y + i) + term.clear_eol)
 
-                    # Re-render
-                    render_input(
+                # Re-render
+                render_input(
+                    term,
+                    ui_state,
+                    layout['input_y']
+                )
+
+                # Render palette, wizard, track viewer, or analytics viewer (mutually exclusive)
+                if ui_state.wizard_active:
+                    render_smart_playlist_wizard(
                         term,
                         ui_state,
-                        layout['input_y']
+                        layout['palette_y'],
+                        layout['palette_height']
+                    )
+                elif ui_state.palette_visible:
+                    render_palette(
+                        term,
+                        ui_state,
+                        layout['palette_y'],
+                        layout['palette_height']
+                    )
+                elif ui_state.track_viewer_visible:
+                    render_track_viewer(
+                        term,
+                        ui_state,
+                        layout['track_viewer_y'],
+                        layout['track_viewer_height']
+                    )
+                elif ui_state.analytics_viewer_visible:
+                    render_analytics_viewer(
+                        term,
+                        ui_state,
+                        layout['analytics_viewer_y'],
+                        layout['analytics_viewer_height']
+                    )
+                elif ui_state.editor_visible:
+                    render_metadata_editor(
+                        term,
+                        ui_state,
+                        layout['palette_y'],
+                        layout['palette_height']
                     )
 
-                    # Render palette, wizard, track viewer, or analytics viewer (mutually exclusive)
-                    if ui_state.wizard_active:
-                        render_smart_playlist_wizard(
-                            term,
-                            ui_state,
-                            layout['palette_y'],
-                            layout['palette_height']
-                        )
-                    elif ui_state.palette_visible:
-                        render_palette(
-                            term,
-                            ui_state,
-                            layout['palette_y'],
-                            layout['palette_height']
-                        )
-                    elif ui_state.track_viewer_visible:
-                        render_track_viewer(
-                            term,
-                            ui_state,
-                            layout['track_viewer_y'],
-                            layout['track_viewer_height']
-                        )
-                    elif ui_state.analytics_viewer_visible:
-                        render_analytics_viewer(
-                            term,
-                            ui_state,
-                            layout['analytics_viewer_y'],
-                            layout['analytics_viewer_height']
-                        )
-                    elif ui_state.editor_visible:
-                        render_metadata_editor(
-                            term,
-                            ui_state,
-                            layout['palette_y'],
-                            layout['palette_height']
-                        )
+                # Flush output
+                sys.stdout.flush()
 
-                    # Flush output
-                    sys.stdout.flush()
-
-                    last_input_text = ui_state.input_text
-                    last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll, ui_state.editor_visible, ui_state.editor_selected)
+                last_input_text = ui_state.input_text
+                last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll, ui_state.editor_visible, ui_state.editor_selected)
 
         else:
             # Check if only position changed (partial dashboard update)

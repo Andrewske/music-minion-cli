@@ -1,3 +1,19 @@
+## 2025-10-05 20:11
+
+### Changes
+- ADDED: Interactive metadata editor with live text input
+- ADDED: Add/delete functionality for notes and tags
+- FIXED: Editor rendering (layout calculation missing editor_visible check)
+- FIXED: Pending changes counter now shows accurate count
+- ADDED: Input validation for year and BPM fields
+
+### LEARNINGS
+- Modal visibility must be checked in calculate_layout() for proper height allocation
+- When editor_visible=True but layout doesn't allocate height, render functions early-return (height <= 0)
+- Full redraw logic requires checking modal state changes BEFORE entering partial update blocks
+
+---
+
 ## 2025-10-05 16:30
 
 ### Changes

@@ -11,6 +11,9 @@ from music_minion.ui.blessed.state import (
     move_editor_selection,
     set_editor_mode,
     add_editor_change,
+    start_field_editing,
+    save_field_edit,
+    cancel_field_edit,
 )
 
 
@@ -178,14 +181,44 @@ def handle_metadata_editor_save(ctx: AppContext, ui_state: UIState) -> tuple[App
         ui_state = add_history_line(ui_state, f"❌ Error: No track ID", 'red')
         return ctx, ui_state
 
-    success = _save_all_changes(track_id, ui_state.editor_changes)
+    success, error_msg = _save_all_changes(track_id, ui_state.editor_changes)
 
     if success:
-        ui_state = hide_metadata_editor(ui_state)
-        ui_state = add_history_line(ui_state, f"✅ Metadata saved", 'green')
-        ui_state = set_feedback(ui_state, "Metadata saved", "✓")
+        # Reload track data from database to show updated values
+        from music_minion.core import database
+        track = database.get_track_by_id(track_id)
+        if track:
+            # Reload ratings, notes, tags
+            ratings = database.get_track_ratings(track_id)
+            notes = database.get_track_notes(track_id)
+            tags = database.get_track_tags(track_id, include_blacklisted=False)
+
+            # Update track data
+            track_data = {
+                'id': track_id,
+                'file_path': track.get('file_path'),
+                'title': track.get('title'),
+                'artist': track.get('artist'),
+                'album': track.get('album'),
+                'year': track.get('year'),
+                'bpm': track.get('bpm'),
+                'key': track.get('key_signature'),
+                'genre': track.get('genre'),
+                'ratings': ratings,
+                'notes': notes,
+                'tags': tags,
+            }
+
+            # Update editor data with refreshed values, clear changes
+            ui_state = replace(ui_state, editor_data=track_data, editor_changes={})
+            ui_state = add_history_line(ui_state, f"✅ Metadata saved and reloaded", 'green')
+            ui_state = set_feedback(ui_state, "Metadata saved", "✓")
+        else:
+            # Failed to reload, close editor
+            ui_state = hide_metadata_editor(ui_state)
+            ui_state = add_history_line(ui_state, f"✅ Metadata saved (failed to reload)", 'yellow')
     else:
-        ui_state = add_history_line(ui_state, f"❌ Failed to save metadata", 'red')
+        ui_state = add_history_line(ui_state, f"❌ Failed to save metadata: {error_msg}", 'red')
 
     return ctx, ui_state
 
@@ -214,9 +247,9 @@ def _handle_edit_field(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, 
             'items': items
         })
     else:
-        # Single-value field: Would open text input (not implemented yet)
-        # For now, show message
-        ui_state = add_history_line(ui_state, f"⚠️  Editing {field_name} not yet implemented", 'yellow')
+        # Single-value field: Open text input
+        current_value = track_data.get(field_name)
+        ui_state = start_field_editing(ui_state, field_name, current_value)
 
     return ctx, ui_state
 
@@ -241,10 +274,19 @@ def _handle_delete_item(ctx: AppContext, ui_state: UIState) -> tuple[AppContext,
 
     # Remove from display list
     new_items = items[:selected] + items[selected + 1:]
+
+    # Adjust selection to stay in bounds
+    # If list is now empty, selection will be 0 (which is fine for empty list)
+    # If deleted last item, move selection to previous item
+    new_selected = min(selected, len(new_items) - 1) if new_items else 0
+
     ui_state = set_editor_mode(ui_state, 'list_editor', {
         'editing_field': field_type,
         'items': new_items
     })
+
+    # Manually set the correct selection (set_editor_mode resets to 0)
+    ui_state = replace(ui_state, editor_selected=new_selected)
 
     ui_state = add_history_line(ui_state, f"⚠️  Marked {field_type[:-1]} for deletion", 'yellow')
 
@@ -253,12 +295,34 @@ def _handle_delete_item(ctx: AppContext, ui_state: UIState) -> tuple[AppContext,
 
 def _handle_add_item(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, UIState]:
     """Handle adding an item in list editor."""
-    # Not implemented yet - would open input dialog
-    ui_state = add_history_line(ui_state, f"⚠️  Adding items not yet implemented", 'yellow')
+    editor_data = ui_state.editor_data
+    field_type = editor_data.get('editing_field', '')
+
+    # For notes and tags: just text input
+    if field_type in ['notes', 'tags']:
+        # Enter adding_item mode
+        ui_state = replace(
+            ui_state,
+            editor_mode='adding_item',
+            editor_input='',
+            editor_data={
+                **editor_data,
+                'adding_item_type': field_type
+            }
+        )
+    elif field_type == 'ratings':
+        # For ratings, show a simple selector (archive/like/love)
+        # For now, default to 'like' and add directly
+        change_data = {'rating_type': 'like'}
+        ui_state = add_editor_change(ui_state, 'add_rating', change_data)
+        ui_state = add_history_line(ui_state, "✓ Added rating: like", 'green')
+    else:
+        ui_state = add_history_line(ui_state, f"⚠️  Adding {field_type} not supported", 'yellow')
+
     return ctx, ui_state
 
 
-def _save_all_changes(track_id: int, changes: dict) -> bool:
+def _save_all_changes(track_id: int, changes: dict) -> tuple[bool, str]:
     """
     Save all pending changes to database.
 
@@ -267,7 +331,7 @@ def _save_all_changes(track_id: int, changes: dict) -> bool:
         changes: Dictionary of pending changes
 
     Returns:
-        True if all changes saved successfully
+        Tuple of (success, error_message)
     """
     from music_minion.core import database
 
@@ -317,8 +381,9 @@ def _save_all_changes(track_id: int, changes: dict) -> bool:
         for item in add_tags:
             database.add_tags(track_id, [item['tag_name']], source='user')
 
-        return True
+        return True, ""
 
     except Exception as e:
-        print(f"❌ Error saving metadata: {e}")
-        return False
+        error_msg = str(e)
+        print(f"❌ Error saving metadata: {error_msg}")
+        return False, error_msg

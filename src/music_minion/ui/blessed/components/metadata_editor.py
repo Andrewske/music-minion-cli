@@ -9,9 +9,37 @@ EDITOR_HEADER_LINES = 3  # Title + track info + separator
 EDITOR_FOOTER_LINES = 1  # Help text
 
 
+def count_pending_changes(editor_changes: dict) -> int:
+    """
+    Count total number of pending changes.
+
+    Args:
+        editor_changes: Dictionary of pending changes
+
+    Returns:
+        Total number of changes (not just number of change types)
+    """
+    if not editor_changes:
+        return 0
+
+    count = 0
+
+    # Count basic metadata changes (single dict)
+    if 'basic' in editor_changes:
+        # Count each changed field
+        count += len(editor_changes['basic'])
+
+    # Count list-based changes (deletions, additions, updates)
+    for change_type, changes in editor_changes.items():
+        if change_type != 'basic' and isinstance(changes, list):
+            count += len(changes)
+
+    return count
+
+
 def render_metadata_editor(term: Terminal, state: UIState, y: int, height: int) -> None:
     """
-    Render metadata editor - routes to main or list editor based on mode.
+    Render metadata editor - routes to main, list, or field editor based on mode.
 
     Args:
         term: blessed Terminal instance
@@ -24,8 +52,15 @@ def render_metadata_editor(term: Terminal, state: UIState, y: int, height: int) 
 
     if state.editor_mode == 'main':
         render_main_editor(term, state, y, height)
-    else:
+    elif state.editor_mode == 'list_editor':
         render_list_editor(term, state, y, height)
+    elif state.editor_mode == 'editing_field':
+        render_field_editor(term, state, y, height)
+    elif state.editor_mode == 'adding_item':
+        render_add_item_editor(term, state, y, height)
+    else:
+        # Fallback for unknown modes
+        render_main_editor(term, state, y, height)
 
 
 def render_main_editor(term: Terminal, state: UIState, y: int, height: int) -> None:
@@ -60,7 +95,7 @@ def render_main_editor(term: Terminal, state: UIState, y: int, height: int) -> N
 
     # Metadata line - pending changes indicator
     if line_num < height:
-        changes_count = len(state.editor_changes)
+        changes_count = count_pending_changes(state.editor_changes)
         if changes_count > 0:
             metadata_text = f"   ⚠️  {changes_count} pending change(s)"
             sys.stdout.write(term.move_xy(0, y + line_num) + term.yellow(metadata_text))
@@ -135,6 +170,12 @@ def render_list_editor(term: Terminal, state: UIState, y: int, height: int) -> N
     items = editor_data.get('items', [])
     selected_index = state.editor_selected
 
+    # Bounds check: ensure selection is valid (defensive programming)
+    if items and selected_index >= len(items):
+        selected_index = len(items) - 1
+    elif not items:
+        selected_index = 0
+
     line_num = 0
 
     # Header - Field name
@@ -197,6 +238,117 @@ def render_list_editor(term: Terminal, state: UIState, y: int, height: int) -> N
     if line_num < height:
         footer = "   ↑↓ navigate  d delete  a add  q back"
         sys.stdout.write(term.move_xy(0, y + line_num) + term.white(footer))
+
+
+def render_field_editor(term: Terminal, state: UIState, y: int, height: int) -> None:
+    """
+    Render field editing mode for single-value fields.
+
+    Args:
+        term: blessed Terminal instance
+        state: Current UI state
+        y: Starting y position
+        height: Available height for editor
+    """
+    editor_data = state.editor_data
+    field_name = editor_data.get('editing_field_name', 'unknown')
+    input_text = state.editor_input
+
+    # Field labels for display
+    field_labels = {
+        'title': 'Title',
+        'artist': 'Artist',
+        'album': 'Album',
+        'year': 'Year',
+        'bpm': 'BPM',
+        'key': 'Key Signature',
+        'genre': 'Genre'
+    }
+    field_label = field_labels.get(field_name, field_name.capitalize())
+
+    line_num = 0
+
+    # Header
+    if line_num < height:
+        header_text = f"   ✏️  Edit {field_label}"
+        sys.stdout.write(term.move_xy(0, y + line_num) + term.bold_cyan(header_text))
+        line_num += 1
+
+    # Hint line
+    if line_num < height:
+        hint_text = "   Type new value and press Enter to save, Esc to cancel"
+        sys.stdout.write(term.move_xy(0, y + line_num) + term.white(hint_text))
+        line_num += 1
+
+    # Separator
+    if line_num < height:
+        sys.stdout.write(term.move_xy(0, y + line_num) + term.white("   " + "─" * 60))
+        line_num += 1
+
+    # Input field
+    if line_num < height:
+        # Show input with cursor
+        input_display = f"   {field_label}: {input_text}█"
+        sys.stdout.write(term.move_xy(0, y + line_num) + term.white(input_display))
+        line_num += 1
+
+    # Clear remaining lines
+    while line_num < height:
+        sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+        line_num += 1
+
+
+def render_add_item_editor(term: Terminal, state: UIState, y: int, height: int) -> None:
+    """
+    Render add item mode for adding new notes or tags.
+
+    Args:
+        term: blessed Terminal instance
+        state: Current UI state
+        y: Starting y position
+        height: Available height for editor
+    """
+    editor_data = state.editor_data
+    item_type = editor_data.get('adding_item_type', 'unknown')
+    input_text = state.editor_input
+
+    # Item type labels for display
+    type_labels = {
+        'notes': 'Note',
+        'tags': 'Tag'
+    }
+    type_label = type_labels.get(item_type, item_type.capitalize())
+
+    line_num = 0
+
+    # Header
+    if line_num < height:
+        header_text = f"   ➕ Add New {type_label}"
+        sys.stdout.write(term.move_xy(0, y + line_num) + term.bold_cyan(header_text))
+        line_num += 1
+
+    # Hint line
+    if line_num < height:
+        hint_text = "   Type text and press Enter to add, Esc to cancel"
+        sys.stdout.write(term.move_xy(0, y + line_num) + term.white(hint_text))
+        line_num += 1
+
+    # Separator
+    if line_num < height:
+        sys.stdout.write(term.move_xy(0, y + line_num) + term.white("   " + "─" * 60))
+        line_num += 1
+
+    # Input field
+    if line_num < height:
+        # Show input with cursor
+        input_display = f"   {type_label}: {input_text}█"
+        sys.stdout.write(term.move_xy(0, y + line_num) + term.white(input_display))
+        line_num += 1
+
+    # Clear remaining lines
+    while line_num < height:
+        sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+        line_num += 1
 
 
 def _build_field_list(track_data: dict) -> list[tuple[str, any, bool]]:

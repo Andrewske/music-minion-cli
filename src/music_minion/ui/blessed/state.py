@@ -123,11 +123,12 @@ class UIState:
 
     # Metadata editor state (for editing track metadata interactively)
     editor_visible: bool = False
-    editor_mode: str = 'main'  # 'main' | 'list_editor'
+    editor_mode: str = 'main'  # 'main' | 'list_editor' | 'editing_field'
     editor_data: dict[str, Any] = field(default_factory=dict)  # All editor state in one dict
     editor_selected: int = 0  # Selected field/item index
     editor_scroll: int = 0  # Scroll offset
     editor_changes: dict[str, Any] = field(default_factory=dict)  # Pending changes
+    editor_input: str = ''  # Text input for field editing
 
     # AI Review mode state (conversational tag review)
     review_mode: Optional[str] = None  # None, 'conversation', 'confirm'
@@ -469,7 +470,12 @@ def start_wizard(state: UIState, wizard_type: str, initial_data: dict[str, Any])
         wizard_data=initial_data,
         wizard_options=initial_options,
         wizard_selected=0,
-        palette_visible=False,  # Hide palette when wizard starts
+        # Close all other modals
+        palette_visible=False,
+        track_viewer_visible=False,
+        analytics_viewer_visible=False,
+        editor_visible=False,
+        confirmation_active=False,
         input_text='',
         cursor_pos=0
     )
@@ -605,7 +611,12 @@ def show_track_viewer(state: UIState, playlist_id: int, playlist_name: str, play
         track_viewer_tracks=tracks,
         track_viewer_selected=0,
         track_viewer_scroll=0,
-        palette_visible=False,  # Hide palette when viewer opens
+        # Close all other modals
+        palette_visible=False,
+        wizard_active=False,
+        analytics_viewer_visible=False,
+        editor_visible=False,
+        confirmation_active=False,
         input_text='',
         cursor_pos=0
     )
@@ -689,7 +700,13 @@ def show_analytics_viewer(state: UIState, analytics_data: dict[str, Any]) -> UIS
             analytics_viewer_visible=True,
             analytics_viewer_data=analytics_data,
             analytics_viewer_scroll=0,
-            analytics_viewer_total_lines=total_lines
+            analytics_viewer_total_lines=total_lines,
+            # Close all other modals
+            palette_visible=False,
+            wizard_active=False,
+            track_viewer_visible=False,
+            editor_visible=False,
+            confirmation_active=False
         )
     except Exception as e:
         # On error, show error message in history instead of crashing UI
@@ -881,7 +898,12 @@ def show_metadata_editor(state: UIState, track_data: dict[str, Any]) -> UIState:
         editor_selected=0,
         editor_scroll=0,
         editor_changes={},
-        palette_visible=False,  # Hide palette when editor opens
+        # Close all other modals
+        palette_visible=False,
+        wizard_active=False,
+        track_viewer_visible=False,
+        analytics_viewer_visible=False,
+        confirmation_active=False,
         input_text='',
         cursor_pos=0
     )
@@ -971,3 +993,153 @@ def add_editor_change(state: UIState, change_type: str, change_data: Any) -> UIS
         new_changes[change_type].append(change_data)
 
     return replace(state, editor_changes=new_changes)
+
+
+def start_field_editing(state: UIState, field_name: str, current_value: Any) -> UIState:
+    """
+    Enter field editing mode for a single-value field.
+
+    Args:
+        state: Current UI state
+        field_name: Name of field being edited
+        current_value: Current value of field (will be converted to string)
+
+    Returns:
+        Updated state in editing_field mode
+    """
+    # Convert value to string for editing
+    value_str = str(current_value) if current_value is not None else ''
+
+    return replace(
+        state,
+        editor_mode='editing_field',
+        editor_input=value_str,
+        editor_data={
+            **state.editor_data,
+            'editing_field_name': field_name,
+            'editing_field_original': current_value
+        }
+    )
+
+
+def save_field_edit(state: UIState) -> UIState:
+    """
+    Save edited field value and return to main editor.
+
+    Args:
+        state: Current UI state
+
+    Returns:
+        Updated state with change saved
+    """
+    if state.editor_mode != 'editing_field':
+        return state
+
+    field_name = state.editor_data.get('editing_field_name', '')
+    new_value = state.editor_input.strip()
+
+    # Add to pending changes
+    state = add_editor_change(state, 'basic', {field_name: new_value})
+
+    # Update the display data to show new value
+    new_data = {**state.editor_data}
+    new_data[field_name] = new_value
+    # Clean up editing fields
+    new_data.pop('editing_field_name', None)
+    new_data.pop('editing_field_original', None)
+
+    return replace(
+        state,
+        editor_mode='main',
+        editor_data=new_data,
+        editor_input=''
+    )
+
+
+def cancel_field_edit(state: UIState) -> UIState:
+    """
+    Cancel field editing and return to main editor.
+
+    Args:
+        state: Current UI state
+
+    Returns:
+        Updated state with editing cancelled
+    """
+    if state.editor_mode != 'editing_field':
+        return state
+
+    # Clean up editing fields
+    new_data = {**state.editor_data}
+    new_data.pop('editing_field_name', None)
+    new_data.pop('editing_field_original', None)
+
+    return replace(
+        state,
+        editor_mode='main',
+        editor_data=new_data,
+        editor_input=''
+    )
+
+
+def save_add_item(state: UIState) -> UIState:
+    """
+    Save new item and return to list editor.
+
+    Args:
+        state: Current UI state
+
+    Returns:
+        Updated state with item added to pending changes
+    """
+    if state.editor_mode != 'adding_item':
+        return state
+
+    item_type = state.editor_data.get('adding_item_type', '')
+    new_value = state.editor_input.strip()
+
+    if not new_value:
+        # Empty input, cancel
+        return cancel_add_item(state)
+
+    # Add to pending changes based on type
+    if item_type == 'notes':
+        state = add_editor_change(state, 'add_note', {'note_text': new_value})
+    elif item_type == 'tags':
+        state = add_editor_change(state, 'add_tag', {'tag_name': new_value})
+
+    # Clean up adding fields
+    new_data = {**state.editor_data}
+    new_data.pop('adding_item_type', None)
+
+    return replace(
+        state,
+        editor_mode='list_editor',
+        editor_data=new_data,
+        editor_input=''
+    )
+
+
+def cancel_add_item(state: UIState) -> UIState:
+    """
+    Cancel adding item and return to list editor.
+
+    Args:
+        state: Current UI state
+
+    Returns:
+        Updated state with adding cancelled
+    """
+    if state.editor_mode != 'adding_item':
+        return state
+
+    # Clean up adding fields
+    new_data = {**state.editor_data}
+    new_data.pop('adding_item_type', None)
+
+    return replace(
+        state,
+        editor_mode='list_editor',
+        editor_data=new_data,
+        editor_input=''
+    )

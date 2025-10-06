@@ -17,7 +17,7 @@ def calculate_layout(term: Terminal, state: UIState, dashboard_height: int) -> d
         Dictionary with region positions and heights
     """
     input_height = 3
-    # Allocate height for palette, wizard, track viewer, or analytics viewer (mutually exclusive)
+    # Allocate height for palette, wizard, track viewer, analytics viewer, or editor (mutually exclusive)
     overlay_height = 0
     if state.palette_visible or state.wizard_active:
         overlay_height = 22
@@ -28,6 +28,8 @@ def calculate_layout(term: Terminal, state: UIState, dashboard_height: int) -> d
         available = term.height - dashboard_height - input_height
         min_history = 3  # Keep minimal history visible for context
         overlay_height = max(30, available - min_history)
+    elif state.editor_visible:
+        overlay_height = 22
 
     return {
         'dashboard_y': 0,
