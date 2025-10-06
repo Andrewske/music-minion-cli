@@ -22,6 +22,22 @@ from .track_viewer_handlers import (
 from .wizard_handlers import handle_wizard_save
 
 
+def _show_analytics_viewer_if_data(ui_state: UIState, analytics_data: dict) -> UIState:
+    """
+    Show analytics viewer if data is provided.
+
+    Args:
+        ui_state: Current UI state
+        analytics_data: Analytics data dictionary
+
+    Returns:
+        Updated UI state with analytics viewer shown (if data provided)
+    """
+    if analytics_data:
+        return show_analytics_viewer(ui_state, analytics_data)
+    return ui_state
+
+
 def _refresh_ui_state_from_db(ui_state: UIState) -> UIState:
     """
     Refresh UI state from database.
@@ -133,8 +149,7 @@ def _handle_internal_command(ctx: AppContext, ui_state: UIState, cmd: InternalCo
     elif cmd.action == 'show_analytics_viewer':
         # Show analytics viewer with data
         analytics_data = cmd.data.get('analytics_data', {})
-        if analytics_data:
-            ui_state = show_analytics_viewer(ui_state, analytics_data)
+        ui_state = _show_analytics_viewer_if_data(ui_state, analytics_data)
         return ctx, ui_state, False
 
     else:
@@ -285,8 +300,7 @@ def _process_ui_action(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, 
     elif action['type'] == 'show_analytics_viewer':
         # Show analytics viewer with data
         analytics_data = action.get('analytics_data', {})
-        if analytics_data:
-            ui_state = show_analytics_viewer(ui_state, analytics_data)
+        ui_state = _show_analytics_viewer_if_data(ui_state, analytics_data)
 
     # Clear the ui_action after processing
     ctx = ctx.with_ui_action(None)

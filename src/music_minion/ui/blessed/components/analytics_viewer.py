@@ -9,6 +9,44 @@ ANALYTICS_VIEWER_HEADER_LINES = 2  # Title + help line
 ANALYTICS_VIEWER_FOOTER_LINES = 1
 
 
+def create_ascii_bar(value: int, max_value: int, width: int = 12, filled_char: str = '▓', empty_char: str = '░') -> str:
+    """
+    Create an ASCII progress bar.
+
+    Args:
+        value: Current value
+        max_value: Maximum value for scaling
+        width: Width of the bar in characters (default: 12)
+        filled_char: Character for filled portion (default: '▓')
+        empty_char: Character for empty portion (default: '░')
+
+    Returns:
+        ASCII bar string
+    """
+    if max_value == 0:
+        return empty_char * width
+
+    filled_width = int((value / max_value) * width)
+    empty_width = width - filled_width
+    return filled_char * filled_width + empty_char * empty_width
+
+
+def truncate_with_ellipsis(text: str, max_length: int) -> str:
+    """
+    Truncate string with ellipsis if longer than max_length.
+
+    Args:
+        text: String to truncate
+        max_length: Maximum length (including ellipsis)
+
+    Returns:
+        Truncated string with '...' if needed
+    """
+    if len(text) <= max_length:
+        return text
+    return text[:max_length - 3] + '...'
+
+
 def format_analytics_lines(analytics: dict, term: Terminal) -> list[str]:
     """
     Format analytics data into colored terminal lines.
@@ -25,7 +63,7 @@ def format_analytics_lines(analytics: dict, term: Terminal) -> list[str]:
     # Header
     header = f"📊 \"{analytics['playlist_name']}\" Analytics ({analytics['playlist_type']})"
     lines.append(term.bold_cyan(header))
-    lines.append(term.cyan("═" * min(70, term.width - 4)))
+    lines.append(term.cyan("═" * 70))
     lines.append("")
 
     # Basic Stats
@@ -56,10 +94,9 @@ def format_analytics_lines(analytics: dict, term: Terminal) -> list[str]:
             max_count = max(a['track_count'] for a in top_artists) if top_artists else 0
 
             for artist_data in top_artists:
-                artist_name = artist_data['artist'][:20]
+                artist_name = truncate_with_ellipsis(artist_data['artist'], 20)
                 count = artist_data['track_count']
-                filled_width = int((count / max_count) * 12) if max_count > 0 else 0
-                bar = '▓' * filled_width + '░' * (12 - filled_width)
+                bar = create_ascii_bar(count, max_count, width=12)
                 percentage = (count / basic['total_tracks'] * 100) if basic['total_tracks'] > 0 else 0
                 lines.append(f"  {artist_name:20s} {bar} " + term.bold_cyan(f"{count:3d}") + f" ({percentage:.1f}%)")
 
@@ -75,11 +112,10 @@ def format_analytics_lines(analytics: dict, term: Terminal) -> list[str]:
             max_count = max(g['count'] for g in top_genres) if top_genres else 0
 
             for genre_data in top_genres:
-                genre = genre_data['genre'][:20]
+                genre = truncate_with_ellipsis(genre_data['genre'], 20)
                 count = genre_data['count']
                 percentage = genre_data['percentage']
-                filled_width = int((count / max_count) * 12) if max_count > 0 else 0
-                bar = '▓' * filled_width + '░' * (12 - filled_width)
+                bar = create_ascii_bar(count, max_count, width=12)
                 lines.append(f"  {genre:20s} {bar} " + term.bold_magenta(f"{count:3d}") + f" ({percentage:.1f}%)")
 
             if len(genres) > 10:
@@ -123,8 +159,7 @@ def format_analytics_lines(analytics: dict, term: Terminal) -> list[str]:
             max_count = max(bpm['distribution'].values()) if bpm['distribution'] else 0
             for range_name, count in bpm['distribution'].items():
                 if count > 0:
-                    filled_width = int((count / max_count) * 15) if max_count > 0 else 0
-                    bar = '▓' * filled_width + '░' * (15 - filled_width)
+                    bar = create_ascii_bar(count, max_count, width=15)
                     peak_marker = " ← Peak" if count == max_count else ""
                     style = term.bold_green if count == max_count else term.white
                     lines.append(style(f"    {range_name:8s} │ {count:3d}  {bar}{peak_marker}"))
@@ -212,8 +247,7 @@ def format_analytics_lines(analytics: dict, term: Terminal) -> list[str]:
             if missing_fields:
                 lines.append(term.white("  Missing Metadata:"))
                 for field_name, count, pct in missing_fields:
-                    filled_width = int((100 - pct) / 100 * 10)
-                    bar = '█' * filled_width + '─' * (10 - filled_width)
+                    bar = create_ascii_bar(int(100 - pct), 100, width=10, filled_char='█', empty_char='─')
                     if pct > 20:
                         color = term.red
                     elif pct > 5:
@@ -223,7 +257,7 @@ def format_analytics_lines(analytics: dict, term: Terminal) -> list[str]:
                     lines.append(f"    {field_name:6s}: {bar} {color(f'{count} tracks ({pct:.1f}%)')}")
         lines.append("")
 
-    lines.append(term.white("─" * min(70, term.width - 4)))
+    lines.append(term.white("─" * 70))
 
     return lines
 

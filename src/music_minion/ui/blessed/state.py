@@ -671,17 +671,22 @@ def show_analytics_viewer(state: UIState, analytics_data: dict[str, Any]) -> UIS
     from blessed import Terminal
     from music_minion.ui.blessed.components.analytics_viewer import format_analytics_lines
 
-    term = Terminal()
-    all_lines = format_analytics_lines(analytics_data, term)
-    total_lines = len(all_lines)
+    try:
+        term = Terminal()
+        all_lines = format_analytics_lines(analytics_data, term)
+        total_lines = len(all_lines)
 
-    return replace(
-        state,
-        analytics_viewer_visible=True,
-        analytics_viewer_data=analytics_data,
-        analytics_viewer_scroll=0,
-        analytics_viewer_total_lines=total_lines
-    )
+        return replace(
+            state,
+            analytics_viewer_visible=True,
+            analytics_viewer_data=analytics_data,
+            analytics_viewer_scroll=0,
+            analytics_viewer_total_lines=total_lines
+        )
+    except Exception as e:
+        # On error, show error message in history instead of crashing UI
+        error_msg = f"❌ Error formatting analytics: {e}"
+        return add_history_line(state, error_msg, 'red')
 
 
 def hide_analytics_viewer(state: UIState) -> UIState:
