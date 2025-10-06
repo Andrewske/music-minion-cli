@@ -13,6 +13,7 @@ from .components import (
     render_palette,
     render_smart_playlist_wizard,
     calculate_layout,
+    render_analytics_viewer,
 )
 from .components.track_viewer import render_track_viewer
 from .events.keyboard import handle_key
@@ -294,7 +295,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
     last_state_hash = None
     needs_full_redraw = True
     last_input_text = ""
-    last_palette_state = (False, 0, False, False, 0, False, 0)  # (palette_visible, palette_selected, confirmation_active, wizard_active, wizard_selected, track_viewer_visible, track_viewer_selected)
+    last_palette_state = (False, 0, False, False, 0, False, 0, False, 0)  # (palette_visible, palette_selected, confirmation_active, wizard_active, wizard_selected, track_viewer_visible, track_viewer_selected, analytics_viewer_visible, analytics_viewer_scroll)
     layout = None
     last_position = None  # Track position separately for partial updates
     dashboard_line_mapping = {}  # Store line offsets from last full dashboard render
@@ -334,7 +335,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
 
         # Check for input-only changes (no full redraw needed)
         input_changed = ui_state.input_text != last_input_text
-        palette_state_changed = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected) != last_palette_state
+        palette_state_changed = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll) != last_palette_state
 
         # Determine if we need a full redraw
         needs_full_redraw = needs_full_redraw or (current_state_hash is not None and current_state_hash != last_state_hash)
@@ -406,19 +407,26 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     layout['track_viewer_y'],
                     layout['track_viewer_height']
                 )
+            elif ui_state.analytics_viewer_visible:
+                render_analytics_viewer(
+                    term,
+                    ui_state,
+                    layout['analytics_viewer_y'],
+                    layout['analytics_viewer_height']
+                )
 
             # Flush output
             sys.stdout.flush()
 
             last_input_text = ui_state.input_text
-            last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected)
+            last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll)
             last_position = int(ctx.player_state.current_position)  # Update position after full redraw
 
         elif input_changed or palette_state_changed:
             # Partial update - only input and palette changed
             if layout:
-                # If palette, wizard, or track viewer visibility changed, do a full redraw instead
-                if palette_state_changed and (ui_state.palette_visible != last_palette_state[0] or ui_state.wizard_active != last_palette_state[3] or ui_state.track_viewer_visible != last_palette_state[5]):
+                # If palette, wizard, track viewer, or analytics viewer visibility changed, do a full redraw instead
+                if palette_state_changed and (ui_state.palette_visible != last_palette_state[0] or ui_state.wizard_active != last_palette_state[3] or ui_state.track_viewer_visible != last_palette_state[5] or ui_state.analytics_viewer_visible != last_palette_state[7]):
                     needs_full_redraw = True
                 else:
                     # Clear input area (3 lines: top border, input, bottom border)
@@ -426,8 +434,8 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     for i in range(3):
                         sys.stdout.write(term.move_xy(0, input_y + i) + term.clear_eol)
 
-                    # Clear palette/wizard/track viewer area if visible
-                    if ui_state.palette_visible or ui_state.wizard_active or ui_state.track_viewer_visible:
+                    # Clear palette/wizard/track viewer/analytics viewer area if visible
+                    if ui_state.palette_visible or ui_state.wizard_active or ui_state.track_viewer_visible or ui_state.analytics_viewer_visible:
                         overlay_y = layout['palette_y']  # Same position for all overlays
                         overlay_height = layout['palette_height']
                         for i in range(overlay_height):
@@ -440,7 +448,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                         layout['input_y']
                     )
 
-                    # Render palette, wizard, or track viewer (mutually exclusive)
+                    # Render palette, wizard, track viewer, or analytics viewer (mutually exclusive)
                     if ui_state.wizard_active:
                         render_smart_playlist_wizard(
                             term,
@@ -462,12 +470,19 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                             layout['track_viewer_y'],
                             layout['track_viewer_height']
                         )
+                    elif ui_state.analytics_viewer_visible:
+                        render_analytics_viewer(
+                            term,
+                            ui_state,
+                            layout['analytics_viewer_y'],
+                            layout['analytics_viewer_height']
+                        )
 
                     # Flush output
                     sys.stdout.flush()
 
                     last_input_text = ui_state.input_text
-                    last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected)
+                    last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll)
 
         else:
             # Check if only position changed (partial dashboard update)
@@ -496,7 +511,8 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         if key:
             # Handle keyboard input
             palette_height = layout['palette_height'] if layout else 10
-            ui_state, command_line = handle_key(ui_state, key, palette_height)
+            analytics_viewer_height = layout['analytics_viewer_height'] if layout else 30
+            ui_state, command_line = handle_key(ui_state, key, palette_height, analytics_viewer_height)
 
             # Execute command if one was triggered
             if command_line:

@@ -11,6 +11,7 @@ from music_minion.ui.blessed.state import (
     add_history_line,
     add_command_to_history,
     start_wizard,
+    show_analytics_viewer,
 )
 from .playlist_handlers import handle_playlist_selection, handle_playlist_deletion
 from .track_viewer_handlers import (
@@ -127,6 +128,13 @@ def _handle_internal_command(ctx: AppContext, ui_state: UIState, cmd: InternalCo
             elif ui_state.review_mode == 'confirm':
                 ctx, ui_state = handle_review_confirmation(ctx, ui_state, user_input)
 
+        return ctx, ui_state, False
+
+    elif cmd.action == 'show_analytics_viewer':
+        # Show analytics viewer with data
+        analytics_data = cmd.data.get('analytics_data', {})
+        if analytics_data:
+            ui_state = show_analytics_viewer(ui_state, analytics_data)
         return ctx, ui_state, False
 
     else:
@@ -273,6 +281,12 @@ def _process_ui_action(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, 
         track_data = action.get('track_data', {})
         tags_with_reasoning = action.get('tags_with_reasoning', {})
         ui_state = start_review_mode(ui_state, track_data, tags_with_reasoning)
+
+    elif action['type'] == 'show_analytics_viewer':
+        # Show analytics viewer with data
+        analytics_data = action.get('analytics_data', {})
+        if analytics_data:
+            ui_state = show_analytics_viewer(ui_state, analytics_data)
 
     # Clear the ui_action after processing
     ctx = ctx.with_ui_action(None)

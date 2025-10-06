@@ -31,6 +31,7 @@ from music_minion.utils import autocomplete
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
+from rich.progress import Progress, BarColumn, TextColumn
 
 
 def handle_playlist_list_command(ctx: AppContext) -> Tuple[AppContext, bool]:
@@ -861,6 +862,46 @@ def handle_playlist_export_command(ctx: AppContext, args: List[str]) -> Tuple[Ap
         return ctx, True
 
 
+def create_ascii_bar(value: int, max_value: int, width: int = 20, filled_char: str = '▓', empty_char: str = '░') -> str:
+    """
+    Create an ASCII progress bar.
+
+    Args:
+        value: Current value
+        max_value: Maximum value for scaling
+        width: Width of the bar in characters
+        filled_char: Character for filled portion
+        empty_char: Character for empty portion
+
+    Returns:
+        ASCII bar string
+    """
+    if max_value == 0:
+        return empty_char * width
+
+    filled_width = int((value / max_value) * width)
+    empty_width = width - filled_width
+    return (filled_char * filled_width) + (empty_char * empty_width)
+
+
+def get_quality_color(percentage: float) -> str:
+    """
+    Get color style for quality percentage.
+
+    Args:
+        percentage: Quality percentage (0-100)
+
+    Returns:
+        Rich color style name
+    """
+    if percentage >= 80:
+        return "bold green"
+    elif percentage >= 50:
+        return "bold yellow"
+    else:
+        return "bold red"
+
+
 def handle_playlist_analyze_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
     """
     Handle playlist analyze command - show comprehensive analytics.
@@ -918,12 +959,19 @@ def handle_playlist_analyze_command(ctx: AppContext, args: List[str]) -> Tuple[A
             print(f"❌ Error: {analytics['error']}")
             return ctx, True
 
-        # Format and display output using Rich
-        console = Console()
+        # Show analytics in full-screen viewer
+        ctx = ctx.with_ui_action({
+            'type': 'show_analytics_viewer',
+            'analytics_data': analytics
+        })
+        return ctx, True
 
-        # Header
-        header_text = f"📊 \"{analytics['playlist_name']}\" ({analytics['playlist_type']})"
-        console.print(header_text, style="bold cyan")
+        # Old Rich console printing code removed - now using analytics viewer
+
+        # Header with panel
+        header_text = f"📊 \"{analytics['playlist_name']}\" Analytics ({analytics['playlist_type']})"
+        console.print(Panel(header_text, style="bold cyan", border_style="cyan"))
+        console.print()
 
         # Basic Stats
         if 'basic' in analytics:
@@ -938,35 +986,57 @@ def handle_playlist_analyze_command(ctx: AppContext, args: List[str]) -> Tuple[A
                 avg_mins = avg_secs // 60
                 avg_secs_rem = avg_secs % 60
 
-                console.print(f"  Tracks: {basic['total_tracks']}")
-                console.print(f"  Duration: {hours}h {minutes}m {seconds}s (avg: {avg_mins}m {avg_secs_rem}s)")
+                console.print(f"  Tracks: [bold white]{basic['total_tracks']}[/bold white]")
+                console.print(f"  Duration: [bold white]{hours}h {minutes}m {seconds}s[/bold white] (avg: {avg_mins}m {avg_secs_rem}s)")
                 if basic['year_min'] and basic['year_max']:
-                    console.print(f"  Year Range: {basic['year_min']}-{basic['year_max']}")
+                    console.print(f"  Year Range: [bold white]{basic['year_min']}-{basic['year_max']}[/bold white]")
+                console.print()
             else:
                 console.print("⚠️  No tracks in playlist\n")
                 return ctx, True
 
-        # Artist Analysis
+        # Artist Analysis with bar charts
         if 'artists' in analytics:
             artists = analytics['artists']
             if artists['top_artists']:
                 console.print("🎤 TOP ARTISTS", style="bold yellow")
                 limit = 5 if compact_mode else 10
-                for i, artist in enumerate(artists['top_artists'][:limit], 1):
-                    count = artist['track_count']
-                    console.print(f"  {i}. {artist['artist']} - {count} tracks")
-                console.print(f"  Total: {artists['total_unique_artists']} unique artists (avg: {artists['diversity_ratio']:.1f} tracks/artist)")
+                top_artists = artists['top_artists'][:limit]
 
-        # Genre Distribution
+                # Find max count for scaling
+                max_count = max(a['track_count'] for a in top_artists) if top_artists else 0
+
+                for artist_data in top_artists:
+                    artist_name = artist_data['artist']
+                    count = artist_data['track_count']
+                    bar = create_ascii_bar(count, max_count, width=12)
+                    percentage = (count / basic['total_tracks'] * 100) if basic['total_tracks'] > 0 else 0
+                    console.print(f"  {artist_name:20s} {bar} [bold cyan]{count:3d}[/bold cyan] ({percentage:.1f}%)")
+
+                console.print(f"  [dim]Total: {artists['total_unique_artists']} unique artists (avg: {artists['diversity_ratio']:.1f} tracks/artist)[/dim]")
+                console.print()
+
+        # Genre Distribution with bar charts
         if 'genres' in analytics:
             genres = analytics['genres']['genres']
             if genres:
                 console.print("🎵 GENRE DISTRIBUTION", style="bold yellow")
                 limit = 5 if compact_mode else min(10, len(genres))
-                for genre_data in genres[:limit]:
-                    console.print(f"  {genre_data['genre']}: {genre_data['count']} ({genre_data['percentage']:.1f}%)")
+                top_genres = genres[:limit]
+
+                # Find max count for scaling
+                max_count = max(g['count'] for g in top_genres) if top_genres else 0
+
+                for genre_data in top_genres:
+                    genre = genre_data['genre']
+                    count = genre_data['count']
+                    percentage = genre_data['percentage']
+                    bar = create_ascii_bar(count, max_count, width=12)
+                    console.print(f"  {genre:20s} {bar} [bold magenta]{count:3d}[/bold magenta] ({percentage:.1f}%)")
+
                 if len(genres) > limit:
-                    console.print(f"  ... and {len(genres) - limit} more")
+                    console.print(f"  [dim]... and {len(genres) - limit} more[/dim]")
+                console.print()
 
         # Tag Analysis
         if 'tags' in analytics:
@@ -994,18 +1064,26 @@ def handle_playlist_analyze_command(ctx: AppContext, args: List[str]) -> Tuple[A
                     for tag in tags['top_file_tags'][:limit]:
                         console.print(f"    • {tag['tag_name']} ({tag['count']})")
 
-        # BPM Analysis
+        # BPM Analysis with bar charts
         if 'bpm' in analytics:
             bpm = analytics['bpm']
             if bpm['min'] is not None:
                 console.print("⚡ BPM ANALYSIS", style="bold yellow")
-                console.print(f"  Range: {bpm['min']:.0f}-{bpm['max']:.0f} BPM (avg: {bpm['avg']:.0f}, median: {bpm['median']:.0f})")
+                console.print(f"  Range: [bold white]{bpm['min']:.0f}-{bpm['max']:.0f} BPM[/bold white] (avg: {bpm['avg']:.0f}, median: {bpm['median']:.0f})")
 
                 if not compact_mode:
                     console.print("  Distribution:")
+                    # Find max for scaling
+                    max_count = max(bpm['distribution'].values()) if bpm['distribution'] else 0
+
                     for range_name, count in bpm['distribution'].items():
                         if count > 0:
-                            console.print(f"    {range_name} BPM: {count} tracks")
+                            bar = create_ascii_bar(count, max_count, width=15)
+                            # Highlight the peak range
+                            style = "bold green" if count == max_count else "white"
+                            peak_marker = " ← Peak" if count == max_count else ""
+                            console.print(f"    {range_name:8s} │ {count:3d}  {bar}{peak_marker}", style=style)
+                console.print()
 
         # Key Distribution
         if 'keys' in analytics:
@@ -1046,33 +1124,48 @@ def handle_playlist_analyze_command(ctx: AppContext, args: List[str]) -> Tuple[A
                     for i, track in enumerate(ratings['most_loved_tracks'][:5], 1):
                         console.print(f"    {i}. {track['artist']} - {track['title']}")
 
-        # Quality Metrics
+        # Quality Metrics with color-coded score
         if 'quality' in analytics:
             quality = analytics['quality']
             console.print("✅ QUALITY METRICS", style="bold yellow")
-            console.print(f"  Completeness Score: {quality['completeness_score']:.1f}%")
+
+            # Color-coded completeness score with bar
+            completeness = quality['completeness_score']
+            quality_color = get_quality_color(completeness)
+            quality_bar = create_ascii_bar(int(completeness), 100, width=20)
+            status_icon = "🟢" if completeness >= 80 else "🟡" if completeness >= 50 else "🔴"
+
+            console.print(f"  Completeness: {quality_bar} [{quality_color}]{completeness:.1f}%[/{quality_color}] {status_icon}")
 
             if not compact_mode:
                 total = quality['total_tracks']
                 if total > 0:
-                    console.print("  Missing Metadata:")
+                    missing_fields = []
                     if quality['missing_bpm'] > 0:
                         pct = quality['missing_bpm'] / total * 100
-                        console.print(f"    BPM: {quality['missing_bpm']} tracks ({pct:.1f}%)")
+                        missing_fields.append(('BPM', quality['missing_bpm'], pct))
                     if quality['missing_key'] > 0:
                         pct = quality['missing_key'] / total * 100
-                        console.print(f"    Key: {quality['missing_key']} tracks ({pct:.1f}%)")
+                        missing_fields.append(('Key', quality['missing_key'], pct))
                     if quality['missing_year'] > 0:
                         pct = quality['missing_year'] / total * 100
-                        console.print(f"    Year: {quality['missing_year']} tracks ({pct:.1f}%)")
+                        missing_fields.append(('Year', quality['missing_year'], pct))
                     if quality['missing_genre'] > 0:
                         pct = quality['missing_genre'] / total * 100
-                        console.print(f"    Genre: {quality['missing_genre']} tracks ({pct:.1f}%)")
+                        missing_fields.append(('Genre', quality['missing_genre'], pct))
                     if quality['without_tags'] > 0:
                         pct = quality['without_tags'] / total * 100
-                        console.print(f"    Tags: {quality['without_tags']} tracks ({pct:.1f}%)")
+                        missing_fields.append(('Tags', quality['without_tags'], pct))
 
-        console.print("─" * 60)
+                    if missing_fields:
+                        console.print("  [dim]Missing Metadata:[/dim]")
+                        for field_name, count, pct in missing_fields:
+                            bar = create_ascii_bar(100 - int(pct), 100, width=10, filled_char='█', empty_char='─')
+                            color = "red" if pct > 20 else "yellow" if pct > 5 else "dim"
+                            console.print(f"    {field_name:6s}: {bar} [{color}]{count} tracks ({pct:.1f}%)[/{color}]")
+
+        console.print()
+        console.print("─" * 70, style="dim")
         return ctx, True
 
     except Exception as e:

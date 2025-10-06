@@ -26,6 +26,10 @@ from ..state import (
     move_palette_selection,
     update_palette_filter,
     clear_history,
+    scroll_history_up,
+    scroll_history_down,
+    scroll_history_to_top,
+    scroll_history_to_bottom,
     navigate_history_up,
     navigate_history_down,
     reset_history_navigation,
@@ -39,6 +43,8 @@ from ..state import (
     move_wizard_selection,
     hide_track_viewer,
     move_track_viewer_selection,
+    hide_analytics_viewer,
+    scroll_analytics_viewer,
 )
 from ..styles.palette import filter_commands, COMMAND_DEFINITIONS
 from ..components.track_viewer import TRACK_VIEWER_HEADER_LINES, TRACK_VIEWER_FOOTER_LINES
@@ -76,10 +82,22 @@ def parse_key(key: Keystroke) -> dict:
         event['type'] = 'arrow_up'
     elif key.name == 'KEY_DOWN':
         event['type'] = 'arrow_down'
+    elif key.name == 'KEY_PGUP':  # Page Up (blessed uses PGUP not PPAGE)
+        event['type'] = 'page_up'
+    elif key.name == 'KEY_PGDOWN':  # Page Down (blessed uses PGDOWN not NPAGE)
+        event['type'] = 'page_down'
+    elif key.name == 'KEY_HOME':
+        event['type'] = 'home'
+    elif key.name == 'KEY_END':
+        event['type'] = 'end'
     elif key == '\x03':  # Ctrl+C
         event['type'] = 'ctrl_c'
     elif key == '\x0c':  # Ctrl+L
         event['type'] = 'ctrl_l'
+    elif key == '\x15':  # Ctrl+U (half page up - vim style)
+        event['type'] = 'page_up'
+    elif key == '\x04':  # Ctrl+D (half page down - vim style)
+        event['type'] = 'page_down'
     elif key and key.isprintable():
         event['type'] = 'char'
 
@@ -391,7 +409,51 @@ def handle_track_viewer_key(state: UIState, event: dict, viewer_height: int = 10
     return state, None
 
 
-def handle_key(state: UIState, key: Keystroke, palette_height: int = 10) -> tuple[UIState, str | InternalCommand | None]:
+def handle_analytics_viewer_key(state: UIState, event: dict, viewer_height: int = 10) -> tuple[UIState | None, str | InternalCommand | None]:
+    """
+    Handle keyboard events for analytics viewer mode.
+
+    Args:
+        state: Current UI state (analytics viewer must be visible)
+        event: Parsed key event from parse_key()
+        viewer_height: Available height for viewer (for scroll calculations)
+
+    Returns:
+        Tuple of (updated state or None if not handled, command to execute or None)
+    """
+    # Escape or 'q' closes viewer
+    if event['type'] == 'escape' or (event['char'] and event['char'].lower() == 'q'):
+        return hide_analytics_viewer(state), None
+
+    # Use pre-calculated line count (no need to re-format on every keystroke!)
+    total_lines = state.analytics_viewer_total_lines
+    max_scroll = max(0, total_lines - viewer_height + 1)  # +1 for footer
+
+    # j or down arrow - scroll down
+    if (event['char'] and event['char'].lower() == 'j') or event['type'] == 'arrow_down':
+        state = scroll_analytics_viewer(state, delta=1, max_scroll=max_scroll)
+        return state, None
+
+    # k or up arrow - scroll up
+    if (event['char'] and event['char'].lower() == 'k') or event['type'] == 'arrow_up':
+        state = scroll_analytics_viewer(state, delta=-1, max_scroll=max_scroll)
+        return state, None
+
+    # Home - jump to top
+    if event['type'] == 'home':
+        state = scroll_analytics_viewer(state, delta=-999999, max_scroll=max_scroll)
+        return state, None
+
+    # End - jump to bottom
+    if event['type'] == 'end':
+        state = scroll_analytics_viewer(state, delta=999999, max_scroll=max_scroll)
+        return state, None
+
+    # For any other key in analytics viewer mode, consume it and do nothing
+    return state, None
+
+
+def handle_key(state: UIState, key: Keystroke, palette_height: int = 10, analytics_viewer_height: int = 30) -> tuple[UIState, str | InternalCommand | None]:
     """
     Handle keyboard input and return updated state.
 
@@ -399,6 +461,7 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10) -> tupl
         state: Current UI state
         key: blessed Keystroke
         palette_height: Available height for palette (for scroll calculations)
+        analytics_viewer_height: Available height for analytics viewer (for scroll calculations)
 
     Returns:
         Tuple of (updated state, command to execute or None)
@@ -446,7 +509,13 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10) -> tupl
         if state_updated is not None:
             return state_updated, cmd
 
-    # Handle review mode keys (fourth priority)
+    # Handle analytics viewer keys (fourth priority)
+    if state.analytics_viewer_visible:
+        state_updated, cmd = handle_analytics_viewer_key(state, event, analytics_viewer_height)
+        if state_updated is not None:
+            return state_updated, cmd
+
+    # Handle review mode keys (fifth priority)
     if state.review_mode:
         # In review mode, Enter sends input to review handler
         if event['type'] == 'enter' and state.input_text.strip():
@@ -465,6 +534,29 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10) -> tupl
     if event['type'] == 'ctrl_l':
         state = clear_history(state)
         return state, None
+
+    # Handle history scrolling (Ctrl+U/D, Home/End) - only when input is empty and no modal active
+    # This allows scrolling through command history output (like analytics) without conflicting with typing
+    if (not state.palette_visible and not state.wizard_active and
+        not state.track_viewer_visible and not state.review_mode and
+        not state.input_text):  # Only scroll when input is empty
+
+        if event['type'] == 'page_up':
+            # Scroll history up by ~visible height (Ctrl+U)
+            state = scroll_history_up(state, lines=20)
+            return state, None
+        elif event['type'] == 'page_down':
+            # Scroll history down by ~visible height (Ctrl+D)
+            state = scroll_history_down(state, lines=20)
+            return state, None
+        elif event['type'] == 'home':
+            # Jump to top of history (oldest messages)
+            state = scroll_history_to_top(state)
+            return state, None
+        elif event['type'] == 'end':
+            # Jump to bottom of history (newest messages)
+            state = scroll_history_to_bottom(state)
+            return state, None
 
     # Handle Escape (hide palette)
     if event['type'] == 'escape':

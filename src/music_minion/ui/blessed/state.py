@@ -115,6 +115,12 @@ class UIState:
     track_viewer_selected: int = 0
     track_viewer_scroll: int = 0
 
+    # Analytics viewer state (for viewing playlist analytics in full screen)
+    analytics_viewer_visible: bool = False
+    analytics_viewer_data: dict[str, Any] = field(default_factory=dict)  # Analytics data
+    analytics_viewer_scroll: int = 0  # Scroll offset in lines
+    analytics_viewer_total_lines: int = 0  # Total formatted lines (pre-calculated)
+
     # AI Review mode state (conversational tag review)
     review_mode: Optional[str] = None  # None, 'conversation', 'confirm'
     review_data: dict[str, Any] = field(default_factory=dict)  # Track, tags, conversation history
@@ -156,14 +162,69 @@ def update_track_info(state: UIState, track_data: dict[str, Any]) -> UIState:
 
 
 def add_history_line(state: UIState, text: str, color: str = 'white') -> UIState:
-    """Add a line to command history."""
+    """Add a line to command history and reset scroll to bottom."""
     new_history = state.history + [(text, color)]
-    return replace(state, history=new_history)
+    # Trim history if it exceeds max size
+    if len(new_history) > MAX_COMMAND_HISTORY:
+        new_history = new_history[-MAX_COMMAND_HISTORY:]
+    # Reset scroll to bottom when new content added
+    return replace(state, history=new_history, history_scroll=0)
 
 
 def clear_history(state: UIState) -> UIState:
     """Clear command history."""
-    return replace(state, history=[])
+    return replace(state, history=[], history_scroll=0)
+
+
+def scroll_history_up(state: UIState, lines: int = 10) -> UIState:
+    """
+    Scroll command history up (toward older messages).
+
+    Args:
+        state: Current UI state
+        lines: Number of lines to scroll (default: 10)
+
+    Returns:
+        Updated state with new scroll position
+    """
+    if not state.history:
+        return state
+
+    # Increase scroll offset (moving toward older messages)
+    new_scroll = min(state.history_scroll + lines, len(state.history) - 1)
+    return replace(state, history_scroll=new_scroll)
+
+
+def scroll_history_down(state: UIState, lines: int = 10) -> UIState:
+    """
+    Scroll command history down (toward newer messages).
+
+    Args:
+        state: Current UI state
+        lines: Number of lines to scroll (default: 10)
+
+    Returns:
+        Updated state with new scroll position
+    """
+    if not state.history:
+        return state
+
+    # Decrease scroll offset (moving toward newer messages)
+    new_scroll = max(state.history_scroll - lines, 0)
+    return replace(state, history_scroll=new_scroll)
+
+
+def scroll_history_to_top(state: UIState) -> UIState:
+    """Scroll command history to the top (oldest messages)."""
+    if not state.history:
+        return state
+
+    return replace(state, history_scroll=len(state.history) - 1)
+
+
+def scroll_history_to_bottom(state: UIState) -> UIState:
+    """Scroll command history to the bottom (newest messages)."""
+    return replace(state, history_scroll=0)
 
 
 def set_input_text(state: UIState, text: str) -> UIState:
@@ -593,6 +654,69 @@ def move_track_viewer_selection(state: UIState, delta: int, visible_items: int =
         new_scroll = new_selected
 
     return replace(state, track_viewer_selected=new_selected, track_viewer_scroll=new_scroll)
+
+
+def show_analytics_viewer(state: UIState, analytics_data: dict[str, Any]) -> UIState:
+    """
+    Show analytics viewer with data.
+
+    Args:
+        state: Current UI state
+        analytics_data: Analytics data dictionary
+
+    Returns:
+        Updated state with analytics viewer visible
+    """
+    # Pre-calculate total line count to avoid re-formatting on every keystroke
+    from blessed import Terminal
+    from music_minion.ui.blessed.components.analytics_viewer import format_analytics_lines
+
+    term = Terminal()
+    all_lines = format_analytics_lines(analytics_data, term)
+    total_lines = len(all_lines)
+
+    return replace(
+        state,
+        analytics_viewer_visible=True,
+        analytics_viewer_data=analytics_data,
+        analytics_viewer_scroll=0,
+        analytics_viewer_total_lines=total_lines
+    )
+
+
+def hide_analytics_viewer(state: UIState) -> UIState:
+    """
+    Hide analytics viewer and reset state.
+
+    Args:
+        state: Current UI state
+
+    Returns:
+        Updated state with analytics viewer hidden
+    """
+    return replace(
+        state,
+        analytics_viewer_visible=False,
+        analytics_viewer_data={},
+        analytics_viewer_scroll=0,
+        analytics_viewer_total_lines=0
+    )
+
+
+def scroll_analytics_viewer(state: UIState, delta: int, max_scroll: int) -> UIState:
+    """
+    Scroll analytics viewer up or down.
+
+    Args:
+        state: Current UI state
+        delta: Amount to scroll (positive = down, negative = up)
+        max_scroll: Maximum scroll offset
+
+    Returns:
+        Updated state with new scroll position
+    """
+    new_scroll = max(0, min(state.analytics_viewer_scroll + delta, max_scroll))
+    return replace(state, analytics_viewer_scroll=new_scroll)
 
 
 def start_review_mode(state: UIState, track_data: dict[str, Any], tags_with_reasoning: dict[str, str]) -> UIState:

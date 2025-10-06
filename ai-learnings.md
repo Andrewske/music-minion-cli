@@ -1515,6 +1515,62 @@ def move_selection(state: TrackViewerState, new_index: int) -> TrackViewerState:
 
 **Learning**: Track both selection and scroll position. Auto-scroll when selection moves off-screen.
 
+### Analytics Viewer Scrolling Bug (Two-Part Fix)
+
+**Issue**: Analytics viewer j/k scrolling wasn't working
+
+#### Part 1: Height Parameter Mismatch
+**Root Cause**: Wrong height passed to scroll calculations
+- Analytics viewer uses dynamic height (30+ lines based on screen size)
+- Keyboard handler was receiving `palette_height` (fixed 22 lines)
+- Max scroll calculation: `max_scroll = total_lines - viewer_height + 1`
+- Wrong height → wrong max_scroll → scrolling disabled
+
+**Fix**: Pass correct height parameter
+```python
+# app.py - extract correct height from layout
+analytics_viewer_height = layout['analytics_viewer_height'] if layout else 30
+ui_state, command_line = handle_key(ui_state, key, palette_height, analytics_viewer_height)
+```
+
+#### Part 2: State Tracking Bug (The Real Cause!)
+**Root Cause**: Inconsistent palette_state tuple sizes prevented change detection
+- Line 298: Initial value had 7 elements (missing analytics fields)
+- Line 338: Comparison had 7 elements (missing analytics fields)
+- Line 422: Update had 9 elements (included analytics fields)
+- Line 485: Update had 7 elements (missing analytics fields)
+
+When j/k pressed:
+1. ✅ Scroll offset changed in state
+2. ❌ Comparison tuple didn't include scroll offset
+3. ❌ Change not detected
+4. ❌ No redraw triggered
+5. ❌ Screen didn't update
+
+**Fix**: Make all palette_state tuples consistent (9 elements)
+```python
+# All three locations now have same 9-element tuple:
+last_palette_state = (
+    ui_state.palette_visible,
+    ui_state.palette_selected,
+    ui_state.confirmation_active,
+    ui_state.wizard_active,
+    ui_state.wizard_selected,
+    ui_state.track_viewer_visible,
+    ui_state.track_viewer_selected,
+    ui_state.analytics_viewer_visible,  # Added
+    ui_state.analytics_viewer_scroll     # Added
+)
+```
+
+**Learning**:
+- **State tracking tuples must be consistent across all code paths**
+- Missing fields in comparison prevents change detection
+- State can change, but UI won't redraw without change detection
+- Always verify initial value, comparison, and all update sites match
+- Height parameters must match the actual rendered height for scroll calculations
+- Don't reuse height parameters across different UI components with different sizes
+
 ### Wizard Multi-Step Flow Pattern
 
 **Pattern**: State machine for multi-step processes
@@ -1674,3 +1730,163 @@ def ai_review_event_loop(term: Terminal, ctx: AppContext, track_id: int):
 ---
 
 **Last Updated**: 2025-10-03 after AI review system, hot-reload, track viewer, and wizard implementation
+
+## UI Enhancements: Scrollable History & Rich Analytics (2025-10-05)
+
+### Command History Scrolling
+**Problem**: Long analytics output exceeded visible command history area, making it impossible to review full reports.
+
+**Solution**: Added keyboard-based scrolling for command history.
+
+**Implementation**:
+1. **State Management** (`state.py`):
+   ```python
+   def scroll_history_up(state, lines=10):
+       new_scroll = min(state.history_scroll + lines, len(state.history) - 1)
+       return replace(state, history_scroll=new_scroll)
+
+   def add_history_line(state, text, color):
+       # Auto-reset scroll to bottom on new output
+       return replace(state, history=new_history, history_scroll=0)
+   ```
+
+2. **Render Logic** (`history.py`):
+   ```python
+   # Calculate visible window based on scroll offset
+   end_idx = len(history) - scroll_offset
+   start_idx = max(0, end_idx - height)
+   visible_lines = history[start_idx:end_idx]
+   
+   # Show indicator when scrolled
+   if scroll_offset > 0:
+       indicator = f"↑ Scrolled ({scroll_offset}/{total} lines from bottom)"
+   ```
+
+3. **Keyboard Shortcuts** (`keyboard.py`):
+   - `Page Up`: Scroll up by ~20 lines
+   - `Page Down`: Scroll down by ~20 lines
+   - `Home`: Jump to oldest message
+   - `End`: Jump to newest message
+
+**Behavior**:
+- Scroll only works when palette/wizard/viewer not active
+- Auto-scrolls to bottom when new output appears
+- Visual indicator shows scroll position
+
+**Learning**: Scroll offset from bottom (0 = newest) is more intuitive than from top for command history.
+
+---
+
+### Enhanced Analytics Formatting
+**Problem**: Analytics output was plain text, making it hard to quickly identify trends and issues.
+
+**Solution**: Added ASCII bar charts, color coding, and visual hierarchy using Rich library.
+
+**Visual Enhancements**:
+
+1. **ASCII Bar Charts**:
+   ```python
+   def create_ascii_bar(value, max_value, width=20):
+       filled_width = int((value / max_value) * width)
+       return '▓' * filled_width + '░' * (width - filled_width)
+   ```
+
+   Used for:
+   - Top artists distribution
+   - Genre distribution  
+   - BPM range distribution
+   - Quality/completeness metrics
+
+2. **Color Coding**:
+   ```python
+   def get_quality_color(percentage):
+       if percentage >= 80: return "bold green"  # 🟢
+       if percentage >= 50: return "bold yellow" # 🟡
+       return "bold red"                         # 🔴
+   ```
+
+   Applied to:
+   - Quality completeness score
+   - Missing metadata warnings
+   - Peak BPM ranges
+
+3. **Visual Hierarchy**:
+   - Header: Rich Panel with cyan border
+   - Section headers: Bold yellow with emojis
+   - Data highlights: Bold white for key numbers
+   - Metadata: Dim text for supporting info
+   - Separators: Colored unicode lines
+
+**Example Output**:
+```
+╭─────────────────────────────────────╮
+│ 📊 "NYE 2025" Analytics (smart)     │
+╰─────────────────────────────────────╯
+
+📈 BASIC STATS
+  Tracks: 127
+  Duration: 8h 34m 12s (avg: 4m 3s)
+
+🎤 TOP ARTISTS
+  Excision             ▓▓▓▓▓▓▓▓▓▓▓▓  12 (9%)
+  Subtronics           ▓▓▓▓▓▓▓▓░░░░   8 (6%)
+
+⚡ BPM ANALYSIS
+  Range: 138-174 BPM (avg: 148, median: 150)
+  Distribution:
+    140-160  │  62  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ ← Peak
+
+✅ QUALITY METRICS
+  Completeness: ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92% 🟢
+  Missing Metadata:
+    BPM   : ██████████ 3 tracks (2%)
+```
+
+**Key Patterns**:
+
+1. **Scaling Bars**: Always scale to max value in dataset
+   ```python
+   max_count = max(a['track_count'] for a in top_artists)
+   bar = create_ascii_bar(count, max_count, width=12)
+   ```
+
+2. **Peak Highlighting**: Mark highest value in distributions
+   ```python
+   style = "bold green" if count == max_count else "white"
+   peak_marker = " ← Peak" if count == max_count else ""
+   ```
+
+3. **Compact vs Full**: Respect `--compact` flag for different detail levels
+   ```python
+   limit = 5 if compact_mode else 10
+   ```
+
+**Benefits**:
+- ✅ Immediate visual pattern recognition
+- ✅ Quick identification of issues (red missing data)
+- ✅ Professional, organized appearance
+- ✅ Scrollable to review all sections
+- ✅ Color-blind friendly (uses shape + color)
+
+**Learning**: ASCII bar charts provide significant UX improvement with minimal code complexity. Rich library markup is powerful but keep it simple.
+
+---
+
+### Testing Approach
+**Verification**:
+1. Python syntax check: `python -m py_compile <files>`
+2. Module import test: Verify functions exist
+3. Function unit tests: Test edge cases (empty data, max values)
+4. Integration test: Run actual analytics command
+
+**Edge Cases Handled**:
+- Empty playlists (show message, don't crash)
+- Division by zero in percentages
+- Scroll past boundaries (clamped to valid range)
+- Missing analytics sections (graceful degradation)
+
+**Time Estimate**: ~1.5 hours actual (vs 1.75 hours planned)
+- Scrolling: 30 min (as estimated)
+- Rich formatting: 1 hour (as estimated)
+- Testing: Concurrent with development
+

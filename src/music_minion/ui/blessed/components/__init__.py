@@ -6,6 +6,7 @@ from .input import render_input
 from .palette import render_palette
 from .wizard import render_smart_playlist_wizard, get_wizard_footer_text
 from .layout import calculate_layout
+from .analytics_viewer import render_analytics_viewer
 
 __all__ = [
     "render_dashboard",
@@ -15,4 +16,5 @@ __all__ = [
     "render_smart_playlist_wizard",
     "get_wizard_footer_text",
     "calculate_layout",
+    "render_analytics_viewer",
 ]
