@@ -5,7 +5,7 @@ from pathlib import Path
 from blessed import Terminal
 from music_minion.context import AppContext
 from music_minion.commands import admin
-from .state import UIState, PlaylistInfo, update_track_info
+from .state import UIState, PlaylistInfo, update_track_info, add_history_line
 from .components import (
     render_dashboard,
     render_history,
@@ -171,6 +171,16 @@ def poll_player_state(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, U
                     ctx, _ = play_track(ctx, track, position)
                     track_changed = True
 
+                    # Add autoplay notification to command history
+                    from ...domain import library
+                    ui_state = add_history_line(ui_state, f"♪ Now playing: {library.get_display_name(track)}", 'cyan')
+                    if track.duration:
+                        ui_state = add_history_line(ui_state, f"   Duration: {library.get_duration_str(track)}", 'blue')
+
+                    dj_info = library.get_dj_info(track)
+                    if dj_info != "No DJ metadata":
+                        ui_state = add_history_line(ui_state, f"   {dj_info}", 'magenta')
+
         # If track changed, re-query player status to get new track info
         if track_changed:
             status = player.get_player_status(ctx.player_state)
@@ -296,7 +306,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
     last_state_hash = None
     needs_full_redraw = True
     last_input_text = ""
-    last_palette_state = (False, 0, False, False, 0, False, 0, False, 0, False, 0)  # (palette_visible, palette_selected, confirmation_active, wizard_active, wizard_selected, track_viewer_visible, track_viewer_selected, analytics_viewer_visible, analytics_viewer_scroll, editor_visible, editor_selected)
+    last_palette_state = (False, 0, False, False, 0, False, 0, False, 0, False, 0, 'main', '')  # (palette_visible, palette_selected, confirmation_active, wizard_active, wizard_selected, track_viewer_visible, track_viewer_selected, analytics_viewer_visible, analytics_viewer_scroll, editor_visible, editor_selected, editor_mode, editor_input)
     layout = None
     last_position = None  # Track position separately for partial updates
     dashboard_line_mapping = {}  # Store line offsets from last full dashboard render
@@ -336,7 +346,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
 
         # Check for input-only changes (no full redraw needed)
         input_changed = ui_state.input_text != last_input_text
-        palette_state_changed = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll, ui_state.editor_visible, ui_state.editor_selected) != last_palette_state
+        palette_state_changed = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll, ui_state.editor_visible, ui_state.editor_selected, ui_state.editor_mode, ui_state.editor_input) != last_palette_state
 
         # Determine if we need a full redraw
         needs_full_redraw = needs_full_redraw or (current_state_hash is not None and current_state_hash != last_state_hash)
@@ -427,7 +437,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
             sys.stdout.flush()
 
             last_input_text = ui_state.input_text
-            last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll, ui_state.editor_visible, ui_state.editor_selected)
+            last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll, ui_state.editor_visible, ui_state.editor_selected, ui_state.editor_mode, ui_state.editor_input)
             last_position = int(ctx.player_state.current_position)  # Update position after full redraw
 
         # Check if modal visibility changed (requires full redraw)
@@ -497,7 +507,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 sys.stdout.flush()
 
                 last_input_text = ui_state.input_text
-                last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll, ui_state.editor_visible, ui_state.editor_selected)
+                last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll, ui_state.editor_visible, ui_state.editor_selected, ui_state.editor_mode, ui_state.editor_input)
 
         else:
             # Check if only position changed (partial dashboard update)
