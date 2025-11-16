@@ -12,6 +12,7 @@ class Track(NamedTuple):
     file_path: str
     title: Optional[str] = None
     artist: Optional[str] = None
+    remix_artist: Optional[str] = None  # Remix/edit artist (semicolon-separated)
     album: Optional[str] = None
     genre: Optional[str] = None
     year: Optional[int] = None

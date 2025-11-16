@@ -22,6 +22,7 @@ def handle_wizard_save(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, 
         Tuple of (updated AppContext, updated UIState)
     """
     from music_minion.domain import playlists
+    from music_minion.domain.playlists import filters as playlist_filters
 
     if not ui_state.wizard_active or ui_state.wizard_type != 'smart_playlist':
         return ctx, ui_state
@@ -42,17 +43,24 @@ def handle_wizard_save(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, 
         ui_state = cancel_wizard(ui_state)
         return ctx, ui_state
 
-    # Generate unique ID
-    playlist_id = str(uuid.uuid4())
-
     # Create smart playlist
     try:
-        playlists.create_smart_playlist(
-            playlist_id=playlist_id,
+        # Create the playlist first
+        playlist_id = playlists.create_playlist(
             name=playlist_name,
-            description=wizard_data.get('description', ''),
-            filters=filters
+            playlist_type='smart',
+            description=wizard_data.get('description', '')
         )
+
+        # Add each filter
+        for filter_data in filters:
+            playlist_filters.add_filter(
+                playlist_id=playlist_id,
+                field=filter_data['field'],
+                operator=filter_data['operator'],
+                value=filter_data['value'],
+                conjunction=filter_data.get('conjunction', 'AND')
+            )
 
         ui_state = add_history_line(ui_state, f"✅ Created smart playlist: {playlist_name}", 'green')
         ui_state = set_feedback(ui_state, f"✓ Created {playlist_name}", "✓")

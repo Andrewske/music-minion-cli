@@ -98,8 +98,8 @@ def play_track(ctx: AppContext, track: library.Track, playlist_position: Optiona
 
         # Store track in database
         track_id = database.get_or_create_track(
-            track.file_path, track.title, track.artist, track.album,
-            track.genre, track.year, track.duration, track.key, track.bpm
+            track.file_path, track.title, track.artist, track.remix_artist,
+            track.album, track.genre, track.year, track.duration, track.key, track.bpm
         )
 
         # Start playback session

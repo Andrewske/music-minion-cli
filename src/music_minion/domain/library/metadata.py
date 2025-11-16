@@ -71,6 +71,7 @@ def extract_track_metadata(file_path: str) -> Track:
         # Extract common metadata
         title = get_tag_value(audio_file, ['TIT2', '\xa9nam', 'TITLE'])
         artist = get_tag_value(audio_file, ['TPE1', '\xa9ART', 'ARTIST'])
+        remix_artist = get_tag_value(audio_file, ['TPE4', 'TPE2'])  # Remix artist (TPE4) or Album artist (TPE2)
         album = get_tag_value(audio_file, ['TALB', '\xa9alb', 'ALBUM'])
         genre = get_tag_value(audio_file, ['TCON', '\xa9gen', 'GENRE'])
 
@@ -114,6 +115,7 @@ def extract_track_metadata(file_path: str) -> Track:
             file_path=file_path,
             title=title,
             artist=artist,
+            remix_artist=remix_artist,
             album=album,
             genre=genre,
             year=year,

@@ -48,6 +48,7 @@ def handle_show_metadata_editor(ctx: AppContext, ui_state: UIState, track_id: in
         'file_path': track.get('file_path'),
         'title': track.get('title'),
         'artist': track.get('artist'),
+        'remix_artist': track.get('remix_artist'),
         'album': track.get('album'),
         'year': track.get('year'),
         'bpm': track.get('bpm'),
@@ -76,8 +77,8 @@ def handle_metadata_editor_navigation(ui_state: UIState, direction: int) -> UISt
         Updated UIState
     """
     if ui_state.editor_mode == 'main':
-        # Main editor has 10 fields (7 basic + 3 multi-value)
-        max_items = 10
+        # Main editor has 11 fields (8 basic + 3 multi-value)
+        max_items = 11
     else:
         # List editor - count items
         items = ui_state.editor_data.get('items', [])
@@ -199,6 +200,7 @@ def handle_metadata_editor_save(ctx: AppContext, ui_state: UIState) -> tuple[App
                 'file_path': track.get('file_path'),
                 'title': track.get('title'),
                 'artist': track.get('artist'),
+                'remix_artist': track.get('remix_artist'),
                 'album': track.get('album'),
                 'year': track.get('year'),
                 'bpm': track.get('bpm'),
@@ -231,7 +233,7 @@ def _handle_edit_field(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, 
     track_data = ui_state.editor_data
 
     # Field list (same order as in metadata_editor.py)
-    field_names = ['title', 'artist', 'album', 'year', 'bpm', 'key', 'genre', 'ratings', 'notes', 'tags']
+    field_names = ['title', 'artist', 'remix_artist', 'album', 'year', 'bpm', 'key', 'genre', 'ratings', 'notes', 'tags']
 
     if selected >= len(field_names):
         return ctx, ui_state

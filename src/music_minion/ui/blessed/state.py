@@ -13,6 +13,7 @@ class TrackMetadata:
     """Track metadata from file."""
     title: str = "Unknown"
     artist: str = "Unknown"
+    remix_artist: Optional[str] = None
     album: Optional[str] = None
     year: Optional[int] = None
     genre: Optional[str] = None
@@ -152,6 +153,7 @@ def update_track_info(state: UIState, track_data: dict[str, Any]) -> UIState:
     metadata = TrackMetadata(
         title=track_data.get('title', 'Unknown'),
         artist=track_data.get('artist', 'Unknown'),
+        remix_artist=track_data.get('remix_artist'),
         album=track_data.get('album'),
         year=track_data.get('year'),
         genre=track_data.get('genre'),

@@ -258,6 +258,7 @@ def render_field_editor(term: Terminal, state: UIState, y: int, height: int) -> 
     field_labels = {
         'title': 'Title',
         'artist': 'Artist',
+        'remix_artist': 'Remix Artist',
         'album': 'Album',
         'year': 'Year',
         'bpm': 'BPM',
@@ -366,6 +367,7 @@ def _build_field_list(track_data: dict) -> list[tuple[str, any, bool]]:
     # Basic single-value fields
     fields.append(("Title", track_data.get('title'), False))
     fields.append(("Artist", track_data.get('artist'), False))
+    fields.append(("Remix Artist", track_data.get('remix_artist'), False))
     fields.append(("Album", track_data.get('album'), False))
     fields.append(("Year", track_data.get('year'), False))
     fields.append(("BPM", track_data.get('bpm'), False))

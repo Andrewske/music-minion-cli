@@ -192,9 +192,12 @@ def export_playlist(
     if not pl:
         raise ValueError("Playlist not found")
 
-    # Default library root to ~/Music
+    # Default library root to ~/Music and ensure it's a Path object
     if library_root is None:
         library_root = Path.home() / "Music"
+    else:
+        # Ensure library_root is a Path (no-op if already Path, converts if string)
+        library_root = Path(library_root)
 
     # Default output path based on format
     if output_path is None:

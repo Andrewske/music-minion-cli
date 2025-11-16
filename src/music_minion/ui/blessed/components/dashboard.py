@@ -198,11 +198,51 @@ def render_dashboard(term: Terminal, player_state: PlayerState, ui_state: UIStat
     return len(lines), line_mapping
 
 
+def format_artists(artist_string: str) -> str:
+    """
+    Format semicolon-separated artists for display.
+
+    Examples:
+        "Artist1" -> "Artist1"
+        "Artist1; Artist2" -> "Artist1 & Artist2"
+        "Artist1; Artist2; Artist3" -> "Artist1, Artist2 & Artist3"
+
+    Args:
+        artist_string: Semicolon-separated artist names
+
+    Returns:
+        Formatted artist string
+    """
+    if not artist_string:
+        return "Unknown"
+
+    # Split on semicolons and strip whitespace
+    artists = [a.strip() for a in artist_string.split(';') if a.strip()]
+
+    if not artists:
+        return "Unknown"
+    elif len(artists) == 1:
+        return artists[0]
+    elif len(artists) == 2:
+        return f"{artists[0]} & {artists[1]}"
+    else:
+        # Three or more: "A, B, C & D"
+        return ", ".join(artists[:-1]) + f" & {artists[-1]}"
+
+
 def format_track_display(metadata: TrackMetadata, term: Terminal) -> list[str]:
     """Format track information for display."""
     lines = []
     lines.append(term.bold_white(f"{ICONS['note']} {metadata.title}"))
-    lines.append(term.bold_blue(f"  by {metadata.artist}"))
+
+    # Format main artists
+    formatted_artists = format_artists(metadata.artist)
+    lines.append(term.bold_blue(f"  by {formatted_artists}"))
+
+    # Show remix artists if present
+    if metadata.remix_artist:
+        formatted_remix = format_artists(metadata.remix_artist)
+        lines.append(term.blue(f"  remix by {formatted_remix}"))
 
     details = []
     if metadata.album:

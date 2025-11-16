@@ -38,14 +38,15 @@ def _show_analytics_viewer_if_data(ui_state: UIState, analytics_data: dict) -> U
     return ui_state
 
 
-def _refresh_ui_state_from_db(ui_state: UIState) -> UIState:
+def _refresh_ui_state_from_db(ui_state: UIState, ctx: AppContext) -> UIState:
     """
     Refresh UI state from database.
 
-    Updates shuffle mode and playlist info to reflect latest database state.
+    Updates shuffle mode, playlist info, and current track metadata.
 
     Args:
         ui_state: Current UI state
+        ctx: Application context with current player state
 
     Returns:
         Updated UI state with fresh database values
@@ -53,6 +54,7 @@ def _refresh_ui_state_from_db(ui_state: UIState) -> UIState:
     try:
         from music_minion.domain.playback import state as playback_state
         from music_minion.domain.playlists import crud as playlists
+        from music_minion.core import database
 
         # Update shuffle mode
         shuffle_enabled = playback_state.get_shuffle_mode()
@@ -75,6 +77,45 @@ def _refresh_ui_state_from_db(ui_state: UIState) -> UIState:
         else:
             # No active playlist
             ui_state = replace(ui_state, playlist_info=PlaylistInfo())
+
+        # Update current track metadata if a track is playing
+        current_file = ctx.player_state.current_track
+        if current_file:
+            from music_minion.ui.blessed.state import update_track_info
+
+            db_track = database.get_track_by_path(current_file)
+            if db_track:
+                # Build track data for UI display
+                track_data = {
+                    'title': db_track.get('title') or 'Unknown',
+                    'artist': db_track.get('artist') or 'Unknown',
+                    'remix_artist': db_track.get('remix_artist'),
+                    'album': db_track.get('album'),
+                    'year': db_track.get('year'),
+                    'genre': db_track.get('genre'),
+                    'bpm': db_track.get('bpm'),
+                    'key': db_track.get('key'),
+                }
+
+                # Get additional database info
+                tags = database.get_track_tags(db_track['id'])
+                notes = database.get_track_notes(db_track['id'])
+
+                track_data.update({
+                    'tags': [t['tag_name'] for t in tags],
+                    'notes': notes[0]['note_text'] if notes else '',
+                    'rating': db_track.get('rating'),
+                    'last_played': db_track.get('last_played'),
+                    'play_count': db_track.get('play_count', 0),
+                })
+
+                ui_state = update_track_info(ui_state, track_data)
+            else:
+                # Track not in database - clear metadata
+                ui_state = replace(ui_state, track_metadata=None, track_db_info=None)
+        else:
+            # No track playing - clear metadata
+            ui_state = replace(ui_state, track_metadata=None, track_db_info=None)
 
     except Exception:
         # Silently ignore errors - don't break UI on refresh failure
@@ -296,8 +337,8 @@ def execute_command(ctx: AppContext, ui_state: UIState, command_line: str | Inte
         ctx, ui_state = _process_ui_action(ctx, ui_state)
 
     # Refresh UI state from database after command execution
-    # This ensures shuffle mode, playlist info, etc. are up-to-date
-    ui_state = _refresh_ui_state_from_db(ui_state)
+    # This ensures shuffle mode, playlist info, and track metadata are up-to-date
+    ui_state = _refresh_ui_state_from_db(ui_state, ctx)
 
     return ctx, ui_state, False
 

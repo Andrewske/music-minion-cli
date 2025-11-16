@@ -12,7 +12,7 @@ from .config import Config, get_data_dir
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 
 def get_database_path() -> Path:
@@ -232,6 +232,17 @@ def migrate_database(conn, current_version: int) -> None:
 
         conn.commit()
 
+    if current_version < 10:
+        # Migration from v9 to v10: Add remix_artist field for DJ metadata
+
+        try:
+            conn.execute("ALTER TABLE tracks ADD COLUMN remix_artist TEXT")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+
+        conn.commit()
+
 
 def init_database() -> None:
     """Initialize the database with required tables."""
@@ -367,23 +378,24 @@ def init_database() -> None:
         conn.commit()
 
 
-def get_or_create_track(file_path: str, title: Optional[str] = None, 
-                       artist: Optional[str] = None, album: Optional[str] = None,
-                       genre: Optional[str] = None, year: Optional[int] = None,
-                       duration: Optional[float] = None, key_signature: Optional[str] = None,
-                       bpm: Optional[float] = None) -> int:
+def get_or_create_track(file_path: str, title: Optional[str] = None,
+                       artist: Optional[str] = None, remix_artist: Optional[str] = None,
+                       album: Optional[str] = None, genre: Optional[str] = None,
+                       year: Optional[int] = None, duration: Optional[float] = None,
+                       key_signature: Optional[str] = None, bpm: Optional[float] = None) -> int:
     """Get track ID if exists, otherwise create new track record."""
     with get_db_connection() as conn:
         # Try to find existing track
         cursor = conn.execute("SELECT id FROM tracks WHERE file_path = ?", (file_path,))
         row = cursor.fetchone()
-        
+
         if row:
             # Update existing track with any new metadata
             conn.execute("""
                 UPDATE tracks SET
                     title = COALESCE(?, title),
                     artist = COALESCE(?, artist),
+                    remix_artist = COALESCE(?, remix_artist),
                     album = COALESCE(?, album),
                     genre = COALESCE(?, genre),
                     year = COALESCE(?, year),
@@ -392,15 +404,15 @@ def get_or_create_track(file_path: str, title: Optional[str] = None,
                     bpm = COALESCE(?, bpm),
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-            """, (title, artist, album, genre, year, duration, key_signature, bpm, row['id']))
+            """, (title, artist, remix_artist, album, genre, year, duration, key_signature, bpm, row['id']))
             conn.commit()
             return row['id']
         else:
             # Create new track
             cursor = conn.execute("""
-                INSERT INTO tracks (file_path, title, artist, album, genre, year, duration, key_signature, bpm)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (file_path, title, artist, album, genre, year, duration, key_signature, bpm))
+                INSERT INTO tracks (file_path, title, artist, remix_artist, album, genre, year, duration, key_signature, bpm)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (file_path, title, artist, remix_artist, album, genre, year, duration, key_signature, bpm))
             conn.commit()
             return cursor.lastrowid
 
@@ -904,7 +916,7 @@ def update_track_metadata(track_id: int, **fields) -> bool:
 
     Args:
         track_id: Track ID to update
-        **fields: Field name/value pairs (title, artist, album, year, bpm, key_signature, genre)
+        **fields: Field name/value pairs (title, artist, remix_artist, album, year, bpm, key_signature, genre)
 
     Returns:
         True if successful
@@ -913,7 +925,7 @@ def update_track_metadata(track_id: int, **fields) -> bool:
         return False
 
     # Validate field names
-    valid_fields = {'title', 'artist', 'album', 'year', 'bpm', 'key_signature', 'genre'}
+    valid_fields = {'title', 'artist', 'remix_artist', 'album', 'year', 'bpm', 'key_signature', 'genre'}
     invalid_fields = set(fields.keys()) - valid_fields
     if invalid_fields:
         raise ValueError(f"Invalid fields: {invalid_fields}")
@@ -945,7 +957,7 @@ def update_track_metadata(track_id: int, **fields) -> bool:
             except (ValueError, TypeError) as e:
                 raise ValueError(f"Invalid BPM value '{value}': {e}")
 
-        elif field in ('title', 'artist', 'album', 'genre', 'key_signature'):
+        elif field in ('title', 'artist', 'remix_artist', 'album', 'genre', 'key_signature'):
             # String fields: just convert to string and trim
             validated_fields[field] = str(value).strip()
 

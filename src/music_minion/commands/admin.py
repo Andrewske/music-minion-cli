@@ -132,8 +132,8 @@ def _threaded_scan_worker(ctx: AppContext) -> None:
 
                 # Add or update track in database
                 database.get_or_create_track(
-                    track.file_path, track.title, track.artist, track.album,
-                    track.genre, track.year, track.duration, track.key, track.bpm
+                    track.file_path, track.title, track.artist, track.remix_artist,
+                    track.album, track.genre, track.year, track.duration, track.key, track.bpm
                 )
 
                 db_processed += 1
@@ -310,8 +310,8 @@ def handle_scan_command(ctx: AppContext) -> Tuple[AppContext, bool]:
 
                 # Add or update track in database
                 database.get_or_create_track(
-                    track.file_path, track.title, track.artist, track.album,
-                    track.genre, track.year, track.duration, track.key, track.bpm
+                    track.file_path, track.title, track.artist, track.remix_artist,
+                    track.album, track.genre, track.year, track.duration, track.key, track.bpm
                 )
             except Exception as e:
                 errors += 1

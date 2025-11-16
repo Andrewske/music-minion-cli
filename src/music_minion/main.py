@@ -153,8 +153,8 @@ def interactive_mode_with_dashboard() -> None:
 
             # Get track ID from database
             track_id = database.get_or_create_track(
-                track.file_path, track.title, track.artist, track.album,
-                track.genre, track.year, track.duration, track.key, track.bpm
+                track.file_path, track.title, track.artist, track.remix_artist,
+                track.album, track.genre, track.year, track.duration, track.key, track.bpm
             )
 
             # Get tags

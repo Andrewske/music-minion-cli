@@ -203,6 +203,7 @@ def poll_player_state(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, U
                 track_data = {
                     'title': db_track.get('title') or 'Unknown',
                     'artist': db_track.get('artist') or 'Unknown',
+                    'remix_artist': db_track.get('remix_artist'),
                     'album': db_track.get('album'),
                     'year': db_track.get('year'),
                     'genre': db_track.get('genre'),
