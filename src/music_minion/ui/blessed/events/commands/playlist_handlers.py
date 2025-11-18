@@ -1,5 +1,6 @@
 """Playlist-related command handlers."""
 
+from dataclasses import replace
 from music_minion.context import AppContext
 from music_minion.ui.blessed.state import (
     UIState,
@@ -14,6 +15,10 @@ def handle_playlist_selection(ctx: AppContext, ui_state: UIState, playlist_name:
     """
     Handle playlist selection from palette.
 
+    Can either:
+    - Activate playlist for playback (default)
+    - Add a pending track to playlist (when called from search "Add to Playlist")
+
     Args:
         ctx: Application context
         ui_state: Current UI state
@@ -23,6 +28,8 @@ def handle_playlist_selection(ctx: AppContext, ui_state: UIState, playlist_name:
         Tuple of (updated AppContext, updated UIState)
     """
     from music_minion.domain import playlists
+    from music_minion.core import database
+    from music_minion import helpers
 
     # Get playlist by name
     pl = playlists.get_playlist_by_name(playlist_name)
@@ -30,15 +37,44 @@ def handle_playlist_selection(ctx: AppContext, ui_state: UIState, playlist_name:
         ui_state = add_history_line(ui_state, f"❌ Playlist '{playlist_name}' not found", 'red')
         return ctx, ui_state
 
-    # Call playlist active command
-    from music_minion.commands.playlist import handle_playlist_active_command
+    # Check if this is an "add track" operation from search
+    pending_track_id = ui_state.confirmation_data.get('pending_add_track_id') if ui_state.confirmation_data else None
 
-    # Update context with active playlist
-    ctx, _ = handle_playlist_active_command(ctx, [playlist_name])
+    if pending_track_id is not None:
+        # Add track to playlist instead of activating
+        try:
+            if playlists.add_track_to_playlist(pl['id'], pending_track_id):
+                # Get track info for display
+                track = database.get_track_by_id(pending_track_id)
+                if track:
+                    display_name = f"{track.get('artist', 'Unknown')} - {track.get('title', 'Unknown')}"
+                    ui_state = add_history_line(ui_state, f"✅ Added to '{playlist_name}': {display_name}", 'green')
+                else:
+                    ui_state = add_history_line(ui_state, f"✅ Added track to playlist: {playlist_name}", 'green')
 
-    # Add success message
-    ui_state = add_history_line(ui_state, f"✅ Activated playlist: {playlist_name}", 'green')
-    ui_state = set_feedback(ui_state, f"✓ {playlist_name}", "✓")
+                ui_state = set_feedback(ui_state, f"✓ Added to {playlist_name}", "✓")
+
+                # Auto-export if enabled
+                helpers.auto_export_if_enabled(pl['id'], ctx)
+            else:
+                ui_state = add_history_line(ui_state, f"Track is already in playlist '{playlist_name}'", 'yellow')
+        except ValueError as e:
+            ui_state = add_history_line(ui_state, f"❌ Error: {e}", 'red')
+        except Exception as e:
+            ui_state = add_history_line(ui_state, f"❌ Error adding track to playlist: {e}", 'red')
+
+        # Clear confirmation data
+        ui_state = replace(ui_state, confirmation_data=None)
+    else:
+        # Default behavior: activate playlist
+        from music_minion.commands.playlist import handle_playlist_active_command
+
+        # Update context with active playlist
+        ctx, _ = handle_playlist_active_command(ctx, [playlist_name])
+
+        # Add success message
+        ui_state = add_history_line(ui_state, f"✅ Activated playlist: {playlist_name}", 'green')
+        ui_state = set_feedback(ui_state, f"✓ {playlist_name}", "✓")
 
     return ctx, ui_state
 

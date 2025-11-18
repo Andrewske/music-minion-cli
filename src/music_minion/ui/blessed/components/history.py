@@ -47,7 +47,7 @@ def render_history(term: Terminal, state: UIState, y_start: int, height: int) ->
     # Render each line
     for i, (text, color) in enumerate(visible_lines):
         color_func = color_map.get(color, term.white)
-        print(term.move_xy(0, y_start + i) + color_func(text))
+        print(term.move_xy(0, y_start + i) + term.clear_eol + color_func(text))
 
     # Clear any remaining lines in the region
     for i in range(len(visible_lines), height):

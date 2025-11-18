@@ -45,6 +45,11 @@ from ..state import (
     move_track_viewer_selection,
     hide_analytics_viewer,
     scroll_analytics_viewer,
+    update_search_query,
+    move_search_selection,
+    set_search_mode,
+    move_detail_selection,
+    scroll_search_detail,
 )
 from ..styles.palette import filter_commands, COMMAND_DEFINITIONS
 from ..components.track_viewer import TRACK_VIEWER_HEADER_LINES, TRACK_VIEWER_FOOTER_LINES
@@ -349,7 +354,7 @@ def generate_preview_data(state: UIState) -> UIState:
 
 def handle_track_viewer_key(state: UIState, event: dict, viewer_height: int = 10) -> tuple[UIState | None, str | InternalCommand | None]:
     """
-    Handle keyboard events for track viewer mode.
+    Handle keyboard events for track viewer mode (2-mode: list/detail with filtering).
 
     Args:
         state: Current UI state (track viewer must be visible)
@@ -359,54 +364,171 @@ def handle_track_viewer_key(state: UIState, event: dict, viewer_height: int = 10
     Returns:
         Tuple of (updated state or None if not handled, command to execute or None)
     """
-    # Escape closes viewer
+    from ..state import set_track_viewer_mode, move_track_viewer_action_selection, update_track_viewer_filter
+
+    # Escape - navigate back, clear filter, or close
     if event['type'] == 'escape':
-        return hide_track_viewer(state), None
+        if state.track_viewer_mode == 'detail':
+            # Detail -> List
+            state = set_track_viewer_mode(state, 'list')
+            return state, None
+        elif state.track_viewer_filter_query:
+            # List with filter -> Clear filter
+            from ..components.track_search import filter_tracks
+            state = update_track_viewer_filter(state, "", state.track_viewer_tracks)
+            return state, None
+        else:
+            # List without filter -> Close
+            return hide_track_viewer(state), None
+
+    # 'q' key - close viewer (only in list mode)
+    if event['type'] == 'char' and event['char'] == 'q':
+        if state.track_viewer_mode == 'list':
+            return hide_track_viewer(state), None
 
     # Calculate visible items (subtract header and footer lines)
     visible_items = max(1, viewer_height - TRACK_VIEWER_HEADER_LINES - TRACK_VIEWER_FOOTER_LINES)
 
-    # Arrow key navigation
-    if event['type'] == 'arrow_up':
-        state = move_track_viewer_selection(state, -1, visible_items)
+    # Arrow key / j/k navigation
+    if event['type'] == 'arrow_up' or (event['type'] == 'char' and event['char'] == 'k'):
+        if state.track_viewer_mode == 'list':
+            # List mode: navigate tracks
+            state = move_track_viewer_selection(state, -1, visible_items)
+        else:
+            # Detail mode: navigate action menu
+            playlist_type = state.track_viewer_playlist_type
+            action_count = 5 if playlist_type == 'manual' else 4  # Manual: 5 actions, Smart: 4 actions
+            state = move_track_viewer_action_selection(state, -1, action_count)
         return state, None
 
-    if event['type'] == 'arrow_down':
-        state = move_track_viewer_selection(state, 1, visible_items)
+    if event['type'] == 'arrow_down' or (event['type'] == 'char' and event['char'] == 'j'):
+        if state.track_viewer_mode == 'list':
+            # List mode: navigate tracks
+            state = move_track_viewer_selection(state, 1, visible_items)
+        else:
+            # Detail mode: navigate action menu
+            playlist_type = state.track_viewer_playlist_type
+            action_count = 5 if playlist_type == 'manual' else 4  # Manual: 5 actions, Smart: 4 actions
+            state = move_track_viewer_action_selection(state, 1, action_count)
         return state, None
 
-    # Enter plays selected track
+    # Enter - mode switching or action execution
     if event['type'] == 'enter':
-        if state.track_viewer_selected < len(state.track_viewer_tracks):
-            # Send typed command to play track from viewer
-            command = InternalCommand(
-                action='play_track_from_viewer',
-                data={
-                    'playlist_id': state.track_viewer_playlist_id,
-                    'track_index': state.track_viewer_selected
-                }
-            )
-            return state, command
-
-    # Delete removes track from manual playlists
-    if event['type'] == 'delete':
-        if state.track_viewer_playlist_type == 'manual':
+        if state.track_viewer_mode == 'list':
+            # List -> Detail: show track details
             if state.track_viewer_selected < len(state.track_viewer_tracks):
-                selected_track = state.track_viewer_tracks[state.track_viewer_selected]
-                track_id = selected_track['id']
-                playlist_name = state.track_viewer_playlist_name
+                state = set_track_viewer_mode(state, 'detail')
+            return state, None
+        else:
+            # Detail -> Execute: execute selected action
+            return _execute_track_viewer_action(state)
 
-                # Show confirmation dialog
-                state = show_confirmation(state, 'remove_track_from_playlist', {
-                    'track_id': track_id,
-                    'playlist_name': playlist_name,
-                    'track_title': selected_track.get('title', 'Unknown'),
-                    'track_artist': selected_track.get('artist', 'Unknown')
-                })
+    # Quick keyboard shortcuts (work in both modes, but differ based on context)
+    if event['type'] == 'char':
+        char = event['char'].lower()
+
+        # Get selected track
+        if state.track_viewer_selected < len(state.track_viewer_tracks):
+            selected_track = state.track_viewer_tracks[state.track_viewer_selected]
+            track_id = selected_track.get('id')
+
+            if char == 'p':
+                # Play track
+                return state, InternalCommand(action='track_viewer_play', data={'track_id': track_id})
+            elif char == 'e':
+                # Edit metadata
+                return state, InternalCommand(action='track_viewer_edit', data={'track_id': track_id})
+            elif char == 'a':
+                # Add to another playlist
+                return state, InternalCommand(action='track_viewer_add_to_playlist', data={'track_id': track_id})
+            elif char == 'd' and state.track_viewer_playlist_type == 'manual':
+                # Remove from manual playlist (only in list mode)
+                if state.track_viewer_mode == 'list':
+                    playlist_name = state.track_viewer_playlist_name
+                    state = show_confirmation(state, 'remove_track_from_playlist', {
+                        'track_id': track_id,
+                        'playlist_name': playlist_name,
+                        'track_title': selected_track.get('title', 'Unknown'),
+                        'track_artist': selected_track.get('artist', 'Unknown')
+                    })
+                    return state, None
+            elif char == 'f' and state.track_viewer_playlist_type == 'smart':
+                # Edit filters (smart playlists only)
+                playlist_id = state.track_viewer_playlist_id
+                return state, InternalCommand(action='track_viewer_edit_filters', data={'playlist_id': playlist_id})
+
+    # Handle filter input in list mode
+    if state.track_viewer_mode == 'list':
+        # Backspace - remove last character from filter
+        if event['type'] == 'backspace':
+            if state.track_viewer_filter_query:
+                from ..components.track_search import filter_tracks
+                new_query = state.track_viewer_filter_query[:-1]
+                filtered = filter_tracks(new_query, state.track_viewer_tracks)
+                state = update_track_viewer_filter(state, new_query, filtered)
+                return state, None
+
+        # Regular character - add to filter (only printable characters, not special shortcuts)
+        if event['type'] == 'char' and event['char']:
+            char = event['char']
+            # Skip shortcut keys
+            if char.lower() not in ['p', 'd', 'e', 'a', 'f', 'q', 'j', 'k']:
+                from ..components.track_search import filter_tracks
+                new_query = state.track_viewer_filter_query + char
+                filtered = filter_tracks(new_query, state.track_viewer_tracks)
+                state = update_track_viewer_filter(state, new_query, filtered)
                 return state, None
 
     # For any other key in track viewer mode, consume it and do nothing
     return state, None
+
+
+def _execute_track_viewer_action(state: UIState) -> tuple[UIState, InternalCommand | None]:
+    """
+    Execute the selected action in track viewer detail mode.
+
+    Args:
+        state: Current UI state
+
+    Returns:
+        Tuple of (updated state, command to execute or None)
+    """
+    if state.track_viewer_selected >= len(state.track_viewer_tracks):
+        return state, None
+
+    selected_track = state.track_viewer_tracks[state.track_viewer_selected]
+    track_id = selected_track.get('id')
+    action_index = state.track_viewer_action_selected
+    playlist_type = state.track_viewer_playlist_type
+
+    # Action mapping based on playlist type
+    if playlist_type == 'manual':
+        # Manual playlist actions: Play, Remove, Edit, Add, Cancel
+        action_map = [
+            ('track_viewer_play', {'track_id': track_id}),
+            ('track_viewer_remove', {'track_id': track_id}),
+            ('track_viewer_edit', {'track_id': track_id}),
+            ('track_viewer_add_to_playlist', {'track_id': track_id}),
+            (None, {}),  # Cancel
+        ]
+    else:  # smart playlist
+        # Smart playlist actions: Play, Edit Metadata, Add, Cancel (Edit Filters is a quick shortcut, not in menu)
+        action_map = [
+            ('track_viewer_play', {'track_id': track_id}),
+            ('track_viewer_edit', {'track_id': track_id}),
+            ('track_viewer_add_to_playlist', {'track_id': track_id}),
+            (None, {}),  # Cancel
+        ]
+
+    action_name, action_data = action_map[action_index]
+
+    if action_name:
+        # Execute action
+        return state, InternalCommand(action=action_name, data=action_data)
+    else:
+        # Cancel: go back to list mode
+        state = set_track_viewer_mode(state, 'list')
+        return state, None
 
 
 def handle_analytics_viewer_key(state: UIState, event: dict, viewer_height: int = 10) -> tuple[UIState | None, str | InternalCommand | None]:
@@ -641,7 +763,6 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10, analyti
             user_input = state.input_text.strip()
             state = set_input_text(state, "")
             # Use InternalCommand to pass review input
-            from music_minion.ui.blessed.state import InternalCommand
             return state, InternalCommand(action='review_input', data={'input': user_input})
 
     # Handle Ctrl+C (quit)
@@ -676,10 +797,20 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10, analyti
             state = scroll_history_to_bottom(state)
             return state, None
 
-    # Handle Escape (hide palette)
+    # Handle Escape (hide palette or navigate back in search modes)
     if event['type'] == 'escape':
         if state.palette_visible:
-            state = hide_palette(state)
+            # Search mode: Navigate back or close
+            if state.palette_mode == 'search':
+                if state.search_mode == 'detail':
+                    # Detail -> Search
+                    state = set_search_mode(state, 'search')
+                else:
+                    # Search -> Close
+                    state = hide_palette(state)
+            else:
+                # Other modes: just close palette
+                state = hide_palette(state)
         return state, None
 
     # Calculate visible items (subtract header and footer lines)
@@ -688,12 +819,21 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10, analyti
     # Handle arrows - palette navigation OR command history navigation
     if event['type'] == 'arrow_up':
         if state.palette_visible:
-            # Palette navigation with autofill
-            state = move_palette_selection(state, -1, visible_items)
-            # Autofill input with selected command
-            if state.palette_items and state.palette_selected < len(state.palette_items):
-                selected_cmd = state.palette_items[state.palette_selected][1]  # Command name
-                state = set_input_text(state, selected_cmd)
+            if state.palette_mode == 'search':
+                # Search mode: different behavior based on current mode
+                if state.search_mode == 'search':
+                    # Navigate tracks
+                    state = move_search_selection(state, -1, visible_items)
+                elif state.search_mode == 'detail':
+                    # Navigate action menu (4 items)
+                    state = move_detail_selection(state, -1)
+            else:
+                # Palette navigation with autofill
+                state = move_palette_selection(state, -1, visible_items)
+                # Autofill input with selected command (not for search)
+                if state.palette_items and state.palette_selected < len(state.palette_items):
+                    selected_cmd = state.palette_items[state.palette_selected][1]  # Command name
+                    state = set_input_text(state, selected_cmd)
         else:
             # Command history navigation (when palette not visible)
             state = navigate_history_up(state)
@@ -701,12 +841,21 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10, analyti
 
     if event['type'] == 'arrow_down':
         if state.palette_visible:
-            # Palette navigation with autofill
-            state = move_palette_selection(state, 1, visible_items)
-            # Autofill input with selected command
-            if state.palette_items and state.palette_selected < len(state.palette_items):
-                selected_cmd = state.palette_items[state.palette_selected][1]  # Command name
-                state = set_input_text(state, selected_cmd)
+            if state.palette_mode == 'search':
+                # Search mode: different behavior based on current mode
+                if state.search_mode == 'search':
+                    # Navigate tracks
+                    state = move_search_selection(state, 1, visible_items)
+                elif state.search_mode == 'detail':
+                    # Navigate action menu (4 items)
+                    state = move_detail_selection(state, 1)
+            else:
+                # Palette navigation with autofill
+                state = move_palette_selection(state, 1, visible_items)
+                # Autofill input with selected command (not for search)
+                if state.palette_items and state.palette_selected < len(state.palette_items):
+                    selected_cmd = state.palette_items[state.palette_selected][1]  # Command name
+                    state = set_input_text(state, selected_cmd)
         else:
             # Command history navigation (when palette not visible)
             state = navigate_history_down(state)
@@ -714,27 +863,63 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10, analyti
 
     # Handle Enter (execute command or select palette item)
     if event['type'] == 'enter':
-        if state.palette_visible and state.palette_items:
-            # Select item from palette
-            if state.palette_selected < len(state.palette_items):
-                selected = state.palette_items[state.palette_selected]
+        command_to_execute = None
 
-                # Different handling based on palette mode
-                if state.palette_mode == 'playlist':
-                    # For playlist mode, send special command with playlist name
-                    playlist_name = selected[1]  # Playlist name
-                    command_to_execute = f"__SELECT_PLAYLIST__ {playlist_name}"
-                else:
-                    # For command mode, just use the command name
-                    command_to_execute = selected[1]  # Command name
+        if state.palette_visible:
+            # Search mode: Navigate to detail or execute action
+            if state.palette_mode == 'search':
+                if state.search_filtered_tracks and state.search_selected < len(state.search_filtered_tracks):
+                    selected_track = state.search_filtered_tracks[state.search_selected]
+                    track_id = selected_track.get('id')
 
-                state = hide_palette(state)
-                state = set_input_text(state, "")
+                    if track_id is not None:
+                        if state.search_mode == 'search':
+                            # Search -> Detail: Show track details
+                            state = set_search_mode(state, 'detail')
+                            return state, None
+                        elif state.search_mode == 'detail':
+                            # Detail -> Execute: Execute selected action
+                            action_map = [
+                                ('search_play_track', {}),
+                                ('search_add_to_playlist', {}),
+                                ('search_edit_metadata', {}),
+                                (None, {}),  # Cancel (do nothing)
+                            ]
+                            action_name, action_data = action_map[state.search_detail_selection]
+
+                            if action_name:
+                                # Close search and execute action
+                                state = hide_palette(state)
+                                action_data['track_id'] = track_id
+                                return state, InternalCommand(action=action_name, data=action_data)
+                            else:
+                                # Cancel: go back to search
+                                state = set_search_mode(state, 'search')
+                                return state, None
+                return state, None
+
+            # Command/Playlist mode: select item
+            elif state.palette_items:
+                if state.palette_selected < len(state.palette_items):
+                    selected = state.palette_items[state.palette_selected]
+
+                    # Different handling based on palette mode
+                    if state.palette_mode == 'playlist':
+                        # For playlist mode, send special command with playlist name
+                        playlist_name = selected[1]  # Playlist name
+                        command_to_execute = f"__SELECT_PLAYLIST__ {playlist_name}"
+                    else:
+                        # For command mode, just use the command name
+                        command_to_execute = selected[1]  # Command name
+
+                    state = hide_palette(state)
+                    state = set_input_text(state, "")
         else:
             # Execute typed command
             if state.input_text.strip():
                 command_to_execute = state.input_text.strip()
                 state = set_input_text(state, "")
+
         return state, command_to_execute
 
     # Handle backspace
@@ -744,7 +929,12 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10, analyti
 
         # Update palette filter if visible
         if state.palette_visible:
-            if state.palette_mode == 'playlist':
+            if state.palette_mode == 'search':
+                # Filter tracks in search mode
+                from ..components.track_search import filter_tracks
+                filtered = filter_tracks(state.input_text, state.search_all_tracks)
+                state = update_search_query(state, state.input_text, filtered)
+            elif state.palette_mode == 'playlist':
                 # Filter playlists by name
                 from ..components.palette import filter_playlist_items, load_playlist_items
                 all_items = load_playlist_items()
@@ -757,6 +947,19 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10, analyti
                 state = update_palette_filter(state, query, filtered)
 
         return state, None
+
+    # Handle 'v' key - view playlist tracks (only in playlist palette mode)
+    if event['type'] == 'char' and event['char'] == 'v':
+        if state.palette_visible and state.palette_mode == 'playlist':
+            # Get selected playlist
+            if state.palette_items and state.palette_selected < len(state.palette_items):
+                selected = state.palette_items[state.palette_selected]
+                playlist_name = selected[1]  # Playlist name
+
+                # Close palette and open track viewer
+                state = hide_palette(state)
+                return state, InternalCommand(action='view_playlist_tracks', data={'playlist_name': playlist_name})
+            return state, None
 
     # Handle delete key
     if event['type'] == 'delete':
@@ -791,6 +994,22 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10, analyti
     if event['type'] == 'char' and event['char']:
         char = event['char']
 
+        # Shortcut keys in search detail mode (p/a/e for quick actions)
+        if state.palette_visible and state.palette_mode == 'search' and state.search_mode == 'detail':
+            if state.search_filtered_tracks and state.search_selected < len(state.search_filtered_tracks):
+                track_id = state.search_filtered_tracks[state.search_selected].get('id')
+
+                if track_id is not None:
+                    if char.lower() == 'p':  # Play
+                        state = hide_palette(state)
+                        return state, InternalCommand(action='search_play_track', data={'track_id': track_id})
+                    elif char.lower() == 'a':  # Add to playlist
+                        state = hide_palette(state)
+                        return state, InternalCommand(action='search_add_to_playlist', data={'track_id': track_id})
+                    elif char.lower() == 'e':  # Edit metadata
+                        state = hide_palette(state)
+                        return state, InternalCommand(action='search_edit_metadata', data={'track_id': track_id})
+
         # Reset history navigation when typing
         state = reset_history_navigation(state)
 
@@ -812,7 +1031,12 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10, analyti
 
             # Update palette filter if visible
             if state.palette_visible:
-                if state.palette_mode == 'playlist':
+                if state.palette_mode == 'search':
+                    # Filter tracks in search mode
+                    from ..components.track_search import filter_tracks
+                    filtered = filter_tracks(state.input_text, state.search_all_tracks)
+                    state = update_search_query(state, state.input_text, filtered)
+                elif state.palette_mode == 'playlist':
                     # Filter playlists by name
                     from ..components.palette import filter_playlist_items, load_playlist_items
                     all_items = load_playlist_items()

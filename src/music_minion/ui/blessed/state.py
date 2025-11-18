@@ -87,7 +87,7 @@ class UIState:
 
     # Command palette state
     palette_visible: bool = False
-    palette_mode: str = 'command'  # 'command' or 'playlist'
+    palette_mode: str = 'command'  # 'command', 'playlist', or 'search'
     palette_query: str = ""
     palette_items: list[tuple[str, str, str, str]] = field(default_factory=list)  # (cat, cmd, icon, desc)
     palette_selected: int = 0
@@ -112,9 +112,13 @@ class UIState:
     track_viewer_playlist_id: Optional[int] = None
     track_viewer_playlist_name: str = ""
     track_viewer_playlist_type: str = "manual"
-    track_viewer_tracks: list[dict[str, Any]] = field(default_factory=list)
+    track_viewer_tracks: list[dict[str, Any]] = field(default_factory=list)  # All tracks
+    track_viewer_filtered_tracks: list[dict[str, Any]] = field(default_factory=list)  # Filtered tracks
+    track_viewer_filter_query: str = ""  # Current filter query
     track_viewer_selected: int = 0
     track_viewer_scroll: int = 0
+    track_viewer_mode: str = 'list'  # 'list' | 'detail' (2-mode flow like search)
+    track_viewer_action_selected: int = 0  # Selected action in detail mode action menu
 
     # Analytics viewer state (for viewing playlist analytics in full screen)
     analytics_viewer_visible: bool = False
@@ -130,6 +134,16 @@ class UIState:
     editor_scroll: int = 0  # Scroll offset
     editor_changes: dict[str, Any] = field(default_factory=dict)  # Pending changes
     editor_input: str = ''  # Text input for field editing
+
+    # Track search state (for searching and browsing all tracks in palette mode)
+    search_query: str = ""
+    search_all_tracks: list[dict[str, Any]] = field(default_factory=list)  # Pre-loaded once
+    search_filtered_tracks: list[dict[str, Any]] = field(default_factory=list)  # Filtered results
+    search_selected: int = 0  # Selected track index in filtered results
+    search_scroll: int = 0  # Scroll offset for results list
+    search_mode: str = 'search'  # Current mode: 'search' | 'detail' (actions integrated in detail)
+    search_detail_scroll: int = 0  # Scroll offset in detail view
+    search_detail_selection: int = 0  # Selected item in detail view (action index: 0-3)
 
     # AI Review mode state (conversational tag review)
     review_mode: Optional[str] = None  # None, 'conversation', 'confirm'
@@ -268,13 +282,55 @@ def show_palette(state: UIState) -> UIState:
 
 
 def hide_palette(state: UIState) -> UIState:
-    """Hide palette and reset selection."""
-    return replace(state, palette_visible=False, palette_mode='command', palette_selected=0, palette_scroll=0, palette_query="")
+    """Hide palette and reset selection (including search mode state)."""
+    return replace(
+        state,
+        palette_visible=False,
+        palette_mode='command',
+        palette_selected=0,
+        palette_scroll=0,
+        palette_query="",
+        # Reset search state if in search mode
+        search_query="",
+        search_filtered_tracks=[],
+        search_selected=0,
+        search_scroll=0,
+        search_mode='search',
+        search_detail_scroll=0,
+        search_detail_selection=0
+    )
 
 
 def show_playlist_palette(state: UIState, items: list[tuple[str, str, str, str]]) -> UIState:
     """Show playlist palette with items."""
     return replace(state, palette_visible=True, palette_mode='playlist', palette_items=items, palette_selected=0, palette_scroll=0, palette_query="")
+
+
+def enable_palette_search_mode(state: UIState, all_tracks: list[dict[str, Any]]) -> UIState:
+    """
+    Transform palette into track search mode.
+
+    Args:
+        state: Current UI state
+        all_tracks: Pre-loaded tracks from database
+
+    Returns:
+        Updated state with palette in search mode, tracks loaded
+    """
+    return replace(
+        state,
+        palette_visible=True,
+        palette_mode='search',
+        palette_selected=0,
+        palette_scroll=0,
+        palette_query="",
+        # Initialize search state - show all tracks initially
+        search_query="",
+        search_all_tracks=all_tracks,
+        search_filtered_tracks=all_tracks,  # Show all tracks initially
+        search_selected=0,
+        search_scroll=0
+    )
 
 
 def update_palette_filter(state: UIState, query: str, items: list[tuple[str, str, str, str]]) -> UIState:
@@ -611,6 +667,8 @@ def show_track_viewer(state: UIState, playlist_id: int, playlist_name: str, play
         track_viewer_playlist_name=playlist_name,
         track_viewer_playlist_type=playlist_type,
         track_viewer_tracks=tracks,
+        track_viewer_filtered_tracks=tracks,  # Initially show all tracks
+        track_viewer_filter_query="",  # No filter initially
         track_viewer_selected=0,
         track_viewer_scroll=0,
         # Close all other modals
@@ -641,8 +699,12 @@ def hide_track_viewer(state: UIState) -> UIState:
         track_viewer_playlist_name='',
         track_viewer_playlist_type='manual',
         track_viewer_tracks=[],
+        track_viewer_filtered_tracks=[],
+        track_viewer_filter_query='',
         track_viewer_selected=0,
-        track_viewer_scroll=0
+        track_viewer_scroll=0,
+        track_viewer_mode='list',
+        track_viewer_action_selected=0
     )
 
 
@@ -658,10 +720,10 @@ def move_track_viewer_selection(state: UIState, delta: int, visible_items: int =
     Returns:
         Updated state with new selection and scroll position
     """
-    if not state.track_viewer_tracks:
+    if not state.track_viewer_filtered_tracks:
         return state
 
-    new_selected = (state.track_viewer_selected + delta) % len(state.track_viewer_tracks)
+    new_selected = (state.track_viewer_selected + delta) % len(state.track_viewer_filtered_tracks)
 
     # Adjust scroll to keep selection visible
     new_scroll = state.track_viewer_scroll
@@ -675,6 +737,64 @@ def move_track_viewer_selection(state: UIState, delta: int, visible_items: int =
         new_scroll = new_selected
 
     return replace(state, track_viewer_selected=new_selected, track_viewer_scroll=new_scroll)
+
+
+def set_track_viewer_mode(state: UIState, mode: str) -> UIState:
+    """
+    Change track viewer mode between list and detail.
+
+    Args:
+        state: Current UI state
+        mode: New mode ('list' | 'detail')
+
+    Returns:
+        Updated state with new mode, action selection reset
+    """
+    return replace(
+        state,
+        track_viewer_mode=mode,
+        track_viewer_action_selected=0  # Reset action selection when changing modes
+    )
+
+
+def move_track_viewer_action_selection(state: UIState, delta: int, action_count: int) -> UIState:
+    """
+    Move action menu selection in track viewer detail mode.
+
+    Args:
+        state: Current UI state
+        delta: Direction and amount (-1 up, 1 down)
+        action_count: Number of actions in menu (depends on playlist type)
+
+    Returns:
+        Updated state with new action selection
+    """
+    if action_count == 0:
+        return state
+
+    new_selected = (state.track_viewer_action_selected + delta) % action_count
+    return replace(state, track_viewer_action_selected=new_selected)
+
+
+def update_track_viewer_filter(state: UIState, query: str, filtered_tracks: list[dict[str, Any]]) -> UIState:
+    """
+    Update track viewer filter query and filtered tracks.
+
+    Args:
+        state: Current UI state
+        query: New filter query
+        filtered_tracks: Filtered track list
+
+    Returns:
+        Updated state with new filter, selection and scroll reset
+    """
+    return replace(
+        state,
+        track_viewer_filter_query=query,
+        track_viewer_filtered_tracks=filtered_tracks,
+        track_viewer_selected=0,
+        track_viewer_scroll=0
+    )
 
 
 def show_analytics_viewer(state: UIState, analytics_data: dict[str, Any]) -> UIState:
@@ -1145,3 +1265,106 @@ def cancel_add_item(state: UIState) -> UIState:
         editor_data=new_data,
         editor_input=''
     )
+
+
+# Track search helper functions (for palette search mode)
+
+
+def update_search_query(state: UIState, query: str, filtered: list[dict[str, Any]]) -> UIState:
+    """
+    Update search query and filtered results.
+
+    Args:
+        state: Current UI state
+        query: New search query
+        filtered: Filtered tracks matching query
+
+    Returns:
+        Updated state with new query, filtered results,
+        selection reset to 0, scroll reset
+    """
+    return replace(
+        state,
+        search_query=query,
+        search_filtered_tracks=filtered,
+        search_selected=0,
+        search_scroll=0
+    )
+
+
+def move_search_selection(state: UIState, delta: int, visible_items: int = 20) -> UIState:
+    """
+    Move selection in search results with scroll adjustment.
+
+    Args:
+        state: Current UI state
+        delta: Direction and amount (-1 up, 1 down)
+        visible_items: Number of visible items in viewport
+
+    Returns:
+        Updated state with new selection and scroll position
+    """
+    if not state.search_filtered_tracks:
+        return state
+
+    new_selected = (state.search_selected + delta) % len(state.search_filtered_tracks)
+
+    # Adjust scroll to keep selection visible
+    new_scroll = state.search_scroll
+    if new_selected >= state.search_scroll + visible_items:
+        new_scroll = new_selected - visible_items + 1
+    elif new_selected < state.search_scroll:
+        new_scroll = new_selected
+
+    return replace(state, search_selected=new_selected, search_scroll=new_scroll)
+
+
+def set_search_mode(state: UIState, mode: str) -> UIState:
+    """
+    Change search mode.
+
+    Args:
+        state: Current UI state
+        mode: New mode ('search' | 'detail')
+
+    Returns:
+        Updated state with new mode, scroll/selection reset
+    """
+    return replace(
+        state,
+        search_mode=mode,
+        search_detail_scroll=0,
+        search_detail_selection=0  # Reset selection when changing modes
+    )
+
+
+def move_detail_selection(state: UIState, delta: int) -> UIState:
+    """
+    Move selection in combined detail view (action menu with 4 actions).
+
+    Args:
+        state: Current UI state
+        delta: Direction and amount (-1 up, 1 down)
+
+    Returns:
+        Updated state with new action selection
+    """
+    ACTION_COUNT = 4  # Play, Add to Playlist, Edit Metadata, Cancel
+    new_selected = (state.search_detail_selection + delta) % ACTION_COUNT
+    return replace(state, search_detail_selection=new_selected)
+
+
+def scroll_search_detail(state: UIState, delta: int, max_scroll: int) -> UIState:
+    """
+    Scroll detail view up or down.
+
+    Args:
+        state: Current UI state
+        delta: Amount to scroll (positive = down, negative = up)
+        max_scroll: Maximum scroll offset
+
+    Returns:
+        Updated state with new scroll position
+    """
+    new_scroll = max(0, min(state.search_detail_scroll + delta, max_scroll))
+    return replace(state, search_detail_scroll=new_scroll)

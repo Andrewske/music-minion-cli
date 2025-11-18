@@ -22,6 +22,7 @@ COMMAND_DEFINITIONS: list[tuple[str, str, str, str]] = [
     ('📋 Playlists', 'remove', '➖', 'Remove current track from playlist'),
 
     # Library
+    ('🔍 Library', 'search', '🔍', 'Search all tracks'),
     ('🔍 Library', 'scan', '🔍', 'Scan library for new tracks'),
     ('🔍 Library', 'stats', '📊', 'Show library statistics'),
     ('🔍 Library', 'sync', '🔄', 'Sync metadata with files'),

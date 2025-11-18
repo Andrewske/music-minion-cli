@@ -18,6 +18,11 @@ from .track_viewer_handlers import (
     handle_show_track_viewer,
     handle_play_track_from_viewer,
     handle_remove_track_from_playlist,
+    handle_track_viewer_play,
+    handle_track_viewer_edit,
+    handle_track_viewer_add_to_playlist,
+    handle_track_viewer_remove,
+    handle_track_viewer_edit_filters,
 )
 from .wizard_handlers import handle_wizard_save
 
@@ -217,6 +222,73 @@ def _handle_internal_command(ctx: AppContext, ui_state: UIState, cmd: InternalCo
         ctx, ui_state = handle_metadata_editor_add(ctx, ui_state)
         return ctx, ui_state, False
 
+    elif cmd.action == 'search_play_track':
+        # Play track from search
+        from music_minion.ui.blessed.events.commands.search_handlers import handle_search_play_track
+        track_id = cmd.data.get('track_id')
+        if track_id is not None:
+            ctx, ui_state = handle_search_play_track(ctx, ui_state, track_id)
+        return ctx, ui_state, False
+
+    elif cmd.action == 'search_add_to_playlist':
+        # Add track to playlist from search
+        from music_minion.ui.blessed.events.commands.search_handlers import handle_search_add_to_playlist
+        track_id = cmd.data.get('track_id')
+        if track_id is not None:
+            ctx, ui_state = handle_search_add_to_playlist(ctx, ui_state, track_id)
+        return ctx, ui_state, False
+
+    elif cmd.action == 'search_edit_metadata':
+        # Edit track metadata from search
+        from music_minion.ui.blessed.events.commands.search_handlers import handle_search_edit_metadata
+        track_id = cmd.data.get('track_id')
+        if track_id is not None:
+            ctx, ui_state = handle_search_edit_metadata(ctx, ui_state, track_id)
+        return ctx, ui_state, False
+
+    # Track viewer actions
+    elif cmd.action == 'view_playlist_tracks':
+        # Show track viewer for playlist
+        playlist_name = cmd.data.get('playlist_name')
+        if playlist_name:
+            ctx, ui_state = handle_show_track_viewer(ctx, ui_state, playlist_name)
+        return ctx, ui_state, False
+
+    elif cmd.action == 'track_viewer_play':
+        # Play track from viewer
+        track_id = cmd.data.get('track_id')
+        if track_id is not None:
+            ctx, ui_state = handle_track_viewer_play(ctx, ui_state, track_id)
+        return ctx, ui_state, False
+
+    elif cmd.action == 'track_viewer_edit':
+        # Edit track metadata from viewer
+        track_id = cmd.data.get('track_id')
+        if track_id is not None:
+            ctx, ui_state = handle_track_viewer_edit(ctx, ui_state, track_id)
+        return ctx, ui_state, False
+
+    elif cmd.action == 'track_viewer_add_to_playlist':
+        # Add track to another playlist from viewer
+        track_id = cmd.data.get('track_id')
+        if track_id is not None:
+            ctx, ui_state = handle_track_viewer_add_to_playlist(ctx, ui_state, track_id)
+        return ctx, ui_state, False
+
+    elif cmd.action == 'track_viewer_remove':
+        # Remove track from playlist
+        track_id = cmd.data.get('track_id')
+        if track_id is not None:
+            ctx, ui_state = handle_track_viewer_remove(ctx, ui_state, track_id)
+        return ctx, ui_state, False
+
+    elif cmd.action == 'track_viewer_edit_filters':
+        # Edit smart playlist filters
+        playlist_id = cmd.data.get('playlist_id')
+        if playlist_id is not None:
+            ctx, ui_state = handle_track_viewer_edit_filters(ctx, ui_state, playlist_id)
+        return ctx, ui_state, False
+
     else:
         # Unknown command action, log it and continue
         ui_state = add_history_line(ui_state, f"⚠️ Unknown internal command: {cmd.action}", 'yellow')
@@ -277,6 +349,23 @@ def execute_command(ctx: AppContext, ui_state: UIState, command_line: str | Inte
         # Initialize scan UI state (actual progress will be polled)
         ui_state = start_scan(ui_state, 0)
         ui_state = add_history_line(ui_state, "🔍 Starting library scan in background...", 'cyan')
+
+        return ctx, ui_state, False
+
+    # Special handling for search command - enable search mode
+    if command == 'search':
+        from music_minion.core import database
+        from music_minion.ui.blessed.state import enable_palette_search_mode
+
+        # Load all tracks with metadata
+        all_tracks = database.get_all_tracks_with_metadata()
+
+        if not all_tracks:
+            ui_state = add_history_line(ui_state, "❌ No tracks found in library. Run 'scan' to add tracks.", 'red')
+            return ctx, ui_state, False
+
+        # Enable search mode in palette
+        ui_state = enable_palette_search_mode(ui_state, all_tracks)
 
         return ctx, ui_state, False
 

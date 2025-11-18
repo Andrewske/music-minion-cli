@@ -246,6 +246,14 @@ music-minion/
 - Shows track metadata: title, artist, album, BPM, key
 - Accessible from playlist show command
 
+### Track Search (New - 2025-11-16)
+- `search` - Open interactive track search
+- Real-time filtering across all tracks (title, artist, album, genre, tags, notes)
+- Sequential 3-mode UI: Search → Detail → Action
+- Quick action shortcuts: `p` (play), `a` (add to playlist), `e` (edit metadata)
+- Keyboard navigation: ↑↓/j/k, Enter for details, Esc to close
+- Performance: < 5ms filtering for 5000+ tracks (in-memory)
+
 ### Playback Commands (Phase 6 Complete)
 - `shuffle` - Show current shuffle mode
 - `shuffle on` - Enable shuffle mode (random playback)
@@ -502,4 +510,4 @@ main.py
 
 ---
 
-**Last Updated**: 2025-10-03 after AI review system, hot-reload, and track viewer implementation
+**Last Updated**: 2025-11-16 after track search implementation

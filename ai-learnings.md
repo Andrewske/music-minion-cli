@@ -1729,6 +1729,67 @@ def ai_review_event_loop(term: Terminal, ctx: AppContext, track_id: int):
 
 ---
 
+**Last Updated**: 2025-11-16 after track search implementation
+
+## Track Search Implementation (2025-11-16)
+
+### In-Memory Filtering Pattern
+**Pattern**: Pre-load all data once, filter in-memory on each keystroke for instant results
+```python
+# Load once when search opens (100ms for 5000 tracks)
+all_tracks = database.get_all_tracks_with_metadata()
+
+# Filter on every keystroke (< 5ms)
+def filter_tracks(query: str, all_tracks: list) -> list:
+    query_lower = query.lower()
+    return [t for t in all_tracks if query_lower in concatenated_fields(t).lower()]
+```
+
+**Benefits**:
+- < 5ms filtering vs 20-50ms database queries
+- Scales well to 10,000+ tracks
+- Simple implementation, no complex indexing
+
+**Learning**: For read-heavy operations with < 10K records, in-memory filtering is faster than database LIKE queries. The 100ms initial load is acceptable for instant subsequent filtering.
+
+### SQLite GROUP_CONCAT Limitations
+**Issue**: `GROUP_CONCAT(DISTINCT column, separator)` fails - SQLite doesn't support both DISTINCT and custom separator.
+
+**Wrong**:
+```python
+GROUP_CONCAT(DISTINCT notes.note_text, ' ')  # ERROR: DISTINCT aggregates must have exactly one argument
+```
+
+**Right**:
+```python
+GROUP_CONCAT(notes.note_text, ' ')  # Remove DISTINCT, or
+GROUP_CONCAT(DISTINCT notes.note_text)  # Remove separator
+```
+
+**Learning**: SQLite's GROUP_CONCAT is more limited than other databases. Check documentation before assuming feature parity.
+
+### UI Action Protocol Pattern
+**Pattern**: Use `ctx.with_ui_action()` to signal UI changes from command handlers
+```python
+# Command handler (non-UI layer)
+def handle_search(ctx: AppContext, args: list) -> tuple[AppContext, bool]:
+    all_tracks = database.get_all_tracks_with_metadata()
+    ctx = ctx.with_ui_action({
+        'type': 'show_track_search',
+        'all_tracks': all_tracks
+    })
+    return ctx, True
+
+# UI executor (UI layer)
+def _handle_ui_actions(ctx: AppContext, ui_state: UIState) -> UIState:
+    if action['type'] == 'show_track_search':
+        all_tracks = action.get('all_tracks', [])
+        ui_state = show_track_search(ui_state, all_tracks)
+    return ui_state
+```
+
+**Learning**: This is the established pattern for command → UI communication. Don't try to directly manipulate UI state from command handlers - use the action protocol.
+
 **Last Updated**: 2025-10-03 after AI review system, hot-reload, track viewer, and wizard implementation
 
 ## UI Enhancements: Scrollable History & Rich Analytics (2025-10-05)

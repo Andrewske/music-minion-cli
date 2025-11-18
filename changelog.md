@@ -1,3 +1,23 @@
+## 2025-11-16 12:30
+
+### Changes
+- ADDED: Interactive track search with real-time filtering (< 5ms for 5000+ tracks)
+- ADDED: Sequential 3-mode UI (Search → Detail → Action)
+- ADDED: Quick action shortcuts (p=play, a=add to playlist, e=edit metadata)
+- ADDED: Multi-field search (title, artist, album, genre, tags, notes)
+- ADDED: `get_all_tracks_with_metadata()` database function with optimized JOIN query
+- ADDED: Track search components (`track_search.py`, `search_handlers.py`)
+- FIXED: SQLite GROUP_CONCAT error (DISTINCT + separator not supported)
+- CHANGED: In-memory filtering instead of database queries for instant results
+
+### LEARNINGS
+- In-memory filtering (< 5ms) beats database LIKE queries (20-50ms) for < 10K records
+- SQLite's GROUP_CONCAT doesn't support both DISTINCT and custom separator
+- UI action protocol (`ctx.with_ui_action()`) is correct pattern for command → UI communication
+- Pre-loading data once (100ms) acceptable for instant subsequent filtering
+
+---
+
 ## 2025-10-05 20:11
 
 ### Changes

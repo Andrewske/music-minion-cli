@@ -11,7 +11,7 @@ TRACK_VIEWER_FOOTER_LINES = 1
 
 def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> None:
     """
-    Render track viewer with scrolling support.
+    Render track viewer with scrolling support (2-mode: list/detail).
 
     Args:
         term: blessed Terminal instance
@@ -22,11 +22,14 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
     if not state.track_viewer_visible or height <= 0:
         return
 
-    tracks = state.track_viewer_tracks
+    all_tracks = state.track_viewer_tracks
+    filtered_tracks = state.track_viewer_filtered_tracks
+    filter_query = state.track_viewer_filter_query
     selected_index = state.track_viewer_selected
     scroll_offset = state.track_viewer_scroll
     playlist_name = state.track_viewer_playlist_name
     playlist_type = state.track_viewer_playlist_type
+    viewer_mode = state.track_viewer_mode
 
     # Reserve lines for header and footer
     content_height = height - TRACK_VIEWER_HEADER_LINES - TRACK_VIEWER_FOOTER_LINES
@@ -37,83 +40,220 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
 
     line_num = 0
 
-    # Header - playlist title
+    # Header - different based on mode
     if line_num < height:
-        header_text = f"   📋 Playlist: {playlist_name}"
+        if viewer_mode == 'detail':
+            header_text = f"   🎵 Track Details"
+        else:
+            header_text = f"   📋 Playlist: {playlist_name}"
         sys.stdout.write(term.move_xy(0, y + line_num) + term.bold_cyan(header_text))
         line_num += 1
 
-    # Metadata line - type and track count
-    if line_num < height:
+    # Metadata line - type, track count, and filter indicator (only in list mode)
+    if viewer_mode == 'list' and line_num < height:
         type_icon = "🧠" if playlist_type == 'smart' else "📝"
-        metadata_text = f"   {type_icon} {playlist_type.capitalize()} • {len(tracks)} tracks"
+        if filter_query:
+            # Show filtered count and total
+            metadata_text = f"   {type_icon} {playlist_type.capitalize()} • {len(filtered_tracks)}/{len(all_tracks)} tracks (filter: {filter_query})"
+        else:
+            # Show total count
+            metadata_text = f"   {type_icon} {playlist_type.capitalize()} • {len(all_tracks)} tracks"
         sys.stdout.write(term.move_xy(0, y + line_num) + term.white(metadata_text))
         line_num += 1
 
-    # Render tracks
-    if not tracks:
-        if line_num < height:
-            empty_msg = "  No tracks in this playlist"
-            sys.stdout.write(term.move_xy(0, y + line_num) + term.white(empty_msg))
-            line_num += 1
-    else:
-        # Render tracks with scroll offset
-        items_rendered = 0
-        for track_index, track in enumerate(tracks):
-            # Skip tracks before scroll offset
-            if track_index < scroll_offset:
-                continue
+    # Render based on mode
+    if viewer_mode == 'detail' and filtered_tracks and selected_index < len(filtered_tracks):
+        # Detail mode: show track details and action menu
+        selected_track = filtered_tracks[selected_index]
+        line_num = _render_track_detail_and_actions(
+            term, state, selected_track, playlist_type,
+            y, line_num, height, TRACK_VIEWER_FOOTER_LINES, content_height
+        )
+    elif viewer_mode == 'list':
+        # List mode: show track list (filtered)
+        if not filtered_tracks:
+            if line_num < height:
+                if filter_query:
+                    empty_msg = f"  No tracks match filter: '{filter_query}'"
+                else:
+                    empty_msg = "  No tracks in this playlist"
+                sys.stdout.write(term.move_xy(0, y + line_num) + term.white(empty_msg))
+                line_num += 1
+        else:
+            # Render filtered tracks with scroll offset
+            items_rendered = 0
+            for track_index, track in enumerate(filtered_tracks):
+                # Skip tracks before scroll offset
+                if track_index < scroll_offset:
+                    continue
 
-            # Stop if we've filled the content area
-            if items_rendered >= content_height:
-                break
+                # Stop if we've filled the content area
+                if items_rendered >= content_height:
+                    break
 
-            if line_num >= height - TRACK_VIEWER_FOOTER_LINES:
-                break
+                if line_num >= height - TRACK_VIEWER_FOOTER_LINES:
+                    break
 
-            # Format track info
-            position = track_index + 1
-            artist = track.get('artist', 'Unknown')
-            title = track.get('title', 'Unknown')
+                # Format track info
+                position = track_index + 1
+                artist = track.get('artist', 'Unknown')
+                title = track.get('title', 'Unknown')
 
-            is_selected = track_index == selected_index
+                is_selected = track_index == selected_index
 
-            # Track line: position, artist - title
-            track_text = f"{position:3d}. {artist} - {title}"
+                # Track line: position, artist - title
+                track_text = f"{position:3d}. {artist} - {title}"
 
-            if is_selected:
-                # Selected item: highlighted background
-                item_line = term.black_on_cyan(f"  {track_text[:max_track_width]}")
-            else:
-                # Normal item
-                item_line = term.white(f"  {track_text[:max_track_width]}")
+                if is_selected:
+                    # Selected item: highlighted background
+                    item_line = term.black_on_cyan(f"  {track_text[:max_track_width]}")
+                else:
+                    # Normal item
+                    item_line = term.white(f"  {track_text[:max_track_width]}")
 
-            sys.stdout.write(term.move_xy(0, y + line_num) + item_line)
-            line_num += 1
-            items_rendered += 1
+                sys.stdout.write(term.move_xy(0, y + line_num) + item_line)
+                line_num += 1
+                items_rendered += 1
 
     # Clear remaining lines
     while line_num < height - TRACK_VIEWER_FOOTER_LINES:
         sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
         line_num += 1
 
-    # Footer help text
+    # Footer help text - different based on mode
     if line_num < height:
-        total_tracks = len(tracks)
-        if playlist_type == 'manual':
-            # Manual playlist: can remove tracks
-            if total_tracks > content_height:
-                current_position = min(selected_index + 1, total_tracks)
-                footer = f"   [{current_position}/{total_tracks}] ↑↓ navigate  Enter play  Del remove  Esc close"
-            else:
-                footer = "   ↑↓ navigate  Enter play  Del remove  Esc close"
+        if viewer_mode == 'detail':
+            # Detail mode: show action navigation help
+            footer = "   ↑↓ navigate  Enter select  p/e/a shortcuts  Esc back"
         else:
-            # Smart playlist: read-only
-            if total_tracks > content_height:
-                current_position = min(selected_index + 1, total_tracks)
-                footer = f"   [{current_position}/{total_tracks}] ↑↓ navigate  Enter play  Esc close"
+            # List mode: show track navigation help
+            total_tracks = len(filtered_tracks)  # Show filtered count for navigation
+            if playlist_type == 'manual':
+                # Manual playlist: can remove tracks
+                if total_tracks > content_height:
+                    current_position = min(selected_index + 1, total_tracks)
+                    footer = f"   [{current_position}/{total_tracks}] ↑↓/j/k nav  Enter details  p/d/e/a (play/del/edit/add)  q close"
+                else:
+                    footer = "   ↑↓/j/k navigate  Enter details  p/d/e/a (play/del/edit/add)  q close"
             else:
-                footer = "   ↑↓ navigate  Enter play  Esc close"
+                # Smart playlist: read-only (no delete, but can edit filters)
+                if total_tracks > content_height:
+                    current_position = min(selected_index + 1, total_tracks)
+                    footer = f"   [{current_position}/{total_tracks}] ↑↓/j/k nav  Enter details  p/e/a/f (play/edit/add/filters)  q close"
+                else:
+                    footer = "   ↑↓/j/k navigate  Enter details  p/e/a/f (play/edit/add/filters)  q close"
 
         sys.stdout.write(term.move_xy(0, y + line_num) + term.white(footer))
         line_num += 1
+
+
+def _render_track_detail_and_actions(
+    term: Terminal,
+    state: UIState,
+    track: dict,
+    playlist_type: str,
+    y: int,
+    line_num: int,
+    height: int,
+    footer_lines: int,
+    content_height: int
+) -> int:
+    """
+    Render track details and action menu.
+
+    Args:
+        term: Terminal instance
+        state: UI state
+        track: Track dictionary
+        playlist_type: Type of playlist ('manual' or 'smart')
+        y: Starting Y position
+        line_num: Current line number
+        height: Total height
+        footer_lines: Number of footer lines
+        content_height: Available content height
+
+    Returns:
+        Updated line_num
+    """
+    # Track metadata fields to display
+    fields = [
+        ('Title', track.get('title', 'Unknown')),
+        ('Artist', track.get('artist', 'Unknown')),
+        ('Album', track.get('album', '')),
+        ('Genre', track.get('genre', '')),
+        ('Year', str(track.get('year', '')) if track.get('year') else ''),
+        ('BPM', str(track.get('bpm', '')) if track.get('bpm') else ''),
+        ('Key', track.get('key_signature', '')),
+    ]
+
+    # Add tags and notes if present (database returns comma-separated strings)
+    tags = track.get('tags', '')  # String, not list
+    if tags:
+        fields.append(('Tags', tags))
+
+    notes = track.get('notes', '')  # String, not list
+    if notes:
+        fields.append(('Notes', notes))
+
+    # Render metadata fields
+    for field_name, field_value in fields:
+        if line_num >= height - footer_lines - 5:  # Reserve space for action menu
+            break
+
+        if field_value:  # Only show non-empty fields
+            # Format: "  Field: Value"
+            field_line = term.cyan(f"  {field_name}: ") + term.white(str(field_value))
+            sys.stdout.write(term.move_xy(0, y + line_num) + field_line)
+            line_num += 1
+
+    # Add spacing before action menu
+    if line_num < height - footer_lines:
+        sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+        line_num += 1
+
+    # Render action menu (context-aware based on playlist type)
+    if line_num < height - footer_lines:
+        action_header = term.bold_cyan("  Actions:")
+        sys.stdout.write(term.move_xy(0, y + line_num) + action_header)
+        line_num += 1
+
+    # Define actions based on playlist type
+    if playlist_type == 'manual':
+        actions = [
+            ('p', 'Play Track'),
+            ('d', 'Remove from Playlist'),
+            ('e', 'Edit Metadata'),
+            ('a', 'Add to Another Playlist'),
+            ('', 'Cancel')
+        ]
+    else:  # smart playlist - same as manual but without Remove option
+        actions = [
+            ('p', 'Play Track'),
+            ('e', 'Edit Metadata'),
+            ('a', 'Add to Another Playlist'),
+            ('', 'Cancel')
+        ]
+
+    # Render each action with selection highlighting
+    for action_index, (shortcut, action_text) in enumerate(actions):
+        if line_num >= height - footer_lines:
+            break
+
+        is_selected = action_index == state.track_viewer_action_selected
+
+        # Format action line
+        if shortcut:
+            action_line = f"    [{shortcut}] {action_text}"
+        else:
+            action_line = f"        {action_text}"
+
+        if is_selected:
+            # Selected action: highlighted background
+            sys.stdout.write(term.move_xy(0, y + line_num) + term.black_on_cyan(action_line))
+        else:
+            # Normal action
+            sys.stdout.write(term.move_xy(0, y + line_num) + term.white(action_line))
+
+        line_num += 1
+
+    return line_num

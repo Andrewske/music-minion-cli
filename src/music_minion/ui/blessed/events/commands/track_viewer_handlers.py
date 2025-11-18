@@ -164,3 +164,177 @@ def handle_remove_track_from_playlist(ctx: AppContext, ui_state: UIState, track_
         ui_state = add_history_line(ui_state, f"❌ Database error: {e}", 'red')
 
     return ctx, ui_state
+
+
+def handle_track_viewer_play(ctx: AppContext, ui_state: UIState, track_id: int) -> tuple[AppContext, UIState]:
+    """
+    Handle playing a track from track viewer by track ID.
+
+    Args:
+        ctx: Application context
+        ui_state: Current UI state
+        track_id: ID of track to play
+
+    Returns:
+        Tuple of (updated AppContext, updated UIState)
+    """
+    from music_minion.core import database
+    from music_minion.commands.playback import play_track
+
+    # Get track from database
+    track = database.get_track_by_id(track_id)
+    if not track:
+        ui_state = add_history_line(ui_state, f"❌ Track not found: {track_id}", 'red')
+        return ctx, ui_state
+
+    # Convert to library track format
+    library_track = database.db_track_to_library_track(track)
+
+    # Play the track
+    ctx, _ = play_track(ctx, library_track)
+
+    # Add feedback
+    artist = library_track.artist or 'Unknown'
+    title = library_track.title or 'Unknown'
+    ui_state = add_history_line(ui_state, f"▶️  Now playing: {artist} - {title}", 'white')
+    ui_state = set_feedback(ui_state, "✓ Playing track", "✓")
+
+    # Keep viewer open
+    return ctx, ui_state
+
+
+def handle_track_viewer_edit(ctx: AppContext, ui_state: UIState, track_id: int) -> tuple[AppContext, UIState]:
+    """
+    Handle editing track metadata from track viewer.
+
+    Args:
+        ctx: Application context
+        ui_state: Current UI state
+        track_id: ID of track to edit
+
+    Returns:
+        Tuple of (updated AppContext, updated UIState)
+    """
+    from music_minion.core import database
+    from music_minion.ui.blessed.state import show_metadata_editor
+
+    # Get track from database with all metadata
+    track = database.get_track_by_id(track_id)
+    if not track:
+        ui_state = add_history_line(ui_state, f"❌ Track not found: {track_id}", 'red')
+        return ctx, ui_state
+
+    # Get tags and notes
+    tags = database.get_track_tags(track_id)
+    notes = database.get_track_notes(track_id)
+
+    # Build track data for editor
+    track_data = {
+        'id': track_id,
+        'title': track.get('title', ''),
+        'artist': track.get('artist', ''),
+        'album': track.get('album', ''),
+        'genre': track.get('genre', ''),
+        'year': track.get('year'),
+        'bpm': track.get('bpm'),
+        'key_signature': track.get('key_signature', ''),
+        'tags': [tag['tag_name'] for tag in tags],
+        'notes': [note['note_text'] for note in notes],
+    }
+
+    # Open metadata editor
+    ui_state = show_metadata_editor(ui_state, track_data)
+
+    return ctx, ui_state
+
+
+def handle_track_viewer_add_to_playlist(ctx: AppContext, ui_state: UIState, track_id: int) -> tuple[AppContext, UIState]:
+    """
+    Handle adding track to another playlist from track viewer.
+
+    Args:
+        ctx: Application context
+        ui_state: Current UI state
+        track_id: ID of track to add
+
+    Returns:
+        Tuple of (updated AppContext, updated UIState)
+    """
+    from music_minion.ui.blessed.components.palette import load_playlist_items
+    from music_minion.ui.blessed.state import show_playlist_palette
+
+    # Load playlists and show palette for selection
+    items = load_playlist_items()
+
+    if not items:
+        ui_state = add_history_line(ui_state, "❌ No playlists available", 'red')
+        return ctx, ui_state
+
+    # Show playlist palette - selection will be handled by InternalCommand
+    ui_state = show_playlist_palette(ui_state, items)
+
+    # Store track_id in context for later use (when playlist is selected)
+    # For now, we'll use feedback to indicate what we're doing
+    ui_state = set_feedback(ui_state, "Select playlist to add track to", "→")
+
+    return ctx, ui_state
+
+
+def handle_track_viewer_remove(ctx: AppContext, ui_state: UIState, track_id: int) -> tuple[AppContext, UIState]:
+    """
+    Handle removing track from manual playlist (wrapper for confirmation dialog result).
+
+    Args:
+        ctx: Application context
+        ui_state: Current UI state
+        track_id: ID of track to remove
+
+    Returns:
+        Tuple of (updated AppContext, updated UIState)
+    """
+    # Get playlist name from viewer state
+    playlist_name = ui_state.track_viewer_playlist_name
+
+    # Delegate to existing remove handler
+    return handle_remove_track_from_playlist(ctx, ui_state, track_id, playlist_name)
+
+
+def handle_track_viewer_edit_filters(ctx: AppContext, ui_state: UIState, playlist_id: int) -> tuple[AppContext, UIState]:
+    """
+    Handle editing filters for a smart playlist.
+
+    Args:
+        ctx: Application context
+        ui_state: Current UI state
+        playlist_id: ID of smart playlist to edit
+
+    Returns:
+        Tuple of (updated AppContext, updated UIState)
+    """
+    from music_minion.domain import playlists
+    from music_minion.ui.blessed.state import start_wizard
+
+    # Get playlist
+    pl = playlists.get_playlist_by_id(playlist_id)
+    if not pl:
+        ui_state = add_history_line(ui_state, f"❌ Playlist not found", 'red')
+        return ctx, ui_state
+
+    if pl['type'] != 'smart':
+        ui_state = add_history_line(ui_state, f"❌ Cannot edit filters on manual playlist", 'red')
+        return ctx, ui_state
+
+    # Get existing filters
+    filters = playlists.get_playlist_filters(playlist_id)
+
+    # Start wizard in edit mode with existing filters
+    wizard_data = {
+        'name': pl['name'],
+        'playlist_id': playlist_id,
+        'filters': filters,
+        'edit_mode': True
+    }
+
+    ui_state = start_wizard(ui_state, 'smart_playlist', wizard_data)
+
+    return ctx, ui_state
