@@ -113,6 +113,13 @@ def render_dashboard(
         lines.append("")
         lines.append("")
         # Skip normal track display
+    # Background sync progress (takes priority over track display)
+    elif ui_state.sync_active:
+        sync_lines = format_sync_progress(ui_state, term)
+        lines.extend(sync_lines)
+        lines.append("")
+        lines.append("")
+        # Skip normal track display
     # Track information
     elif player_state.current_track:
         if metadata:
@@ -510,6 +517,61 @@ def format_scan_progress(scan_progress, term: Terminal) -> list[str]:
         if len(current_file) > max_width:
             current_file = "..." + current_file[-(max_width - 3) :]
         lines.append(term.white(f"  {current_file}"))
+
+    return lines
+
+
+def format_sync_progress(ui_state: UIState, term: Terminal) -> list[str]:
+    """Format background sync progress display.
+
+    Args:
+        ui_state: UIState with sync progress fields
+        term: blessed Terminal instance
+
+    Returns:
+        List of formatted lines for display
+    """
+    lines = []
+
+    # Title with provider
+    provider_display = ui_state.sync_provider.title()
+    sync_type_display = ui_state.sync_type.replace('_', ' ').title()
+    lines.append(term.bold_cyan(f"🔄 {sync_type_display} - {provider_display}"))
+    lines.append("")
+
+    # Progress bar
+    if ui_state.sync_total > 0:
+        percent = (ui_state.sync_progress / ui_state.sync_total) * 100
+        bar_width = 40
+        filled = int((ui_state.sync_progress / ui_state.sync_total) * bar_width)
+        bar = "█" * filled + "░" * (bar_width - filled)
+        progress_text = f"  Progress: [{term.green(bar)}] {ui_state.sync_progress}/{ui_state.sync_total} ({percent:.0f}%)"
+        lines.append(progress_text)
+        lines.append("")
+
+    # Current item
+    if ui_state.sync_current_name:
+        lines.append(term.bold_white(f"  Current: {ui_state.sync_current_name}"))
+
+    # Status
+    if ui_state.sync_current_status:
+        lines.append(term.yellow(f"  Status:  {ui_state.sync_current_status}"))
+
+    lines.append("")
+
+    # Stats
+    stats = ui_state.sync_stats
+    created = stats.get('created', 0)
+    updated = stats.get('updated', 0)
+    skipped = stats.get('skipped', 0)
+    failed = stats.get('failed', 0)
+
+    stats_line = f"  {term.green('✓ Created:')} {created:2d}  {term.cyan('↻ Updated:')} {updated:2d}  {term.white('⏭ Skipped:')} {skipped:2d}  {term.red('❌ Failed:')} {failed:2d}"
+    lines.append(stats_line)
+    lines.append("")
+
+    # Info message
+    lines.append(term.white("  You can continue using the app while sync runs"))
 
     return lines
 

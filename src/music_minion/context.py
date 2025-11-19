@@ -6,7 +6,7 @@ mutable state accessed via import hacks.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Callable
 
 try:
     from rich.console import Console
@@ -44,6 +44,8 @@ class AppContext:
     # UI
     console: Optional[Console]
     ui_action: Optional[Dict[str, Any]] = field(default=None)
+    ui_mode: str = 'cli'  # 'cli' or 'blessed'
+    update_ui_state: Optional[Callable[[Dict[str, Any]], None]] = field(default=None)  # Thread-safe UIState updater
 
     @classmethod
     def create(cls, config: Config, console: Optional[Console] = None) -> 'AppContext':
@@ -62,6 +64,8 @@ class AppContext:
             player_state=PlayerState(),
             console=console,
             ui_action=None,
+            ui_mode='cli',
+            update_ui_state=None,
         )
 
     def with_tracks(self, tracks: List[Track]) -> 'AppContext':
@@ -79,6 +83,8 @@ class AppContext:
             player_state=self.player_state,
             console=self.console,
             ui_action=self.ui_action,
+            ui_mode=self.ui_mode,
+            update_ui_state=self.update_ui_state,
         )
 
     def with_player_state(self, state: PlayerState) -> 'AppContext':
@@ -96,6 +102,8 @@ class AppContext:
             player_state=state,
             console=self.console,
             ui_action=self.ui_action,
+            ui_mode=self.ui_mode,
+            update_ui_state=self.update_ui_state,
         )
 
     def with_config(self, config: Config) -> 'AppContext':
@@ -113,6 +121,8 @@ class AppContext:
             player_state=self.player_state,
             console=self.console,
             ui_action=self.ui_action,
+            ui_mode=self.ui_mode,
+            update_ui_state=self.update_ui_state,
         )
 
     def with_ui_action(self, action: Optional[Dict[str, Any]]) -> 'AppContext':
@@ -130,4 +140,6 @@ class AppContext:
             player_state=self.player_state,
             console=self.console,
             ui_action=action,
+            ui_mode=self.ui_mode,
+            update_ui_state=self.update_ui_state,
         )

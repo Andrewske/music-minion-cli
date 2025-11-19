@@ -2,6 +2,8 @@
 
 import sys
 import time
+import threading
+import dataclasses
 from pathlib import Path
 from blessed import Terminal
 from music_minion.context import AppContext
@@ -315,6 +317,23 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         active_library = row['provider'] if row else 'local'
 
     ui_state = UIState(active_library=active_library)
+
+    # Thread-safe UIState updater for background tasks
+    ui_state_lock = threading.Lock()
+
+    def update_ui_state_safe(updates: dict):
+        """Thread-safe UIState update from background threads."""
+        nonlocal ui_state
+        with ui_state_lock:
+            # Replace state with updated fields
+            ui_state = dataclasses.replace(ui_state, **updates)
+
+    # Inject updater into context for background tasks
+    ctx = dataclasses.replace(ctx,
+        ui_mode='blessed',
+        update_ui_state=update_ui_state_safe
+    )
+
     should_quit = False
     frame_count = 0
     last_state_hash = None
@@ -358,6 +377,9 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 ui_state.scan_progress.is_scanning,
                 ui_state.scan_progress.files_scanned,
                 ui_state.scan_progress.phase,
+                ui_state.sync_active,
+                ui_state.sync_progress,
+                ui_state.sync_current_name,
             ))
 
         # Check for input-only changes (no full redraw needed)
@@ -368,13 +390,14 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         needs_full_redraw = needs_full_redraw or (current_state_hash is not None and current_state_hash != last_state_hash)
 
         if needs_full_redraw:
-            # Render dashboard first to check if height changed
-            dashboard_height, dashboard_line_mapping = render_dashboard(
-                term,
-                ctx.player_state,
-                ui_state,
-                0  # Dashboard always starts at y=0
-            )
+            # Render dashboard first to check if height changed (lock for thread safety)
+            with ui_state_lock:
+                dashboard_height, dashboard_line_mapping = render_dashboard(
+                    term,
+                    ctx.player_state,
+                    ui_state,
+                    0  # Dashboard always starts at y=0
+                )
 
             # Only clear screen if dashboard height changed (or first render)
             height_changed = last_dashboard_height != dashboard_height

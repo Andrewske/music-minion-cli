@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 
 def get_database_path() -> Path:
@@ -525,6 +525,27 @@ def migrate_database(conn, current_version: int) -> None:
         conn.execute("PRAGMA foreign_keys=ON")
 
         print("  ✓ Migration to v14 complete: file_path column removed")
+        conn.commit()
+
+    if current_version < 15:
+        # Migration from v14 to v15: Add playlist sync timestamps
+        print("  Migrating to v15: Adding playlist sync timestamps...")
+
+        # Add last_synced_at column
+        try:
+            conn.execute("ALTER TABLE playlists ADD COLUMN last_synced_at TIMESTAMP")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+
+        # Add provider_last_modified column
+        try:
+            conn.execute("ALTER TABLE playlists ADD COLUMN provider_last_modified TIMESTAMP")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+
+        print("  ✓ Migration to v15 complete: Playlist sync timestamps added")
         conn.commit()
 
 

@@ -345,12 +345,9 @@ def sync_library(state: ProviderState, incremental: bool = True) -> Tuple[Provid
                 "SELECT soundcloud_id FROM tracks WHERE soundcloud_id IS NOT NULL AND source = 'soundcloud'"
             )
             existing_ids = {row[0] for row in cursor.fetchall()}
-
-        if existing_ids:
-            print(f"  Found {len(existing_ids)} existing SoundCloud tracks in database")
-    except Exception as e:
-        print(f"  Warning: Could not load existing tracks for incremental sync: {e}")
-        print("  Proceeding with full sync...")
+    except Exception:
+        # Silently continue with full sync if we can't load existing tracks
+        pass
 
     # Fetch user's likes
     tracks = _fetch_user_likes(
@@ -416,6 +413,16 @@ def get_stream_url(state: ProviderState, provider_id: str) -> Optional[str]:
     if not token_data:
         return None
 
+    # Check if token expired
+    if _is_token_expired(token_data):
+        # Try to refresh
+        new_token_data = _refresh_token(token_data)
+        if new_token_data:
+            _save_user_tokens(new_token_data)
+            token_data = new_token_data
+        else:
+            return None
+
     access_token = token_data["access_token"]
 
     # SoundCloud stream URL
@@ -438,6 +445,17 @@ def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, A
     token_data = state.cache.get("token_data")
     if not token_data:
         return state, []
+
+    # Check if token expired
+    if _is_token_expired(token_data):
+        # Try to refresh
+        new_token_data = _refresh_token(token_data)
+        if new_token_data:
+            _save_user_tokens(new_token_data)
+            state = state.with_cache(token_data=new_token_data)
+            token_data = new_token_data
+        else:
+            return state.with_authenticated(False), []
 
     access_token = token_data["access_token"]
 
@@ -471,6 +489,7 @@ def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, A
                         "track_count": playlist.get("track_count", 0),
                         "description": playlist.get("description"),
                         "permalink": playlist.get("permalink_url"),
+                        "last_modified": playlist.get("last_modified"),
                     }
                 )
 
@@ -503,6 +522,17 @@ def get_playlist_tracks(
     token_data = state.cache.get("token_data")
     if not token_data:
         return state, []
+
+    # Check if token expired
+    if _is_token_expired(token_data):
+        # Try to refresh
+        new_token_data = _refresh_token(token_data)
+        if new_token_data:
+            _save_user_tokens(new_token_data)
+            state = state.with_cache(token_data=new_token_data)
+            token_data = new_token_data
+        else:
+            return state.with_authenticated(False), []
 
     access_token = token_data["access_token"]
 
@@ -636,8 +666,8 @@ def _refresh_token(token_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
         return new_token_data
 
-    except Exception as e:
-        print(f"Token refresh failed: {e}")
+    except Exception:
+        # Silently fail - caller will handle None return
         return None
 
 
@@ -752,9 +782,6 @@ def _fetch_user_likes(
 
                     # Incremental sync: stop if we've already imported this track
                     if incremental and track_id in existing_ids:
-                        print(
-                            f"  ✓ Found existing track {track_id} - stopping incremental sync"
-                        )
                         found_existing = True
                         stopped_early = True
                         break
@@ -762,12 +789,6 @@ def _fetch_user_likes(
                     metadata = _normalize_soundcloud_track(item)
                     tracks.append((track_id, metadata))
                     page_tracks += 1
-
-            # Progress update
-            status = " (stopped - found existing)" if found_existing else ""
-            print(
-                f"  Page {page}: +{page_tracks} tracks (total: {len(tracks)}){status}"
-            )
 
             # Stop if we found an existing track
             if found_existing:
@@ -777,11 +798,9 @@ def _fetch_user_likes(
             url = data.get("next_href")
             params = {}  # Pagination URL contains all params
 
-    except Exception as e:
-        print(f"Error fetching likes: {e}")
-
-    if stopped_early and len(tracks) > 0:
-        print(f"  ✓ Incremental sync: fetched {len(tracks)} new tracks")
+    except Exception:
+        # Silently fail - caller will handle empty result
+        pass
 
     return tracks
 
