@@ -2,10 +2,12 @@
 
 from datetime import datetime
 from typing import Optional
-from blessed import Terminal
-from music_minion.domain.playback.player import PlayerState
-from ..state import UIState, TrackMetadata, TrackDBInfo
 
+from blessed import Terminal
+
+from music_minion.domain.playback.player import PlayerState
+
+from ..state import TrackMetadata, UIState
 
 # Icon constants
 ICONS = {
@@ -19,7 +21,9 @@ ICONS = {
 }
 
 
-def render_dashboard(term: Terminal, player_state: PlayerState, ui_state: UIState, y_start: int) -> tuple[int, dict]:
+def render_dashboard(
+    term: Terminal, player_state: PlayerState, ui_state: UIState, y_start: int
+) -> tuple[int, dict]:
     """
     Render dashboard section.
 
@@ -45,11 +49,11 @@ def render_dashboard(term: Terminal, player_state: PlayerState, ui_state: UIStat
 
     # Get active library color
     library = ui_state.active_library
-    if library == 'soundcloud':
+    if library == "soundcloud":
         library_color = term.bold_cyan
-    elif library == 'spotify':
+    elif library == "spotify":
         library_color = term.bold_green
-    elif library == 'youtube':
+    elif library == "youtube":
         library_color = term.bold_red
     else:  # local or all
         library_color = term.bold_white
@@ -72,15 +76,19 @@ def render_dashboard(term: Terminal, player_state: PlayerState, ui_state: UIStat
         time_color = term.bold_magenta
 
     header = (
-        term.bold_magenta(ICONS['music']) + " " +
-        term.bold_cyan("MUSIC") + " " +
-        term.bold_blue("MINION") + " " +
-        library_color(f"[{library}]") + " " +
-        term.bold_magenta(ICONS['music']) +
-        " " * spacer_width +
-        time_color(f"[{current_time}]")
+        term.bold_magenta(ICONS["music"])
+        + " "
+        + term.bold_cyan("MUSIC")
+        + " "
+        + term.bold_blue("MINION")
+        + " "
+        + library_color(f"[{library}]")
+        + " "
+        + term.bold_magenta(ICONS["music"])
+        + " " * spacer_width
+        + time_color(f"[{current_time}]")
     )
-    line_mapping['header_line'] = len(lines)
+    line_mapping["header_line"] = len(lines)
     lines.append(header)
 
     # Colorful separator
@@ -107,6 +115,7 @@ def render_dashboard(term: Terminal, player_state: PlayerState, ui_state: UIStat
         else:
             # Track is playing but no metadata yet (not in DB or lookup failed)
             import os
+
             filename = os.path.basename(player_state.current_track)
             lines.append(term.bold_white(f"{ICONS['note']} {filename}"))
             lines.append(term.white("  Loading metadata..."))
@@ -116,20 +125,22 @@ def render_dashboard(term: Terminal, player_state: PlayerState, ui_state: UIStat
 
     lines.append("")
 
-    # Progress bar
+    # Progress bar - always set mapping for partial render compatibility
+    line_mapping["progress_line"] = len(lines)
     if player_state.is_playing:
-        progress = create_progress_bar(player_state.current_position, player_state.duration, term)
-        line_mapping['progress_line'] = len(lines)
+        progress = create_progress_bar(
+            player_state.current_position, player_state.duration, term
+        )
         lines.append(progress)
 
         # BPM visualizer
         if metadata and metadata.bpm:
             bpm_line = format_bpm_line(metadata.bpm, term)
-            line_mapping['bpm_line'] = len(lines)
+            line_mapping["bpm_line"] = len(lines)
             lines.append(bpm_line)
     else:
-        lines.append(term.white("─" * 40))
-        lines.append(term.bold_yellow("⏸ Paused"))
+        # Show paused state on the progress line
+        lines.append(term.white("─" * 40) + " " + term.bold_yellow("⏸ Paused"))
 
     lines.append("")
 
@@ -137,16 +148,18 @@ def render_dashboard(term: Terminal, player_state: PlayerState, ui_state: UIStat
     if db_info:
         tag_lines = format_tags_and_notes(db_info.tags, db_info.notes, term)
         for line, style in tag_lines:
-            if style == 'tag':
+            if style == "tag":
                 lines.append(term.bold_blue(line))
-            elif style == 'note':
+            elif style == "note":
                 lines.append(term.bold_green(line))
             else:
                 lines.append(term.blue(line))
 
         # Rating
         if db_info.rating is not None or db_info.last_played:
-            rating_line = format_rating(db_info.rating, db_info.last_played, db_info.play_count)
+            rating_line = format_rating(
+                db_info.rating, db_info.last_played, db_info.play_count
+            )
             if db_info.rating and db_info.rating >= 80:
                 rating_style = term.bold_red
             elif db_info.rating and db_info.rating >= 60:
@@ -161,6 +174,7 @@ def render_dashboard(term: Terminal, player_state: PlayerState, ui_state: UIStat
 
     # Feedback
     from ..state import should_show_feedback
+
     if should_show_feedback(ui_state):
         feedback = ui_state.feedback_message
         if feedback:
@@ -229,7 +243,7 @@ def format_artists(artist_string: str) -> str:
         return "Unknown"
 
     # Split on semicolons and strip whitespace
-    artists = [a.strip() for a in artist_string.split(';') if a.strip()]
+    artists = [a.strip() for a in artist_string.split(";") if a.strip()]
 
     if not artists:
         return "Unknown"
@@ -275,16 +289,24 @@ def format_track_display(metadata: TrackMetadata, term: Terminal) -> list[str]:
 
 
 def create_progress_bar(position: float, duration: float, term: Terminal) -> str:
-    """Create a colored progress bar."""
+    """Create a colored progress bar with sub-character precision using Unicode blocks."""
     if duration <= 0:
         return term.white("─" * 40)
 
     percentage = min(position / duration, 1.0)
     bar_width = 40
-    filled = int(bar_width * percentage)
+
+    total_segments = bar_width * 8
+    filled_segments = int(total_segments * percentage)
+    full_chars = filled_segments // 8
+    partial_fill = filled_segments % 8
+
+    partial_blocks = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"]
 
     progress_parts = []
-    for i in range(filled):
+
+    # Build filled portion
+    for i in range(full_chars):
         char_percentage = (i + 1) / bar_width
         if char_percentage < 0.33:
             progress_parts.append(term.green("█"))
@@ -293,9 +315,26 @@ def create_progress_bar(position: float, duration: float, term: Terminal) -> str
         else:
             progress_parts.append(term.red("█"))
 
-    progress_parts.append(term.white("░" * (bar_width - filled)))
+    # Add partial block with dark grey background
+    if partial_fill > 0 and full_chars < bar_width:
+        char_percentage = (full_chars + 1) / bar_width
+        partial_char = partial_blocks[partial_fill]
 
-    # Add time displays
+        if char_percentage < 0.33:
+            progress_parts.append(term.green_on_bright_black(partial_char))
+        elif char_percentage < 0.66:
+            progress_parts.append(term.yellow_on_bright_black(partial_char))
+        else:
+            progress_parts.append(term.red_on_bright_black(partial_char))
+
+        remaining = bar_width - full_chars - 1
+    else:
+        remaining = bar_width - full_chars
+
+    # Make unfilled portion dark grey background
+    if remaining > 0:
+        progress_parts.append(term.bright_black_on_bright_black("░" * remaining))
+
     current = format_time(position)
     total = format_time(duration)
     progress_parts.append(term.white(f" {current} "))
@@ -319,23 +358,27 @@ def format_bpm_line(bpm: int, term: Terminal) -> str:
     return color(f"{ICONS['music']} {bpm} BPM {ICONS['music']}")
 
 
-def format_tags_and_notes(tags: list[str], notes: str, term: Terminal) -> list[tuple[str, str]]:
+def format_tags_and_notes(
+    tags: list[str], notes: str, term: Terminal
+) -> list[tuple[str, str]]:
     """Format tags and notes for display. Returns list of (text, style_key) tuples."""
     lines = []
 
     if tags:
         tag_line = f"{ICONS['tag']}  " + " • ".join(tags[:5])
-        lines.append((tag_line, 'tag'))
+        lines.append((tag_line, "tag"))
 
     if notes:
         if len(notes) > 60:
             notes = notes[:57] + "..."
-        lines.append((f"{ICONS['memo']} \"{notes}\"", 'note'))
+        lines.append((f'{ICONS["memo"]} "{notes}"', "note"))
 
     return lines
 
 
-def format_rating(rating: Optional[int], last_played: Optional[str], play_count: int) -> str:
+def format_rating(
+    rating: Optional[int], last_played: Optional[str], play_count: int
+) -> str:
     """Format rating and play statistics."""
     stars = ""
     if rating is not None:
@@ -374,7 +417,6 @@ def format_scan_progress(scan_progress, term: Terminal) -> list[str]:
     Returns:
         List of formatted lines for display
     """
-    from ..state import ScanProgress
 
     lines = []
 
@@ -383,11 +425,11 @@ def format_scan_progress(scan_progress, term: Terminal) -> list[str]:
     lines.append("")
 
     # Phase indicator
-    if scan_progress.phase == 'counting':
+    if scan_progress.phase == "counting":
         lines.append(term.yellow("  📊 Counting files..."))
-    elif scan_progress.phase == 'scanning':
+    elif scan_progress.phase == "scanning":
         lines.append(term.yellow("  🎵 Scanning music files..."))
-    elif scan_progress.phase == 'database':
+    elif scan_progress.phase == "database":
         lines.append(term.yellow("  💾 Updating database..."))
 
     # Progress bar
@@ -403,7 +445,9 @@ def format_scan_progress(scan_progress, term: Terminal) -> list[str]:
         progress_parts.append(term.white("░" * (bar_width - filled)))
 
         # Add counts
-        progress_parts.append(term.white(f" {scan_progress.files_scanned}/{scan_progress.total_files}"))
+        progress_parts.append(
+            term.white(f" {scan_progress.files_scanned}/{scan_progress.total_files}")
+        )
         progress_parts.append(term.yellow(f" ({percentage * 100:.1f}%)"))
 
         lines.append("  " + "".join(progress_parts))
@@ -413,14 +457,19 @@ def format_scan_progress(scan_progress, term: Terminal) -> list[str]:
         current_file = scan_progress.current_file
         max_width = term.width - 10
         if len(current_file) > max_width:
-            current_file = "..." + current_file[-(max_width - 3):]
+            current_file = "..." + current_file[-(max_width - 3) :]
         lines.append(term.white(f"  {current_file}"))
 
     return lines
 
 
-def render_dashboard_partial(term: Terminal, player_state: PlayerState, ui_state: UIState,
-                           y_start: int, line_mapping: dict) -> None:
+def render_dashboard_partial(
+    term: Terminal,
+    player_state: PlayerState,
+    ui_state: UIState,
+    y_start: int,
+    line_mapping: dict,
+) -> None:
     """
     Partially update dashboard - only time-sensitive elements.
 
@@ -437,16 +486,16 @@ def render_dashboard_partial(term: Terminal, player_state: PlayerState, ui_state
     metadata = ui_state.track_metadata
 
     # Update clock in header
-    if 'header_line' in line_mapping:
+    if "header_line" in line_mapping:
         current_time = datetime.now().strftime("%H:%M:%S")
 
         # Get active library color (same as full render)
         library = ui_state.active_library
-        if library == 'soundcloud':
+        if library == "soundcloud":
             library_color = term.bold_cyan
-        elif library == 'spotify':
+        elif library == "spotify":
             library_color = term.bold_green
-        elif library == 'youtube':
+        elif library == "youtube":
             library_color = term.bold_red
         else:  # local or all
             library_color = term.bold_white
@@ -469,27 +518,37 @@ def render_dashboard_partial(term: Terminal, player_state: PlayerState, ui_state
             time_color = term.bold_magenta
 
         header = (
-            term.bold_magenta(ICONS['music']) + " " +
-            term.bold_cyan("MUSIC") + " " +
-            term.bold_blue("MINION") + " " +
-            library_color(f"[{library}]") + " " +
-            term.bold_magenta(ICONS['music']) +
-            " " * spacer_width +
-            time_color(f"[{current_time}]")
+            term.bold_magenta(ICONS["music"])
+            + " "
+            + term.bold_cyan("MUSIC")
+            + " "
+            + term.bold_blue("MINION")
+            + " "
+            + library_color(f"[{library}]")
+            + " "
+            + term.bold_magenta(ICONS["music"])
+            + " " * spacer_width
+            + time_color(f"[{current_time}]")
         )
 
         # Update clock line - clear and rewrite
-        header_y = y_start + line_mapping['header_line']
-        print(term.move_xy(0, header_y) + term.clear_eol + header, end='')
+        header_y = y_start + line_mapping["header_line"]
+        print(term.move_xy(0, header_y) + term.clear_eol + header, end="")
 
     # Update progress bar if playing
-    if player_state.is_playing and player_state.current_track and 'progress_line' in line_mapping:
-        progress = create_progress_bar(player_state.current_position, player_state.duration, term)
-        progress_y = y_start + line_mapping['progress_line']
-        print(term.move_xy(0, progress_y) + term.clear_eol + progress, end='')
+    if (
+        player_state.is_playing
+        and player_state.current_track
+        and "progress_line" in line_mapping
+    ):
+        progress = create_progress_bar(
+            player_state.current_position, player_state.duration, term
+        )
+        progress_y = y_start + line_mapping["progress_line"]
+        print(term.move_xy(0, progress_y) + term.clear_eol + progress, end="")
 
         # Update BPM line if metadata available
-        if metadata and metadata.bpm and 'bpm_line' in line_mapping:
+        if metadata and metadata.bpm and "bpm_line" in line_mapping:
             bpm_line = format_bpm_line(metadata.bpm, term)
-            bpm_y = y_start + line_mapping['bpm_line']
-            print(term.move_xy(0, bpm_y) + term.clear_eol + bpm_line, end='')
+            bpm_y = y_start + line_mapping["bpm_line"]
+            print(term.move_xy(0, bpm_y) + term.clear_eol + bpm_line, end="")

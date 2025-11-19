@@ -112,7 +112,7 @@ def search_tracks(tracks: List[Track], query: str) -> List[Track]:
             track.album or '',
             track.genre or '',
             track.key or '',
-            Path(track.file_path).name
+            Path(track.file_path).name if track.file_path else ''
         ]
 
         if any(query in field.lower() for field in search_fields):

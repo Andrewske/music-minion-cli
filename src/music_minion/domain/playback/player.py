@@ -4,6 +4,7 @@ Functional approach with explicit state management
 """
 
 import json
+import logging
 import os
 import socket
 import subprocess
@@ -13,6 +14,8 @@ from pathlib import Path
 from typing import Optional, Dict, Any, Tuple, NamedTuple
 
 from music_minion.core.config import Config
+
+logger = logging.getLogger(__name__)
 
 
 class PlayerState(NamedTuple):
@@ -110,16 +113,23 @@ def stop_mpv(state: PlayerState) -> None:
 def is_mpv_running(state: PlayerState) -> bool:
     """Check if MPV process is still running."""
     if not state.process:
+        logger.debug("MPV not running: no process")
         return False
-    
+
     # Check if process is still alive
     if state.process.poll() is not None:
+        logger.debug(f"MPV not running: process exited with code {state.process.poll()}")
         return False
-    
+
     # Check if socket exists and is responsive
-    if not state.socket_path or not os.path.exists(state.socket_path):
+    if not state.socket_path:
+        logger.debug("MPV not running: no socket path set")
         return False
-    
+
+    if not os.path.exists(state.socket_path):
+        logger.debug(f"MPV not running: socket does not exist at {state.socket_path}")
+        return False
+
     return True
 
 
@@ -347,6 +357,7 @@ def update_player_status(state: PlayerState) -> PlayerState:
 def get_player_status(state: PlayerState) -> Dict[str, Any]:
     """Get current player status without modifying state."""
     if not is_mpv_running(state):
+        logger.debug("Cannot get player status: MPV not running")
         return {
             'playing': False,
             'file': None,

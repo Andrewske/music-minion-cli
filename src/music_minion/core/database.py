@@ -1115,7 +1115,8 @@ def db_track_to_library_track(db_track: Dict[str, Any]):
 
     # Map database columns to Track fields
     # Note: database has 'local_path' but Track model uses 'file_path' for backward compat
-    local_path = db_track.get('local_path') or db_track.get('file_path', '')
+    # Ensure file_path is never None - use empty string for provider tracks without local files
+    local_path = db_track.get('local_path') or db_track.get('file_path') or ''
 
     return library.Track(
         file_path=local_path,

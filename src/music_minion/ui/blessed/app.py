@@ -1,6 +1,7 @@
 """Main event loop and entry point for blessed UI."""
 
 import sys
+import time
 from pathlib import Path
 from blessed import Terminal
 from music_minion.context import AppContext
@@ -316,7 +317,9 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
     last_input_text = ""
     last_palette_state = (False, 0, False, False, 0, False, 0, False, 0, False, 0, 'main', '', 0, 0, 'search', 0, 0)  # (palette_visible, palette_selected, confirmation_active, wizard_active, wizard_selected, track_viewer_visible, track_viewer_selected, analytics_viewer_visible, analytics_viewer_scroll, editor_visible, editor_selected, editor_mode, editor_input, search_selected, search_scroll, search_mode, search_detail_scroll, search_detail_selection)
     layout = None
-    last_position = None  # Track position separately for partial updates
+    last_position = 0.0  # Track position separately for partial updates (float for smooth updates)
+    last_poll_time = time.time()  # Track when we last polled MPV for interpolation
+    last_rendered_position = 0.0  # Track last rendered position for change detection
     dashboard_line_mapping = {}  # Store line offsets from last full dashboard render
     last_dashboard_height = None  # Track dashboard height to avoid unnecessary clears
 
@@ -328,6 +331,9 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         should_poll = frame_count % 10 == 0
         if should_poll:
             ctx, ui_state = poll_player_state(ctx, ui_state)
+            # Update tracking for position interpolation
+            last_position = ctx.player_state.current_position
+            last_poll_time = time.time()
 
         # Poll scan state every 5 frames (~0.5 second) for smoother progress updates
         should_poll_scan = frame_count % 5 == 0
@@ -446,7 +452,8 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
 
             last_input_text = ui_state.input_text
             last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll, ui_state.editor_visible, ui_state.editor_selected, ui_state.editor_mode, ui_state.editor_input, ui_state.search_selected, ui_state.search_scroll, ui_state.search_mode, ui_state.search_detail_scroll, ui_state.search_detail_selection)
-            last_position = int(ctx.player_state.current_position)  # Update position after full redraw
+            last_position = ctx.player_state.current_position  # Update position after full redraw (float for smooth updates)
+            last_rendered_position = ctx.player_state.current_position  # Sync rendered position
 
         # Check if modal visibility changed (requires full redraw)
         if palette_state_changed and (ui_state.palette_visible != last_palette_state[0] or ui_state.wizard_active != last_palette_state[3] or ui_state.track_viewer_visible != last_palette_state[5] or ui_state.analytics_viewer_visible != last_palette_state[7] or ui_state.editor_visible != last_palette_state[9]):
@@ -515,28 +522,39 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 sys.stdout.flush()
 
                 last_input_text = ui_state.input_text
-                last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll, ui_state.editor_visible, ui_state.editor_selected, ui_state.editor_mode, ui_state.editor_input, ui_state.search_selected, ui_state.search_scroll)
+                last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll, ui_state.editor_visible, ui_state.editor_selected, ui_state.editor_mode, ui_state.editor_input, ui_state.search_selected, ui_state.search_scroll, ui_state.search_mode, ui_state.search_detail_scroll, ui_state.search_detail_selection)
 
         else:
-            # Check if only position changed (partial dashboard update)
-            current_position = int(ctx.player_state.current_position)
-            position_changed = last_position != current_position
+            # Calculate interpolated position for smooth updates between MPV polls
+            # This gives second-by-second visual updates without extra MPV queries
+            if ctx.player_state.is_playing:
+                time_since_poll = time.time() - last_poll_time
+                interpolated_position = last_position + time_since_poll
+            else:
+                interpolated_position = last_position
 
-            if position_changed and layout and ctx.player_state.is_playing and dashboard_line_mapping:
+            # Check if interpolated position crossed threshold
+            # Lower threshold for smooth sub-character updates (8 blocks per char, 40 chars = 320 segments)
+            position_changed = abs(interpolated_position - last_rendered_position) >= 0.1
+
+            if position_changed and layout and dashboard_line_mapping:
                 # Partial update - only update time-sensitive dashboard elements
-                # This avoids full screen clear and only updates specific lines
+                # Create temporary player state with interpolated position for rendering
                 from .components.dashboard import render_dashboard_partial
+
+                # Use interpolated position for smooth visual updates
+                display_state = ctx.player_state._replace(current_position=interpolated_position)
 
                 render_dashboard_partial(
                     term,
-                    ctx.player_state,
+                    display_state,
                     ui_state,
                     layout['dashboard_y'],
                     dashboard_line_mapping
                 )
 
                 sys.stdout.flush()
-                last_position = current_position
+                last_rendered_position = interpolated_position
 
         # Wait for input (with timeout for background updates)
         key = term.inkey(timeout=0.1)

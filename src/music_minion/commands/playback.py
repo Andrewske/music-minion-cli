@@ -68,7 +68,13 @@ def play_track(ctx: AppContext, track: library.Track, playlist_position: Optiona
     Returns:
         (updated_context, should_continue)
     """
-    # Validate track file exists before attempting playback
+    # Validate track has a local file path and it exists
+    if not track.file_path:
+        safe_print(ctx, f"❌ Cannot play: Track has no local file", "red")
+        safe_print(ctx, f"   Track: {library.get_display_name(track)}", "yellow")
+        safe_print(ctx, "   This may be a provider track (SoundCloud, Spotify, etc.) that hasn't been downloaded", "yellow")
+        return ctx, True
+
     if not Path(track.file_path).exists():
         safe_print(ctx, f"❌ File not found: {track.file_path}", "red")
         safe_print(ctx, "Track may have been moved or deleted", "yellow")

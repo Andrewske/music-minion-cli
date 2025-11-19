@@ -145,8 +145,10 @@ def get_display_name(track: Track) -> str:
         return f"{track.artist} - {track.title}"
     elif track.title:
         return track.title
-    else:
+    elif track.file_path:
         return Path(track.file_path).stem
+    else:
+        return "<Unknown Track>"
 
 
 def get_duration_str(track: Track) -> str:
