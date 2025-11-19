@@ -80,7 +80,7 @@ def export_m3u8(
 
         # Write tracks
         for track in tracks:
-            track_path = Path(track['file_path'])
+            track_path = Path(track['local_path'])
 
             # Write EXTINF line (metadata)
             duration = int(track.get('duration', 0))
@@ -145,7 +145,7 @@ def export_serato_crate(
 
     # Add tracks to crate
     for track in tracks:
-        track_path = Path(track['file_path'])
+        track_path = Path(track['local_path'])
         # Serato expects absolute paths
         crate.add_track(str(track_path.absolute()))
 

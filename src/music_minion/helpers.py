@@ -125,8 +125,8 @@ def ensure_library_loaded(ctx: AppContext) -> tuple[AppContext, bool]:
             # Filter out files that no longer exist (only for local tracks)
             existing_tracks = []
             for track in tracks:
-                # Keep provider tracks (no file_path or empty) and local tracks that still exist
-                if not track.file_path or Path(track.file_path).exists():
+                # Keep provider tracks (no local_path or empty) and local tracks that still exist
+                if not track.local_path or Path(track.local_path).exists():
                     existing_tracks.append(track)
             ctx = ctx.with_tracks(existing_tracks)
             safe_print(ctx, f"Loaded {len(existing_tracks)} tracks from database", "green")
@@ -212,7 +212,7 @@ def check_and_handle_track_completion(ctx: AppContext) -> AppContext:
         # Find the track that just finished
         finished_track = None
         for track in ctx.music_tracks:
-            if track.file_path == ctx.player_state.current_track:
+            if track.local_path == ctx.player_state.current_track:
                 finished_track = track
                 break
 
@@ -254,7 +254,7 @@ def check_and_handle_track_completion(ctx: AppContext) -> AppContext:
 
         # Remove the track that just finished from options if possible
         if finished_track and len(available_tracks) > 1:
-            available_tracks = [t for t in available_tracks if t.file_path != finished_track.file_path]
+            available_tracks = [t for t in available_tracks if t.local_path != finished_track.local_path]
 
         if available_tracks:
             next_track = library.get_random_track(available_tracks)

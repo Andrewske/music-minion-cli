@@ -7,45 +7,41 @@ Supports reading/writing tags to MP3 (ID3) and M4A files.
 
 import os
 import shutil
-from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from mutagen import File as MutagenFile
-from mutagen.id3 import ID3, COMM, ID3NoHeaderError
+from mutagen.id3 import COMM, ID3
 from mutagen.mp4 import MP4
 
+from music_minion.core.config import Config
 from music_minion.core.database import (
+    add_tags,
     get_db_connection,
     get_track_tags,
-    add_tags,
     remove_tag,
-    get_all_tracks,
-    get_track_by_path
 )
-from music_minion.core.config import Config
 
 
-def get_file_mtime(file_path: str) -> Optional[float]:
+def get_file_mtime(local_path: str) -> Optional[float]:
     """Get file modification time as Unix timestamp with sub-second precision.
 
     Args:
-        file_path: Path to the file
+        local_path: Path to the file
 
     Returns:
         Unix timestamp (float) or None if file doesn't exist
     """
     try:
-        return os.path.getmtime(file_path)
+        return os.path.getmtime(local_path)
     except (OSError, FileNotFoundError):
         return None
 
 
-def write_tags_to_file(file_path: str, tags: List[str], config: Config) -> bool:
+def write_tags_to_file(local_path: str, tags: List[str], config: Config) -> bool:
     """Write tags to file metadata COMMENT field using atomic writes.
 
     Args:
-        file_path: Path to the audio file
+        local_path: Path to the audio file
         tags: List of tag names to write
         config: Configuration object with sync settings
 
@@ -57,20 +53,20 @@ def write_tags_to_file(file_path: str, tags: List[str], config: Config) -> bool:
 
     try:
         # Validate file format first (only MP3 and M4A supported)
-        audio = MutagenFile(file_path, easy=False)
+        audio = MutagenFile(local_path, easy=False)
         if audio is None:
-            print(f"Error: Could not open file {file_path}")
+            print(f"Error: Could not open file {local_path}")
             return False
 
-        if not isinstance(audio, (MP4, ID3)) and not hasattr(audio, 'tags'):
-            print(f"Unsupported format for {file_path} (only MP3/M4A supported)")
+        if not isinstance(audio, (MP4, ID3)) and not hasattr(audio, "tags"):
+            print(f"Unsupported format for {local_path} (only MP3/M4A supported)")
             return False
 
         # Atomic write: copy to temp, modify temp, then replace original
-        temp_path = file_path + '.tmp'
+        temp_path = local_path + ".tmp"
         try:
             # Step 1: Copy original to temp
-            shutil.copy2(file_path, temp_path)
+            shutil.copy2(local_path, temp_path)
 
             # Step 2: Load temp file for modification
             audio = MutagenFile(temp_path, easy=False)
@@ -89,7 +85,7 @@ def write_tags_to_file(file_path: str, tags: List[str], config: Config) -> bool:
             else:
                 # MP3 file - use ID3 COMM frame
                 # Check if tags exist, add them if not
-                if not hasattr(audio, 'tags') or audio.tags is None:
+                if not hasattr(audio, "tags") or audio.tags is None:
                     try:
                         audio.add_tags()
                     except Exception as e:
@@ -99,13 +95,15 @@ def write_tags_to_file(file_path: str, tags: List[str], config: Config) -> bool:
                 if audio.tags:
                     audio.tags.delall("COMM")
                     # Add new COMM frame
-                    audio.tags.add(COMM(encoding=3, lang='eng', desc='', text=tag_string))
+                    audio.tags.add(
+                        COMM(encoding=3, lang="eng", desc="", text=tag_string)
+                    )
 
             # Step 4: Save temp file in place (no filename = saves to same file)
             audio.save()
 
             # Step 5: Atomically replace original with temp
-            os.replace(temp_path, file_path)
+            os.replace(temp_path, local_path)
             return True
 
         except Exception as e:
@@ -118,30 +116,30 @@ def write_tags_to_file(file_path: str, tags: List[str], config: Config) -> bool:
             raise e
 
     except PermissionError as e:
-        print(f"Permission denied writing to {file_path}: {e}")
+        print(f"Permission denied writing to {local_path}: {e}")
         return False
     except Exception as e:
-        print(f"Error writing tags to {file_path}: {e}")
+        print(f"Error writing tags to {local_path}: {e}")
         return False
 
 
-def read_tags_from_file(file_path: str, config: Config) -> List[str]:
+def read_tags_from_file(local_path: str, config: Config) -> List[str]:
     """Read tags from file metadata COMMENT field with deduplication.
 
     Args:
-        file_path: Path to the audio file
+        local_path: Path to the audio file
         config: Configuration object with sync settings
 
     Returns:
         List of unique tag names found in file metadata
     """
     try:
-        audio = MutagenFile(file_path, easy=False)
+        audio = MutagenFile(local_path, easy=False)
         if audio is None:
             return []
 
         # Validate file format
-        if not isinstance(audio, (MP4, ID3)) and not hasattr(audio, 'tags'):
+        if not isinstance(audio, (MP4, ID3)) and not hasattr(audio, "tags"):
             return []
 
         tag_prefix = config.sync.tag_prefix
@@ -152,7 +150,7 @@ def read_tags_from_file(file_path: str, config: Config) -> List[str]:
             comment_text = audio.get("\xa9cmt", [""])[0]
         else:
             # MP3 file - read ID3 COMM frame
-            if hasattr(audio, 'tags') and audio.tags:
+            if hasattr(audio, "tags") and audio.tags:
                 comm_frames = audio.tags.getall("COMM")
                 if comm_frames:
                     comment_text = comm_frames[0].text[0] if comm_frames[0].text else ""
@@ -167,14 +165,14 @@ def read_tags_from_file(file_path: str, config: Config) -> List[str]:
             tag = tag.strip()
             # Remove prefix if present
             if tag.startswith(tag_prefix):
-                tag = tag[len(tag_prefix):]
+                tag = tag[len(tag_prefix) :]
             if tag:
                 tags_set.add(tag.lower())  # Normalize to lowercase
 
         return list(tags_set)
 
     except Exception as e:
-        print(f"Error reading tags from {file_path}: {e}")
+        print(f"Error reading tags from {local_path}: {e}")
         return []
 
 
@@ -196,36 +194,37 @@ def detect_file_changes(config: Config) -> List[Dict[str, Any]]:
         # Optimized query: only get tracks that might need checking
         # Either never synced (file_mtime IS NULL) or potentially changed
         cursor = conn.execute("""
-            SELECT id, file_path, file_mtime, last_synced_at
+            SELECT id, local_path, file_mtime, last_synced_at
             FROM tracks
-            WHERE file_path IS NOT NULL
+            WHERE local_path IS NOT NULL
         """)
 
         for row in cursor.fetchall():
             track = dict(row)
-            file_path = track['file_path']
+            local_path = track["local_path"]
 
             # Check if file still exists
-            if not os.path.exists(file_path):
+            if not os.path.exists(local_path):
                 continue
 
-            current_mtime = get_file_mtime(file_path)
+            current_mtime = get_file_mtime(local_path)
             if current_mtime is None:
                 continue
 
             # Check if file has been modified
-            stored_mtime = track['file_mtime']
+            stored_mtime = track["file_mtime"]
 
             # If no stored mtime, or if current mtime is newer, file has changed
             if stored_mtime is None or current_mtime > stored_mtime:
-                track['current_mtime'] = current_mtime
+                track["current_mtime"] = current_mtime
                 changed_tracks.append(track)
 
     return changed_tracks
 
 
-def sync_export(config: Config, track_ids: Optional[List[int]] = None,
-                show_progress: bool = True) -> Dict[str, int]:
+def sync_export(
+    config: Config, track_ids: Optional[List[int]] = None, show_progress: bool = True
+) -> Dict[str, int]:
     """Export database tags to file metadata with atomic writes.
 
     Writes all tags from database to file metadata COMMENT fields.
@@ -238,7 +237,7 @@ def sync_export(config: Config, track_ids: Optional[List[int]] = None,
     Returns:
         Dictionary with stats: {'success': count, 'failed': count, 'skipped': count}
     """
-    stats = {'success': 0, 'failed': 0, 'skipped': 0}
+    stats = {"success": 0, "failed": 0, "skipped": 0}
 
     if not config.sync.write_tags_to_metadata:
         if show_progress:
@@ -248,13 +247,16 @@ def sync_export(config: Config, track_ids: Optional[List[int]] = None,
     with get_db_connection() as conn:
         # Get tracks to export
         if track_ids:
-            placeholders = ','.join('?' * len(track_ids))
-            cursor = conn.execute(f"""
-                SELECT id, file_path FROM tracks
+            placeholders = ",".join("?" * len(track_ids))
+            cursor = conn.execute(
+                f"""
+                SELECT id, local_path FROM tracks
                 WHERE id IN ({placeholders})
-            """, track_ids)
+            """,
+                track_ids,
+            )
         else:
-            cursor = conn.execute("SELECT id, file_path FROM tracks")
+            cursor = conn.execute("SELECT id, local_path FROM tracks")
 
         tracks = [dict(row) for row in cursor.fetchall()]
 
@@ -268,53 +270,59 @@ def sync_export(config: Config, track_ids: Optional[List[int]] = None,
     updates = []
 
     for i, track in enumerate(tracks, 1):
-        track_id = track['id']
-        file_path = track['file_path']
+        track_id = track["id"]
+        local_path = track["local_path"]
 
         # Check if file exists
-        if not os.path.exists(file_path):
-            stats['skipped'] += 1
+        if not os.path.exists(local_path):
+            stats["skipped"] += 1
             continue
 
         # Get mtime BEFORE write to avoid race condition
-        mtime_before = get_file_mtime(file_path)
+        mtime_before = get_file_mtime(local_path)
 
         # Get tags from database
         db_tags = get_track_tags(track_id, include_blacklisted=False)
-        tag_names = [tag['tag_name'] for tag in db_tags]
+        tag_names = [tag["tag_name"] for tag in db_tags]
 
         # Write to file
-        if write_tags_to_file(file_path, tag_names, config):
+        if write_tags_to_file(local_path, tag_names, config):
             # Get mtime AFTER write
-            current_mtime = get_file_mtime(file_path)
+            current_mtime = get_file_mtime(local_path)
             updates.append((current_mtime, track_id))
 
-            stats['success'] += 1
+            stats["success"] += 1
             if show_progress and i % progress_interval == 0:
                 percent = (i * 100) // total_tracks
                 print(f"  Exported {percent}% ({i}/{total_tracks})...")
         else:
-            stats['failed'] += 1
+            stats["failed"] += 1
 
     # Batch update database
     if updates:
         with get_db_connection() as conn:
-            conn.executemany("""
+            conn.executemany(
+                """
                 UPDATE tracks
                 SET file_mtime = ?, last_synced_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-            """, updates)
+            """,
+                updates,
+            )
             conn.commit()
 
     if show_progress:
-        print(f"\nExport complete: {stats['success']} succeeded, "
-              f"{stats['failed']} failed, {stats['skipped']} skipped")
+        print(
+            f"\nExport complete: {stats['success']} succeeded, "
+            f"{stats['failed']} failed, {stats['skipped']} skipped"
+        )
 
     return stats
 
 
-def sync_import(config: Config, force_all: bool = False,
-                show_progress: bool = True) -> Dict[str, int]:
+def sync_import(
+    config: Config, force_all: bool = False, show_progress: bool = True
+) -> Dict[str, int]:
     """Import tags from file metadata to database, preserving user/AI tags.
 
     Reads tags from file metadata and updates database. Only processes
@@ -331,12 +339,12 @@ def sync_import(config: Config, force_all: bool = False,
     Returns:
         Dictionary with stats: {'success': count, 'failed': count, 'added': count, 'removed': count}
     """
-    stats = {'success': 0, 'failed': 0, 'added': 0, 'removed': 0}
+    stats = {"success": 0, "failed": 0, "added": 0, "removed": 0}
 
     # Detect changed files
     if force_all:
         with get_db_connection() as conn:
-            cursor = conn.execute("SELECT * FROM tracks WHERE file_path IS NOT NULL")
+            cursor = conn.execute("SELECT * FROM tracks WHERE local_path IS NOT NULL")
             changed_tracks = [dict(row) for row in cursor.fetchall()]
     else:
         changed_tracks = detect_file_changes(config)
@@ -359,22 +367,22 @@ def sync_import(config: Config, force_all: bool = False,
     mtime_updates = []
 
     for i, track in enumerate(changed_tracks, 1):
-        track_id = track['id']
-        file_path = track['file_path']
+        track_id = track["id"]
+        local_path = track["local_path"]
 
         # Check if file exists
-        if not os.path.exists(file_path):
-            stats['failed'] += 1
+        if not os.path.exists(local_path):
+            stats["failed"] += 1
             continue
 
         try:
             # Read tags from file
-            file_tags = read_tags_from_file(file_path, config)
+            file_tags = read_tags_from_file(local_path, config)
             file_tag_set = set(file_tags)
 
             # Get current database tags with source information
             db_tags = get_track_tags(track_id, include_blacklisted=False)
-            db_tag_dict = {tag['tag_name']: tag['source'] for tag in db_tags}
+            db_tag_dict = {tag["tag_name"]: tag["source"] for tag in db_tags}
             db_tag_set = set(db_tag_dict.keys())
 
             # Find tags to add and remove
@@ -383,46 +391,51 @@ def sync_import(config: Config, force_all: bool = False,
 
             # Add new tags from file
             if tags_to_add:
-                add_tags(track_id, list(tags_to_add), source='file')
-                stats['added'] += len(tags_to_add)
+                add_tags(track_id, list(tags_to_add), source="file")
+                stats["added"] += len(tags_to_add)
 
             # CRITICAL: Only remove tags where source='file'
             # This preserves user and AI tags from being deleted
             for tag in tags_to_remove:
                 tag_source = db_tag_dict.get(tag)
-                if tag_source == 'file':
+                if tag_source == "file":
                     remove_tag(track_id, tag)
-                    stats['removed'] += 1
+                    stats["removed"] += 1
                 # else: Keep user/AI tags even if not in file
 
             # Update mtime for batch processing
-            current_mtime = get_file_mtime(file_path)
+            current_mtime = get_file_mtime(local_path)
             mtime_updates.append((current_mtime, track_id))
 
-            stats['success'] += 1
+            stats["success"] += 1
             if show_progress and i % progress_interval == 0:
                 percent = (i * 100) // total_tracks
                 print(f"  Imported {percent}% ({i}/{total_tracks})...")
 
         except Exception as e:
             if show_progress:
-                print(f"  Error importing {file_path}: {e}")
-            stats['failed'] += 1
+                print(f"  Error importing {local_path}: {e}")
+            stats["failed"] += 1
 
     # Batch update mtimes
     if mtime_updates:
         with get_db_connection() as conn:
-            conn.executemany("""
+            conn.executemany(
+                """
                 UPDATE tracks
                 SET file_mtime = ?, last_synced_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-            """, mtime_updates)
+            """,
+                mtime_updates,
+            )
             conn.commit()
 
     if show_progress:
-        print(f"\nImport complete: {stats['success']} files processed, "
-              f"{stats['added']} tags added, {stats['removed']} tags removed, "
-              f"{stats['failed']} failed")
+        print(
+            f"\nImport complete: {stats['success']} files processed, "
+            f"{stats['added']} tags added, {stats['removed']} tags removed, "
+            f"{stats['failed']} failed"
+        )
 
     return stats
 
@@ -442,8 +455,10 @@ def get_sync_status(config: Config) -> Dict[str, Any]:
 
     with get_db_connection() as conn:
         # Count total tracks
-        cursor = conn.execute("SELECT COUNT(*) as count FROM tracks WHERE file_path IS NOT NULL")
-        total_tracks = cursor.fetchone()['count']
+        cursor = conn.execute(
+            "SELECT COUNT(*) as count FROM tracks WHERE local_path IS NOT NULL"
+        )
+        total_tracks = cursor.fetchone()["count"]
 
         # Get last sync time
         cursor = conn.execute("""
@@ -452,26 +467,27 @@ def get_sync_status(config: Config) -> Dict[str, Any]:
             WHERE last_synced_at IS NOT NULL
         """)
         last_sync_row = cursor.fetchone()
-        last_sync = last_sync_row['last_sync'] if last_sync_row else None
+        last_sync = last_sync_row["last_sync"] if last_sync_row else None
 
         # Count tracks never synced
         cursor = conn.execute("""
             SELECT COUNT(*) as count FROM tracks
-            WHERE file_path IS NOT NULL AND last_synced_at IS NULL
+            WHERE local_path IS NOT NULL AND last_synced_at IS NULL
         """)
-        never_synced = cursor.fetchone()['count']
+        never_synced = cursor.fetchone()["count"]
 
     return {
-        'total_tracks': total_tracks,
-        'changed_files': len(changed_files),
-        'never_synced': never_synced,
-        'last_sync': last_sync,
-        'sync_enabled': config.sync.write_tags_to_metadata
+        "total_tracks": total_tracks,
+        "changed_files": len(changed_files),
+        "never_synced": never_synced,
+        "last_sync": last_sync,
+        "sync_enabled": config.sync.write_tags_to_metadata,
     }
 
 
-def rescan_library(config: Config, full_rescan: bool = False,
-                   show_progress: bool = True) -> Dict[str, int]:
+def rescan_library(
+    config: Config, full_rescan: bool = False, show_progress: bool = True
+) -> Dict[str, int]:
     """Rescan library for file changes and update metadata.
 
     Args:

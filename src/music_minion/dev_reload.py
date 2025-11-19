@@ -12,8 +12,9 @@ from pathlib import Path
 from typing import Callable, Optional
 
 try:
+    from watchdog.events import FileModifiedEvent, FileSystemEventHandler
     from watchdog.observers import Observer
-    from watchdog.events import FileSystemEventHandler, FileModifiedEvent
+
     WATCHDOG_AVAILABLE = True
 except ImportError:
     WATCHDOG_AVAILABLE = False
@@ -23,6 +24,7 @@ except ImportError:
 
 
 if WATCHDOG_AVAILABLE:
+
     class FileChangeHandler(FileSystemEventHandler):
         """Handles file modification events with debouncing."""
 
@@ -42,11 +44,11 @@ if WATCHDOG_AVAILABLE:
         def on_modified(self, event):
             """Handle file modification event."""
             # Only process Python file modifications
-            if event.is_directory or not event.src_path.endswith('.py'):
+            if event.is_directory or not event.src_path.endswith(".py"):
                 return
 
             # Ignore __pycache__ and .pyc files
-            if '__pycache__' in event.src_path or event.src_path.endswith('.pyc'):
+            if "__pycache__" in event.src_path or event.src_path.endswith(".pyc"):
                 return
 
             # Add to pending changes with timestamp
@@ -61,11 +63,11 @@ if WATCHDOG_AVAILABLE:
             current_time = time.time()
             ready_files = []
 
-            for file_path, timestamp in list(self.pending_changes.items()):
+            for local_path, timestamp in list(self.pending_changes.items()):
                 # If enough time has passed since last modification, process it
                 if current_time - timestamp >= self.debounce_seconds:
-                    ready_files.append(file_path)
-                    del self.pending_changes[file_path]
+                    ready_files.append(local_path)
+                    del self.pending_changes[local_path]
 
             return ready_files
 else:
@@ -73,23 +75,24 @@ else:
     class FileChangeHandler:
         def __init__(self, callback: Callable[[str], None], debounce_ms: int = 100):
             pass
+
         def check_pending_changes(self) -> list[str]:
             return []
 
 
-def file_path_to_module_name(file_path: str, package_root: Path) -> Optional[str]:
+def local_path_to_module_name(local_path: str, package_root: Path) -> Optional[str]:
     """
     Convert file path to Python module name.
 
     Args:
-        file_path: Absolute path to Python file
+        local_path: Absolute path to Python file
         package_root: Root directory of the package (e.g., src/music_minion)
 
     Returns:
         Module name (e.g., "music_minion.commands.playlist") or None if invalid
     """
     try:
-        path = Path(file_path).resolve()
+        path = Path(local_path).resolve()
         root = package_root.resolve()
 
         # Check if file is within package
@@ -103,7 +106,7 @@ def file_path_to_module_name(file_path: str, package_root: Path) -> Optional[str
         module_parts = list(relative.parts[:-1])  # Remove filename
         module_parts.append(relative.stem)  # Add filename without .py
 
-        return '.'.join(module_parts)
+        return ".".join(module_parts)
 
     except (ValueError, OSError):
         return None
@@ -123,7 +126,7 @@ def reload_module(module_path: str) -> bool:
     package_root = Path(__file__).parent
 
     # Convert file path to module name
-    module_name = file_path_to_module_name(module_path, package_root)
+    module_name = local_path_to_module_name(module_path, package_root)
 
     if not module_name:
         return False
@@ -142,7 +145,9 @@ def reload_module(module_path: str) -> bool:
         return False
 
 
-def setup_file_watcher(callback: Callable[[str], None]) -> Optional[tuple[Observer, FileChangeHandler]]:
+def setup_file_watcher(
+    callback: Callable[[str], None],
+) -> Optional[tuple[Observer, FileChangeHandler]]:
     """
     Initialize file watcher for hot-reload.
 

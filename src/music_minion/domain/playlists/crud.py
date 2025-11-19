@@ -588,14 +588,14 @@ def get_available_playlist_tracks(playlist_id: int) -> List[str]:
         if playlist['type'] == 'manual':
             # Manual playlist - get from playlist_tracks
             cursor = conn.execute("""
-                SELECT DISTINCT t.file_path
+                SELECT DISTINCT t.local_path
                 FROM tracks t
                 JOIN playlist_tracks pt ON t.id = pt.track_id
                 LEFT JOIN ratings r ON t.id = r.track_id AND r.rating_type = 'archive'
                 WHERE pt.playlist_id = ? AND r.id IS NULL
                 ORDER BY pt.position
             """, (playlist_id,))
-            return [row['file_path'] for row in cursor.fetchall()]
+            return [row['local_path'] for row in cursor.fetchall()]
         else:
             # Smart playlist - evaluate filters
             playlist_filters = filters.get_playlist_filters(playlist_id)
@@ -608,10 +608,10 @@ def get_available_playlist_tracks(playlist_id: int) -> List[str]:
             # Note: f-string is safe here because build_filter_query() validates column names
             # via FIELD_TO_COLUMN whitelist and returns parameterized WHERE clause with ? placeholders
             cursor = conn.execute(f"""
-                SELECT DISTINCT t.file_path
+                SELECT DISTINCT t.local_path
                 FROM tracks t
                 LEFT JOIN ratings r ON t.id = r.track_id AND r.rating_type = 'archive'
                 WHERE ({where_clause}) AND r.id IS NULL
                 ORDER BY t.artist, t.album, t.title
             """, params)
-            return [row['file_path'] for row in cursor.fetchall()]
+            return [row['local_path'] for row in cursor.fetchall()]

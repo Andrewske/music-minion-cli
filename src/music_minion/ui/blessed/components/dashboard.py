@@ -20,6 +20,12 @@ ICONS = {
     "heart": "💖",
 }
 
+# Progress bar constants
+SEGMENTS_PER_CHAR = 8  # Unicode blocks per character
+PROGRESS_GREEN_THRESHOLD = 0.33  # First third of track
+PROGRESS_YELLOW_THRESHOLD = 0.66  # Second third of track
+PARTIAL_BLOCKS = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"]  # Sub-character precision
+
 
 def render_dashboard(
     term: Terminal, player_state: PlayerState, ui_state: UIState, y_start: int
@@ -256,6 +262,23 @@ def format_artists(artist_string: str) -> str:
         return ", ".join(artists[:-1]) + f" & {artists[-1]}"
 
 
+def get_progress_color(percentage: float, term: Terminal):
+    """Get color function for progress bar based on percentage.
+
+    Args:
+        percentage: Progress percentage (0.0 to 1.0)
+        term: blessed Terminal instance
+
+    Returns:
+        Terminal color function (green, yellow, or red)
+    """
+    if percentage < PROGRESS_GREEN_THRESHOLD:
+        return term.green
+    elif percentage < PROGRESS_YELLOW_THRESHOLD:
+        return term.yellow
+    return term.red
+
+
 def format_track_display(metadata: TrackMetadata, term: Terminal) -> list[str]:
     """Format track information for display."""
     lines = []
@@ -288,60 +311,88 @@ def format_track_display(metadata: TrackMetadata, term: Terminal) -> list[str]:
     return lines
 
 
-def create_progress_bar(position: float, duration: float, term: Terminal) -> str:
-    """Create a colored progress bar with sub-character precision using Unicode blocks."""
-    if duration <= 0:
-        return term.white("─" * 40)
+def calculate_progress_segments(position: float, duration: float, bar_width: int) -> tuple[int, int]:
+    """Calculate filled characters and partial block segments for progress bar.
 
+    Args:
+        position: Current playback position in seconds
+        duration: Total track duration in seconds
+        bar_width: Width of progress bar in characters
+
+    Returns:
+        Tuple of (full_chars, partial_fill) where:
+        - full_chars: Number of fully filled characters
+        - partial_fill: Index for partial block (0-7)
+    """
     percentage = min(position / duration, 1.0)
-    bar_width = 40
-
-    total_segments = bar_width * 8
+    total_segments = bar_width * SEGMENTS_PER_CHAR
     filled_segments = int(total_segments * percentage)
-    full_chars = filled_segments // 8
-    partial_fill = filled_segments % 8
+    full_chars = filled_segments // SEGMENTS_PER_CHAR
+    partial_fill = filled_segments % SEGMENTS_PER_CHAR
+    return full_chars, partial_fill
 
-    partial_blocks = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"]
 
+def render_progress_blocks(full_chars: int, partial_fill: int, bar_width: int, term: Terminal) -> str:
+    """Render colored progress bar blocks with sub-character precision.
+
+    Args:
+        full_chars: Number of fully filled characters
+        partial_fill: Index for partial block (0-7)
+        bar_width: Total width of progress bar
+        term: blessed Terminal instance
+
+    Returns:
+        Formatted progress bar string with colors
+    """
     progress_parts = []
 
-    # Build filled portion
+    # Build filled portion with gradient colors
     for i in range(full_chars):
         char_percentage = (i + 1) / bar_width
-        if char_percentage < 0.33:
-            progress_parts.append(term.green("█"))
-        elif char_percentage < 0.66:
-            progress_parts.append(term.yellow("█"))
-        else:
-            progress_parts.append(term.red("█"))
+        color = get_progress_color(char_percentage, term)
+        progress_parts.append(color("█"))
 
-    # Add partial block with dark grey background
+    # Add partial block if needed
     if partial_fill > 0 and full_chars < bar_width:
         char_percentage = (full_chars + 1) / bar_width
-        partial_char = partial_blocks[partial_fill]
-
-        if char_percentage < 0.33:
-            progress_parts.append(term.green_on_bright_black(partial_char))
-        elif char_percentage < 0.66:
-            progress_parts.append(term.yellow_on_bright_black(partial_char))
-        else:
-            progress_parts.append(term.red_on_bright_black(partial_char))
-
+        partial_char = PARTIAL_BLOCKS[partial_fill]
+        color = get_progress_color(char_percentage, term)
+        # Use dim background for better terminal compatibility
+        progress_parts.append(color(partial_char))
         remaining = bar_width - full_chars - 1
     else:
         remaining = bar_width - full_chars
 
-    # Make unfilled portion dark grey background
+    # Add unfilled portion with dim background
     if remaining > 0:
-        progress_parts.append(term.bright_black_on_bright_black("░" * remaining))
-
-    current = format_time(position)
-    total = format_time(duration)
-    progress_parts.append(term.white(f" {current} "))
-    progress_parts.append(term.cyan("━━━━"))
-    progress_parts.append(term.white(f" {total}"))
+        # Use bright_black instead of dim for better compatibility
+        progress_parts.append(term.bright_black("░" * remaining))
 
     return "".join(progress_parts)
+
+
+def create_progress_bar(position: float, duration: float, term: Terminal) -> str:
+    """Create a colored progress bar with sub-character precision using Unicode blocks.
+
+    Args:
+        position: Current playback position in seconds
+        duration: Total track duration in seconds
+        term: blessed Terminal instance
+
+    Returns:
+        Formatted progress bar string with time displays
+    """
+    if duration <= 0:
+        return term.white("─" * 40)
+
+    bar_width = 40
+    full_chars, partial_fill = calculate_progress_segments(position, duration, bar_width)
+    progress_bar = render_progress_blocks(full_chars, partial_fill, bar_width, term)
+
+    # Add time displays
+    current = format_time(position)
+    total = format_time(duration)
+    return f"{progress_bar} {term.white(current)} {term.cyan('━━━━')} {term.white(total)}"
 
 
 def format_bpm_line(bpm: int, term: Terminal) -> str:

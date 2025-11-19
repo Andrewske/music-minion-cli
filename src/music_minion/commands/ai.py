@@ -58,7 +58,7 @@ def handle_ai_analyze_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     # Find current track
     current_track = None
     for track in ctx.music_tracks:
-        if track.file_path == ctx.player_state.current_track:
+        if track.local_path == ctx.player_state.current_track:
             current_track = track
             break
 
@@ -183,7 +183,7 @@ def handle_ai_review_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     # Find current track
     current_track = None
     for track in ctx.music_tracks:
-        if track.file_path == ctx.player_state.current_track:
+        if track.local_path == ctx.player_state.current_track:
             current_track = track
             break
 
@@ -216,7 +216,7 @@ def handle_ai_review_command(ctx: AppContext) -> Tuple[AppContext, bool]:
 
         # Prepare track data for review mode
         track_data = {
-            'file_path': str(current_track.file_path),
+            'local_path': str(current_track.local_path),
             'title': current_track.title,
             'artist': current_track.artist,
             'album': current_track.album,

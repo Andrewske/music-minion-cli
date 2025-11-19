@@ -2,17 +2,20 @@
 SQLite database operations for Music Minion CLI
 """
 
+import logging
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Tuple
-from contextlib import contextmanager
+from typing import Any, Dict, List, Optional, Tuple
 
-from .config import Config, get_data_dir
+from .config import get_data_dir
+
+logger = logging.getLogger(__name__)
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 
 def get_database_path() -> Path:
@@ -83,16 +86,24 @@ def migrate_database(conn, current_version: int) -> None:
         """)
 
         # Create indexes for playlist performance
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist_id ON playlist_tracks (playlist_id, position)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track_id ON playlist_tracks (track_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_playlist_filters_playlist_id ON playlist_filters (playlist_id)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist_id ON playlist_tracks (playlist_id, position)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track_id ON playlist_tracks (track_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_playlist_filters_playlist_id ON playlist_filters (playlist_id)"
+        )
 
         # Create indexes on tracks table for smart playlist filtering performance
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_year ON tracks (year)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks (album)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_genre ON tracks (genre)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_bpm ON tracks (bpm)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_key ON tracks (key_signature)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tracks_key ON tracks (key_signature)"
+        )
 
         conn.commit()
 
@@ -100,7 +111,9 @@ def migrate_database(conn, current_version: int) -> None:
         # Migration from v3 to v4: Add track_count column and fix conjunction constraint
         # Add track_count column to playlists table
         try:
-            conn.execute("ALTER TABLE playlists ADD COLUMN track_count INTEGER DEFAULT 0")
+            conn.execute(
+                "ALTER TABLE playlists ADD COLUMN track_count INTEGER DEFAULT 0"
+            )
         except Exception:
             # Column might already exist if user is on modified v3
             pass
@@ -146,19 +159,25 @@ def migrate_database(conn, current_version: int) -> None:
 
         # Add position tracking columns to active_playlist table
         try:
-            conn.execute("ALTER TABLE active_playlist ADD COLUMN last_played_track_id INTEGER")
+            conn.execute(
+                "ALTER TABLE active_playlist ADD COLUMN last_played_track_id INTEGER"
+            )
         except sqlite3.OperationalError as e:
             if "duplicate column name" not in str(e).lower():
                 raise  # Re-raise if it's not a "column exists" error
 
         try:
-            conn.execute("ALTER TABLE active_playlist ADD COLUMN last_played_position INTEGER")
+            conn.execute(
+                "ALTER TABLE active_playlist ADD COLUMN last_played_position INTEGER"
+            )
         except sqlite3.OperationalError as e:
             if "duplicate column name" not in str(e).lower():
                 raise
 
         try:
-            conn.execute("ALTER TABLE active_playlist ADD COLUMN last_played_at TIMESTAMP")
+            conn.execute(
+                "ALTER TABLE active_playlist ADD COLUMN last_played_at TIMESTAMP"
+            )
         except sqlite3.OperationalError as e:
             if "duplicate column name" not in str(e).lower():
                 raise
@@ -245,10 +264,7 @@ def migrate_database(conn, current_version: int) -> None:
 
     if current_version < 11:
         # Migration from v10 to v11: Multi-provider support
-        # Rename file_path to local_path and add provider ID columns
-
-        # Note: SQLite doesn't support column rename directly
-        # We'll create new columns and copy data
+        # Add local_path column and provider ID columns
 
         # 1. Add new local_path column
         try:
@@ -257,10 +273,7 @@ def migrate_database(conn, current_version: int) -> None:
             if "duplicate column name" not in str(e).lower():
                 raise
 
-        # 2. Copy file_path data to local_path
-        conn.execute("UPDATE tracks SET local_path = file_path WHERE local_path IS NULL")
-
-        # 3. Add provider ID columns (nullable, UNIQUE constraint added via index below)
+        # 2. Add provider ID columns (nullable, UNIQUE constraint added via index below)
         try:
             conn.execute("ALTER TABLE tracks ADD COLUMN soundcloud_id TEXT")
         except sqlite3.OperationalError as e:
@@ -333,12 +346,20 @@ def migrate_database(conn, current_version: int) -> None:
         """)
 
         # 9. Create index on local_path (same as old file_path index)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_local_path ON tracks (local_path)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tracks_local_path ON tracks (local_path)"
+        )
 
         # 10. Create UNIQUE indexes on provider IDs for fast lookups and uniqueness
-        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_soundcloud_id ON tracks (soundcloud_id) WHERE soundcloud_id IS NOT NULL")
-        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_spotify_id ON tracks (spotify_id) WHERE spotify_id IS NOT NULL")
-        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_youtube_id ON tracks (youtube_id) WHERE youtube_id IS NOT NULL")
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_soundcloud_id ON tracks (soundcloud_id) WHERE soundcloud_id IS NOT NULL"
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_spotify_id ON tracks (spotify_id) WHERE spotify_id IS NOT NULL"
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_youtube_id ON tracks (youtube_id) WHERE youtube_id IS NOT NULL"
+        )
 
         conn.commit()
 
@@ -373,34 +394,56 @@ def migrate_database(conn, current_version: int) -> None:
 
         # 5. Add last_track_count for incremental playlist sync
         try:
-            conn.execute("ALTER TABLE playlists ADD COLUMN last_track_count INTEGER DEFAULT 0")
+            conn.execute(
+                "ALTER TABLE playlists ADD COLUMN last_track_count INTEGER DEFAULT 0"
+            )
         except sqlite3.OperationalError as e:
             if "duplicate column name" not in str(e).lower():
                 raise
 
         # 6. Create unique indexes on provider playlist IDs
-        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_playlists_soundcloud_id ON playlists (soundcloud_playlist_id) WHERE soundcloud_playlist_id IS NOT NULL")
-        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_playlists_spotify_id ON playlists (spotify_playlist_id) WHERE spotify_playlist_id IS NOT NULL")
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_playlists_soundcloud_id ON playlists (soundcloud_playlist_id) WHERE soundcloud_playlist_id IS NOT NULL"
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_playlists_spotify_id ON playlists (spotify_playlist_id) WHERE spotify_playlist_id IS NOT NULL"
+        )
 
         conn.commit()
 
     if current_version < 13:
-        # Migration from v12 to v13: Make file_path nullable for multi-provider support
-        # SQLite doesn't support ALTER COLUMN, so we must recreate the table
+        # Migration from v12 to v13: Removed file_path column cleanup (now handled in v14)
+        # This migration is kept for historical compatibility but does nothing
+        print("  Skipping v13 migration (superseded by v14)")
+        conn.commit()
 
-        print("  Migrating to v13: Making file_path nullable for provider tracks...")
+    if current_version < 14:
+        # Migration from v13 to v14: Remove file_path column (backward compatibility cleanup)
+        # Keep only local_path column since we're the only user
 
-        # Commit any pending operations before starting table recreation
+        print("  Migrating to v14: Removing file_path column...")
+
+        # Commit any pending operations
         conn.commit()
 
         # Step 1: Disable foreign keys during table recreation
         conn.execute("PRAGMA foreign_keys=OFF")
 
-        # Step 2: Create new tracks table with file_path nullable
+        # Step 2: Copy any remaining file_path data to local_path (safety measure)
+        # This may fail if file_path column doesn't exist (already migrated)
+        try:
+            conn.execute(
+                "UPDATE tracks SET local_path = file_path WHERE local_path IS NULL AND file_path IS NOT NULL"
+            )
+        except sqlite3.OperationalError as e:
+            if "no such column" not in str(e).lower():
+                raise
+            # file_path column doesn't exist, which is fine
+
+        # Step 3: Create new tracks table without file_path column
         conn.execute("""
             CREATE TABLE tracks_new (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                file_path TEXT UNIQUE,
                 title TEXT,
                 artist TEXT,
                 album TEXT,
@@ -425,17 +468,17 @@ def migrate_database(conn, current_version: int) -> None:
             )
         """)
 
-        # Step 3: Copy all data from old table
+        # Step 4: Copy all data from old table (excluding file_path)
         conn.execute("""
             INSERT INTO tracks_new (
-                id, file_path, title, artist, album, genre, year, duration,
+                id, title, artist, album, genre, year, duration,
                 key_signature, bpm, created_at, updated_at, file_mtime,
                 last_synced_at, remix_artist, local_path, soundcloud_id,
                 spotify_id, youtube_id, soundcloud_synced_at, spotify_synced_at,
                 youtube_synced_at, source
             )
             SELECT
-                id, file_path, title, artist, album, genre, year, duration,
+                id, title, artist, album, genre, year, duration,
                 key_signature, bpm, created_at, updated_at, file_mtime,
                 last_synced_at, remix_artist, local_path, soundcloud_id,
                 spotify_id, youtube_id, soundcloud_synced_at, spotify_synced_at,
@@ -443,34 +486,45 @@ def migrate_database(conn, current_version: int) -> None:
             FROM tracks
         """)
 
-        # Step 4: Drop old table
+        # Step 5: Drop old table
         conn.execute("DROP TABLE tracks")
 
-        # Step 5: Rename new table
+        # Step 6: Rename new table
         conn.execute("ALTER TABLE tracks_new RENAME TO tracks")
 
-        # Step 6: Recreate all indexes (13 total)
+        # Step 7: Recreate all indexes (12 total, excluding idx_tracks_file_path)
         # Regular indexes
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_file_path ON tracks (file_path)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks (artist)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_year ON tracks (year)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks (album)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_genre ON tracks (genre)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_bpm ON tracks (bpm)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_key ON tracks (key_signature)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_mtime ON tracks (file_mtime)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_local_path ON tracks (local_path)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tracks_key ON tracks (key_signature)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tracks_mtime ON tracks (file_mtime)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tracks_local_path ON tracks (local_path)"
+        )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_source ON tracks (source)")
 
         # Partial UNIQUE indexes
-        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_soundcloud_id ON tracks (soundcloud_id) WHERE soundcloud_id IS NOT NULL")
-        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_spotify_id ON tracks (spotify_id) WHERE spotify_id IS NOT NULL")
-        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_youtube_id ON tracks (youtube_id) WHERE youtube_id IS NOT NULL")
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_soundcloud_id ON tracks (soundcloud_id) WHERE soundcloud_id IS NOT NULL"
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_spotify_id ON tracks (spotify_id) WHERE spotify_id IS NOT NULL"
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_youtube_id ON tracks (youtube_id) WHERE youtube_id IS NOT NULL"
+        )
 
-        # Step 7: Re-enable foreign keys
+        # Step 8: Re-enable foreign keys
         conn.execute("PRAGMA foreign_keys=ON")
 
-        print("  ✓ Migration to v13 complete")
+        print("  ✓ Migration to v14 complete: file_path column removed")
         conn.commit()
 
 
@@ -488,12 +542,12 @@ def init_database() -> None:
                 version INTEGER PRIMARY KEY
             )
         """)
-        
+
         # Create tracks table for basic track info
         conn.execute("""
             CREATE TABLE IF NOT EXISTS tracks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                file_path TEXT UNIQUE,
+                local_path TEXT,
                 title TEXT,
                 artist TEXT,
                 album TEXT,
@@ -506,7 +560,7 @@ def init_database() -> None:
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        
+
         # Create ratings table for user feedback
         conn.execute("""
             CREATE TABLE IF NOT EXISTS ratings (
@@ -520,7 +574,7 @@ def init_database() -> None:
                 FOREIGN KEY (track_id) REFERENCES tracks (id) ON DELETE CASCADE
             )
         """)
-        
+
         # Create notes table for user notes on tracks
         conn.execute("""
             CREATE TABLE IF NOT EXISTS notes (
@@ -533,7 +587,7 @@ def init_database() -> None:
                 FOREIGN KEY (track_id) REFERENCES tracks (id) ON DELETE CASCADE
             )
         """)
-        
+
         # Create playback_sessions table for tracking listening sessions
         conn.execute("""
             CREATE TABLE IF NOT EXISTS playback_sessions (
@@ -546,7 +600,7 @@ def init_database() -> None:
                 FOREIGN KEY (track_id) REFERENCES tracks (id) ON DELETE CASCADE
             )
         """)
-        
+
         # Create tags table for AI and user tags
         conn.execute("""
             CREATE TABLE IF NOT EXISTS tags (
@@ -560,7 +614,7 @@ def init_database() -> None:
                 FOREIGN KEY (track_id) REFERENCES tracks (id) ON DELETE CASCADE
             )
         """)
-        
+
         # Create ai_requests table for token usage tracking
         conn.execute("""
             CREATE TABLE IF NOT EXISTS ai_requests (
@@ -579,58 +633,84 @@ def init_database() -> None:
                 FOREIGN KEY (track_id) REFERENCES tracks (id) ON DELETE CASCADE
             )
         """)
-        
+
         # Create indexes for performance
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_file_path ON tracks (file_path)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tracks_local_path ON tracks (local_path)"
+        )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks (artist)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_ratings_track_id ON ratings (track_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_ratings_timestamp ON ratings (timestamp)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_ratings_type ON ratings (rating_type)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_notes_track_id ON notes (track_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_track_id ON playback_sessions (track_id)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ratings_track_id ON ratings (track_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ratings_timestamp ON ratings (timestamp)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ratings_type ON ratings (rating_type)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_notes_track_id ON notes (track_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_track_id ON playback_sessions (track_id)"
+        )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tags_track_id ON tags (track_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tags_name ON tags (tag_name)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tags_source ON tags (source)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_ai_requests_track_id ON ai_requests (track_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_ai_requests_timestamp ON ai_requests (request_timestamp)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ai_requests_track_id ON ai_requests (track_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ai_requests_timestamp ON ai_requests (request_timestamp)"
+        )
 
         # Check current schema version and run migrations if needed
         cursor = conn.execute("SELECT version FROM schema_version")
         row = cursor.fetchone()
-        current_version = row['version'] if row else 0
+        current_version = row["version"] if row else 0
         cursor.close()  # Close cursor to release any locks before migration
 
         if current_version < SCHEMA_VERSION:
             migrate_database(conn, current_version)
 
         # Set schema version
-        conn.execute("INSERT OR REPLACE INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
+        conn.execute(
+            "INSERT OR REPLACE INTO schema_version (version) VALUES (?)",
+            (SCHEMA_VERSION,),
+        )
 
         conn.commit()
 
 
-def get_or_create_track(file_path: str, title: Optional[str] = None,
-                       artist: Optional[str] = None, remix_artist: Optional[str] = None,
-                       album: Optional[str] = None, genre: Optional[str] = None,
-                       year: Optional[int] = None, duration: Optional[float] = None,
-                       key_signature: Optional[str] = None, bpm: Optional[float] = None) -> int:
-    """Get track ID if exists, otherwise create new track record.
-
-    Note: file_path parameter maps to local_path in database (v11+).
-    """
+def get_or_create_track(
+    local_path: str,
+    title: Optional[str] = None,
+    artist: Optional[str] = None,
+    remix_artist: Optional[str] = None,
+    album: Optional[str] = None,
+    genre: Optional[str] = None,
+    year: Optional[int] = None,
+    duration: Optional[float] = None,
+    key_signature: Optional[str] = None,
+    bpm: Optional[float] = None,
+) -> int:
+    """Get track ID if exists, otherwise create new track record."""
     with get_db_connection() as conn:
-        # Try to find existing track by local_path (or fallback to file_path for v10 compat)
-        cursor = conn.execute("""
+        # Try to find existing track by local_path
+        cursor = conn.execute(
+            """
             SELECT id FROM tracks
-            WHERE local_path = ? OR file_path = ?
-        """, (file_path, file_path))
+            WHERE local_path = ?
+        """,
+            (local_path,),
+        )
         row = cursor.fetchone()
 
         if row:
             # Update existing track with any new metadata
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE tracks SET
-                    local_path = ?,
                     title = COALESCE(?, title),
                     artist = COALESCE(?, artist),
                     remix_artist = COALESCE(?, remix_artist),
@@ -642,15 +722,42 @@ def get_or_create_track(file_path: str, title: Optional[str] = None,
                     bpm = COALESCE(?, bpm),
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-            """, (file_path, title, artist, remix_artist, album, genre, year, duration, key_signature, bpm, row['id']))
+            """,
+                (
+                    title,
+                    artist,
+                    remix_artist,
+                    album,
+                    genre,
+                    year,
+                    duration,
+                    key_signature,
+                    bpm,
+                    row["id"],
+                ),
+            )
             conn.commit()
-            return row['id']
+            return row["id"]
         else:
             # Create new track
-            cursor = conn.execute("""
-                INSERT INTO tracks (local_path, file_path, title, artist, remix_artist, album, genre, year, duration, key_signature, bpm)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (file_path, file_path, title, artist, remix_artist, album, genre, year, duration, key_signature, bpm))
+            cursor = conn.execute(
+                """
+                INSERT INTO tracks (local_path, title, artist, remix_artist, album, genre, year, duration, key_signature, bpm)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+                (
+                    local_path,
+                    title,
+                    artist,
+                    remix_artist,
+                    album,
+                    genre,
+                    year,
+                    duration,
+                    key_signature,
+                    bpm,
+                ),
+            )
             conn.commit()
             return cursor.lastrowid
 
@@ -660,22 +767,28 @@ def add_rating(track_id: int, rating_type: str, context: Optional[str] = None) -
     now = datetime.now()
     hour_of_day = now.hour
     day_of_week = now.weekday()  # 0=Monday, 6=Sunday
-    
+
     with get_db_connection() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO ratings (track_id, rating_type, hour_of_day, day_of_week, context)
             VALUES (?, ?, ?, ?, ?)
-        """, (track_id, rating_type, hour_of_day, day_of_week, context))
+        """,
+            (track_id, rating_type, hour_of_day, day_of_week, context),
+        )
         conn.commit()
 
 
 def add_note(track_id: int, note_text: str) -> int:
     """Add a note for a track and return note ID."""
     with get_db_connection() as conn:
-        cursor = conn.execute("""
+        cursor = conn.execute(
+            """
             INSERT INTO notes (track_id, note_text)
             VALUES (?, ?)
-        """, (track_id, note_text))
+        """,
+            (track_id, note_text),
+        )
         conn.commit()
         return cursor.lastrowid
 
@@ -683,64 +796,80 @@ def add_note(track_id: int, note_text: str) -> int:
 def start_playback_session(track_id: int) -> int:
     """Start a playback session and return session ID."""
     with get_db_connection() as conn:
-        cursor = conn.execute("""
+        cursor = conn.execute(
+            """
             INSERT INTO playback_sessions (track_id)
             VALUES (?)
-        """, (track_id,))
+        """,
+            (track_id,),
+        )
         conn.commit()
         return cursor.lastrowid
 
 
-def end_playback_session(session_id: int, completed: bool = False, 
-                        skipped_at_percent: Optional[float] = None) -> None:
+def end_playback_session(
+    session_id: int, completed: bool = False, skipped_at_percent: Optional[float] = None
+) -> None:
     """End a playback session."""
     with get_db_connection() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             UPDATE playback_sessions SET
                 ended_at = CURRENT_TIMESTAMP,
                 completed = ?,
                 skipped_at_percent = ?
             WHERE id = ?
-        """, (completed, skipped_at_percent, session_id))
+        """,
+            (completed, skipped_at_percent, session_id),
+        )
         conn.commit()
 
 
 def get_track_ratings(track_id: int) -> List[Dict[str, Any]]:
     """Get all ratings for a track."""
     with get_db_connection() as conn:
-        cursor = conn.execute("""
+        cursor = conn.execute(
+            """
             SELECT rating_type, timestamp, hour_of_day, day_of_week, context
             FROM ratings 
             WHERE track_id = ?
             ORDER BY timestamp DESC
-        """, (track_id,))
+        """,
+            (track_id,),
+        )
         return [dict(row) for row in cursor.fetchall()]
 
 
 def get_track_notes(track_id: int) -> List[Dict[str, Any]]:
     """Get all notes for a track."""
     with get_db_connection() as conn:
-        cursor = conn.execute("""
+        cursor = conn.execute(
+            """
             SELECT note_text, timestamp, processed_by_ai, ai_tags
             FROM notes 
             WHERE track_id = ?
             ORDER BY timestamp DESC
-        """, (track_id,))
+        """,
+            (track_id,),
+        )
         return [dict(row) for row in cursor.fetchall()]
 
 
 def get_recent_ratings(limit: int = 10) -> List[Dict[str, Any]]:
     """Get recent ratings across all tracks."""
     with get_db_connection() as conn:
-        cursor = conn.execute("""
+        cursor = conn.execute(
+            """
             SELECT r.rating_type, r.timestamp, r.context,
                    t.title, t.artist,
-                   COALESCE(t.local_path, t.file_path) as file_path
+                   t.local_path
             FROM ratings r
             JOIN tracks t ON r.track_id = t.id
             ORDER BY r.timestamp DESC
             LIMIT ?
-        """, (limit,))
+        """,
+            (limit,),
+        )
         return [dict(row) for row in cursor.fetchall()]
 
 
@@ -752,52 +881,53 @@ def get_archived_tracks() -> List[int]:
             FROM ratings
             WHERE rating_type = 'archive'
         """)
-        return [row['track_id'] for row in cursor.fetchall()]
+        return [row["track_id"] for row in cursor.fetchall()]
 
 
 def get_rating_patterns(track_id: int) -> Dict[str, Any]:
     """Get rating patterns for a track (time-based preferences)."""
     with get_db_connection() as conn:
         # Get hourly preferences
-        cursor = conn.execute("""
+        cursor = conn.execute(
+            """
             SELECT hour_of_day, rating_type, COUNT(*) as count
             FROM ratings
             WHERE track_id = ?
             GROUP BY hour_of_day, rating_type
             ORDER BY hour_of_day, count DESC
-        """, (track_id,))
+        """,
+            (track_id,),
+        )
         hourly_patterns = {}
         for row in cursor.fetchall():
-            hour = row['hour_of_day']
+            hour = row["hour_of_day"]
             if hour not in hourly_patterns:
                 hourly_patterns[hour] = []
-            hourly_patterns[hour].append({
-                'rating': row['rating_type'],
-                'count': row['count']
-            })
-        
+            hourly_patterns[hour].append(
+                {"rating": row["rating_type"], "count": row["count"]}
+            )
+
         # Get daily preferences
-        cursor = conn.execute("""
+        cursor = conn.execute(
+            """
             SELECT day_of_week, rating_type, COUNT(*) as count
             FROM ratings
             WHERE track_id = ?
             GROUP BY day_of_week, rating_type
             ORDER BY day_of_week, count DESC
-        """, (track_id,))
+        """,
+            (track_id,),
+        )
         daily_patterns = {}
         for row in cursor.fetchall():
-            day = row['day_of_week']
+            day = row["day_of_week"]
             if day not in daily_patterns:
                 daily_patterns[day] = []
-            daily_patterns[day].append({
-                'rating': row['rating_type'],
-                'count': row['count']
-            })
-        
-        return {
-            'hourly': hourly_patterns,
-            'daily': daily_patterns
-        }
+            daily_patterns[day].append(
+                {"rating": row["rating_type"], "count": row["count"]}
+            )
+
+        return {"hourly": hourly_patterns, "daily": daily_patterns}
 
 
 def get_library_analytics() -> Dict[str, Any]:
@@ -805,14 +935,14 @@ def get_library_analytics() -> Dict[str, Any]:
     with get_db_connection() as conn:
         # Basic counts
         cursor = conn.execute("SELECT COUNT(*) as count FROM tracks")
-        total_tracks = cursor.fetchone()['count']
-        
+        total_tracks = cursor.fetchone()["count"]
+
         cursor = conn.execute("SELECT COUNT(*) as count FROM ratings")
-        total_ratings = cursor.fetchone()['count']
-        
+        total_ratings = cursor.fetchone()["count"]
+
         cursor = conn.execute("SELECT COUNT(DISTINCT track_id) as count FROM ratings")
-        rated_tracks = cursor.fetchone()['count']
-        
+        rated_tracks = cursor.fetchone()["count"]
+
         # Rating type distribution
         cursor = conn.execute("""
             SELECT rating_type, COUNT(*) as count
@@ -820,8 +950,10 @@ def get_library_analytics() -> Dict[str, Any]:
             GROUP BY rating_type
             ORDER BY count DESC
         """)
-        rating_distribution = {row['rating_type']: row['count'] for row in cursor.fetchall()}
-        
+        rating_distribution = {
+            row["rating_type"]: row["count"] for row in cursor.fetchall()
+        }
+
         # Most active hours
         cursor = conn.execute("""
             SELECT hour_of_day, COUNT(*) as count
@@ -830,9 +962,11 @@ def get_library_analytics() -> Dict[str, Any]:
             ORDER BY count DESC
             LIMIT 5
         """)
-        active_hours = [{'hour': row['hour_of_day'], 'count': row['count']} 
-                       for row in cursor.fetchall()]
-        
+        active_hours = [
+            {"hour": row["hour_of_day"], "count": row["count"]}
+            for row in cursor.fetchall()
+        ]
+
         # Most active days
         cursor = conn.execute("""
             SELECT day_of_week, COUNT(*) as count
@@ -841,17 +975,27 @@ def get_library_analytics() -> Dict[str, Any]:
             ORDER BY count DESC
             LIMIT 7
         """)
-        day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-        active_days = [{'day': day_names[row['day_of_week']], 'count': row['count']} 
-                      for row in cursor.fetchall()]
-        
+        day_names = [
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ]
+        active_days = [
+            {"day": day_names[row["day_of_week"]], "count": row["count"]}
+            for row in cursor.fetchall()
+        ]
+
         return {
-            'total_tracks': total_tracks,
-            'total_ratings': total_ratings,
-            'rated_tracks': rated_tracks,
-            'rating_distribution': rating_distribution,
-            'active_hours': active_hours,
-            'active_days': active_days
+            "total_tracks": total_tracks,
+            "total_ratings": total_ratings,
+            "rated_tracks": rated_tracks,
+            "rating_distribution": rating_distribution,
+            "active_hours": active_hours,
+            "active_days": active_days,
         }
 
 
@@ -867,16 +1011,16 @@ def cleanup_old_sessions() -> None:
         conn.commit()
 
 
-def get_track_by_path(file_path: str) -> Optional[Dict[str, Any]]:
-    """Get track information by file path.
-
-    Note: Searches local_path (v11+) with fallback to file_path (v10 compat).
-    """
+def get_track_by_path(local_path: str) -> Optional[Dict[str, Any]]:
+    """Get track information by file path."""
     with get_db_connection() as conn:
-        cursor = conn.execute("""
+        cursor = conn.execute(
+            """
             SELECT * FROM tracks
-            WHERE local_path = ? OR file_path = ?
-        """, (file_path, file_path))
+            WHERE local_path = ?
+        """,
+            (local_path,),
+        )
         row = cursor.fetchone()
         return dict(row) if row else None
 
@@ -884,9 +1028,12 @@ def get_track_by_path(file_path: str) -> Optional[Dict[str, Any]]:
 def get_track_by_id(track_id: int) -> Optional[Dict[str, Any]]:
     """Get track information by ID."""
     with get_db_connection() as conn:
-        cursor = conn.execute("""
+        cursor = conn.execute(
+            """
             SELECT * FROM tracks WHERE id = ?
-        """, (track_id,))
+        """,
+            (track_id,),
+        )
         row = cursor.fetchone()
         return dict(row) if row else None
 
@@ -898,17 +1045,14 @@ def get_track_path_to_id_map() -> Dict[str, int]:
 
     Returns:
         Dictionary mapping file paths to track IDs
-
-    Note: Uses local_path (v11+) with fallback to file_path (v10 compat).
     """
     with get_db_connection() as conn:
-        cursor = conn.execute("SELECT id, local_path, file_path FROM tracks")
+        cursor = conn.execute("SELECT id, local_path FROM tracks")
         result = {}
         for row in cursor.fetchall():
-            # Prefer local_path, fallback to file_path
-            path = row['local_path'] or row['file_path']
+            path = row["local_path"]
             if path:
-                result[path] = row['id']
+                result[path] = row["id"]
         return result
 
 
@@ -935,34 +1079,36 @@ def batch_upsert_tracks(tracks: List[Any]) -> Tuple[int, int]:
     update_tracks = []
 
     for track in tracks:
-        if track.file_path in existing_paths:
-            update_tracks.append((
-                track.file_path,  # local_path
-                track.title,
-                track.artist,
-                track.remix_artist,
-                track.album,
-                track.genre,
-                track.year,
-                track.duration,
-                track.key,  # key_signature
-                track.bpm,
-                existing_paths[track.file_path]  # id for WHERE clause
-            ))
+        if track.local_path in existing_paths:
+            update_tracks.append(
+                (
+                    track.title,
+                    track.artist,
+                    track.remix_artist,
+                    track.album,
+                    track.genre,
+                    track.year,
+                    track.duration,
+                    track.key,  # key_signature
+                    track.bpm,
+                    existing_paths[track.local_path],  # id for WHERE clause
+                )
+            )
         else:
-            new_tracks.append((
-                track.file_path,  # local_path
-                track.file_path,  # file_path (duplicate for v10 compat)
-                track.title,
-                track.artist,
-                track.remix_artist,
-                track.album,
-                track.genre,
-                track.year,
-                track.duration,
-                track.key,  # key_signature
-                track.bpm
-            ))
+            new_tracks.append(
+                (
+                    track.local_path,  # local_path
+                    track.title,
+                    track.artist,
+                    track.remix_artist,
+                    track.album,
+                    track.genre,
+                    track.year,
+                    track.duration,
+                    track.key,  # key_signature
+                    track.bpm,
+                )
+            )
 
     # Batch insert new tracks
     added = 0
@@ -970,16 +1116,19 @@ def batch_upsert_tracks(tracks: List[Any]) -> Tuple[int, int]:
 
     with get_db_connection() as conn:
         if new_tracks:
-            conn.executemany("""
-                INSERT INTO tracks (local_path, file_path, title, artist, remix_artist, album, genre, year, duration, key_signature, bpm)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, new_tracks)
+            conn.executemany(
+                """
+                INSERT INTO tracks (local_path, title, artist, remix_artist, album, genre, year, duration, key_signature, bpm)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+                new_tracks,
+            )
             added = len(new_tracks)
 
         if update_tracks:
-            conn.executemany("""
+            conn.executemany(
+                """
                 UPDATE tracks SET
-                    local_path = ?,
                     title = COALESCE(?, title),
                     artist = COALESCE(?, artist),
                     remix_artist = COALESCE(?, remix_artist),
@@ -991,7 +1140,9 @@ def batch_upsert_tracks(tracks: List[Any]) -> Tuple[int, int]:
                     bpm = COALESCE(?, bpm),
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-            """, update_tracks)
+            """,
+                update_tracks,
+            )
             updated = len(update_tracks)
 
         conn.commit()
@@ -1002,12 +1153,15 @@ def batch_upsert_tracks(tracks: List[Any]) -> Tuple[int, int]:
 def update_ai_processed_note(note_id: int, ai_tags: str) -> None:
     """Mark a note as processed by AI and store extracted tags."""
     with get_db_connection() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             UPDATE notes SET
                 processed_by_ai = TRUE,
                 ai_tags = ?
             WHERE id = ?
-        """, (ai_tags, note_id))
+        """,
+            (ai_tags, note_id),
+        )
         conn.commit()
 
 
@@ -1017,7 +1171,7 @@ def get_unprocessed_notes() -> List[Dict[str, Any]]:
         cursor = conn.execute("""
             SELECT n.id, n.note_text, n.timestamp,
                    t.title, t.artist,
-                   COALESCE(t.local_path, t.file_path) as file_path
+                   t.local_path
             FROM notes n
             JOIN tracks t ON n.track_id = t.id
             WHERE n.processed_by_ai = FALSE
@@ -1040,13 +1194,13 @@ def get_available_track_paths() -> List[str]:
     """Get file paths of tracks that are not archived."""
     with get_db_connection() as conn:
         cursor = conn.execute("""
-            SELECT COALESCE(t.local_path, t.file_path) as file_path
+            SELECT t.local_path
             FROM tracks t
             LEFT JOIN ratings r ON t.id = r.track_id AND r.rating_type = 'archive'
             WHERE r.id IS NULL
             ORDER BY t.artist, t.album, t.title
         """)
-        return [row['file_path'] for row in cursor.fetchall()]
+        return [row["local_path"] for row in cursor.fetchall()]
 
 
 def get_available_tracks() -> List[Dict[str, Any]]:
@@ -1090,7 +1244,7 @@ def get_all_tracks_with_metadata() -> List[Dict[str, Any]]:
                 t.genre,
                 t.bpm,
                 t.key_signature,
-                COALESCE(t.local_path, t.file_path) as file_path,
+                t.local_path,
                 COALESCE(GROUP_CONCAT(DISTINCT tags.tag_name), '') as tags,
                 COALESCE(GROUP_CONCAT(notes.note_text, ' '), '') as notes,
                 (SELECT rating_type FROM ratings r
@@ -1114,35 +1268,52 @@ def db_track_to_library_track(db_track: Dict[str, Any]):
     from ..domain import library
 
     # Map database columns to Track fields
-    # Note: database has 'local_path' but Track model uses 'file_path' for backward compat
     # Ensure file_path is never None - use empty string for provider tracks without local files
-    local_path = db_track.get('local_path') or db_track.get('file_path') or ''
+    local_path = db_track.get("local_path") or ""
+
+    # Log when converting NULL path to empty string (helps debug provider track issues)
+    if not local_path and (
+        db_track.get("soundcloud_id")
+        or db_track.get("spotify_id")
+        or db_track.get("youtube_id")
+    ):
+        logger.debug(
+            f"Track {db_track.get('id')} has no local file path (provider track: "
+            f"sc={bool(db_track.get('soundcloud_id'))}, "
+            f"sp={bool(db_track.get('spotify_id'))}, "
+            f"yt={bool(db_track.get('youtube_id'))})"
+        )
 
     return library.Track(
-        file_path=local_path,
-        title=db_track.get('title'),
-        artist=db_track.get('artist'),
-        remix_artist=db_track.get('remix_artist'),
-        album=db_track.get('album'),
-        genre=db_track.get('genre'),
-        year=db_track.get('year'),
-        duration=db_track.get('duration'),
+        local_path=local_path,
+        title=db_track.get("title"),
+        artist=db_track.get("artist"),
+        remix_artist=db_track.get("remix_artist"),
+        album=db_track.get("album"),
+        genre=db_track.get("genre"),
+        year=db_track.get("year"),
+        duration=db_track.get("duration"),
         bitrate=None,  # Not stored in database yet
-        file_size=0,   # Not stored in database yet
-        format=None,   # Could derive from file_path
-        key=db_track.get('key_signature'),
-        bpm=db_track.get('bpm'),
-        soundcloud_id=db_track.get('soundcloud_id'),
-        spotify_id=db_track.get('spotify_id'),
-        youtube_id=db_track.get('youtube_id')
+        file_size=0,  # Not stored in database yet
+        format=None,  # Could derive from local_path
+        key=db_track.get("key_signature"),
+        bpm=db_track.get("bpm"),
+        soundcloud_id=db_track.get("soundcloud_id"),
+        spotify_id=db_track.get("spotify_id"),
+        youtube_id=db_track.get("youtube_id"),
     )
 
 
 # Tag management functions
 
-def add_tags(track_id: int, tags: List[str], source: str = 'user',
-             confidence: Optional[float] = None,
-             reasoning: Optional[Dict[str, str]] = None) -> None:
+
+def add_tags(
+    track_id: int,
+    tags: List[str],
+    source: str = "user",
+    confidence: Optional[float] = None,
+    reasoning: Optional[Dict[str, str]] = None,
+) -> None:
     """Add multiple tags to a track.
 
     Args:
@@ -1156,34 +1327,45 @@ def add_tags(track_id: int, tags: List[str], source: str = 'user',
         for tag in tags:
             tag_name = tag.strip().lower()
             tag_reasoning = reasoning.get(tag_name) if reasoning else None
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT OR IGNORE INTO tags (track_id, tag_name, source, confidence, reasoning)
                 VALUES (?, ?, ?, ?, ?)
-            """, (track_id, tag_name, source, confidence, tag_reasoning))
+            """,
+                (track_id, tag_name, source, confidence, tag_reasoning),
+            )
         conn.commit()
 
 
-def get_track_tags(track_id: int, include_blacklisted: bool = False) -> List[Dict[str, Any]]:
+def get_track_tags(
+    track_id: int, include_blacklisted: bool = False
+) -> List[Dict[str, Any]]:
     """Get all tags for a track."""
     blacklist_filter = "" if include_blacklisted else "AND blacklisted = FALSE"
 
     with get_db_connection() as conn:
-        cursor = conn.execute(f"""
+        cursor = conn.execute(
+            f"""
             SELECT tag_name, source, confidence, created_at, blacklisted, reasoning
             FROM tags
             WHERE track_id = ? {blacklist_filter}
             ORDER BY created_at DESC
-        """, (track_id,))
+        """,
+            (track_id,),
+        )
         return [dict(row) for row in cursor.fetchall()]
 
 
 def blacklist_tag(track_id: int, tag_name: str) -> bool:
     """Blacklist a tag for a specific track. Returns True if tag was found and blacklisted."""
     with get_db_connection() as conn:
-        cursor = conn.execute("""
+        cursor = conn.execute(
+            """
             UPDATE tags SET blacklisted = TRUE
             WHERE track_id = ? AND tag_name = ? AND blacklisted = FALSE
-        """, (track_id, tag_name.strip().lower()))
+        """,
+            (track_id, tag_name.strip().lower()),
+        )
         conn.commit()
         return cursor.rowcount > 0
 
@@ -1191,37 +1373,61 @@ def blacklist_tag(track_id: int, tag_name: str) -> bool:
 def remove_tag(track_id: int, tag_name: str) -> bool:
     """Completely remove a tag from a track. Returns True if tag was found and removed."""
     with get_db_connection() as conn:
-        cursor = conn.execute("""
+        cursor = conn.execute(
+            """
             DELETE FROM tags
             WHERE track_id = ? AND tag_name = ?
-        """, (track_id, tag_name.strip().lower()))
+        """,
+            (track_id, tag_name.strip().lower()),
+        )
         conn.commit()
         return cursor.rowcount > 0
 
 
 # AI request logging functions
 
-def log_ai_request(track_id: int, request_type: str, model_name: str,
-                   prompt_tokens: int, completion_tokens: int, 
-                   response_time_ms: int, success: bool = True,
-                   error_message: Optional[str] = None) -> int:
+
+def log_ai_request(
+    track_id: int,
+    request_type: str,
+    model_name: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    response_time_ms: int,
+    success: bool = True,
+    error_message: Optional[str] = None,
+) -> int:
     """Log an AI request and return the request ID."""
     total_tokens = prompt_tokens + completion_tokens
-    
+
     # Hard-coded pricing for gpt-4o-mini (per 1M tokens)
     # Input: $0.15, Output: $0.60
-    cost_estimate = (prompt_tokens * 0.15 / 1_000_000) + (completion_tokens * 0.60 / 1_000_000)
-    
+    cost_estimate = (prompt_tokens * 0.15 / 1_000_000) + (
+        completion_tokens * 0.60 / 1_000_000
+    )
+
     with get_db_connection() as conn:
-        cursor = conn.execute("""
+        cursor = conn.execute(
+            """
             INSERT INTO ai_requests (
                 track_id, request_type, model_name, prompt_tokens, 
                 completion_tokens, total_tokens, cost_estimate,
                 response_time_ms, success, error_message
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (track_id, request_type, model_name, prompt_tokens, 
-              completion_tokens, total_tokens, cost_estimate,
-              response_time_ms, success, error_message))
+        """,
+            (
+                track_id,
+                request_type,
+                model_name,
+                prompt_tokens,
+                completion_tokens,
+                total_tokens,
+                cost_estimate,
+                response_time_ms,
+                success,
+                error_message,
+            ),
+        )
         conn.commit()
         return cursor.lastrowid
 
@@ -1230,13 +1436,16 @@ def get_ai_usage_stats(days: Optional[int] = None) -> Dict[str, Any]:
     """Get AI usage statistics. If days is provided, filter to last N days."""
     date_filter = ""
     params = []
-    
+
     if days:
-        date_filter = "WHERE request_timestamp >= datetime('now', '-{} days')".format(days)
-    
+        date_filter = "WHERE request_timestamp >= datetime('now', '-{} days')".format(
+            days
+        )
+
     with get_db_connection() as conn:
         # Total requests and tokens
-        cursor = conn.execute(f"""
+        cursor = conn.execute(
+            f"""
             SELECT 
                 COUNT(*) as total_requests,
                 SUM(prompt_tokens) as total_prompt_tokens,
@@ -1247,23 +1456,31 @@ def get_ai_usage_stats(days: Optional[int] = None) -> Dict[str, Any]:
                 SUM(CASE WHEN success = TRUE THEN 1 ELSE 0 END) as successful_requests
             FROM ai_requests 
             {date_filter}
-        """, params)
+        """,
+            params,
+        )
         stats = dict(cursor.fetchone())
-        
+
         # Request type breakdown
-        cursor = conn.execute(f"""
+        cursor = conn.execute(
+            f"""
             SELECT request_type, COUNT(*) as count, SUM(cost_estimate) as cost
             FROM ai_requests 
             {date_filter}
             GROUP BY request_type
-        """, params)
-        request_types = {row['request_type']: {'count': row['count'], 'cost': row['cost']} 
-                        for row in cursor.fetchall()}
-        
+        """,
+            params,
+        )
+        request_types = {
+            row["request_type"]: {"count": row["count"], "cost": row["cost"]}
+            for row in cursor.fetchall()
+        }
+
         # Daily breakdown if not filtering by days
         daily_stats = []
         if not days or days > 1:
-            cursor = conn.execute(f"""
+            cursor = conn.execute(
+                f"""
                 SELECT 
                     DATE(request_timestamp) as date,
                     COUNT(*) as requests,
@@ -1273,17 +1490,24 @@ def get_ai_usage_stats(days: Optional[int] = None) -> Dict[str, Any]:
                 GROUP BY DATE(request_timestamp)
                 ORDER BY date DESC
                 LIMIT 30
-            """, params)
+            """,
+                params,
+            )
             daily_stats = [dict(row) for row in cursor.fetchall()]
-        
-        stats['request_types'] = request_types
-        stats['daily_breakdown'] = daily_stats
-        
+
+        stats["request_types"] = request_types
+        stats["daily_breakdown"] = daily_stats
+
         # Convert None values to 0 for display
-        for key in ['total_prompt_tokens', 'total_completion_tokens', 'total_tokens', 'total_cost']:
+        for key in [
+            "total_prompt_tokens",
+            "total_completion_tokens",
+            "total_tokens",
+            "total_cost",
+        ]:
             if stats[key] is None:
                 stats[key] = 0
-                
+
         return stats
 
 
@@ -1305,7 +1529,10 @@ def get_tracks_needing_analysis() -> List[Dict[str, Any]]:
 
 # Provider State Functions
 
-def save_provider_state(provider: str, auth_data: Dict[str, Any], config: Dict[str, Any]) -> None:
+
+def save_provider_state(
+    provider: str, auth_data: Dict[str, Any], config: Dict[str, Any]
+) -> None:
     """Save provider authentication state to database.
 
     Args:
@@ -1316,10 +1543,13 @@ def save_provider_state(provider: str, auth_data: Dict[str, Any], config: Dict[s
     import json
 
     with get_db_connection() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT OR REPLACE INTO provider_state (provider, authenticated, auth_data, config, updated_at)
             VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-        """, (provider, True, json.dumps(auth_data), json.dumps(config)))
+        """,
+            (provider, True, json.dumps(auth_data), json.dumps(config)),
+        )
         conn.commit()
 
 
@@ -1335,24 +1565,28 @@ def load_provider_state(provider: str) -> Optional[Dict[str, Any]]:
     import json
 
     with get_db_connection() as conn:
-        cursor = conn.execute("""
+        cursor = conn.execute(
+            """
             SELECT authenticated, auth_data, config
             FROM provider_state
             WHERE provider = ?
-        """, (provider,))
+        """,
+            (provider,),
+        )
 
         row = cursor.fetchone()
         if not row:
             return None
 
         return {
-            'authenticated': bool(row['authenticated']),
-            'auth_data': json.loads(row['auth_data']) if row['auth_data'] else {},
-            'config': json.loads(row['config']) if row['config'] else {}
+            "authenticated": bool(row["authenticated"]),
+            "auth_data": json.loads(row["auth_data"]) if row["auth_data"] else {},
+            "config": json.loads(row["config"]) if row["config"] else {},
         }
 
 
 # Metadata Editor Functions
+
 
 def update_track_metadata(track_id: int, **fields) -> bool:
     """Update track metadata fields.
@@ -1368,7 +1602,16 @@ def update_track_metadata(track_id: int, **fields) -> bool:
         return False
 
     # Validate field names
-    valid_fields = {'title', 'artist', 'remix_artist', 'album', 'year', 'bpm', 'key_signature', 'genre'}
+    valid_fields = {
+        "title",
+        "artist",
+        "remix_artist",
+        "album",
+        "year",
+        "bpm",
+        "key_signature",
+        "genre",
+    }
     invalid_fields = set(fields.keys()) - valid_fields
     if invalid_fields:
         raise ValueError(f"Invalid fields: {invalid_fields}")
@@ -1377,21 +1620,23 @@ def update_track_metadata(track_id: int, **fields) -> bool:
     validated_fields = {}
     for field, value in fields.items():
         # Skip None values (allow clearing fields)
-        if value is None or value == '':
+        if value is None or value == "":
             validated_fields[field] = None
             continue
 
         # Type-specific validation
-        if field == 'year':
+        if field == "year":
             try:
                 year_val = int(value)
                 if not (1900 <= year_val <= 2100):
-                    raise ValueError(f"Year must be between 1900 and 2100, got {year_val}")
+                    raise ValueError(
+                        f"Year must be between 1900 and 2100, got {year_val}"
+                    )
                 validated_fields[field] = year_val
             except (ValueError, TypeError) as e:
                 raise ValueError(f"Invalid year value '{value}': {e}")
 
-        elif field == 'bpm':
+        elif field == "bpm":
             try:
                 bpm_val = int(value)
                 if not (1 <= bpm_val <= 300):
@@ -1400,20 +1645,30 @@ def update_track_metadata(track_id: int, **fields) -> bool:
             except (ValueError, TypeError) as e:
                 raise ValueError(f"Invalid BPM value '{value}': {e}")
 
-        elif field in ('title', 'artist', 'remix_artist', 'album', 'genre', 'key_signature'):
+        elif field in (
+            "title",
+            "artist",
+            "remix_artist",
+            "album",
+            "genre",
+            "key_signature",
+        ):
             # String fields: just convert to string and trim
             validated_fields[field] = str(value).strip()
 
     # Build UPDATE query dynamically
-    set_clause = ', '.join(f"{field} = ?" for field in validated_fields.keys())
+    set_clause = ", ".join(f"{field} = ?" for field in validated_fields.keys())
     values = list(validated_fields.values()) + [track_id]
 
     with get_db_connection() as conn:
-        conn.execute(f"""
+        conn.execute(
+            f"""
             UPDATE tracks
             SET {set_clause}
             WHERE id = ?
-        """, values)
+        """,
+            values,
+        )
         conn.commit()
 
     return True
@@ -1430,10 +1685,13 @@ def delete_rating(track_id: int, rating_timestamp: str) -> bool:
         True if rating was deleted
     """
     with get_db_connection() as conn:
-        cursor = conn.execute("""
+        cursor = conn.execute(
+            """
             DELETE FROM ratings
             WHERE track_id = ? AND timestamp = ?
-        """, (track_id, rating_timestamp))
+        """,
+            (track_id, rating_timestamp),
+        )
         conn.commit()
         return cursor.rowcount > 0
 
@@ -1450,16 +1708,19 @@ def update_rating(track_id: int, old_timestamp: str, new_rating_type: str) -> bo
         True if rating was updated
     """
     # Validate rating type
-    valid_types = {'archive', 'like', 'love'}
+    valid_types = {"archive", "like", "love"}
     if new_rating_type not in valid_types:
         raise ValueError(f"Invalid rating type. Must be one of: {valid_types}")
 
     with get_db_connection() as conn:
-        cursor = conn.execute("""
+        cursor = conn.execute(
+            """
             UPDATE ratings
             SET rating_type = ?
             WHERE track_id = ? AND timestamp = ?
-        """, (new_rating_type, track_id, old_timestamp))
+        """,
+            (new_rating_type, track_id, old_timestamp),
+        )
         conn.commit()
         return cursor.rowcount > 0
 
@@ -1475,10 +1736,13 @@ def delete_note(track_id: int, note_timestamp: str) -> bool:
         True if note was deleted
     """
     with get_db_connection() as conn:
-        cursor = conn.execute("""
+        cursor = conn.execute(
+            """
             DELETE FROM notes
             WHERE track_id = ? AND timestamp = ?
-        """, (track_id, note_timestamp))
+        """,
+            (track_id, note_timestamp),
+        )
         conn.commit()
         return cursor.rowcount > 0
 
@@ -1495,10 +1759,13 @@ def update_note(track_id: int, old_timestamp: str, new_note_text: str) -> bool:
         True if note was updated
     """
     with get_db_connection() as conn:
-        cursor = conn.execute("""
+        cursor = conn.execute(
+            """
             UPDATE notes
             SET note_text = ?
             WHERE track_id = ? AND timestamp = ?
-        """, (new_note_text, track_id, old_timestamp))
+        """,
+            (new_note_text, track_id, old_timestamp),
+        )
         conn.commit()
         return cursor.rowcount > 0

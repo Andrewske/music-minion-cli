@@ -37,10 +37,10 @@ def get_available_tracks(ctx: AppContext) -> List[library.Track]:
     active = playlists.get_active_playlist()
     if active:
         playlist_tracks = playlists.get_playlist_tracks(active['id'])
-        playlist_paths = {t['file_path'] for t in playlist_tracks}
+        playlist_paths = {t['local_path'] for t in playlist_tracks}
         available = [
             t for t in ctx.music_tracks
-            if t.file_path in playlist_paths
+            if t.local_path in playlist_paths
         ]
     else:
         available = ctx.music_tracks
@@ -48,7 +48,7 @@ def get_available_tracks(ctx: AppContext) -> List[library.Track]:
     # Exclude archived tracks using O(1) dictionary lookups
     filtered = []
     for t in available:
-        track_id = path_to_id.get(t.file_path)
+        track_id = path_to_id.get(t.local_path)
         # Include if not in DB yet, or in DB but not archived
         if track_id is None or track_id not in archived_ids:
             filtered.append(t)
@@ -68,16 +68,29 @@ def play_track(ctx: AppContext, track: library.Track, playlist_position: Optiona
     Returns:
         (updated_context, should_continue)
     """
-    # Validate track has a local file path and it exists
-    if not track.file_path:
-        safe_print(ctx, f"❌ Cannot play: Track has no local file", "red")
+    # Validate track has a local file path
+    if not track.local_path or not track.local_path.strip():
+        safe_print(ctx, f"❌ Cannot play: No local file available", "red")
         safe_print(ctx, f"   Track: {library.get_display_name(track)}", "yellow")
-        safe_print(ctx, "   This may be a provider track (SoundCloud, Spotify, etc.) that hasn't been downloaded", "yellow")
+        # Check if this is a provider track
+        providers = []
+        if track.soundcloud_id:
+            providers.append("SoundCloud")
+        if track.spotify_id:
+            providers.append("Spotify")
+        if track.youtube_id:
+            providers.append("YouTube")
+        if providers:
+            safe_print(ctx, f"   Available on: {', '.join(providers)}", "yellow")
+            safe_print(ctx, "   Tip: Provider streaming not yet implemented", "cyan")
         return ctx, True
 
-    if not Path(track.file_path).exists():
-        safe_print(ctx, f"❌ File not found: {track.file_path}", "red")
-        safe_print(ctx, "Track may have been moved or deleted", "yellow")
+    # Validate file exists on filesystem
+    if not Path(track.local_path).exists():
+        safe_print(ctx, f"❌ Cannot play: File not found", "red")
+        safe_print(ctx, f"   Path: {track.local_path}", "yellow")
+        safe_print(ctx, "   File may have been moved or deleted since last library scan", "yellow")
+        safe_print(ctx, "   Tip: Run 'library sync local' to update library", "cyan")
         return ctx, True
 
     # Start MPV if not running
@@ -90,7 +103,7 @@ def play_track(ctx: AppContext, track: library.Track, playlist_position: Optiona
         ctx = ctx.with_player_state(new_state)
 
     # Play the track
-    new_state, success = playback.play_file(ctx.player_state, track.file_path)
+    new_state, success = playback.play_file(ctx.player_state, track.local_path)
     ctx = ctx.with_player_state(new_state)
 
     if success:
@@ -104,7 +117,7 @@ def play_track(ctx: AppContext, track: library.Track, playlist_position: Optiona
 
         # Store track in database
         track_id = database.get_or_create_track(
-            track.file_path, track.title, track.artist, track.remix_artist,
+            track.local_path, track.title, track.artist, track.remix_artist,
             track.album, track.genre, track.year, track.duration, track.key, track.bpm
         )
 
@@ -263,7 +276,7 @@ def get_next_track(ctx: AppContext, available_tracks: List[library.Track]) -> Op
         playlist_tracks = playlists.get_playlist_tracks(active['id'])
 
         # Build dict for O(1) lookups of available tracks by file path
-        available_tracks_dict = {t.file_path: t for t in available_tracks}
+        available_tracks_dict = {t.local_path: t for t in available_tracks}
 
         # Loop to find next non-archived track
         attempts = 0
@@ -285,8 +298,8 @@ def get_next_track(ctx: AppContext, available_tracks: List[library.Track]) -> Op
 
             # Check if track is available (not archived) using O(1) dict lookup
             # Also verify file still exists on disk
-            next_track = available_tracks_dict.get(next_db_track['file_path'])
-            if next_track and Path(next_track.file_path).exists():
+            next_track = available_tracks_dict.get(next_db_track['local_path'])
+            if next_track and Path(next_track.local_path).exists():
                 # Found non-archived track - get its position
                 position = playback.get_track_position_in_playlist(playlist_tracks, next_db_track['id'])
                 return (next_track, position)
@@ -301,7 +314,7 @@ def get_next_track(ctx: AppContext, available_tracks: List[library.Track]) -> Op
     # Shuffle mode or no active playlist: random selection
     # Remove current track from options if possible
     if ctx.player_state.current_track and len(available_tracks) > 1:
-        available_tracks = [t for t in available_tracks if t.file_path != ctx.player_state.current_track]
+        available_tracks = [t for t in available_tracks if t.local_path != ctx.player_state.current_track]
 
     if available_tracks:
         track = library.get_random_track(available_tracks)
@@ -442,7 +455,7 @@ def handle_status_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         # Find track info
         current_track = None
         for track in ctx.music_tracks:
-            if track.file_path == status['file']:
+            if track.local_path == status['file']:
                 current_track = track
                 break
 

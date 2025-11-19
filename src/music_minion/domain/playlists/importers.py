@@ -3,35 +3,38 @@ Playlist import functionality for Music Minion CLI.
 Supports importing M3U/M3U8 and Serato .crate playlists.
 """
 
-from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
 import urllib.parse
+from pathlib import Path
+from typing import List, Optional, Tuple
 
 from music_minion.core.database import get_db_connection
-from .crud import create_playlist, add_track_to_playlist
+
+from .crud import add_track_to_playlist, create_playlist
 
 
-def detect_playlist_format(file_path: Path) -> Optional[str]:
+def detect_playlist_format(local_path: Path) -> Optional[str]:
     """
     Detect the format of a playlist file.
 
     Args:
-        file_path: Path to the playlist file
+        local_path: Path to the playlist file
 
     Returns:
         Format string ('m3u', 'm3u8', 'crate') or None if unknown
     """
-    suffix = file_path.suffix.lower()
+    suffix = local_path.suffix.lower()
 
-    if suffix in ['.m3u', '.m3u8']:
-        return 'm3u8'  # Treat both as M3U8 (UTF-8)
-    elif suffix == '.crate':
-        return 'crate'
+    if suffix in [".m3u", ".m3u8"]:
+        return "m3u8"  # Treat both as M3U8 (UTF-8)
+    elif suffix == ".crate":
+        return "crate"
 
     return None
 
 
-def resolve_relative_path(playlist_path: Path, track_path: str, library_root: Path) -> Optional[Path]:
+def resolve_relative_path(
+    playlist_path: Path, track_path: str, library_root: Path
+) -> Optional[Path]:
     """
     Resolve a track path from a playlist to an absolute path.
 
@@ -50,7 +53,7 @@ def resolve_relative_path(playlist_path: Path, track_path: str, library_root: Pa
         Resolved absolute Path or None if track doesn't exist
     """
     # Decode URL encoding if present
-    if '%' in track_path:
+    if "%" in track_path:
         track_path = urllib.parse.unquote(track_path)
 
     # Convert to Path
@@ -67,8 +70,8 @@ def resolve_relative_path(playlist_path: Path, track_path: str, library_root: Pa
             parts = track_path_obj.parts
             # Look for common music directory names
             for i, part in enumerate(parts):
-                if part.lower() in ['music', 'music library', 'itunes', 'serato']:
-                    rel_parts = parts[i+1:]
+                if part.lower() in ["music", "music library", "itunes", "serato"]:
+                    rel_parts = parts[i + 1 :]
                     if rel_parts:
                         candidate = library_root / Path(*rel_parts)
                         if candidate.exists():
@@ -94,16 +97,16 @@ def resolve_relative_path(playlist_path: Path, track_path: str, library_root: Pa
 
 def _add_tracks_from_paths(
     playlist_id: int,
-    playlist_file_path: Path,
+    playlist_local_path: Path,
     track_paths: List[str],
-    library_root: Path
+    library_root: Path,
 ) -> Tuple[int, int, List[str]]:
     """
     Helper function to resolve track paths and add them to a playlist.
 
     Args:
         playlist_id: ID of the playlist to add tracks to
-        playlist_file_path: Path to the playlist file (for relative resolution)
+        playlist_local_path: Path to the playlist file (for relative resolution)
         track_paths: List of track path strings from playlist
         library_root: Root directory of music library
 
@@ -119,21 +122,22 @@ def _add_tracks_from_paths(
 
         for track_path_str in track_paths:
             # Resolve track path
-            resolved_path = resolve_relative_path(playlist_file_path, track_path_str, library_root)
+            resolved_path = resolve_relative_path(
+                playlist_local_path, track_path_str, library_root
+            )
 
             if resolved_path is None:
                 unresolved_paths.append(track_path_str)
                 continue
 
-            # Look up track in database by file path
+            # Look up track in database by local file path
             cursor.execute(
-                "SELECT id FROM tracks WHERE file_path = ?",
-                (str(resolved_path),)
+                "SELECT id FROM tracks WHERE local_path = ?", (str(resolved_path),)
             )
             row = cursor.fetchone()
 
             if row:
-                track_id = row['id']
+                track_id = row["id"]
                 # Add track to playlist
                 try:
                     add_track_to_playlist(playlist_id, track_id)
@@ -149,16 +153,16 @@ def _add_tracks_from_paths(
 
 
 def import_m3u(
-    file_path: Path,
+    local_path: Path,
     playlist_name: str,
     library_root: Path,
-    description: Optional[str] = None
+    description: Optional[str] = None,
 ) -> Tuple[int, int, int, List[str]]:
     """
     Import an M3U/M3U8 playlist file.
 
     Args:
-        file_path: Path to the M3U/M3U8 file
+        local_path: Path to the M3U/M3U8 file
         playlist_name: Name for the imported playlist
         library_root: Root directory of music library
         description: Optional description for the playlist
@@ -170,17 +174,17 @@ def import_m3u(
         - duplicates_skipped: Number of duplicate tracks skipped
         - unresolved_paths: List of track paths that couldn't be resolved
     """
-    if not file_path.exists():
-        raise FileNotFoundError(f"Playlist file not found: {file_path}")
+    if not local_path.exists():
+        raise FileNotFoundError(f"Playlist file not found: {local_path}")
 
     # Read M3U file
     try:
         # Try UTF-8 first (M3U8 standard)
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(local_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
     except UnicodeDecodeError:
         # Fall back to latin-1 for older M3U files
-        with open(file_path, 'r', encoding='latin-1') as f:
+        with open(local_path, "r", encoding="latin-1") as f:
             lines = f.readlines()
 
     # Parse M3U format
@@ -194,11 +198,11 @@ def import_m3u(
         line = line.strip()
 
         # Skip empty lines, comments (except #EXTINF), and header
-        if not line or line.startswith('#EXTM3U'):
+        if not line or line.startswith("#EXTM3U"):
             continue
-        if line.startswith('#') and not line.startswith('#EXTINF'):
+        if line.startswith("#") and not line.startswith("#EXTINF"):
             continue
-        if line.startswith('#EXTINF'):
+        if line.startswith("#EXTINF"):
             continue  # Metadata line, actual path comes next
 
         track_paths.append(line)
@@ -206,32 +210,32 @@ def import_m3u(
     # Create playlist
     playlist_id = create_playlist(
         name=playlist_name,
-        type='manual',
-        description=description or f"Imported from {file_path.name}"
+        type="manual",
+        description=description or f"Imported from {local_path.name}",
     )
 
     # Resolve and add tracks using helper function
     tracks_added, duplicates_skipped, unresolved_paths = _add_tracks_from_paths(
         playlist_id=playlist_id,
-        playlist_file_path=file_path,
+        playlist_local_path=local_path,
         track_paths=track_paths,
-        library_root=library_root
+        library_root=library_root,
     )
 
     return playlist_id, tracks_added, duplicates_skipped, unresolved_paths
 
 
 def import_serato_crate(
-    file_path: Path,
+    local_path: Path,
     playlist_name: str,
     library_root: Path,
-    description: Optional[str] = None
+    description: Optional[str] = None,
 ) -> Tuple[int, int, int, List[str]]:
     """
     Import a Serato .crate playlist file.
 
     Args:
-        file_path: Path to the .crate file
+        local_path: Path to the .crate file
         playlist_name: Name for the imported playlist
         library_root: Root directory of music library
         description: Optional description for the playlist
@@ -243,8 +247,8 @@ def import_serato_crate(
         - duplicates_skipped: Number of duplicate tracks skipped
         - unresolved_paths: List of track paths that couldn't be resolved
     """
-    if not file_path.exists():
-        raise FileNotFoundError(f"Crate file not found: {file_path}")
+    if not local_path.exists():
+        raise FileNotFoundError(f"Crate file not found: {local_path}")
 
     try:
         from pyserato.builder import Builder
@@ -256,7 +260,7 @@ def import_serato_crate(
     # Parse Serato crate
     try:
         builder = Builder()
-        crate = builder.parse_crate(str(file_path))
+        crate = builder.parse_crate(str(local_path))
     except Exception as e:
         raise ValueError(f"Failed to parse Serato crate: {e}")
 
@@ -265,9 +269,9 @@ def import_serato_crate(
     # Note: pyserato object structure may vary by version
     track_paths = []
     try:
-        if hasattr(crate, 'tracks'):
+        if hasattr(crate, "tracks"):
             for track in crate.tracks:
-                if hasattr(track, 'path'):
+                if hasattr(track, "path"):
                     track_paths.append(track.path)
                 elif isinstance(track, str):
                     track_paths.append(track)
@@ -286,32 +290,32 @@ def import_serato_crate(
     # Create playlist
     playlist_id = create_playlist(
         name=playlist_name,
-        type='manual',
-        description=description or f"Imported from {file_path.name}"
+        type="manual",
+        description=description or f"Imported from {local_path.name}",
     )
 
     # Resolve and add tracks using helper function
     tracks_added, duplicates_skipped, unresolved_paths = _add_tracks_from_paths(
         playlist_id=playlist_id,
-        playlist_file_path=file_path,
+        playlist_local_path=local_path,
         track_paths=track_paths,
-        library_root=library_root
+        library_root=library_root,
     )
 
     return playlist_id, tracks_added, duplicates_skipped, unresolved_paths
 
 
 def import_playlist(
-    file_path: Path,
+    local_path: Path,
     playlist_name: Optional[str] = None,
     library_root: Optional[Path] = None,
-    description: Optional[str] = None
+    description: Optional[str] = None,
 ) -> Tuple[int, int, int, List[str]]:
     """
     Import a playlist from a file, auto-detecting format.
 
     Args:
-        file_path: Path to the playlist file
+        local_path: Path to the playlist file
         playlist_name: Name for the imported playlist (defaults to filename without extension)
         library_root: Root directory of music library (defaults to ~/Music)
         description: Optional description for the playlist
@@ -329,21 +333,21 @@ def import_playlist(
     """
     # Default playlist name to filename without extension
     if playlist_name is None:
-        playlist_name = file_path.stem
+        playlist_name = local_path.stem
 
     # Default library root to ~/Music
     if library_root is None:
         library_root = Path.home() / "Music"
 
     # Detect format
-    format_type = detect_playlist_format(file_path)
+    format_type = detect_playlist_format(local_path)
 
-    if format_type == 'm3u8':
-        return import_m3u(file_path, playlist_name, library_root, description)
-    elif format_type == 'crate':
-        return import_serato_crate(file_path, playlist_name, library_root, description)
+    if format_type == "m3u8":
+        return import_m3u(local_path, playlist_name, library_root, description)
+    elif format_type == "crate":
+        return import_serato_crate(local_path, playlist_name, library_root, description)
     else:
         raise ValueError(
-            f"Unsupported playlist format: {file_path.suffix}. "
+            f"Unsupported playlist format: {local_path.suffix}. "
             "Supported formats: .m3u, .m3u8, .crate"
         )

@@ -399,16 +399,15 @@ except Exception:
 
 ## Database Schema
 
-### Current Version: v12
+### Current Version: v14
 **Location**: `src/music_minion/core/database.py`
 
 ### Core Tables
 - `tracks` - Music library metadata (artist, title, album, year, BPM, key, etc.)
   - **Multi-source support (v11+)**: Added `source` column ('local', 'soundcloud', 'spotify', 'youtube')
   - **Provider IDs (v11+)**: `soundcloud_id`, `spotify_id`, `youtube_id` for linking to provider tracks
-  - **Path column migration (v11)**: Added `local_path` column (replaces `file_path` for clarity)
-    - **Backward compatibility**: `file_path` column maintained temporarily, queries use `COALESCE(local_path, file_path)`
-    - **Migration strategy**: Will drop `file_path` in future version after full migration
+  - **Path column (v11+, v14)**: Uses `local_path` column for local file storage
+    - **Migration v14**: Removed legacy `file_path` column (backward compatibility no longer needed)
   - **Provider playlists (v12)**: `soundcloud_playlist_id`, `spotify_playlist_id`, `youtube_playlist_id`
   - **Sync tracking (v12)**: `last_track_count` for incremental provider sync
 - `ratings` - User ratings with timestamps and context

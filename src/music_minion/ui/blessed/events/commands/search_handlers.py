@@ -46,7 +46,7 @@ def handle_search_play_track(ctx: AppContext, ui_state: UIState, track_id: int) 
 
     # Send play command to player
     try:
-        ctx.player_state, success = play_file(ctx.player_state, track['file_path'])
+        ctx.player_state, success = play_file(ctx.player_state, track['local_path'])
         if success:
             ui_state = add_history_line(
                 ui_state,
@@ -145,7 +145,7 @@ def handle_search_edit_metadata(ctx: AppContext, ui_state: UIState, track_id: in
         'tags': tags,
         'notes': notes,
         'ratings': ratings,
-        'file_path': track['file_path']
+        'local_path': track['local_path']
     }
 
     # Close search and open editor

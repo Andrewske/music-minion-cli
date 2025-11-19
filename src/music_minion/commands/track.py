@@ -52,7 +52,7 @@ def handle_add_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bo
             # Find current track info for display
             current_track = None
             for track in ctx.music_tracks:
-                if track.file_path == ctx.player_state.current_track:
+                if track.local_path == ctx.player_state.current_track:
                     current_track = track
                     break
 
@@ -113,7 +113,7 @@ def handle_remove_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext,
             # Find current track info for display
             current_track = None
             for track in ctx.music_tracks:
-                if track.file_path == ctx.player_state.current_track:
+                if track.local_path == ctx.player_state.current_track:
                     current_track = track
                     break
 

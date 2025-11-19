@@ -4,16 +4,15 @@ Admin command handlers for Music Minion CLI.
 Handles: init, scan, migrate, killall, stats, tag (remove/list)
 """
 
-import subprocess
 import glob
 import os
+import subprocess
 import threading
 from pathlib import Path
-from typing import List, Tuple, Optional, Dict, Any
+from typing import Any, Dict, List, Optional, Tuple
 
 from music_minion.context import AppContext
-from music_minion.core import config
-from music_minion.core import database
+from music_minion.core import config, database
 from music_minion.domain import library
 
 # Global scan state (thread-safe)
@@ -53,12 +52,15 @@ def _count_music_files(cfg: config.Config) -> int:
 
         try:
             if cfg.music.scan_recursive:
-                files = path.rglob('*')
+                files = path.rglob("*")
             else:
                 files = path.iterdir()
 
-            for file_path in files:
-                if file_path.is_file() and file_path.suffix.lower() in cfg.music.supported_formats:
+            for local_path in files:
+                if (
+                    local_path.is_file()
+                    and local_path.suffix.lower() in cfg.music.supported_formats
+                ):
                     total += 1
         except (PermissionError, Exception):
             # Silently skip inaccessible directories
@@ -71,55 +73,56 @@ def _threaded_scan_worker(ctx: AppContext) -> None:
     """Background worker thread for library scanning."""
     try:
         # Initialize state
-        _update_scan_state({
-            'phase': 'counting',
-            'files_scanned': 0,
-            'total_files': 0,
-            'current_file': '',
-            'error': None,
-            'completed': False,
-            'tracks': [],
-            'added': 0,
-            'updated': 0,
-            'errors': 0,
-        })
+        _update_scan_state(
+            {
+                "phase": "counting",
+                "files_scanned": 0,
+                "total_files": 0,
+                "current_file": "",
+                "error": None,
+                "completed": False,
+                "tracks": [],
+                "added": 0,
+                "updated": 0,
+                "errors": 0,
+            }
+        )
 
         # Count files first
         total_files = _count_music_files(ctx.config)
-        _update_scan_state({'total_files': total_files, 'phase': 'scanning'})
+        _update_scan_state({"total_files": total_files, "phase": "scanning"})
 
         # Progress callback for scan
         files_scanned = 0
 
-        def progress_callback(file_path: str, track) -> None:
+        def progress_callback(local_path: str, track) -> None:
             nonlocal files_scanned
             files_scanned += 1
-            _update_scan_state({
-                'files_scanned': files_scanned,
-                'current_file': Path(file_path).name
-            })
+            _update_scan_state(
+                {"files_scanned": files_scanned, "current_file": Path(local_path).name}
+            )
 
         # Scan library with progress
         tracks = library.scan_music_library(
-            ctx.config,
-            show_progress=False,
-            progress_callback=progress_callback
+            ctx.config, show_progress=False, progress_callback=progress_callback
         )
 
         if not tracks:
-            _update_scan_state({
-                'completed': True,
-                'error': 'No music files found in configured library paths'
-            })
+            _update_scan_state(
+                {
+                    "completed": True,
+                    "error": "No music files found in configured library paths",
+                }
+            )
             return
 
         # Database phase (batch operation for performance)
-        _update_scan_state({'phase': 'database', 'current_file': ''})
+        _update_scan_state({"phase": "database", "current_file": ""})
 
         try:
             added, updated = database.batch_upsert_tracks(tracks)
             errors = 0
-        except Exception as e:
+        except Exception:
             added = 0
             updated = 0
             errors = len(tracks)
@@ -128,20 +131,24 @@ def _threaded_scan_worker(ctx: AppContext) -> None:
         stats = library.get_library_stats(tracks)
 
         # Mark complete
-        _update_scan_state({
-            'completed': True,
-            'tracks': tracks,
-            'added': added,
-            'updated': updated,
-            'errors': errors,
-            'stats': stats,
-        })
+        _update_scan_state(
+            {
+                "completed": True,
+                "tracks": tracks,
+                "added": added,
+                "updated": updated,
+                "errors": errors,
+                "stats": stats,
+            }
+        )
 
     except Exception as e:
-        _update_scan_state({
-            'completed': True,
-            'error': str(e),
-        })
+        _update_scan_state(
+            {
+                "completed": True,
+                "error": str(e),
+            }
+        )
 
 
 def start_background_scan(ctx: AppContext) -> None:
@@ -191,14 +198,14 @@ def handle_killall_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         (updated_context, should_continue)
     """
     try:
-        result = subprocess.run(['pkill', 'mpv'], capture_output=True)
+        result = subprocess.run(["pkill", "mpv"], capture_output=True)
         if result.returncode == 0:
             print("⛔ Killed all MPV processes")
         else:
             print("No MPV processes found")
 
         # Clean up any leftover sockets
-        sockets = glob.glob('/tmp/mpv-socket-*')
+        sockets = glob.glob("/tmp/mpv-socket-*")
         for socket in sockets:
             try:
                 os.unlink(socket)
@@ -231,16 +238,22 @@ def handle_stats_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         print(f"Rated tracks: {analytics['rated_tracks']}")
         print(f"Total ratings: {analytics['total_ratings']}")
 
-        if analytics['rating_distribution']:
+        if analytics["rating_distribution"]:
             print("\n📈 Rating Distribution:")
-            for rating_type, count in analytics['rating_distribution'].items():
-                emoji = {'archive': '📦', 'skip': '⏭️', 'like': '👍', 'love': '❤️'}.get(rating_type, '❓')
+            for rating_type, count in analytics["rating_distribution"].items():
+                emoji = {"archive": "📦", "skip": "⏭️", "like": "👍", "love": "❤️"}.get(
+                    rating_type, "❓"
+                )
                 print(f"  {emoji} {rating_type}: {count}")
 
-        if analytics['top_rated_tracks']:
+        if analytics["top_rated_tracks"]:
             print("\n🌟 Top Rated Tracks:")
-            for track_data in analytics['top_rated_tracks'][:10]:
-                track_info = f"{track_data['artist']} - {track_data['title']}" if track_data['artist'] else track_data['title']
+            for track_data in analytics["top_rated_tracks"][:10]:
+                track_info = (
+                    f"{track_data['artist']} - {track_data['title']}"
+                    if track_data["artist"]
+                    else track_data["title"]
+                )
                 print(f"  {track_data['rating_count']} ratings: {track_info}")
 
         return ctx, True
@@ -280,7 +293,7 @@ def handle_scan_command(ctx: AppContext) -> Tuple[AppContext, bool]:
             updated = 0
 
         # Show scan results
-        print(f"\n✅ Scan complete!")
+        print("\n✅ Scan complete!")
         print(f"  📝 New tracks: {added}")
         print(f"  🔄 Updated tracks: {updated}")
         if errors:
@@ -288,19 +301,21 @@ def handle_scan_command(ctx: AppContext) -> Tuple[AppContext, bool]:
 
         # Show library stats
         stats = library.get_library_stats(tracks)
-        print(f"\n📚 Library Overview:")
+        print("\n📚 Library Overview:")
         print(f"  Total duration: {stats['total_duration_str']}")
         print(f"  Total size: {stats['total_size_str']}")
         print(f"  Artists: {stats['artists']}")
         print(f"  Albums: {stats['albums']}")
 
-        if stats['formats']:
-            print(f"\n📂 Formats:")
-            for fmt, count in sorted(stats['formats'].items(), key=lambda x: x[1], reverse=True):
+        if stats["formats"]:
+            print("\n📂 Formats:")
+            for fmt, count in sorted(
+                stats["formats"].items(), key=lambda x: x[1], reverse=True
+            ):
                 print(f"  {fmt}: {count} files")
 
-        if stats['avg_bpm']:
-            print(f"\n🎵 DJ Metadata:")
+        if stats["avg_bpm"]:
+            print("\n🎵 DJ Metadata:")
             print(f"  Tracks with BPM: {stats['tracks_with_bpm']}")
             print(f"  Average BPM: {stats['avg_bpm']:.1f}")
             print(f"  Tracks with key: {stats['tracks_with_key']}")
@@ -312,6 +327,7 @@ def handle_scan_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     except Exception as e:
         print(f"❌ Error scanning library: {e}")
         import traceback
+
         traceback.print_exc()
         return ctx, False
 
@@ -331,7 +347,9 @@ def handle_migrate_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     return ctx, True
 
 
-def handle_tag_remove_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
+def handle_tag_remove_command(
+    ctx: AppContext, args: List[str]
+) -> Tuple[AppContext, bool]:
     """Handle tag remove command - blacklist a tag from current track.
 
     Args:
@@ -352,7 +370,7 @@ def handle_tag_remove_command(ctx: AppContext, args: List[str]) -> Tuple[AppCont
     # Find current track
     current_track = None
     for track in ctx.music_tracks:
-        if track.file_path == ctx.player_state.current_track:
+        if track.local_path == ctx.player_state.current_track:
             current_track = track
             break
 
@@ -366,13 +384,15 @@ def handle_tag_remove_command(ctx: AppContext, args: List[str]) -> Tuple[AppCont
         print("Could not find track in database")
         return ctx, True
 
-    track_id = db_track['id']
-    tag_name = ' '.join(args).lower()
+    track_id = db_track["id"]
+    tag_name = " ".join(args).lower()
 
     try:
         # Try to blacklist the tag
         if database.blacklist_tag(track_id, tag_name):
-            print(f"🚫 Blacklisted tag '{tag_name}' from: {library.get_display_name(current_track)}")
+            print(
+                f"🚫 Blacklisted tag '{tag_name}' from: {library.get_display_name(current_track)}"
+            )
             print("   This tag will not be suggested by AI for this track again")
         else:
             print(f"❌ Tag '{tag_name}' not found on this track")
@@ -398,7 +418,7 @@ def handle_tag_list_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     # Find current track
     current_track = None
     for track in ctx.music_tracks:
-        if track.file_path == ctx.player_state.current_track:
+        if track.local_path == ctx.player_state.current_track:
             current_track = track
             break
 
@@ -412,30 +432,36 @@ def handle_tag_list_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         print("Could not find track in database")
         return ctx, True
 
-    track_id = db_track['id']
+    track_id = db_track["id"]
 
     try:
         tags = database.get_track_tags(track_id, include_blacklisted=False)
         blacklisted_tags = database.get_track_tags(track_id, include_blacklisted=True)
-        blacklisted_tags = [t for t in blacklisted_tags if t['blacklisted']]
+        blacklisted_tags = [t for t in blacklisted_tags if t["blacklisted"]]
 
         print(f"🏷️  Tags for: {library.get_display_name(current_track)}")
 
         if tags:
             # Group tags by source
-            ai_tags = [t for t in tags if t['source'] == 'ai']
-            user_tags = [t for t in tags if t['source'] == 'user']
+            ai_tags = [t for t in tags if t["source"] == "ai"]
+            user_tags = [t for t in tags if t["source"] == "user"]
 
             if ai_tags:
-                print(f"   🤖 AI tags ({len(ai_tags)}): {', '.join(t['tag_name'] for t in ai_tags)}")
+                print(
+                    f"   🤖 AI tags ({len(ai_tags)}): {', '.join(t['tag_name'] for t in ai_tags)}"
+                )
 
             if user_tags:
-                print(f"   👤 User tags ({len(user_tags)}): {', '.join(t['tag_name'] for t in user_tags)}")
+                print(
+                    f"   👤 User tags ({len(user_tags)}): {', '.join(t['tag_name'] for t in user_tags)}"
+                )
         else:
             print("   No tags found")
 
         if blacklisted_tags:
-            print(f"   🚫 Blacklisted ({len(blacklisted_tags)}): {', '.join(t['tag_name'] for t in blacklisted_tags)}")
+            print(
+                f"   🚫 Blacklisted ({len(blacklisted_tags)}): {', '.join(t['tag_name'] for t in blacklisted_tags)}"
+            )
 
     except Exception as e:
         print(f"❌ Error getting tags: {e}")

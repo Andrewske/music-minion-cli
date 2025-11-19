@@ -28,7 +28,7 @@ def handle_archive_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     # Find current track
     current_track = None
     for track in ctx.music_tracks:
-        if track.file_path == ctx.player_state.current_track:
+        if track.local_path == ctx.player_state.current_track:
             current_track = track
             break
 
@@ -69,7 +69,7 @@ def handle_like_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     # Find current track
     current_track = None
     for track in ctx.music_tracks:
-        if track.file_path == ctx.player_state.current_track:
+        if track.local_path == ctx.player_state.current_track:
             current_track = track
             break
 
@@ -110,7 +110,7 @@ def handle_love_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     # Find current track
     current_track = None
     for track in ctx.music_tracks:
-        if track.file_path == ctx.player_state.current_track:
+        if track.local_path == ctx.player_state.current_track:
             current_track = track
             break
 
@@ -160,7 +160,7 @@ def handle_note_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, b
     # Find current track
     current_track = None
     for track in ctx.music_tracks:
-        if track.file_path == ctx.player_state.current_track:
+        if track.local_path == ctx.player_state.current_track:
             current_track = track
             break
 

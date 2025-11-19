@@ -113,7 +113,7 @@ def interactive_mode_with_dashboard() -> None:
         # Find track in library
         track = None
         for t in music_tracks:
-            if str(t.file_path) == current_player_state.current_track:
+            if str(t.local_path) == current_player_state.current_track:
                 track = t
                 break
 
@@ -144,7 +144,7 @@ def interactive_mode_with_dashboard() -> None:
             # Find track in library first to get metadata
             track = None
             for t in music_tracks:
-                if str(t.file_path) == current_player_state.current_track:
+                if str(t.local_path) == current_player_state.current_track:
                     track = t
                     break
 
@@ -153,7 +153,7 @@ def interactive_mode_with_dashboard() -> None:
 
             # Get track ID from database
             track_id = database.get_or_create_track(
-                track.file_path, track.title, track.artist, track.remix_artist,
+                track.local_path, track.title, track.artist, track.remix_artist,
                 track.album, track.genre, track.year, track.duration, track.key, track.bpm
             )
 

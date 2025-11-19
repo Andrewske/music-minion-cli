@@ -4,12 +4,11 @@ Local filesystem provider for Music Minion.
 Scans local music directories and provides access to files.
 """
 
-from typing import List, Tuple, Dict, Any, Optional
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
-from ..provider import ProviderConfig, ProviderState, TrackList, normalize_metadata
-from ..scanner import scan_music_library
 from ..metadata import extract_track_metadata
+from ..provider import ProviderConfig, ProviderState, TrackList
 
 
 def init_provider(config: ProviderConfig) -> ProviderState:
@@ -25,7 +24,7 @@ def init_provider(config: ProviderConfig) -> ProviderState:
         config=config,
         authenticated=True,  # No auth needed for local files
         last_sync=None,
-        cache={}
+        cache={},
     )
 
 
@@ -50,7 +49,7 @@ def sync_library(state: ProviderState) -> Tuple[ProviderState, TrackList]:
         state: Current provider state
 
     Returns:
-        (new_state, [(file_path, metadata), ...])
+        (new_state, [(local_path, metadata), ...])
     """
     # Get library paths from config
     # Note: This will be injected via the full Config object in practice
@@ -71,7 +70,7 @@ def search(state: ProviderState, query: str) -> Tuple[ProviderState, TrackList]:
         query: Search query
 
     Returns:
-        (state, [(file_path, metadata), ...])
+        (state, [(local_path, metadata), ...])
 
     Note:
         For local provider, search is better handled at database level.
@@ -91,9 +90,9 @@ def get_stream_url(state: ProviderState, provider_id: str) -> Optional[str]:
     Returns:
         Absolute file path if exists, None otherwise
     """
-    file_path = Path(provider_id).expanduser()
-    if file_path.exists() and file_path.is_file():
-        return str(file_path.absolute())
+    local_path = Path(provider_id).expanduser()
+    if local_path.exists() and local_path.is_file():
+        return str(local_path.absolute())
     return None
 
 
@@ -112,7 +111,9 @@ def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, A
     return state, []
 
 
-def get_playlist_tracks(state: ProviderState, playlist_id: str) -> Tuple[ProviderState, TrackList]:
+def get_playlist_tracks(
+    state: ProviderState, playlist_id: str
+) -> Tuple[ProviderState, TrackList]:
     """Get tracks in a local playlist.
 
     Args:
@@ -128,8 +129,9 @@ def get_playlist_tracks(state: ProviderState, playlist_id: str) -> Tuple[Provide
     return state, []
 
 
-def scan_local_library(library_paths: List[str], supported_formats: List[str],
-                       recursive: bool = True) -> TrackList:
+def scan_local_library(
+    library_paths: List[str], supported_formats: List[str], recursive: bool = True
+) -> TrackList:
     """Scan local music directories and return track data.
 
     Helper function that can be called directly with config parameters.
@@ -140,7 +142,7 @@ def scan_local_library(library_paths: List[str], supported_formats: List[str],
         recursive: Whether to scan subdirectories
 
     Returns:
-        [(file_path, metadata), ...]
+        [(local_path, metadata), ...]
     """
     tracks: TrackList = []
 
@@ -151,34 +153,34 @@ def scan_local_library(library_paths: List[str], supported_formats: List[str],
             continue
 
         # Find all music files
-        files = path.rglob('*') if recursive else path.iterdir()
+        files = path.rglob("*") if recursive else path.iterdir()
 
-        for file_path in files:
-            if not file_path.is_file():
+        for local_path in files:
+            if not local_path.is_file():
                 continue
 
             # Check if supported format
-            if file_path.suffix.lower() not in supported_formats:
+            if local_path.suffix.lower() not in supported_formats:
                 continue
 
             # Extract metadata
             try:
-                track = extract_track_metadata(str(file_path))
+                track = extract_track_metadata(str(local_path))
                 metadata = {
-                    'title': track.title,
-                    'artist': track.artist,
-                    'remix_artist': track.remix_artist,
-                    'album': track.album,
-                    'genre': track.genre,
-                    'year': track.year,
-                    'duration': track.duration,
-                    'bpm': track.bpm,
-                    'key': track.key,
+                    "title": track.title,
+                    "artist": track.artist,
+                    "remix_artist": track.remix_artist,
+                    "album": track.album,
+                    "genre": track.genre,
+                    "year": track.year,
+                    "duration": track.duration,
+                    "bpm": track.bpm,
+                    "key": track.key,
                 }
                 # Remove None values
                 metadata = {k: v for k, v in metadata.items() if v is not None}
 
-                tracks.append((str(file_path.absolute()), metadata))
+                tracks.append((str(local_path.absolute()), metadata))
             except Exception:
                 # Skip files that can't be read
                 continue

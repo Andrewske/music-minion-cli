@@ -6,11 +6,14 @@ and fallback to streaming services.
 """
 
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
 from ..library.models import Track
 
 
-def resolve_playback_uri(track: Track, provider_states: Optional[Dict[str, Any]] = None) -> Optional[str]:
+def resolve_playback_uri(
+    track: Track, provider_states: Optional[Dict[str, Any]] = None
+) -> Optional[str]:
     """Resolve track to playable URI for MPV.
 
     Preference order:
@@ -27,29 +30,33 @@ def resolve_playback_uri(track: Track, provider_states: Optional[Dict[str, Any]]
         Playable URI/path for MPV, or None if track has no available sources
 
     Examples:
-        >>> track = Track(file_path="/home/user/music/song.mp3", soundcloud_id="123")
+        >>> track = Track(local_path="/home/user/music/song.mp3", soundcloud_id="123")
         >>> resolve_playback_uri(track)
         '/home/user/music/song.mp3'  # Prefers local
 
-        >>> track = Track(file_path="", soundcloud_id="123")
+        >>> track = Track(local_path="", soundcloud_id="123")
         >>> resolve_playback_uri(track, {'soundcloud': soundcloud_state})
         'https://api.soundcloud.com/tracks/123/stream?oauth_token=...'
     """
     provider_states = provider_states or {}
 
     # 1. Try local file first (best quality, offline playback)
-    if track.file_path and Path(track.file_path).exists():
-        return track.file_path
+    if track.local_path and Path(track.local_path).exists():
+        return track.local_path
 
     # 2. Try SoundCloud
     if track.soundcloud_id:
-        stream_url = get_soundcloud_stream_url(track.soundcloud_id, provider_states.get('soundcloud'))
+        stream_url = get_soundcloud_stream_url(
+            track.soundcloud_id, provider_states.get("soundcloud")
+        )
         if stream_url:
             return stream_url
 
     # 3. Try Spotify
     if track.spotify_id:
-        stream_url = get_spotify_stream_url(track.spotify_id, provider_states.get('spotify'))
+        stream_url = get_spotify_stream_url(
+            track.spotify_id, provider_states.get("spotify")
+        )
         if stream_url:
             return stream_url
 
@@ -61,7 +68,9 @@ def resolve_playback_uri(track: Track, provider_states: Optional[Dict[str, Any]]
     return None
 
 
-def get_soundcloud_stream_url(track_id: str, provider_state: Optional[Any]) -> Optional[str]:
+def get_soundcloud_stream_url(
+    track_id: str, provider_state: Optional[Any]
+) -> Optional[str]:
     """Get SoundCloud stream URL for a track.
 
     Args:
@@ -75,15 +84,15 @@ def get_soundcloud_stream_url(track_id: str, provider_state: Optional[Any]) -> O
         return None
 
     # Check if authenticated
-    if not provider_state.get('authenticated'):
+    if not provider_state.get("authenticated"):
         return None
 
     # Get OAuth token from provider state
     token = None
-    if hasattr(provider_state, 'cache'):
-        token = provider_state.cache.get('token')
+    if hasattr(provider_state, "cache"):
+        token = provider_state.cache.get("token")
     elif isinstance(provider_state, dict):
-        token = provider_state.get('cache', {}).get('token')
+        token = provider_state.get("cache", {}).get("token")
 
     if not token:
         return None
@@ -93,7 +102,9 @@ def get_soundcloud_stream_url(track_id: str, provider_state: Optional[Any]) -> O
     return f"https://api.soundcloud.com/tracks/{track_id}/stream?oauth_token={token}"
 
 
-def get_spotify_stream_url(track_id: str, provider_state: Optional[Any]) -> Optional[str]:
+def get_spotify_stream_url(
+    track_id: str, provider_state: Optional[Any]
+) -> Optional[str]:
     """Get Spotify stream URL for a track.
 
     Args:
@@ -119,7 +130,9 @@ def get_spotify_stream_url(track_id: str, provider_state: Optional[Any]) -> Opti
     return None
 
 
-def get_youtube_stream_url(video_id: str, provider_state: Optional[Any]) -> Optional[str]:
+def get_youtube_stream_url(
+    video_id: str, provider_state: Optional[Any]
+) -> Optional[str]:
     """Get YouTube stream URL for a video.
 
     Args:
@@ -138,7 +151,7 @@ def get_youtube_stream_url(video_id: str, provider_state: Optional[Any]) -> Opti
 
 def has_local_source(track: Track) -> bool:
     """Check if track has a local file source."""
-    return bool(track.file_path and Path(track.file_path).exists())
+    return bool(track.local_path and Path(track.local_path).exists())
 
 
 def has_streaming_source(track: Track) -> bool:
@@ -154,16 +167,16 @@ def get_available_sources(track: Track) -> list[str]:
     """
     sources = []
 
-    if track.file_path and Path(track.file_path).exists():
-        sources.append('local')
+    if track.local_path and Path(track.local_path).exists():
+        sources.append("local")
 
     if track.soundcloud_id:
-        sources.append('soundcloud')
+        sources.append("soundcloud")
 
     if track.spotify_id:
-        sources.append('spotify')
+        sources.append("spotify")
 
     if track.youtube_id:
-        sources.append('youtube')
+        sources.append("youtube")
 
     return sources

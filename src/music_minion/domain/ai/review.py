@@ -24,7 +24,7 @@ def get_or_generate_tags_with_reasoning(track: Track) -> Tuple[Dict[str, str], b
         Tuple of (tags_with_reasoning_dict, is_newly_generated)
     """
     # Get track from database
-    db_track = get_track_by_path(track.file_path)
+    db_track = get_track_by_path(track.local_path)
     if not db_track:
         raise ValueError("Track not found in database")
 
@@ -85,7 +85,7 @@ def have_tag_conversation(track: Track, initial_tags: Dict[str, str]) -> Optiona
         conversation_lines.append(f"  {tag}: {reasoning}")
 
     # Build context for AI
-    db_track = get_track_by_path(track.file_path)
+    db_track = get_track_by_path(track.local_path)
     track_notes = get_track_notes(db_track['id']) if db_track else []
     notes_text = "\n".join([note['note_text'] for note in track_notes]) if track_notes else "None"
 
@@ -256,7 +256,7 @@ def regenerate_tags_with_feedback(track: Track, conversation: str,
         client = openai.OpenAI(api_key=api_key)
 
         # Get track metadata
-        db_track = get_track_by_path(track.file_path)
+        db_track = get_track_by_path(track.local_path)
         track_notes = get_track_notes(db_track['id']) if db_track else []
         notes_text = "\n".join([note['note_text'] for note in track_notes]) if track_notes else "None"
 

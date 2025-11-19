@@ -22,6 +22,11 @@ from .components.metadata_editor import render_metadata_editor
 from .events.keyboard import handle_key
 from .events.commands import execute_command
 
+# Frame interval constants for background updates
+PLAYER_POLL_INTERVAL = 10  # Poll MPV every 10 frames (~1 second)
+SCAN_POLL_INTERVAL = 5  # Poll scan progress every 5 frames (~0.5 seconds)
+POSITION_UPDATE_THRESHOLD = 0.1  # Update display every ~3 Unicode blocks (100ms)
+
 
 def _check_and_reload_files() -> None:
     """Check for pending file changes and reload if needed."""
@@ -327,16 +332,13 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         # Check for file changes if hot-reload is enabled
         _check_and_reload_files()
 
-        # Poll player state every 10 frames (~1 second at 0.1s timeout)
-        should_poll = frame_count % 10 == 0
+        # Poll player state at configured interval
+        should_poll = frame_count % PLAYER_POLL_INTERVAL == 0
         if should_poll:
             ctx, ui_state = poll_player_state(ctx, ui_state)
-            # Update tracking for position interpolation
-            last_position = ctx.player_state.current_position
-            last_poll_time = time.time()
 
-        # Poll scan state every 5 frames (~0.5 second) for smoother progress updates
-        should_poll_scan = frame_count % 5 == 0
+        # Poll scan state at configured interval for smoother progress updates
+        should_poll_scan = frame_count % SCAN_POLL_INTERVAL == 0
         if should_poll_scan:
             ui_state = poll_scan_state(ui_state)
 
@@ -452,8 +454,11 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
 
             last_input_text = ui_state.input_text
             last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll, ui_state.editor_visible, ui_state.editor_selected, ui_state.editor_mode, ui_state.editor_input, ui_state.search_selected, ui_state.search_scroll, ui_state.search_mode, ui_state.search_detail_scroll, ui_state.search_detail_selection)
-            last_position = ctx.player_state.current_position  # Update position after full redraw (float for smooth updates)
-            last_rendered_position = ctx.player_state.current_position  # Sync rendered position
+
+            # Update position tracking atomically after full redraw
+            last_position = ctx.player_state.current_position
+            last_poll_time = time.time()
+            last_rendered_position = ctx.player_state.current_position
 
         # Check if modal visibility changed (requires full redraw)
         if palette_state_changed and (ui_state.palette_visible != last_palette_state[0] or ui_state.wizard_active != last_palette_state[3] or ui_state.track_viewer_visible != last_palette_state[5] or ui_state.analytics_viewer_visible != last_palette_state[7] or ui_state.editor_visible != last_palette_state[9]):
@@ -525,36 +530,34 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll, ui_state.editor_visible, ui_state.editor_selected, ui_state.editor_mode, ui_state.editor_input, ui_state.search_selected, ui_state.search_scroll, ui_state.search_mode, ui_state.search_detail_scroll, ui_state.search_detail_selection)
 
         else:
-            # Calculate interpolated position for smooth updates between MPV polls
-            # This gives second-by-second visual updates without extra MPV queries
-            if ctx.player_state.is_playing:
+            # Only check for position updates if playing and we have layout
+            if ctx.player_state.is_playing and layout and dashboard_line_mapping:
+                # Calculate interpolated position for smooth updates between MPV polls
+                # This gives sub-second visual updates without extra MPV queries
                 time_since_poll = time.time() - last_poll_time
                 interpolated_position = last_position + time_since_poll
-            else:
-                interpolated_position = last_position
 
-            # Check if interpolated position crossed threshold
-            # Lower threshold for smooth sub-character updates (8 blocks per char, 40 chars = 320 segments)
-            position_changed = abs(interpolated_position - last_rendered_position) >= 0.1
+                # Check if interpolated position crossed threshold
+                position_changed = abs(interpolated_position - last_rendered_position) >= POSITION_UPDATE_THRESHOLD
 
-            if position_changed and layout and dashboard_line_mapping:
-                # Partial update - only update time-sensitive dashboard elements
-                # Create temporary player state with interpolated position for rendering
-                from .components.dashboard import render_dashboard_partial
+                if position_changed:
+                    # Partial update - only update time-sensitive dashboard elements
+                    # Create temporary player state with interpolated position for rendering
+                    from .components.dashboard import render_dashboard_partial
 
-                # Use interpolated position for smooth visual updates
-                display_state = ctx.player_state._replace(current_position=interpolated_position)
+                    # Use interpolated position for smooth visual updates
+                    display_state = ctx.player_state._replace(current_position=interpolated_position)
 
-                render_dashboard_partial(
-                    term,
-                    display_state,
-                    ui_state,
-                    layout['dashboard_y'],
-                    dashboard_line_mapping
-                )
+                    render_dashboard_partial(
+                        term,
+                        display_state,
+                        ui_state,
+                        layout['dashboard_y'],
+                        dashboard_line_mapping
+                    )
 
-                sys.stdout.flush()
-                last_rendered_position = interpolated_position
+                    sys.stdout.flush()
+                    last_rendered_position = interpolated_position
 
         # Wait for input (with timeout for background updates)
         key = term.inkey(timeout=0.1)

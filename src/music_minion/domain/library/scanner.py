@@ -7,25 +7,28 @@ and generating library statistics.
 
 import random
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
 from music_minion.core.config import Config
-from .models import Track
+
 from .metadata import extract_track_metadata, format_duration, format_size
+from .models import Track
 
 
-def is_supported_format(file_path: Path, supported_formats: List[str]) -> bool:
+def is_supported_format(local_path: Path, supported_formats: List[str]) -> bool:
     """Check if file format is supported."""
-    return file_path.suffix.lower() in supported_formats
+    return local_path.suffix.lower() in supported_formats
 
 
-def scan_directory(directory: Path, config: Config, progress_callback=None) -> List[Track]:
+def scan_directory(
+    directory: Path, config: Config, progress_callback=None
+) -> List[Track]:
     """Scan a directory for music files and extract metadata.
 
     Args:
         directory: Directory to scan
         config: Configuration object
-        progress_callback: Optional callback function(file_path, track) for progress updates
+        progress_callback: Optional callback function(local_path, track) for progress updates
 
     Returns:
         List of Track objects
@@ -35,22 +38,24 @@ def scan_directory(directory: Path, config: Config, progress_callback=None) -> L
     try:
         # Get all files if recursive, otherwise just immediate files
         if config.music.scan_recursive:
-            files = directory.rglob('*')
+            files = directory.rglob("*")
         else:
             files = directory.iterdir()
 
-        for file_path in files:
-            if file_path.is_file() and is_supported_format(file_path, config.music.supported_formats):
+        for local_path in files:
+            if local_path.is_file() and is_supported_format(
+                local_path, config.music.supported_formats
+            ):
                 try:
-                    track = extract_track_metadata(str(file_path))
+                    track = extract_track_metadata(str(local_path))
                     tracks.append(track)
 
                     # Call progress callback if provided
                     if progress_callback:
-                        progress_callback(str(file_path), track)
+                        progress_callback(str(local_path), track)
 
                 except Exception as e:
-                    print(f"Error processing {file_path}: {e}")
+                    print(f"Error processing {local_path}: {e}")
 
     except PermissionError:
         print(f"Permission denied accessing: {directory}")
@@ -60,13 +65,15 @@ def scan_directory(directory: Path, config: Config, progress_callback=None) -> L
     return tracks
 
 
-def scan_music_library(config: Config, show_progress: bool = True, progress_callback=None) -> List[Track]:
+def scan_music_library(
+    config: Config, show_progress: bool = True, progress_callback=None
+) -> List[Track]:
     """Scan all configured library paths for music files.
 
     Args:
         config: Configuration object
         show_progress: Whether to print progress messages (deprecated, use progress_callback)
-        progress_callback: Optional callback function(file_path, track) for progress updates
+        progress_callback: Optional callback function(local_path, track) for progress updates
 
     Returns:
         List of Track objects
@@ -106,13 +113,15 @@ def search_tracks(tracks: List[Track], query: str) -> List[Track]:
 
     for track in tracks:
         # Search in various fields
+        # Use string split instead of Path object for better performance in tight loop
+        filename = track.local_path.split("/")[-1] if track.local_path else ""
         search_fields = [
-            track.title or '',
-            track.artist or '',
-            track.album or '',
-            track.genre or '',
-            track.key or '',
-            Path(track.file_path).name if track.file_path else ''
+            track.title or "",
+            track.artist or "",
+            track.album or "",
+            track.genre or "",
+            track.key or "",
+            filename,
         ]
 
         if any(query in field.lower() for field in search_fields):
@@ -124,44 +133,44 @@ def search_tracks(tracks: List[Track], query: str) -> List[Track]:
 def get_tracks_by_key(tracks: List[Track], key: str) -> List[Track]:
     """Get all tracks in a specific key."""
     key = key.lower()
-    return [track for track in tracks
-            if track.key and key in track.key.lower()]
+    return [track for track in tracks if track.key and key in track.key.lower()]
 
 
-def get_tracks_by_bpm_range(tracks: List[Track], min_bpm: float, max_bpm: float) -> List[Track]:
+def get_tracks_by_bpm_range(
+    tracks: List[Track], min_bpm: float, max_bpm: float
+) -> List[Track]:
     """Get tracks within a BPM range."""
-    return [track for track in tracks
-            if track.bpm and min_bpm <= track.bpm <= max_bpm]
+    return [track for track in tracks if track.bpm and min_bpm <= track.bpm <= max_bpm]
 
 
 def get_tracks_by_artist(tracks: List[Track], artist: str) -> List[Track]:
     """Get all tracks by a specific artist."""
     artist = artist.lower()
-    return [track for track in tracks
-            if track.artist and artist in track.artist.lower()]
+    return [
+        track for track in tracks if track.artist and artist in track.artist.lower()
+    ]
 
 
 def get_tracks_by_album(tracks: List[Track], album: str) -> List[Track]:
     """Get all tracks from a specific album."""
     album = album.lower()
-    return [track for track in tracks
-            if track.album and album in track.album.lower()]
+    return [track for track in tracks if track.album and album in track.album.lower()]
 
 
 def get_library_stats(tracks: List[Track]) -> Dict[str, Any]:
     """Get statistics about the music library."""
     if not tracks:
         return {
-            'total_tracks': 0,
-            'total_duration': 0,
-            'total_size': 0,
-            'artists': 0,
-            'albums': 0,
-            'formats': {},
-            'keys': {},
-            'avg_bpm': None,
-            'tracks_with_bpm': 0,
-            'tracks_with_key': 0
+            "total_tracks": 0,
+            "total_duration": 0,
+            "total_size": 0,
+            "artists": 0,
+            "albums": 0,
+            "formats": {},
+            "keys": {},
+            "avg_bpm": None,
+            "tracks_with_bpm": 0,
+            "tracks_with_key": 0,
         }
 
     total_duration = sum(track.duration or 0 for track in tracks)
@@ -193,16 +202,16 @@ def get_library_stats(tracks: List[Track]) -> Dict[str, Any]:
     avg_bpm = sum(bpm_values) / len(bpm_values) if bpm_values else None
 
     return {
-        'total_tracks': len(tracks),
-        'total_duration': total_duration,
-        'total_duration_str': format_duration(total_duration),
-        'total_size': total_size,
-        'total_size_str': format_size(total_size),
-        'artists': len(artists),
-        'albums': len(albums),
-        'formats': formats,
-        'keys': keys,
-        'avg_bpm': avg_bpm,
-        'tracks_with_bpm': tracks_with_bpm,
-        'tracks_with_key': tracks_with_key
+        "total_tracks": len(tracks),
+        "total_duration": total_duration,
+        "total_duration_str": format_duration(total_duration),
+        "total_size": total_size,
+        "total_size_str": format_size(total_size),
+        "artists": len(artists),
+        "albums": len(albums),
+        "formats": formats,
+        "keys": keys,
+        "avg_bpm": avg_bpm,
+        "tracks_with_bpm": tracks_with_bpm,
+        "tracks_with_key": tracks_with_key,
     }
