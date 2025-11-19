@@ -204,8 +204,28 @@ def poll_player_state(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, U
         # If we have a current track, fetch metadata for UI display
         current_file = status.get('file')
         if current_file:
-            # Get track from database
-            db_track = database.get_track_by_path(current_file)
+            # Get track from database (handle both local paths and stream URLs)
+            db_track = None
+
+            # Check if current_file is a stream URL (contains api.soundcloud.com, youtube.com, etc.)
+            if 'api.soundcloud.com/tracks/' in current_file:
+                # Extract SoundCloud track ID from URL
+                # Format: https://api.soundcloud.com/tracks/{id}/stream?oauth_token=...
+                import re
+                match = re.search(r'/tracks/(\d+)', current_file)
+                if match:
+                    soundcloud_id = match.group(1)
+                    db_track = database.get_track_by_provider_id('soundcloud', soundcloud_id)
+            elif 'youtube.com/watch' in current_file or 'youtu.be/' in current_file:
+                # Extract YouTube video ID
+                import re
+                match = re.search(r'(?:v=|youtu\.be/)([a-zA-Z0-9_-]+)', current_file)
+                if match:
+                    youtube_id = match.group(1)
+                    db_track = database.get_track_by_provider_id('youtube', youtube_id)
+            else:
+                # Assume local file path
+                db_track = database.get_track_by_path(current_file)
 
             if db_track:
                 # Build track data for UI display
@@ -346,13 +366,20 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
     last_rendered_position = 0.0  # Track last rendered position for change detection
     dashboard_line_mapping = {}  # Store line offsets from last full dashboard render
     last_dashboard_height = None  # Track dashboard height to avoid unnecessary clears
+    last_track_file = None  # Track previous track to detect changes
 
     while not should_quit:
         # Check for file changes if hot-reload is enabled
         _check_and_reload_files()
 
-        # Poll player state at configured interval
-        should_poll = frame_count % PLAYER_POLL_INTERVAL == 0
+        # Detect track changes (immediate poll for instant metadata)
+        current_track_file = ctx.player_state.current_track
+        track_changed = (current_track_file != last_track_file)
+        if track_changed:
+            last_track_file = current_track_file
+
+        # Poll player state at configured interval OR immediately on track change
+        should_poll = (frame_count % PLAYER_POLL_INTERVAL == 0) or track_changed
         if should_poll:
             ctx, ui_state = poll_player_state(ctx, ui_state)
 

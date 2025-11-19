@@ -88,18 +88,16 @@ def get_soundcloud_stream_url(
         return None
 
     # Get OAuth token from provider state
-    token = None
-    if hasattr(provider_state, "cache"):
-        token = provider_state.cache.get("token")
-    elif isinstance(provider_state, dict):
-        token = provider_state.get("cache", {}).get("token")
+    # Provider state structure: {'authenticated': True, 'token_data': {...}, 'config': {...}}
+    token_data = provider_state.get("token_data", {})
+    access_token = token_data.get("access_token")
 
-    if not token:
+    if not access_token:
         return None
 
     # Return SoundCloud stream URL
     # MPV will follow redirects to the actual progressive HTTP stream
-    return f"https://api.soundcloud.com/tracks/{track_id}/stream?oauth_token={token}"
+    return f"https://api.soundcloud.com/tracks/{track_id}/stream?oauth_token={access_token}"
 
 
 def get_spotify_stream_url(

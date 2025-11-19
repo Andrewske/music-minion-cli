@@ -6,7 +6,7 @@ Shared functions for command parsing, validation, and utilities.
 
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from music_minion.context import AppContext
 from music_minion.core import config
@@ -105,6 +105,28 @@ def ensure_mpv_available() -> bool:
     return True
 
 
+def load_provider_states() -> Dict[str, Any]:
+    """Load all provider authentication states from database.
+
+    Returns:
+        Dictionary mapping provider names to their state data
+    """
+    provider_states = {}
+
+    # Load known providers
+    for provider in ['soundcloud', 'spotify', 'youtube']:
+        state = database.load_provider_state(provider)
+        if state and state.get('authenticated'):
+            # Store in format expected by resolver
+            provider_states[provider] = {
+                'authenticated': True,
+                'token_data': state.get('auth_data', {}),
+                'config': state.get('config', {})
+            }
+
+    return provider_states
+
+
 def ensure_library_loaded(ctx: AppContext) -> tuple[AppContext, bool]:
     """Ensure music library is loaded.
 
@@ -114,6 +136,14 @@ def ensure_library_loaded(ctx: AppContext) -> tuple[AppContext, bool]:
     Returns:
         (updated_context, success)
     """
+    # Load provider states if not already loaded
+    if not ctx.provider_states:
+        provider_states = load_provider_states()
+        if provider_states:
+            # Create new context with provider states using dataclasses.replace
+            from dataclasses import replace
+            ctx = replace(ctx, provider_states=provider_states)
+
     if not ctx.music_tracks:
         safe_print(ctx, "Loading music library...", "blue")
 

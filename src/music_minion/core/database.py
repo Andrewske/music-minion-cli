@@ -1059,6 +1059,37 @@ def get_track_by_id(track_id: int) -> Optional[Dict[str, Any]]:
         return dict(row) if row else None
 
 
+def get_track_by_provider_id(provider: str, provider_id: str) -> Optional[Dict[str, Any]]:
+    """Get track information by provider ID.
+
+    Args:
+        provider: Provider name ('soundcloud', 'spotify', 'youtube')
+        provider_id: Provider-specific track ID
+
+    Returns:
+        Track dict or None if not found
+    """
+    column_map = {
+        'soundcloud': 'soundcloud_id',
+        'spotify': 'spotify_id',
+        'youtube': 'youtube_id'
+    }
+
+    column = column_map.get(provider)
+    if not column:
+        return None
+
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            f"""
+            SELECT * FROM tracks WHERE {column} = ?
+        """,
+            (provider_id,),
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
 def get_track_path_to_id_map() -> Dict[str, int]:
     """Get mapping of file_path to track_id for all tracks in database.
 

@@ -42,7 +42,8 @@ class AppContext:
     player_state: PlayerState
 
     # UI
-    console: Optional[Console]
+    console: Optional[Console] = None
+    provider_states: Dict[str, Any] = field(default_factory=dict)  # Provider auth states (SoundCloud, Spotify, etc.)
     ui_action: Optional[Dict[str, Any]] = field(default=None)
     ui_mode: str = 'cli'  # 'cli' or 'blessed'
     update_ui_state: Optional[Callable[[Dict[str, Any]], None]] = field(default=None)  # Thread-safe UIState updater
@@ -62,6 +63,7 @@ class AppContext:
             config=config,
             music_tracks=[],
             player_state=PlayerState(),
+            provider_states={},
             console=console,
             ui_action=None,
             ui_mode='cli',
@@ -81,6 +83,7 @@ class AppContext:
             config=self.config,
             music_tracks=tracks,
             player_state=self.player_state,
+            provider_states=self.provider_states,
             console=self.console,
             ui_action=self.ui_action,
             ui_mode=self.ui_mode,
@@ -100,6 +103,7 @@ class AppContext:
             config=self.config,
             music_tracks=self.music_tracks,
             player_state=state,
+            provider_states=self.provider_states,
             console=self.console,
             ui_action=self.ui_action,
             ui_mode=self.ui_mode,
@@ -119,6 +123,7 @@ class AppContext:
             config=config,
             music_tracks=self.music_tracks,
             player_state=self.player_state,
+            provider_states=self.provider_states,
             console=self.console,
             ui_action=self.ui_action,
             ui_mode=self.ui_mode,
@@ -138,6 +143,7 @@ class AppContext:
             config=self.config,
             music_tracks=self.music_tracks,
             player_state=self.player_state,
+            provider_states=self.provider_states,
             console=self.console,
             ui_action=action,
             ui_mode=self.ui_mode,

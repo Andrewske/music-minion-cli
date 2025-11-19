@@ -12,6 +12,7 @@ from music_minion.core import database
 from music_minion.domain import library
 from music_minion.domain import playback
 from music_minion.domain import playlists
+from music_minion.domain.playback import resolver
 
 
 def safe_print(ctx: AppContext, message: str, style: Optional[str] = None) -> None:
@@ -30,25 +31,59 @@ def get_available_tracks(ctx: AppContext) -> List[library.Track]:
     # Get archived track IDs
     archived_ids = set(database.get_archived_tracks())
 
-    # Get path-to-id mapping for all tracks (single query instead of N queries)
-    path_to_id = database.get_track_path_to_id_map()
+    # Build track identifier to ID map for archived check (handles both local and provider tracks)
+    all_db_tracks = database.get_all_tracks()
+    identifier_to_id = {}
+    for db_track in all_db_tracks:
+        identifier = (
+            db_track.get('local_path') or '',
+            db_track.get('soundcloud_id') or '',
+            db_track.get('spotify_id') or '',
+            db_track.get('youtube_id') or ''
+        )
+        identifier_to_id[identifier] = db_track['id']
 
     # Filter by active playlist if set
     active = playlists.get_active_playlist()
     if active:
         playlist_tracks = playlists.get_playlist_tracks(active['id'])
-        playlist_paths = {t['local_path'] for t in playlist_tracks}
-        available = [
-            t for t in ctx.music_tracks
-            if t.local_path in playlist_paths
-        ]
+
+        # Build a set of track identifiers from playlist
+        # Use tuple of (local_path, soundcloud_id, spotify_id, youtube_id) for matching
+        playlist_identifiers = set()
+        for pt in playlist_tracks:
+            identifier = (
+                pt.get('local_path') or '',
+                pt.get('soundcloud_id') or '',
+                pt.get('spotify_id') or '',
+                pt.get('youtube_id') or ''
+            )
+            playlist_identifiers.add(identifier)
+
+        # Filter tracks by matching identifiers
+        available = []
+        for t in ctx.music_tracks:
+            track_identifier = (
+                t.local_path or '',
+                t.soundcloud_id or '',
+                t.spotify_id or '',
+                t.youtube_id or ''
+            )
+            if track_identifier in playlist_identifiers:
+                available.append(t)
     else:
         available = ctx.music_tracks
 
     # Exclude archived tracks using O(1) dictionary lookups
     filtered = []
     for t in available:
-        track_id = path_to_id.get(t.local_path)
+        track_identifier = (
+            t.local_path or '',
+            t.soundcloud_id or '',
+            t.spotify_id or '',
+            t.youtube_id or ''
+        )
+        track_id = identifier_to_id.get(track_identifier)
         # Include if not in DB yet, or in DB but not archived
         if track_id is None or track_id not in archived_ids:
             filtered.append(t)
@@ -68,29 +103,26 @@ def play_track(ctx: AppContext, track: library.Track, playlist_position: Optiona
     Returns:
         (updated_context, should_continue)
     """
-    # Validate track has a local file path
-    if not track.local_path or not track.local_path.strip():
-        safe_print(ctx, f"❌ Cannot play: No local file available", "red")
-        safe_print(ctx, f"   Track: {library.get_display_name(track)}", "yellow")
-        # Check if this is a provider track
-        providers = []
-        if track.soundcloud_id:
-            providers.append("SoundCloud")
-        if track.spotify_id:
-            providers.append("Spotify")
-        if track.youtube_id:
-            providers.append("YouTube")
-        if providers:
-            safe_print(ctx, f"   Available on: {', '.join(providers)}", "yellow")
-            safe_print(ctx, "   Tip: Provider streaming not yet implemented", "cyan")
-        return ctx, True
+    # Resolve track to playable URI (handles local files and streaming URLs)
+    playback_uri = resolver.resolve_playback_uri(track, ctx.provider_states)
 
-    # Validate file exists on filesystem
-    if not Path(track.local_path).exists():
-        safe_print(ctx, f"❌ Cannot play: File not found", "red")
-        safe_print(ctx, f"   Path: {track.local_path}", "yellow")
-        safe_print(ctx, "   File may have been moved or deleted since last library scan", "yellow")
-        safe_print(ctx, "   Tip: Run 'library sync local' to update library", "cyan")
+    if not playback_uri:
+        safe_print(ctx, f"❌ Cannot play: No playable source available", "red")
+        safe_print(ctx, f"   Track: {library.get_display_name(track)}", "yellow")
+
+        # Show available sources
+        sources = resolver.get_available_sources(track)
+        if sources:
+            safe_print(ctx, f"   Sources: {', '.join(sources)}", "yellow")
+
+            # Check if streaming sources need authentication
+            if 'soundcloud' in sources and not ctx.provider_states.get('soundcloud', {}).get('authenticated'):
+                safe_print(ctx, "   Tip: SoundCloud not authenticated. Run 'library auth soundcloud'", "cyan")
+            if 'spotify' in sources and not ctx.provider_states.get('spotify', {}).get('authenticated'):
+                safe_print(ctx, "   Tip: Spotify not authenticated. Run 'library auth spotify'", "cyan")
+        else:
+            safe_print(ctx, "   No sources available for this track", "yellow")
+
         return ctx, True
 
     # Start MPV if not running
@@ -102,8 +134,8 @@ def play_track(ctx: AppContext, track: library.Track, playlist_position: Optiona
             return ctx, True
         ctx = ctx.with_player_state(new_state)
 
-    # Play the track
-    new_state, success = playback.play_file(ctx.player_state, track.local_path)
+    # Play the track (works for both local files and streaming URLs)
+    new_state, success = playback.play_file(ctx.player_state, playback_uri)
     ctx = ctx.with_player_state(new_state)
 
     if success:
@@ -115,14 +147,27 @@ def play_track(ctx: AppContext, track: library.Track, playlist_position: Optiona
         if dj_info != "No DJ metadata":
             safe_print(ctx, f"   {dj_info}", "magenta")
 
-        # Store track in database
-        track_id = database.get_or_create_track(
-            track.local_path, track.title, track.artist, track.remix_artist,
-            track.album, track.genre, track.year, track.duration, track.key, track.bpm
-        )
+        # Find track in database (use provider ID for streaming tracks, local_path for local files)
+        track_id = None
+        if track.soundcloud_id:
+            db_track = database.get_track_by_provider_id('soundcloud', track.soundcloud_id)
+            track_id = db_track['id'] if db_track else None
+        elif track.spotify_id:
+            db_track = database.get_track_by_provider_id('spotify', track.spotify_id)
+            track_id = db_track['id'] if db_track else None
+        elif track.youtube_id:
+            db_track = database.get_track_by_provider_id('youtube', track.youtube_id)
+            track_id = db_track['id'] if db_track else None
+        elif track.local_path:
+            # For local files, use get_or_create_track
+            track_id = database.get_or_create_track(
+                track.local_path, track.title, track.artist, track.remix_artist,
+                track.album, track.genre, track.year, track.duration, track.key, track.bpm
+            )
 
-        # Start playback session
-        database.start_playback_session(track_id)
+        # Start playback session if track found in database
+        if track_id:
+            database.start_playback_session(track_id)
 
         # Track position if playing from active playlist
         active = playlists.get_active_playlist()

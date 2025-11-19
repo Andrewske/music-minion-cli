@@ -129,9 +129,14 @@ def render_dashboard(
             # Track is playing but no metadata yet (not in DB or lookup failed)
             import os
 
-            filename = os.path.basename(player_state.current_track)
-            lines.append(term.bold_white(f"{ICONS['note']} {filename}"))
-            lines.append(term.white("  Loading metadata..."))
+            # Check if current_track is a URL (don't show OAuth tokens!)
+            if player_state.current_track.startswith('http://') or player_state.current_track.startswith('https://'):
+                lines.append(term.bold_white(f"{ICONS['note']} Streaming track..."))
+                lines.append(term.white("  Loading metadata..."))
+            else:
+                filename = os.path.basename(player_state.current_track)
+                lines.append(term.bold_white(f"{ICONS['note']} {filename}"))
+                lines.append(term.white("  Loading metadata..."))
     else:
         lines.append(term.white(f"{ICONS['note']} No track playing"))
         lines.append(term.white("  Waiting for music..."))
