@@ -345,6 +345,12 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         """Thread-safe UIState update from background threads."""
         nonlocal ui_state
         with ui_state_lock:
+            # Handle history_messages specially (add to history)
+            if 'history_messages' in updates:
+                messages = updates.pop('history_messages')
+                for text, color in messages:
+                    ui_state = add_history_line(ui_state, text, color)
+
             # Replace state with updated fields
             ui_state = dataclasses.replace(ui_state, **updates)
 
@@ -367,6 +373,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
     dashboard_line_mapping = {}  # Store line offsets from last full dashboard render
     last_dashboard_height = None  # Track dashboard height to avoid unnecessary clears
     last_track_file = None  # Track previous track to detect changes
+    last_sync_active = False  # Track sync state to force clear when it changes
 
     while not should_quit:
         # Check for file changes if hot-reload is enabled
@@ -426,9 +433,13 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     0  # Dashboard always starts at y=0
                 )
 
-            # Only clear screen if dashboard height changed (or first render)
+            # Detect sync state change (force clear when sync completes)
+            sync_state_changed = ui_state.sync_active != last_sync_active
+            last_sync_active = ui_state.sync_active
+
+            # Only clear screen if dashboard height changed, sync state changed, or first render
             height_changed = last_dashboard_height != dashboard_height
-            if height_changed or last_dashboard_height is None:
+            if height_changed or sync_state_changed or last_dashboard_height is None:
                 # Clear screen and re-render everything
                 print(term.clear)
 

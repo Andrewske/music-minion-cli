@@ -44,7 +44,21 @@ def init_provider(config: ProviderConfig) -> ProviderState:
         auth_data = db_state["auth_data"]
 
         # Check if token expired
-        if not _is_token_expired(auth_data):
+        if _is_token_expired(auth_data):
+            # Try to refresh the token
+            refreshed_token = _refresh_token(auth_data)
+            if refreshed_token:
+                # Update database with refreshed token
+                database.save_provider_state("soundcloud", refreshed_token, db_state.get("config", {}))
+                return ProviderState(
+                    config=config,
+                    authenticated=True,
+                    last_sync=None,
+                    cache={"token_data": refreshed_token},
+                )
+            # Refresh failed, fall through to check file tokens
+        else:
+            # Token still valid
             return ProviderState(
                 config=config,
                 authenticated=True,
@@ -55,14 +69,28 @@ def init_provider(config: ProviderConfig) -> ProviderState:
     # Fall back to file-based tokens (for backward compatibility)
     token_data = _load_user_tokens()
 
-    if token_data and not _is_token_expired(token_data):
-        # Have valid token from file
-        return ProviderState(
-            config=config,
-            authenticated=True,
-            last_sync=None,
-            cache={"token_data": token_data},
-        )
+    if token_data:
+        if _is_token_expired(token_data):
+            # Try to refresh the file-based token
+            refreshed_token = _refresh_token(token_data)
+            if refreshed_token:
+                # Save to database for future use
+                database.save_provider_state("soundcloud", refreshed_token, {})
+                return ProviderState(
+                    config=config,
+                    authenticated=True,
+                    last_sync=None,
+                    cache={"token_data": refreshed_token},
+                )
+            # Refresh failed, fall through to unauthenticated
+        else:
+            # Token still valid
+            return ProviderState(
+                config=config,
+                authenticated=True,
+                last_sync=None,
+                cache={"token_data": token_data},
+            )
 
     # Not authenticated or token expired
     return ProviderState(config=config, authenticated=False, last_sync=None, cache={})
@@ -490,6 +518,7 @@ def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, A
                         "description": playlist.get("description"),
                         "permalink": playlist.get("permalink_url"),
                         "last_modified": playlist.get("last_modified"),
+                        "created_at": playlist.get("created_at"),
                     }
                 )
 

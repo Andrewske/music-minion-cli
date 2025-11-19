@@ -453,13 +453,14 @@ def sync_library_background(
             update_ui_state({
                 "sync_active": False,
                 "sync_current_status": "Complete",
-                "sync_stats": {"created": data["created"], "skipped": data["skipped"]}
+                "sync_stats": {"created": data["created"], "skipped": data["skipped"]},
+                "history_messages": [
+                    ("", "white"),
+                    (f"✓ Library sync complete! (task {task_id})", "green"),
+                    (f"  Created: {data['created']}, Skipped: {data['skipped']}", "green"),
+                    ("", "white")
+                ]
             })
-            # Show final summary in history
-            safe_print(ctx, "", style="")
-            safe_print(ctx, f"✓ Library sync complete! (task {task_id})", style="bold green")
-            safe_print(ctx, f"  Created: {data['created']}, Skipped: {data['skipped']}", style="green")
-            safe_print(ctx, "")
 
     # Background thread
     def run_sync():
@@ -579,6 +580,7 @@ def sync_playlists(
             pl_id = pl_data['id']
             pl_track_count = pl_data.get('track_count', 0)
             pl_last_modified = pl_data.get('last_modified')
+            pl_created_at = pl_data.get('created_at')
 
             print_if_not_silent(f"\n[{i}/{len(playlists)}] Processing: {pl_name}")
             print_if_not_silent(f"  Tracks: {pl_track_count}")
@@ -667,9 +669,10 @@ def sync_playlists(
                             UPDATE playlists
                             SET last_synced_at = ?,
                                 provider_last_modified = ?,
+                                provider_created_at = ?,
                                 updated_at = CURRENT_TIMESTAMP
                             WHERE id = ?
-                        """, (datetime.now().isoformat(), pl_last_modified, playlist_id))
+                        """, (datetime.now().isoformat(), pl_last_modified, pl_created_at, playlist_id))
                         conn.commit()
 
                     print_if_not_silent(f"  ✅ Updated '{pl_name}' with {len(track_ids)} tracks", style="bold green")
@@ -705,9 +708,10 @@ def sync_playlists(
                             UPDATE playlists
                             SET {provider_id_field} = ?,
                                 last_synced_at = ?,
-                                provider_last_modified = ?
+                                provider_last_modified = ?,
+                                provider_created_at = ?
                             WHERE id = ?
-                        """, (pl_id, datetime.now().isoformat(), pl_last_modified, playlist_id))
+                        """, (pl_id, datetime.now().isoformat(), pl_last_modified, pl_created_at, playlist_id))
                         conn.commit()
 
                     # Add tracks to playlist
@@ -838,13 +842,15 @@ def sync_playlists_background(ctx: AppContext, provider_name: str, full: bool = 
         elif event_type == "complete":
             update_ui_state({
                 "sync_active": False,
-                "sync_current_status": "Complete"
+                "sync_current_status": "Complete",
+                "history_messages": [
+                    ("", "white"),
+                    (f"✓ Playlist sync complete! (task {task_id})", "green"),
+                    (f"  Created: {data['created']}, Updated: {data['updated']}, Skipped: {data['skipped']}, Failed: {data['failed']}", "green"),
+                    (f"  Total tracks: {data.get('total_tracks', 0)}", "green"),
+                    ("", "white")
+                ]
             })
-            # Show final summary in history
-            safe_print(ctx, "", style="")
-            safe_print(ctx, f"✓ Playlist sync complete! (task {task_id})", style="bold green")
-            safe_print(ctx, f"  Created: {data['created']}, Updated: {data['updated']}, Skipped: {data['skipped']}, Failed: {data['failed']}", style="green")
-            safe_print(ctx, "")
 
     # Background thread
     def run_sync():

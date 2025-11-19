@@ -170,35 +170,57 @@ def get_all_playlists() -> List[Dict[str, Any]]:
 def get_playlists_sorted_by_recent(provider: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Get all playlists sorted by recently played/added, optionally filtered by provider.
-    Playlists with last_played_at come first (most recent first),
-    then playlists by updated_at (most recent first).
+
+    Sorting logic:
+    - For provider playlists (soundcloud, spotify, etc.): Sort by provider_created_at DESC (newest first)
+    - For local playlists: Sort by last_played_at DESC, then updated_at DESC
+    - For mixed ('all' or None): Combine both approaches
 
     Args:
         provider: Optional provider filter ('local', 'soundcloud', 'spotify', 'youtube', 'all', or None)
                   - 'local': Only playlists without provider IDs
-                  - 'soundcloud': Only SoundCloud playlists
-                  - 'spotify': Only Spotify playlists
-                  - 'youtube': Only YouTube playlists
-                  - 'all' or None: All playlists (no filtering)
+                  - 'soundcloud': Only SoundCloud playlists (sorted by creation date)
+                  - 'spotify': Only Spotify playlists (sorted by creation date)
+                  - 'youtube': Only YouTube playlists (sorted by creation date)
+                  - 'all' or None: All playlists (mixed sorting)
 
     Returns:
         List of playlist dicts with id, name, type, description, track_count, created_at, updated_at, last_played_at
     """
     # Build WHERE clause based on provider
     where_clause = ""
+    order_clause = ""
+
     if provider == 'local':
         where_clause = """
             WHERE soundcloud_playlist_id IS NULL
               AND spotify_playlist_id IS NULL
         """
-    elif provider == 'soundcloud':
-        where_clause = "WHERE soundcloud_playlist_id IS NOT NULL"
-    elif provider == 'spotify':
-        where_clause = "WHERE spotify_playlist_id IS NOT NULL"
-    # Note: youtube_playlist_id column doesn't exist yet in schema
-    # elif provider == 'youtube':
-    #     where_clause = "WHERE youtube_playlist_id IS NOT NULL"
-    # else: 'all' or None - no filter
+        # Local playlists: Sort by play history
+        order_clause = """
+            ORDER BY
+                CASE WHEN last_played_at IS NULL THEN 1 ELSE 0 END,
+                last_played_at DESC,
+                updated_at DESC
+        """
+    elif provider in ('soundcloud', 'spotify', 'youtube'):
+        # Provider playlists: Sort by creation date on the provider
+        provider_id_field = f"{provider}_playlist_id"
+        where_clause = f"WHERE {provider_id_field} IS NOT NULL"
+        order_clause = """
+            ORDER BY
+                CASE WHEN provider_created_at IS NULL THEN 1 ELSE 0 END,
+                provider_created_at DESC
+        """
+    else:
+        # Mixed (all or None): Sort by play history for local, creation date for providers
+        order_clause = """
+            ORDER BY
+                CASE WHEN last_played_at IS NULL THEN 1 ELSE 0 END,
+                last_played_at DESC,
+                provider_created_at DESC,
+                updated_at DESC
+        """
 
     with get_db_connection() as conn:
         cursor = conn.execute(f"""
@@ -210,13 +232,11 @@ def get_playlists_sorted_by_recent(provider: Optional[str] = None) -> List[Dict[
                 track_count,
                 created_at,
                 updated_at,
-                last_played_at
+                last_played_at,
+                provider_created_at
             FROM playlists
             {where_clause}
-            ORDER BY
-                CASE WHEN last_played_at IS NULL THEN 1 ELSE 0 END,
-                last_played_at DESC,
-                updated_at DESC
+            {order_clause}
         """)
         return [dict(row) for row in cursor.fetchall()]
 

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 
 def get_database_path() -> Path:
@@ -546,6 +546,19 @@ def migrate_database(conn, current_version: int) -> None:
                 raise
 
         print("  ✓ Migration to v15 complete: Playlist sync timestamps added")
+        conn.commit()
+
+    if current_version < 16:
+        # Migration from v15 to v16: Add provider_created_at for sorting playlists by creation date
+
+        # Add provider_created_at column to track when playlists were created on the provider (e.g., SoundCloud)
+        try:
+            conn.execute("ALTER TABLE playlists ADD COLUMN provider_created_at TIMESTAMP")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+
+        print("  ✓ Migration to v16 complete: Added provider_created_at column")
         conn.commit()
 
 
