@@ -7,6 +7,7 @@ from typing import Iterable, Dict, Any
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.document import Document
 
+from music_minion.core import database
 from music_minion.domain import playlists as playlist_module
 
 
@@ -160,8 +161,14 @@ class PlaylistCompleter(Completer):
         word = document.get_word_before_cursor().lower()
 
         try:
-            # Fetch playlists sorted by recently played
-            playlists = playlist_module.get_playlists_sorted_by_recent()
+            # Get active library from database
+            with database.get_db_connection() as conn:
+                cursor = conn.execute("SELECT provider FROM active_library WHERE id = 1")
+                row = cursor.fetchone()
+                active_library = row['provider'] if row else 'local'
+
+            # Fetch playlists sorted by recently played (filtered by active library)
+            playlists = playlist_module.get_playlists_sorted_by_recent(provider=active_library)
 
             for pl in playlists:
                 name = pl['name']

@@ -65,6 +65,13 @@ def _refresh_ui_state_from_db(ui_state: UIState, ctx: AppContext) -> UIState:
         shuffle_enabled = playback_state.get_shuffle_mode()
         ui_state = replace(ui_state, shuffle_enabled=shuffle_enabled)
 
+        # Update active library
+        with database.get_db_connection() as conn:
+            cursor = conn.execute("SELECT provider FROM active_library WHERE id = 1")
+            row = cursor.fetchone()
+            active_library = row['provider'] if row else 'local'
+        ui_state = replace(ui_state, active_library=active_library)
+
         # Update playlist info
         active = playlists.get_active_playlist()
         if active:
@@ -450,7 +457,7 @@ def _process_ui_action(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, 
 
     if action['type'] == 'show_playlist_palette':
         # Show playlist palette with loaded items
-        items = load_playlist_items()
+        items = load_playlist_items(ui_state.active_library)
         ui_state = show_playlist_palette(ui_state, items)
 
     elif action['type'] == 'start_wizard':

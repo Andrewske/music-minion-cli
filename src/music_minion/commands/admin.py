@@ -113,41 +113,16 @@ def _threaded_scan_worker(ctx: AppContext) -> None:
             })
             return
 
-        # Database phase
+        # Database phase (batch operation for performance)
         _update_scan_state({'phase': 'database', 'current_file': ''})
 
-        added = 0
-        updated = 0
-        errors = 0
-        db_processed = 0
-
-        for track in tracks:
-            try:
-                # Check if track already exists
-                existing = database.get_track_by_path(track.file_path)
-                if existing:
-                    updated += 1
-                else:
-                    added += 1
-
-                # Add or update track in database
-                database.get_or_create_track(
-                    track.file_path, track.title, track.artist, track.remix_artist,
-                    track.album, track.genre, track.year, track.duration, track.key, track.bpm
-                )
-
-                db_processed += 1
-                _update_scan_state({
-                    'files_scanned': db_processed,
-                    'total_files': len(tracks),
-                    'current_file': Path(track.file_path).name,
-                    'added': added,
-                    'updated': updated,
-                    'errors': errors,
-                })
-
-            except Exception as e:
-                errors += 1
+        try:
+            added, updated = database.batch_upsert_tracks(tracks)
+            errors = 0
+        except Exception as e:
+            added = 0
+            updated = 0
+            errors = len(tracks)
 
         # Compute stats
         stats = library.get_library_stats(tracks)
@@ -293,29 +268,16 @@ def handle_scan_command(ctx: AppContext) -> Tuple[AppContext, bool]:
             print("❌ No music files found in configured library paths")
             return ctx, True
 
-        # Add all tracks to database
+        # Add all tracks to database (batch operation for performance)
         print(f"\n💾 Adding {len(tracks)} tracks to database...")
-        added = 0
-        updated = 0
-        errors = 0
-
-        for track in tracks:
-            try:
-                # Check if track already exists
-                existing = database.get_track_by_path(track.file_path)
-                if existing:
-                    updated += 1
-                else:
-                    added += 1
-
-                # Add or update track in database
-                database.get_or_create_track(
-                    track.file_path, track.title, track.artist, track.remix_artist,
-                    track.album, track.genre, track.year, track.duration, track.key, track.bpm
-                )
-            except Exception as e:
-                errors += 1
-                print(f"  Error processing {track.file_path}: {e}")
+        try:
+            added, updated = database.batch_upsert_tracks(tracks)
+            errors = 0
+        except Exception as e:
+            print(f"  Error batch processing tracks: {e}")
+            errors = len(tracks)
+            added = 0
+            updated = 0
 
         # Show scan results
         print(f"\n✅ Scan complete!")

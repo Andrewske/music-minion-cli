@@ -416,9 +416,8 @@ def interactive_mode_blessed() -> None:
     """Run the interactive mode with blessed UI."""
     global current_config, current_player_state, music_tracks
 
-    # Load config if not already loaded
-    if not current_config.music.library_paths:
-        current_config = config.load_config()
+    # Always load config from file
+    current_config = config.load_config()
 
     # Load music library using context
     ctx = helpers.create_context_from_globals()
@@ -459,9 +458,8 @@ def interactive_mode() -> None:
     import os
     from .context import AppContext
 
-    # Load config if not already loaded
-    if not current_config.music.library_paths:
-        current_config = config.load_config()
+    # Always load config from file
+    current_config = config.load_config()
 
     # Run database migrations on startup
     database.init_database()

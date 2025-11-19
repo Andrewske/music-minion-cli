@@ -72,10 +72,18 @@ music-minion/
 │   │   │   ├── models.py       # Track data models
 │   │   │   ├── scanner.py      # Library scanning
 │   │   │   ├── metadata.py     # Metadata extraction
+│   │   │   ├── provider.py     # Provider protocol (abstract interface)
+│   │   │   ├── deduplication.py # TF-IDF track matching across providers
+│   │   │   ├── import_tracks.py # Batch provider track import
+│   │   │   ├── providers/      # Provider implementations
+│   │   │   │   ├── __init__.py # Provider registry
+│   │   │   │   ├── local.py    # Local file provider
+│   │   │   │   └── soundcloud.py # SoundCloud OAuth + API client
 │   │   │   └── __init__.py
 │   │   ├── playback/           # Audio playback
 │   │   │   ├── player.py       # MPV integration
 │   │   │   ├── state.py        # Playback state management
+│   │   │   ├── resolver.py     # Multi-source stream URL resolution
 │   │   │   └── __init__.py
 │   │   ├── playlists/          # Playlist management
 │   │   │   ├── crud.py         # Playlist CRUD operations
@@ -85,12 +93,14 @@ music-minion/
 │   │   │   ├── exporters.py    # Export to M3U8/Serato formats
 │   │   │   └── __init__.py
 │   │   └── sync/               # Bidirectional metadata sync
-│   │       ├── engine.py       # Sync engine
+│   │       ├── engine.py       # Sync engine (local files)
+│   │       ├── provider_metadata.py # Provider tag sync (database ↔ file metadata)
 │   │       └── __init__.py
 │   │
 │   ├── commands/               # Command handlers
 │   │   ├── admin.py            # Admin commands (quit, help)
 │   │   ├── ai.py               # AI commands
+│   │   ├── library.py          # Library management commands (multi-source)
 │   │   ├── playback.py         # Playback commands
 │   │   ├── playlist.py         # Playlist commands
 │   │   ├── rating.py           # Rating commands
@@ -188,10 +198,33 @@ music-minion/
 - **Command Handler Pattern**: `(AppContext, str, list) -> (AppContext, bool)`
 - **Benefits**: Clear data flow, easier testing, no hidden mutations
 
+### Multi-Source Provider Architecture
+- **Provider Protocol**: Abstract interface in `domain/library/provider.py`
+  - Pure functions: `authenticate()`, `sync_library()`, `get_stream_url()`
+  - Immutable state: `ProviderState` dataclass with builder methods
+  - Explicit state passing: No global variables or class instance state
+- **Provider Registry**: `domain/library/providers/__init__.py`
+  - Maps provider names to implementations
+  - Currently: `local` (filesystem), `soundcloud` (OAuth + API)
+  - Future: `spotify`, `youtube`
+- **Track Deduplication**: TF-IDF text matching in `deduplication.py`
+  - Fast batch matching (~10ms per track)
+  - Cosine similarity with configurable threshold
+  - Manual correction workflow via CSV export/import
+- **Batch Import**: `import_tracks.py` with transaction safety
+  - Whitelist validation for SQL injection protection
+  - Atomic operations with explicit rollback
+  - Progress reporting (1% intervals)
+- **Provider Metadata Sync**: `sync/provider_metadata.py`
+  - Bidirectional: database tags ↔ file metadata
+  - Atomic file operations (copy-to-temp pattern)
+  - Source tracking prevents data loss
+
 ### Audio Integration
 - **MPV with JSON IPC** for cross-platform audio playback
 - Handles complex audio processing while focusing on curation logic
 - Socket-based communication for control from anywhere
+- **Multi-source playback**: `playback/resolver.py` resolves stream URLs for providers
 
 ### Data Storage Strategy
 - **SQLite**: Context data, ratings with timestamps, temporal patterns
@@ -267,11 +300,19 @@ music-minion/
 - `sync rescan` - Rescan library for file changes (incremental)
 - `sync rescan --full` - Full library rescan (all files)
 
+### Library Commands (Multi-Source)
+- `library active` - Show current active library
+- `library active <provider>` - Switch active library (local, soundcloud, etc.)
+- `library sync <provider>` - Sync tracks from provider (OAuth + API)
+- `library auth <provider>` - Authenticate with provider (OAuth flow)
+- `library match <provider>` - Match provider tracks to local library (deduplication)
+
 ### Context Tracking
 - Store ratings with timestamp and context (time of day, day of week)
 - Track preference patterns and evolution over time
 - Mood correlation and session statistics
 - Bidirectional sync with file metadata (Linux ↔ Windows/Serato)
+- Multi-source integration (local files + SoundCloud/Spotify/YouTube)
 
 ## User Profile Context
 - **Primary Library**: MP3 (4,766 files), M4A (368 files)
@@ -358,11 +399,18 @@ except Exception:
 
 ## Database Schema
 
-### Current Version: v9
+### Current Version: v12
 **Location**: `src/music_minion/core/database.py`
 
 ### Core Tables
 - `tracks` - Music library metadata (artist, title, album, year, BPM, key, etc.)
+  - **Multi-source support (v11+)**: Added `source` column ('local', 'soundcloud', 'spotify', 'youtube')
+  - **Provider IDs (v11+)**: `soundcloud_id`, `spotify_id`, `youtube_id` for linking to provider tracks
+  - **Path column migration (v11)**: Added `local_path` column (replaces `file_path` for clarity)
+    - **Backward compatibility**: `file_path` column maintained temporarily, queries use `COALESCE(local_path, file_path)`
+    - **Migration strategy**: Will drop `file_path` in future version after full migration
+  - **Provider playlists (v12)**: `soundcloud_playlist_id`, `spotify_playlist_id`, `youtube_playlist_id`
+  - **Sync tracking (v12)**: `last_track_count` for incremental provider sync
 - `ratings` - User ratings with timestamps and context
 - `tags` - Track tags with source tracking ('user', 'ai', 'file') and reasoning (v9)
 - `notes` - Contextual notes about tracks
@@ -376,6 +424,10 @@ except Exception:
 ### Playback & Sync Tables (v5+)
 - `playback_state` - Singleton table for shuffle mode and position tracking
 - Sync columns in `tracks`: `file_mtime`, `last_synced_at` for change detection
+
+### Provider System Tables (v11+)
+- `provider_state` - Stores OAuth tokens and provider-specific state (JSON blob)
+- `active_library` - Singleton table for current active library ('local', 'soundcloud', etc.)
 
 ### AI Enhancements (v9)
 - `tags.reasoning` - Stores AI reasoning for each tag (5-10 words)
@@ -510,4 +562,4 @@ main.py
 
 ---
 
-**Last Updated**: 2025-11-16 after track search implementation
+**Last Updated**: 2025-11-18 after multi-source provider integration (SoundCloud)

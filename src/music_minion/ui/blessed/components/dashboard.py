@@ -40,11 +40,22 @@ def render_dashboard(term: Terminal, player_state: PlayerState, ui_state: UIStat
     metadata = ui_state.track_metadata
     db_info = ui_state.track_db_info
 
-    # Header with clock
+    # Header with clock and active library
     current_time = datetime.now().strftime("%H:%M:%S")
-    header_text = f"{ICONS['music']} MUSIC MINION {ICONS['music']}"
 
-    # Calculate spacer for time alignment
+    # Get active library color
+    library = ui_state.active_library
+    if library == 'soundcloud':
+        library_color = term.bold_cyan
+    elif library == 'spotify':
+        library_color = term.bold_green
+    elif library == 'youtube':
+        library_color = term.bold_red
+    else:  # local or all
+        library_color = term.bold_white
+
+    # Calculate header length (plain text for alignment)
+    header_text = f"{ICONS['music']} MUSIC MINION [{library}] {ICONS['music']}"
     header_len = len(header_text)
     time_len = len(f"[{current_time}]")
     spacer_width = max(term.width - header_len - time_len - 4, 2)
@@ -64,6 +75,7 @@ def render_dashboard(term: Terminal, player_state: PlayerState, ui_state: UIStat
         term.bold_magenta(ICONS['music']) + " " +
         term.bold_cyan("MUSIC") + " " +
         term.bold_blue("MINION") + " " +
+        library_color(f"[{library}]") + " " +
         term.bold_magenta(ICONS['music']) +
         " " * spacer_width +
         time_color(f"[{current_time}]")
@@ -427,9 +439,20 @@ def render_dashboard_partial(term: Terminal, player_state: PlayerState, ui_state
     # Update clock in header
     if 'header_line' in line_mapping:
         current_time = datetime.now().strftime("%H:%M:%S")
-        header_text = f"{ICONS['music']} MUSIC MINION {ICONS['music']}"
 
-        # Calculate spacer for time alignment
+        # Get active library color (same as full render)
+        library = ui_state.active_library
+        if library == 'soundcloud':
+            library_color = term.bold_cyan
+        elif library == 'spotify':
+            library_color = term.bold_green
+        elif library == 'youtube':
+            library_color = term.bold_red
+        else:  # local or all
+            library_color = term.bold_white
+
+        # Calculate header length (plain text for alignment)
+        header_text = f"{ICONS['music']} MUSIC MINION [{library}] {ICONS['music']}"
         header_len = len(header_text)
         time_len = len(f"[{current_time}]")
         spacer_width = max(term.width - header_len - time_len - 4, 2)
@@ -449,6 +472,7 @@ def render_dashboard_partial(term: Terminal, player_state: PlayerState, ui_state
             term.bold_magenta(ICONS['music']) + " " +
             term.bold_cyan("MUSIC") + " " +
             term.bold_blue("MINION") + " " +
+            library_color(f"[{library}]") + " " +
             term.bold_magenta(ICONS['music']) +
             " " * spacer_width +
             time_color(f"[{current_time}]")

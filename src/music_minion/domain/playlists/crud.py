@@ -167,17 +167,41 @@ def get_all_playlists() -> List[Dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
 
 
-def get_playlists_sorted_by_recent() -> List[Dict[str, Any]]:
+def get_playlists_sorted_by_recent(provider: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    Get all playlists sorted by recently played/added.
+    Get all playlists sorted by recently played/added, optionally filtered by provider.
     Playlists with last_played_at come first (most recent first),
     then playlists by updated_at (most recent first).
+
+    Args:
+        provider: Optional provider filter ('local', 'soundcloud', 'spotify', 'youtube', 'all', or None)
+                  - 'local': Only playlists without provider IDs
+                  - 'soundcloud': Only SoundCloud playlists
+                  - 'spotify': Only Spotify playlists
+                  - 'youtube': Only YouTube playlists
+                  - 'all' or None: All playlists (no filtering)
 
     Returns:
         List of playlist dicts with id, name, type, description, track_count, created_at, updated_at, last_played_at
     """
+    # Build WHERE clause based on provider
+    where_clause = ""
+    if provider == 'local':
+        where_clause = """
+            WHERE soundcloud_playlist_id IS NULL
+              AND spotify_playlist_id IS NULL
+        """
+    elif provider == 'soundcloud':
+        where_clause = "WHERE soundcloud_playlist_id IS NOT NULL"
+    elif provider == 'spotify':
+        where_clause = "WHERE spotify_playlist_id IS NOT NULL"
+    # Note: youtube_playlist_id column doesn't exist yet in schema
+    # elif provider == 'youtube':
+    #     where_clause = "WHERE youtube_playlist_id IS NOT NULL"
+    # else: 'all' or None - no filter
+
     with get_db_connection() as conn:
-        cursor = conn.execute("""
+        cursor = conn.execute(f"""
             SELECT
                 id,
                 name,
@@ -188,6 +212,7 @@ def get_playlists_sorted_by_recent() -> List[Dict[str, Any]]:
                 updated_at,
                 last_played_at
             FROM playlists
+            {where_clause}
             ORDER BY
                 CASE WHEN last_played_at IS NULL THEN 1 ELSE 0 END,
                 last_played_at DESC,

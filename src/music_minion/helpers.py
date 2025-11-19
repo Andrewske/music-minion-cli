@@ -122,10 +122,11 @@ def ensure_library_loaded(ctx: AppContext) -> tuple[AppContext, bool]:
         if db_tracks:
             # Convert database tracks to library Track objects
             tracks = [database.db_track_to_library_track(track) for track in db_tracks]
-            # Filter out files that no longer exist
+            # Filter out files that no longer exist (only for local tracks)
             existing_tracks = []
             for track in tracks:
-                if Path(track.file_path).exists():
+                # Keep provider tracks (no file_path) and local tracks that still exist
+                if track.file_path is None or Path(track.file_path).exists():
                     existing_tracks.append(track)
             ctx = ctx.with_tracks(existing_tracks)
             safe_print(ctx, f"Loaded {len(existing_tracks)} tracks from database", "green")

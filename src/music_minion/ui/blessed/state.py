@@ -71,6 +71,7 @@ class UIState:
     track_db_info: Optional[TrackDBInfo] = None
     playlist_info: PlaylistInfo = field(default_factory=PlaylistInfo)
     shuffle_enabled: bool = True  # Cached from database for display
+    active_library: str = 'local'  # Cached from database for display
 
     # Command history display
     history: list[tuple[str, str]] = field(default_factory=list)  # (text, color)

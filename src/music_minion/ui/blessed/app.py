@@ -5,6 +5,7 @@ from pathlib import Path
 from blessed import Terminal
 from music_minion.context import AppContext
 from music_minion.commands import admin
+from music_minion.core import database
 from .state import UIState, PlaylistInfo, update_track_info, add_history_line
 from .components import (
     render_dashboard,
@@ -301,7 +302,13 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         Updated AppContext after loop exits
     """
     # Create initial UI state (UI-only, not application state)
-    ui_state = UIState()
+    # Load active library from database
+    with database.get_db_connection() as conn:
+        cursor = conn.execute("SELECT provider FROM active_library WHERE id = 1")
+        row = cursor.fetchone()
+        active_library = row['provider'] if row else 'local'
+
+    ui_state = UIState(active_library=active_library)
     should_quit = False
     frame_count = 0
     last_state_hash = None

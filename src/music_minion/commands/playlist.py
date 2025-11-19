@@ -40,8 +40,14 @@ def handle_playlist_list_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     Returns:
         (updated_context, should_continue)
     """
-    # Check if there are any playlists
-    all_playlists = playlists.get_playlists_sorted_by_recent()
+    # Get active library from database
+    with database.get_db_connection() as conn:
+        cursor = conn.execute("SELECT provider FROM active_library WHERE id = 1")
+        row = cursor.fetchone()
+        active_library = row['provider'] if row else 'local'
+
+    # Check if there are any playlists (filtered by active library)
+    all_playlists = playlists.get_playlists_sorted_by_recent(provider=active_library)
 
     if not all_playlists:
         print("No playlists found. Create one with: playlist new manual <name>")

@@ -84,6 +84,17 @@ class SyncConfig:
 
 
 @dataclass
+class SoundCloudConfig:
+    """Configuration for SoundCloud provider integration."""
+    enabled: bool = False
+    client_id: str = ""
+    client_secret: str = ""
+    redirect_uri: str = "http://localhost:8080/callback"
+    sync_likes: bool = True
+    sync_playlists: bool = True
+
+
+@dataclass
 class Config:
     """Main configuration object."""
     music: MusicConfig = field(default_factory=MusicConfig)
@@ -92,6 +103,7 @@ class Config:
     ui: UIConfig = field(default_factory=UIConfig)
     playlists: PlaylistConfig = field(default_factory=PlaylistConfig)
     sync: SyncConfig = field(default_factory=SyncConfig)
+    soundcloud: SoundCloudConfig = field(default_factory=SoundCloudConfig)
 
 
 def get_config_dir() -> Path:
@@ -221,13 +233,43 @@ sync_method = "manual"
 
 # Auto-watch files for changes (future feature)
 auto_watch_files = false
+
+[soundcloud]
+# Enable SoundCloud integration
+enabled = false
+
+# SoundCloud API credentials (get from https://developers.soundcloud.com/docs/api/guide#authentication)
+# Register an app at: https://soundcloud.com/you/apps/new
+# Uncomment and set your credentials:
+# client_id = "your-client-id-here"
+# client_secret = "your-client-secret-here"
+
+# OAuth redirect URI (must match your app settings)
+redirect_uri = "http://localhost:8080/callback"
+
+# Sync user's liked tracks
+sync_likes = true
+
+# Sync user's playlists
+sync_playlists = true
 """.strip()
 
 
 def load_config() -> Config:
-    """Load configuration from file or create default."""
+    """Load configuration from file or create default.
+
+    Environment variables override TOML values:
+    - SOUNDCLOUD_CLIENT_ID
+    - SOUNDCLOUD_CLIENT_SECRET
+    """
+    # Load .env file from config directory if it exists
+    from dotenv import load_dotenv
+    env_path = get_config_dir() / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+
     config_path = get_config_path()
-    
+
     if not config_path.exists():
         # Create config directory and default file
         config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -235,7 +277,7 @@ def load_config() -> Config:
             f.write(create_default_config())
         print(f"Created default configuration at: {config_path}")
         return Config()
-    
+
     try:
         with open(config_path, 'rb') as f:
             toml_data = tomllib.load(f)
@@ -309,6 +351,26 @@ def load_config() -> Config:
                 auto_watch_files=sync_data.get('auto_watch_files', config.sync.auto_watch_files)
             )
 
+        if 'soundcloud' in toml_data:
+            soundcloud_data = toml_data['soundcloud']
+            config.soundcloud = SoundCloudConfig(
+                enabled=soundcloud_data.get('enabled', config.soundcloud.enabled),
+                client_id=soundcloud_data.get('client_id', config.soundcloud.client_id),
+                client_secret=soundcloud_data.get('client_secret', config.soundcloud.client_secret),
+                redirect_uri=soundcloud_data.get('redirect_uri', config.soundcloud.redirect_uri),
+                sync_likes=soundcloud_data.get('sync_likes', config.soundcloud.sync_likes),
+                sync_playlists=soundcloud_data.get('sync_playlists', config.soundcloud.sync_playlists)
+            )
+
+        # Override SoundCloud credentials with environment variables if present
+        soundcloud_client_id = os.environ.get('SOUNDCLOUD_CLIENT_ID')
+        soundcloud_client_secret = os.environ.get('SOUNDCLOUD_CLIENT_SECRET')
+
+        if soundcloud_client_id:
+            config.soundcloud.client_id = soundcloud_client_id
+        if soundcloud_client_secret:
+            config.soundcloud.client_secret = soundcloud_client_secret
+
         return config
         
     except Exception as e:
@@ -376,7 +438,19 @@ metadata_tag_field = "{config.sync.metadata_tag_field}"
 tag_prefix = "{config.sync.tag_prefix}"
 sync_method = "{config.sync.sync_method}"
 auto_watch_files = {config.sync.auto_watch_files!r}
-"""
+
+[soundcloud]
+enabled = {config.soundcloud.enabled!r}
+redirect_uri = "{config.soundcloud.redirect_uri}"
+sync_likes = {config.soundcloud.sync_likes!r}
+sync_playlists = {config.soundcloud.sync_playlists!r}"""
+
+        if config.soundcloud.client_id:
+            toml_content += f'\nclient_id = "{config.soundcloud.client_id}"'
+        if config.soundcloud.client_secret:
+            toml_content += f'\nclient_secret = "{config.soundcloud.client_secret}"'
+
+        toml_content += "\n"
 
         with open(config_path, 'w', encoding='utf-8') as f:
             f.write(toml_content)

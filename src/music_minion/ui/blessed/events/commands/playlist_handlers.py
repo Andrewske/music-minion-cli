@@ -115,7 +115,7 @@ def handle_playlist_deletion(ctx: AppContext, ui_state: UIState, playlist_name: 
 
         # Refresh playlist palette if visible
         if ui_state.palette_visible and ui_state.palette_mode == 'playlist':
-            items = load_playlist_items(ctx)
+            items = load_playlist_items(ui_state.active_library)
             ui_state = show_playlist_palette(ui_state, items)
 
     except (ValueError, KeyError, TypeError) as e:

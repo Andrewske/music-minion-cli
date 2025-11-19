@@ -264,7 +264,7 @@ def handle_track_viewer_add_to_playlist(ctx: AppContext, ui_state: UIState, trac
     from music_minion.ui.blessed.state import show_playlist_palette
 
     # Load playlists and show palette for selection
-    items = load_playlist_items()
+    items = load_playlist_items(ui_state.active_library)
 
     if not items:
         ui_state = add_history_line(ui_state, "❌ No playlists available", 'red')

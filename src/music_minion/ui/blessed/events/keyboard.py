@@ -937,7 +937,7 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10, analyti
             elif state.palette_mode == 'playlist':
                 # Filter playlists by name
                 from ..components.palette import filter_playlist_items, load_playlist_items
-                all_items = load_playlist_items()
+                all_items = load_playlist_items(state.active_library)
                 filtered = filter_playlist_items(state.input_text, all_items)
                 state = update_palette_filter(state, state.input_text, filtered)
             else:
@@ -1039,7 +1039,7 @@ def handle_key(state: UIState, key: Keystroke, palette_height: int = 10, analyti
                 elif state.palette_mode == 'playlist':
                     # Filter playlists by name
                     from ..components.palette import filter_playlist_items, load_playlist_items
-                    all_items = load_playlist_items()
+                    all_items = load_playlist_items(state.active_library)
                     filtered = filter_playlist_items(state.input_text, all_items)
                     state = update_palette_filter(state, state.input_text, filtered)
                 else:

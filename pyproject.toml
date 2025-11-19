@@ -8,14 +8,17 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "mutagen>=1.47.0",    # MP3/M4A metadata handling
-    "openai>=1.0.0",      # AI integration (optional)
+    "mutagen>=1.47.0", # MP3/M4A metadata handling
+    "openai>=1.0.0", # AI integration (optional)
     "python-dotenv>=1.0.0", # Environment variable management
-    "rich>=13.0.0",       # Terminal UI formatting
-    "blessed>=1.20.0",    # Terminal UI library
-    "pyserato>=0.1.0",    # Serato crate import/export
+    "rich>=13.0.0", # Terminal UI formatting
+    "blessed>=1.20.0", # Terminal UI library
+    "pyserato>=0.1.0", # Serato crate import/export
     "prompt_toolkit>=3.0.0", # Interactive CLI with autocomplete
     "simple-term-menu>=1.6.0", # Interactive arrow-key menus
+    "requests>=2.31.0", # HTTP client for provider APIs
+    "pandas>=2.2.3",
+    "scikit-learn>=1.3.0", # TF-IDF vectorization for fast track matching
 ]
 
 [project.optional-dependencies]

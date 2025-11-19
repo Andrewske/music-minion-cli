@@ -5,9 +5,13 @@ from blessed import Terminal
 from ..state import UIState
 
 
-def load_playlist_items() -> list[tuple[str, str, str, str]]:
+def load_playlist_items(active_library: str = 'all') -> list[tuple[str, str, str, str]]:
     """
     Load playlists from database and convert to palette items format.
+
+    Args:
+        active_library: Active library filter ('local', 'soundcloud', 'spotify', 'youtube', 'all')
+                        Defaults to 'all' to show all playlists.
 
     Returns:
         List of palette items: (category, name, icon, description)
@@ -15,7 +19,7 @@ def load_playlist_items() -> list[tuple[str, str, str, str]]:
     # Import here to avoid circular dependencies
     from ....domain.playlists import crud as playlists
 
-    all_playlists = playlists.get_playlists_sorted_by_recent()
+    all_playlists = playlists.get_playlists_sorted_by_recent(provider=active_library)
     active = playlists.get_active_playlist()
     active_id = active['id'] if active else None
 

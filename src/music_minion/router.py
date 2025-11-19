@@ -19,6 +19,7 @@ from music_minion.commands import ai
 from music_minion.commands import sync
 from music_minion.commands import playlist
 from music_minion.commands import track
+from music_minion.commands import library
 
 
 def print_help() -> None:
@@ -84,6 +85,26 @@ Sync Commands:
   sync rescan       Rescan library for file changes (incremental)
   sync rescan --full Full library rescan (all files)
 
+Library Commands:
+  library                          List all available libraries with track counts
+  library active                   Show current active library
+  library active <provider>        Switch to provider (local/soundcloud/spotify/all)
+  library sync [provider]          Sync tracks from provider
+  library sync playlists <provider> Sync playlists from provider
+  library auth <provider>          Authenticate with provider (OAuth)
+
+SoundCloud Setup:
+  1. Get credentials: https://soundcloud.com/you/apps/new
+  2. Edit ~/.config/music-minion/config.toml:
+     [soundcloud]
+     enabled = true
+     client_id = "YOUR_CLIENT_ID"
+     client_secret = "YOUR_CLIENT_SECRET"
+  3. Authenticate: library auth soundcloud
+  4. Sync likes: library sync soundcloud
+  5. Sync playlists: library sync playlists soundcloud
+  6. Switch library: library active soundcloud
+
   init              Initialize configuration and scan library
   help              Show this help message
   quit, exit        Exit the program
@@ -104,6 +125,9 @@ Examples:
   /                       # Open command palette
   playlist new manual "NYE 2025"  # Create playlist
   add "NYE 2025"          # Add current track to playlist
+  library auth soundcloud # Authenticate with SoundCloud
+  library active soundcloud # Switch to SoundCloud library
+  play                    # Play SoundCloud stream via MPV
 """
     print(help_text.strip())
 
@@ -261,6 +285,9 @@ def handle_command(ctx: AppContext, command: str, args: List[str]) -> Tuple[AppC
         else:
             print(f"Unknown sync subcommand: '{args[0]}'. Available: export, import, status, rescan")
             return ctx, True
+
+    elif command == 'library':
+        return library.handle_library_command(ctx, args)
 
     elif command == '':
         # Empty command, do nothing
