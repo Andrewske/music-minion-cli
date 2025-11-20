@@ -72,6 +72,7 @@ class UIState:
     playlist_info: PlaylistInfo = field(default_factory=PlaylistInfo)
     shuffle_enabled: bool = True  # Cached from database for display
     active_library: str = 'local'  # Cached from database for display
+    current_track_has_soundcloud_like: bool = False  # Cached for heart indicator
 
     # Command history display
     history: list[tuple[str, str]] = field(default_factory=list)  # (text, color)

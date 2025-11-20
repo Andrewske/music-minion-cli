@@ -40,6 +40,7 @@ Available commands:
   archive           Archive current song (never play again)
   like              Rate current song as liked
   love              Rate current song as loved
+  unlike            Remove SoundCloud like for current song
   note <text>       Add a note to the current song
   status            Show current song and player status
   stats             Show library and rating statistics
@@ -188,6 +189,9 @@ def handle_command(ctx: AppContext, command: str, args: List[str]) -> Tuple[AppC
 
     elif command == 'love':
         return rating.handle_love_command(ctx)
+
+    elif command == 'unlike':
+        return rating.handle_unlike_command(ctx)
 
     elif command == 'note':
         return rating.handle_note_command(ctx, args)

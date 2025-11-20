@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 
 def get_database_path() -> Path:
@@ -561,6 +561,28 @@ def migrate_database(conn, current_version: int) -> None:
         print("  ✓ Migration to v16 complete: Added provider_created_at column")
         conn.commit()
 
+    if current_version < 17:
+        # Migration from v16 to v17: Add source tracking to ratings for provider likes
+        print("  Migrating to v17: Adding source tracking to ratings...")
+
+        # Add source column to ratings table (user, soundcloud, spotify, youtube)
+        try:
+            conn.execute("ALTER TABLE ratings ADD COLUMN source TEXT DEFAULT 'user'")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+
+        # Set source='user' for all existing ratings (they're all user ratings)
+        conn.execute("UPDATE ratings SET source = 'user' WHERE source IS NULL")
+
+        # Create index for fast lookups (has_soundcloud_like queries)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ratings_track_source ON ratings (track_id, source)"
+        )
+
+        print("  ✓ Migration to v17 complete: Source tracking added to ratings")
+        conn.commit()
+
 
 def init_database() -> None:
     """Initialize the database with required tables."""
@@ -796,8 +818,20 @@ def get_or_create_track(
             return cursor.lastrowid
 
 
-def add_rating(track_id: int, rating_type: str, context: Optional[str] = None) -> None:
-    """Add a rating for a track."""
+def add_rating(
+    track_id: int,
+    rating_type: str,
+    context: Optional[str] = None,
+    source: str = "user",
+) -> None:
+    """Add a rating for a track.
+
+    Args:
+        track_id: Track ID
+        rating_type: Type of rating ('archive', 'skip', 'like', 'love')
+        context: Optional context text
+        source: Source of rating ('user', 'soundcloud', 'spotify', 'youtube')
+    """
     now = datetime.now()
     hour_of_day = now.hour
     day_of_week = now.weekday()  # 0=Monday, 6=Sunday
@@ -805,12 +839,71 @@ def add_rating(track_id: int, rating_type: str, context: Optional[str] = None) -
     with get_db_connection() as conn:
         conn.execute(
             """
-            INSERT INTO ratings (track_id, rating_type, hour_of_day, day_of_week, context)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO ratings (track_id, rating_type, hour_of_day, day_of_week, context, source)
+            VALUES (?, ?, ?, ?, ?, ?)
         """,
-            (track_id, rating_type, hour_of_day, day_of_week, context),
+            (track_id, rating_type, hour_of_day, day_of_week, context, source),
         )
         conn.commit()
+
+
+def has_soundcloud_like(track_id: int) -> bool:
+    """Check if track has a SoundCloud like marker.
+
+    Args:
+        track_id: Track ID
+
+    Returns:
+        True if track has source='soundcloud' rating
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT EXISTS(
+                SELECT 1 FROM ratings
+                WHERE track_id = ? AND source = 'soundcloud'
+            )
+        """,
+            (track_id,),
+        )
+        return bool(cursor.fetchone()[0])
+
+
+def batch_add_soundcloud_likes(track_ids: List[int]) -> int:
+    """Bulk insert SoundCloud like markers for multiple tracks.
+
+    Args:
+        track_ids: List of track IDs to add markers for
+
+    Returns:
+        Number of markers created
+    """
+    if not track_ids:
+        return 0
+
+    now = datetime.now()
+    hour_of_day = now.hour
+    day_of_week = now.weekday()
+
+    # Prepare batch insert data
+    markers = [
+        (track_id, "like", hour_of_day, day_of_week, "Synced from SoundCloud", "soundcloud")
+        for track_id in track_ids
+    ]
+
+    with get_db_connection() as conn:
+        # Use INSERT OR IGNORE to avoid duplicates
+        conn.executemany(
+            """
+            INSERT OR IGNORE INTO ratings (track_id, rating_type, hour_of_day, day_of_week, context, source)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """,
+            markers,
+        )
+        inserted_count = conn.total_changes
+        conn.commit()
+
+    return inserted_count
 
 
 def add_note(track_id: int, note_text: str) -> int:

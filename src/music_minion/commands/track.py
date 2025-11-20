@@ -48,23 +48,53 @@ def handle_add_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bo
     track_id = db_track['id']
 
     try:
-        if playlists.add_track_to_playlist(pl['id'], track_id):
-            # Find current track info for display
-            current_track = None
-            for track in ctx.music_tracks:
-                if track.local_path == ctx.player_state.current_track:
-                    current_track = track
-                    break
+        # Check if playlist is a SoundCloud playlist
+        soundcloud_playlist_id = db_track.get('soundcloud_playlist_id')
+        soundcloud_track_id = db_track.get('soundcloud_id')
 
-            if current_track:
-                print(f"✅ Added to '{name}': {library.get_display_name(current_track)}")
+        if soundcloud_playlist_id and soundcloud_track_id:
+            # Add to SoundCloud playlist via API
+            from music_minion.domain.library import providers
+
+            provider = providers.get_provider('soundcloud')
+            from music_minion.domain.library.provider import ProviderConfig
+            config = ProviderConfig(name='soundcloud', enabled=True)
+            state = provider.init_provider(config)
+
+            if not state.authenticated:
+                print("⚠ Not authenticated with SoundCloud")
+                print("   Run: library auth soundcloud")
+                return ctx, True
+
+            # Call SoundCloud API
+            new_state, success, error_msg = provider.add_track_to_playlist(
+                state, soundcloud_playlist_id, soundcloud_track_id
+            )
+
+            if success:
+                print(f"✅ Added to SoundCloud playlist '{name}'")
             else:
-                print(f"✅ Added current track to playlist: {name}")
-
-            # Auto-export if enabled
-            helpers.auto_export_if_enabled(pl['id'], ctx)
+                print(f"⚠ Failed to add to SoundCloud playlist: {error_msg}")
+                print("   Check logs for details")
         else:
-            print(f"Track is already in playlist '{name}'")
+            # Local playlist - use existing logic
+            if playlists.add_track_to_playlist(pl['id'], track_id):
+                # Find current track info for display
+                current_track = None
+                for track in ctx.music_tracks:
+                    if track.local_path == ctx.player_state.current_track:
+                        current_track = track
+                        break
+
+                if current_track:
+                    print(f"✅ Added to '{name}': {library.get_display_name(current_track)}")
+                else:
+                    print(f"✅ Added current track to playlist: {name}")
+
+                # Auto-export if enabled
+                helpers.auto_export_if_enabled(pl['id'], ctx)
+            else:
+                print(f"Track is already in playlist '{name}'")
         return ctx, True
     except ValueError as e:
         print(f"❌ Error: {e}")
@@ -109,23 +139,53 @@ def handle_remove_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext,
     track_id = db_track['id']
 
     try:
-        if playlists.remove_track_from_playlist(pl['id'], track_id):
-            # Find current track info for display
-            current_track = None
-            for track in ctx.music_tracks:
-                if track.local_path == ctx.player_state.current_track:
-                    current_track = track
-                    break
+        # Check if playlist is a SoundCloud playlist
+        soundcloud_playlist_id = db_track.get('soundcloud_playlist_id')
+        soundcloud_track_id = db_track.get('soundcloud_id')
 
-            if current_track:
-                print(f"✅ Removed from '{name}': {library.get_display_name(current_track)}")
+        if soundcloud_playlist_id and soundcloud_track_id:
+            # Remove from SoundCloud playlist via API
+            from music_minion.domain.library import providers
+
+            provider = providers.get_provider('soundcloud')
+            from music_minion.domain.library.provider import ProviderConfig
+            config = ProviderConfig(name='soundcloud', enabled=True)
+            state = provider.init_provider(config)
+
+            if not state.authenticated:
+                print("⚠ Not authenticated with SoundCloud")
+                print("   Run: library auth soundcloud")
+                return ctx, True
+
+            # Call SoundCloud API
+            new_state, success, error_msg = provider.remove_track_from_playlist(
+                state, soundcloud_playlist_id, soundcloud_track_id
+            )
+
+            if success:
+                print(f"✅ Removed from SoundCloud playlist '{name}'")
             else:
-                print(f"✅ Removed current track from playlist: {name}")
-
-            # Auto-export if enabled
-            helpers.auto_export_if_enabled(pl['id'], ctx)
+                print(f"⚠ Failed to remove from SoundCloud playlist: {error_msg}")
+                print("   Check logs for details")
         else:
-            print(f"Track is not in playlist '{name}'")
+            # Local playlist - use existing logic
+            if playlists.remove_track_from_playlist(pl['id'], track_id):
+                # Find current track info for display
+                current_track = None
+                for track in ctx.music_tracks:
+                    if track.local_path == ctx.player_state.current_track:
+                        current_track = track
+                        break
+
+                if current_track:
+                    print(f"✅ Removed from '{name}': {library.get_display_name(current_track)}")
+                else:
+                    print(f"✅ Removed current track from playlist: {name}")
+
+                # Auto-export if enabled
+                helpers.auto_export_if_enabled(pl['id'], ctx)
+            else:
+                print(f"Track is not in playlist '{name}'")
         return ctx, True
     except ValueError as e:
         print(f"❌ Error: {e}")

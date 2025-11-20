@@ -1951,3 +1951,98 @@ def _handle_ui_actions(ctx: AppContext, ui_state: UIState) -> UIState:
 - Rich formatting: 1 hour (as estimated)
 - Testing: Concurrent with development
 
+
+## SoundCloud Integration & Provider Architecture (2025-11-20)
+
+### Multi-Provider Like Tracking Pattern
+**Pattern**: Use `ratings.source` column to distinguish provider-specific like markers from user ratings
+```python
+# Database schema v17
+ALTER TABLE ratings ADD COLUMN source TEXT DEFAULT 'user'
+CREATE INDEX idx_ratings_track_source ON ratings (track_id, source)
+
+# Check provider like status (cached in UI state)
+has_soundcloud_like = database.has_soundcloud_like(track_id)
+
+# Add provider like marker (deduplicated)
+database.add_rating(track_id, 'like', 'Synced from SoundCloud', source='soundcloud')
+
+# Smart sync: only call API if marker doesn't exist
+if not has_soundcloud_like(track_id):
+    provider.like_track(state, soundcloud_id)
+    add_rating(track_id, 'like', context, source='soundcloud')
+```
+
+**Benefits**:
+- ✅ One API call per track (checked via marker existence)
+- ✅ User can like track multiple times locally (temporal data)
+- ✅ Provider likes are binary state (one marker per provider)
+- ✅ Extensible to multiple providers (spotify, youtube)
+
+**Learning**: Separate user ratings (temporal, multiple) from provider sync state (binary, single marker). The marker pattern prevents duplicate API calls while preserving local rating history.
+
+### Provider Module Refactoring Pattern
+**Pattern**: Split large provider files into focused modules
+```
+providers/soundcloud/
+  ├── __init__.py       # Re-exports all public functions
+  ├── auth.py           # OAuth 2.0 + PKCE, token management (self-contained)
+  └── api.py            # API operations (imports from auth.py)
+```
+
+**Benefits**:
+- ✅ ~200-300 lines per file vs 1000+ monolithic
+- ✅ Clear separation: auth (credentials) vs api (operations)
+- ✅ No circular imports (auth is self-contained, api imports auth)
+
+**Learning**: Refactor providers when reaching ~600+ lines. Split by concern (auth vs api) not by feature. Auth module should have zero dependencies on api module.
+
+### UI State Caching for Database Queries
+**Pattern**: Cache frequently-accessed database flags in UIState to avoid repeated queries
+```python
+@dataclass
+class UIState:
+    current_track_has_soundcloud_like: bool = False  # Cached
+
+# Update when track changes (full redraw)
+has_sc_like = database.has_soundcloud_like(track_id)
+ui_state = replace(ui_state, current_track_has_soundcloud_like=has_sc_like)
+
+# Render uses cached value (no database query)
+heart = term.red(' ♥') if ui_state.current_track_has_soundcloud_like else ""
+```
+
+**Benefits**:
+- ✅ No database query on every render (60+ times per minute during playback)
+- ✅ Consistent with partial rendering strategy
+- ✅ Simple boolean flag vs complex query result
+
+**Learning**: Cache any database-derived UI flags in UIState, update during full redraws only. Partial renders should never query database.
+
+### Batch Like Sync with Progress Reporting
+**Pattern**: Sync thousands of provider likes efficiently with progress feedback
+```python
+# Fetch ALL liked track IDs (paginated, 200 at a time)
+all_liked_ids = set()
+while url:
+    response = requests.get(url, params={'limit': 200})
+    for item in response.json()['collection']:
+        all_liked_ids.add(str(item['id']))
+    if total % 200 == 0:
+        print(f"  Fetching likes: {total}...")
+
+# Single batch insert for all markers
+track_ids = get_matching_db_tracks(all_liked_ids)  # One query
+inserted = database.batch_add_soundcloud_likes(track_ids)  # executemany()
+```
+
+**Benefits**:
+- ✅ API calls are slow (200 tracks at a time), show progress
+- ✅ Database insert is fast (executemany), one transaction
+- ✅ Syncs markers for existing tracks, not just new imports
+
+**Learning**: Separate API fetch (slow, progress reporting) from database insert (fast, batch operation). Progress on API calls, not database operations.
+
+---
+
+**Last Updated**: 2025-11-20 after SoundCloud like integration (database v17, provider refactoring)
