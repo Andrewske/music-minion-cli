@@ -426,9 +426,6 @@ def interactive_mode_blessed() -> None:
     if not success:
         return
 
-    # Run database migrations on startup
-    database.init_database()
-
     # Auto-sync on startup if enabled (run in background thread)
     if current_config.sync.auto_sync_on_startup:
         sync_thread = threading.Thread(
