@@ -86,39 +86,29 @@ def batch_insert_provider_tracks(
 
     # Build field list dynamically based on first record
     fields = list(to_insert[0].keys())
-    placeholders = ", ".join([f":{field}" for field in fields])
+    placeholders = ", ".join(["?" for _ in fields])  # Use positional placeholders for executemany
     fields_str = ", ".join(fields)
 
-    created = 0
-    progress_interval = max(1, len(to_insert) // 100)  # Report every 1%
+    # OPTIMIZATION: Convert dict records to tuples for executemany
+    insert_tuples = [
+        tuple(record[field] for field in fields)
+        for record in to_insert
+    ]
 
     with database.get_db_connection() as conn:
         try:
             # Begin explicit transaction for atomicity
             conn.execute("BEGIN TRANSACTION")
 
-            for idx, record in enumerate(to_insert, 1):
-                try:
-                    conn.execute(
-                        f"""
-                        INSERT INTO tracks ({fields_str})
-                        VALUES ({placeholders})
-                        """,
-                        record,
-                    )
-                    created += 1
-
-                    # Progress update
-                    if idx % progress_interval == 0 or idx == len(to_insert):
-                        pct = (idx / len(to_insert)) * 100
-                        print(f"    Progress: {idx}/{len(to_insert)} ({pct:.0f}%)")
-
-                except Exception as e:
-                    # Log error but continue with other tracks
-                    print(
-                        f"  Warning: Failed to insert track {record.get(provider_id_col)}: {e}"
-                    )
-                    continue
+            # OPTIMIZATION: Batch insert all tracks at once
+            cursor = conn.executemany(
+                f"""
+                INSERT INTO tracks ({fields_str})
+                VALUES ({placeholders})
+                """,
+                insert_tuples,
+            )
+            created = cursor.rowcount
 
             # Commit all changes at once
             conn.commit()
