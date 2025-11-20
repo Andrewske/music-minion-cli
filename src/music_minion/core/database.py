@@ -727,17 +727,19 @@ def init_database() -> None:
         )
 
         # Check current schema version and run migrations if needed
-        cursor = conn.execute("SELECT version FROM schema_version")
+        # Use MAX to handle legacy databases with multiple version rows
+        cursor = conn.execute("SELECT MAX(version) as version FROM schema_version")
         row = cursor.fetchone()
-        current_version = row["version"] if row else 0
+        current_version = row["version"] if row and row["version"] else 0
         cursor.close()  # Close cursor to release any locks before migration
 
         if current_version < SCHEMA_VERSION:
             migrate_database(conn, current_version)
 
-        # Set schema version
+        # Set schema version (delete old rows to prevent duplicates)
+        conn.execute("DELETE FROM schema_version")
         conn.execute(
-            "INSERT OR REPLACE INTO schema_version (version) VALUES (?)",
+            "INSERT INTO schema_version (version) VALUES (?)",
             (SCHEMA_VERSION,),
         )
 
