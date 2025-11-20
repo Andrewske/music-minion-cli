@@ -182,13 +182,17 @@ def get_stream_url(state: ProviderState, provider_id: str) -> Optional[str]:
 
 
 def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, Any]]]:
-    """Get user's SoundCloud playlists.
+    """Get user's SoundCloud playlists with tracks (optimized batch fetch).
 
     Args:
         state: Current provider state
 
     Returns:
-        (state, [{"id": "...", "name": "...", "track_count": N}, ...])
+        (state, [{"id": "...", "name": "...", "track_count": N, "tracks": [(id, metadata), ...]}, ...])
+
+    Note:
+        Includes "tracks" key with pre-fetched track data to eliminate per-playlist API calls.
+        For playlists with >200 tracks, may fall back to individual fetch.
     """
     if not state.authenticated:
         return state, []
@@ -210,16 +214,17 @@ def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, A
 
     access_token = token_data["access_token"]
 
-    # Fetch user's playlists
+    # Fetch user's playlists with tracks
     url = f"{API_BASE_URL}/me/playlists"
     headers = {"Authorization": f"OAuth {access_token}"}
-    params = {"limit": 200}
+    params = {"limit": 200, "show_tracks": True}
 
     playlists = []
 
     try:
         while url:
-            response = requests.get(url, params=params, headers=headers, timeout=30)
+            # Increased timeout for larger payloads (with show_tracks=True)
+            response = requests.get(url, params=params, headers=headers, timeout=60)
             response.raise_for_status()
             data = response.json()
 
@@ -233,17 +238,25 @@ def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, A
 
             # Process playlists
             for playlist in collection:
-                playlists.append(
-                    {
-                        "id": str(playlist["id"]),
-                        "name": playlist.get("title", "Untitled"),
-                        "track_count": playlist.get("track_count", 0),
-                        "description": playlist.get("description"),
-                        "permalink": playlist.get("permalink_url"),
-                        "last_modified": playlist.get("last_modified"),
-                        "created_at": playlist.get("created_at"),
-                    }
-                )
+                playlist_dict = {
+                    "id": str(playlist["id"]),
+                    "name": playlist.get("title", "Untitled"),
+                    "track_count": playlist.get("track_count", 0),
+                    "description": playlist.get("description"),
+                    "permalink": playlist.get("permalink_url"),
+                    "last_modified": playlist.get("last_modified"),
+                    "created_at": playlist.get("created_at"),
+                }
+
+                # Include tracks if available (from show_tracks parameter)
+                if "tracks" in playlist and playlist["tracks"]:
+                    playlist_dict["tracks"] = [
+                        (str(track["id"]), _normalize_soundcloud_track(track))
+                        for track in playlist["tracks"]
+                        if track  # Filter None values
+                    ]
+
+                playlists.append(playlist_dict)
 
             # Next page (only for dict responses with pagination)
             url = data.get("next_href") if isinstance(data, dict) else None

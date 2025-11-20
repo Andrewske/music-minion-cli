@@ -25,10 +25,16 @@ def get_database_path() -> Path:
 
 @contextmanager
 def get_db_connection():
-    """Get a database connection with proper cleanup."""
+    """Get a database connection with proper cleanup and concurrency support."""
     db_path = get_database_path()
-    conn = sqlite3.connect(db_path)
+    # Timeout increased to 30s to handle long-running operations (e.g., playlist sync)
+    # WAL mode enables concurrent reads during writes
+    conn = sqlite3.connect(db_path, timeout=30.0)
     conn.row_factory = sqlite3.Row  # Enable dict-like access
+
+    # Enable WAL mode for better concurrency (allows reads during writes)
+    conn.execute("PRAGMA journal_mode=WAL")
+
     try:
         yield conn
     finally:
