@@ -5,20 +5,57 @@ Handles library sync, playlists, likes, and stream URLs.
 """
 
 import json
+import logging
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
 from ...provider import ProviderState, TrackList
 from . import auth
+from .auth import TOKEN_URL
 
 # SoundCloud API base URL
 API_BASE_URL = "https://api.soundcloud.com"
 
+logger = logging.getLogger(__name__)
 
-def sync_library(state: ProviderState, incremental: bool = True) -> Tuple[ProviderState, TrackList]:
+
+def _format_track_urn(track_id: str) -> str:
+    """Format track ID as SoundCloud URN.
+
+    Args:
+        track_id: Numeric track ID or URN
+
+    Returns:
+        Track URN in format 'soundcloud:tracks:{id}'
+    """
+    # If already a URN, return as-is
+    if track_id.startswith("soundcloud:tracks:"):
+        return track_id
+    # Otherwise, format as URN
+    return f"soundcloud:tracks:{track_id}"
+
+
+def _format_playlist_urn(playlist_id: str) -> str:
+    """Format playlist ID as SoundCloud URN.
+
+    Args:
+        playlist_id: Numeric playlist ID or URN
+
+    Returns:
+        Playlist URN in format 'soundcloud:playlists:{id}'
+    """
+    # If already a URN, return as-is
+    if playlist_id.startswith("soundcloud:playlists:"):
+        return playlist_id
+    # Otherwise, format as URN
+    return f"soundcloud:playlists:{playlist_id}"
+
+
+def sync_library(
+    state: ProviderState, incremental: bool = True
+) -> Tuple[ProviderState, TrackList]:
     """Sync SoundCloud likes/playlists and like markers.
 
     Performs incremental sync by default - only fetches new likes since last sync.
@@ -46,7 +83,7 @@ def sync_library(state: ProviderState, incremental: bool = True) -> Tuple[Provid
         # Try to refresh
         new_token_data = auth.refresh_token(token_data)
         if new_token_data:
-            auth.auth._save_user_tokens(new_token_data)
+            auth._save_user_tokens(new_token_data)
             state = state.with_cache(token_data=new_token_data)
             token_data = new_token_data
         else:
@@ -64,14 +101,22 @@ def sync_library(state: ProviderState, incremental: bool = True) -> Tuple[Provid
                 "SELECT soundcloud_id FROM tracks WHERE soundcloud_id IS NOT NULL AND source = 'soundcloud'"
             )
             existing_ids = {row[0] for row in cursor.fetchall()}
-    except Exception:
-        # Silently continue with full sync if we can't load existing tracks
+        logger.info(
+            f"Found {len(existing_ids)} existing SoundCloud tracks for incremental sync"
+        )
+    except Exception as e:
+        logger.warning(f"Failed to load existing SoundCloud IDs: {e}")
+        # Continue with full sync if we can't load existing tracks
         pass
 
     # Fetch user's likes (with progress reporting)
+    logger.info("Starting SoundCloud likes sync")
     print("\n🔄 Syncing SoundCloud likes...")
     tracks, all_liked_ids = _fetch_user_likes_with_markers(
         access_token, existing_ids=existing_ids, incremental=incremental
+    )
+    logger.info(
+        f"Fetched {len(tracks)} new tracks, {len(all_liked_ids)} total liked tracks"
     )
 
     # Sync like markers for all matched tracks (both new and existing)
@@ -79,6 +124,9 @@ def sync_library(state: ProviderState, incremental: bool = True) -> Tuple[Provid
     try:
         if all_liked_ids:
             print(f"📊 Syncing like markers for {len(all_liked_ids)} liked tracks...")
+            logger.debug(
+                f"Syncing like markers for {len(all_liked_ids)} SoundCloud tracks"
+            )
 
             # Get track IDs from database for all soundcloud tracks that are liked
             with database.get_db_connection() as conn:
@@ -96,8 +144,10 @@ def sync_library(state: ProviderState, incremental: bool = True) -> Tuple[Provid
             # Batch insert like markers (uses INSERT OR IGNORE to avoid duplicates)
             if db_track_ids:
                 likes_synced = database.batch_add_soundcloud_likes(db_track_ids)
+                logger.info(f"Synced {likes_synced} like markers to database")
                 print(f"✓ Synced {likes_synced} like markers")
     except Exception as e:
+        logger.error(f"Error syncing like markers: {e}", exc_info=True)
         print(f"⚠ Error syncing like markers: {e}")
         print("  Check logs for details")
 
@@ -143,8 +193,6 @@ def search(state: ProviderState, query: str) -> Tuple[ProviderState, TrackList]:
         return state, []
 
 
-
-
 def get_stream_url(state: ProviderState, provider_id: str) -> Optional[str]:
     """Get SoundCloud stream URL.
 
@@ -177,8 +225,6 @@ def get_stream_url(state: ProviderState, provider_id: str) -> Optional[str]:
     # SoundCloud stream URL
     # MPV will follow the redirect to the actual progressive HTTP stream
     return f"{API_BASE_URL}/tracks/{provider_id}/stream?oauth_token={access_token}"
-
-
 
 
 def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, Any]]]:
@@ -269,8 +315,6 @@ def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, A
         return state, []
 
 
-
-
 def get_playlist_tracks(
     state: ProviderState, playlist_id: str
 ) -> Tuple[ProviderState, TrackList]:
@@ -303,8 +347,9 @@ def get_playlist_tracks(
 
     access_token = token_data["access_token"]
 
-    # Fetch playlist tracks
-    url = f"{API_BASE_URL}/playlists/{playlist_id}"
+    # Fetch playlist tracks (using URN format)
+    playlist_urn = _format_playlist_urn(playlist_id)
+    url = f"{API_BASE_URL}/playlists/{playlist_urn}"
     headers = {"Authorization": f"OAuth {access_token}"}
     params = {"show_tracks": True}
 
@@ -327,9 +372,9 @@ def get_playlist_tracks(
         return state, []
 
 
-
-
-def like_track(state: ProviderState, track_id: str) -> Tuple[ProviderState, bool, Optional[str]]:
+def like_track(
+    state: ProviderState, track_id: str
+) -> Tuple[ProviderState, bool, Optional[str]]:
     """Like a track on SoundCloud.
 
     Args:
@@ -355,7 +400,11 @@ def like_track(state: ProviderState, track_id: str) -> Tuple[ProviderState, bool
             state = state.with_cache(token_data=new_token_data)
             token_data = new_token_data
         else:
-            return state.with_authenticated(False), False, "Token expired and refresh failed"
+            return (
+                state.with_authenticated(False),
+                False,
+                "Token expired and refresh failed",
+            )
 
     access_token = token_data["access_token"]
 
@@ -387,9 +436,9 @@ def like_track(state: ProviderState, track_id: str) -> Tuple[ProviderState, bool
         return state, False, f"Unexpected error: {str(e)}"
 
 
-
-
-def unlike_track(state: ProviderState, track_id: str) -> Tuple[ProviderState, bool, Optional[str]]:
+def unlike_track(
+    state: ProviderState, track_id: str
+) -> Tuple[ProviderState, bool, Optional[str]]:
     """Unlike a track on SoundCloud.
 
     Args:
@@ -415,7 +464,11 @@ def unlike_track(state: ProviderState, track_id: str) -> Tuple[ProviderState, bo
             state = state.with_cache(token_data=new_token_data)
             token_data = new_token_data
         else:
-            return state.with_authenticated(False), False, "Token expired and refresh failed"
+            return (
+                state.with_authenticated(False),
+                False,
+                "Token expired and refresh failed",
+            )
 
     access_token = token_data["access_token"]
 
@@ -452,8 +505,6 @@ def unlike_track(state: ProviderState, track_id: str) -> Tuple[ProviderState, bo
 # ============================================================================
 
 
-
-
 def _get_client_credentials_token() -> str:
     """Get access token using Client Credentials flow (for public data).
 
@@ -463,7 +514,7 @@ def _get_client_credentials_token() -> str:
     Raises:
         ValueError: If client credentials are not configured
     """
-    tokens_file = _get_tokens_dir() / "app_token.json"
+    tokens_file = auth._get_tokens_dir() / "app_token.json"
 
     # Try cached token
     if tokens_file.exists():
@@ -514,8 +565,6 @@ def _get_client_credentials_token() -> str:
         raise ValueError(f"Failed to get client credentials token: {e}")
 
 
-
-
 def _fetch_user_likes(
     access_token: str, existing_ids: Optional[set] = None, incremental: bool = True
 ) -> TrackList:
@@ -531,8 +580,6 @@ def _fetch_user_likes(
     """
     tracks, _ = _fetch_user_likes_with_markers(access_token, existing_ids, incremental)
     return tracks
-
-
 
 
 def _fetch_user_likes_with_markers(
@@ -577,7 +624,9 @@ def _fetch_user_likes_with_markers(
 
             # Show pagination progress
             collection = data.get("collection", [])
-            fetched_this_page = len([item for item in collection if item and item.get("kind") == "track"])
+            fetched_this_page = len(
+                [item for item in collection if item and item.get("kind") == "track"]
+            )
 
             # Process tracks
             page_tracks = 0
@@ -608,7 +657,7 @@ def _fetch_user_likes_with_markers(
 
             # Incremental mode: Stop if we found an existing track
             if found_existing:
-                print(f"  ✓ Stopping at first existing track (incremental mode)")
+                print("  ✓ Stopping at first existing track (incremental mode)")
                 break
 
             # Next page
@@ -621,8 +670,6 @@ def _fetch_user_likes_with_markers(
 
     print(f"  ✓ Fetched {total_fetched} liked tracks")
     return tracks, all_liked_ids
-
-
 
 
 def _normalize_soundcloud_track(track: Dict[str, Any]) -> Dict[str, Any]:
@@ -650,8 +697,6 @@ def _normalize_soundcloud_track(track: Dict[str, Any]) -> Dict[str, Any]:
     # Keep None values for consistent field set across all tracks
     # This prevents "binding parameter" errors during batch insert
     return metadata
-
-
 
 
 def add_track_to_playlist(
@@ -687,13 +732,18 @@ def add_track_to_playlist(
             state = state.with_cache(token_data=new_token_data)
             token_data = new_token_data
         else:
-            return state.with_authenticated(False), False, "Token expired and refresh failed"
+            return (
+                state.with_authenticated(False),
+                False,
+                "Token expired and refresh failed",
+            )
 
     access_token = token_data["access_token"]
 
     try:
-        # 1. Get current playlist
-        url = f"{API_BASE_URL}/playlists/{playlist_id}"
+        # 1. Get current playlist (using URN format)
+        playlist_urn = _format_playlist_urn(playlist_id)
+        url = f"{API_BASE_URL}/playlists/{playlist_urn}"
         headers = {"Authorization": f"OAuth {access_token}"}
 
         response = requests.get(url, headers=headers, timeout=30)
@@ -706,16 +756,19 @@ def add_track_to_playlist(
 
         # Check if track already in playlist
         if track_id in track_ids:
-            return state, False, f"Track already in playlist"
+            return state, False, "Track already in playlist"
 
         track_ids.append(track_id)
 
-        # 3. Update playlist with new track list
+        # 3. Update playlist with new track list (using URN format for tracks)
         update_data = {
             "playlist": {
-                "tracks": [{"id": tid} for tid in track_ids]
+                "tracks": [{"urn": _format_track_urn(tid)} for tid in track_ids]
             }
         }
+
+        logger.debug(f"Adding track to playlist - URL: {url}")
+        logger.debug(f"Request payload: {json.dumps(update_data, indent=2)}")
 
         response = requests.put(url, headers=headers, json=update_data, timeout=30)
         response.raise_for_status()
@@ -723,17 +776,32 @@ def add_track_to_playlist(
         return state, True, None
 
     except requests.HTTPError as e:
+        # Log full error details
+        logger.error(f"HTTP error adding track to playlist: {e.response.status_code}")
+        logger.error(f"Request URL: {url}")
+        logger.error(f"Request payload: {json.dumps(update_data, indent=2)}")
+        logger.error(f"Response body: {e.response.text}")
+
         if e.response.status_code == 401:
             return state.with_authenticated(False), False, "Authentication failed (401)"
         elif e.response.status_code == 404:
-            return state, False, f"Playlist or track not found (404)"
+            return state, False, "Playlist or track not found (404)"
         elif e.response.status_code == 429:
             return state, False, "Rate limit exceeded (429)"
         else:
-            return state, False, f"HTTP error: {e.response.status_code}"
+            # Include response body for debugging 500 errors
+            try:
+                error_detail = e.response.text[:500]  # First 500 chars of error
+                return state, False, f"HTTP {e.response.status_code}: {error_detail}"
+            except:
+                return state, False, f"HTTP error: {e.response.status_code}"
     except requests.RequestException as e:
+        logger.error(f"Network error adding track to playlist: {str(e)}", exc_info=True)
         return state, False, f"Network error: {str(e)}"
     except Exception as e:
+        logger.error(
+            f"Unexpected error adding track to playlist: {str(e)}", exc_info=True
+        )
         return state, False, f"Unexpected error: {str(e)}"
 
 
@@ -770,13 +838,18 @@ def remove_track_from_playlist(
             state = state.with_cache(token_data=new_token_data)
             token_data = new_token_data
         else:
-            return state.with_authenticated(False), False, "Token expired and refresh failed"
+            return (
+                state.with_authenticated(False),
+                False,
+                "Token expired and refresh failed",
+            )
 
     access_token = token_data["access_token"]
 
     try:
-        # 1. Get current playlist
-        url = f"{API_BASE_URL}/playlists/{playlist_id}"
+        # 1. Get current playlist (using URN format)
+        playlist_urn = _format_playlist_urn(playlist_id)
+        url = f"{API_BASE_URL}/playlists/{playlist_urn}"
         headers = {"Authorization": f"OAuth {access_token}"}
 
         response = requests.get(url, headers=headers, timeout=30)
@@ -789,16 +862,19 @@ def remove_track_from_playlist(
 
         # Check if track in playlist
         if track_id not in track_ids:
-            return state, False, f"Track not in playlist"
+            return state, False, "Track not in playlist"
 
         track_ids.remove(track_id)
 
-        # 3. Update playlist with new track list
+        # 3. Update playlist with new track list (using URN format for tracks)
         update_data = {
             "playlist": {
-                "tracks": [{"id": tid} for tid in track_ids]
+                "tracks": [{"urn": _format_track_urn(tid)} for tid in track_ids]
             }
         }
+
+        logger.debug(f"Removing track from playlist - URL: {url}")
+        logger.debug(f"Request payload: {json.dumps(update_data, indent=2)}")
 
         response = requests.put(url, headers=headers, json=update_data, timeout=30)
         response.raise_for_status()
@@ -806,17 +882,36 @@ def remove_track_from_playlist(
         return state, True, None
 
     except requests.HTTPError as e:
+        # Log full error details
+        logger.error(
+            f"HTTP error removing track from playlist: {e.response.status_code}"
+        )
+        logger.error(f"Request URL: {url}")
+        logger.error(f"Request payload: {json.dumps(update_data, indent=2)}")
+        logger.error(f"Response body: {e.response.text}")
+
         if e.response.status_code == 401:
             return state.with_authenticated(False), False, "Authentication failed (401)"
         elif e.response.status_code == 404:
-            return state, False, f"Playlist or track not found (404)"
+            return state, False, "Playlist or track not found (404)"
         elif e.response.status_code == 429:
             return state, False, "Rate limit exceeded (429)"
         else:
-            return state, False, f"HTTP error: {e.response.status_code}"
+            # Include response body for debugging 500 errors
+            try:
+                error_detail = e.response.text[:500]  # First 500 chars of error
+                return state, False, f"HTTP {e.response.status_code}: {error_detail}"
+            except:
+                return state, False, f"HTTP error: {e.response.status_code}"
     except requests.RequestException as e:
+        logger.error(
+            f"Network error removing track from playlist: {str(e)}", exc_info=True
+        )
         return state, False, f"Network error: {str(e)}"
     except Exception as e:
+        logger.error(
+            f"Unexpected error removing track from playlist: {str(e)}", exc_info=True
+        )
         return state, False, f"Unexpected error: {str(e)}"
 
 
@@ -848,7 +943,11 @@ def create_playlist(
             state = state.with_cache(token_data=new_token_data)
             token_data = new_token_data
         else:
-            return state.with_authenticated(False), None, "Token expired and refresh failed"
+            return (
+                state.with_authenticated(False),
+                None,
+                "Token expired and refresh failed",
+            )
 
     access_token = token_data["access_token"]
 

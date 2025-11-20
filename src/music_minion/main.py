@@ -10,6 +10,7 @@ from typing import List, Optional
 
 from music_minion.core import config
 from music_minion.core import database
+from music_minion.core import logging as mm_logging
 from music_minion.domain import library
 from music_minion.domain import playback
 from music_minion.domain import ai
@@ -419,6 +420,16 @@ def interactive_mode_blessed() -> None:
     # Always load config from file
     current_config = config.load_config()
 
+    # Initialize logging from config
+    log_file = Path(current_config.logging.log_file) if current_config.logging.log_file else None
+    mm_logging.setup_logging(
+        level=current_config.logging.level,
+        log_file_path=log_file,
+        max_bytes=current_config.logging.max_file_size_mb * 1024 * 1024,
+        backup_count=current_config.logging.backup_count,
+        console_output=current_config.logging.console_output
+    )
+
     # Load music library using context
     ctx = helpers.create_context_from_globals()
     ctx, success = helpers.ensure_library_loaded(ctx)
@@ -457,6 +468,16 @@ def interactive_mode() -> None:
 
     # Always load config from file
     current_config = config.load_config()
+
+    # Initialize logging from config
+    log_file = Path(current_config.logging.log_file) if current_config.logging.log_file else None
+    mm_logging.setup_logging(
+        level=current_config.logging.level,
+        log_file_path=log_file,
+        max_bytes=current_config.logging.max_file_size_mb * 1024 * 1024,
+        backup_count=current_config.logging.backup_count,
+        console_output=current_config.logging.console_output
+    )
 
     # Run database migrations on startup
     database.init_database()

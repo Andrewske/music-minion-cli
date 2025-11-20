@@ -58,7 +58,8 @@ music-minion/
 │   │
 │   ├── core/                   # Core infrastructure
 │   │   ├── config.py           # Configuration loading (TOML)
-│   │   ├── database.py         # SQLite operations (schema v9)
+│   │   ├── database.py         # SQLite operations (schema v17)
+│   │   ├── logging.py          # Centralized logging with rotation
 │   │   └── console.py          # Console utilities
 │   │
 │   ├── domain/                 # Business logic (functional)
@@ -239,8 +240,12 @@ music-minion/
 - Load with Python's built-in tomllib
 
 ### Logging Strategy
-- **Two levels**: User-facing errors and detailed debug logs
-- Preserve user workflow even when AI/metadata operations fail
+- **Centralized logging**: Configured at startup via `core/logging.py`
+- **Default location**: `~/.local/share/music-minion/music-minion.log`
+- **Configurable**: Log level, file location, rotation size, backup count in config.toml
+- **Automatic rotation**: 10MB max file size, 5 backups by default
+- **Format**: `2025-11-20 15:12:11 | INFO | module:line | message`
+- **Usage**: All modules use `logging.getLogger(__name__)` - no per-module setup needed
 
 ## Core Features & Commands
 
@@ -567,4 +572,4 @@ main.py
 
 ---
 
-**Last Updated**: 2025-11-20 after SoundCloud like integration and provider refactoring (schema v17)
+**Last Updated**: 2025-11-20 after centralized logging implementation

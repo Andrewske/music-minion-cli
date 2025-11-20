@@ -593,6 +593,7 @@ def migrate_database(conn, current_version: int) -> None:
 def init_database() -> None:
     """Initialize the database with required tables."""
     db_path = get_database_path()
+    logger.info(f"Initializing database at: {db_path}")
 
     # Ensure data directory exists
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -734,7 +735,10 @@ def init_database() -> None:
         cursor.close()  # Close cursor to release any locks before migration
 
         if current_version < SCHEMA_VERSION:
+            logger.info(f"Running database migrations from v{current_version} to v{SCHEMA_VERSION}")
             migrate_database(conn, current_version)
+        else:
+            logger.debug(f"Database schema is up to date (v{current_version})")
 
         # Set schema version (delete old rows to prevent duplicates)
         conn.execute("DELETE FROM schema_version")

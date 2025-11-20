@@ -84,6 +84,16 @@ class SyncConfig:
 
 
 @dataclass
+class LoggingConfig:
+    """Configuration for logging."""
+    level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+    log_file: Optional[str] = None  # Custom log file path (default: ~/.local/share/music-minion/music-minion.log)
+    max_file_size_mb: int = 10  # Maximum log file size before rotation
+    backup_count: int = 5  # Number of backup files to keep
+    console_output: bool = False  # Also output to console (for debugging)
+
+
+@dataclass
 class SoundCloudConfig:
     """Configuration for SoundCloud provider integration."""
     enabled: bool = False
@@ -103,6 +113,7 @@ class Config:
     ui: UIConfig = field(default_factory=UIConfig)
     playlists: PlaylistConfig = field(default_factory=PlaylistConfig)
     sync: SyncConfig = field(default_factory=SyncConfig)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
     soundcloud: SoundCloudConfig = field(default_factory=SoundCloudConfig)
 
 
@@ -234,6 +245,22 @@ sync_method = "manual"
 # Auto-watch files for changes (future feature)
 auto_watch_files = false
 
+[logging]
+# Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+level = "INFO"
+
+# Custom log file path (default: ~/.local/share/music-minion/music-minion.log)
+# log_file = "/path/to/custom/music-minion.log"
+
+# Maximum log file size in MB before rotation
+max_file_size_mb = 10
+
+# Number of backup log files to keep
+backup_count = 5
+
+# Also output logs to console (useful for debugging)
+console_output = false
+
 [soundcloud]
 # Enable SoundCloud integration
 enabled = false
@@ -351,6 +378,19 @@ def load_config() -> Config:
                 auto_watch_files=sync_data.get('auto_watch_files', config.sync.auto_watch_files)
             )
 
+        if 'logging' in toml_data:
+            logging_data = toml_data['logging']
+            log_file = logging_data.get('log_file')
+            if log_file:
+                log_file = str(Path(log_file).expanduser())
+            config.logging = LoggingConfig(
+                level=logging_data.get('level', config.logging.level).upper(),
+                log_file=log_file,
+                max_file_size_mb=logging_data.get('max_file_size_mb', config.logging.max_file_size_mb),
+                backup_count=logging_data.get('backup_count', config.logging.backup_count),
+                console_output=logging_data.get('console_output', config.logging.console_output)
+            )
+
         if 'soundcloud' in toml_data:
             soundcloud_data = toml_data['soundcloud']
             config.soundcloud = SoundCloudConfig(
@@ -438,6 +478,17 @@ metadata_tag_field = "{config.sync.metadata_tag_field}"
 tag_prefix = "{config.sync.tag_prefix}"
 sync_method = "{config.sync.sync_method}"
 auto_watch_files = {config.sync.auto_watch_files!r}
+
+[logging]
+level = "{config.logging.level}"
+max_file_size_mb = {config.logging.max_file_size_mb}
+backup_count = {config.logging.backup_count}
+console_output = {config.logging.console_output!r}"""
+
+        if config.logging.log_file:
+            toml_content += f'\nlog_file = "{config.logging.log_file}"'
+
+        toml_content += """
 
 [soundcloud]
 enabled = {config.soundcloud.enabled!r}

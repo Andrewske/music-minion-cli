@@ -2045,4 +2045,64 @@ inserted = database.batch_add_soundcloud_likes(track_ids)  # executemany()
 
 ---
 
-**Last Updated**: 2025-11-20 after SoundCloud like integration (database v17, provider refactoring)
+## Centralized Logging Implementation (2025-11-20)
+
+### Logging Setup Pattern
+**Pattern**: Initialize logging once at application startup from config
+```python
+# core/logging.py - Centralized setup
+from logging.handlers import RotatingFileHandler
+
+def setup_logging(level: str, log_file_path: Optional[Path], max_bytes: int, backup_count: int, console_output: bool):
+    log_file = log_file_path or get_data_dir() / "music-minion.log"
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(getattr(logging, level.upper(), logging.INFO))
+    root_logger.handlers.clear()  # Remove existing handlers
+
+    # File handler with rotation
+    file_handler = RotatingFileHandler(log_file, maxBytes=max_bytes, backupCount=backup_count)
+    file_handler.setFormatter(logging.Formatter(
+        fmt='%(asctime)s | %(levelname)-8s | %(name)s:%(lineno)d | %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    ))
+    root_logger.addHandler(file_handler)
+
+# main.py - Initialize at startup
+mm_logging.setup_logging(
+    level=config.logging.level,
+    log_file_path=Path(config.logging.log_file) if config.logging.log_file else None,
+    max_bytes=config.logging.max_file_size_mb * 1024 * 1024,
+    backup_count=config.logging.backup_count,
+    console_output=config.logging.console_output
+)
+```
+
+**Benefits**:
+- ✅ Single initialization point (main.py startup)
+- ✅ All modules automatically log to file via `logging.getLogger(__name__)`
+- ✅ Automatic log rotation (default: 10MB, 5 backups)
+- ✅ Configurable via config.toml
+- ✅ Clear handlers before setup prevents duplicate logs
+
+**Learning**: Configure root logger at startup, then all modules use `logging.getLogger(__name__)` - no per-module configuration needed. Clearing handlers prevents duplicates on hot-reload.
+
+### Log File Location Configuration
+**Pattern**: Optional custom log file path with home directory expansion
+```python
+# config.toml
+[logging]
+log_file = "~/my-logs/music-minion.log"  # Expands ~ to home directory
+
+# config.py - Load and expand
+log_file = logging_data.get('log_file')
+if log_file:
+    log_file = str(Path(log_file).expanduser())
+```
+
+**Learning**: Always use `Path.expanduser()` for user-provided paths. Default to `~/.local/share/music-minion/music-minion.log` if not specified.
+
+---
+
+**Last Updated**: 2025-11-20 after centralized logging implementation

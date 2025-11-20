@@ -181,6 +181,9 @@ def auto_export_if_enabled(playlist_id: int, ctx: Optional[AppContext] = None) -
     """
     Auto-export a playlist if auto-export is enabled in config.
 
+    Only exports when active library is 'local'. Streaming libraries (soundcloud,
+    spotify, youtube) do not support file export.
+
     Args:
         playlist_id: ID of the playlist to export
         ctx: Optional application context (for config access). If None, loads config.
@@ -192,6 +195,17 @@ def auto_export_if_enabled(playlist_id: int, ctx: Optional[AppContext] = None) -
         cfg = config.load_config()
 
     if not cfg.playlists.auto_export:
+        return
+
+    # Check active library - only export for local library
+    with database.get_db_connection() as conn:
+        cursor = conn.execute("SELECT provider FROM active_library WHERE id = 1")
+        row = cursor.fetchone()
+        active_library = row['provider'] if row else 'local'
+
+    # Skip export for streaming libraries (soundcloud, spotify, youtube)
+    # Export is only supported for local file libraries
+    if active_library != 'local':
         return
 
     # Validate library paths exist

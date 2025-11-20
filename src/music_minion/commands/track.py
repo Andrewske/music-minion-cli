@@ -33,23 +33,41 @@ def handle_add_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bo
         return ctx, True
 
     name = ' '.join(args)
+
+    # Get active library for better error messages
+    with database.get_db_connection() as conn:
+        cursor = conn.execute("SELECT provider FROM active_library WHERE id = 1")
+        row = cursor.fetchone()
+        active_library = row['provider'] if row else 'local'
+
     pl = playlists.get_playlist_by_name(name)
 
     if not pl:
-        print(f"❌ Playlist '{name}' not found")
+        print(f"❌ Playlist '{name}' not found in {active_library} library")
+        if active_library != 'local':
+            print(f"   Tip: Switch to local library with 'library active local' to access local playlists")
         return ctx, True
 
-    # Get current track ID
-    db_track = database.get_track_by_path(ctx.player_state.current_track)
+    # Get current track ID - prefer using the cached ID from player state
+    track_id = ctx.player_state.current_track_id
+
+    # Fallback to path lookup for backward compatibility
+    if not track_id:
+        db_track = database.get_track_by_path(ctx.player_state.current_track)
+        if not db_track:
+            print("❌ Could not find current track in database")
+            return ctx, True
+        track_id = db_track['id']
+
+    # Fetch full track info from database using track_id
+    db_track = database.get_track_by_id(track_id)
     if not db_track:
         print("❌ Could not find current track in database")
         return ctx, True
 
-    track_id = db_track['id']
-
     try:
         # Check if playlist is a SoundCloud playlist
-        soundcloud_playlist_id = db_track.get('soundcloud_playlist_id')
+        soundcloud_playlist_id = pl.get('soundcloud_playlist_id')
         soundcloud_track_id = db_track.get('soundcloud_id')
 
         if soundcloud_playlist_id and soundcloud_track_id:
@@ -124,23 +142,41 @@ def handle_remove_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext,
         return ctx, True
 
     name = ' '.join(args)
+
+    # Get active library for better error messages
+    with database.get_db_connection() as conn:
+        cursor = conn.execute("SELECT provider FROM active_library WHERE id = 1")
+        row = cursor.fetchone()
+        active_library = row['provider'] if row else 'local'
+
     pl = playlists.get_playlist_by_name(name)
 
     if not pl:
-        print(f"❌ Playlist '{name}' not found")
+        print(f"❌ Playlist '{name}' not found in {active_library} library")
+        if active_library != 'local':
+            print(f"   Tip: Switch to local library with 'library active local' to access local playlists")
         return ctx, True
 
-    # Get current track ID
-    db_track = database.get_track_by_path(ctx.player_state.current_track)
+    # Get current track ID - prefer using the cached ID from player state
+    track_id = ctx.player_state.current_track_id
+
+    # Fallback to path lookup for backward compatibility
+    if not track_id:
+        db_track = database.get_track_by_path(ctx.player_state.current_track)
+        if not db_track:
+            print("❌ Could not find current track in database")
+            return ctx, True
+        track_id = db_track['id']
+
+    # Fetch full track info from database using track_id
+    db_track = database.get_track_by_id(track_id)
     if not db_track:
         print("❌ Could not find current track in database")
         return ctx, True
 
-    track_id = db_track['id']
-
     try:
         # Check if playlist is a SoundCloud playlist
-        soundcloud_playlist_id = db_track.get('soundcloud_playlist_id')
+        soundcloud_playlist_id = pl.get('soundcloud_playlist_id')
         soundcloud_track_id = db_track.get('soundcloud_id')
 
         if soundcloud_playlist_id and soundcloud_track_id:
