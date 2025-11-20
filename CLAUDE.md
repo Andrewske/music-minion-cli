@@ -78,7 +78,10 @@ music-minion/
 │   │   │   ├── providers/      # Provider implementations
 │   │   │   │   ├── __init__.py # Provider registry
 │   │   │   │   ├── local.py    # Local file provider
-│   │   │   │   └── soundcloud.py # SoundCloud OAuth + API client
+│   │   │   │   └── soundcloud/ # SoundCloud provider (OAuth + API)
+│   │   │   │       ├── __init__.py  # Re-exports
+│   │   │   │       ├── auth.py      # OAuth 2.0 + PKCE
+│   │   │   │       └── api.py       # API operations
 │   │   │   └── __init__.py
 │   │   ├── playback/           # Audio playback
 │   │   │   ├── player.py       # MPV integration
@@ -244,8 +247,9 @@ music-minion/
 ### Interactive Rating System
 - `archive` - Remove from rotation (never play again)
 - `skip` - Skip without penalty (mood-dependent)
-- `like` - Basic positive rating
+- `like` - Basic positive rating (auto-syncs to SoundCloud if track has soundcloud_id)
 - `love` - Strong positive rating
+- `unlike` - Remove SoundCloud like marker and unsync from SoundCloud
 - `note "text"` - Add contextual notes
 
 ### AI Integration Commands
@@ -399,7 +403,7 @@ except Exception:
 
 ## Database Schema
 
-### Current Version: v14
+### Current Version: v17
 **Location**: `src/music_minion/core/database.py`
 
 ### Core Tables
@@ -411,6 +415,8 @@ except Exception:
   - **Provider playlists (v12)**: `soundcloud_playlist_id`, `spotify_playlist_id`, `youtube_playlist_id`
   - **Sync tracking (v12)**: `last_track_count` for incremental provider sync
 - `ratings` - User ratings with timestamps and context
+  - **Provider like tracking (v17)**: Added `source` column ('user', 'soundcloud', 'spotify', 'youtube')
+  - **Performance index (v17)**: `idx_ratings_track_source` for fast provider like lookups
 - `tags` - Track tags with source tracking ('user', 'ai', 'file') and reasoning (v9)
 - `notes` - Contextual notes about tracks
 
@@ -561,4 +567,4 @@ main.py
 
 ---
 
-**Last Updated**: 2025-11-18 after multi-source provider integration (SoundCloud)
+**Last Updated**: 2025-11-20 after SoundCloud like integration and provider refactoring (schema v17)

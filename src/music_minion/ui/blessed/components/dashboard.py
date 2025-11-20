@@ -123,7 +123,7 @@ def render_dashboard(
     # Track information
     elif player_state.current_track:
         if metadata:
-            track_lines = format_track_display(metadata, term)
+            track_lines = format_track_display(metadata, term, ui_state.current_track_has_soundcloud_like)
             lines.extend(track_lines)
         else:
             # Track is playing but no metadata yet (not in DB or lookup failed)
@@ -291,10 +291,12 @@ def get_progress_color(percentage: float, term: Terminal):
     return term.red
 
 
-def format_track_display(metadata: TrackMetadata, term: Terminal) -> list[str]:
+def format_track_display(metadata: TrackMetadata, term: Terminal, has_soundcloud_like: bool = False) -> list[str]:
     """Format track information for display."""
     lines = []
-    lines.append(term.bold_white(f"{ICONS['note']} {metadata.title}"))
+    # Add heart indicator if track is liked on SoundCloud
+    heart = term.red(" ♥") if has_soundcloud_like else ""
+    lines.append(term.bold_white(f"{ICONS['note']} {metadata.title}") + heart)
 
     # Format main artists
     formatted_artists = format_artists(metadata.artist)

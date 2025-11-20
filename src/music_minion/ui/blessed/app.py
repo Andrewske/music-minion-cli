@@ -253,12 +253,16 @@ def poll_player_state(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, U
                 })
 
                 ui_state = update_track_info(ui_state, track_data)
+
+                # Check if track has SoundCloud like marker (for heart indicator)
+                has_sc_like = database.has_soundcloud_like(db_track['id'])
+                ui_state = replace(ui_state, current_track_has_soundcloud_like=has_sc_like)
             else:
                 # Track not in database - clear metadata to show fallback
-                ui_state = replace(ui_state, track_metadata=None, track_db_info=None)
+                ui_state = replace(ui_state, track_metadata=None, track_db_info=None, current_track_has_soundcloud_like=False)
         else:
             # No track playing - clear metadata
-            ui_state = replace(ui_state, track_metadata=None, track_db_info=None)
+            ui_state = replace(ui_state, track_metadata=None, track_db_info=None, current_track_has_soundcloud_like=False)
 
         # Update shuffle mode state from database
         shuffle_enabled = playback_state.get_shuffle_mode()
