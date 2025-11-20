@@ -24,6 +24,7 @@ class PlayerState(NamedTuple):
     socket_path: Optional[str] = None
     process: Optional[subprocess.Popen] = None
     current_track: Optional[str] = None
+    current_track_id: Optional[int] = None  # Database track ID for easier lookup
     is_playing: bool = False
     current_position: float = 0.0
     duration: float = 0.0
@@ -49,9 +50,12 @@ def start_mpv(config: Config) -> Optional[PlayerState]:
         temp_dir = Path(tempfile.gettempdir())
         socket_path = str(temp_dir / f"mpv-socket-{os.getpid()}")
 
+    logger.info(f"Starting MPV player with socket: {socket_path}")
+
     try:
         # Remove existing socket if it exists
         if os.path.exists(socket_path):
+            logger.debug(f"Removing existing socket: {socket_path}")
             os.unlink(socket_path)
 
         # Start MPV with JSON IPC
@@ -78,18 +82,22 @@ def start_mpv(config: Config) -> Optional[PlayerState]:
         start_time = time.time()
         while not os.path.exists(socket_path):
             if time.time() - start_time > timeout:
+                logger.error(f"MPV socket creation timeout after {timeout}s")
                 process.kill()
                 return None
             time.sleep(0.1)
 
         # Test connection
         if send_mpv_command(socket_path, {"command": ["get_property", "idle-active"]}):
+            logger.info("MPV started successfully")
             return PlayerState(socket_path=socket_path, process=process)
         else:
+            logger.error("MPV socket connection test failed")
             process.kill()
             return None
 
     except (subprocess.SubprocessError, OSError) as e:
+        logger.error(f"Failed to start MPV: {e}")
         print(f"Failed to start MPV: {e}")
         return None
 
@@ -192,8 +200,17 @@ def get_mpv_property(socket_path: Optional[str], property_name: str) -> Any:
         return None
 
 
-def play_file(state: PlayerState, local_path: str) -> Tuple[PlayerState, bool]:
-    """Play a specific audio file and return updated state."""
+def play_file(state: PlayerState, local_path: str, track_id: Optional[int] = None) -> Tuple[PlayerState, bool]:
+    """Play a specific audio file and return updated state.
+
+    Args:
+        state: Current player state
+        local_path: Path or URL to play
+        track_id: Optional database track ID for easier lookup
+
+    Returns:
+        Tuple of (updated_state, success)
+    """
     if not is_mpv_running(state):
         return state, False
 
@@ -224,7 +241,7 @@ def play_file(state: PlayerState, local_path: str) -> Tuple[PlayerState, bool]:
 
         # Update status to get actual playback state
         updated_state = update_player_status(
-            state._replace(current_track=local_path, is_playing=True)
+            state._replace(current_track=local_path, current_track_id=track_id, is_playing=True)
         )
         return updated_state, True
 

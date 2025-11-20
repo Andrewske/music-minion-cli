@@ -241,22 +241,64 @@ def get_playlists_sorted_by_recent(provider: Optional[str] = None) -> List[Dict[
         return [dict(row) for row in cursor.fetchall()]
 
 
-def get_playlist_by_name(name: str) -> Optional[Dict[str, Any]]:
+def get_playlist_by_name(name: str, provider: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
-    Get playlist by name.
+    Get playlist by name, filtered by provider.
 
     Args:
         name: Playlist name
+        provider: Provider to filter by ('local', 'soundcloud', 'spotify', 'youtube').
+                 If None, uses active library from database.
 
     Returns:
-        Playlist dict or None if not found
+        Playlist dict or None if not found (includes all columns including provider IDs)
     """
     with get_db_connection() as conn:
-        cursor = conn.execute("""
-            SELECT id, name, type, description, created_at, updated_at
-            FROM playlists
-            WHERE name = ?
-        """, (name,))
+        # Get active library if provider not specified
+        if provider is None:
+            cursor = conn.execute("SELECT provider FROM active_library WHERE id = 1")
+            row = cursor.fetchone()
+            provider = row['provider'] if row else 'local'
+
+        # Build query based on provider
+        if provider == 'local':
+            # Local playlists have no provider IDs
+            query = """
+                SELECT * FROM playlists
+                WHERE name = ?
+                AND soundcloud_playlist_id IS NULL
+                AND spotify_playlist_id IS NULL
+                AND youtube_playlist_id IS NULL
+            """
+        elif provider == 'soundcloud':
+            # SoundCloud playlists must have soundcloud_playlist_id
+            query = """
+                SELECT * FROM playlists
+                WHERE name = ? AND soundcloud_playlist_id IS NOT NULL
+            """
+        elif provider == 'spotify':
+            # Spotify playlists must have spotify_playlist_id
+            query = """
+                SELECT * FROM playlists
+                WHERE name = ? AND spotify_playlist_id IS NOT NULL
+            """
+        elif provider == 'youtube':
+            # YouTube playlists must have youtube_playlist_id
+            query = """
+                SELECT * FROM playlists
+                WHERE name = ? AND youtube_playlist_id IS NOT NULL
+            """
+        else:
+            # Unknown provider - default to local
+            query = """
+                SELECT * FROM playlists
+                WHERE name = ?
+                AND soundcloud_playlist_id IS NULL
+                AND spotify_playlist_id IS NULL
+                AND youtube_playlist_id IS NULL
+            """
+
+        cursor = conn.execute(query, (name,))
         row = cursor.fetchone()
         return dict(row) if row else None
 
@@ -269,13 +311,11 @@ def get_playlist_by_id(playlist_id: int) -> Optional[Dict[str, Any]]:
         playlist_id: Playlist ID
 
     Returns:
-        Playlist dict or None if not found
+        Playlist dict or None if not found (includes all columns including provider IDs)
     """
     with get_db_connection() as conn:
         cursor = conn.execute("""
-            SELECT id, name, type, description, created_at, updated_at
-            FROM playlists
-            WHERE id = ?
+            SELECT * FROM playlists WHERE id = ?
         """, (playlist_id,))
         row = cursor.fetchone()
         return dict(row) if row else None

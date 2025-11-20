@@ -125,6 +125,25 @@ def play_track(ctx: AppContext, track: library.Track, playlist_position: Optiona
 
         return ctx, True
 
+    # Find track in database (use provider ID for streaming tracks, local_path for local files)
+    # We do this BEFORE playing so we can pass track_id to play_file
+    track_id = None
+    if track.soundcloud_id:
+        db_track = database.get_track_by_provider_id('soundcloud', track.soundcloud_id)
+        track_id = db_track['id'] if db_track else None
+    elif track.spotify_id:
+        db_track = database.get_track_by_provider_id('spotify', track.spotify_id)
+        track_id = db_track['id'] if db_track else None
+    elif track.youtube_id:
+        db_track = database.get_track_by_provider_id('youtube', track.youtube_id)
+        track_id = db_track['id'] if db_track else None
+    elif track.local_path:
+        # For local files, use get_or_create_track
+        track_id = database.get_or_create_track(
+            track.local_path, track.title, track.artist, track.remix_artist,
+            track.album, track.genre, track.year, track.duration, track.key, track.bpm
+        )
+
     # Start MPV if not running
     if not playback.is_mpv_running(ctx.player_state):
         print("Starting music playback...")
@@ -135,7 +154,8 @@ def play_track(ctx: AppContext, track: library.Track, playlist_position: Optiona
         ctx = ctx.with_player_state(new_state)
 
     # Play the track (works for both local files and streaming URLs)
-    new_state, success = playback.play_file(ctx.player_state, playback_uri)
+    # Pass track_id so it's available in player state for add/remove commands
+    new_state, success = playback.play_file(ctx.player_state, playback_uri, track_id)
     ctx = ctx.with_player_state(new_state)
 
     if success:
@@ -146,24 +166,6 @@ def play_track(ctx: AppContext, track: library.Track, playlist_position: Optiona
         dj_info = library.get_dj_info(track)
         if dj_info != "No DJ metadata":
             safe_print(ctx, f"   {dj_info}", "magenta")
-
-        # Find track in database (use provider ID for streaming tracks, local_path for local files)
-        track_id = None
-        if track.soundcloud_id:
-            db_track = database.get_track_by_provider_id('soundcloud', track.soundcloud_id)
-            track_id = db_track['id'] if db_track else None
-        elif track.spotify_id:
-            db_track = database.get_track_by_provider_id('spotify', track.spotify_id)
-            track_id = db_track['id'] if db_track else None
-        elif track.youtube_id:
-            db_track = database.get_track_by_provider_id('youtube', track.youtube_id)
-            track_id = db_track['id'] if db_track else None
-        elif track.local_path:
-            # For local files, use get_or_create_track
-            track_id = database.get_or_create_track(
-                track.local_path, track.title, track.artist, track.remix_artist,
-                track.album, track.genre, track.year, track.duration, track.key, track.bpm
-            )
 
         # Start playback session if track found in database
         if track_id:
