@@ -575,170 +575,209 @@ def sync_playlists(
             "mode": "full" if full else "incremental"
         })
 
-        for i, pl_data in enumerate(playlists, 1):
-            pl_name = pl_data['name']
-            pl_id = pl_data['id']
-            pl_track_count = pl_data.get('track_count', 0)
-            pl_last_modified = pl_data.get('last_modified')
-            pl_created_at = pl_data.get('created_at')
+        # OPTIMIZATION: Batch lookup all existing playlists before loop
+        print_if_not_silent(f"🔍 Looking up existing playlists...", style="yellow")
+        provider_id_field = f"{provider_name}_playlist_id"
+        provider_playlist_ids = [pl['id'] for pl in playlists]
+        existing_playlists_map = {}
 
-            print_if_not_silent(f"\n[{i}/{len(playlists)}] Processing: {pl_name}")
-            print_if_not_silent(f"  Tracks: {pl_track_count}")
+        with database.get_db_connection() as conn:
+            if provider_playlist_ids:
+                placeholders = ','.join('?' * len(provider_playlist_ids))
+                query = f"""
+                    SELECT id, name, last_synced_at, provider_last_modified, {provider_id_field}
+                    FROM playlists
+                    WHERE {provider_id_field} IN ({placeholders})
+                """
+                cursor = conn.execute(query, provider_playlist_ids)
+                existing_playlists_map = {
+                    row[provider_id_field]: dict(row)
+                    for row in cursor.fetchall()
+                }
 
-            # Notify playlist start
-            update_progress("playlist_start", {
-                "index": i,
-                "name": pl_name,
-                "tracks": pl_track_count
-            })
+        print_if_not_silent(f"✓ Found {len(existing_playlists_map)} existing playlists", style="green")
 
+        # OPTIMIZATION: Single transaction for all playlist operations
+        with database.get_db_connection() as conn:
+            conn.execute("BEGIN")
             try:
-                # Check if playlist already exists
-                provider_id_field = f"{provider_name}_playlist_id"
-                existing = None
-                with database.get_db_connection() as conn:
-                    cursor = conn.execute(
-                        f"SELECT id, name, last_synced_at, provider_last_modified FROM playlists WHERE {provider_id_field} = ?",
-                        (pl_id,)
-                    )
-                    existing = cursor.fetchone()
+                for i, pl_data in enumerate(playlists, 1):
+                    pl_name = pl_data['name']
+                    pl_id = pl_data['id']
+                    pl_track_count = pl_data.get('track_count', 0)
+                    pl_last_modified = pl_data.get('last_modified')
+                    pl_created_at = pl_data.get('created_at')
 
-                # Incremental sync: Skip if not modified and not full sync
-                if existing and not full and pl_last_modified:
-                    existing_modified = existing['provider_last_modified']
-                    if existing_modified and pl_last_modified <= existing_modified:
-                        print_if_not_silent(f"  ⏭ Skipped (no changes since {existing_modified})", style="dim")
-                        skipped_count += 1
+                    print_if_not_silent(f"\n[{i}/{len(playlists)}] Processing: {pl_name}")
+                    print_if_not_silent(f"  Tracks: {pl_track_count}")
+
+                    # Notify playlist start
+                    update_progress("playlist_start", {
+                        "index": i,
+                        "name": pl_name,
+                        "tracks": pl_track_count
+                    })
+
+                    try:
+                        # OPTIMIZATION: Use pre-fetched playlist lookup
+                        existing = existing_playlists_map.get(pl_id)
+
+                        # Incremental sync: Skip if not modified and not full sync
+                        if existing and not full and pl_last_modified:
+                            existing_modified = existing['provider_last_modified']
+                            if existing_modified and pl_last_modified <= existing_modified:
+                                print_if_not_silent(f"  ⏭ Skipped (no changes since {existing_modified})", style="dim")
+                                skipped_count += 1
+                                continue
+
+                        # Get playlist tracks (use pre-fetched if available, otherwise fetch individually)
+                        if "tracks" in pl_data and pl_data["tracks"]:
+                            # Tracks were pre-fetched in get_playlists() call
+                            print_if_not_silent(f"  ✓ Using pre-fetched tracks ({len(pl_data['tracks'])} tracks)", style="dim")
+                            provider_tracks = pl_data["tracks"]
+                        else:
+                            # Fall back to individual fetch (large playlists or old provider implementations)
+                            print_if_not_silent(f"  📥 Fetching tracks from {provider_name}...", style="yellow")
+                            update_progress("status_update", {"status": f"Fetching tracks from {provider_name}..."})
+                            state, provider_tracks = provider.get_playlist_tracks(state, pl_id)
+
+                        if not provider_tracks:
+                            print_if_not_silent(f"  ⚠ No tracks found", style="yellow")
+                            skipped_count += 1
+                            continue
+
+                        # Batch lookup tracks in database by provider ID
+                        print_if_not_silent(f"  🔍 Looking up {len(provider_tracks)} tracks in database...")
+                        update_progress("status_update", {"status": f"Looking up {len(provider_tracks)} tracks in database..."})
+
+                        provider_id_col = f"{provider_name}_id"
+                        provider_ids = [track_id for track_id, _ in provider_tracks]
+
+                        # Single batch query with IN clause (using outer transaction connection)
+                        placeholders = ','.join('?' * len(provider_ids))
+                        query = f"SELECT id, {provider_id_col} FROM tracks WHERE {provider_id_col} IN ({placeholders})"
+                        cursor = conn.execute(query, provider_ids)
+
+                        # Build lookup dict
+                        id_map = {row[provider_id_col]: row['id'] for row in cursor.fetchall()}
+
+                        # Map provider IDs to database track IDs in order
+                        track_ids = [id_map[pid] for pid in provider_ids if pid in id_map]
+
+                        found_pct = (len(track_ids) / len(provider_tracks) * 100) if provider_tracks else 0
+                        print_if_not_silent(f"  ✓ Found {len(track_ids)}/{len(provider_tracks)} tracks ({found_pct:.0f}%)", style="green")
+
+                        if len(track_ids) < len(provider_tracks):
+                            missing = len(provider_tracks) - len(track_ids)
+                            print_if_not_silent(f"  ⚠ {missing} tracks not found (run 'library sync {provider_name}' first)", style="yellow")
+
+                        # Update existing playlist or create new one
+                        if existing:
+                            playlist_id = existing['id']
+                            print_if_not_silent(f"  💾 Updating existing playlist...", style="yellow")
+                            update_progress("status_update", {"status": "Updating existing playlist..."})
+
+                            # Clear existing tracks
+                            conn.execute("DELETE FROM playlist_tracks WHERE playlist_id = ?", (playlist_id,))
+
+                            # OPTIMIZATION: Batch insert tracks
+                            if track_ids:
+                                insert_data = [
+                                    (playlist_id, track_id, position)
+                                    for position, track_id in enumerate(track_ids)
+                                ]
+                                conn.executemany("""
+                                    INSERT INTO playlist_tracks (playlist_id, track_id, position)
+                                    VALUES (?, ?, ?)
+                                """, insert_data)
+
+                            # Update timestamps and track count
+                            conn.execute("""
+                                UPDATE playlists
+                                SET last_synced_at = ?,
+                                    provider_last_modified = ?,
+                                    provider_created_at = ?,
+                                    track_count = ?,
+                                    updated_at = CURRENT_TIMESTAMP
+                                WHERE id = ?
+                            """, (datetime.now().isoformat(), pl_last_modified, pl_created_at, len(track_ids), playlist_id))
+
+                            print_if_not_silent(f"  ✅ Updated '{pl_name}' with {len(track_ids)} tracks", style="bold green")
+                            updated_count += 1
+                            update_progress("playlist_complete", {
+                                "result": "updated",
+                                "tracks_added": len(track_ids),
+                                "stats": {"created": created_count, "updated": updated_count, "skipped": skipped_count, "failed": failed_count}
+                            })
+
+                        else:
+                            # Ensure unique playlist name (handle duplicates)
+                            final_name = pl_name
+                            cursor = conn.execute("SELECT id FROM playlists WHERE name = ?", (pl_name,))
+                            if cursor.fetchone():
+                                final_name = f"{provider_name.title()} - {pl_name}"
+                                print_if_not_silent(f"  ℹ Renamed to '{final_name}' (name collision)", style="cyan")
+
+                            print_if_not_silent(f"  💾 Creating playlist...", style="yellow")
+                            update_progress("status_update", {"status": "Creating playlist..."})
+
+                            # Create playlist in database (inline to use same transaction)
+                            cursor = conn.execute("""
+                                INSERT INTO playlists (name, type, description, track_count, created_at, updated_at)
+                                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                            """, (final_name, 'manual', pl_data.get('description'), len(track_ids)))
+                            playlist_id = cursor.lastrowid
+
+                            # Set provider playlist ID and timestamps
+                            conn.execute(f"""
+                                UPDATE playlists
+                                SET {provider_id_field} = ?,
+                                    last_synced_at = ?,
+                                    provider_last_modified = ?,
+                                    provider_created_at = ?
+                                WHERE id = ?
+                            """, (pl_id, datetime.now().isoformat(), pl_last_modified, pl_created_at, playlist_id))
+
+                            # OPTIMIZATION: Batch insert tracks
+                            if track_ids:
+                                insert_data = [
+                                    (playlist_id, track_id, position)
+                                    for position, track_id in enumerate(track_ids)
+                                ]
+                                conn.executemany("""
+                                    INSERT INTO playlist_tracks (playlist_id, track_id, position)
+                                    VALUES (?, ?, ?)
+                                """, insert_data)
+
+                            print_if_not_silent(f"  ✅ Created '{final_name}' with {len(track_ids)} tracks", style="bold green")
+                            created_count += 1
+                            update_progress("playlist_complete", {
+                                "result": "created",
+                                "tracks_added": len(track_ids),
+                                "stats": {"created": created_count, "updated": updated_count, "skipped": skipped_count, "failed": failed_count}
+                            })
+
+                        total_tracks_added += len(track_ids)
+
+                    except Exception as e:
+                        print_if_not_silent(f"  ❌ Failed: {e}", style="bold red")
+                        failures.append((pl_name, str(e)))
+                        failed_count += 1
+                        update_progress("playlist_complete", {
+                            "result": "failed",
+                            "tracks_added": 0,
+                            "stats": {"created": created_count, "updated": updated_count, "skipped": skipped_count, "failed": failed_count}
+                        })
                         continue
 
-                # Get playlist tracks from provider
-                print_if_not_silent(f"  📥 Fetching tracks from {provider_name}...", style="yellow")
-                update_progress("status_update", {"status": f"Fetching tracks from {provider_name}..."})
-                state, provider_tracks = provider.get_playlist_tracks(state, pl_id)
-
-                if not provider_tracks:
-                    print_if_not_silent(f"  ⚠ No tracks found", style="yellow")
-                    skipped_count += 1
-                    continue
-
-                # Batch lookup tracks in database by provider ID
-                print_if_not_silent(f"  🔍 Looking up {len(provider_tracks)} tracks in database...")
-                update_progress("status_update", {"status": f"Looking up {len(provider_tracks)} tracks in database..."})
-
-                provider_id_col = f"{provider_name}_id"
-                provider_ids = [track_id for track_id, _ in provider_tracks]
-
-                # Single batch query with IN clause
-                with database.get_db_connection() as conn:
-                    placeholders = ','.join('?' * len(provider_ids))
-                    query = f"SELECT id, {provider_id_col} FROM tracks WHERE {provider_id_col} IN ({placeholders})"
-                    cursor = conn.execute(query, provider_ids)
-
-                    # Build lookup dict
-                    id_map = {row[provider_id_col]: row['id'] for row in cursor.fetchall()}
-
-                # Map provider IDs to database track IDs in order
-                track_ids = [id_map[pid] for pid in provider_ids if pid in id_map]
-
-                found_pct = (len(track_ids) / len(provider_tracks) * 100) if provider_tracks else 0
-                print_if_not_silent(f"  ✓ Found {len(track_ids)}/{len(provider_tracks)} tracks ({found_pct:.0f}%)", style="green")
-
-                if len(track_ids) < len(provider_tracks):
-                    missing = len(provider_tracks) - len(track_ids)
-                    print_if_not_silent(f"  ⚠ {missing} tracks not found (run 'library sync {provider_name}' first)", style="yellow")
-
-                # Update existing playlist or create new one
-                if existing:
-                    playlist_id = existing['id']
-                    print_if_not_silent(f"  💾 Updating existing playlist...", style="yellow")
-                    update_progress("status_update", {"status": "Updating existing playlist..."})
-
-                    # Clear existing tracks
-                    with database.get_db_connection() as conn:
-                        conn.execute("DELETE FROM playlist_tracks WHERE playlist_id = ?", (playlist_id,))
-                        conn.commit()
-
-                    # Add new tracks
-                    if track_ids:
-                        for track_id in track_ids:
-                            playlist_crud.add_track_to_playlist(playlist_id, track_id)
-
-                    # Update timestamps
-                    with database.get_db_connection() as conn:
-                        conn.execute("""
-                            UPDATE playlists
-                            SET last_synced_at = ?,
-                                provider_last_modified = ?,
-                                provider_created_at = ?,
-                                updated_at = CURRENT_TIMESTAMP
-                            WHERE id = ?
-                        """, (datetime.now().isoformat(), pl_last_modified, pl_created_at, playlist_id))
-                        conn.commit()
-
-                    print_if_not_silent(f"  ✅ Updated '{pl_name}' with {len(track_ids)} tracks", style="bold green")
-                    updated_count += 1
-                    update_progress("playlist_complete", {
-                        "result": "updated",
-                        "tracks_added": len(track_ids),
-                        "stats": {"created": created_count, "updated": updated_count, "skipped": skipped_count, "failed": failed_count}
-                    })
-
-                else:
-                    # Ensure unique playlist name (handle duplicates)
-                    final_name = pl_name
-                    with database.get_db_connection() as conn:
-                        cursor = conn.execute("SELECT id FROM playlists WHERE name = ?", (pl_name,))
-                        if cursor.fetchone():
-                            final_name = f"{provider_name.title()} - {pl_name}"
-                            print_if_not_silent(f"  ℹ Renamed to '{final_name}' (name collision)", style="cyan")
-
-                    print_if_not_silent(f"  💾 Creating playlist...", style="yellow")
-                    update_progress("status_update", {"status": "Creating playlist..."})
-
-                    # Create playlist in database
-                    playlist_id = playlist_crud.create_playlist(
-                        name=final_name,
-                        playlist_type='manual',
-                        description=pl_data.get('description')
-                    )
-
-                    # Set provider playlist ID and timestamps
-                    with database.get_db_connection() as conn:
-                        conn.execute(f"""
-                            UPDATE playlists
-                            SET {provider_id_field} = ?,
-                                last_synced_at = ?,
-                                provider_last_modified = ?,
-                                provider_created_at = ?
-                            WHERE id = ?
-                        """, (pl_id, datetime.now().isoformat(), pl_last_modified, pl_created_at, playlist_id))
-                        conn.commit()
-
-                    # Add tracks to playlist
-                    if track_ids:
-                        for track_id in track_ids:
-                            playlist_crud.add_track_to_playlist(playlist_id, track_id)
-
-                    print_if_not_silent(f"  ✅ Created '{final_name}' with {len(track_ids)} tracks", style="bold green")
-                    created_count += 1
-                    update_progress("playlist_complete", {
-                        "result": "created",
-                        "tracks_added": len(track_ids),
-                        "stats": {"created": created_count, "updated": updated_count, "skipped": skipped_count, "failed": failed_count}
-                    })
-
-                total_tracks_added += len(track_ids)
+                # OPTIMIZATION: Single commit for all playlists
+                conn.commit()
+                print_if_not_silent(f"\n✓ Committed all playlist changes to database", style="green")
 
             except Exception as e:
-                print_if_not_silent(f"  ❌ Failed: {e}", style="bold red")
-                failures.append((pl_name, str(e)))
-                failed_count += 1
-                update_progress("playlist_complete", {
-                    "result": "failed",
-                    "tracks_added": 0,
-                    "stats": {"created": created_count, "updated": updated_count, "skipped": skipped_count, "failed": failed_count}
-                })
-                continue
+                conn.rollback()
+                print_if_not_silent(f"❌ Transaction failed, rolled back: {e}", style="bold red")
+                raise
 
         # Notify complete
         update_progress("complete", {
