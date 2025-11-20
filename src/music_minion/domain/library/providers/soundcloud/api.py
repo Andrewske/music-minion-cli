@@ -575,6 +575,10 @@ def _fetch_user_likes_with_markers(
             response.raise_for_status()
             data = response.json()
 
+            # Show pagination progress
+            collection = data.get("collection", [])
+            fetched_this_page = len([item for item in collection if item and item.get("kind") == "track"])
+
             # Process tracks
             page_tracks = 0
             found_existing = False
@@ -599,33 +603,12 @@ def _fetch_user_likes_with_markers(
 
             total_fetched = len(all_liked_ids)
 
-            # Show progress every 200 tracks
-            if total_fetched % 200 == 0:
-                print(f"  Fetching likes: {total_fetched}...")
+            # Show progress per page
+            print(f"  → {total_fetched} (page {page}, +{fetched_this_page})")
 
-            # Stop if we found an existing track (but still track the IDs)
+            # Incremental mode: Stop if we found an existing track
             if found_existing:
-                # Continue fetching IDs only (no track metadata) for marker sync
-                # This ensures we sync markers for ALL liked tracks, not just new ones
-                while url:
-                    url = data.get("next_href")
-                    if not url:
-                        break
-
-                    params = {}
-                    response = requests.get(url, params=params, headers=headers, timeout=30)
-                    response.raise_for_status()
-                    data = response.json()
-
-                    if "collection" in data:
-                        for item in data["collection"]:
-                            if item and item.get("kind") == "track":
-                                all_liked_ids.add(str(item["id"]))
-
-                    total_fetched = len(all_liked_ids)
-                    if total_fetched % 200 == 0:
-                        print(f"  Fetching likes: {total_fetched}...")
-
+                print(f"  ✓ Stopping at first existing track (incremental mode)")
                 break
 
             # Next page
