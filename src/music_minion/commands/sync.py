@@ -1,7 +1,7 @@
 """
 Sync command handlers for Music Minion CLI.
 
-Handles: sync export, sync import, sync status, sync rescan
+Context-aware sync that adapts to active library (local vs provider).
 """
 
 from typing import List, Tuple
@@ -11,8 +11,11 @@ from music_minion.core.output import log
 from music_minion.domain import sync
 
 
-def handle_sync_export_command(ctx: AppContext) -> Tuple[AppContext, bool]:
-    """Handle sync export command - write all database tags to file metadata.
+def handle_sync_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+    """Context-aware sync - behavior depends on active library.
+
+    Local library: Incremental import (detect changed files)
+    Provider library: Sync likes + playlists from API
 
     Args:
         ctx: Application context
@@ -20,36 +23,28 @@ def handle_sync_export_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     Returns:
         (updated_context, should_continue)
     """
-    log("Starting metadata export...", level="info")
-    stats = sync.sync_export(ctx.config, show_progress=True)
+    from music_minion.core import database
 
-    return ctx, True
+    active_provider = database.get_active_provider()
 
-
-def handle_sync_import_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
-    """Handle sync import command - read tags from file metadata to database.
-
-    Args:
-        ctx: Application context
-        args: Command arguments
-
-    Returns:
-        (updated_context, should_continue)
-    """
-    force_all = '--all' in args or '-a' in args
-
-    if force_all:
-        log("Forcing full import from all files...", level="info")
+    if active_provider == 'local':
+        # Incremental import for local files
+        return _sync_local_incremental(ctx)
+    elif active_provider == 'all':
+        log("❌ Cannot sync 'all' library. Switch to specific library:", level="error")
+        log("  library active local", level="info")
+        log("  library active soundcloud", level="info")
+        return ctx, True
     else:
-        log("Importing from changed files...", level="info")
-
-    stats = sync.sync_import(ctx.config, force_all=force_all, show_progress=True)
-
-    return ctx, True
+        # Provider sync (soundcloud, spotify, youtube)
+        return _sync_provider(ctx, active_provider, full=False)
 
 
-def handle_sync_status_command(ctx: AppContext) -> Tuple[AppContext, bool]:
-    """Handle sync status command - show sync statistics.
+def handle_sync_full_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+    """Full sync bypassing cache - behavior depends on active library.
+
+    Local library: Full filesystem scan + import all
+    Provider library: Full sync from API (bypass incremental)
 
     Args:
         ctx: Application context
@@ -57,40 +52,122 @@ def handle_sync_status_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     Returns:
         (updated_context, should_continue)
     """
-    status = sync.get_sync_status(ctx.config)
+    from music_minion.core import database
 
-    log("\n📊 Sync Status", level="info")
-    log("=" * 50, level="info")
-    log(f"Total tracks: {status['total_tracks']}", level="info")
-    log(f"Changed files needing import: {status['changed_files']}", level="info")
-    log(f"Never synced: {status['never_synced']}", level="info")
+    active_provider = database.get_active_provider()
 
-    if status['last_sync']:
-        log(f"Last sync: {status['last_sync']}", level="info")
+    if active_provider == 'local':
+        # Full filesystem scan + import
+        return _sync_local_full(ctx)
+    elif active_provider == 'all':
+        log("❌ Cannot sync 'all' library. Switch to specific library:", level="error")
+        log("  library active local", level="info")
+        log("  library active soundcloud", level="info")
+        return ctx, True
     else:
-        log("Last sync: Never", level="info")
-
-    log(f"Sync enabled: {'✅ Yes' if status['sync_enabled'] else '❌ No'}", level="info")
-    log("", level="info")
-
-    if status['changed_files'] > 0:
-        log(f"💡 Run 'sync import' to import {status['changed_files']} changed file(s)", level="info")
-
-    return ctx, True
+        # Provider full sync
+        return _sync_provider(ctx, active_provider, full=True)
 
 
-def handle_sync_rescan_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
-    """Handle sync rescan command - rescan library for changes.
+def _sync_local_incremental(ctx: AppContext) -> Tuple[AppContext, bool]:
+    """Incremental import: detect changed files and import metadata.
 
     Args:
         ctx: Application context
-        args: Command arguments
 
     Returns:
         (updated_context, should_continue)
     """
-    full_rescan = '--full' in args or '-f' in args
+    from loguru import logger
 
-    stats = sync.rescan_library(ctx.config, full_rescan=full_rescan, show_progress=True)
+    logger.info("Starting incremental local sync...")
+
+    # Detect files that changed since last sync
+    changed_tracks = sync.detect_file_changes(ctx.config)
+
+    if not changed_tracks:
+        log("✓ All files in sync", level="info")
+        return ctx, True
+
+    log(f"Found {len(changed_tracks)} changed files, importing metadata...", level="info")
+
+    # Import metadata from changed files
+    result = sync.sync_import(ctx.config, force_all=False, show_progress=True)
+
+    log(f"✓ Imported {result.get('imported', 0)} tracks", level="info")
+
+    # Reload tracks in context
+    from music_minion import helpers
+    ctx = helpers.reload_tracks(ctx)
+
+    return ctx, True
+
+
+def _sync_local_full(ctx: AppContext) -> Tuple[AppContext, bool]:
+    """Full sync: scan filesystem for new files + import all.
+
+    Args:
+        ctx: Application context
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    from loguru import logger
+    from music_minion.core import database
+    from music_minion.domain.library import scanner
+
+    logger.info("Starting full local sync (filesystem scan)...")
+
+    log("Scanning ~/Music for new files...", level="info")
+
+    # Full filesystem scan with optimizations
+    tracks = scanner.scan_music_library_optimized(
+        ctx.config,
+        show_progress=True
+    )
+
+    if not tracks:
+        log("✓ No new files found", level="info")
+        return ctx, True
+
+    # Batch upsert into database
+    log(f"Processing {len(tracks)} tracks...", level="info")
+    added, updated = database.batch_upsert_tracks(tracks)
+
+    log(f"✓ Added {added} new tracks, updated {updated} existing tracks", level="info")
+
+    # Reload tracks in context
+    from music_minion import helpers
+    ctx = helpers.reload_tracks(ctx)
+
+    return ctx, True
+
+
+def _sync_provider(ctx: AppContext, provider_name: str, full: bool) -> Tuple[AppContext, bool]:
+    """Sync from provider API (soundcloud, spotify, youtube).
+
+    Args:
+        ctx: Application context
+        provider_name: Provider to sync
+        full: If True, do full sync; if False, do incremental
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    from loguru import logger
+    from music_minion.commands import library
+
+    sync_type = "full" if full else "incremental"
+    logger.info(f"Starting {sync_type} sync for provider: {provider_name}")
+
+    log(f"Syncing {provider_name} (likes + playlists)...", level="info")
+
+    # Delegate to library.sync_library() function
+    # Note: This syncs both likes and playlists (always both)
+    if ctx.ui_mode == "blessed" and ctx.update_ui_state:
+        # Use background version for blessed UI
+        ctx, _ = library.sync_library_background(ctx, provider_name, full=full)
+    else:
+        ctx, _ = library.sync_library(ctx, provider_name, full=full)
 
     return ctx, True

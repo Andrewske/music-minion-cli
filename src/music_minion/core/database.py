@@ -40,6 +40,18 @@ def get_db_connection():
         conn.close()
 
 
+def get_active_provider() -> str:
+    """Get the currently active library provider.
+
+    Returns:
+        Provider name: 'local', 'soundcloud', 'spotify', 'youtube', or 'all'
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute("SELECT provider FROM active_library WHERE id = 1")
+        row = cursor.fetchone()
+        return row["provider"] if row else "local"
+
+
 def migrate_database(conn, current_version: int) -> None:
     """Migrate database from current_version to latest schema."""
     if current_version < 3:

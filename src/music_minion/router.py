@@ -283,19 +283,14 @@ def handle_command(ctx: AppContext, command: str, args: List[str]) -> Tuple[AppC
 
     elif command == 'sync':
         if not args:
-            log("Error: Sync command requires a subcommand. Usage: sync <export|import|status|rescan>", level="error")
-            return ctx, True
-        elif args[0] == 'export':
-            return sync.handle_sync_export_command(ctx)
-        elif args[0] == 'import':
-            return sync.handle_sync_import_command(ctx, args[1:])
-        elif args[0] == 'status':
-            return sync.handle_sync_status_command(ctx)
-        elif args[0] == 'rescan':
-            return sync.handle_sync_rescan_command(ctx, args[1:])
+            # sync (no arguments) - context-aware sync
+            return sync.handle_sync_command(ctx)
+        elif args[0] == 'full':
+            # sync full - full sync bypassing cache
+            return sync.handle_sync_full_command(ctx)
         else:
             logger.warning(f"Unknown sync subcommand: '{args[0]}'")
-            log(f"Unknown sync subcommand: '{args[0]}'. Available: export, import, status, rescan", level="error")
+            log(f"Unknown sync subcommand: '{args[0]}'. Use 'sync' or 'sync full'", level="error")
             return ctx, True
 
     elif command == 'library':

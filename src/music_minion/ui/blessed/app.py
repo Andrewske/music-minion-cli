@@ -368,6 +368,17 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         update_ui_state=update_ui_state_safe
     )
 
+    # Auto-sync on startup (fast incremental sync)
+    logger.info("Running auto-sync on startup...")
+    try:
+        from music_minion.commands import sync
+        ctx, _ = sync.handle_sync_command(ctx)
+        ui_state = add_history_line(ui_state, "✓ Auto-sync complete", 'green')
+    except Exception as e:
+        logger.exception(f"Auto-sync failed: {e}")
+        # Continue even if sync fails (non-critical)
+        ui_state = add_history_line(ui_state, f"⚠ Auto-sync failed: {e}", 'yellow')
+
     # Initialize IPC server for external commands (hotkeys)
     command_queue = queue.Queue()
     response_queue = queue.Queue()
