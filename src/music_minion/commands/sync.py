@@ -164,10 +164,6 @@ def _sync_provider(ctx: AppContext, provider_name: str, full: bool) -> Tuple[App
 
     # Delegate to library.sync_library() function
     # Note: This syncs both likes and playlists (always both)
-    if ctx.ui_mode == "blessed" and ctx.update_ui_state:
-        # Use background version for blessed UI
-        ctx, _ = library.sync_library_background(ctx, provider_name, full=full)
-    else:
-        ctx, _ = library.sync_library(ctx, provider_name, full=full)
+    ctx, _ = library.sync_library(ctx, provider_name, full=full)
 
     return ctx, True

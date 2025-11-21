@@ -154,18 +154,6 @@ class UIState:
     # Library scan progress
     scan_progress: ScanProgress = field(default_factory=ScanProgress)
 
-    # Background sync progress (displayed in dashboard)
-    sync_active: bool = False
-    sync_type: str = ""  # "playlist_sync", "library_sync", etc.
-    sync_provider: str = ""  # "soundcloud", "spotify", etc.
-    sync_mode: str = ""  # "full" or "incremental"
-    sync_progress: int = 0  # Current item number
-    sync_total: int = 0  # Total items
-    sync_current_name: str = ""  # Current item name
-    sync_current_status: str = ""  # Status message
-    sync_stats: dict[str, int] = field(default_factory=dict)  # {created, updated, skipped, failed}
-    sync_task_id: str = ""  # Task identifier
-
     # UI feedback (toast notifications)
     feedback_message: Optional[str] = None
     feedback_time: Optional[float] = None
