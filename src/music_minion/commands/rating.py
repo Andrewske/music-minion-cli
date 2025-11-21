@@ -6,10 +6,13 @@ Handles: archive, like, love, note
 
 from typing import List, Tuple
 from datetime import datetime
+import logging
 
 from music_minion.context import AppContext
 from music_minion.core import database
 from music_minion.domain import library
+
+logger = logging.getLogger(__name__)
 
 
 def handle_archive_command(ctx: AppContext) -> Tuple[AppContext, bool]:

@@ -704,11 +704,130 @@ def sync_playlists(
             f"✓ Found {len(existing_playlists_map)} existing playlists", style="green"
         )
 
+        # ========================================================================
+        # PHASE 1: Collect unique tracks from all playlists needing sync
+        # ========================================================================
+        print_if_not_silent("\n📦 Collecting tracks from playlists...", style="yellow")
+
+        all_tracks_to_sync = {}  # {soundcloud_id: (soundcloud_id, metadata)}
+        playlists_to_sync = []   # [(pl_data, [provider_track_ids])]
+
+        for pl_data in playlists:
+            pl_id = pl_data["id"]
+            pl_name = pl_data["name"]
+            pl_last_modified = pl_data.get("last_modified")
+
+            # Apply incremental sync filter (same logic as current code)
+            existing = existing_playlists_map.get(pl_id)
+            if existing and not full and pl_last_modified:
+                existing_modified = existing["provider_last_modified"]
+                if existing_modified and pl_last_modified <= existing_modified:
+                    # Skip - no changes since last sync
+                    continue
+
+            # Get tracks for this playlist (pre-fetched or fetch individually)
+            provider_tracks = None
+            if "tracks" in pl_data and pl_data["tracks"]:
+                provider_tracks = pl_data["tracks"]
+            else:
+                # Fall back to individual fetch for large playlists
+                state, provider_tracks = provider.get_playlist_tracks(state, pl_id)
+
+            if not provider_tracks:
+                continue  # Skip empty playlists
+
+            # Collect unique tracks (deduplicate across playlists)
+            track_ids = []
+            for track_id, metadata in provider_tracks:
+                all_tracks_to_sync[track_id] = (track_id, metadata)
+                track_ids.append(track_id)
+
+            playlists_to_sync.append((pl_data, track_ids))
+
+        print_if_not_silent(
+            f"✓ Collected {len(all_tracks_to_sync)} unique tracks from {len(playlists_to_sync)} playlists",
+            style="green"
+        )
+
+        if not playlists_to_sync:
+            print_if_not_silent("\n⚠ No playlists need syncing", style="yellow")
+            return ctx, True
+
+        # ========================================================================
+        # PHASE 2: Batch import missing tracks
+        # ========================================================================
+        print_if_not_silent("\n🔍 Looking up tracks in database...", style="yellow")
+
+        provider_id_col = f"{provider_name}_id"
+        all_provider_ids = list(all_tracks_to_sync.keys())
+
+        # Single batch query for ALL tracks across ALL playlists
+        global_track_map = {}  # {provider_id: database_track_id}
+        with database.get_db_connection() as conn:
+            if all_provider_ids:
+                placeholders = ",".join("?" * len(all_provider_ids))
+                query = f"SELECT id, {provider_id_col} FROM tracks WHERE {provider_id_col} IN ({placeholders})"
+                cursor = conn.execute(query, all_provider_ids)
+                global_track_map = {
+                    row[provider_id_col]: row["id"] for row in cursor.fetchall()
+                }
+
+        existing_count = len(global_track_map)
+        missing_count = len(all_tracks_to_sync) - existing_count
+
+        print_if_not_silent(
+            f"✓ Found {existing_count}/{len(all_tracks_to_sync)} tracks in database",
+            style="green"
+        )
+
+        # Import missing tracks using pre-fetched metadata
+        if missing_count > 0:
+            print_if_not_silent(
+                f"📥 Auto-importing {missing_count} missing tracks...", style="yellow"
+            )
+
+            missing_provider_ids = [
+                pid for pid in all_provider_ids if pid not in global_track_map
+            ]
+            missing_tracks = [
+                all_tracks_to_sync[pid] for pid in missing_provider_ids
+            ]
+
+            # Import using existing batch function
+            from music_minion.domain.library.import_tracks import batch_insert_provider_tracks
+            stats = batch_insert_provider_tracks(missing_tracks, provider_name)
+
+            print_if_not_silent(
+                f"✓ Imported {stats['created']} new tracks (skipped {stats['skipped']} duplicates)",
+                style="green"
+            )
+
+            # Re-query to get newly created track IDs
+            with database.get_db_connection() as conn:
+                placeholders = ",".join("?" * len(missing_provider_ids))
+                query = f"SELECT id, {provider_id_col} FROM tracks WHERE {provider_id_col} IN ({placeholders})"
+                cursor = conn.execute(query, missing_provider_ids)
+                new_tracks = {row[provider_id_col]: row["id"] for row in cursor.fetchall()}
+                global_track_map.update(new_tracks)
+
+        print_if_not_silent(
+            f"✓ Ready to sync {len(playlists_to_sync)} playlists with {len(global_track_map)} tracks",
+            style="green"
+        )
+
+        # ========================================================================
+        # PHASE 3: Update playlist associations using global track map
+        # ========================================================================
+        print_if_not_silent("\n💾 Updating playlists...", style="bold yellow")
+
+        # Calculate skipped count (playlists filtered out in PHASE 1)
+        skipped_count = len(playlists) - len(playlists_to_sync)
+
         # OPTIMIZATION: Single transaction for all playlist operations
         with database.get_db_connection() as conn:
             conn.execute("BEGIN")
             try:
-                for i, pl_data in enumerate(playlists, 1):
+                for i, (pl_data, provider_track_ids) in enumerate(playlists_to_sync, 1):
                     pl_name = pl_data["name"]
                     pl_id = pl_data["id"]
                     pl_track_count = pl_data.get("track_count", 0)
@@ -716,9 +835,8 @@ def sync_playlists(
                     pl_created_at = pl_data.get("created_at")
 
                     print_if_not_silent(
-                        f"\n[{i}/{len(playlists)}] Processing: {pl_name}"
+                        f"\n[{i}/{len(playlists_to_sync)}] Processing: {pl_name}"
                     )
-                    print_if_not_silent(f"  Tracks: {pl_track_count}")
 
                     # Notify playlist start
                     update_progress(
@@ -730,92 +848,17 @@ def sync_playlists(
                         # OPTIMIZATION: Use pre-fetched playlist lookup
                         existing = existing_playlists_map.get(pl_id)
 
-                        # Incremental sync: Skip if not modified and not full sync
-                        if existing and not full and pl_last_modified:
-                            existing_modified = existing["provider_last_modified"]
-                            if (
-                                existing_modified
-                                and pl_last_modified <= existing_modified
-                            ):
-                                print_if_not_silent(
-                                    f"  ⏭ Skipped (no changes since {existing_modified})",
-                                    style="dim",
-                                )
-                                skipped_count += 1
-                                continue
-
-                        # Get playlist tracks (use pre-fetched if available, otherwise fetch individually)
-                        if "tracks" in pl_data and pl_data["tracks"]:
-                            # Tracks were pre-fetched in get_playlists() call
-                            print_if_not_silent(
-                                f"  ✓ Using pre-fetched tracks ({len(pl_data['tracks'])} tracks)",
-                                style="dim",
-                            )
-                            provider_tracks = pl_data["tracks"]
-                        else:
-                            # Fall back to individual fetch (large playlists or old provider implementations)
-                            print_if_not_silent(
-                                f"  📥 Fetching tracks from {provider_name}...",
-                                style="yellow",
-                            )
-                            update_progress(
-                                "status_update",
-                                {"status": f"Fetching tracks from {provider_name}..."},
-                            )
-                            state, provider_tracks = provider.get_playlist_tracks(
-                                state, pl_id
-                            )
-
-                        if not provider_tracks:
-                            print_if_not_silent("  ⚠ No tracks found", style="yellow")
-                            skipped_count += 1
-                            continue
-
-                        # Batch lookup tracks in database by provider ID
-                        print_if_not_silent(
-                            f"  🔍 Looking up {len(provider_tracks)} tracks in database..."
-                        )
-                        update_progress(
-                            "status_update",
-                            {
-                                "status": f"Looking up {len(provider_tracks)} tracks in database..."
-                            },
-                        )
-
-                        provider_id_col = f"{provider_name}_id"
-                        provider_ids = [track_id for track_id, _ in provider_tracks]
-
-                        # Single batch query with IN clause (using outer transaction connection)
-                        placeholders = ",".join("?" * len(provider_ids))
-                        query = f"SELECT id, {provider_id_col} FROM tracks WHERE {provider_id_col} IN ({placeholders})"
-                        cursor = conn.execute(query, provider_ids)
-
-                        # Build lookup dict
-                        id_map = {
-                            row[provider_id_col]: row["id"] for row in cursor.fetchall()
-                        }
-
-                        # Map provider IDs to database track IDs in order
+                        # Map provider track IDs to database track IDs using global map
                         track_ids = [
-                            id_map[pid] for pid in provider_ids if pid in id_map
+                            global_track_map[pid]
+                            for pid in provider_track_ids
+                            if pid in global_track_map
                         ]
 
-                        found_pct = (
-                            (len(track_ids) / len(provider_tracks) * 100)
-                            if provider_tracks
-                            else 0
-                        )
                         print_if_not_silent(
-                            f"  ✓ Found {len(track_ids)}/{len(provider_tracks)} tracks ({found_pct:.0f}%)",
+                            f"  ✓ Mapped {len(track_ids)}/{len(provider_track_ids)} tracks from global map",
                             style="green",
                         )
-
-                        if len(track_ids) < len(provider_tracks):
-                            missing = len(provider_tracks) - len(track_ids)
-                            print_if_not_silent(
-                                f"  ⚠ {missing} tracks not found (run 'library sync {provider_name}' first)",
-                                style="yellow",
-                            )
 
                         # Update existing playlist or create new one
                         if existing:

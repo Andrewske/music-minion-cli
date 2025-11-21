@@ -10,6 +10,7 @@ from music_minion.context import AppContext
 from music_minion.core import config
 from music_minion.core import database
 from music_minion.domain import playback as playback_domain
+from music_minion import actions
 
 # Import command handlers
 from music_minion.commands import playback
@@ -292,6 +293,16 @@ def handle_command(ctx: AppContext, command: str, args: List[str]) -> Tuple[AppC
 
     elif command == 'library':
         return library.handle_library_command(ctx, args)
+
+    elif command == 'composite':
+        # Composite actions (for IPC/hotkeys)
+        if not args:
+            print("Error: Composite action name required")
+            return ctx, True
+        action_name = args[0]
+        ctx, success, message = actions.execute_composite_action(ctx, action_name)
+        print(message)
+        return ctx, True
 
     elif command == '':
         # Empty command, do nothing

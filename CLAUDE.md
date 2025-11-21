@@ -240,12 +240,35 @@ music-minion/
 - Load with Python's built-in tomllib
 
 ### Logging Strategy
-- **Centralized logging**: Configured at startup via `core/logging.py`
+**CRITICAL**: Always use the centralized logging system - never use print() for debugging or error messages.
+
+- **Centralized logging**: Configured once at startup via `core/logging.py`
 - **Default location**: `~/.local/share/music-minion/music-minion.log`
 - **Configurable**: Log level, file location, rotation size, backup count in config.toml
 - **Automatic rotation**: 10MB max file size, 5 backups by default
 - **Format**: `2025-11-20 15:12:11 | INFO | module:line | message`
-- **Usage**: All modules use `logging.getLogger(__name__)` - no per-module setup needed
+
+**Usage Pattern** (REQUIRED):
+```python
+# At top of every module
+import logging
+logger = logging.getLogger(__name__)
+
+# In your code - use logger, not print()
+logger.debug("Detailed information for diagnosing problems")
+logger.info("General informational messages")
+logger.warning("Warning messages for unexpected but handled situations")
+logger.error("Error messages for serious problems")
+logger.exception("Error with full stack trace - use in except blocks")
+```
+
+**Benefits**:
+- ✅ All logs automatically saved to file (survives app restarts)
+- ✅ No per-module configuration needed
+- ✅ Automatic log rotation prevents disk overflow
+- ✅ Module and line number automatically included
+- ✅ Configurable log levels for development vs production
+- ✅ Hot-reload compatible (handlers cleared on restart)
 
 ## Core Features & Commands
 
@@ -329,6 +352,31 @@ music-minion/
 - **Platform**: Linux (primary), expand to other platforms later
 
 ## Code Style Requirements
+
+### Logging Requirements (CRITICAL)
+**ALWAYS use the centralized logging system. NEVER use print() statements.**
+
+```python
+# ✅ CORRECT - Use logger
+import logging
+logger = logging.getLogger(__name__)
+
+logger.info("Library sync completed: 150 tracks added")
+logger.error(f"Failed to sync playlist {playlist_name}: {error}")
+logger.debug(f"Processing track: {track.title}")
+
+# ❌ WRONG - Don't use print()
+print("Library sync completed")  # Logs are lost on app restart
+print(f"Error: {error}")  # Not saved to log file
+```
+
+**Why this matters**:
+- Print statements are lost when the app restarts
+- Debugging production issues requires persistent logs
+- Centralized logs are automatically rotated and managed
+- Log levels allow filtering (debug vs production)
+
+### General Code Style
 - Use type hints for function parameters and returns
 - Prefer pathlib.Path over string paths
 - Use context managers for file/database operations
@@ -336,11 +384,12 @@ music-minion/
 - Write docstrings for public functions
 - No circular imports
 - Extract reusable code to `utils/` folder
-- **Import Style**:
-  - Use absolute imports (`from music_minion.core import database`)
-  - Exception: Package-local imports in `__init__.py` files (e.g., `from .crud import create_playlist`)
-  - Exception: Sibling module imports within same package (e.g., `from .models import Track` in `domain/library/`)
-  - Rationale: Absolute imports are clearer, more refactor-safe, and easier for tools to resolve
+
+### Import Style
+- Use absolute imports (`from music_minion.core import database`)
+- Exception: Package-local imports in `__init__.py` files (e.g., `from .crud import create_playlist`)
+- Exception: Sibling module imports within same package (e.g., `from .models import Track` in `domain/library/`)
+- Rationale: Absolute imports are clearer, more refactor-safe, and easier for tools to resolve
 
 ## Critical Patterns & Best Practices
 
@@ -376,9 +425,35 @@ except Exception:
 - **Migrations**: Idempotent with try/except for "duplicate column" errors
 
 ### Error Handling
+**CRITICAL**: Always use logger.exception() in except blocks for automatic stack traces.
+
+```python
+# ✅ CORRECT - Use logger.exception() for full context
+import logging
+logger = logging.getLogger(__name__)
+
+try:
+    sync_library(provider)
+except ProviderAuthError as e:
+    logger.exception(f"Authentication failed for {provider}: {e}")
+    # User-facing message
+    return "Authentication required. Run 'library auth soundcloud'"
+except Exception as e:
+    logger.exception(f"Unexpected error during sync: {e}")
+    raise
+
+# ❌ WRONG - Generic error without logging
+try:
+    sync_library(provider)
+except Exception as e:
+    print(f"Error: {e}")  # Lost after restart, no stack trace
+```
+
+**Rules**:
 - **NEVER use bare except**: Always catch specific exceptions
-- **Informative errors**: Include file, operation, and cause in error messages
-- **Silent failure**: Only for auto-operations (auto-export, auto-sync)
+- **Use logger.exception()**: Automatically includes full stack trace
+- **Informative errors**: Include operation context (file, provider, playlist name)
+- **Silent failure**: Only for auto-operations (auto-export, auto-sync) - still log them
 - **Background threads**: Must wrap in try/except (exceptions don't propagate)
 
 ### Change Detection
@@ -573,3 +648,5 @@ main.py
 ---
 
 **Last Updated**: 2025-11-20 after centralized logging implementation
+
+**CRITICAL REMINDER**: All new code must use `logging.getLogger(__name__)` for logging. Never use print() statements. See "Logging Strategy" section above for usage patterns.

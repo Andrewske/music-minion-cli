@@ -7,6 +7,7 @@ Handles: playlist list, playlist new, playlist delete, playlist rename,
 
 import shlex
 import sys
+import logging
 from pathlib import Path
 from typing import List, Tuple
 
@@ -19,6 +20,8 @@ from music_minion.domain.playlists import analytics as playlist_analytics
 from music_minion.domain.playlists import exporters as playlist_export
 from music_minion.domain.playlists import filters as playlist_filters
 from music_minion.domain.playlists import importers as playlist_import
+
+logger = logging.getLogger(__name__)
 
 
 def handle_playlist_list_command(ctx: AppContext) -> Tuple[AppContext, bool]:
@@ -734,6 +737,38 @@ def handle_playlist_active_command(
                         print(
                             "\n⚠️  No tracks available in this playlist (all may be archived)"
                         )
+
+            # Sequential mode with no saved position - start from first track
+            else:
+                # Import playback commands for helper functions
+                from . import playback as playback_commands
+
+                # Get playlist tracks
+                playlist_tracks = playlists.get_playlist_tracks(pl["id"])
+
+                if playlist_tracks:
+                    # Get first track (position 0)
+                    first_track_dict = playback.get_next_sequential_track(
+                        playlist_tracks, None
+                    )
+
+                    if first_track_dict:
+                        # Find the Track object from music_tracks
+                        for track in ctx.music_tracks:
+                            if track.local_path == first_track_dict["local_path"]:
+                                if not is_blessed_mode:
+                                    print("\n▶️  Starting from first track in playlist")
+                                    print(f"   {len(playlist_tracks)} tracks in playlist")
+
+                                # Play track with position 0
+                                ctx, _ = playback_commands.play_track(ctx, track, 0)
+                                break
+                    else:
+                        if not is_blessed_mode:
+                            print("\n⚠️  Unable to find first track in playlist")
+                else:
+                    if not is_blessed_mode:
+                        print("\n⚠️  Playlist is empty")
 
         else:
             if not is_blessed_mode:

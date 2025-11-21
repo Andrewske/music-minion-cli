@@ -4,11 +4,13 @@ import sys
 import time
 import threading
 import dataclasses
+import queue
 from pathlib import Path
 from blessed import Terminal
 from music_minion.context import AppContext
 from music_minion.commands import admin
 from music_minion.core import database
+from music_minion.ipc import server as ipc_server
 from .state import UIState, PlaylistInfo, update_track_info, add_history_line
 from .components import (
     render_dashboard,
@@ -364,6 +366,19 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         update_ui_state=update_ui_state_safe
     )
 
+    # Initialize IPC server for external commands (hotkeys)
+    command_queue = queue.Queue()
+    response_queue = queue.Queue()
+    ipc_srv = None
+
+    if ctx.config.ipc.enabled if hasattr(ctx.config, 'ipc') else True:
+        try:
+            ipc_srv = ipc_server.IPCServer(command_queue, response_queue)
+            ipc_srv.start()
+        except Exception as e:
+            # IPC failure is non-fatal - continue without it
+            ui_state = add_history_line(ui_state, f"⚠ IPC server failed to start: {e}", 'yellow')
+
     should_quit = False
     frame_count = 0
     last_state_hash = None
@@ -398,6 +413,33 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         should_poll_scan = frame_count % SCAN_POLL_INTERVAL == 0
         if should_poll_scan:
             ui_state = poll_scan_state(ui_state)
+
+        # Process IPC commands from external clients (hotkeys)
+        try:
+            while not command_queue.empty():
+                request_id, command, args = command_queue.get_nowait()
+
+                # Helper to add to history
+                def add_to_history(text):
+                    nonlocal ui_state
+                    # Use cyan color for IPC commands to distinguish them
+                    ui_state = add_history_line(ui_state, text, 'cyan')
+
+                # Process command
+                ctx, success, message = ipc_server.process_ipc_command(
+                    ctx, command, args, add_to_history
+                )
+
+                # Send response back to IPC server
+                response_queue.put((request_id, success, message))
+
+                # Force full redraw after IPC command
+                needs_full_redraw = True
+        except queue.Empty:
+            pass
+        except Exception as e:
+            # Log IPC errors but don't crash UI
+            ui_state = add_history_line(ui_state, f"⚠ IPC error: {e}", 'yellow')
 
         # Check if state changed (only redraw if needed)
         # Only compute hash when we polled or when other state changes might have occurred
@@ -640,5 +682,12 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 needs_full_redraw = True
 
         frame_count += 1
+
+    # Cleanup: Stop IPC server
+    if ipc_srv:
+        try:
+            ipc_srv.stop()
+        except Exception:
+            pass  # Silently ignore cleanup errors
 
     return ctx
