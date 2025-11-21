@@ -420,15 +420,8 @@ def interactive_mode_blessed() -> None:
     # Always load config from file
     current_config = config.load_config()
 
-    # Initialize logging from config
-    log_file = Path(current_config.logging.log_file) if current_config.logging.log_file else None
-    mm_logging.setup_logging(
-        level=current_config.logging.level,
-        log_file_path=log_file,
-        max_bytes=current_config.logging.max_file_size_mb * 1024 * 1024,
-        backup_count=current_config.logging.backup_count,
-        console_output=current_config.logging.console_output
-    )
+    # Note: Logging is already initialized in interactive_mode()
+    # No need to reinitialize here - that would clear all handlers!
 
     # Load music library using context
     ctx = helpers.create_context_from_globals()

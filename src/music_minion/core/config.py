@@ -105,6 +105,28 @@ class SoundCloudConfig:
 
 
 @dataclass
+class IPCConfig:
+    """Configuration for IPC (Inter-Process Communication)."""
+    enabled: bool = True
+
+
+@dataclass
+class NotificationsConfig:
+    """Configuration for desktop notifications."""
+    enabled: bool = True
+    show_success: bool = True
+    show_errors: bool = True
+
+
+@dataclass
+class HotkeysConfig:
+    """Configuration for hotkey shortcuts."""
+    dated_playlist_template: str = "{month} {year}"  # e.g., "Nov 25"
+    not_quite_playlist: str = "Not Quite"
+    not_interested_playlist: str = "Not Interested"
+
+
+@dataclass
 class Config:
     """Main configuration object."""
     music: MusicConfig = field(default_factory=MusicConfig)
@@ -115,6 +137,9 @@ class Config:
     sync: SyncConfig = field(default_factory=SyncConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     soundcloud: SoundCloudConfig = field(default_factory=SoundCloudConfig)
+    ipc: IPCConfig = field(default_factory=IPCConfig)
+    notifications: NotificationsConfig = field(default_factory=NotificationsConfig)
+    hotkeys: HotkeysConfig = field(default_factory=HotkeysConfig)
 
 
 def get_config_dir() -> Path:
@@ -279,6 +304,30 @@ sync_likes = true
 
 # Sync user's playlists
 sync_playlists = true
+
+[ipc]
+# Enable IPC (Inter-Process Communication) for external commands
+enabled = true
+
+[notifications]
+# Enable desktop notifications
+enabled = true
+
+# Show success notifications
+show_success = true
+
+# Show error notifications
+show_errors = true
+
+[hotkeys]
+# Template for dated playlists (e.g., "Nov 25", "Dec 25")
+dated_playlist_template = "{month} {year}"
+
+# Playlist name for "Not Quite" workflow
+not_quite_playlist = "Not Quite"
+
+# Playlist name for "Not Interested" workflow
+not_interested_playlist = "Not Interested"
 """.strip()
 
 

@@ -5,14 +5,21 @@ Functional approach with explicit state passing
 
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+import logging
 
 from music_minion.core.database import get_db_connection
 from . import filters
+from . import sync
+
+logger = logging.getLogger(__name__)
 
 
 def create_playlist(name: str, playlist_type: str, description: Optional[str] = None) -> int:
     """
     Create a new playlist.
+
+    If active library is SoundCloud, automatically creates a SoundCloud playlist
+    and links it to the local playlist.
 
     Args:
         name: Playlist name (must be unique)
@@ -28,6 +35,9 @@ def create_playlist(name: str, playlist_type: str, description: Optional[str] = 
     if playlist_type not in ['manual', 'smart']:
         raise ValueError(f"Invalid playlist type: {playlist_type}. Must be 'manual' or 'smart'")
 
+    # Check if active library is SoundCloud
+    active_library = sync.get_active_library()
+
     with get_db_connection() as conn:
         try:
             cursor = conn.execute("""
@@ -35,11 +45,23 @@ def create_playlist(name: str, playlist_type: str, description: Optional[str] = 
                 VALUES (?, ?, ?)
             """, (name, playlist_type, description))
             conn.commit()
-            return cursor.lastrowid
+            playlist_id = cursor.lastrowid
         except Exception as e:
             if 'UNIQUE constraint failed' in str(e):
                 raise ValueError(f"Playlist '{name}' already exists")
             raise
+
+    # If active library is SoundCloud, create remote playlist and link it
+    if active_library == 'soundcloud':
+        logger.info(f"Active library is SoundCloud, creating remote playlist for '{name}'")
+        success, soundcloud_id, error = sync._ensure_soundcloud_playlist_linked(
+            playlist_id, name
+        )
+        if not success:
+            logger.warning(f"Failed to create SoundCloud playlist: {error}")
+            # Don't fail - local playlist was created successfully
+
+    return playlist_id
 
 
 def update_playlist_track_count(playlist_id: int) -> None:
@@ -440,7 +462,15 @@ def add_track_to_playlist(playlist_id: int, track_id: int) -> bool:
         """, (playlist_id,))
 
         conn.commit()
-        return True
+
+    # Sync to SoundCloud if needed (after database commit)
+    if sync.should_sync_to_soundcloud(playlist_id):
+        success, error = sync.add_track_to_soundcloud_playlist(playlist_id, track_id)
+        if not success:
+            logger.warning(f"Failed to sync add to SoundCloud: {error}")
+            # Don't fail the operation - database was updated successfully
+
+    return True
 
 
 def remove_track_from_playlist(playlist_id: int, track_id: int) -> bool:
@@ -502,6 +532,14 @@ def remove_track_from_playlist(playlist_id: int, track_id: int) -> bool:
             """, (playlist_id,))
 
             conn.commit()
+
+            # Sync to SoundCloud if needed (after database commit)
+            if sync.should_sync_to_soundcloud(playlist_id):
+                success, error = sync.remove_track_from_soundcloud_playlist(playlist_id, track_id)
+                if not success:
+                    logger.warning(f"Failed to sync remove to SoundCloud: {error}")
+                    # Don't fail the operation - database was updated successfully
+
             return True
         except Exception:
             conn.rollback()

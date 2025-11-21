@@ -368,7 +368,7 @@ def get_playlist_tracks(
         return state, tracks
 
     except Exception as e:
-        print(f"Error fetching playlist tracks: {e}")
+        logger.error(f"Error fetching playlist tracks: {e}", exc_info=True)
         return state, []
 
 
