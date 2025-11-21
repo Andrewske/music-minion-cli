@@ -51,13 +51,23 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
 
     # Metadata line - type, track count, and filter indicator (only in list mode)
     if viewer_mode == 'list' and line_num < height:
-        type_icon = "🧠" if playlist_type == 'smart' else "📝"
+        # Select icon based on playlist type
+        if playlist_type == 'history':
+            type_icon = "🕐"
+        elif playlist_type == 'smart':
+            type_icon = "🧠"
+        else:
+            type_icon = "📝"
+
+        # Add read-only indicator for history
+        type_display = f"{playlist_type.capitalize()} (Read-Only)" if playlist_type == 'history' else playlist_type.capitalize()
+
         if filter_query:
             # Show filtered count and total
-            metadata_text = f"   {type_icon} {playlist_type.capitalize()} • {len(filtered_tracks)}/{len(all_tracks)} tracks (filter: {filter_query})"
+            metadata_text = f"   {type_icon} {type_display} • {len(filtered_tracks)}/{len(all_tracks)} tracks (filter: {filter_query})"
         else:
             # Show total count
-            metadata_text = f"   {type_icon} {playlist_type.capitalize()} • {len(all_tracks)} tracks"
+            metadata_text = f"   {type_icon} {type_display} • {len(all_tracks)} tracks"
         sys.stdout.write(term.move_xy(0, y + line_num) + term.white(metadata_text))
         line_num += 1
 
@@ -128,7 +138,14 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
         else:
             # List mode: show track navigation help
             total_tracks = len(filtered_tracks)  # Show filtered count for navigation
-            if playlist_type == 'manual':
+            if playlist_type == 'history':
+                # History: read-only (no delete, no filters)
+                if total_tracks > content_height:
+                    current_position = min(selected_index + 1, total_tracks)
+                    footer = f"   [{current_position}/{total_tracks}] ↑↓/j/k nav  Enter details  p/e/a (play/edit/add)  q close"
+                else:
+                    footer = "   ↑↓/j/k navigate  Enter details  p/e/a (play/edit/add)  q close"
+            elif playlist_type == 'manual':
                 # Manual playlist: can remove tracks
                 if total_tracks > content_height:
                     current_position = min(selected_index + 1, total_tracks)
@@ -226,7 +243,7 @@ def _render_track_detail_and_actions(
             ('a', 'Add to Another Playlist'),
             ('', 'Cancel')
         ]
-    else:  # smart playlist - same as manual but without Remove option
+    else:  # smart playlist or history - read-only (no delete)
         actions = [
             ('p', 'Play Track'),
             ('e', 'Edit Metadata'),
