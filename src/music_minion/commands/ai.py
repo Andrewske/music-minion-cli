@@ -11,6 +11,7 @@ from music_minion.domain import ai
 from music_minion.domain.ai import review as ai_review
 from music_minion.domain.ai import prompt_enhancement
 from music_minion.core import database
+from music_minion.core.output import log
 from music_minion.domain import library
 
 
@@ -25,19 +26,19 @@ def handle_ai_setup_command(ctx: AppContext, args: List[str]) -> Tuple[AppContex
         (updated_context, should_continue)
     """
     if not args:
-        print("Error: Please provide an API key. Usage: ai setup <key>")
+        log("❌ Error: Please provide an API key. Usage: ai setup <key>", level="error")
         return ctx, True
 
     api_key = args[0]
 
     try:
         ai.store_api_key(api_key)
-        print("✅ OpenAI API key stored successfully")
-        print("   Key stored in ~/.config/music-minion/.env")
-        print("   You can also set OPENAI_API_KEY environment variable or create .env in project root")
-        print("   You can now use AI analysis features")
+        log("✅ OpenAI API key stored successfully", level="info")
+        log("   Key stored in ~/.config/music-minion/.env", level="info")
+        log("   You can also set OPENAI_API_KEY environment variable or create .env in project root", level="info")
+        log("   You can now use AI analysis features", level="info")
     except Exception as e:
-        print(f"❌ Error storing API key: {e}")
+        log(f"❌ Error storing API key: {e}", level="error")
 
     return ctx, True
 
@@ -52,7 +53,7 @@ def handle_ai_analyze_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         (updated_context, should_continue)
     """
     if not ctx.player_state.current_track:
-        print("No track is currently playing")
+        log("⚠️ No track is currently playing", level="warning")
         return ctx, True
 
     # Find current track
@@ -63,10 +64,10 @@ def handle_ai_analyze_command(ctx: AppContext) -> Tuple[AppContext, bool]:
             break
 
     if not current_track:
-        print("Could not find current track information")
+        log("❌ Could not find current track information", level="error")
         return ctx, True
 
-    print(f"🤖 Analyzing track: {library.get_display_name(current_track)}")
+    log(f"🤖 Analyzing track: {library.get_display_name(current_track)}", level="info")
 
     try:
         result = ai.analyze_and_tag_track(current_track, 'manual_analysis')
@@ -74,21 +75,21 @@ def handle_ai_analyze_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         if result['success']:
             tags_added = result['tags_added']
             if tags_added:
-                print(f"✅ Added {len(tags_added)} tags: {', '.join(tags_added)}")
+                log(f"✅ Added {len(tags_added)} tags: {', '.join(tags_added)}", level="info")
             else:
-                print("✅ Analysis complete - no new tags suggested")
+                log("✅ Analysis complete - no new tags suggested", level="info")
 
             # Show token usage
             usage = result.get('token_usage', {})
             if usage:
-                print(f"   Tokens used: {usage.get('prompt_tokens', 0)} prompt + {usage.get('completion_tokens', 0)} completion")
-                print(f"   Response time: {usage.get('response_time_ms', 0)}ms")
+                log(f"   Tokens used: {usage.get('prompt_tokens', 0)} prompt + {usage.get('completion_tokens', 0)} completion", level="info")
+                log(f"   Response time: {usage.get('response_time_ms', 0)}ms", level="info")
         else:
             error_msg = result.get('error', 'Unknown error')
-            print(f"❌ AI analysis failed: {error_msg}")
+            log(f"❌ AI analysis failed: {error_msg}", level="error")
 
     except Exception as e:
-        print(f"❌ Error during AI analysis: {e}")
+        log(f"❌ Error during AI analysis: {e}", level="error")
 
     return ctx, True
 
@@ -103,7 +104,7 @@ def handle_ai_test_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         (updated_context, should_continue)
     """
     try:
-        print("🧪 Running AI prompt test with random track...")
+        log("🧪 Running AI prompt test with random track...", level="info")
 
         # Run the test
         test_results = ai.test_ai_prompt_with_random_track()
@@ -114,27 +115,27 @@ def handle_ai_test_command(ctx: AppContext) -> Tuple[AppContext, bool]:
 
             # Show summary
             track_info = test_results['track_info']
-            print(f"✅ Test completed successfully!")
-            print(f"   Track: {track_info.get('artist', 'Unknown')} - {track_info.get('title', 'Unknown')}")
-            print(f"   Generated tags: {', '.join(test_results.get('ai_output_tags', []))}")
+            log("✅ Test completed successfully!", level="info")
+            log(f"   Track: {track_info.get('artist', 'Unknown')} - {track_info.get('title', 'Unknown')}", level="info")
+            log(f"   Generated tags: {', '.join(test_results.get('ai_output_tags', []))}", level="info")
 
             token_usage = test_results.get('token_usage', {})
-            print(f"   Tokens used: {token_usage.get('prompt_tokens', 0)} prompt + {token_usage.get('completion_tokens', 0)} completion")
-            print(f"   Response time: {token_usage.get('response_time_ms', 0)}ms")
+            log(f"   Tokens used: {token_usage.get('prompt_tokens', 0)} prompt + {token_usage.get('completion_tokens', 0)} completion", level="info")
+            log(f"   Response time: {token_usage.get('response_time_ms', 0)}ms", level="info")
 
-            print(f"📄 Full report saved: {report_file}")
+            log(f"📄 Full report saved: {report_file}", level="info")
 
         else:
             # Save report even for failed tests
             report_file = ai.save_test_report(test_results)
             error_msg = test_results.get('error', 'Unknown error')
-            print(f"❌ Test failed: {error_msg}")
-            print(f"📄 Report with input data saved: {report_file}")
+            log(f"❌ Test failed: {error_msg}", level="error")
+            log(f"📄 Report with input data saved: {report_file}", level="info")
 
         return ctx, True
 
     except Exception as e:
-        print(f"❌ Error during AI test: {e}")
+        log(f"❌ Error during AI test: {e}", level="error")
         return ctx, True
 
 
@@ -159,11 +160,11 @@ def handle_ai_usage_command(ctx: AppContext, args: List[str]) -> Tuple[AppContex
             stats = database.get_ai_usage_stats()
             usage_text = ai.format_usage_stats(stats, "Total")
 
-        print(usage_text)
+        log(usage_text, level="info")
 
         return ctx, True
     except Exception as e:
-        print(f"❌ Error getting AI usage stats: {e}")
+        log(f"❌ Error getting AI usage stats: {e}", level="error")
         return ctx, True
 
 
@@ -177,7 +178,7 @@ def handle_ai_review_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         (updated_context, should_continue)
     """
     if not ctx.player_state.current_track:
-        print("❌ No track is currently playing")
+        log("❌ No track is currently playing", level="error")
         return ctx, True
 
     # Find current track
@@ -188,31 +189,31 @@ def handle_ai_review_command(ctx: AppContext) -> Tuple[AppContext, bool]:
             break
 
     if not current_track:
-        print("❌ Could not find current track information")
+        log("❌ Could not find current track information", level="error")
         return ctx, True
 
-    print(f"🎵 Reviewing tags for: {library.get_display_name(current_track)}")
+    log(f"🎵 Reviewing tags for: {library.get_display_name(current_track)}", level="info")
 
     try:
         # Get or generate tags with reasoning
         tags_with_reasoning, is_new = ai_review.get_or_generate_tags_with_reasoning(current_track)
 
         if is_new:
-            print("✨ Generated new tags for this track")
+            log("✨ Generated new tags for this track", level="info")
         else:
-            print("📋 Loaded existing tags")
+            log("📋 Loaded existing tags", level="info")
 
-        print("")
-        print("─" * 60)
-        print("Tags with AI reasoning:")
-        print("")
+        log("", level="info")
+        log("─" * 60, level="info")
+        log("Tags with AI reasoning:", level="info")
+        log("", level="info")
         for tag, reasoning in tags_with_reasoning.items():
-            print(f"  • {tag}: \"{reasoning}\"")
-        print("─" * 60)
-        print("")
-        print("💬 Entering conversation mode. Type your feedback, or 'done' to finish.")
-        print("   Example: \"This is half-time, not energetic. Don't tag key.\"")
-        print("")
+            log(f"  • {tag}: \"{reasoning}\"", level="info")
+        log("─" * 60, level="info")
+        log("", level="info")
+        log("💬 Entering conversation mode. Type your feedback, or 'done' to finish.", level="info")
+        log("   Example: \"This is half-time, not energetic. Don't tag key.\"", level="info")
+        log("", level="info")
 
         # Prepare track data for review mode
         track_data = {
@@ -236,10 +237,10 @@ def handle_ai_review_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         return ctx, True
 
     except ai.AIError as e:
-        print(f"❌ AI error: {e}")
+        log(f"❌ AI error: {e}", level="error")
         return ctx, True
     except Exception as e:
-        print(f"❌ Unexpected error during review: {e}")
+        log(f"❌ Unexpected error during review: {e}", level="error")
         import traceback
         traceback.print_exc()
         return ctx, True
@@ -257,7 +258,7 @@ def handle_ai_enhance_command(ctx: AppContext, args: List[str]) -> Tuple[AppCont
     """
     # Check if subcommand is 'prompt' (optional)
     if args and args[0] != 'prompt':
-        print(f"❌ Unknown enhance subcommand: '{args[0]}'. Use: ai enhance prompt")
+        log(f"❌ Unknown enhance subcommand: '{args[0]}'. Use: ai enhance prompt", level="error")
         return ctx, True
 
     try:
@@ -265,10 +266,10 @@ def handle_ai_enhance_command(ctx: AppContext, args: List[str]) -> Tuple[AppCont
         return ctx, True
 
     except ai.AIError as e:
-        print(f"❌ AI error: {e}")
+        log(f"❌ AI error: {e}", level="error")
         return ctx, True
     except Exception as e:
-        print(f"❌ Unexpected error during prompt enhancement: {e}")
+        log(f"❌ Unexpected error during prompt enhancement: {e}", level="error")
         import traceback
         traceback.print_exc()
         return ctx, True

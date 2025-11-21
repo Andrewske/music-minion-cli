@@ -7,6 +7,7 @@ Handles: sync export, sync import, sync status, sync rescan
 from typing import List, Tuple
 
 from music_minion.context import AppContext
+from music_minion.core.output import log
 from music_minion.domain import sync
 
 
@@ -19,7 +20,7 @@ def handle_sync_export_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     Returns:
         (updated_context, should_continue)
     """
-    print("Starting metadata export...")
+    log("Starting metadata export...", level="info")
     stats = sync.sync_export(ctx.config, show_progress=True)
 
     return ctx, True
@@ -38,9 +39,9 @@ def handle_sync_import_command(ctx: AppContext, args: List[str]) -> Tuple[AppCon
     force_all = '--all' in args or '-a' in args
 
     if force_all:
-        print("Forcing full import from all files...")
+        log("Forcing full import from all files...", level="info")
     else:
-        print("Importing from changed files...")
+        log("Importing from changed files...", level="info")
 
     stats = sync.sync_import(ctx.config, force_all=force_all, show_progress=True)
 
@@ -58,22 +59,22 @@ def handle_sync_status_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     """
     status = sync.get_sync_status(ctx.config)
 
-    print("\n📊 Sync Status")
-    print("=" * 50)
-    print(f"Total tracks: {status['total_tracks']}")
-    print(f"Changed files needing import: {status['changed_files']}")
-    print(f"Never synced: {status['never_synced']}")
+    log("\n📊 Sync Status", level="info")
+    log("=" * 50, level="info")
+    log(f"Total tracks: {status['total_tracks']}", level="info")
+    log(f"Changed files needing import: {status['changed_files']}", level="info")
+    log(f"Never synced: {status['never_synced']}", level="info")
 
     if status['last_sync']:
-        print(f"Last sync: {status['last_sync']}")
+        log(f"Last sync: {status['last_sync']}", level="info")
     else:
-        print("Last sync: Never")
+        log("Last sync: Never", level="info")
 
-    print(f"Sync enabled: {'✅ Yes' if status['sync_enabled'] else '❌ No'}")
-    print()
+    log(f"Sync enabled: {'✅ Yes' if status['sync_enabled'] else '❌ No'}", level="info")
+    log("", level="info")
 
     if status['changed_files'] > 0:
-        print(f"💡 Run 'sync import' to import {status['changed_files']} changed file(s)")
+        log(f"💡 Run 'sync import' to import {status['changed_files']} changed file(s)", level="info")
 
     return ctx, True
 

@@ -14,17 +14,6 @@ from music_minion.domain import library, playback, playlists
 from music_minion.domain.playback import resolver
 
 
-def safe_print(ctx: AppContext, message: str, style: Optional[str] = None) -> None:
-    """Print using Rich Console if available."""
-    if ctx.console:
-        if style:
-            ctx.console.print(message, style=style)
-        else:
-            ctx.console.print(message)
-    else:
-        print(message)
-
-
 def get_available_tracks(ctx: AppContext) -> List[library.Track]:
     """Get available tracks (respects active playlist and excludes archived)."""
     # Get archived track IDs
@@ -108,33 +97,31 @@ def play_track(
     playback_uri = resolver.resolve_playback_uri(track, ctx.provider_states)
 
     if not playback_uri:
-        safe_print(ctx, "❌ Cannot play: No playable source available", "red")
-        safe_print(ctx, f"   Track: {library.get_display_name(track)}", "yellow")
+        log("❌ Cannot play: No playable source available", level="error")
+        log(f"   Track: {library.get_display_name(track)}", level="warning")
 
         # Show available sources
         sources = resolver.get_available_sources(track)
         if sources:
-            safe_print(ctx, f"   Sources: {', '.join(sources)}", "yellow")
+            log(f"   Sources: {', '.join(sources)}", level="warning")
 
             # Check if streaming sources need authentication
             if "soundcloud" in sources and not ctx.provider_states.get(
                 "soundcloud", {}
             ).get("authenticated"):
-                safe_print(
-                    ctx,
+                log(
                     "   Tip: SoundCloud not authenticated. Run 'library auth soundcloud'",
-                    "cyan",
+                    level="info",
                 )
             if "spotify" in sources and not ctx.provider_states.get("spotify", {}).get(
                 "authenticated"
             ):
-                safe_print(
-                    ctx,
+                log(
                     "   Tip: Spotify not authenticated. Run 'library auth spotify'",
-                    "cyan",
+                    level="info",
                 )
         else:
-            safe_print(ctx, "   No sources available for this track", "yellow")
+            log("   No sources available for this track", level="warning")
 
         return ctx, True
 
@@ -180,13 +167,13 @@ def play_track(
     ctx = ctx.with_player_state(new_state)
 
     if success:
-        safe_print(ctx, f"♪ Now playing: {library.get_display_name(track)}", "cyan")
+        log(f"♪ Now playing: {library.get_display_name(track)}", level="info")
         if track.duration:
-            safe_print(ctx, f"   Duration: {library.get_duration_str(track)}", "blue")
+            log(f"   Duration: {library.get_duration_str(track)}", level="info")
 
         dj_info = library.get_dj_info(track)
         if dj_info != "No DJ metadata":
-            safe_print(ctx, f"   {dj_info}", "magenta")
+            log(f"   {dj_info}", level="info")
 
         # Start playback session if track found in database
         if track_id:
@@ -209,7 +196,7 @@ def play_track(
                 if position is not None:
                     playback.update_playlist_position(active["id"], track_id, position)
     else:
-        safe_print(ctx, "❌ Failed to play track", "red")
+        log("❌ Failed to play track", level="error")
 
     return ctx, True
 
@@ -241,9 +228,9 @@ def handle_play_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, b
             new_state, success = playback.resume_playback(ctx.player_state)
             ctx = ctx.with_player_state(new_state)
             if success:
-                safe_print(ctx, "▶ Resumed playback", "green")
+                log("▶ Resumed playback", level="info")
             else:
-                safe_print(ctx, "❌ Failed to resume playback", "red")
+                log("❌ Failed to resume playback", level="error")
         else:
             # Play random track from available (non-archived) tracks
             available_tracks = get_available_tracks(ctx)
