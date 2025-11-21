@@ -11,6 +11,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 from loguru import logger
 
+from music_minion.core.output import log
+
 from ...provider import ProviderState, TrackList
 from . import auth
 from .auth import TOKEN_URL
@@ -109,7 +111,7 @@ def sync_library(
 
     # Fetch user's likes (with progress reporting)
     logger.info("Starting SoundCloud likes sync")
-    print("\n🔄 Syncing SoundCloud likes...")
+    log("\n🔄 Syncing SoundCloud likes...", level="info")
     tracks, all_liked_ids = _fetch_user_likes_with_markers(
         access_token, existing_ids=existing_ids, incremental=incremental
     )
@@ -121,7 +123,7 @@ def sync_library(
     likes_synced = 0
     try:
         if all_liked_ids:
-            print(f"📊 Syncing like markers for {len(all_liked_ids)} liked tracks...")
+            log(f"📊 Syncing like markers for {len(all_liked_ids)} liked tracks...", level="info")
             logger.debug(
                 f"Syncing like markers for {len(all_liked_ids)} SoundCloud tracks"
             )
@@ -143,11 +145,11 @@ def sync_library(
             if db_track_ids:
                 likes_synced = database.batch_add_soundcloud_likes(db_track_ids)
                 logger.info(f"Synced {likes_synced} like markers to database")
-                print(f"✓ Synced {likes_synced} like markers")
+                log(f"✓ Synced {likes_synced} like markers", level="info")
     except Exception as e:
         logger.error(f"Error syncing like markers: {e}", exc_info=True)
-        print(f"⚠ Error syncing like markers: {e}")
-        print("  Check logs for details")
+        log(f"⚠ Error syncing like markers: {e}", level="warning")
+        log("  Check logs for details", level="info")
 
     new_state = state.with_sync_time()
     return new_state, tracks
@@ -309,7 +311,7 @@ def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, A
         return state, playlists
 
     except Exception as e:
-        print(f"Error fetching playlists: {e}")
+        log(f"Error fetching playlists: {e}", level="error")
         return state, []
 
 
@@ -651,11 +653,11 @@ def _fetch_user_likes_with_markers(
             total_fetched = len(all_liked_ids)
 
             # Show progress per page
-            print(f"  → {total_fetched} (page {page}, +{fetched_this_page})")
+            log(f"  → {total_fetched} (page {page}, +{fetched_this_page})", level="info")
 
             # Incremental mode: Stop if we found an existing track
             if found_existing:
-                print("  ✓ Stopping at first existing track (incremental mode)")
+                log("  ✓ Stopping at first existing track (incremental mode)", level="info")
                 break
 
             # Next page
@@ -664,9 +666,9 @@ def _fetch_user_likes_with_markers(
 
     except Exception as e:
         # Show error but return what we have
-        print(f"  ⚠ Error fetching likes: {e}")
+        log(f"  ⚠ Error fetching likes: {e}", level="warning")
 
-    print(f"  ✓ Fetched {total_fetched} liked tracks")
+    log(f"  ✓ Fetched {total_fetched} liked tracks", level="info")
     return tracks, all_liked_ids
 
 
