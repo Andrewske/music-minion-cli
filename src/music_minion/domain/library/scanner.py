@@ -215,3 +215,42 @@ def get_library_stats(tracks: List[Track]) -> Dict[str, Any]:
         "tracks_with_bpm": tracks_with_bpm,
         "tracks_with_key": tracks_with_key,
     }
+
+
+def get_track_id_from_track(track: Track) -> Optional[int]:
+    """Find database track ID from Track object (multi-source support).
+
+    Checks provider IDs first (SoundCloud, Spotify, YouTube), then falls back
+    to local_path for local files.
+
+    Args:
+        track: Track object to look up
+
+    Returns:
+        Database track ID if found, None otherwise
+    """
+    from music_minion.core import database
+
+    # Check provider IDs first
+    if track.soundcloud_id:
+        db_track = database.get_track_by_provider_id('soundcloud', track.soundcloud_id)
+        if db_track:
+            return db_track['id']
+
+    if track.spotify_id:
+        db_track = database.get_track_by_provider_id('spotify', track.spotify_id)
+        if db_track:
+            return db_track['id']
+
+    if track.youtube_id:
+        db_track = database.get_track_by_provider_id('youtube', track.youtube_id)
+        if db_track:
+            return db_track['id']
+
+    # Fall back to local path for local files
+    if track.local_path:
+        db_track = database.get_track_by_path(track.local_path)
+        if db_track:
+            return db_track['id']
+
+    return None

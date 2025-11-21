@@ -312,18 +312,23 @@ def get_next_track(ctx: AppContext, available_tracks: List[library.Track]) -> Op
 
     # Sequential mode: play next track in playlist order
     if not shuffle_enabled and active:
-        # Get current track ID
-        current_track_id = None
-        if ctx.player_state.current_track:
-            db_track = database.get_track_by_path(ctx.player_state.current_track)
-            if db_track:
-                current_track_id = db_track['id']
+        # Get current track ID directly from player state (works for both local and streaming tracks)
+        current_track_id = ctx.player_state.current_track_id
 
         # Get playlist tracks (in order)
         playlist_tracks = playlists.get_playlist_tracks(active['id'])
 
-        # Build dict for O(1) lookups of available tracks by file path
-        available_tracks_dict = {t.local_path: t for t in available_tracks}
+        # Build dict for O(1) lookups of available tracks using compound identifier
+        # (handles both local files and streaming tracks)
+        available_tracks_dict = {}
+        for t in available_tracks:
+            identifier = (
+                t.local_path or '',
+                t.soundcloud_id or '',
+                t.spotify_id or '',
+                t.youtube_id or ''
+            )
+            available_tracks_dict[identifier] = t
 
         # Loop to find next non-archived track
         attempts = 0
@@ -343,13 +348,29 @@ def get_next_track(ctx: AppContext, available_tracks: List[library.Track]) -> Op
                     # Empty playlist or other error
                     return None
 
-            # Check if track is available (not archived) using O(1) dict lookup
-            # Also verify file still exists on disk
-            next_track = available_tracks_dict.get(next_db_track['local_path'])
-            if next_track and Path(next_track.local_path).exists():
-                # Found non-archived track - get its position
-                position = playback.get_track_position_in_playlist(playlist_tracks, next_db_track['id'])
-                return (next_track, position)
+            # Check if track is available (not archived) using O(1) dict lookup with compound identifier
+            next_track_identifier = (
+                next_db_track.get('local_path') or '',
+                next_db_track.get('soundcloud_id') or '',
+                next_db_track.get('spotify_id') or '',
+                next_db_track.get('youtube_id') or ''
+            )
+            next_track = available_tracks_dict.get(next_track_identifier)
+
+            # Verify track is playable (file exists for local, or has provider ID for streaming)
+            if next_track:
+                is_playable = False
+                if next_track.local_path and next_track.local_path.strip():
+                    # Local track - verify file exists
+                    is_playable = Path(next_track.local_path).exists()
+                elif next_track.soundcloud_id or next_track.spotify_id or next_track.youtube_id:
+                    # Streaming track - has provider ID, assume playable
+                    is_playable = True
+
+                if is_playable:
+                    # Found non-archived track - get its position
+                    position = playback.get_track_position_in_playlist(playlist_tracks, next_db_track['id'])
+                    return (next_track, position)
 
             # Track is archived, continue to next
             current_track_id = next_db_track['id']

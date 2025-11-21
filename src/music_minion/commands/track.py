@@ -234,6 +234,8 @@ def handle_remove_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext,
 def handle_metadata_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
     """Handle metadata command - show metadata editor for current track.
 
+    Note: Metadata editing is only supported for local files, not streaming tracks.
+
     Args:
         ctx: Application context
         args: Command arguments (unused)
@@ -245,13 +247,35 @@ def handle_metadata_command(ctx: AppContext, args: List[str]) -> Tuple[AppContex
         print("No track is currently playing")
         return ctx, True
 
-    # Get track from database
-    db_track = database.get_track_by_path(ctx.player_state.current_track)
+    # Get track ID from player state (works for both local and streaming tracks)
+    track_id = ctx.player_state.current_track_id
+
+    # Fallback to path lookup for backward compatibility
+    if not track_id:
+        db_track = database.get_track_by_path(ctx.player_state.current_track)
+        if not db_track:
+            print("❌ Could not find current track in database")
+            return ctx, True
+        track_id = db_track['id']
+
+    # Get full track info from database
+    db_track = database.get_track_by_id(track_id)
     if not db_track:
         print("❌ Could not find current track in database")
         return ctx, True
 
-    track_id = db_track['id']
+    # Check if this is a streaming track
+    if not db_track.get('local_path') or not db_track.get('local_path').strip():
+        # This is a streaming track - cannot edit metadata
+        print("⚠️  Cannot edit metadata for streaming tracks")
+        print(f"   Track: {db_track.get('artist')} - {db_track.get('title')}")
+        if db_track.get('soundcloud_id'):
+            print("   Source: SoundCloud")
+        elif db_track.get('spotify_id'):
+            print("   Source: Spotify")
+        elif db_track.get('youtube_id'):
+            print("   Source: YouTube")
+        return ctx, True
 
     # Signal to blessed UI to open metadata editor
     # This will be handled via InternalCommand in keyboard handler

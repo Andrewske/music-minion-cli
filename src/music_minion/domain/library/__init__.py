@@ -34,6 +34,7 @@ from .scanner import (
     get_tracks_by_artist,
     get_tracks_by_album,
     get_library_stats,
+    get_track_id_from_track,
 )
 
 __all__ = [
@@ -59,4 +60,5 @@ __all__ = [
     "get_tracks_by_artist",
     "get_tracks_by_album",
     "get_library_stats",
+    "get_track_id_from_track",
 ]
