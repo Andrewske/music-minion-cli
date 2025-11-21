@@ -14,15 +14,30 @@ from . import api, auth
 
 
 def init_provider(config: ProviderConfig) -> ProviderState:
-    """Initialize SoundCloud provider.
+    """Initialize SoundCloud provider with token lookup and auto-refresh.
 
-    Tries to load state from database first, then falls back to file tokens.
+    NOTE: This function performs more work than typical __init__.py exports
+    because it needs to load authentication state from multiple sources
+    with automatic token refresh.
+
+    Token Lookup Priority:
+    1. Database provider_state table (primary, persisted)
+       - Includes auto-refresh if token expired
+    2. File-based tokens (legacy, ~/.local/share/music-minion/soundcloud/)
+       - Auto-migrates to database on successful refresh
+    3. Unauthenticated state (requires 'library auth soundcloud')
+
+    This complexity is justified because:
+    - Avoids forcing all callers to handle token refresh
+    - Provides seamless migration from file-based to DB storage
+    - Follows provider protocol (returns ProviderState)
+    - Initialization happens once per session, not per-operation
 
     Args:
         config: Provider configuration
 
     Returns:
-        Initial provider state
+        ProviderState with authentication status and cached token data
     """
     from music_minion.core import database
 
