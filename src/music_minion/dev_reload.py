@@ -11,6 +11,8 @@ import time
 from pathlib import Path
 from typing import Callable, Optional
 
+from loguru import logger
+
 try:
     from watchdog.events import FileModifiedEvent, FileSystemEventHandler
     from watchdog.observers import Observer
@@ -141,7 +143,7 @@ def reload_module(module_path: str) -> bool:
         return True
     except Exception as e:
         # Log error but don't crash app
-        print(f"❌ Failed to reload {module_name}: {e}")
+        logger.error(f"Failed to reload {module_name}: {e}")
         return False
 
 
@@ -158,8 +160,8 @@ def setup_file_watcher(
         Tuple of (Observer, FileChangeHandler) if successful, None otherwise
     """
     if not WATCHDOG_AVAILABLE:
-        print("⚠️  watchdog not installed - hot-reload unavailable")
-        print("   Install with: uv pip install watchdog")
+        logger.warning("watchdog not installed - hot-reload unavailable")
+        logger.info("Install with: uv pip install watchdog")
         return None
 
     try:
@@ -177,7 +179,7 @@ def setup_file_watcher(
         return observer, handler
 
     except Exception as e:
-        print(f"⚠️  Failed to setup file watcher: {e}")
+        logger.warning(f"Failed to setup file watcher: {e}")
         return None
 
 

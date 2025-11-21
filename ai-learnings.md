@@ -2106,3 +2106,73 @@ if log_file:
 ---
 
 **Last Updated**: 2025-11-20 after centralized logging implementation
+
+## Loguru Migration (2025-11-21)
+
+### Unified Logging with Loguru
+**Pattern**: Single logging system with dual output for user-facing messages
+```python
+# core/output.py - Setup once at startup
+from loguru import logger
+
+def setup_loguru(log_file: Path, level: str = "INFO") -> None:
+    """Configure loguru for file-only logging."""
+    logger.remove()  # Remove default handler
+    logger.add(
+        log_file,
+        rotation="10 MB",
+        retention=5,
+        level=level,
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{line} | {message}",
+        enqueue=False,  # Synchronous for immediate writes
+    )
+
+def log(message: str, level: str = "info") -> None:
+    """Unified logging: writes to file AND prints for blessed UI."""
+    getattr(logger, level)(message)
+    print(message)  # Blessed UI captures this
+```
+
+**Learning**: File-only logging with no console handler prevents conflicts with blessed terminal control. The `log()` helper provides dual output: file logging + UI display.
+
+### Two Logging Patterns
+**Background operations** (use loguru directly):
+```python
+from loguru import logger
+
+# dev_reload.py, ipc/server.py, helpers.py
+logger.error(f"Failed to reload {module_name}: {e}")
+logger.warning("watchdog not installed - hot-reload unavailable")
+logger.exception("Background sync failed")  # Auto-captures stack trace
+```
+
+**User-facing messages** (use log() helper):
+```python
+from music_minion.core.output import log
+
+# commands/*.py - All command handlers
+log(f"❌ Playlist '{name}' not found", level="error")
+log(f"⚠️ No tracks available", level="warning")
+log(f"✅ Created playlist: {name}", level="info")
+```
+
+**Learning**: Background operations use `logger` directly (file only). User-facing messages use `log()` helper (file + UI). This separation keeps concerns clear.
+
+### Migration Statistics
+- **10 files** migrated from stdlib logging to loguru (domain, commands, core)
+- **284 print() statements** replaced with `log()` in command handlers
+- **12 background print() statements** replaced with `logger` calls
+- **23 verbose messages** marked with TODO for future cleanup
+- **100 lines** of custom logging code eliminated
+
+**Benefits**:
+- ✅ Zero blessed UI conflicts (no stderr console handler)
+- ✅ All user messages automatically logged to file
+- ✅ Thread-safe with `enqueue=False` (synchronous writes)
+- ✅ Automatic log rotation (10MB, 5 backups)
+- ✅ Rich exception tracebacks with `logger.exception()`
+- ✅ Single-line setup replaces 100-line custom module
+
+---
+
+**Last Updated**: 2025-11-21 after loguru migration

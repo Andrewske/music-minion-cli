@@ -5,13 +5,12 @@ Functional approach with explicit state passing
 
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-import logging
+
+from loguru import logger
 
 from music_minion.core.database import get_db_connection
 from . import filters
 from . import sync
-
-logger = logging.getLogger(__name__)
 
 
 def create_playlist(name: str, playlist_type: str, description: Optional[str] = None) -> int:

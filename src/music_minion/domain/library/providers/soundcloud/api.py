@@ -5,11 +5,11 @@ Handles library sync, playlists, likes, and stream URLs.
 """
 
 import json
-import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
+from loguru import logger
 
 from ...provider import ProviderState, TrackList
 from . import auth
@@ -17,8 +17,6 @@ from .auth import TOKEN_URL
 
 # SoundCloud API base URL
 API_BASE_URL = "https://api.soundcloud.com"
-
-logger = logging.getLogger(__name__)
 
 
 def _format_track_urn(track_id: str) -> str:

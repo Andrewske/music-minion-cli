@@ -2,16 +2,15 @@
 SQLite database operations for Music Minion CLI
 """
 
-import logging
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .config import get_data_dir
+from loguru import logger
 
-logger = logging.getLogger(__name__)
+from .config import get_data_dir
 
 
 # Database schema version for migrations

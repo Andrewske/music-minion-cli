@@ -9,13 +9,12 @@ Sync strategy:
 4. Push updated playlist back to provider
 """
 
-import logging
 from typing import Optional, Tuple
+
+from loguru import logger
 
 from music_minion.core.database import get_db_connection
 from music_minion.domain.library import providers
-
-logger = logging.getLogger(__name__)
 
 
 def get_active_library() -> str:

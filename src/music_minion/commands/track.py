@@ -4,16 +4,16 @@ Track operation command handlers for Music Minion CLI.
 Handles: add, remove (adding/removing tracks to/from playlists)
 """
 
-import logging
 from typing import List, Tuple
+
+from loguru import logger
 
 from music_minion.context import AppContext
 from music_minion.core import database
+from music_minion.core.output import log
 from music_minion.domain import playlists
 from music_minion.domain import library
 from music_minion import helpers
-
-logger = logging.getLogger(__name__)
 
 
 def handle_add_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
@@ -27,12 +27,12 @@ def handle_add_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bo
         (updated_context, should_continue)
     """
     if not ctx.player_state.current_track:
-        print("No track is currently playing")
+        log("No track is currently playing", "warning")
         return ctx, True
 
     if not args:
-        print("Error: Please specify playlist name")
-        print("Usage: add <playlist_name>")
+        log("Error: Please specify playlist name", "error")
+        log("Usage: add <playlist_name>", "info")
         return ctx, True
 
     name = ' '.join(args)
@@ -46,9 +46,9 @@ def handle_add_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bo
     pl = playlists.get_playlist_by_name(name)
 
     if not pl:
-        print(f"❌ Playlist '{name}' not found in {active_library} library")
+        log(f"❌ Playlist '{name}' not found in {active_library} library", "error")
         if active_library != 'local':
-            print(f"   Tip: Switch to local library with 'library active local' to access local playlists")
+            log(f"   Tip: Switch to local library with 'library active local' to access local playlists", "info")
         return ctx, True
 
     # Get current track ID - prefer using the cached ID from player state
@@ -58,14 +58,14 @@ def handle_add_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bo
     if not track_id:
         db_track = database.get_track_by_path(ctx.player_state.current_track)
         if not db_track:
-            print("❌ Could not find current track in database")
+            log("❌ Could not find current track in database", "error")
             return ctx, True
         track_id = db_track['id']
 
     # Fetch full track info from database using track_id
     db_track = database.get_track_by_id(track_id)
     if not db_track:
-        print("❌ Could not find current track in database")
+        log("❌ Could not find current track in database", "error")
         return ctx, True
 
     try:
@@ -85,22 +85,22 @@ def handle_add_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bo
 
             # Check if this was a SoundCloud playlist for better messaging
             if pl.get('soundcloud_playlist_id'):
-                print(f"✅ Added to SoundCloud playlist '{name}': {display_name}")
+                log(f"✅ Added to SoundCloud playlist '{name}': {display_name}", "info")
             else:
-                print(f"✅ Added to '{name}': {display_name}")
+                log(f"✅ Added to '{name}': {display_name}", "info")
 
             # Auto-export if enabled (only for local playlists)
             helpers.auto_export_if_enabled(pl['id'], ctx)
         else:
-            print(f"Track is already in playlist '{name}'")
+            log(f"Track is already in playlist '{name}'", "warning")
         return ctx, True
     except ValueError as e:
         logger.error(f"ValueError in add_command: {e}")
-        print(f"❌ Error: {e}")
+        log(f"❌ Error: {e}", "error")
         return ctx, True
     except Exception as e:
         logger.exception(f"Error adding track to playlist '{name}'")
-        print(f"❌ Error adding track to playlist: {e}")
+        log(f"❌ Error adding track to playlist: {e}", "error")
         return ctx, True
 
 
@@ -115,12 +115,12 @@ def handle_remove_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext,
         (updated_context, should_continue)
     """
     if not ctx.player_state.current_track:
-        print("No track is currently playing")
+        log("No track is currently playing", "warning")
         return ctx, True
 
     if not args:
-        print("Error: Please specify playlist name")
-        print("Usage: remove <playlist_name>")
+        log("Error: Please specify playlist name", "error")
+        log("Usage: remove <playlist_name>", "info")
         return ctx, True
 
     name = ' '.join(args)
@@ -134,9 +134,9 @@ def handle_remove_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext,
     pl = playlists.get_playlist_by_name(name)
 
     if not pl:
-        print(f"❌ Playlist '{name}' not found in {active_library} library")
+        log(f"❌ Playlist '{name}' not found in {active_library} library", "error")
         if active_library != 'local':
-            print(f"   Tip: Switch to local library with 'library active local' to access local playlists")
+            log(f"   Tip: Switch to local library with 'library active local' to access local playlists", "info")
         return ctx, True
 
     # Get current track ID - prefer using the cached ID from player state
@@ -146,14 +146,14 @@ def handle_remove_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext,
     if not track_id:
         db_track = database.get_track_by_path(ctx.player_state.current_track)
         if not db_track:
-            print("❌ Could not find current track in database")
+            log("❌ Could not find current track in database", "error")
             return ctx, True
         track_id = db_track['id']
 
     # Fetch full track info from database using track_id
     db_track = database.get_track_by_id(track_id)
     if not db_track:
-        print("❌ Could not find current track in database")
+        log("❌ Could not find current track in database", "error")
         return ctx, True
 
     try:
@@ -173,22 +173,22 @@ def handle_remove_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext,
 
             # Check if this was a SoundCloud playlist for better messaging
             if pl.get('soundcloud_playlist_id'):
-                print(f"✅ Removed from SoundCloud playlist '{name}': {display_name}")
+                log(f"✅ Removed from SoundCloud playlist '{name}': {display_name}", "info")
             else:
-                print(f"✅ Removed from '{name}': {display_name}")
+                log(f"✅ Removed from '{name}': {display_name}", "info")
 
             # Auto-export if enabled (only for local playlists)
             helpers.auto_export_if_enabled(pl['id'], ctx)
         else:
-            print(f"Track is not in playlist '{name}'")
+            log(f"Track is not in playlist '{name}'", "warning")
         return ctx, True
     except ValueError as e:
         logger.error(f"ValueError in remove_command: {e}")
-        print(f"❌ Error: {e}")
+        log(f"❌ Error: {e}", "error")
         return ctx, True
     except Exception as e:
         logger.exception(f"Error removing track from playlist '{name}'")
-        print(f"❌ Error removing track from playlist: {e}")
+        log(f"❌ Error removing track from playlist: {e}", "error")
         return ctx, True
 
 
@@ -205,7 +205,7 @@ def handle_metadata_command(ctx: AppContext, args: List[str]) -> Tuple[AppContex
         (updated_context, should_continue)
     """
     if not ctx.player_state.current_track:
-        print("No track is currently playing")
+        log("No track is currently playing", "warning")
         return ctx, True
 
     # Get track ID from player state (works for both local and streaming tracks)
@@ -215,27 +215,27 @@ def handle_metadata_command(ctx: AppContext, args: List[str]) -> Tuple[AppContex
     if not track_id:
         db_track = database.get_track_by_path(ctx.player_state.current_track)
         if not db_track:
-            print("❌ Could not find current track in database")
+            log("❌ Could not find current track in database", "error")
             return ctx, True
         track_id = db_track['id']
 
     # Get full track info from database
     db_track = database.get_track_by_id(track_id)
     if not db_track:
-        print("❌ Could not find current track in database")
+        log("❌ Could not find current track in database", "error")
         return ctx, True
 
     # Check if this is a streaming track
     if not db_track.get('local_path') or not db_track.get('local_path').strip():
         # This is a streaming track - cannot edit metadata
-        print("⚠️  Cannot edit metadata for streaming tracks")
-        print(f"   Track: {db_track.get('artist')} - {db_track.get('title')}")
+        log("⚠️  Cannot edit metadata for streaming tracks", "warning")
+        log(f"   Track: {db_track.get('artist')} - {db_track.get('title')}", "info")
         if db_track.get('soundcloud_id'):
-            print("   Source: SoundCloud")
+            log("   Source: SoundCloud", "info")
         elif db_track.get('spotify_id'):
-            print("   Source: Spotify")
+            log("   Source: Spotify", "info")
         elif db_track.get('youtube_id'):
-            print("   Source: YouTube")
+            log("   Source: YouTube", "info")
         return ctx, True
 
     # Signal to blessed UI to open metadata editor
@@ -245,11 +245,11 @@ def handle_metadata_command(ctx: AppContext, args: List[str]) -> Tuple[AppContex
 
     # For non-blessed mode, show error
     if not hasattr(ctx, 'ui_state'):
-        print("⚠️  Metadata editor only available in blessed UI mode")
+        log("⚠️  Metadata editor only available in blessed UI mode", "warning")
         return ctx, True
 
     # In blessed mode, this command is handled via internal command
     # The blessed app will call handle_show_metadata_editor
-    print(f"Opening metadata editor for: {db_track.get('artist')} - {db_track.get('title')}")
+    log(f"Opening metadata editor for: {db_track.get('artist')} - {db_track.get('title')}", "info")
 
     return ctx, True
