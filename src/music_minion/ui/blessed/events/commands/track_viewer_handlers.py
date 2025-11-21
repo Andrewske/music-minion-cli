@@ -11,20 +11,41 @@ from music_minion.ui.blessed.state import (
 )
 
 
-def handle_show_track_viewer(ctx: AppContext, ui_state: UIState, playlist_name: str) -> tuple[AppContext, UIState]:
+def handle_show_track_viewer(
+    ctx: AppContext,
+    ui_state: UIState,
+    playlist_name: str,
+    playlist_type: str = '',
+    tracks: list | None = None
+) -> tuple[AppContext, UIState]:
     """
-    Handle showing track viewer for a playlist.
+    Handle showing track viewer for a playlist or history.
 
     Args:
         ctx: Application context
         ui_state: Current UI state
-        playlist_name: Name of playlist to view
+        playlist_name: Name of playlist to view (or display name for history)
+        playlist_type: Type of playlist ('history' for special handling, '' for regular)
+        tracks: Optional pre-fetched tracks (for history or other special cases)
 
     Returns:
         Tuple of (updated AppContext, updated UIState)
     """
     from music_minion.domain import playlists
 
+    # Handle history or other special cases with pre-fetched tracks
+    if playlist_type == 'history' and tracks is not None:
+        # Use virtual playlist ID -1 for history (not a real playlist)
+        ui_state = show_track_viewer(
+            ui_state,
+            playlist_id=-1,
+            playlist_name=playlist_name,
+            playlist_type='history',
+            tracks=tracks
+        )
+        return ctx, ui_state
+
+    # Regular playlist handling
     # Get playlist by name
     pl = playlists.get_playlist_by_name(playlist_name)
     if not pl:
@@ -337,4 +358,157 @@ def handle_track_viewer_edit_filters(ctx: AppContext, ui_state: UIState, playlis
 
     ui_state = start_wizard(ui_state, 'smart_playlist', wizard_data)
 
+    return ctx, ui_state
+
+
+def handle_track_viewer_like(ctx: AppContext, ui_state: UIState, track_id: int) -> tuple[AppContext, UIState]:
+    """
+    Handle liking a track from track viewer.
+
+    Args:
+        ctx: Application context
+        ui_state: Current UI state
+        track_id: ID of track to like
+
+    Returns:
+        Tuple of (updated AppContext, updated UIState)
+    """
+    from datetime import datetime
+    from music_minion.core import database
+    from music_minion.domain import library
+
+    # Get track from database
+    db_track = database.get_track_by_id(track_id)
+    if not db_track:
+        ui_state = add_history_line(ui_state, f"❌ Track not found: {track_id}", 'red')
+        return ctx, ui_state
+
+    # Convert to library track for display name
+    library_track = database.db_track_to_library_track(db_track)
+
+    # Add like rating
+    database.add_rating(track_id, 'like', 'User liked song', source='user')
+
+    # Show temporal context
+    now = datetime.now()
+    time_context = f"{now.strftime('%A')} at {now.hour:02d}:{now.minute:02d}"
+
+    # Add feedback
+    ui_state = add_history_line(ui_state, f"👍 Liked: {library.get_display_name(library_track)}", 'white')
+    ui_state = add_history_line(ui_state, f"   Liked on {time_context}", 'white')
+    ui_state = set_feedback(ui_state, "✓ Liked track", "✓")
+
+    # Sync to SoundCloud if track has soundcloud_id
+    soundcloud_id = db_track.get('soundcloud_id')
+    if soundcloud_id:
+        # Check if already liked on SoundCloud
+        if not database.has_soundcloud_like(track_id):
+            # Sync like to SoundCloud
+            from music_minion.domain.library import providers
+
+            try:
+                # Get SoundCloud provider
+                provider = providers.get_provider('soundcloud')
+                from music_minion.domain.library.provider import ProviderConfig
+                config = ProviderConfig(name='soundcloud', enabled=True)
+                state = provider.init_provider(config)
+
+                if state.authenticated:
+                    # Call API to like track
+                    new_state, success, error_msg = provider.like_track(state, soundcloud_id)
+
+                    if success:
+                        # Add soundcloud marker to database
+                        database.add_rating(track_id, 'like', 'Synced to SoundCloud', source='soundcloud')
+                        ui_state = add_history_line(ui_state, "   ✓ Synced like to SoundCloud", 'white')
+                    else:
+                        ui_state = add_history_line(ui_state, f"   ⚠ Failed to sync to SoundCloud: {error_msg}", 'yellow')
+                else:
+                    # Not authenticated - skip silently
+                    pass
+            except Exception as e:
+                ui_state = add_history_line(ui_state, f"   ⚠ Error syncing to SoundCloud: {e}", 'yellow')
+
+    # Keep viewer open
+    return ctx, ui_state
+
+
+def handle_track_viewer_unlike(ctx: AppContext, ui_state: UIState, track_id: int) -> tuple[AppContext, UIState]:
+    """
+    Handle unliking a track from track viewer.
+
+    Only removes the SoundCloud like marker and syncs to SoundCloud.
+    Does not remove local user likes (those are temporal data).
+
+    Args:
+        ctx: Application context
+        ui_state: Current UI state
+        track_id: ID of track to unlike
+
+    Returns:
+        Tuple of (updated AppContext, updated UIState)
+    """
+    from music_minion.core import database
+    from music_minion.domain import library
+
+    # Get track from database
+    db_track = database.get_track_by_id(track_id)
+    if not db_track:
+        ui_state = add_history_line(ui_state, f"❌ Track not found: {track_id}", 'red')
+        return ctx, ui_state
+
+    # Convert to library track for display name
+    library_track = database.db_track_to_library_track(db_track)
+
+    soundcloud_id = db_track.get('soundcloud_id')
+
+    # Check if track has SoundCloud like marker
+    if not database.has_soundcloud_like(track_id):
+        ui_state = add_history_line(ui_state, f"⚠ {library.get_display_name(library_track)}", 'yellow')
+        ui_state = add_history_line(ui_state, "   Track is not liked on SoundCloud", 'yellow')
+        return ctx, ui_state
+
+    # Track has SoundCloud like, proceed to unlike
+    if not soundcloud_id:
+        ui_state = add_history_line(ui_state, f"⚠ {library.get_display_name(library_track)}", 'yellow')
+        ui_state = add_history_line(ui_state, "   Track has like marker but no SoundCloud ID", 'yellow')
+        return ctx, ui_state
+
+    # Remove SoundCloud like via API
+    from music_minion.domain.library import providers
+
+    try:
+        # Get SoundCloud provider
+        provider = providers.get_provider('soundcloud')
+        from music_minion.domain.library.provider import ProviderConfig
+        config = ProviderConfig(name='soundcloud', enabled=True)
+        state = provider.init_provider(config)
+
+        if not state.authenticated:
+            ui_state = add_history_line(ui_state, "⚠ Not authenticated with SoundCloud", 'yellow')
+            ui_state = add_history_line(ui_state, "   Run: library auth soundcloud", 'yellow')
+            return ctx, ui_state
+
+        # Call API to unlike track
+        new_state, success, error_msg = provider.unlike_track(state, soundcloud_id)
+
+        if success:
+            # Remove soundcloud marker from database
+            with database.get_db_connection() as conn:
+                conn.execute(
+                    "DELETE FROM ratings WHERE track_id = ? AND source = 'soundcloud'",
+                    (track_id,),
+                )
+                conn.commit()
+
+            ui_state = add_history_line(ui_state, f"💔 Unliked on SoundCloud: {library.get_display_name(library_track)}", 'white')
+            ui_state = add_history_line(ui_state, "   ✓ Removed like from SoundCloud", 'white')
+            ui_state = set_feedback(ui_state, "✓ Unliked track", "✓")
+        else:
+            ui_state = add_history_line(ui_state, f"⚠ Failed to unlike on SoundCloud: {error_msg}", 'yellow')
+
+    except Exception as e:
+        ui_state = add_history_line(ui_state, f"⚠ Error unliking on SoundCloud: {e}", 'yellow')
+
+    # Keep viewer open
     return ctx, ui_state

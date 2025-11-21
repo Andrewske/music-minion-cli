@@ -31,6 +31,7 @@ from .events.commands import execute_command
 # Frame interval constants for background updates
 PLAYER_POLL_INTERVAL = 10  # Poll MPV every 10 frames (~1 second)
 SCAN_POLL_INTERVAL = 5  # Poll scan progress every 5 frames (~0.5 seconds)
+SYNC_POLL_INTERVAL = 5  # Poll sync progress every 5 frames (~0.5 seconds)
 POSITION_UPDATE_THRESHOLD = 0.1  # Update display every ~3 Unicode blocks (100ms)
 
 
@@ -131,6 +132,70 @@ def poll_scan_state(ui_state: UIState) -> UIState:
 
         # Clear scan state so completion messages don't repeat on next poll
         admin._clear_scan_state()
+
+    return ui_state
+
+
+def poll_sync_state(ui_state: UIState) -> UIState:
+    """
+    Poll library sync state and update UI state.
+
+    Args:
+        ui_state: Current UI state
+
+    Returns:
+        Updated UI state with sync progress
+    """
+    from dataclasses import replace
+    from .state import add_history_line
+    from ...commands import library
+
+    # Get current sync state
+    sync_state = library.get_sync_state()
+
+    if sync_state is None:
+        # No sync running
+        return ui_state
+
+    # Check if sync completed
+    if sync_state.get('completed', False):
+        # Show results in history
+        provider = sync_state.get('provider', 'unknown')
+        mode = sync_state.get('mode', 'incremental')
+
+        if sync_state.get('error'):
+            ui_state = add_history_line(ui_state, f"❌ Sync failed: {sync_state['error']}", 'red')
+        else:
+            phase = sync_state.get('phase', '')
+
+            if phase == 'playlists' or phase == 'syncing_playlists':
+                # Playlist sync completed
+                stats = sync_state.get('stats', {})
+                ui_state = add_history_line(ui_state, f"✅ {provider.title()} playlist sync complete!", 'green')
+                ui_state = add_history_line(ui_state, f"  ✨ Created: {stats.get('created', 0)}", 'white')
+                ui_state = add_history_line(ui_state, f"  🔄 Updated: {stats.get('updated', 0)}", 'white')
+                ui_state = add_history_line(ui_state, f"  ⏭️  Skipped: {stats.get('skipped', 0)}", 'white')
+                if stats.get('failed', 0) > 0:
+                    ui_state = add_history_line(ui_state, f"  ❌ Failed: {stats.get('failed', 0)}", 'yellow')
+            else:
+                # Library sync completed
+                stats = sync_state.get('stats', {})
+                mode_str = "full" if mode == "full" else "incremental"
+                ui_state = add_history_line(ui_state, f"✅ {provider.title()} sync complete ({mode_str})!", 'green')
+                ui_state = add_history_line(ui_state, f"  ✨ Created: {stats.get('created', 0)} tracks", 'white')
+                ui_state = add_history_line(ui_state, f"  ⏭️  Skipped: {stats.get('skipped', 0)} tracks", 'white')
+
+        # Clear sync state so completion messages don't repeat on next poll
+        library._clear_sync_state()
+
+    else:
+        # Sync still running - show progress indicator
+        phase = sync_state.get('phase', '')
+        provider = sync_state.get('provider', 'unknown')
+
+        # Add progress status to UI if not already showing
+        # (In the future, we could add a dedicated sync progress UI component)
+        # For now, the log messages from the sync functions will show in history
 
     return ui_state
 
@@ -426,6 +491,11 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         if should_poll_scan:
             ui_state = poll_scan_state(ui_state)
 
+        # Poll sync state at configured interval for smoother progress updates
+        should_poll_sync = frame_count % SYNC_POLL_INTERVAL == 0
+        if should_poll_sync:
+            ui_state = poll_sync_state(ui_state)
+
         # Process IPC commands from external clients (hotkeys)
         try:
             while not command_queue.empty():
@@ -565,7 +635,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
             sys.stdout.flush()
 
             last_input_text = ui_state.input_text
-            last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll, ui_state.editor_visible, ui_state.editor_selected, ui_state.editor_mode, ui_state.editor_input, ui_state.search_selected, ui_state.search_scroll, ui_state.search_mode, ui_state.search_detail_scroll, ui_state.search_detail_selection)
+            last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.track_viewer_mode, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll, ui_state.editor_visible, ui_state.editor_selected, ui_state.editor_mode, ui_state.editor_input, ui_state.search_selected, ui_state.search_scroll, ui_state.search_mode, ui_state.search_detail_scroll, ui_state.search_detail_selection)
 
             # Update position tracking atomically after full redraw
             last_position = ctx.player_state.current_position
@@ -573,7 +643,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
             last_rendered_position = ctx.player_state.current_position
 
         # Check if modal visibility changed (requires full redraw)
-        if palette_state_changed and (ui_state.palette_visible != last_palette_state[0] or ui_state.wizard_active != last_palette_state[3] or ui_state.track_viewer_visible != last_palette_state[5] or ui_state.analytics_viewer_visible != last_palette_state[7] or ui_state.editor_visible != last_palette_state[9]):
+        if palette_state_changed and (ui_state.palette_visible != last_palette_state[0] or ui_state.wizard_active != last_palette_state[3] or ui_state.track_viewer_visible != last_palette_state[5] or ui_state.track_viewer_mode != last_palette_state[7] or ui_state.analytics_viewer_visible != last_palette_state[8] or ui_state.editor_visible != last_palette_state[10]):
             needs_full_redraw = True
 
         if input_changed or palette_state_changed:
@@ -639,7 +709,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 sys.stdout.flush()
 
                 last_input_text = ui_state.input_text
-                last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll, ui_state.editor_visible, ui_state.editor_selected, ui_state.editor_mode, ui_state.editor_input, ui_state.search_selected, ui_state.search_scroll, ui_state.search_mode, ui_state.search_detail_scroll, ui_state.search_detail_selection)
+                last_palette_state = (ui_state.palette_visible, ui_state.palette_selected, ui_state.confirmation_active, ui_state.wizard_active, ui_state.wizard_selected, ui_state.track_viewer_visible, ui_state.track_viewer_selected, ui_state.track_viewer_mode, ui_state.analytics_viewer_visible, ui_state.analytics_viewer_scroll, ui_state.editor_visible, ui_state.editor_selected, ui_state.editor_mode, ui_state.editor_input, ui_state.search_selected, ui_state.search_scroll, ui_state.search_mode, ui_state.search_detail_scroll, ui_state.search_detail_selection)
 
         else:
             # Only check for position updates if playing and we have layout

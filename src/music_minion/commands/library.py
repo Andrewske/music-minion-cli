@@ -4,7 +4,8 @@ Library management command handlers for Music Minion CLI.
 Handles: library, library list, library active, library sync, library auth
 """
 
-from typing import Callable, List, Optional, Tuple
+import threading
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from music_minion.context import AppContext
 from music_minion.core import database
@@ -13,6 +14,190 @@ from music_minion.domain.library import providers
 from music_minion.domain.library.provider import ProviderConfig
 
 # Removed: old sync_provider_tracks import (replaced with batch_insert_provider_tracks)
+
+# Global sync state (thread-safe)
+_sync_state_lock = threading.Lock()
+_sync_state: Optional[Dict[str, Any]] = None
+
+
+def get_sync_state() -> Optional[Dict[str, Any]]:
+    """Get current sync state (thread-safe)."""
+    with _sync_state_lock:
+        return _sync_state.copy() if _sync_state else None
+
+
+def _update_sync_state(updates: Dict[str, Any]) -> None:
+    """Update sync state (thread-safe, internal use only)."""
+    global _sync_state
+    with _sync_state_lock:
+        if _sync_state is None:
+            _sync_state = {}
+        _sync_state.update(updates)
+
+
+def _clear_sync_state() -> None:
+    """Clear sync state (thread-safe, internal use only)."""
+    global _sync_state
+    with _sync_state_lock:
+        _sync_state = None
+
+
+def _threaded_sync_worker(
+    ctx: AppContext, provider_name: str, full: bool
+) -> None:
+    """Background worker thread for library syncing."""
+    try:
+        # Initialize state
+        _update_sync_state(
+            {
+                "phase": "init",
+                "provider": provider_name,
+                "mode": "full" if full else "incremental",
+                "tracks_fetched": 0,
+                "tracks_imported": 0,
+                "error": None,
+                "completed": False,
+                "stats": {"created": 0, "skipped": 0},
+            }
+        )
+
+        # Progress callback to update UI
+        def progress_callback(event_type: str, data: dict) -> None:
+            if event_type == "tracks_fetched":
+                _update_sync_state(
+                    {
+                        "phase": "fetching",
+                        "tracks_fetched": data.get("total", 0),
+                        "status": data.get("status", ""),
+                    }
+                )
+            elif event_type == "importing":
+                _update_sync_state(
+                    {"phase": "importing", "status": data.get("status", "")}
+                )
+            elif event_type == "complete":
+                _update_sync_state(
+                    {
+                        "completed": True,
+                        "stats": {
+                            "created": data.get("created", 0),
+                            "skipped": data.get("skipped", 0),
+                        },
+                    }
+                )
+            elif event_type == "error":
+                _update_sync_state({"completed": True, "error": data.get("error")})
+
+        # Run sync with progress callback
+        sync_library(ctx, provider_name, full=full, progress_callback=progress_callback)
+
+    except Exception as e:
+        _update_sync_state({"completed": True, "error": str(e)})
+
+
+def sync_library_background(
+    ctx: AppContext, provider_name: str, full: bool = False
+) -> Tuple[AppContext, bool]:
+    """Start library sync in background thread.
+
+    Args:
+        ctx: Application context
+        provider_name: Provider to sync
+        full: If True, do full sync; if False, do incremental sync
+
+    Returns:
+        (ctx, True) - Returns immediately while sync runs in background
+    """
+    # Clear any previous sync state
+    _clear_sync_state()
+
+    # Start worker thread
+    thread = threading.Thread(
+        target=_threaded_sync_worker, args=(ctx, provider_name, full), daemon=True
+    )
+    thread.start()
+
+    return ctx, True
+
+
+def _threaded_playlist_sync_worker(
+    ctx: AppContext, provider_name: str, full: bool
+) -> None:
+    """Background worker thread for playlist syncing."""
+    try:
+        # Initialize state
+        _update_sync_state(
+            {
+                "phase": "playlists",
+                "provider": provider_name,
+                "mode": "full" if full else "incremental",
+                "playlists_processed": 0,
+                "total_playlists": 0,
+                "error": None,
+                "completed": False,
+                "stats": {"created": 0, "updated": 0, "skipped": 0, "failed": 0},
+            }
+        )
+
+        # Progress callback to update UI
+        def progress_callback(event_type: str, data: dict) -> None:
+            if event_type == "init":
+                _update_sync_state(
+                    {"total_playlists": data.get("total", 0), "phase": "syncing_playlists"}
+                )
+            elif event_type == "playlist_start":
+                _update_sync_state(
+                    {
+                        "playlists_processed": data.get("index", 0),
+                        "current_playlist": data.get("name", ""),
+                    }
+                )
+            elif event_type == "playlist_complete":
+                stats = data.get("stats", {})
+                _update_sync_state({"stats": stats})
+            elif event_type == "complete":
+                stats = data.get("stats", {}) if "stats" in data else {
+                    "created": data.get("created", 0),
+                    "updated": data.get("updated", 0),
+                    "skipped": data.get("skipped", 0),
+                    "failed": data.get("failed", 0),
+                }
+                _update_sync_state({"completed": True, "stats": stats})
+            elif event_type == "error":
+                _update_sync_state({"completed": True, "error": data.get("error")})
+
+        # Run playlist sync with progress callback
+        sync_playlists(
+            ctx, provider_name, full=full, progress_callback=progress_callback, silent=True
+        )
+
+    except Exception as e:
+        _update_sync_state({"completed": True, "error": str(e)})
+
+
+def sync_playlists_background(
+    ctx: AppContext, provider_name: str, full: bool = False
+) -> Tuple[AppContext, bool]:
+    """Start playlist sync in background thread.
+
+    Args:
+        ctx: Application context
+        provider_name: Provider to sync playlists from
+        full: If True, force full re-sync of all playlists
+
+    Returns:
+        (ctx, True) - Returns immediately while sync runs in background
+    """
+    # Clear any previous sync state
+    _clear_sync_state()
+
+    # Start worker thread
+    thread = threading.Thread(
+        target=_threaded_playlist_sync_worker, args=(ctx, provider_name, full), daemon=True
+    )
+    thread.start()
+
+    return ctx, True
 
 
 def handle_library_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
@@ -55,7 +240,10 @@ def handle_library_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext
                 "  library sync soundcloud              # Sync tracks + playlists",
                 level="info",
             )
-            log("  library sync soundcloud likes        # Sync tracks only", level="info")
+            log(
+                "  library sync soundcloud likes        # Sync tracks only",
+                level="info",
+            )
             log(
                 "  library sync soundcloud playlists    # Sync playlists only",
                 level="info",
@@ -243,13 +431,19 @@ def switch_active_library(ctx: AppContext, provider: str) -> Tuple[AppContext, b
 
     # Auto-sync streaming providers (incremental sync is fast)
     if provider == "spotify" and ctx.config.spotify.enabled:
-        log(f"🔄 Auto-syncing Spotify library (incremental)...", level="info")
-        ctx, _ = sync_library(ctx, provider, full=False)
-        log(f"✓ Spotify sync complete", level="info")
+        log("🔄 Auto-syncing Spotify library (incremental)...", level="info")
+        if ctx.ui_mode == "blessed" and ctx.update_ui_state:
+            ctx, _ = sync_library_background(ctx, provider, full=False)
+        else:
+            ctx, _ = sync_library(ctx, provider, full=False)
+            log("✓ Spotify sync complete", level="info")
     elif provider == "soundcloud" and ctx.config.soundcloud.enabled:
-        log(f"🔄 Auto-syncing SoundCloud library (incremental)...", level="info")
-        ctx, _ = sync_library(ctx, provider, full=False)
-        log(f"✓ SoundCloud sync complete", level="info")
+        log("🔄 Auto-syncing SoundCloud library (incremental)...", level="info")
+        if ctx.ui_mode == "blessed" and ctx.update_ui_state:
+            ctx, _ = sync_library_background(ctx, provider, full=False)
+        else:
+            ctx, _ = sync_library(ctx, provider, full=False)
+            log("✓ SoundCloud sync complete", level="info")
 
     # Reload tracks based on provider
     if provider == "local":
@@ -381,8 +575,6 @@ def sync_library(
             f"📥 Importing {len(provider_tracks)} {provider_name} tracks to database...",
             level="info",
         )
-        log(f"📥 Importing {len(provider_tracks, level="info")} {provider_name} tracks to database...",
-        )
 
         if progress_callback:
             progress_callback(
@@ -395,16 +587,14 @@ def sync_library(
 
         stats = batch_insert_provider_tracks(provider_tracks, provider_name)
 
+        log("✓ Import complete!", level="info")
+        log(f"  Created:  {stats['created']} (new {provider_name} tracks)", level="info")
+        log(f"  Skipped:  {stats['skipped']} (already synced)", level="info")
+        log("", level="info")
         log(
-            f"✓ Import complete! Created: {stats['created']}, Skipped: {stats['skipped']}",
+            f"💡 Tip: Run 'library match {provider_name}' to link {provider_name} tracks to local files",
             level="info",
         )
-        log("✓ Import complete!", level="info")
-        log(f"  Created:  {stats['created']} (new {provider_name} tracks", level="info")
-        log(f"  Skipped:  {stats['skipped']} (already synced", level="info")
-        log("", level="info")
-        log(f"💡 Tip: Run 'library match {provider_name}' to link {provider_name} tracks to local files",
-         level="info")
 
         # Notify completion
         if progress_callback:
@@ -424,16 +614,20 @@ def sync_library(
             new_state2, playlists = provider.get_playlists(new_state)
 
             if playlists:
-                log(f"Found {len(playlists, level="info")} playlists:")
+                log(f"Found {len(playlists)} playlists:", level="info")
                 for i, pl in enumerate(playlists[:5], 1):
-                    log(f"  {i}. {pl['name']} ({pl['track_count']} tracks", level="info")
+                    log(
+                        f"  {i}. {pl['name']} ({pl['track_count']} tracks)", level="info"
+                    )
 
                 if len(playlists) > 5:
-                    log(f"  ... and {len(playlists, level="info") - 5} more")
+                    log(f"  ... and {len(playlists) - 5} more", level="info")
 
                 log("", level="info")
-                log("💡 Tip: Use 'playlist import soundcloud' to import playlists",
-         level="info")
+                log(
+                    "💡 Tip: Use 'playlist import soundcloud' to import playlists",
+                    level="info",
+                )
 
         # Reload tracks if this is the active provider
         active_provider = database.get_active_provider()
@@ -495,9 +689,7 @@ def sync_playlists(
 
     # Can't sync from 'all' or 'local'
     if provider_name in ("all", "local"):
-        print_if_not_silent(
-            f"❌ Cannot sync playlists from '{provider_name}'"
-        )
+        print_if_not_silent(f"❌ Cannot sync playlists from '{provider_name}'")
         return ctx, True
 
     sync_mode = "full" if full else "incremental"
@@ -517,23 +709,17 @@ def sync_playlists(
         # Check authentication
         if not state.authenticated:
             log(f"❌ Not authenticated with {provider_name}", level="error")
-            print_if_not_silent(
-                f"❌ Not authenticated with {provider_name}"
-            )
+            print_if_not_silent(f"❌ Not authenticated with {provider_name}")
             print_if_not_silent(f"Run: library auth {provider_name}")
             return ctx, True
 
         # Get playlists from provider
-        print_if_not_silent(
-            f"📋 Fetching playlists from {provider_name}..."
-        )
+        print_if_not_silent(f"📋 Fetching playlists from {provider_name}...")
         state, playlists = provider.get_playlists(state)
 
         if not playlists:
             log(f"⚠ No playlists found in {provider_name}", level="warning")
-            print_if_not_silent(
-                f"⚠ No playlists found in {provider_name}"
-            )
+            print_if_not_silent(f"⚠ No playlists found in {provider_name}")
             return ctx, True
 
         log(f"✓ Found {len(playlists)} playlists", level="info")
@@ -578,9 +764,7 @@ def sync_playlists(
                     row[provider_id_field]: dict(row) for row in cursor.fetchall()
                 }
 
-        print_if_not_silent(
-            f"✓ Found {len(existing_playlists_map)} existing playlists"
-        )
+        print_if_not_silent(f"✓ Found {len(existing_playlists_map)} existing playlists")
 
         # ========================================================================
         # PHASE 1: Collect unique tracks from all playlists needing sync
@@ -658,9 +842,7 @@ def sync_playlists(
 
         # Import missing tracks using pre-fetched metadata
         if missing_count > 0:
-            print_if_not_silent(
-                f"📥 Auto-importing {missing_count} missing tracks..."
-            )
+            print_if_not_silent(f"📥 Auto-importing {missing_count} missing tracks...")
 
             missing_provider_ids = [
                 pid for pid in all_provider_ids if pid not in global_track_map
@@ -739,9 +921,7 @@ def sync_playlists(
                         # Update existing playlist or create new one
                         if existing:
                             playlist_id = existing["id"]
-                            print_if_not_silent(
-                                "  💾 Updating existing playlist..."
-                            )
+                            print_if_not_silent("  💾 Updating existing playlist...")
                             update_progress(
                                 "status_update",
                                 {"status": "Updating existing playlist..."},
@@ -840,9 +1020,7 @@ def sync_playlists(
                                     f"  ℹ Renamed to '{final_name}' (name collision)",
                                 )
 
-                            print_if_not_silent(
-                                "  💾 Creating playlist..."
-                            )
+                            print_if_not_silent("  💾 Creating playlist...")
                             update_progress(
                                 "status_update", {"status": "Creating playlist..."}
                             )
@@ -958,16 +1136,12 @@ def sync_playlists(
 
                 # OPTIMIZATION: Single commit for all playlists
                 conn.commit()
-                print_if_not_silent(
-                    "\n✓ Committed all playlist changes to database"
-                )
+                print_if_not_silent("\n✓ Committed all playlist changes to database")
 
             except Exception as e:
                 conn.rollback()
                 log(f"❌ Transaction failed, rolled back: {e}", level="error")
-                print_if_not_silent(
-                    f"❌ Transaction failed, rolled back: {e}"
-                )
+                print_if_not_silent(f"❌ Transaction failed, rolled back: {e}")
                 raise
 
         # Notify complete
@@ -1045,7 +1219,6 @@ def authenticate_provider(
         log("✓ Local provider doesn't require authentication", level="info")
         return ctx, True
 
-    log(f"🔐 Authenticating with {provider_name}...", level="info")
     log(f"🔐 Authenticating with {provider_name}...", level="info")
 
     try:

@@ -72,7 +72,7 @@ def _normalize_spotify_track(track: Dict[str, Any]) -> TrackMetadata:
         "duration": track.get("duration_ms", 0) / 1000.0 if track.get("duration_ms") else None,
         "genre": None,  # Not in basic API response
         "bpm": None,    # Audio features API deprecated
-        "key": None,    # Audio features API deprecated
+        "key_signature": None,  # Audio features API deprecated
     }
 
 
