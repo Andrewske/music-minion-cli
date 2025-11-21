@@ -467,3 +467,15 @@ AttributeError: 'tuple' object has no attribute 'get'
 2025-11-21 09:40:44 | INFO     | music_minion.core.output:47 | ♪ Now playing: RAWS - RAWS - FLEX DUB
 2025-11-21 09:40:44 | INFO     | music_minion.core.output:47 |    Duration: 03:05
 2025-11-21 09:40:44 | INFO     | music_minion.core.output:47 |    Dubstep
+2025-11-21 09:57:10 | INFO     | music_minion.core.output:32 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-21 09:57:10 | INFO     | music_minion.core.database:607 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-21 09:57:10 | INFO     | music_minion.ui.blessed.app:372 | Running auto-sync on startup...
+2025-11-21 09:57:10 | INFO     | music_minion.commands.sync:161 | Starting incremental sync for provider: soundcloud
+2025-11-21 09:57:10 | INFO     | music_minion.core.output:47 | Syncing soundcloud (likes + playlists)...
+2025-11-21 09:57:10 | INFO     | music_minion.core.output:47 | 🔄 Starting library sync from soundcloud in background (task ca0e6a28)
+2025-11-21 09:57:10 | INFO     | music_minion.core.output:47 | 🔄 Starting library sync from soundcloud in background (task ca0e6a28
+2025-11-21 09:57:10 | INFO     | music_minion.core.output:47 | 
+2025-11-21 09:57:10 | INFO     | music_minion.core.output:47 | 🔄 Syncing from soundcloud...
+2025-11-21 09:57:10 | INFO     | music_minion.core.output:47 | 🔄 Syncing from soundcloud...
+2025-11-21 09:57:10 | ERROR    | music_minion.core.output:47 | ❌ Sync failed: UIState.__init__() got an unexpected keyword argument 'sync_active'
+2025-11-21 09:57:10 | ERROR    | music_minion.core.output:47 | ❌ Sync failed: UIState.__init__() got an unexpected keyword argument 'sync_active'
