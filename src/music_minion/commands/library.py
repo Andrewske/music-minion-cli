@@ -323,10 +323,8 @@ def sync_library(
     # Can't sync 'all' - it's a filter, not a provider
     if provider_name == "all":
         log("❌ Cannot sync 'all' - specify a provider", level="error")
-        log("❌ Cannot sync 'all' - specify a provider", level="error")
         return ctx, True
 
-    log(f"🔄 Syncing from {provider_name}...", level="info")
     log(f"🔄 Syncing from {provider_name}...", level="info")
 
     try:
@@ -339,7 +337,6 @@ def sync_library(
 
         # Check authentication
         if not state.authenticated and provider_name != "local":
-            log(f"❌ Not authenticated with {provider_name}", level="error")
             log(f"❌ Not authenticated with {provider_name}", level="error")
             log(f"Run: library auth {provider_name}", level="info")
             return ctx, True
@@ -362,10 +359,8 @@ def sync_library(
             if incremental:
                 message += " (incremental mode - all tracks already synced)"
                 log(message, level="warning")
-                log(message, level="warning")
                 log("💡 Tip: Use '--full' flag to re-sync all tracks", level="info")
             else:
-                log(message, level="warning")
                 log(message, level="warning")
             if progress_callback:
                 progress_callback("complete", {"created": 0, "skipped": 0})
@@ -448,7 +443,6 @@ def sync_library(
             ctx, _ = switch_active_library(ctx, provider_name)
 
     except Exception as e:
-        log(f"❌ Sync failed: {e}", level="error")
         log(f"❌ Sync failed: {e}", level="error")
         if progress_callback:
             progress_callback("error", {"error": str(e)})
@@ -1083,8 +1077,6 @@ def authenticate_provider(
 
         if success:
             log(f"✓ Successfully authenticated with {provider_name}!", level="info")
-            log(f"✓ Successfully authenticated with {provider_name}!",
-         level="info")
 
             # Save auth state to database
             auth_data = new_state.cache.get("token_data", {})
@@ -1093,10 +1085,8 @@ def authenticate_provider(
 
         else:
             log("❌ Authentication failed", level="error")
-            log("❌ Authentication failed", level="error")
 
     except Exception as e:
-        log(f"❌ Authentication error: {e}", level="error")
         log(f"❌ Authentication error: {e}", level="error")
 
     return ctx, True

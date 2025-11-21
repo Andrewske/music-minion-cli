@@ -185,18 +185,6 @@ def ensure_library_loaded(ctx: AppContext) -> tuple[AppContext, bool]:
         row = cursor.fetchone()
         active_provider = row["provider"] if row else "local"
 
-    # Auto-sync if active library is a streaming provider
-    if active_provider == "spotify" and ctx.config.spotify.enabled:
-        safe_print(ctx, "🔄 Auto-syncing Spotify library (incremental)...", "blue")
-        from music_minion.commands import library as library_commands
-        ctx, _ = library_commands.sync_library(ctx, active_provider, full=False)
-        safe_print(ctx, "✓ Spotify sync complete", "green")
-    elif active_provider == "soundcloud" and ctx.config.soundcloud.enabled:
-        safe_print(ctx, "🔄 Auto-syncing SoundCloud library (incremental)...", "blue")
-        from music_minion.commands import library as library_commands
-        ctx, _ = library_commands.sync_library(ctx, active_provider, full=False)
-        safe_print(ctx, "✓ SoundCloud sync complete", "green")
-
     if not ctx.music_tracks:
         safe_print(ctx, "Loading music library...", "blue")
 

@@ -166,7 +166,9 @@ def sync_library(
             if db_track_ids:
                 likes_synced = database.batch_add_soundcloud_likes(db_track_ids)
                 logger.info(f"Synced {likes_synced} like markers to database")
-                log(f"✓ Synced {likes_synced} like markers", level="info")
+                # Show combined status: likes synced + new tracks imported
+                new_tracks_msg = f"{len(tracks)} new" if tracks else "no new"
+                log(f"✓ Synced {likes_synced} like markers ({new_tracks_msg} tracks to import)", level="info")
     except Exception as e:
         logger.error(f"Error syncing like markers: {e}", exc_info=True)
         log(f"⚠ Error syncing like markers: {e}", level="warning")
