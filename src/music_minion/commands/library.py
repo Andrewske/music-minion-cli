@@ -213,16 +213,19 @@ def switch_active_library(ctx: AppContext, provider: str) -> Tuple[AppContext, b
 
     Args:
         ctx: Application context
-        provider: Provider name ('local', 'soundcloud', 'spotify', 'all')
+        provider: Provider name ('local', 'soundcloud', 'spotify', 'youtube')
+             Note: 'all' is supported internally but hidden from users
 
     Returns:
         (updated_context, True)
     """
-    valid_providers = ["local", "soundcloud", "spotify", "youtube", "all"]
+    # Valid providers (excluding 'all' which is internal-only)
+    valid_providers = ["local", "soundcloud", "spotify", "youtube"]
 
-    if provider not in valid_providers:
+    # Allow 'all' for internal use only
+    if provider not in valid_providers and provider != "all":
         log(f"❌ Invalid provider: {provider}", level="error")
-        log(f"Available: {', '.join(valid_providers, level="info")}")
+        log(f"Available: {', '.join(valid_providers)}", level="info")
         return ctx, True
 
     # Update active library in database
@@ -428,14 +431,11 @@ def sync_library(
          level="info")
 
         # Reload tracks if this is the active provider
-        with database.get_db_connection() as conn:
-            cursor = conn.execute("SELECT provider FROM active_library WHERE id = 1")
-            row = cursor.fetchone()
-            active_provider = row["provider"] if row else "local"
+        active_provider = database.get_active_provider()
 
         if active_provider == provider_name or active_provider == "all":
-            # Reload tracks
-            ctx, _ = switch_active_library(ctx, active_provider)
+            # Reload tracks for synced provider
+            ctx, _ = switch_active_library(ctx, provider_name)
 
     except Exception as e:
         log(f"❌ Sync failed: {e}", level="error")

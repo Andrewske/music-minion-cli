@@ -420,3 +420,50 @@ AttributeError: 'tuple' object has no attribute 'get'
 2025-11-21 00:59:59 | INFO     | music_minion.core.output:47 | ♪ Now playing: The Arcturians, BRAINWAVEZ - The Arcturians & BRAINWAVEZ - Time & Space
 2025-11-21 00:59:59 | INFO     | music_minion.core.output:47 |    Duration: 03:06
 2025-11-21 00:59:59 | INFO     | music_minion.core.output:47 |    Drum & Bass
+2025-11-21 01:23:58 | INFO     | music_minion.core.output:32 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-21 01:23:58 | INFO     | music_minion.core.database:607 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-21 01:23:58 | INFO     | music_minion.ui.blessed.app:372 | Running auto-sync on startup...
+2025-11-21 01:23:58 | INFO     | music_minion.commands.sync:161 | Starting incremental sync for provider: soundcloud
+2025-11-21 01:23:58 | INFO     | music_minion.core.output:47 | Syncing soundcloud (likes + playlists)...
+2025-11-21 01:23:58 | INFO     | music_minion.core.output:47 | 🔄 Starting library sync from soundcloud in background (task 8e774cf7)
+2025-11-21 01:23:58 | INFO     | music_minion.core.output:47 | 🔄 Starting library sync from soundcloud in background (task 8e774cf7
+2025-11-21 01:23:58 | INFO     | music_minion.core.output:47 | 
+2025-11-21 01:23:58 | INFO     | music_minion.core.output:47 | 🔄 Syncing from soundcloud...
+2025-11-21 01:23:58 | INFO     | music_minion.core.output:47 | 🔄 Syncing from soundcloud...
+2025-11-21 01:23:58 | INFO     | music_minion.domain.library.providers.soundcloud.api:102 | Found 7434 existing SoundCloud tracks for incremental sync
+2025-11-21 01:23:58 | INFO     | music_minion.domain.library.providers.soundcloud.api:111 | Starting SoundCloud likes sync
+2025-11-21 01:23:59 | INFO     | music_minion.domain.library.providers.soundcloud.api:116 | Fetched 0 new tracks, 1 total liked tracks
+2025-11-21 01:23:59 | INFO     | music_minion.domain.library.providers.soundcloud.api:145 | Synced 1 like markers to database
+2025-11-21 01:23:59 | WARNING  | music_minion.core.output:47 | ⚠ No tracks found in soundcloud library (incremental mode - all tracks already synced)
+2025-11-21 01:23:59 | WARNING  | music_minion.core.output:47 | ⚠ No tracks found in soundcloud library (incremental mode - all tracks already synced)
+2025-11-21 01:23:59 | INFO     | music_minion.core.output:47 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-21 09:40:34 | INFO     | music_minion.core.output:32 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-21 09:40:34 | INFO     | music_minion.core.database:607 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-21 09:40:34 | INFO     | music_minion.ui.blessed.app:372 | Running auto-sync on startup...
+2025-11-21 09:40:34 | INFO     | music_minion.commands.sync:161 | Starting incremental sync for provider: soundcloud
+2025-11-21 09:40:34 | INFO     | music_minion.core.output:47 | Syncing soundcloud (likes + playlists)...
+2025-11-21 09:40:34 | INFO     | music_minion.core.output:47 | 🔄 Starting library sync from soundcloud in background (task a514c33e)
+2025-11-21 09:40:34 | INFO     | music_minion.core.output:47 | 🔄 Starting library sync from soundcloud in background (task a514c33e
+2025-11-21 09:40:34 | INFO     | music_minion.core.output:47 | 
+2025-11-21 09:40:34 | INFO     | music_minion.core.output:47 | 🔄 Syncing from soundcloud...
+2025-11-21 09:40:34 | INFO     | music_minion.core.output:47 | 🔄 Syncing from soundcloud...
+2025-11-21 09:40:34 | INFO     | music_minion.domain.library.providers.soundcloud.api:125 | Found 7434 existing SoundCloud tracks for incremental sync
+2025-11-21 09:40:34 | INFO     | music_minion.domain.library.providers.soundcloud.api:134 | Starting SoundCloud likes sync
+2025-11-21 09:40:34 | INFO     | music_minion.core.output:47 | 
+🔄 Syncing SoundCloud likes...
+2025-11-21 09:40:35 | INFO     | music_minion.core.output:47 |   → 1 (page 1, +193)
+2025-11-21 09:40:35 | INFO     | music_minion.core.output:47 |   ✓ Stopping at first existing track (incremental mode)
+2025-11-21 09:40:35 | INFO     | music_minion.core.output:47 |   ✓ Fetched 1 liked tracks
+2025-11-21 09:40:35 | INFO     | music_minion.domain.library.providers.soundcloud.api:139 | Fetched 0 new tracks, 1 total liked tracks
+2025-11-21 09:40:35 | INFO     | music_minion.core.output:47 | 📊 Syncing like markers for 1 liked tracks...
+2025-11-21 09:40:35 | INFO     | music_minion.domain.library.providers.soundcloud.api:168 | Synced 1 like markers to database
+2025-11-21 09:40:35 | INFO     | music_minion.core.output:47 | ✓ Synced 1 like markers
+2025-11-21 09:40:35 | WARNING  | music_minion.core.output:47 | ⚠ No tracks found in soundcloud library (incremental mode - all tracks already synced)
+2025-11-21 09:40:35 | WARNING  | music_minion.core.output:47 | ⚠ No tracks found in soundcloud library (incremental mode - all tracks already synced)
+2025-11-21 09:40:35 | INFO     | music_minion.core.output:47 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-21 09:40:43 | INFO     | music_minion.core.output:47 | Starting music playback...
+2025-11-21 09:40:43 | INFO     | music_minion.domain.playback.player:52 | Starting MPV player with socket: /tmp/mpv-socket-378844
+2025-11-21 09:40:43 | INFO     | music_minion.domain.playback.player:91 | MPV started successfully
+2025-11-21 09:40:44 | INFO     | music_minion.core.output:47 | ♪ Now playing: RAWS - RAWS - FLEX DUB
+2025-11-21 09:40:44 | INFO     | music_minion.core.output:47 |    Duration: 03:05
+2025-11-21 09:40:44 | INFO     | music_minion.core.output:47 |    Dubstep

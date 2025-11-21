@@ -129,6 +129,38 @@ def load_provider_states() -> Dict[str, Any]:
     return provider_states
 
 
+def reload_tracks(ctx: AppContext) -> AppContext:
+    """Reload tracks from database for active library.
+
+    Args:
+        ctx: Application context
+
+    Returns:
+        Updated context with reloaded tracks
+    """
+    from dataclasses import replace
+
+    # Get all tracks from database for active library
+    db_tracks = database.get_all_tracks()
+
+    if db_tracks:
+        # Convert database tracks to library Track objects
+        tracks = [database.db_track_to_library_track(track) for track in db_tracks]
+
+        # Filter out local files that no longer exist
+        existing_tracks = []
+        for track in tracks:
+            # Keep provider tracks (no local_path or empty) and local tracks that still exist
+            if not track.local_path or Path(track.local_path).exists():
+                existing_tracks.append(track)
+
+        # Update context with new tracks
+        ctx = replace(ctx, music_tracks=existing_tracks)
+        logger.info(f"Reloaded {len(existing_tracks)} tracks from database")
+
+    return ctx
+
+
 def ensure_library_loaded(ctx: AppContext) -> tuple[AppContext, bool]:
     """Ensure music library is loaded.
 
