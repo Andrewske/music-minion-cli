@@ -76,9 +76,9 @@ def smart_playlist_wizard(name: str, ctx: AppContext) -> Tuple[AppContext, bool]
         )
         return ctx, True
 
-    print(f"\n🧙 Smart Playlist Wizard: {name}")
-    print("=" * 60)
-    print("Create filters to automatically match tracks.\n")
+    log(f"\n🧙 Smart Playlist Wizard: {name}", level="info")
+    log("=" * 60, level="info")
+    log("Create filters to automatically match tracks.\n", level="info")
 
     # Create the playlist first
     try:
@@ -91,15 +91,15 @@ def smart_playlist_wizard(name: str, ctx: AppContext) -> Tuple[AppContext, bool]
 
     # Loop to add filters
     while True:
-        print("\n" + "-" * 60)
-        print("Add a filter rule:")
-        print()
+        log("\n" + "-" * 60, level="info")
+        log("Add a filter rule:", level="info")
+        log("", level="info")
 
         # Show valid fields
-        print("Available fields:")
-        print("  Text: title, artist, album, genre, key")
-        print("  Numeric: year, bpm")
-        print()
+        log("Available fields:", level="info")
+        log("  Text: title, artist, album, genre, key", level="info")
+        log("  Numeric: year, bpm", level="info")
+        log("", level="info")
 
         # Get field
         field = input("Field (or 'done' to finish): ").strip().lower()
@@ -124,13 +124,15 @@ def smart_playlist_wizard(name: str, ctx: AppContext) -> Tuple[AppContext, bool]
 
         # Show valid operators for this field
         if field in playlist_filters.NUMERIC_FIELDS:
-            print(
-                f"\nNumeric operators: {', '.join(sorted(playlist_filters.NUMERIC_OPERATORS))}"
+            log(
+                f"\nNumeric operators: {', '.join(sorted(playlist_filters.NUMERIC_OPERATORS))}",
+                level="info"
             )
             valid_ops = playlist_filters.NUMERIC_OPERATORS
         else:
-            print(
-                f"\nText operators: {', '.join(sorted(playlist_filters.TEXT_OPERATORS))}"
+            log(
+                f"\nText operators: {', '.join(sorted(playlist_filters.TEXT_OPERATORS))}",
+                level="info"
             )
             valid_ops = playlist_filters.TEXT_OPERATORS
 
@@ -187,33 +189,33 @@ def smart_playlist_wizard(name: str, ctx: AppContext) -> Tuple[AppContext, bool]
             break
 
     # Preview matching tracks
-    print("\n" + "=" * 60)
-    print("📊 Preview: Finding matching tracks...")
+    log("\n" + "=" * 60, level="info")
+    log("📊 Preview: Finding matching tracks...", level="info")
 
     try:
         matching_tracks = playlist_filters.evaluate_filters(playlist_id)
         count = len(matching_tracks)
 
-        print(f"\n✅ Found {count} matching tracks")
+        log(f"\n✅ Found {count} matching tracks", level="info")
 
         if count > 0:
-            print("\nFirst 10 matches:")
+            log("\nFirst 10 matches:", level="info")
             for i, track in enumerate(matching_tracks[:10], 1):
                 artist = track.get("artist", "Unknown")
                 title = track.get("title", "Unknown")
                 album = track.get("album", "")
-                print(f"  {i}. {artist} - {title}")
+                log(f"  {i}. {artist} - {title}", level="info")
                 if album:
-                    print(f"     Album: {album}")
+                    log(f"     Album: {album}", level="info")
 
         # Show filters
-        print(f"\n📋 Filter rules for '{name}':")
+        log(f"\n📋 Filter rules for '{name}':", level="info")
         for i, f in enumerate(filters_added, 1):
             prefix = f"  {f['conjunction']}" if i > 1 else "  "
-            print(f"{prefix} {f['field']} {f['operator']} '{f['value']}'")
+            log(f"{prefix} {f['field']} {f['operator']} '{f['value']}'", level="info")
 
         # Confirm
-        print()
+        log("", level="info")
         confirm = input("Save this smart playlist? (y/n) [y]: ").strip().lower()
 
         if confirm == "n":
@@ -281,10 +283,10 @@ def ai_smart_playlist_wizard(
         )
         return ctx, True
 
-    print(f"\n🤖 AI Smart Playlist Wizard: {name}")
-    print("=" * 60)
-    print(f'Description: "{description}"')
-    print("\n🧠 Parsing with AI...")
+    log(f"\n🤖 AI Smart Playlist Wizard: {name}", level="info")
+    log("=" * 60, level="info")
+    log(f'Description: "{description}"', level="info")
+    log("\n🧠 Parsing with AI...", level="info")
 
     # Parse description with AI
     try:
@@ -312,7 +314,7 @@ def ai_smart_playlist_wizard(
         return ctx, True
 
     # Validate all filters
-    print("\n🔍 Validating filters...")
+    log("\n🔍 Validating filters...", level="info")
     validation_errors = validate_filters_list(filters)
 
     if validation_errors:
@@ -329,13 +331,13 @@ def ai_smart_playlist_wizard(
     log(f"✅ All {len(filters)} filters are valid", level="info")
 
     # Show parsed filters
-    print("\n📋 Parsed filters:")
-    print(playlist_ai.format_filters_for_preview(filters))
+    log("\n📋 Parsed filters:", level="info")
+    log(playlist_ai.format_filters_for_preview(filters), level="info")
 
     # Ask if user wants to edit (skip in blessed mode)
     edit = "n"
     if not is_blessed_mode:
-        print("\n" + "=" * 60)
+        log("\n" + "=" * 60, level="info")
         edit = (
             input("Edit filters before creating playlist? (y/n) [n]: ").strip().lower()
         )
@@ -365,8 +367,8 @@ def ai_smart_playlist_wizard(
             return ctx, True
 
     # Create playlist
-    print("\n" + "=" * 60)
-    print(f"Creating smart playlist: {name}")
+    log("\n" + "=" * 60, level="info")
+    log(f"Creating smart playlist: {name}", level="info")
 
     try:
         playlist_id = playlists.create_playlist(name, "smart", description=description)
@@ -390,34 +392,34 @@ def ai_smart_playlist_wizard(
         return ctx, True
 
     # Preview matching tracks
-    print("\n📊 Preview: Finding matching tracks...")
+    log("\n📊 Preview: Finding matching tracks...", level="info")
 
     try:
         matching_tracks = playlist_filters.evaluate_filters(playlist_id)
         count = len(matching_tracks)
 
-        print(f"\n✅ Found {count} matching tracks")
+        log(f"\n✅ Found {count} matching tracks", level="info")
 
         if count > 0:
-            print("\nFirst 10 matches:")
+            log("\nFirst 10 matches:", level="info")
             for i, track in enumerate(matching_tracks[:10], 1):
                 artist = track.get("artist", "Unknown")
                 title = track.get("title", "Unknown")
                 album = track.get("album", "")
-                print(f"  {i}. {artist} - {title}")
+                log(f"  {i}. {artist} - {title}", level="info")
                 if album:
-                    print(f"     Album: {album}")
+                    log(f"     Album: {album}", level="info")
 
         # Show final filters
-        print(f"\n📋 Filter rules for '{name}':")
+        log(f"\n📋 Filter rules for '{name}':", level="info")
         for i, f in enumerate(filters, 1):
             prefix = f"  {f['conjunction']}" if i > 1 else "  "
-            print(f"{prefix} {f['field']} {f['operator']} '{f['value']}'")
+            log(f"{prefix} {f['field']} {f['operator']} '{f['value']}'", level="info")
 
         # Confirm (skip in blessed mode, default to yes)
         confirm = "y"
         if not is_blessed_mode:
-            print()
+            log("", level="info")
             confirm = input("Save this smart playlist? (y/n) [y]: ").strip().lower()
 
         if confirm == "n":
@@ -564,11 +566,11 @@ def handle_playlist_delete_command(
         return ctx, True
 
     # Confirm deletion
-    print(f"⚠️  Delete playlist '{name}'? This cannot be undone.")
+    log(f"⚠️  Delete playlist '{name}'? This cannot be undone.", level="warning")
     confirm = input("Type 'yes' to confirm: ").strip().lower()
 
     if confirm != "yes":
-        print("Deletion cancelled")
+        log("Deletion cancelled", level="info")
         return ctx, True
 
     try:
@@ -732,7 +734,7 @@ def handle_playlist_active_command(
                         for track in ctx.music_tracks:
                             if track.local_path == saved_track["local_path"]:
                                 if not is_blessed_mode:
-                                    print("▶️  Resuming playback...")
+                                    log("▶️  Resuming playback...", level="info")
                                 # Import play_track from playback commands
                                 from . import playback as playback_commands
 

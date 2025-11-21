@@ -395,3 +395,28 @@ AttributeError: 'tuple' object has no attribute 'get'
 2025-11-21 00:04:40 | INFO     | music_minion.core.database:595 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
 2025-11-21 00:18:48 | INFO     | music_minion.core.output:32 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
 2025-11-21 00:18:48 | INFO     | music_minion.core.database:595 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-21 00:28:33 | INFO     | music_minion.core.output:32 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-21 00:28:33 | INFO     | music_minion.core.database:595 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-21 00:28:44 | INFO     | music_minion.core.output:47 | Starting music playback...
+2025-11-21 00:28:44 | INFO     | music_minion.domain.playback.player:52 | Starting MPV player with socket: /tmp/mpv-socket-336416
+2025-11-21 00:28:44 | INFO     | music_minion.domain.playback.player:91 | MPV started successfully
+2025-11-21 00:35:12 | INFO     | music_minion.core.output:32 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-21 00:35:12 | INFO     | music_minion.core.database:595 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-21 00:35:14 | INFO     | music_minion.core.output:47 | Starting music playback...
+2025-11-21 00:35:14 | INFO     | music_minion.domain.playback.player:52 | Starting MPV player with socket: /tmp/mpv-socket-344566
+2025-11-21 00:35:14 | INFO     | music_minion.domain.playback.player:91 | MPV started successfully
+2025-11-21 00:36:35 | WARNING  | music_minion.domain.playlists.sync:240 | Track 2205603159 in SoundCloud playlist not found in local database
+2025-11-21 00:36:35 | INFO     | music_minion.domain.playlists.sync:256 | Synced 49 tracks from SoundCloud for playlist 'Nov 25'
+2025-11-21 00:36:35 | INFO     | music_minion.domain.playlists.sync:338 | Adding track 2204308671 to SoundCloud playlist 2107077439
+2025-11-21 00:36:37 | WARNING  | music_minion.domain.playlists.sync:240 | Track 2205603159 in SoundCloud playlist not found in local database
+2025-11-21 00:36:37 | INFO     | music_minion.domain.playlists.sync:256 | Synced 50 tracks from SoundCloud for playlist 'Nov 25'
+2025-11-21 00:36:37 | INFO     | music_minion.domain.playlists.sync:356 | Successfully added track to SoundCloud playlist 'Nov 25'
+2025-11-21 00:38:26 | INFO     | music_minion.core.output:47 | ⏸ Paused
+2025-11-21 00:59:51 | INFO     | music_minion.core.output:32 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-21 00:59:51 | INFO     | music_minion.core.database:595 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-21 00:59:58 | INFO     | music_minion.core.output:47 | Starting music playback...
+2025-11-21 00:59:58 | INFO     | music_minion.domain.playback.player:52 | Starting MPV player with socket: /tmp/mpv-socket-357207
+2025-11-21 00:59:58 | INFO     | music_minion.domain.playback.player:91 | MPV started successfully
+2025-11-21 00:59:59 | INFO     | music_minion.core.output:47 | ♪ Now playing: The Arcturians, BRAINWAVEZ - The Arcturians & BRAINWAVEZ - Time & Space
+2025-11-21 00:59:59 | INFO     | music_minion.core.output:47 |    Duration: 03:06
+2025-11-21 00:59:59 | INFO     | music_minion.core.output:47 |    Drum & Bass

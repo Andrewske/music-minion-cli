@@ -11,6 +11,7 @@ from loguru import logger
 
 from music_minion.context import AppContext
 from music_minion.core import database
+from music_minion.core.output import log
 from music_minion.domain import library
 
 
@@ -24,7 +25,7 @@ def handle_archive_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         (updated_context, should_continue)
     """
     if not ctx.player_state.current_track:
-        print("No track is currently playing")
+        log("No track is currently playing", level="warning")
         return ctx, True
 
     # Get track ID from player state (works for both local and streaming tracks)
@@ -34,14 +35,14 @@ def handle_archive_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     if not track_id:
         db_track = database.get_track_by_path(ctx.player_state.current_track)
         if not db_track:
-            print("❌ Could not find current track in database")
+            log("❌ Could not find current track in database", level="error")
             return ctx, True
         track_id = db_track['id']
 
     # Get full track info from database
     db_track = database.get_track_by_id(track_id)
     if not db_track:
-        print("❌ Could not find current track in database")
+        log("❌ Could not find current track in database", level="error")
         return ctx, True
 
     # Find Track object in memory for display (multi-source lookup)
@@ -55,13 +56,13 @@ def handle_archive_command(ctx: AppContext) -> Tuple[AppContext, bool]:
             break
 
     if not current_track:
-        print("Could not find current track information")
+        log("Could not find current track information", level="error")
         return ctx, True
 
     # Add archive rating
     database.add_rating(track_id, 'archive', 'User archived song')
-    print(f"📦 Archived: {library.get_display_name(current_track)}")
-    print("   This song will not be played in future shuffle sessions")
+    log(f"📦 Archived: {library.get_display_name(current_track)}", level="info")
+    log("   This song will not be played in future shuffle sessions", level="info")
 
     # Skip to next track automatically
     from .playback import handle_skip_command
@@ -78,7 +79,7 @@ def handle_like_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         (updated_context, should_continue)
     """
     if not ctx.player_state.current_track:
-        print("No track is currently playing")
+        log("No track is currently playing", level="warning")
         return ctx, True
 
     # Get track ID from player state (works for both local and streaming tracks)
@@ -88,14 +89,14 @@ def handle_like_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     if not track_id:
         db_track = database.get_track_by_path(ctx.player_state.current_track)
         if not db_track:
-            print("❌ Could not find current track in database")
+            log("❌ Could not find current track in database", level="error")
             return ctx, True
         track_id = db_track['id']
 
     # Get full track info from database
     db_track = database.get_track_by_id(track_id)
     if not db_track:
-        print("❌ Could not find current track in database")
+        log("❌ Could not find current track in database", level="error")
         return ctx, True
 
     # Find Track object in memory for display (multi-source lookup)
@@ -109,17 +110,17 @@ def handle_like_command(ctx: AppContext) -> Tuple[AppContext, bool]:
             break
 
     if not current_track:
-        print("Could not find current track information")
+        log("Could not find current track information", level="error")
         return ctx, True
 
     # Add like rating
     database.add_rating(track_id, 'like', 'User liked song', source='user')
-    print(f"👍 Liked: {library.get_display_name(current_track)}")
+    log(f"👍 Liked: {library.get_display_name(current_track)}", level="info")
 
     # Show temporal context
     now = datetime.now()
     time_context = f"{now.strftime('%A')} at {now.hour:02d}:{now.minute:02d}"
-    print(f"   Liked on {time_context}")
+    log(f"   Liked on {time_context}", level="info")
 
     # Sync to SoundCloud if track has soundcloud_id
     soundcloud_id = db_track.get('soundcloud_id')
@@ -143,16 +144,16 @@ def handle_like_command(ctx: AppContext) -> Tuple[AppContext, bool]:
                     if success:
                         # Add soundcloud marker to database
                         database.add_rating(track_id, 'like', 'Synced to SoundCloud', source='soundcloud')
-                        print("   ✓ Synced like to SoundCloud")
+                        log("   ✓ Synced like to SoundCloud", level="info")
                     else:
-                        print(f"   ⚠ Failed to sync to SoundCloud: {error_msg}")
-                        print("     Check logs for details")
+                        log(f"   ⚠ Failed to sync to SoundCloud: {error_msg}", level="warning")
+                        log("     Check logs for details", level="warning")
                 else:
                     # Not authenticated - skip silently
                     pass
             except Exception as e:
-                print(f"   ⚠ Error syncing to SoundCloud: {e}")
-                print("     Check logs for details")
+                log(f"   ⚠ Error syncing to SoundCloud: {e}", level="warning")
+                log("     Check logs for details", level="warning")
 
     return ctx, True
 
@@ -167,7 +168,7 @@ def handle_love_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         (updated_context, should_continue)
     """
     if not ctx.player_state.current_track:
-        print("No track is currently playing")
+        log("No track is currently playing", level="warning")
         return ctx, True
 
     # Get track ID from player state (works for both local and streaming tracks)
@@ -177,14 +178,14 @@ def handle_love_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     if not track_id:
         db_track = database.get_track_by_path(ctx.player_state.current_track)
         if not db_track:
-            print("❌ Could not find current track in database")
+            log("❌ Could not find current track in database", level="error")
             return ctx, True
         track_id = db_track['id']
 
     # Get full track info from database
     db_track = database.get_track_by_id(track_id)
     if not db_track:
-        print("❌ Could not find current track in database")
+        log("❌ Could not find current track in database", level="error")
         return ctx, True
 
     # Find Track object in memory for display (multi-source lookup)
@@ -198,21 +199,21 @@ def handle_love_command(ctx: AppContext) -> Tuple[AppContext, bool]:
             break
 
     if not current_track:
-        print("Could not find current track information")
+        log("Could not find current track information", level="error")
         return ctx, True
 
     # Add love rating
     database.add_rating(track_id, 'love', 'User loved song')
-    print(f"❤️  Loved: {library.get_display_name(current_track)}")
+    log(f"❤️  Loved: {library.get_display_name(current_track)}", level="info")
 
     # Show temporal context and DJ info
     now = datetime.now()
     time_context = f"{now.strftime('%A')} at {now.hour:02d}:{now.minute:02d}"
-    print(f"   Loved on {time_context}")
+    log(f"   Loved on {time_context}", level="info")
 
     dj_info = library.get_dj_info(current_track)
     if dj_info != "No DJ metadata":
-        print(f"   {dj_info}")
+        log(f"   {dj_info}", level="info")
 
     return ctx, True
 
@@ -228,11 +229,11 @@ def handle_note_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, b
         (updated_context, should_continue)
     """
     if not args:
-        print("Error: Please provide a note. Usage: note <text>")
+        log("Error: Please provide a note. Usage: note <text>", level="error")
         return ctx, True
 
     if not ctx.player_state.current_track:
-        print("No track is currently playing")
+        log("No track is currently playing", level="warning")
         return ctx, True
 
     # Get track ID from player state (works for both local and streaming tracks)
@@ -242,14 +243,14 @@ def handle_note_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, b
     if not track_id:
         db_track = database.get_track_by_path(ctx.player_state.current_track)
         if not db_track:
-            print("❌ Could not find current track in database")
+            log("❌ Could not find current track in database", level="error")
             return ctx, True
         track_id = db_track['id']
 
     # Get full track info from database
     db_track = database.get_track_by_id(track_id)
     if not db_track:
-        print("❌ Could not find current track in database")
+        log("❌ Could not find current track in database", level="error")
         return ctx, True
 
     # Find Track object in memory for display (multi-source lookup)
@@ -263,23 +264,23 @@ def handle_note_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, b
             break
 
     if not current_track:
-        print("Could not find current track information")
+        log("Could not find current track information", level="error")
         return ctx, True
 
     # Add note
     note_text = ' '.join(args)
     note_id = database.add_note(track_id, note_text)
 
-    print(f"📝 Note added to: {library.get_display_name(current_track)}")
-    print(f"   \"{note_text}\"")
+    log(f"📝 Note added to: {library.get_display_name(current_track)}", level="info")
+    log(f"   \"{note_text}\"", level="info")
 
     # Show temporal context
     now = datetime.now()
     time_context = f"{now.strftime('%A')} at {now.hour:02d}:{now.minute:02d}"
-    print(f"   Added on {time_context}")
+    log(f"   Added on {time_context}", level="info")
 
     if note_id:
-        print(f"   Note ID: {note_id} (for AI processing)")
+        log(f"   Note ID: {note_id} (for AI processing)", level="info")
 
     return ctx, True
 
@@ -297,7 +298,7 @@ def handle_unlike_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         (updated_context, should_continue)
     """
     if not ctx.player_state.current_track:
-        print("No track is currently playing")
+        log("No track is currently playing", level="warning")
         return ctx, True
 
     # Get track ID from player state (works for both local and streaming tracks)
@@ -307,14 +308,14 @@ def handle_unlike_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     if not track_id:
         db_track = database.get_track_by_path(ctx.player_state.current_track)
         if not db_track:
-            print("❌ Could not find current track in database")
+            log("❌ Could not find current track in database", level="error")
             return ctx, True
         track_id = db_track['id']
 
     # Get full track info from database
     db_track = database.get_track_by_id(track_id)
     if not db_track:
-        print("❌ Could not find current track in database")
+        log("❌ Could not find current track in database", level="error")
         return ctx, True
 
     # Find Track object in memory for display (multi-source lookup)
@@ -328,21 +329,21 @@ def handle_unlike_command(ctx: AppContext) -> Tuple[AppContext, bool]:
             break
 
     if not current_track:
-        print("Could not find current track information")
+        log("Could not find current track information", level="error")
         return ctx, True
 
     soundcloud_id = db_track.get('soundcloud_id')
 
     # Check if track has SoundCloud like marker
     if not database.has_soundcloud_like(track_id):
-        print(f"⚠ {library.get_display_name(current_track)}")
-        print("   Track is not liked on SoundCloud")
+        log(f"⚠ {library.get_display_name(current_track)}", level="warning")
+        log("   Track is not liked on SoundCloud", level="warning")
         return ctx, True
 
     # Track has SoundCloud like, proceed to unlike
     if not soundcloud_id:
-        print(f"⚠ {library.get_display_name(current_track)}")
-        print("   Track has like marker but no SoundCloud ID")
+        log(f"⚠ {library.get_display_name(current_track)}", level="warning")
+        log("   Track has like marker but no SoundCloud ID", level="warning")
         return ctx, True
 
     # Remove SoundCloud like via API
@@ -356,8 +357,8 @@ def handle_unlike_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         state = provider.init_provider(config)
 
         if not state.authenticated:
-            print("⚠ Not authenticated with SoundCloud")
-            print("   Run: library auth soundcloud")
+            log("⚠ Not authenticated with SoundCloud", level="warning")
+            log("   Run: library auth soundcloud", level="warning")
             return ctx, True
 
         # Call API to unlike track
@@ -372,14 +373,14 @@ def handle_unlike_command(ctx: AppContext) -> Tuple[AppContext, bool]:
                 )
                 conn.commit()
 
-            print(f"💔 Unliked on SoundCloud: {library.get_display_name(current_track)}")
-            print("   ✓ Removed like from SoundCloud")
+            log(f"💔 Unliked on SoundCloud: {library.get_display_name(current_track)}", level="info")
+            log("   ✓ Removed like from SoundCloud", level="info")
         else:
-            print(f"⚠ Failed to unlike on SoundCloud: {error_msg}")
-            print("   Check logs for details")
+            log(f"⚠ Failed to unlike on SoundCloud: {error_msg}", level="warning")
+            log("   Check logs for details", level="warning")
 
     except Exception as e:
-        print(f"⚠ Error unliking on SoundCloud: {e}")
-        print("   Check logs for details")
+        log(f"⚠ Error unliking on SoundCloud: {e}", level="warning")
+        log("   Check logs for details", level="warning")
 
     return ctx, True
