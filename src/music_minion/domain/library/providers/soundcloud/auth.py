@@ -18,6 +18,8 @@ from urllib.parse import parse_qs, quote, urlparse
 
 import requests
 
+from music_minion.core.output import log
+
 from ...provider import ProviderState
 
 # SoundCloud OAuth URLs
@@ -44,15 +46,15 @@ def authenticate(state: ProviderState) -> Tuple[ProviderState, bool]:
     redirect_uri = config_dict.get("redirect_uri", "http://localhost:8080/callback")
 
     if not client_id or not client_secret:
-        print("❌ SoundCloud credentials not configured")
-        print("\nTo get SoundCloud API credentials:")
-        print("1. Visit: https://soundcloud.com/you/apps/new")
-        print("2. Register an application")
-        print("3. Edit ~/.config/music-minion/config.toml:")
-        print("\n   [soundcloud]")
-        print("   enabled = true")
-        print('   client_id = "YOUR_CLIENT_ID"')
-        print('   client_secret = "YOUR_CLIENT_SECRET"')
+        log("❌ SoundCloud credentials not configured", level="error")
+        log("\nTo get SoundCloud API credentials:", level="info")
+        log("1. Visit: https://soundcloud.com/you/apps/new", level="info")
+        log("2. Register an application", level="info")
+        log("3. Edit ~/.config/music-minion/config.toml:", level="info")
+        log("\n   [soundcloud]", level="info")
+        log("   enabled = true", level="info")
+        log('   client_id = "YOUR_CLIENT_ID"', level="info")
+        log('   client_secret = "YOUR_CLIENT_SECRET"', level="info")
         return state, False
 
     # Generate PKCE challenge
@@ -136,8 +138,8 @@ def authenticate(state: ProviderState) -> Tuple[ProviderState, bool]:
         server_thread.daemon = True
         server_thread.start()
 
-        print("🔐 Starting SoundCloud authentication...")
-        print(f"Callback server listening on port {port}")
+        log("🔐 Starting SoundCloud authentication...", level="info")
+        log(f"Callback server listening on port {port}", level="info")
 
         # Try to open browser
         browser_opened = False
@@ -147,22 +149,22 @@ def authenticate(state: ProviderState) -> Tuple[ProviderState, bool]:
             pass
 
         if browser_opened:
-            print("✓ Browser opened for authorization")
+            log("✓ Browser opened for authorization", level="info")
         else:
-            print("\n⚠ Could not open browser automatically")
-            print("\nPlease open this URL in your browser:")
-            print(f"\n{auth_url}\n")
+            log("\n⚠ Could not open browser automatically", level="warning")
+            log("\nPlease open this URL in your browser:", level="info")
+            log(f"\n{auth_url}\n", level="info")
 
-        print("\n⏳ Waiting for authorization (120 seconds timeout)...")
+        log("\n⏳ Waiting for authorization (120 seconds timeout)...", level="info")
         server_thread.join(timeout=120)  # 2 minute timeout
 
     except OSError as e:
         # Could not start server (port in use, etc.)
-        print(f"\n⚠ Could not start callback server: {e}")
-        print("\n📋 Manual authorization mode:")
-        print(f"\n1. Open this URL in your browser:\n{auth_url}\n")
-        print("2. After authorizing, you'll be redirected to a URL")
-        print("3. Copy the FULL redirect URL and paste it here")
+        log(f"\n⚠ Could not start callback server: {e}", level="warning")
+        log("\n📋 Manual authorization mode:", level="info")
+        log(f"\n1. Open this URL in your browser:\n{auth_url}\n", level="info")
+        log("2. After authorizing, you'll be redirected to a URL", level="info")
+        log("3. Copy the FULL redirect URL and paste it here", level="info")
 
         try:
             callback_url = input("\nPaste the callback URL: ").strip()
@@ -175,7 +177,7 @@ def authenticate(state: ProviderState) -> Tuple[ProviderState, bool]:
                 auth_result["error"] = params.get("error", [None])[0]
                 auth_result["received"] = True
         except (EOFError, KeyboardInterrupt):
-            print("\n❌ Authorization cancelled")
+            log("\n❌ Authorization cancelled", level="error")
             return state, False
 
     finally:
@@ -184,25 +186,25 @@ def authenticate(state: ProviderState) -> Tuple[ProviderState, bool]:
 
     # Check result
     if not auth_result["received"]:
-        print("❌ Authorization timeout - no response received")
+        log("❌ Authorization timeout - no response received", level="error")
         return state, False
 
     if auth_result["error"]:
-        print(f"❌ Authorization error: {auth_result['error']}")
+        log(f"❌ Authorization error: {auth_result['error']}", level="error")
         return state, False
 
     if not auth_result["code"]:
-        print("❌ No authorization code received")
+        log("❌ No authorization code received", level="error")
         return state, False
 
     # Verify CSRF state
     if auth_result["state"] != csrf_state:
-        print("❌ CSRF state mismatch - possible security attack!")
-        print("Please try authenticating again.")
+        log("❌ CSRF state mismatch - possible security attack!", level="error")
+        log("Please try authenticating again.", level="info")
         return state, False
 
     # Exchange code for tokens
-    print("\n🔄 Exchanging authorization code for access token...")
+    log("\n🔄 Exchanging authorization code for access token...", level="info")
 
     try:
         token_response = requests.post(
@@ -229,8 +231,8 @@ def authenticate(state: ProviderState) -> Tuple[ProviderState, bool]:
         # Save tokens
         _save_user_tokens(token_data)
 
-        print("✓ Authentication successful!")
-        print(f"Access token expires: {expires_at.strftime('%Y-%m-%d %H:%M')}")
+        log("✓ Authentication successful!", level="info")
+        log(f"Access token expires: {expires_at.strftime('%Y-%m-%d %H:%M')}", level="info")
 
         # Update state
         new_state = state.with_authenticated(True)
@@ -239,18 +241,18 @@ def authenticate(state: ProviderState) -> Tuple[ProviderState, bool]:
         return new_state, True
 
     except requests.HTTPError as e:
-        print(f"❌ Token exchange failed: {e}")
+        log(f"❌ Token exchange failed: {e}", level="error")
         if e.response:
             try:
                 error_data = e.response.json()
-                print(
-                    f"Error details: {error_data.get('error_description', error_data)}"
+                log(
+                    f"Error details: {error_data.get('error_description', error_data)}", level="error"
                 )
             except Exception:
-                print(f"Response: {e.response.text}")
+                log(f"Response: {e.response.text}", level="error")
         return state, False
     except Exception as e:
-        print(f"❌ Authentication error: {e}")
+        log(f"❌ Authentication error: {e}", level="error")
         return state, False
 
 
