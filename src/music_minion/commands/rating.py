@@ -25,10 +25,30 @@ def handle_archive_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         print("No track is currently playing")
         return ctx, True
 
-    # Find current track
+    # Get track ID from player state (works for both local and streaming tracks)
+    track_id = ctx.player_state.current_track_id
+
+    # Fallback to path lookup for backward compatibility
+    if not track_id:
+        db_track = database.get_track_by_path(ctx.player_state.current_track)
+        if not db_track:
+            print("❌ Could not find current track in database")
+            return ctx, True
+        track_id = db_track['id']
+
+    # Get full track info from database
+    db_track = database.get_track_by_id(track_id)
+    if not db_track:
+        print("❌ Could not find current track in database")
+        return ctx, True
+
+    # Find Track object in memory for display (multi-source lookup)
     current_track = None
     for track in ctx.music_tracks:
-        if track.local_path == ctx.player_state.current_track:
+        if (track.local_path and track.local_path == db_track.get('local_path')) or \
+           (track.soundcloud_id and track.soundcloud_id == db_track.get('soundcloud_id')) or \
+           (track.spotify_id and track.spotify_id == db_track.get('spotify_id')) or \
+           (track.youtube_id and track.youtube_id == db_track.get('youtube_id')):
             current_track = track
             break
 
@@ -36,21 +56,14 @@ def handle_archive_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         print("Could not find current track information")
         return ctx, True
 
-    # Get track ID and add archive rating
-    db_track = database.get_track_by_path(ctx.player_state.current_track)
-    if db_track:
-        track_id = db_track['id']
-        database.add_rating(track_id, 'archive', 'User archived song')
-        print(f"📦 Archived: {library.get_display_name(current_track)}")
-        print("   This song will not be played in future shuffle sessions")
+    # Add archive rating
+    database.add_rating(track_id, 'archive', 'User archived song')
+    print(f"📦 Archived: {library.get_display_name(current_track)}")
+    print("   This song will not be played in future shuffle sessions")
 
-        # Skip to next track automatically
-        from .playback import handle_skip_command
-        return handle_skip_command(ctx)
-    else:
-        print("Failed to archive track")
-
-    return ctx, True
+    # Skip to next track automatically
+    from .playback import handle_skip_command
+    return handle_skip_command(ctx)
 
 
 def handle_like_command(ctx: AppContext) -> Tuple[AppContext, bool]:
@@ -66,10 +79,30 @@ def handle_like_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         print("No track is currently playing")
         return ctx, True
 
-    # Find current track
+    # Get track ID from player state (works for both local and streaming tracks)
+    track_id = ctx.player_state.current_track_id
+
+    # Fallback to path lookup for backward compatibility
+    if not track_id:
+        db_track = database.get_track_by_path(ctx.player_state.current_track)
+        if not db_track:
+            print("❌ Could not find current track in database")
+            return ctx, True
+        track_id = db_track['id']
+
+    # Get full track info from database
+    db_track = database.get_track_by_id(track_id)
+    if not db_track:
+        print("❌ Could not find current track in database")
+        return ctx, True
+
+    # Find Track object in memory for display (multi-source lookup)
     current_track = None
     for track in ctx.music_tracks:
-        if track.local_path == ctx.player_state.current_track:
+        if (track.local_path and track.local_path == db_track.get('local_path')) or \
+           (track.soundcloud_id and track.soundcloud_id == db_track.get('soundcloud_id')) or \
+           (track.spotify_id and track.spotify_id == db_track.get('spotify_id')) or \
+           (track.youtube_id and track.youtube_id == db_track.get('youtube_id')):
             current_track = track
             break
 
@@ -77,52 +110,47 @@ def handle_like_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         print("Could not find current track information")
         return ctx, True
 
-    # Get track ID and add like rating
-    db_track = database.get_track_by_path(ctx.player_state.current_track)
-    if db_track:
-        track_id = db_track['id']
-        database.add_rating(track_id, 'like', 'User liked song', source='user')
-        print(f"👍 Liked: {library.get_display_name(current_track)}")
+    # Add like rating
+    database.add_rating(track_id, 'like', 'User liked song', source='user')
+    print(f"👍 Liked: {library.get_display_name(current_track)}")
 
-        # Show temporal context
-        now = datetime.now()
-        time_context = f"{now.strftime('%A')} at {now.hour:02d}:{now.minute:02d}"
-        print(f"   Liked on {time_context}")
+    # Show temporal context
+    now = datetime.now()
+    time_context = f"{now.strftime('%A')} at {now.hour:02d}:{now.minute:02d}"
+    print(f"   Liked on {time_context}")
 
-        # Sync to SoundCloud if track has soundcloud_id
-        soundcloud_id = db_track.get('soundcloud_id')
-        if soundcloud_id:
-            # Check if already liked on SoundCloud
-            if not database.has_soundcloud_like(track_id):
-                # Sync like to SoundCloud
-                from music_minion.domain.library import providers
+    # Sync to SoundCloud if track has soundcloud_id
+    soundcloud_id = db_track.get('soundcloud_id')
+    if soundcloud_id:
+        # Check if already liked on SoundCloud
+        if not database.has_soundcloud_like(track_id):
+            # Sync like to SoundCloud
+            from music_minion.domain.library import providers
 
-                try:
-                    # Get SoundCloud provider
-                    provider = providers.get_provider('soundcloud')
-                    from music_minion.domain.library.provider import ProviderConfig
-                    config = ProviderConfig(name='soundcloud', enabled=True)
-                    state = provider.init_provider(config)
+            try:
+                # Get SoundCloud provider
+                provider = providers.get_provider('soundcloud')
+                from music_minion.domain.library.provider import ProviderConfig
+                config = ProviderConfig(name='soundcloud', enabled=True)
+                state = provider.init_provider(config)
 
-                    if state.authenticated:
-                        # Call API to like track
-                        new_state, success, error_msg = provider.like_track(state, soundcloud_id)
+                if state.authenticated:
+                    # Call API to like track
+                    new_state, success, error_msg = provider.like_track(state, soundcloud_id)
 
-                        if success:
-                            # Add soundcloud marker to database
-                            database.add_rating(track_id, 'like', 'Synced to SoundCloud', source='soundcloud')
-                            print("   ✓ Synced like to SoundCloud")
-                        else:
-                            print(f"   ⚠ Failed to sync to SoundCloud: {error_msg}")
-                            print("     Check logs for details")
+                    if success:
+                        # Add soundcloud marker to database
+                        database.add_rating(track_id, 'like', 'Synced to SoundCloud', source='soundcloud')
+                        print("   ✓ Synced like to SoundCloud")
                     else:
-                        # Not authenticated - skip silently
-                        pass
-                except Exception as e:
-                    print(f"   ⚠ Error syncing to SoundCloud: {e}")
-                    print("     Check logs for details")
-    else:
-        print("Failed to rate track")
+                        print(f"   ⚠ Failed to sync to SoundCloud: {error_msg}")
+                        print("     Check logs for details")
+                else:
+                    # Not authenticated - skip silently
+                    pass
+            except Exception as e:
+                print(f"   ⚠ Error syncing to SoundCloud: {e}")
+                print("     Check logs for details")
 
     return ctx, True
 
@@ -140,10 +168,30 @@ def handle_love_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         print("No track is currently playing")
         return ctx, True
 
-    # Find current track
+    # Get track ID from player state (works for both local and streaming tracks)
+    track_id = ctx.player_state.current_track_id
+
+    # Fallback to path lookup for backward compatibility
+    if not track_id:
+        db_track = database.get_track_by_path(ctx.player_state.current_track)
+        if not db_track:
+            print("❌ Could not find current track in database")
+            return ctx, True
+        track_id = db_track['id']
+
+    # Get full track info from database
+    db_track = database.get_track_by_id(track_id)
+    if not db_track:
+        print("❌ Could not find current track in database")
+        return ctx, True
+
+    # Find Track object in memory for display (multi-source lookup)
     current_track = None
     for track in ctx.music_tracks:
-        if track.local_path == ctx.player_state.current_track:
+        if (track.local_path and track.local_path == db_track.get('local_path')) or \
+           (track.soundcloud_id and track.soundcloud_id == db_track.get('soundcloud_id')) or \
+           (track.spotify_id and track.spotify_id == db_track.get('spotify_id')) or \
+           (track.youtube_id and track.youtube_id == db_track.get('youtube_id')):
             current_track = track
             break
 
@@ -151,23 +199,18 @@ def handle_love_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         print("Could not find current track information")
         return ctx, True
 
-    # Get track ID and add love rating
-    db_track = database.get_track_by_path(ctx.player_state.current_track)
-    if db_track:
-        track_id = db_track['id']
-        database.add_rating(track_id, 'love', 'User loved song')
-        print(f"❤️  Loved: {library.get_display_name(current_track)}")
+    # Add love rating
+    database.add_rating(track_id, 'love', 'User loved song')
+    print(f"❤️  Loved: {library.get_display_name(current_track)}")
 
-        # Show temporal context and DJ info
-        now = datetime.now()
-        time_context = f"{now.strftime('%A')} at {now.hour:02d}:{now.minute:02d}"
-        print(f"   Loved on {time_context}")
+    # Show temporal context and DJ info
+    now = datetime.now()
+    time_context = f"{now.strftime('%A')} at {now.hour:02d}:{now.minute:02d}"
+    print(f"   Loved on {time_context}")
 
-        dj_info = library.get_dj_info(current_track)
-        if dj_info != "No DJ metadata":
-            print(f"   {dj_info}")
-    else:
-        print("Failed to rate track")
+    dj_info = library.get_dj_info(current_track)
+    if dj_info != "No DJ metadata":
+        print(f"   {dj_info}")
 
     return ctx, True
 
@@ -190,10 +233,30 @@ def handle_note_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, b
         print("No track is currently playing")
         return ctx, True
 
-    # Find current track
+    # Get track ID from player state (works for both local and streaming tracks)
+    track_id = ctx.player_state.current_track_id
+
+    # Fallback to path lookup for backward compatibility
+    if not track_id:
+        db_track = database.get_track_by_path(ctx.player_state.current_track)
+        if not db_track:
+            print("❌ Could not find current track in database")
+            return ctx, True
+        track_id = db_track['id']
+
+    # Get full track info from database
+    db_track = database.get_track_by_id(track_id)
+    if not db_track:
+        print("❌ Could not find current track in database")
+        return ctx, True
+
+    # Find Track object in memory for display (multi-source lookup)
     current_track = None
     for track in ctx.music_tracks:
-        if track.local_path == ctx.player_state.current_track:
+        if (track.local_path and track.local_path == db_track.get('local_path')) or \
+           (track.soundcloud_id and track.soundcloud_id == db_track.get('soundcloud_id')) or \
+           (track.spotify_id and track.spotify_id == db_track.get('spotify_id')) or \
+           (track.youtube_id and track.youtube_id == db_track.get('youtube_id')):
             current_track = track
             break
 
@@ -201,25 +264,20 @@ def handle_note_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, b
         print("Could not find current track information")
         return ctx, True
 
-    # Get track ID and add note
-    db_track = database.get_track_by_path(ctx.player_state.current_track)
-    if db_track:
-        track_id = db_track['id']
-        note_text = ' '.join(args)
-        note_id = database.add_note(track_id, note_text)
+    # Add note
+    note_text = ' '.join(args)
+    note_id = database.add_note(track_id, note_text)
 
-        print(f"📝 Note added to: {library.get_display_name(current_track)}")
-        print(f"   \"{note_text}\"")
+    print(f"📝 Note added to: {library.get_display_name(current_track)}")
+    print(f"   \"{note_text}\"")
 
-        # Show temporal context
-        now = datetime.now()
-        time_context = f"{now.strftime('%A')} at {now.hour:02d}:{now.minute:02d}"
-        print(f"   Added on {time_context}")
+    # Show temporal context
+    now = datetime.now()
+    time_context = f"{now.strftime('%A')} at {now.hour:02d}:{now.minute:02d}"
+    print(f"   Added on {time_context}")
 
-        if note_id:
-            print(f"   Note ID: {note_id} (for AI processing)")
-    else:
-        print("Failed to add note")
+    if note_id:
+        print(f"   Note ID: {note_id} (for AI processing)")
 
     return ctx, True
 
@@ -240,10 +298,30 @@ def handle_unlike_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         print("No track is currently playing")
         return ctx, True
 
-    # Find current track
+    # Get track ID from player state (works for both local and streaming tracks)
+    track_id = ctx.player_state.current_track_id
+
+    # Fallback to path lookup for backward compatibility
+    if not track_id:
+        db_track = database.get_track_by_path(ctx.player_state.current_track)
+        if not db_track:
+            print("❌ Could not find current track in database")
+            return ctx, True
+        track_id = db_track['id']
+
+    # Get full track info from database
+    db_track = database.get_track_by_id(track_id)
+    if not db_track:
+        print("❌ Could not find current track in database")
+        return ctx, True
+
+    # Find Track object in memory for display (multi-source lookup)
     current_track = None
     for track in ctx.music_tracks:
-        if track.local_path == ctx.player_state.current_track:
+        if (track.local_path and track.local_path == db_track.get('local_path')) or \
+           (track.soundcloud_id and track.soundcloud_id == db_track.get('soundcloud_id')) or \
+           (track.spotify_id and track.spotify_id == db_track.get('spotify_id')) or \
+           (track.youtube_id and track.youtube_id == db_track.get('youtube_id')):
             current_track = track
             break
 
@@ -251,13 +329,6 @@ def handle_unlike_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         print("Could not find current track information")
         return ctx, True
 
-    # Get track from database
-    db_track = database.get_track_by_path(ctx.player_state.current_track)
-    if not db_track:
-        print("Could not find track in database")
-        return ctx, True
-
-    track_id = db_track['id']
     soundcloud_id = db_track.get('soundcloud_id')
 
     # Check if track has SoundCloud like marker

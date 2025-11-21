@@ -8,8 +8,8 @@ allowing users to provide feedback and improve the tagging system over time.
 import json
 from typing import Dict, List, Tuple, Optional, Any
 
-from music_minion.domain.library import Track
-from music_minion.core.database import get_track_tags, get_track_by_path
+from music_minion.domain.library import Track, get_track_id_from_track
+from music_minion.core.database import get_track_tags
 from .client import analyze_track_with_ai, AIError, get_api_key
 from .prompt_manager import get_learnings, append_to_learnings_section
 
@@ -23,12 +23,10 @@ def get_or_generate_tags_with_reasoning(track: Track) -> Tuple[Dict[str, str], b
     Returns:
         Tuple of (tags_with_reasoning_dict, is_newly_generated)
     """
-    # Get track from database
-    db_track = get_track_by_path(track.local_path)
-    if not db_track:
+    # Get track from database (multi-source support)
+    track_id = get_track_id_from_track(track)
+    if not track_id:
         raise ValueError("Track not found in database")
-
-    track_id = db_track['id']
 
     # Get existing AI tags
     existing_tags = get_track_tags(track_id, include_blacklisted=False)

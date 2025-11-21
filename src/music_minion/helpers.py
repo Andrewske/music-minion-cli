@@ -264,9 +264,16 @@ def check_and_handle_track_completion(ctx: AppContext) -> AppContext:
             safe_print(ctx, f"✅ Finished: {library.get_display_name(finished_track)}", "green")
 
             # Check if track is archived (don't analyze archived tracks)
-            db_track = database.get_track_by_path(ctx.player_state.current_track)
-            if db_track:
-                track_id = db_track['id']
+            # Use track ID from player state (multi-source support)
+            track_id = ctx.player_state.current_track_id
+
+            # Fallback to path lookup for backward compatibility
+            if not track_id and ctx.player_state.current_track:
+                db_track = database.get_track_by_path(ctx.player_state.current_track)
+                if db_track:
+                    track_id = db_track['id']
+
+            if track_id:
                 archived_tracks = database.get_archived_tracks()
                 if track_id not in archived_tracks:
                     # Trigger auto-analysis

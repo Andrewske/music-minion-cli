@@ -232,12 +232,12 @@ def analyze_track_with_ai(
     except ImportError:
         raise AIError("OpenAI library not installed. Install with: pip install openai")
 
-    # Get track from database to get ID
-    db_track = get_track_by_path(track.local_path)
-    if not db_track:
-        raise AIError("Track not found in database")
+    # Get track from database to get ID (multi-source support)
+    from music_minion.domain.library import get_track_id_from_track
 
-    track_id = db_track["id"]
+    track_id = get_track_id_from_track(track)
+    if not track_id:
+        raise AIError("Track not found in database")
 
     # Get existing notes and tags
     notes = get_track_notes(track_id)
@@ -409,9 +409,12 @@ def analyze_and_tag_track(
         )
 
         if tags:
-            # Get track ID
-            db_track = get_track_by_path(track.local_path)
-            track_id = db_track["id"]
+            # Get track ID (multi-source support)
+            from music_minion.domain.library import get_track_id_from_track
+
+            track_id = get_track_id_from_track(track)
+            if not track_id:
+                raise AIError("Track not found in database")
 
             # Add tags to database with reasoning
             add_tags(track_id, tags, source="ai", reasoning=reasoning)

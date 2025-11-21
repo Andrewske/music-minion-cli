@@ -190,7 +190,8 @@ def sync_provider_ids_from_file(local_path: str) -> Optional[int]:
     # Read provider IDs from file
     provider_ids = read_provider_ids_from_file(local_path)
 
-    # Get track by file path
+    # Get track by file path (local files only - this function reads ID3 tags from audio files)
+    # NOTE: This is intentionally path-based as it only operates on local file metadata
     track_data = database.get_track_by_path(local_path)
     if not track_data:
         return None

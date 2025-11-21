@@ -367,10 +367,30 @@ def handle_tag_remove_command(
         print("No track is currently playing")
         return ctx, True
 
-    # Find current track
+    # Get track ID from player state (works for both local and streaming tracks)
+    track_id = ctx.player_state.current_track_id
+
+    # Fallback to path lookup for backward compatibility
+    if not track_id:
+        db_track = database.get_track_by_path(ctx.player_state.current_track)
+        if not db_track:
+            print("❌ Could not find current track in database")
+            return ctx, True
+        track_id = db_track['id']
+
+    # Get full track info from database
+    db_track = database.get_track_by_id(track_id)
+    if not db_track:
+        print("❌ Could not find current track in database")
+        return ctx, True
+
+    # Find Track object in memory for display (multi-source lookup)
     current_track = None
     for track in ctx.music_tracks:
-        if track.local_path == ctx.player_state.current_track:
+        if (track.local_path and track.local_path == db_track.get('local_path')) or \
+           (track.soundcloud_id and track.soundcloud_id == db_track.get('soundcloud_id')) or \
+           (track.spotify_id and track.spotify_id == db_track.get('spotify_id')) or \
+           (track.youtube_id and track.youtube_id == db_track.get('youtube_id')):
             current_track = track
             break
 
@@ -378,13 +398,6 @@ def handle_tag_remove_command(
         print("Could not find current track information")
         return ctx, True
 
-    # Get track ID
-    db_track = database.get_track_by_path(ctx.player_state.current_track)
-    if not db_track:
-        print("Could not find track in database")
-        return ctx, True
-
-    track_id = db_track["id"]
     tag_name = " ".join(args).lower()
 
     try:
@@ -415,24 +428,36 @@ def handle_tag_list_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         print("No track is currently playing")
         return ctx, True
 
-    # Find current track
+    # Get track ID from player state (works for both local and streaming tracks)
+    track_id = ctx.player_state.current_track_id
+
+    # Fallback to path lookup for backward compatibility
+    if not track_id:
+        db_track = database.get_track_by_path(ctx.player_state.current_track)
+        if not db_track:
+            print("❌ Could not find current track in database")
+            return ctx, True
+        track_id = db_track['id']
+
+    # Get full track info from database
+    db_track = database.get_track_by_id(track_id)
+    if not db_track:
+        print("❌ Could not find current track in database")
+        return ctx, True
+
+    # Find Track object in memory for display (multi-source lookup)
     current_track = None
     for track in ctx.music_tracks:
-        if track.local_path == ctx.player_state.current_track:
+        if (track.local_path and track.local_path == db_track.get('local_path')) or \
+           (track.soundcloud_id and track.soundcloud_id == db_track.get('soundcloud_id')) or \
+           (track.spotify_id and track.spotify_id == db_track.get('spotify_id')) or \
+           (track.youtube_id and track.youtube_id == db_track.get('youtube_id')):
             current_track = track
             break
 
     if not current_track:
         print("Could not find current track information")
         return ctx, True
-
-    # Get track ID
-    db_track = database.get_track_by_path(ctx.player_state.current_track)
-    if not db_track:
-        print("Could not find track in database")
-        return ctx, True
-
-    track_id = db_track["id"]
 
     try:
         tags = database.get_track_tags(track_id, include_blacklisted=False)
