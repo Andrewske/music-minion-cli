@@ -6,14 +6,13 @@ Each action returns (AppContext, success, message) for detailed feedback.
 
 from typing import Tuple, Optional
 from datetime import datetime
-import logging
+
+from loguru import logger
 
 from music_minion.context import AppContext
 from music_minion.core import database
 from music_minion.domain import library, playlists
 from music_minion.commands import rating, track, playback
-
-logger = logging.getLogger(__name__)
 
 
 def get_current_month_playlist() -> str:

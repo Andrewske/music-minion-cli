@@ -4,7 +4,6 @@ Functional approach with explicit state management
 """
 
 import json
-import logging
 import os
 import socket
 import subprocess
@@ -13,9 +12,9 @@ import time
 from pathlib import Path
 from typing import Any, Dict, NamedTuple, Optional, Tuple
 
-from music_minion.core.config import Config
+from loguru import logger
 
-logger = logging.getLogger(__name__)
+from music_minion.core.config import Config
 
 
 class PlayerState(NamedTuple):

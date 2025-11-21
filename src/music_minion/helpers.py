@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from loguru import logger
+
 from music_minion.context import AppContext
 from music_minion.core import config
 from music_minion.core import database
@@ -210,7 +212,7 @@ def auto_export_if_enabled(playlist_id: int, ctx: Optional[AppContext] = None) -
 
     # Validate library paths exist
     if not cfg.music.library_paths:
-        print("Warning: Cannot auto-export - no library paths configured", file=sys.stderr)
+        logger.warning("Cannot auto-export - no library paths configured")
         return
 
     # Get library root from config
@@ -226,10 +228,10 @@ def auto_export_if_enabled(playlist_id: int, ctx: Optional[AppContext] = None) -
         )
     except (ValueError, FileNotFoundError, ImportError, OSError) as e:
         # Expected errors - log but don't interrupt workflow
-        print(f"Auto-export failed: {e}", file=sys.stderr)
+        logger.exception("Auto-export failed")
     except Exception as e:
         # Unexpected errors - log for debugging
-        print(f"Unexpected error during auto-export: {e}", file=sys.stderr)
+        logger.exception("Unexpected error during auto-export")
 
 
 def check_and_handle_track_completion(ctx: AppContext) -> AppContext:

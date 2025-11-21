@@ -27,7 +27,7 @@ venv/
 *.db
 
 # Logs
-*.log
+# *.log
 
 # Music Minion data and config
 ai-test-reports/

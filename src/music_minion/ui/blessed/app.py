@@ -7,6 +7,8 @@ import dataclasses
 import queue
 from pathlib import Path
 from blessed import Terminal
+from loguru import logger
+
 from music_minion.context import AppContext
 from music_minion.commands import admin
 from music_minion.core import database
@@ -293,11 +295,11 @@ def poll_player_state(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, U
         # Silently continue - UI will show "not playing"
         pass
     except (database.sqlite3.Error, KeyError, ValueError) as e:
-        # Database or data errors - log to stderr but don't crash
-        print(f"Warning: Error polling player state: {e}", file=sys.stderr)
+        # Database or data errors - log but don't crash
+        logger.warning(f"Error polling player state: {e}")
     except Exception as e:
         # Unexpected errors - log for debugging
-        print(f"Unexpected error polling player state: {type(e).__name__}: {e}", file=sys.stderr)
+        logger.error(f"Unexpected error polling: {type(e).__name__}: {e}")
 
     return ctx, ui_state
 

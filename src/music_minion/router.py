@@ -6,9 +6,12 @@ Routes user commands to appropriate handler functions.
 
 from typing import List, Tuple
 
+from loguru import logger
+
 from music_minion.context import AppContext
 from music_minion.core import config
 from music_minion.core import database
+from music_minion.core.output import log
 from music_minion.domain import playback as playback_domain
 from music_minion import actions
 
@@ -149,9 +152,9 @@ def handle_command(ctx: AppContext, command: str, args: List[str]) -> Tuple[AppC
     if command in ['quit', 'exit']:
         # Clean up MPV player before exiting
         if playback_domain.is_mpv_running(ctx.player_state):
-            print("Stopping music playback...")
+            log("Stopping music playback...")
             playback_domain.stop_mpv(ctx.player_state)
-        print("Goodbye!")
+        log("Goodbye!")
         return ctx, False
 
     elif command == 'help':
@@ -231,7 +234,8 @@ def handle_command(ctx: AppContext, command: str, args: List[str]) -> Tuple[AppC
         elif args[0] == 'export':
             return playlist.handle_playlist_export_command(ctx, args[1:])
         else:
-            print(f"Unknown playlist subcommand: '{args[0]}'. Available: new, delete, rename, show, analyze, active, none, import, export")
+            logger.warning(f"Unknown playlist subcommand: '{args[0]}'")
+            log(f"Unknown playlist subcommand: '{args[0]}'. Available: new, delete, rename, show, analyze, active, none, import, export", level="error")
             return ctx, True
 
     elif command == 'add':
@@ -245,7 +249,7 @@ def handle_command(ctx: AppContext, command: str, args: List[str]) -> Tuple[AppC
 
     elif command == 'ai':
         if not args:
-            print("Error: AI command requires a subcommand. Usage: ai <setup|analyze|review|enhance|test|usage>")
+            log("Error: AI command requires a subcommand. Usage: ai <setup|analyze|review|enhance|test|usage>", level="error")
             return ctx, True
         elif args[0] == 'setup':
             return ai.handle_ai_setup_command(ctx, args[1:])
@@ -260,24 +264,26 @@ def handle_command(ctx: AppContext, command: str, args: List[str]) -> Tuple[AppC
         elif args[0] == 'usage':
             return ai.handle_ai_usage_command(ctx, args[1:])
         else:
-            print(f"Unknown AI subcommand: '{args[0]}'. Available: setup, analyze, review, enhance, test, usage")
+            logger.warning(f"Unknown AI subcommand: '{args[0]}'")
+            log(f"Unknown AI subcommand: '{args[0]}'. Available: setup, analyze, review, enhance, test, usage", level="error")
             return ctx, True
 
     elif command == 'tag':
         if not args:
-            print("Error: Tag command requires a subcommand. Usage: tag <remove|list>")
+            log("Error: Tag command requires a subcommand. Usage: tag <remove|list>", level="error")
             return ctx, True
         elif args[0] == 'remove':
             return admin.handle_tag_remove_command(ctx, args[1:])
         elif args[0] == 'list':
             return admin.handle_tag_list_command(ctx)
         else:
-            print(f"Unknown tag subcommand: '{args[0]}'. Available: remove, list")
+            logger.warning(f"Unknown tag subcommand: '{args[0]}'")
+            log(f"Unknown tag subcommand: '{args[0]}'. Available: remove, list", level="error")
             return ctx, True
 
     elif command == 'sync':
         if not args:
-            print("Error: Sync command requires a subcommand. Usage: sync <export|import|status|rescan>")
+            log("Error: Sync command requires a subcommand. Usage: sync <export|import|status|rescan>", level="error")
             return ctx, True
         elif args[0] == 'export':
             return sync.handle_sync_export_command(ctx)
@@ -288,7 +294,8 @@ def handle_command(ctx: AppContext, command: str, args: List[str]) -> Tuple[AppC
         elif args[0] == 'rescan':
             return sync.handle_sync_rescan_command(ctx, args[1:])
         else:
-            print(f"Unknown sync subcommand: '{args[0]}'. Available: export, import, status, rescan")
+            logger.warning(f"Unknown sync subcommand: '{args[0]}'")
+            log(f"Unknown sync subcommand: '{args[0]}'. Available: export, import, status, rescan", level="error")
             return ctx, True
 
     elif command == 'library':
@@ -297,11 +304,11 @@ def handle_command(ctx: AppContext, command: str, args: List[str]) -> Tuple[AppC
     elif command == 'composite':
         # Composite actions (for IPC/hotkeys)
         if not args:
-            print("Error: Composite action name required")
+            log("Error: Composite action name required", level="error")
             return ctx, True
         action_name = args[0]
         ctx, success, message = actions.execute_composite_action(ctx, action_name)
-        print(message)
+        log(message)
         return ctx, True
 
     elif command == '':
@@ -309,5 +316,6 @@ def handle_command(ctx: AppContext, command: str, args: List[str]) -> Tuple[AppC
         return ctx, True
 
     else:
-        print(f"Unknown command: '{command}'. Type 'help' for available commands.")
+        logger.warning(f"Unknown command: '{command}'")
+        log(f"Unknown command: '{command}'. Type 'help' for available commands.", level="error")
         return ctx, True

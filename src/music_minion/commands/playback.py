@@ -9,9 +9,8 @@ from typing import List, Optional, Tuple
 
 from music_minion.context import AppContext
 from music_minion.core import database
-from music_minion.domain import library
-from music_minion.domain import playback
-from music_minion.domain import playlists
+from music_minion.core.output import log
+from music_minion.domain import library, playback, playlists
 from music_minion.domain.playback import resolver
 
 
@@ -36,27 +35,27 @@ def get_available_tracks(ctx: AppContext) -> List[library.Track]:
     identifier_to_id = {}
     for db_track in all_db_tracks:
         identifier = (
-            db_track.get('local_path') or '',
-            db_track.get('soundcloud_id') or '',
-            db_track.get('spotify_id') or '',
-            db_track.get('youtube_id') or ''
+            db_track.get("local_path") or "",
+            db_track.get("soundcloud_id") or "",
+            db_track.get("spotify_id") or "",
+            db_track.get("youtube_id") or "",
         )
-        identifier_to_id[identifier] = db_track['id']
+        identifier_to_id[identifier] = db_track["id"]
 
     # Filter by active playlist if set
     active = playlists.get_active_playlist()
     if active:
-        playlist_tracks = playlists.get_playlist_tracks(active['id'])
+        playlist_tracks = playlists.get_playlist_tracks(active["id"])
 
         # Build a set of track identifiers from playlist
         # Use tuple of (local_path, soundcloud_id, spotify_id, youtube_id) for matching
         playlist_identifiers = set()
         for pt in playlist_tracks:
             identifier = (
-                pt.get('local_path') or '',
-                pt.get('soundcloud_id') or '',
-                pt.get('spotify_id') or '',
-                pt.get('youtube_id') or ''
+                pt.get("local_path") or "",
+                pt.get("soundcloud_id") or "",
+                pt.get("spotify_id") or "",
+                pt.get("youtube_id") or "",
             )
             playlist_identifiers.add(identifier)
 
@@ -64,10 +63,10 @@ def get_available_tracks(ctx: AppContext) -> List[library.Track]:
         available = []
         for t in ctx.music_tracks:
             track_identifier = (
-                t.local_path or '',
-                t.soundcloud_id or '',
-                t.spotify_id or '',
-                t.youtube_id or ''
+                t.local_path or "",
+                t.soundcloud_id or "",
+                t.spotify_id or "",
+                t.youtube_id or "",
             )
             if track_identifier in playlist_identifiers:
                 available.append(t)
@@ -78,10 +77,10 @@ def get_available_tracks(ctx: AppContext) -> List[library.Track]:
     filtered = []
     for t in available:
         track_identifier = (
-            t.local_path or '',
-            t.soundcloud_id or '',
-            t.spotify_id or '',
-            t.youtube_id or ''
+            t.local_path or "",
+            t.soundcloud_id or "",
+            t.spotify_id or "",
+            t.youtube_id or "",
         )
         track_id = identifier_to_id.get(track_identifier)
         # Include if not in DB yet, or in DB but not archived
@@ -91,7 +90,9 @@ def get_available_tracks(ctx: AppContext) -> List[library.Track]:
     return filtered
 
 
-def play_track(ctx: AppContext, track: library.Track, playlist_position: Optional[int] = None) -> Tuple[AppContext, bool]:
+def play_track(
+    ctx: AppContext, track: library.Track, playlist_position: Optional[int] = None
+) -> Tuple[AppContext, bool]:
     """
     Play a specific track.
 
@@ -107,7 +108,7 @@ def play_track(ctx: AppContext, track: library.Track, playlist_position: Optiona
     playback_uri = resolver.resolve_playback_uri(track, ctx.provider_states)
 
     if not playback_uri:
-        safe_print(ctx, f"❌ Cannot play: No playable source available", "red")
+        safe_print(ctx, "❌ Cannot play: No playable source available", "red")
         safe_print(ctx, f"   Track: {library.get_display_name(track)}", "yellow")
 
         # Show available sources
@@ -116,10 +117,22 @@ def play_track(ctx: AppContext, track: library.Track, playlist_position: Optiona
             safe_print(ctx, f"   Sources: {', '.join(sources)}", "yellow")
 
             # Check if streaming sources need authentication
-            if 'soundcloud' in sources and not ctx.provider_states.get('soundcloud', {}).get('authenticated'):
-                safe_print(ctx, "   Tip: SoundCloud not authenticated. Run 'library auth soundcloud'", "cyan")
-            if 'spotify' in sources and not ctx.provider_states.get('spotify', {}).get('authenticated'):
-                safe_print(ctx, "   Tip: Spotify not authenticated. Run 'library auth spotify'", "cyan")
+            if "soundcloud" in sources and not ctx.provider_states.get(
+                "soundcloud", {}
+            ).get("authenticated"):
+                safe_print(
+                    ctx,
+                    "   Tip: SoundCloud not authenticated. Run 'library auth soundcloud'",
+                    "cyan",
+                )
+            if "spotify" in sources and not ctx.provider_states.get("spotify", {}).get(
+                "authenticated"
+            ):
+                safe_print(
+                    ctx,
+                    "   Tip: Spotify not authenticated. Run 'library auth spotify'",
+                    "cyan",
+                )
         else:
             safe_print(ctx, "   No sources available for this track", "yellow")
 
@@ -129,27 +142,35 @@ def play_track(ctx: AppContext, track: library.Track, playlist_position: Optiona
     # We do this BEFORE playing so we can pass track_id to play_file
     track_id = None
     if track.soundcloud_id:
-        db_track = database.get_track_by_provider_id('soundcloud', track.soundcloud_id)
-        track_id = db_track['id'] if db_track else None
+        db_track = database.get_track_by_provider_id("soundcloud", track.soundcloud_id)
+        track_id = db_track["id"] if db_track else None
     elif track.spotify_id:
-        db_track = database.get_track_by_provider_id('spotify', track.spotify_id)
-        track_id = db_track['id'] if db_track else None
+        db_track = database.get_track_by_provider_id("spotify", track.spotify_id)
+        track_id = db_track["id"] if db_track else None
     elif track.youtube_id:
-        db_track = database.get_track_by_provider_id('youtube', track.youtube_id)
-        track_id = db_track['id'] if db_track else None
+        db_track = database.get_track_by_provider_id("youtube", track.youtube_id)
+        track_id = db_track["id"] if db_track else None
     elif track.local_path:
         # For local files, use get_or_create_track
         track_id = database.get_or_create_track(
-            track.local_path, track.title, track.artist, track.remix_artist,
-            track.album, track.genre, track.year, track.duration, track.key, track.bpm
+            track.local_path,
+            track.title,
+            track.artist,
+            track.remix_artist,
+            track.album,
+            track.genre,
+            track.year,
+            track.duration,
+            track.key,
+            track.bpm,
         )
 
     # Start MPV if not running
     if not playback.is_mpv_running(ctx.player_state):
-        print("Starting music playback...")
+        log("Starting music playback...", "info")
         new_state = playback.start_mpv(ctx.config)
         if not new_state:
-            print("Failed to start music player")
+            log("Failed to start music player", "error")
             return ctx, True
         ctx = ctx.with_player_state(new_state)
 
@@ -176,13 +197,17 @@ def play_track(ctx: AppContext, track: library.Track, playlist_position: Optiona
         if active:
             # Use provided position if available, otherwise compute it
             if playlist_position is not None:
-                playback.update_playlist_position(active['id'], track_id, playlist_position)
+                playback.update_playlist_position(
+                    active["id"], track_id, playlist_position
+                )
             else:
                 # Only compute position if not provided
-                playlist_tracks = playlists.get_playlist_tracks(active['id'])
-                position = playback.get_track_position_in_playlist(playlist_tracks, track_id)
+                playlist_tracks = playlists.get_playlist_tracks(active["id"])
+                position = playback.get_track_position_in_playlist(
+                    playlist_tracks, track_id
+                )
                 if position is not None:
-                    playback.update_playlist_position(active['id'], track_id, position)
+                    playback.update_playlist_position(active["id"], track_id, position)
     else:
         safe_print(ctx, "❌ Failed to play track", "red")
 
@@ -201,12 +226,12 @@ def handle_play_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, b
     """
     # Check MPV availability
     if not playback.check_mpv_available():
-        print("Error: MPV is not installed or not available in PATH.")
+        log("Error: MPV is not installed or not available in PATH.", "error")
         return ctx, True
 
     # Ensure library is loaded
     if not ctx.music_tracks:
-        print("No music library loaded. Please run 'scan' command first.")
+        log("No music library loaded. Please run 'scan' command first.", "warning")
         return ctx, True
 
     # If no arguments, play random track or resume current
@@ -226,18 +251,19 @@ def handle_play_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, b
                 track = library.get_random_track(available_tracks)
                 return play_track(ctx, track)
             else:
-                print("No tracks available to play (all may be archived)")
+                log("No tracks available to play (all may be archived)", "warning")
     else:
         # Search for track by query
-        query = ' '.join(args)
+        query = " ".join(args)
         results = library.search_tracks(ctx.music_tracks, query)
 
         if results:
             track = results[0]  # Play first match
-            print(f"Playing: {library.get_display_name(track)}")
+
+            log(f"Playing: {library.get_display_name(track)}", "info")
             return play_track(ctx, track)
         else:
-            print(f"No tracks found matching: {query}")
+            log(f"No tracks found matching: {query}", "warning")
 
     return ctx, True
 
@@ -252,17 +278,17 @@ def handle_pause_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         (updated_context, should_continue)
     """
     if not playback.is_mpv_running(ctx.player_state):
-        print("No music is currently playing")
+        log("No music is currently playing", "warning")
         return ctx, True
 
     new_state, success = playback.pause_playback(ctx.player_state)
     ctx = ctx.with_player_state(new_state)
 
     if success:
-        print("⏸ Paused")
+        log("⏸ Paused", "info")
 
     else:
-        print("Failed to pause playback")
+        log("Failed to pause playback", "error")
 
     return ctx, True
 
@@ -277,21 +303,23 @@ def handle_resume_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         (updated_context, should_continue)
     """
     if not playback.is_mpv_running(ctx.player_state):
-        print("No music player is running")
+        log("No music player is running", "warning")
         return ctx, True
 
     new_state, success = playback.resume_playback(ctx.player_state)
     ctx = ctx.with_player_state(new_state)
 
     if success:
-        print("▶ Resumed")
+        log("▶ Resumed", "info")
     else:
-        print("Failed to resume playback")
+        log("Failed to resume playback", "error")
 
     return ctx, True
 
 
-def get_next_track(ctx: AppContext, available_tracks: List[library.Track]) -> Optional[Tuple[library.Track, Optional[int]]]:
+def get_next_track(
+    ctx: AppContext, available_tracks: List[library.Track]
+) -> Optional[Tuple[library.Track, Optional[int]]]:
     """
     Get the next track to play based on shuffle mode and active playlist.
 
@@ -316,17 +344,17 @@ def get_next_track(ctx: AppContext, available_tracks: List[library.Track]) -> Op
         current_track_id = ctx.player_state.current_track_id
 
         # Get playlist tracks (in order)
-        playlist_tracks = playlists.get_playlist_tracks(active['id'])
+        playlist_tracks = playlists.get_playlist_tracks(active["id"])
 
         # Build dict for O(1) lookups of available tracks using compound identifier
         # (handles both local files and streaming tracks)
         available_tracks_dict = {}
         for t in available_tracks:
             identifier = (
-                t.local_path or '',
-                t.soundcloud_id or '',
-                t.spotify_id or '',
-                t.youtube_id or ''
+                t.local_path or "",
+                t.soundcloud_id or "",
+                t.spotify_id or "",
+                t.youtube_id or "",
             )
             available_tracks_dict[identifier] = t
 
@@ -335,7 +363,9 @@ def get_next_track(ctx: AppContext, available_tracks: List[library.Track]) -> Op
         max_attempts = len(playlist_tracks)
 
         while attempts < max_attempts:
-            next_db_track = playback.get_next_sequential_track(playlist_tracks, current_track_id)
+            next_db_track = playback.get_next_sequential_track(
+                playlist_tracks, current_track_id
+            )
 
             if next_db_track is None:
                 # Track not found in playlist
@@ -350,10 +380,10 @@ def get_next_track(ctx: AppContext, available_tracks: List[library.Track]) -> Op
 
             # Check if track is available (not archived) using O(1) dict lookup with compound identifier
             next_track_identifier = (
-                next_db_track.get('local_path') or '',
-                next_db_track.get('soundcloud_id') or '',
-                next_db_track.get('spotify_id') or '',
-                next_db_track.get('youtube_id') or ''
+                next_db_track.get("local_path") or "",
+                next_db_track.get("soundcloud_id") or "",
+                next_db_track.get("spotify_id") or "",
+                next_db_track.get("youtube_id") or "",
             )
             next_track = available_tracks_dict.get(next_track_identifier)
 
@@ -363,17 +393,23 @@ def get_next_track(ctx: AppContext, available_tracks: List[library.Track]) -> Op
                 if next_track.local_path and next_track.local_path.strip():
                     # Local track - verify file exists
                     is_playable = Path(next_track.local_path).exists()
-                elif next_track.soundcloud_id or next_track.spotify_id or next_track.youtube_id:
+                elif (
+                    next_track.soundcloud_id
+                    or next_track.spotify_id
+                    or next_track.youtube_id
+                ):
                     # Streaming track - has provider ID, assume playable
                     is_playable = True
 
                 if is_playable:
                     # Found non-archived track - get its position
-                    position = playback.get_track_position_in_playlist(playlist_tracks, next_db_track['id'])
+                    position = playback.get_track_position_in_playlist(
+                        playlist_tracks, next_db_track["id"]
+                    )
                     return (next_track, position)
 
             # Track is archived, continue to next
-            current_track_id = next_db_track['id']
+            current_track_id = next_db_track["id"]
             attempts += 1
 
         # All tracks in playlist are archived
@@ -382,7 +418,11 @@ def get_next_track(ctx: AppContext, available_tracks: List[library.Track]) -> Op
     # Shuffle mode or no active playlist: random selection
     # Remove current track from options if possible
     if ctx.player_state.current_track and len(available_tracks) > 1:
-        available_tracks = [t for t in available_tracks if t.local_path != ctx.player_state.current_track]
+        available_tracks = [
+            t
+            for t in available_tracks
+            if t.local_path != ctx.player_state.current_track
+        ]
 
     if available_tracks:
         track = library.get_random_track(available_tracks)
@@ -403,14 +443,14 @@ def handle_skip_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     """
     # Ensure library is loaded
     if not ctx.music_tracks:
-        print("No music library loaded. Please run 'scan' command first.")
+        log("No music library loaded. Please run 'scan' command first.", "warning")
         return ctx, True
 
     # Get available tracks (excluding archived ones)
     available_tracks = get_available_tracks(ctx)
 
     if not available_tracks:
-        print("No more tracks to play (all may be archived)")
+        log("No more tracks to play (all may be archived)", "warning")
         return ctx, True
 
     # Get next track
@@ -421,17 +461,17 @@ def handle_skip_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         # Check shuffle mode for user message
         shuffle_enabled = playback.get_shuffle_mode()
         if shuffle_enabled:
-            print("⏭ Skipping to next track...")
+            log("⏭ Skipping to next track...", "info")
         else:
-            print("⏭ Next track (sequential)...")
+            log("⏭ Next track (sequential)...", "info")
         return play_track(ctx, track, position)
     else:
         # No tracks available
         active = playlists.get_active_playlist()
         if active and not playback.get_shuffle_mode():
-            print("No non-archived tracks remaining in playlist")
+            log("No non-archived tracks remaining in playlist", "warning")
         else:
-            print("No more tracks to play (all may be archived)")
+            log("No more tracks to play (all may be archived)", "warning")
         return ctx, True
 
 
@@ -452,23 +492,26 @@ def handle_shuffle_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext
         playback.set_shuffle_mode(new_mode)
 
         if new_mode:
-            print("🔀 Shuffle mode enabled (random playback)")
+            log("🔀 Shuffle mode enabled (random playback)", "info")
         else:
-            print("🔁 Sequential mode enabled (play in order)")
+            log("🔁 Sequential mode enabled (play in order)", "info")
         return ctx, True
 
     # Handle explicit shuffle on/off
     subcommand = args[0].lower()
-    if subcommand == 'on':
+    if subcommand == "on":
         playback.set_shuffle_mode(True)
-        print("🔀 Shuffle mode enabled (random playback)")
+        log("🔀 Shuffle mode enabled (random playback)", "info")
         return ctx, True
-    elif subcommand == 'off':
+    elif subcommand == "off":
         playback.set_shuffle_mode(False)
-        print("🔁 Sequential mode enabled (play in order)")
+        log("🔁 Sequential mode enabled (play in order)", "info")
         return ctx, True
     else:
-        print(f"Unknown shuffle option: '{subcommand}'. Use 'shuffle', 'shuffle on', or 'shuffle off'")
+        log(
+            f"Unknown shuffle option: '{subcommand}'. Use 'shuffle', 'shuffle on', or 'shuffle off'",
+            "warning",
+        )
         return ctx, True
 
 
@@ -482,16 +525,16 @@ def handle_stop_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         (updated_context, should_continue)
     """
     if not playback.is_mpv_running(ctx.player_state):
-        print("No music is currently playing")
+        log("No music is currently playing", "warning")
         return ctx, True
 
     new_state, success = playback.stop_playback(ctx.player_state)
     ctx = ctx.with_player_state(new_state)
 
     if success:
-        print("⏹ Stopped")
+        log("⏹ Stopped", "info")
     else:
-        print("Failed to stop playback")
+        log("Failed to stop playback", "error")
 
     return ctx, True
 
@@ -505,73 +548,81 @@ def handle_status_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     Returns:
         (updated_context, should_continue)
     """
-    print("Music Minion Status:")
-    print("─" * 40)
+    log("Music Minion Status:", "info")
+    log("─" * 40, "info")
 
     if not playback.is_mpv_running(ctx.player_state):
-        print("♪ Player: Not running")
-        print("♫ Track: None")
+        log("♪ Player: Not running", "info")
+        log("♫ Track: None", "info")
         return ctx, True
 
     # Get current status from player
     status = playback.get_player_status(ctx.player_state)
     position, duration, percent = playback.get_progress_info(ctx.player_state)
 
-    print(f"♪ Player: {'Playing' if status['playing'] else 'Paused'}")
+    log(f"♪ Player: {'Playing' if status['playing'] else 'Paused'}", "info")
 
-    if status['file']:
+    if status["file"]:
         # Find track info
         current_track = None
         for track in ctx.music_tracks:
-            if track.local_path == status['file']:
+            if track.local_path == status["file"]:
                 current_track = track
                 break
 
         if current_track:
-            print(f"♫ Track: {library.get_display_name(current_track)}")
+            log(f"♫ Track: {library.get_display_name(current_track)}", "info")
 
             # Progress bar
             if duration > 0:
                 progress_bar = "▓" * int(percent / 5) + "░" * (20 - int(percent / 5))
-                print(f"⏱  Progress: [{progress_bar}] {playback.format_time(position)} / {playback.format_time(duration)}")
+                log(
+                    f"⏱  Progress: [{progress_bar}] {playback.format_time(position)} / {playback.format_time(duration)}",
+                    "info",
+                )
 
             # DJ info
             dj_info = library.get_dj_info(current_track)
             if dj_info != "No DJ metadata":
-                print(f"🎵 Info: {dj_info}")
+                log(f"🎵 Info: {dj_info}", "info")
         else:
-            print(f"♫ Track: {status['file']}")
+            log(f"♫ Track: {status['file']}", "info")
     else:
-        print("♫ Track: None")
+        log("♫ Track: None", "info")
 
-    print(f"🔊 Volume: {int(status.get('volume', 0))}%")
+    log(f"🔊 Volume: {int(status.get('volume', 0))}%", "info")
 
     # Active playlist
     active = playlists.get_active_playlist()
     if active:
-        print(f"📋 Active Playlist: {active['name']} ({active['type']})")
+        log(f"📋 Active Playlist: {active['name']} ({active['type']})", "info")
 
         # Show position if available and in sequential mode
         shuffle_enabled = playback.get_shuffle_mode()
-        saved_position = playback.get_playlist_position(active['id'])
+        saved_position = playback.get_playlist_position(active["id"])
 
         if saved_position and not shuffle_enabled:
             _, position = saved_position
             # Get total track count
-            playlist_tracks = playlists.get_playlist_tracks(active['id'])
+            playlist_tracks = playlists.get_playlist_tracks(active["id"])
             total_tracks = len(playlist_tracks)
-            print(f"   Position: {position + 1}/{total_tracks}")
+            log(f"   Position: {position + 1}/{total_tracks}", "info")
     else:
-        print("📋 Active Playlist: None (playing all tracks)")
+        log("📋 Active Playlist: None (playing all tracks)", "info")
 
     # Shuffle mode
     shuffle_enabled = playback.get_shuffle_mode()
-    shuffle_mode = "ON (random playback)" if shuffle_enabled else "OFF (sequential playback)"
-    print(f"🔀 Shuffle: {shuffle_mode}")
+    shuffle_mode = (
+        "ON (random playback)" if shuffle_enabled else "OFF (sequential playback)"
+    )
+    log(f"🔀 Shuffle: {shuffle_mode}", "info")
 
     # Library stats
     if ctx.music_tracks:
         available = get_available_tracks(ctx)
-        print(f"📚 Library: {len(ctx.music_tracks)} tracks loaded, {len(available)} available for playback")
+        log(
+            f"📚 Library: {len(ctx.music_tracks)} tracks loaded, {len(available)} available for playback",
+            "info",
+        )
 
     return ctx, True

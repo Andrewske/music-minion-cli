@@ -240,35 +240,46 @@ music-minion/
 - Load with Python's built-in tomllib
 
 ### Logging Strategy
-**CRITICAL**: Always use the centralized logging system - never use print() for debugging or error messages.
+**CRITICAL**: Use loguru for logging and the unified `log()` helper for user-facing messages.
 
-- **Centralized logging**: Configured once at startup via `core/logging.py`
-- **Default location**: `~/.local/share/music-minion/music-minion.log`
-- **Configurable**: Log level, file location, rotation size, backup count in config.toml
-- **Automatic rotation**: 10MB max file size, 5 backups by default
-- **Format**: `2025-11-20 15:12:11 | INFO | module:line | message`
+- **Centralized logging**: Configured once at startup via `core/output.py`
+- **Default location**: `music-minion.log` (relative path from config)
+- **File-only output**: No console handler (blessed UI manages display)
+- **Automatic rotation**: 10MB max file size, 5 backups
+- **Format**: `2025-11-21 00:18:48 | INFO | music_minion.core.output:32 | message`
 
-**Usage Pattern** (REQUIRED):
+**Two Logging Patterns**:
+
+**1. Background operations** (use loguru directly):
 ```python
-# At top of every module
-import logging
-logger = logging.getLogger(__name__)
+from loguru import logger
 
-# In your code - use logger, not print()
+# For background threads, dev tools, IPC
 logger.debug("Detailed information for diagnosing problems")
 logger.info("General informational messages")
-logger.warning("Warning messages for unexpected but handled situations")
+logger.warning("Warning messages for unexpected situations")
 logger.error("Error messages for serious problems")
 logger.exception("Error with full stack trace - use in except blocks")
 ```
 
+**2. User-facing messages** (use unified `log()` helper):
+```python
+from music_minion.core.output import log
+
+# For command handlers - logs to file AND prints for blessed UI
+log("❌ Playlist not found", level="error")
+log("⚠️ No tracks available", level="warning")
+log("✅ Playlist created successfully", level="info")
+```
+
 **Benefits**:
+- ✅ Dual output: File logging + blessed UI display (via `log()` helper)
 - ✅ All logs automatically saved to file (survives app restarts)
-- ✅ No per-module configuration needed
+- ✅ Zero per-module configuration needed
 - ✅ Automatic log rotation prevents disk overflow
 - ✅ Module and line number automatically included
-- ✅ Configurable log levels for development vs production
-- ✅ Hot-reload compatible (handlers cleared on restart)
+- ✅ Thread-safe for background operations
+- ✅ Rich exception tracebacks with context
 
 ## Core Features & Commands
 
@@ -647,6 +658,6 @@ main.py
 
 ---
 
-**Last Updated**: 2025-11-20 after centralized logging implementation
+**Last Updated**: 2025-11-21 after loguru migration
 
-**CRITICAL REMINDER**: All new code must use `logging.getLogger(__name__)` for logging. Never use print() statements. See "Logging Strategy" section above for usage patterns.
+**CRITICAL REMINDER**: Use loguru for background logging and the unified `log()` helper for user-facing messages. See "Logging Strategy" section above for patterns.

@@ -8,6 +8,7 @@ from typing import Callable, List, Optional, Tuple
 
 from music_minion.context import AppContext
 from music_minion.core import database
+from music_minion.core.output import log
 from music_minion.domain.library import providers
 from music_minion.domain.library.provider import ProviderConfig
 
@@ -323,9 +324,11 @@ def sync_library(
 
     # Can't sync 'all' - it's a filter, not a provider
     if provider_name == "all":
+        log("❌ Cannot sync 'all' - specify a provider", level="error")
         safe_print(ctx, "❌ Cannot sync 'all' - specify a provider", style="bold red")
         return ctx, True
 
+    log(f"🔄 Syncing from {provider_name}...", level="info")
     safe_print(ctx, f"🔄 Syncing from {provider_name}...", style="bold yellow")
 
     try:
@@ -338,6 +341,7 @@ def sync_library(
 
         # Check authentication
         if not state.authenticated and provider_name != "local":
+            log(f"❌ Not authenticated with {provider_name}", level="error")
             safe_print(
                 ctx, f"❌ Not authenticated with {provider_name}", style="bold red"
             )
@@ -361,9 +365,13 @@ def sync_library(
             message = f"⚠ No tracks found in {provider_name} library"
             if incremental:
                 message += " (incremental mode - all tracks already synced)"
+                log(message, level="warning")
                 safe_print(ctx, message, style="yellow")
-                safe_print(ctx, "💡 Tip: Use '--full' flag to re-sync all tracks", style="dim")
+                safe_print(
+                    ctx, "💡 Tip: Use '--full' flag to re-sync all tracks", style="dim"
+                )
             else:
+                log(message, level="warning")
                 safe_print(ctx, message, style="yellow")
             if progress_callback:
                 progress_callback("complete", {"created": 0, "skipped": 0})
@@ -380,6 +388,10 @@ def sync_library(
             )
 
         # Import to database (no deduplication - creates records with source=provider)
+        log(
+            f"📥 Importing {len(provider_tracks)} {provider_name} tracks to database...",
+            level="info",
+        )
         safe_print(
             ctx,
             f"📥 Importing {len(provider_tracks)} {provider_name} tracks to database...",
@@ -396,6 +408,10 @@ def sync_library(
 
         stats = batch_insert_provider_tracks(provider_tracks, provider_name)
 
+        log(
+            f"✓ Import complete! Created: {stats['created']}, Skipped: {stats['skipped']}",
+            level="info",
+        )
         safe_print(ctx, "✓ Import complete!", style="bold green")
         safe_print(ctx, f"  Created:  {stats['created']} (new {provider_name} tracks)")
         safe_print(ctx, f"  Skipped:  {stats['skipped']} (already synced)")
@@ -449,10 +465,12 @@ def sync_library(
             ctx, _ = switch_active_library(ctx, active_provider)
 
     except Exception as e:
+        log(f"❌ Sync failed: {e}", level="error")
         safe_print(ctx, f"❌ Sync failed: {e}", style="bold red")
         if progress_callback:
             progress_callback("error", {"error": str(e)})
         import traceback
+
         traceback.print_exc()
 
     return ctx, True
@@ -484,6 +502,10 @@ def sync_library_background(
             provider_name = row["provider"] if row else "local"
 
     # Show immediate message in history
+    log(
+        f"🔄 Starting library sync from {provider_name} in background (task {task_id})",
+        level="info",
+    )
     safe_print(
         ctx,
         f"🔄 Starting library sync from {provider_name} in background (task {task_id})",
@@ -494,6 +516,7 @@ def sync_library_background(
     # Get UIState updater from context
     update_ui_state = ctx.update_ui_state
     if not update_ui_state:
+        log("❌ Background sync requires blessed UI mode", level="error")
         safe_print(ctx, "❌ Background sync requires blessed UI mode", style="bold red")
         return ctx, True
 
@@ -563,6 +586,7 @@ def sync_library_background(
             update_ui_state(
                 {"sync_active": False, "sync_current_status": f"Error: {e}"}
             )
+            log(f"❌ Background sync {task_id} failed: {e}", level="error")
             safe_print(
                 ctx, f"❌ Background sync {task_id} failed: {e}", style="bold red"
             )
@@ -626,6 +650,7 @@ def sync_playlists(
         return ctx, True
 
     sync_mode = "full" if full else "incremental"
+    log(f"🔄 Syncing playlists from {provider_name} ({sync_mode})...", level="info")
     print_if_not_silent(
         f"🔄 Syncing playlists from {provider_name} ({sync_mode})...",
         style="bold yellow",
@@ -641,6 +666,7 @@ def sync_playlists(
 
         # Check authentication
         if not state.authenticated:
+            log(f"❌ Not authenticated with {provider_name}", level="error")
             print_if_not_silent(
                 f"❌ Not authenticated with {provider_name}", style="bold red"
             )
@@ -654,11 +680,13 @@ def sync_playlists(
         state, playlists = provider.get_playlists(state)
 
         if not playlists:
+            log(f"⚠ No playlists found in {provider_name}", level="warning")
             print_if_not_silent(
                 f"⚠ No playlists found in {provider_name}", style="yellow"
             )
             return ctx, True
 
+        log(f"✓ Found {len(playlists)} playlists", level="info")
         print_if_not_silent(f"✓ Found {len(playlists)} playlists", style="green")
         print_if_not_silent("")
 
@@ -710,7 +738,7 @@ def sync_playlists(
         print_if_not_silent("\n📦 Collecting tracks from playlists...", style="yellow")
 
         all_tracks_to_sync = {}  # {soundcloud_id: (soundcloud_id, metadata)}
-        playlists_to_sync = []   # [(pl_data, [provider_track_ids])]
+        playlists_to_sync = []  # [(pl_data, [provider_track_ids])]
 
         for pl_data in playlists:
             pl_id = pl_data["id"]
@@ -746,7 +774,7 @@ def sync_playlists(
 
         print_if_not_silent(
             f"✓ Collected {len(all_tracks_to_sync)} unique tracks from {len(playlists_to_sync)} playlists",
-            style="green"
+            style="green",
         )
 
         if not playlists_to_sync:
@@ -777,7 +805,7 @@ def sync_playlists(
 
         print_if_not_silent(
             f"✓ Found {existing_count}/{len(all_tracks_to_sync)} tracks in database",
-            style="green"
+            style="green",
         )
 
         # Import missing tracks using pre-fetched metadata
@@ -789,17 +817,18 @@ def sync_playlists(
             missing_provider_ids = [
                 pid for pid in all_provider_ids if pid not in global_track_map
             ]
-            missing_tracks = [
-                all_tracks_to_sync[pid] for pid in missing_provider_ids
-            ]
+            missing_tracks = [all_tracks_to_sync[pid] for pid in missing_provider_ids]
 
             # Import using existing batch function
-            from music_minion.domain.library.import_tracks import batch_insert_provider_tracks
+            from music_minion.domain.library.import_tracks import (
+                batch_insert_provider_tracks,
+            )
+
             stats = batch_insert_provider_tracks(missing_tracks, provider_name)
 
             print_if_not_silent(
                 f"✓ Imported {stats['created']} new tracks (skipped {stats['skipped']} duplicates)",
-                style="green"
+                style="green",
             )
 
             # Re-query to get newly created track IDs
@@ -807,12 +836,14 @@ def sync_playlists(
                 placeholders = ",".join("?" * len(missing_provider_ids))
                 query = f"SELECT id, {provider_id_col} FROM tracks WHERE {provider_id_col} IN ({placeholders})"
                 cursor = conn.execute(query, missing_provider_ids)
-                new_tracks = {row[provider_id_col]: row["id"] for row in cursor.fetchall()}
+                new_tracks = {
+                    row[provider_id_col]: row["id"] for row in cursor.fetchall()
+                }
                 global_track_map.update(new_tracks)
 
         print_if_not_silent(
             f"✓ Ready to sync {len(playlists_to_sync)} playlists with {len(global_track_map)} tracks",
-            style="green"
+            style="green",
         )
 
         # ========================================================================
@@ -1046,6 +1077,7 @@ def sync_playlists(
 
             except Exception as e:
                 conn.rollback()
+                log(f"❌ Transaction failed, rolled back: {e}", level="error")
                 print_if_not_silent(
                     f"❌ Transaction failed, rolled back: {e}", style="bold red"
                 )
@@ -1094,6 +1126,7 @@ def sync_playlists(
             print_if_not_silent(f"    library match {provider_name}", style="dim")
 
     except Exception as e:
+        log(f"❌ Playlist sync failed: {e}", level="error")
         print_if_not_silent(f"❌ Playlist sync failed: {e}", style="bold red")
         if progress_callback:
             progress_callback("error", {"error": str(e)})
@@ -1123,6 +1156,10 @@ def sync_playlists_background(
     task_id = str(uuid.uuid4())[:8]
 
     # Show immediate message in history
+    log(
+        f"🔄 Starting playlist sync from {provider_name} in background (task {task_id})",
+        level="info",
+    )
     safe_print(
         ctx,
         f"🔄 Starting playlist sync from {provider_name} in background (task {task_id})",
@@ -1133,6 +1170,7 @@ def sync_playlists_background(
     # Get UIState updater from context
     update_ui_state = ctx.update_ui_state
     if not update_ui_state:
+        log("❌ Background sync requires blessed UI mode", level="error")
         safe_print(ctx, "❌ Background sync requires blessed UI mode", style="bold red")
         return ctx, True
 
@@ -1221,6 +1259,7 @@ def sync_playlists_background(
             update_ui_state(
                 {"sync_active": False, "sync_current_status": f"Error: {e}"}
             )
+            log(f"❌ Background sync {task_id} failed: {e}", level="error")
             safe_print(
                 ctx, f"❌ Background sync {task_id} failed: {e}", style="bold red"
             )
@@ -1260,20 +1299,10 @@ def authenticate_provider(
         )
         return ctx, True
 
+    log(f"🔐 Authenticating with {provider_name}...", level="info")
     safe_print(ctx, f"🔐 Authenticating with {provider_name}...", style="bold yellow")
 
     try:
-        # Debug: Check what's in the config
-        safe_print(ctx, f"DEBUG: SoundCloud enabled = {ctx.config.soundcloud.enabled}")
-        safe_print(
-            ctx,
-            f"DEBUG: Client ID = {ctx.config.soundcloud.client_id[:20] if ctx.config.soundcloud.client_id else '(empty)'}...",
-        )
-        safe_print(
-            ctx,
-            f"DEBUG: Client Secret = {ctx.config.soundcloud.client_secret[:20] if ctx.config.soundcloud.client_secret else '(empty)'}...",
-        )
-
         # Get provider module
         provider = providers.get_provider(provider_name)
 
@@ -1294,6 +1323,7 @@ def authenticate_provider(
         new_state, success = provider.authenticate(state)
 
         if success:
+            log(f"✓ Successfully authenticated with {provider_name}!", level="info")
             safe_print(
                 ctx,
                 f"✓ Successfully authenticated with {provider_name}!",
@@ -1306,9 +1336,11 @@ def authenticate_provider(
             database.save_provider_state(provider_name, auth_data, config_data)
 
         else:
+            log("❌ Authentication failed", level="error")
             safe_print(ctx, "❌ Authentication failed", style="bold red")
 
     except Exception as e:
+        log(f"❌ Authentication error: {e}", level="error")
         safe_print(ctx, f"❌ Authentication error: {e}", style="bold red")
 
     return ctx, True

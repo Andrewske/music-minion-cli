@@ -8,6 +8,8 @@ import queue
 from pathlib import Path
 from typing import Optional, Callable, Tuple, Dict, Any
 
+from loguru import logger
+
 from music_minion.context import AppContext
 from music_minion import router, actions, notifications
 
@@ -111,10 +113,10 @@ class IPCServer:
                     continue
                 except Exception as e:
                     if self.running:  # Only log if we're still supposed to be running
-                        print(f"Error accepting connection: {e}")
+                        logger.error(f"Error accepting connection: {e}")
 
         except Exception as e:
-            print(f"IPC server error: {e}")
+            logger.exception("IPC server error")
         finally:
             if self.server_socket:
                 self.server_socket.close()

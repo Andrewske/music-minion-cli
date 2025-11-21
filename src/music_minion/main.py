@@ -8,9 +8,11 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
+from loguru import logger
+
 from music_minion.core import config
 from music_minion.core import database
-from music_minion.core import logging as mm_logging
+from music_minion.core.output import setup_loguru
 from music_minion.domain import library
 from music_minion.domain import playback
 from music_minion.domain import ai
@@ -61,7 +63,7 @@ def _auto_sync_background(cfg: config.Config) -> None:
     try:
         sync.sync_import(cfg, force_all=False, show_progress=False)
     except Exception as e:
-        print(f"⚠️  Background sync failed: {e}")
+        logger.exception("Background sync failed")
 
 
 def interactive_mode_with_dashboard() -> None:
@@ -463,14 +465,9 @@ def interactive_mode() -> None:
     current_config = config.load_config()
 
     # Initialize logging from config
-    log_file = Path(current_config.logging.log_file) if current_config.logging.log_file else None
-    mm_logging.setup_logging(
-        level=current_config.logging.level,
-        log_file_path=log_file,
-        max_bytes=current_config.logging.max_file_size_mb * 1024 * 1024,
-        backup_count=current_config.logging.backup_count,
-        console_output=current_config.logging.console_output
-    )
+    from music_minion.core.config import get_data_dir
+    log_file = Path(current_config.logging.log_file) if current_config.logging.log_file else (get_data_dir() / "music-minion.log")
+    setup_loguru(log_file, level=current_config.logging.level)
 
     # Run database migrations on startup
     database.init_database()
