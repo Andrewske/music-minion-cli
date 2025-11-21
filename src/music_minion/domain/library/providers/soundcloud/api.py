@@ -21,6 +21,37 @@ from .auth import TOKEN_URL
 API_BASE_URL = "https://api.soundcloud.com"
 
 
+def _ensure_valid_token(state: ProviderState) -> Tuple[ProviderState, Optional[Dict[str, Any]]]:
+    """Ensure access token is valid, refreshing if expired.
+
+    Handles token expiry check and automatic refresh. Returns None if
+    token cannot be refreshed, triggering re-authentication.
+
+    Args:
+        state: Current provider state
+
+    Returns:
+        (updated_state, token_data or None)
+        - token_data is None if refresh failed (requires re-auth)
+    """
+    token_data = state.cache.get("token_data")
+    if not token_data:
+        return state, None
+
+    if not auth.is_token_expired(token_data):
+        return state, token_data
+
+    # Token expired - attempt refresh
+    new_token_data = auth.refresh_token(token_data)
+    if new_token_data:
+        auth._save_user_tokens(new_token_data)
+        state = state.with_cache(token_data=new_token_data)
+        return state, new_token_data
+    else:
+        # Refresh failed - mark as unauthenticated
+        return state.with_authenticated(False), None
+
+
 def _format_track_urn(track_id: str) -> str:
     """Format track ID as SoundCloud URN.
 
@@ -74,20 +105,10 @@ def sync_library(
     if not state.authenticated:
         return state, []
 
-    token_data = state.cache.get("token_data")
+    # Ensure token is valid, refresh if needed
+    state, token_data = _ensure_valid_token(state)
     if not token_data:
         return state, []
-
-    # Check if token expired
-    if auth.is_token_expired(token_data):
-        # Try to refresh
-        new_token_data = auth.refresh_token(token_data)
-        if new_token_data:
-            auth._save_user_tokens(new_token_data)
-            state = state.with_cache(token_data=new_token_data)
-            token_data = new_token_data
-        else:
-            return state.with_authenticated(False), []
 
     access_token = token_data["access_token"]
 
@@ -206,19 +227,10 @@ def get_stream_url(state: ProviderState, provider_id: str) -> Optional[str]:
     if not state.authenticated:
         return None
 
-    token_data = state.cache.get("token_data")
+    # Ensure token is valid, refresh if needed
+    state, token_data = _ensure_valid_token(state)
     if not token_data:
         return None
-
-    # Check if token expired
-    if auth.is_token_expired(token_data):
-        # Try to refresh
-        new_token_data = auth.refresh_token(token_data)
-        if new_token_data:
-            auth._save_user_tokens(new_token_data)
-            token_data = new_token_data
-        else:
-            return None
 
     access_token = token_data["access_token"]
 
@@ -243,20 +255,10 @@ def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, A
     if not state.authenticated:
         return state, []
 
-    token_data = state.cache.get("token_data")
+    # Ensure token is valid, refresh if needed
+    state, token_data = _ensure_valid_token(state)
     if not token_data:
         return state, []
-
-    # Check if token expired
-    if auth.is_token_expired(token_data):
-        # Try to refresh
-        new_token_data = auth.refresh_token(token_data)
-        if new_token_data:
-            auth._save_user_tokens(new_token_data)
-            state = state.with_cache(token_data=new_token_data)
-            token_data = new_token_data
-        else:
-            return state.with_authenticated(False), []
 
     access_token = token_data["access_token"]
 
@@ -330,20 +332,10 @@ def get_playlist_tracks(
     if not state.authenticated:
         return state, []
 
-    token_data = state.cache.get("token_data")
+    # Ensure token is valid, refresh if needed
+    state, token_data = _ensure_valid_token(state)
     if not token_data:
         return state, []
-
-    # Check if token expired
-    if auth.is_token_expired(token_data):
-        # Try to refresh
-        new_token_data = auth.refresh_token(token_data)
-        if new_token_data:
-            auth._save_user_tokens(new_token_data)
-            state = state.with_cache(token_data=new_token_data)
-            token_data = new_token_data
-        else:
-            return state.with_authenticated(False), []
 
     access_token = token_data["access_token"]
 
@@ -387,24 +379,10 @@ def like_track(
     if not state.authenticated:
         return state, False, "Not authenticated with SoundCloud"
 
-    token_data = state.cache.get("token_data")
+    # Ensure token is valid, refresh if needed
+    state, token_data = _ensure_valid_token(state)
     if not token_data:
-        return state, False, "No authentication token found"
-
-    # Check if token expired
-    if auth.is_token_expired(token_data):
-        # Try to refresh
-        new_token_data = auth.refresh_token(token_data)
-        if new_token_data:
-            auth._save_user_tokens(new_token_data)
-            state = state.with_cache(token_data=new_token_data)
-            token_data = new_token_data
-        else:
-            return (
-                state.with_authenticated(False),
-                False,
-                "Token expired and refresh failed",
-            )
+        return state, False, "Token expired and refresh failed"
 
     access_token = token_data["access_token"]
 
@@ -451,24 +429,10 @@ def unlike_track(
     if not state.authenticated:
         return state, False, "Not authenticated with SoundCloud"
 
-    token_data = state.cache.get("token_data")
+    # Ensure token is valid, refresh if needed
+    state, token_data = _ensure_valid_token(state)
     if not token_data:
-        return state, False, "No authentication token found"
-
-    # Check if token expired
-    if auth.is_token_expired(token_data):
-        # Try to refresh
-        new_token_data = auth.refresh_token(token_data)
-        if new_token_data:
-            auth._save_user_tokens(new_token_data)
-            state = state.with_cache(token_data=new_token_data)
-            token_data = new_token_data
-        else:
-            return (
-                state.with_authenticated(False),
-                False,
-                "Token expired and refresh failed",
-            )
+        return state, False, "Token expired and refresh failed"
 
     access_token = token_data["access_token"]
 
@@ -720,23 +684,10 @@ def add_track_to_playlist(
     if not state.authenticated:
         return state, False, "Not authenticated with SoundCloud"
 
-    token_data = state.cache.get("token_data")
+    # Ensure token is valid, refresh if needed
+    state, token_data = _ensure_valid_token(state)
     if not token_data:
-        return state, False, "No authentication token found"
-
-    # Check if token expired
-    if auth.is_token_expired(token_data):
-        new_token_data = auth.refresh_token(token_data)
-        if new_token_data:
-            auth._save_user_tokens(new_token_data)
-            state = state.with_cache(token_data=new_token_data)
-            token_data = new_token_data
-        else:
-            return (
-                state.with_authenticated(False),
-                False,
-                "Token expired and refresh failed",
-            )
+        return state, False, "Token expired and refresh failed"
 
     access_token = token_data["access_token"]
 
@@ -826,23 +777,10 @@ def remove_track_from_playlist(
     if not state.authenticated:
         return state, False, "Not authenticated with SoundCloud"
 
-    token_data = state.cache.get("token_data")
+    # Ensure token is valid, refresh if needed
+    state, token_data = _ensure_valid_token(state)
     if not token_data:
-        return state, False, "No authentication token found"
-
-    # Check if token expired
-    if auth.is_token_expired(token_data):
-        new_token_data = auth.refresh_token(token_data)
-        if new_token_data:
-            auth._save_user_tokens(new_token_data)
-            state = state.with_cache(token_data=new_token_data)
-            token_data = new_token_data
-        else:
-            return (
-                state.with_authenticated(False),
-                False,
-                "Token expired and refresh failed",
-            )
+        return state, False, "Token expired and refresh failed"
 
     access_token = token_data["access_token"]
 
@@ -931,23 +869,10 @@ def create_playlist(
     if not state.authenticated:
         return state, None, "Not authenticated with SoundCloud"
 
-    token_data = state.cache.get("token_data")
+    # Ensure token is valid, refresh if needed
+    state, token_data = _ensure_valid_token(state)
     if not token_data:
-        return state, None, "No authentication token found"
-
-    # Check if token expired
-    if auth.is_token_expired(token_data):
-        new_token_data = auth.refresh_token(token_data)
-        if new_token_data:
-            auth._save_user_tokens(new_token_data)
-            state = state.with_cache(token_data=new_token_data)
-            token_data = new_token_data
-        else:
-            return (
-                state.with_authenticated(False),
-                None,
-                "Token expired and refresh failed",
-            )
+        return state, None, "Token expired and refresh failed"
 
     access_token = token_data["access_token"]
 
