@@ -103,29 +103,29 @@ def get_soundcloud_stream_url(
 def get_spotify_stream_url(
     track_id: str, provider_state: Optional[Any]
 ) -> Optional[str]:
-    """Get Spotify stream URL for a track.
+    """Get Spotify URI for playback via Spotify Connect API.
 
     Args:
         track_id: Spotify track ID
         provider_state: Spotify provider state (contains auth token)
 
     Returns:
-        Stream URL or None if not authenticated/available
+        spotify:track:{id} URI for SpotifyPlayer routing, or None if not authenticated
 
     Note:
-        Spotify doesn't provide direct stream URLs. This would require:
-        - Using Spotify Web API to get preview URL (30 second clips only)
-        - Or using librespot/spotifyd for full playback (requires Premium)
-
-        For now, this returns None. Future implementation could integrate
-        with librespot or return preview URLs for basic playback.
+        Spotify uses Spotify Connect API for playback, not direct stream URLs.
+        Returns a special spotify: URI that will be detected by playback commands
+        and routed to SpotifyPlayer instead of MPV.
     """
-    # TODO: Implement Spotify playback
-    # Options:
-    # 1. Use Spotify Web API preview URLs (30s clips)
-    # 2. Integrate with librespot for full playback (requires Premium)
-    # 3. Use spotify:// URIs if user has Spotify desktop client
-    return None
+    if not provider_state:
+        return None
+
+    # Check if authenticated
+    if not provider_state.get("authenticated"):
+        return None
+
+    # Return Spotify URI for SpotifyPlayer routing
+    return f"spotify:track:{track_id}"
 
 
 def get_youtube_stream_url(

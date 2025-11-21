@@ -241,6 +241,16 @@ def switch_active_library(ctx: AppContext, provider: str) -> Tuple[AppContext, b
         )
         conn.commit()
 
+    # Auto-sync streaming providers (incremental sync is fast)
+    if provider == "spotify" and ctx.config.spotify.enabled:
+        log(f"🔄 Auto-syncing Spotify library (incremental)...", level="info")
+        ctx, _ = sync_library(ctx, provider, full=False)
+        log(f"✓ Spotify sync complete", level="info")
+    elif provider == "soundcloud" and ctx.config.soundcloud.enabled:
+        log(f"🔄 Auto-syncing SoundCloud library (incremental)...", level="info")
+        ctx, _ = sync_library(ctx, provider, full=False)
+        log(f"✓ SoundCloud sync complete", level="info")
+
     # Reload tracks based on provider
     if provider == "local":
         # Only tracks with local files
@@ -764,24 +774,47 @@ def sync_playlists(
                                 )
 
                             # Update timestamps and track count
-                            conn.execute(
-                                """
-                                UPDATE playlists
-                                SET last_synced_at = ?,
-                                    provider_last_modified = ?,
-                                    provider_created_at = ?,
-                                    track_count = ?,
-                                    updated_at = CURRENT_TIMESTAMP
-                                WHERE id = ?
-                            """,
-                                (
-                                    datetime.now().isoformat(),
-                                    pl_last_modified,
-                                    pl_created_at,
-                                    len(track_ids),
-                                    playlist_id,
-                                ),
-                            )
+                            # Also update spotify_snapshot_id if provider is Spotify
+                            if provider_name == "spotify":
+                                conn.execute(
+                                    """
+                                    UPDATE playlists
+                                    SET last_synced_at = ?,
+                                        provider_last_modified = ?,
+                                        provider_created_at = ?,
+                                        track_count = ?,
+                                        spotify_snapshot_id = ?,
+                                        updated_at = CURRENT_TIMESTAMP
+                                    WHERE id = ?
+                                """,
+                                    (
+                                        datetime.now().isoformat(),
+                                        pl_last_modified,
+                                        pl_created_at,
+                                        len(track_ids),
+                                        pl_last_modified,  # snapshot_id
+                                        playlist_id,
+                                    ),
+                                )
+                            else:
+                                conn.execute(
+                                    """
+                                    UPDATE playlists
+                                    SET last_synced_at = ?,
+                                        provider_last_modified = ?,
+                                        provider_created_at = ?,
+                                        track_count = ?,
+                                        updated_at = CURRENT_TIMESTAMP
+                                    WHERE id = ?
+                                """,
+                                    (
+                                        datetime.now().isoformat(),
+                                        pl_last_modified,
+                                        pl_created_at,
+                                        len(track_ids),
+                                        playlist_id,
+                                    ),
+                                )
 
                             print_if_not_silent(
                                 f"  ✅ Updated '{pl_name}' with {len(track_ids)} tracks",
@@ -836,23 +869,45 @@ def sync_playlists(
                             playlist_id = cursor.lastrowid
 
                             # Set provider playlist ID and timestamps
-                            conn.execute(
-                                f"""
-                                UPDATE playlists
-                                SET {provider_id_field} = ?,
-                                    last_synced_at = ?,
-                                    provider_last_modified = ?,
-                                    provider_created_at = ?
-                                WHERE id = ?
-                            """,
-                                (
-                                    pl_id,
-                                    datetime.now().isoformat(),
-                                    pl_last_modified,
-                                    pl_created_at,
-                                    playlist_id,
-                                ),
-                            )
+                            # Also set spotify_snapshot_id if provider is Spotify
+                            if provider_name == "spotify":
+                                conn.execute(
+                                    f"""
+                                    UPDATE playlists
+                                    SET {provider_id_field} = ?,
+                                        last_synced_at = ?,
+                                        provider_last_modified = ?,
+                                        provider_created_at = ?,
+                                        spotify_snapshot_id = ?
+                                    WHERE id = ?
+                                """,
+                                    (
+                                        pl_id,
+                                        datetime.now().isoformat(),
+                                        pl_last_modified,
+                                        pl_created_at,
+                                        pl_last_modified,  # snapshot_id
+                                        playlist_id,
+                                    ),
+                                )
+                            else:
+                                conn.execute(
+                                    f"""
+                                    UPDATE playlists
+                                    SET {provider_id_field} = ?,
+                                        last_synced_at = ?,
+                                        provider_last_modified = ?,
+                                        provider_created_at = ?
+                                    WHERE id = ?
+                                """,
+                                    (
+                                        pl_id,
+                                        datetime.now().isoformat(),
+                                        pl_last_modified,
+                                        pl_created_at,
+                                        playlist_id,
+                                    ),
+                                )
 
                             # OPTIMIZATION: Batch insert tracks
                             if track_ids:
@@ -1013,6 +1068,13 @@ def authenticate_provider(
                 "client_id": ctx.config.soundcloud.client_id,
                 "client_secret": ctx.config.soundcloud.client_secret,
                 "redirect_uri": ctx.config.soundcloud.redirect_uri,
+            }
+            state = state.with_cache(config=config_dict)
+        elif provider_name == "spotify":
+            config_dict = {
+                "client_id": ctx.config.spotify.client_id,
+                "client_secret": ctx.config.spotify.client_secret,
+                "redirect_uri": ctx.config.spotify.redirect_uri,
             }
             state = state.with_cache(config=config_dict)
 

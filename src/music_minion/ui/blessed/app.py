@@ -469,9 +469,6 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 ui_state.scan_progress.is_scanning,
                 ui_state.scan_progress.files_scanned,
                 ui_state.scan_progress.phase,
-                ui_state.sync_active,
-                ui_state.sync_progress,
-                ui_state.sync_current_name,
             ))
 
         # Check for input-only changes (no full redraw needed)
