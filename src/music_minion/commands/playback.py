@@ -152,19 +152,50 @@ def play_track(
             track.bpm,
         )
 
-    # Start MPV if not running
-    if not playback.is_mpv_running(ctx.player_state):
-        log("Starting music playback...", "info")
-        new_state = playback.start_mpv(ctx.config)
-        if not new_state:
-            log("Failed to start music player", "error")
+    # Detect Spotify URIs and route to SpotifyPlayer
+    if playback_uri.startswith("spotify:"):
+        from music_minion.domain.playback.spotify_player import SpotifyPlayer
+
+        # Get or initialize Spotify provider state
+        if "spotify" not in ctx.provider_states:
+            from music_minion.domain.library.providers import spotify
+
+            spotify_state = spotify.init_provider(ctx.config.spotify)
+            ctx = ctx.with_provider_states({
+                **ctx.provider_states,
+                "spotify": spotify_state
+            })
+
+        # Create SpotifyPlayer
+        spotify_player = SpotifyPlayer(ctx.provider_states["spotify"])
+
+        # Play via Spotify Connect
+        success = spotify_player.play(playback_uri)
+
+        if not success:
+            log("❌ Failed to play via Spotify", level="error")
             return ctx, True
+
+        # Store current track ID in player state for continuity with other commands
+        # Update player state to mark as playing via Spotify
+        new_state = ctx.player_state.with_current_track(track_id, playback_uri)
         ctx = ctx.with_player_state(new_state)
 
-    # Play the track (works for both local files and streaming URLs)
-    # Pass track_id so it's available in player state for add/remove commands
-    new_state, success = playback.play_file(ctx.player_state, playback_uri, track_id)
-    ctx = ctx.with_player_state(new_state)
+    else:
+        # Standard MPV playback (local files, SoundCloud, YouTube)
+        # Start MPV if not running
+        if not playback.is_mpv_running(ctx.player_state):
+            log("Starting music playback...", "info")
+            new_state = playback.start_mpv(ctx.config)
+            if not new_state:
+                log("Failed to start music player", "error")
+                return ctx, True
+            ctx = ctx.with_player_state(new_state)
+
+        # Play the track (works for both local files and streaming URLs)
+        # Pass track_id so it's available in player state for add/remove commands
+        new_state, success = playback.play_file(ctx.player_state, playback_uri, track_id)
+        ctx = ctx.with_player_state(new_state)
 
     if success:
         log(f"♪ Now playing: {library.get_display_name(track)}", level="info")

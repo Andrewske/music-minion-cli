@@ -7,6 +7,7 @@ import tomllib
 from pathlib import Path
 from typing import List, Optional
 from dataclasses import dataclass, field
+from loguru import logger
 
 
 @dataclass
@@ -105,6 +106,17 @@ class SoundCloudConfig:
 
 
 @dataclass
+class SpotifyConfig:
+    """Configuration for Spotify provider integration."""
+    enabled: bool = False
+    client_id: str = ""
+    client_secret: str = ""
+    redirect_uri: str = "http://localhost:8080/callback"
+    sync_likes: bool = True
+    sync_playlists: bool = True
+
+
+@dataclass
 class IPCConfig:
     """Configuration for IPC (Inter-Process Communication)."""
     enabled: bool = True
@@ -137,6 +149,7 @@ class Config:
     sync: SyncConfig = field(default_factory=SyncConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     soundcloud: SoundCloudConfig = field(default_factory=SoundCloudConfig)
+    spotify: SpotifyConfig = field(default_factory=SpotifyConfig)
     ipc: IPCConfig = field(default_factory=IPCConfig)
     notifications: NotificationsConfig = field(default_factory=NotificationsConfig)
     hotkeys: HotkeysConfig = field(default_factory=HotkeysConfig)
@@ -150,20 +163,56 @@ def get_config_dir() -> Path:
     return Path.home() / ".config" / "music-minion"
 
 
+def _find_project_config() -> Optional[Path]:
+    """Find config.toml in project root by looking for pyproject.toml.
+
+    This is used during development to automatically find the project's config file
+    even when the app is run via 'uv run' which may change the working directory.
+
+    Returns:
+        Path to config.toml in project root, or None if not found
+    """
+    try:
+        # Start from this file's location
+        current = Path(__file__).resolve().parent
+        # Walk up to find pyproject.toml (marker for project root)
+        for parent in [current] + list(current.parents):
+            if (parent / "pyproject.toml").exists():
+                config_path = parent / "config.toml"
+                if config_path.exists():
+                    return config_path
+                # Found project root but no config.toml there
+                return None
+    except Exception:
+        # If anything goes wrong, just return None
+        pass
+    return None
+
+
 def get_config_path() -> Path:
     """Get the main configuration file path.
 
     Checks for config.toml in the following order:
-    1. Current working directory
-    2. XDG_CONFIG_HOME/music-minion (or ~/.config/music-minion)
+    1. Project root (detected via pyproject.toml) - for development
+    2. Current working directory
+    3. XDG_CONFIG_HOME/music-minion (or ~/.config/music-minion)
     """
-    # Check current directory first
+    # Check for project root config (development mode)
+    project_config = _find_project_config()
+    if project_config:
+        logger.info(f"Using project config: {project_config}")
+        return project_config
+
+    # Check current directory
     local_config = Path.cwd() / "config.toml"
     if local_config.exists():
+        logger.info(f"Using local config: {local_config}")
         return local_config
 
     # Fall back to XDG config directory
-    return get_config_dir() / "config.toml"
+    global_config = get_config_dir() / "config.toml"
+    logger.info(f"Using global config: {global_config}")
+    return global_config
 
 
 def get_data_dir() -> Path:
@@ -460,6 +509,26 @@ def load_config() -> Config:
         if soundcloud_client_secret:
             config.soundcloud.client_secret = soundcloud_client_secret
 
+        if 'spotify' in toml_data:
+            spotify_data = toml_data['spotify']
+            config.spotify = SpotifyConfig(
+                enabled=spotify_data.get('enabled', config.spotify.enabled),
+                client_id=spotify_data.get('client_id', config.spotify.client_id),
+                client_secret=spotify_data.get('client_secret', config.spotify.client_secret),
+                redirect_uri=spotify_data.get('redirect_uri', config.spotify.redirect_uri),
+                sync_likes=spotify_data.get('sync_likes', config.spotify.sync_likes),
+                sync_playlists=spotify_data.get('sync_playlists', config.spotify.sync_playlists)
+            )
+
+        # Override Spotify credentials with environment variables if present
+        spotify_client_id = os.environ.get('SPOTIFY_CLIENT_ID')
+        spotify_client_secret = os.environ.get('SPOTIFY_CLIENT_SECRET')
+
+        if spotify_client_id:
+            config.spotify.client_id = spotify_client_id
+        if spotify_client_secret:
+            config.spotify.client_secret = spotify_client_secret
+
         return config
         
     except Exception as e:
@@ -537,7 +606,7 @@ console_output = {config.logging.console_output!r}"""
         if config.logging.log_file:
             toml_content += f'\nlog_file = "{config.logging.log_file}"'
 
-        toml_content += """
+        toml_content += f"""
 
 [soundcloud]
 enabled = {config.soundcloud.enabled!r}
@@ -549,6 +618,19 @@ sync_playlists = {config.soundcloud.sync_playlists!r}"""
             toml_content += f'\nclient_id = "{config.soundcloud.client_id}"'
         if config.soundcloud.client_secret:
             toml_content += f'\nclient_secret = "{config.soundcloud.client_secret}"'
+
+        toml_content += f"""
+
+[spotify]
+enabled = {config.spotify.enabled!r}
+redirect_uri = "{config.spotify.redirect_uri}"
+sync_likes = {config.spotify.sync_likes!r}
+sync_playlists = {config.spotify.sync_playlists!r}"""
+
+        if config.spotify.client_id:
+            toml_content += f'\nclient_id = "{config.spotify.client_id}"'
+        if config.spotify.client_secret:
+            toml_content += f'\nclient_secret = "{config.spotify.client_secret}"'
 
         toml_content += "\n"
 

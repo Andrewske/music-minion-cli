@@ -65,7 +65,8 @@ def provider_exists(name: str) -> bool:
 
 
 # Import and register providers as they are implemented
-from . import local, soundcloud
+from . import local, soundcloud, spotify
 
 register_provider('local', local)
 register_provider('soundcloud', soundcloud)
+register_provider('spotify', spotify)

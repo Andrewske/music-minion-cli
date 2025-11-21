@@ -14,7 +14,7 @@ from .config import get_data_dir
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 
 def get_database_path() -> Path:
@@ -600,6 +600,19 @@ def migrate_database(conn, current_version: int) -> None:
         print("  ✓ Migration to v17 complete: Source tracking added to ratings")
         conn.commit()
 
+    if current_version < 18:
+        # Migration from v17 to v18: Add snapshot_id for Spotify playlist change detection
+        print("  Migrating to v18: Adding spotify_snapshot_id column...")
+
+        try:
+            conn.execute("ALTER TABLE playlists ADD COLUMN spotify_snapshot_id TEXT")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+
+        print("  ✓ Migration to v18 complete: Spotify snapshot_id column added")
+        conn.commit()
+
 
 def init_database() -> None:
     """Initialize the database with required tables."""
@@ -911,6 +924,43 @@ def batch_add_soundcloud_likes(track_ids: List[int]) -> int:
     # Prepare batch insert data
     markers = [
         (track_id, "like", hour_of_day, day_of_week, "Synced from SoundCloud", "soundcloud")
+        for track_id in track_ids
+    ]
+
+    with get_db_connection() as conn:
+        # Use INSERT OR IGNORE to avoid duplicates
+        conn.executemany(
+            """
+            INSERT OR IGNORE INTO ratings (track_id, rating_type, hour_of_day, day_of_week, context, source)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """,
+            markers,
+        )
+        inserted_count = conn.total_changes
+        conn.commit()
+
+    return inserted_count
+
+
+def batch_add_spotify_likes(track_ids: List[int]) -> int:
+    """Bulk insert Spotify like markers for multiple tracks.
+
+    Args:
+        track_ids: List of track IDs to add markers for
+
+    Returns:
+        Number of markers created
+    """
+    if not track_ids:
+        return 0
+
+    now = datetime.now()
+    hour_of_day = now.hour
+    day_of_week = now.weekday()
+
+    # Prepare batch insert data
+    markers = [
+        (track_id, "like", hour_of_day, day_of_week, "Synced from Spotify", "spotify")
         for track_id in track_ids
     ]
 

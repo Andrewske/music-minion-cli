@@ -130,6 +130,26 @@ class AppContext:
             update_ui_state=self.update_ui_state,
         )
 
+    def with_provider_states(self, provider_states: Dict[str, Any]) -> 'AppContext':
+        """Return new context with updated provider states.
+
+        Args:
+            provider_states: New provider states dictionary
+
+        Returns:
+            New AppContext with updated provider_states, other fields unchanged
+        """
+        return AppContext(
+            config=self.config,
+            music_tracks=self.music_tracks,
+            player_state=self.player_state,
+            provider_states=provider_states,
+            console=self.console,
+            ui_action=self.ui_action,
+            ui_mode=self.ui_mode,
+            update_ui_state=self.update_ui_state,
+        )
+
     def with_ui_action(self, action: Optional[Dict[str, Any]]) -> 'AppContext':
         """Return new context with UI action signal.
 
