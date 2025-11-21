@@ -90,6 +90,24 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
                 sys.stdout.write(term.move_xy(0, y + line_num) + term.white(empty_msg))
                 line_num += 1
         else:
+            # Batch query for liked tracks (performance optimization)
+            liked_track_ids = set()
+            try:
+                from music_minion.core import database
+                track_ids = [t.get('id') for t in filtered_tracks if t.get('id')]
+                if track_ids:
+                    with database.get_db_connection() as conn:
+                        placeholders = ','.join('?' * len(track_ids))
+                        cursor = conn.execute(f"""
+                            SELECT DISTINCT track_id
+                            FROM ratings
+                            WHERE track_id IN ({placeholders})
+                            AND rating_type = 'like'
+                        """, track_ids)
+                        liked_track_ids = {row['track_id'] for row in cursor.fetchall()}
+            except Exception:
+                pass  # Ignore errors, don't break UI
+
             # Render filtered tracks with scroll offset
             items_rendered = 0
             for track_index, track in enumerate(filtered_tracks):
@@ -108,11 +126,14 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
                 position = track_index + 1
                 artist = track.get('artist', 'Unknown')
                 title = track.get('title', 'Unknown')
+                track_id = track.get('id')
 
                 is_selected = track_index == selected_index
+                is_liked = track_id in liked_track_ids
 
-                # Track line: position, artist - title
-                track_text = f"{position:3d}. {artist} - {title}"
+                # Track line: position, artist - title [heart]
+                heart = " ♥" if is_liked else ""
+                track_text = f"{position:3d}. {artist} - {title}{heart}"
 
                 if is_selected:
                     # Selected item: highlighted background
@@ -134,7 +155,7 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
     if line_num < height:
         if viewer_mode == 'detail':
             # Detail mode: show action navigation help
-            footer = "   ↑↓ navigate  Enter select  p/e/a shortcuts  Esc back"
+            footer = "   ↑↓ navigate  Enter select  p/l/u/e/a shortcuts  Esc back"
         else:
             # List mode: show track navigation help
             total_tracks = len(filtered_tracks)  # Show filtered count for navigation
@@ -142,23 +163,23 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
                 # History: read-only (no delete, no filters)
                 if total_tracks > content_height:
                     current_position = min(selected_index + 1, total_tracks)
-                    footer = f"   [{current_position}/{total_tracks}] ↑↓/j/k nav  Enter details  p/e/a (play/edit/add)  q close"
+                    footer = f"   [{current_position}/{total_tracks}] ↑↓/j/k nav  Enter  p/l/u/e/a  q close"
                 else:
-                    footer = "   ↑↓/j/k navigate  Enter details  p/e/a (play/edit/add)  q close"
+                    footer = "   ↑↓/j/k navigate  Enter details  p/l/u/e/a (play/like/unlike/edit/add)  q close"
             elif playlist_type == 'manual':
                 # Manual playlist: can remove tracks
                 if total_tracks > content_height:
                     current_position = min(selected_index + 1, total_tracks)
-                    footer = f"   [{current_position}/{total_tracks}] ↑↓/j/k nav  Enter details  p/d/e/a (play/del/edit/add)  q close"
+                    footer = f"   [{current_position}/{total_tracks}] ↑↓/j/k nav  Enter  p/l/u/d/e/a  q close"
                 else:
-                    footer = "   ↑↓/j/k navigate  Enter details  p/d/e/a (play/del/edit/add)  q close"
+                    footer = "   ↑↓/j/k navigate  Enter details  p/l/u/d/e/a (play/like/unlike/del/edit/add)  q close"
             else:
                 # Smart playlist: read-only (no delete, but can edit filters)
                 if total_tracks > content_height:
                     current_position = min(selected_index + 1, total_tracks)
-                    footer = f"   [{current_position}/{total_tracks}] ↑↓/j/k nav  Enter details  p/e/a/f (play/edit/add/filters)  q close"
+                    footer = f"   [{current_position}/{total_tracks}] ↑↓/j/k nav  Enter  p/l/u/e/a/f  q close"
                 else:
-                    footer = "   ↑↓/j/k navigate  Enter details  p/e/a/f (play/edit/add/filters)  q close"
+                    footer = "   ↑↓/j/k navigate  Enter details  p/l/u/e/a/f (play/like/unlike/edit/add/filters)  q close"
 
         sys.stdout.write(term.move_xy(0, y + line_num) + term.white(footer))
         line_num += 1
@@ -192,6 +213,18 @@ def _render_track_detail_and_actions(
     Returns:
         Updated line_num
     """
+    # Check if track is liked
+    track_id = track.get('id')
+    is_liked = False
+    if track_id:
+        from music_minion.core import database
+        try:
+            ratings = database.get_track_ratings(track_id)
+            # Check if there's any 'like' rating with source='user' or 'soundcloud'
+            is_liked = any(r.get('rating_type') == 'like' for r in ratings)
+        except Exception:
+            pass  # Ignore errors, don't break UI
+
     # Track metadata fields to display
     fields = [
         ('Title', track.get('title', 'Unknown')),
@@ -202,6 +235,10 @@ def _render_track_detail_and_actions(
         ('BPM', str(track.get('bpm', '')) if track.get('bpm') else ''),
         ('Key', track.get('key_signature', '')),
     ]
+
+    # Add like status
+    if is_liked:
+        fields.append(('Liked', '♥ Yes'))
 
     # Add tags and notes if present (database returns comma-separated strings)
     tags = track.get('tags', '')  # String, not list
@@ -238,6 +275,8 @@ def _render_track_detail_and_actions(
     if playlist_type == 'manual':
         actions = [
             ('p', 'Play Track'),
+            ('l', 'Like Track'),
+            ('u', 'Unlike Track'),
             ('d', 'Remove from Playlist'),
             ('e', 'Edit Metadata'),
             ('a', 'Add to Another Playlist'),
@@ -246,6 +285,8 @@ def _render_track_detail_and_actions(
     else:  # smart playlist or history - read-only (no delete)
         actions = [
             ('p', 'Play Track'),
+            ('l', 'Like Track'),
+            ('u', 'Unlike Track'),
             ('e', 'Edit Metadata'),
             ('a', 'Add to Another Playlist'),
             ('', 'Cancel')

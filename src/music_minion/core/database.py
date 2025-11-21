@@ -1073,31 +1073,48 @@ def get_recent_ratings(limit: int = 10) -> List[Dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
 
 
-def get_recent_playback_sessions(limit: int = 50) -> List[Dict[str, Any]]:
+def get_recent_playback_sessions(
+    limit: int = 50, source_filter: Optional[str] = None
+) -> List[Dict[str, Any]]:
     """Get recent playback sessions with track metadata.
 
     Args:
         limit: Maximum number of sessions to return
+        source_filter: Optional source to filter by ('local', 'soundcloud', 'spotify', 'youtube').
+                      If None or 'all', returns sessions from all sources.
 
     Returns:
-        List of dicts with: id, track_id, title, artist, album, genre, year,
-                           bpm, key_signature, local_path, started_at, ended_at,
-                           completed, skipped_at_percent
+        List of dicts with: id (track ID), session_id, track_id, title, artist, album,
+                           genre, year, bpm, key_signature, local_path, soundcloud_id,
+                           spotify_id, youtube_id, started_at, ended_at, completed,
+                           skipped_at_percent
     """
     with get_db_connection() as conn:
+        # Build WHERE clause for source filtering
+        where_clause = ""
+        params: List[Any] = []
+
+        if source_filter and source_filter != "all":
+            where_clause = "WHERE t.source = ?"
+            params.append(source_filter)
+
+        params.append(limit)
+
         cursor = conn.execute(
-            """
+            f"""
             SELECT
-                ps.id, ps.track_id, ps.started_at, ps.ended_at,
+                t.id, ps.id as session_id, ps.track_id, ps.started_at, ps.ended_at,
                 ps.completed, ps.skipped_at_percent,
                 t.title, t.artist, t.album, t.genre, t.year,
-                t.bpm, t.key_signature, t.local_path
+                t.bpm, t.key_signature, t.local_path,
+                t.soundcloud_id, t.spotify_id, t.youtube_id
             FROM playback_sessions ps
             JOIN tracks t ON ps.track_id = t.id
+            {where_clause}
             ORDER BY ps.started_at DESC
             LIMIT ?
         """,
-            (limit,),
+            params,
         )
         return [dict(row) for row in cursor.fetchall()]
 

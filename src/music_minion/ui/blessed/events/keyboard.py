@@ -397,7 +397,7 @@ def handle_track_viewer_key(state: UIState, event: dict, viewer_height: int = 10
         else:
             # Detail mode: navigate action menu
             playlist_type = state.track_viewer_playlist_type
-            action_count = 5 if playlist_type == 'manual' else 4  # Manual: 5 actions, Smart: 4 actions
+            action_count = 7 if playlist_type == 'manual' else 6  # Manual: 7 actions, Smart: 6 actions
             state = move_track_viewer_action_selection(state, -1, action_count)
         return state, None
 
@@ -408,7 +408,7 @@ def handle_track_viewer_key(state: UIState, event: dict, viewer_height: int = 10
         else:
             # Detail mode: navigate action menu
             playlist_type = state.track_viewer_playlist_type
-            action_count = 5 if playlist_type == 'manual' else 4  # Manual: 5 actions, Smart: 4 actions
+            action_count = 7 if playlist_type == 'manual' else 6  # Manual: 7 actions, Smart: 6 actions
             state = move_track_viewer_action_selection(state, 1, action_count)
         return state, None
 
@@ -416,7 +416,7 @@ def handle_track_viewer_key(state: UIState, event: dict, viewer_height: int = 10
     if event['type'] == 'enter':
         if state.track_viewer_mode == 'list':
             # List -> Detail: show track details
-            if state.track_viewer_selected < len(state.track_viewer_tracks):
+            if state.track_viewer_selected < len(state.track_viewer_filtered_tracks):
                 state = set_track_viewer_mode(state, 'detail')
             return state, None
         else:
@@ -428,8 +428,8 @@ def handle_track_viewer_key(state: UIState, event: dict, viewer_height: int = 10
         char = event['char'].lower()
 
         # Get selected track
-        if state.track_viewer_selected < len(state.track_viewer_tracks):
-            selected_track = state.track_viewer_tracks[state.track_viewer_selected]
+        if state.track_viewer_selected < len(state.track_viewer_filtered_tracks):
+            selected_track = state.track_viewer_filtered_tracks[state.track_viewer_selected]
             track_id = selected_track.get('id')
 
             if char == 'p':
@@ -441,6 +441,12 @@ def handle_track_viewer_key(state: UIState, event: dict, viewer_height: int = 10
             elif char == 'a':
                 # Add to another playlist
                 return state, InternalCommand(action='track_viewer_add_to_playlist', data={'track_id': track_id})
+            elif char == 'l':
+                # Like track
+                return state, InternalCommand(action='track_viewer_like', data={'track_id': track_id})
+            elif char == 'u':
+                # Unlike track
+                return state, InternalCommand(action='track_viewer_unlike', data={'track_id': track_id})
             elif char == 'd' and state.track_viewer_playlist_type == 'manual':
                 # Remove from manual playlist (only in list mode)
                 if state.track_viewer_mode == 'list':
@@ -472,7 +478,7 @@ def handle_track_viewer_key(state: UIState, event: dict, viewer_height: int = 10
         if event['type'] == 'char' and event['char']:
             char = event['char']
             # Skip shortcut keys
-            if char.lower() not in ['p', 'd', 'e', 'a', 'f', 'q', 'j', 'k']:
+            if char.lower() not in ['p', 'd', 'e', 'a', 'f', 'q', 'j', 'k', 'l', 'u']:
                 from ..components.track_search import filter_tracks
                 new_query = state.track_viewer_filter_query + char
                 filtered = filter_tracks(new_query, state.track_viewer_tracks)
@@ -493,28 +499,32 @@ def _execute_track_viewer_action(state: UIState) -> tuple[UIState, InternalComma
     Returns:
         Tuple of (updated state, command to execute or None)
     """
-    if state.track_viewer_selected >= len(state.track_viewer_tracks):
+    if state.track_viewer_selected >= len(state.track_viewer_filtered_tracks):
         return state, None
 
-    selected_track = state.track_viewer_tracks[state.track_viewer_selected]
+    selected_track = state.track_viewer_filtered_tracks[state.track_viewer_selected]
     track_id = selected_track.get('id')
     action_index = state.track_viewer_action_selected
     playlist_type = state.track_viewer_playlist_type
 
     # Action mapping based on playlist type
     if playlist_type == 'manual':
-        # Manual playlist actions: Play, Remove, Edit, Add, Cancel
+        # Manual playlist actions: Play, Like, Unlike, Remove, Edit, Add, Cancel
         action_map = [
             ('track_viewer_play', {'track_id': track_id}),
+            ('track_viewer_like', {'track_id': track_id}),
+            ('track_viewer_unlike', {'track_id': track_id}),
             ('track_viewer_remove', {'track_id': track_id}),
             ('track_viewer_edit', {'track_id': track_id}),
             ('track_viewer_add_to_playlist', {'track_id': track_id}),
             (None, {}),  # Cancel
         ]
     else:  # smart playlist
-        # Smart playlist actions: Play, Edit Metadata, Add, Cancel (Edit Filters is a quick shortcut, not in menu)
+        # Smart playlist actions: Play, Like, Unlike, Edit Metadata, Add, Cancel (Edit Filters is a quick shortcut, not in menu)
         action_map = [
             ('track_viewer_play', {'track_id': track_id}),
+            ('track_viewer_like', {'track_id': track_id}),
+            ('track_viewer_unlike', {'track_id': track_id}),
             ('track_viewer_edit', {'track_id': track_id}),
             ('track_viewer_add_to_playlist', {'track_id': track_id}),
             (None, {}),  # Cancel

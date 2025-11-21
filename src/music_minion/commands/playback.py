@@ -661,18 +661,21 @@ def handle_history_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext
     if args and args[0].isdigit():
         limit = int(args[0])
 
-    # Fetch recent sessions from database
-    sessions = database.get_recent_playback_sessions(limit)
+    # Get active library and fetch sessions filtered by source
+    active_provider = database.get_active_provider()
+    sessions = database.get_recent_playback_sessions(limit, source_filter=active_provider)
 
     if not sessions:
-        log("No playback history found", level="info")
+        provider_label = active_provider.title() if active_provider != "all" else "All"
+        log(f"No playback history found for {provider_label} library", level="info")
         return ctx, True
 
     # Signal UI to show track viewer with history
+    provider_label = active_provider.title() if active_provider != "all" else "All"
     ctx = ctx.with_ui_action({
         "type": "show_track_viewer",
         "tracks": sessions,
-        "playlist_name": f"Playback History (Last {len(sessions)} tracks)",
+        "playlist_name": f"Playback History - {provider_label} (Last {len(sessions)} tracks)",
         "playlist_type": "history",
     })
 

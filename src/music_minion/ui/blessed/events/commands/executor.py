@@ -23,6 +23,8 @@ from .track_viewer_handlers import (
     handle_track_viewer_add_to_playlist,
     handle_track_viewer_remove,
     handle_track_viewer_edit_filters,
+    handle_track_viewer_like,
+    handle_track_viewer_unlike,
 )
 from .wizard_handlers import handle_wizard_save
 
@@ -296,6 +298,20 @@ def _handle_internal_command(ctx: AppContext, ui_state: UIState, cmd: InternalCo
             ctx, ui_state = handle_track_viewer_edit_filters(ctx, ui_state, playlist_id)
         return ctx, ui_state, False
 
+    elif cmd.action == 'track_viewer_like':
+        # Like track from viewer
+        track_id = cmd.data.get('track_id')
+        if track_id is not None:
+            ctx, ui_state = handle_track_viewer_like(ctx, ui_state, track_id)
+        return ctx, ui_state, False
+
+    elif cmd.action == 'track_viewer_unlike':
+        # Unlike track from viewer
+        track_id = cmd.data.get('track_id')
+        if track_id is not None:
+            ctx, ui_state = handle_track_viewer_unlike(ctx, ui_state, track_id)
+        return ctx, ui_state, False
+
     else:
         # Unknown command action, log it and continue
         ui_state = add_history_line(ui_state, f"⚠️ Unknown internal command: {cmd.action}", 'yellow')
@@ -467,9 +483,11 @@ def _process_ui_action(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, 
         ui_state = start_wizard(ui_state, wizard_type, wizard_data)
 
     elif action['type'] == 'show_track_viewer':
-        # Show track viewer for playlist
+        # Show track viewer for playlist or history
         playlist_name = action.get('playlist_name', '')
-        ctx, ui_state = handle_show_track_viewer(ctx, ui_state, playlist_name)
+        playlist_type = action.get('playlist_type', '')
+        tracks = action.get('tracks')
+        ctx, ui_state = handle_show_track_viewer(ctx, ui_state, playlist_name, playlist_type, tracks)
 
     elif action['type'] == 'start_review_mode':
         # Start AI review mode
