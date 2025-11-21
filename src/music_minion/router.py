@@ -47,6 +47,7 @@ Available commands:
   unlike            Remove SoundCloud like for current song
   note <text>       Add a note to the current song
   status            Show current song and player status
+  history [limit]   Show recent playback history (default: 50 tracks)
   stats             Show library and rating statistics
   scan              Scan library and populate database
   migrate           Run database migrations (if needed)
@@ -202,6 +203,9 @@ def handle_command(ctx: AppContext, command: str, args: List[str]) -> Tuple[AppC
 
     elif command == 'status':
         return playback.handle_status_command(ctx)
+
+    elif command == 'history':
+        return playback.handle_history_command(ctx, args)
 
     elif command == 'stats':
         return admin.handle_stats_command(ctx)

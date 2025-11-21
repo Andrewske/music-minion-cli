@@ -1073,6 +1073,35 @@ def get_recent_ratings(limit: int = 10) -> List[Dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
 
 
+def get_recent_playback_sessions(limit: int = 50) -> List[Dict[str, Any]]:
+    """Get recent playback sessions with track metadata.
+
+    Args:
+        limit: Maximum number of sessions to return
+
+    Returns:
+        List of dicts with: id, track_id, title, artist, album, genre, year,
+                           bpm, key_signature, local_path, started_at, ended_at,
+                           completed, skipped_at_percent
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT
+                ps.id, ps.track_id, ps.started_at, ps.ended_at,
+                ps.completed, ps.skipped_at_percent,
+                t.title, t.artist, t.album, t.genre, t.year,
+                t.bpm, t.key_signature, t.local_path
+            FROM playback_sessions ps
+            JOIN tracks t ON ps.track_id = t.id
+            ORDER BY ps.started_at DESC
+            LIMIT ?
+        """,
+            (limit,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
 def get_archived_tracks() -> List[int]:
     """Get list of track IDs that have been archived."""
     with get_db_connection() as conn:

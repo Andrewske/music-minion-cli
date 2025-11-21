@@ -644,3 +644,36 @@ def handle_status_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         )
 
     return ctx, True
+
+
+def handle_history_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
+    """Show playback history in track viewer.
+
+    Args:
+        ctx: Application context
+        args: Optional limit (default: 50)
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    # Parse limit from args (default: 50)
+    limit = 50
+    if args and args[0].isdigit():
+        limit = int(args[0])
+
+    # Fetch recent sessions from database
+    sessions = database.get_recent_playback_sessions(limit)
+
+    if not sessions:
+        log("No playback history found", level="info")
+        return ctx, True
+
+    # Signal UI to show track viewer with history
+    ctx = ctx.with_ui_action({
+        "type": "show_track_viewer",
+        "tracks": sessions,
+        "playlist_name": f"Playback History (Last {len(sessions)} tracks)",
+        "playlist_type": "history",
+    })
+
+    return ctx, True
