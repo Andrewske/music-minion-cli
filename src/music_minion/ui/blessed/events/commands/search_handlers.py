@@ -46,7 +46,7 @@ def handle_search_play_track(ctx: AppContext, ui_state: UIState, track_id: int) 
 
     # Send play command to player
     try:
-        ctx.player_state, success = play_file(ctx.player_state, track['local_path'])
+        ctx.player_state, success = play_file(ctx.player_state, track['local_path'], track['id'])
         if success:
             ui_state = add_history_line(
                 ui_state,

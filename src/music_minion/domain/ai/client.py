@@ -54,18 +54,6 @@ def get_api_key() -> Optional[str]:
     except ImportError:
         pass
 
-    # Fallback to legacy credentials file for backward compatibility
-    credentials_file = get_config_dir() / "credentials.toml"
-    if credentials_file.exists():
-        try:
-            import tomllib
-
-            with open(credentials_file, "rb") as f:
-                credentials = tomllib.load(f)
-                return credentials.get("openai", {}).get("api_key")
-        except Exception:
-            pass
-
     return None
 
 

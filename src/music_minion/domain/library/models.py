@@ -32,3 +32,6 @@ class Track(NamedTuple):
     soundcloud_id: Optional[str] = None  # SoundCloud track ID
     spotify_id: Optional[str] = None     # Spotify track ID
     youtube_id: Optional[str] = None     # YouTube video ID
+
+    # Database ID (None for tracks not yet persisted to database)
+    id: Optional[int] = None  # Database track ID

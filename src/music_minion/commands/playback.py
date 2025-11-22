@@ -93,6 +93,31 @@ def play_track(
     Returns:
         (updated_context, should_continue)
     """
+    # Validate track belongs to active library (prevent cross-library playback)
+    active_library = database.get_active_provider()
+    track_source = None
+    if track.local_path:
+        track_source = "local"
+    elif track.soundcloud_id:
+        track_source = "soundcloud"
+    elif track.spotify_id:
+        track_source = "spotify"
+    elif track.youtube_id:
+        track_source = "youtube"
+
+    # Check if track source matches active library
+    if track_source and active_library != "all" and track_source != active_library:
+        log(
+            f"❌ Cannot play {track_source} track while in {active_library} library",
+            level="error",
+        )
+        log(f"   Track: {library.get_display_name(track)}", level="warning")
+        log(
+            f"   Tip: Switch to {track_source} library with 'library active {track_source}'",
+            level="info",
+        )
+        return ctx, True
+
     # Resolve track to playable URI (handles local files and streaming URLs)
     playback_uri = resolver.resolve_playback_uri(track, ctx.provider_states)
 
@@ -161,13 +186,16 @@ def play_track(
             from music_minion.domain.library.providers import spotify
 
             spotify_state = spotify.init_provider(ctx.config.spotify)
-            ctx = ctx.with_provider_states({
-                **ctx.provider_states,
-                "spotify": spotify_state
-            })
+            ctx = ctx.with_provider_states(
+                {**ctx.provider_states, "spotify": spotify_state}
+            )
 
-        # Create SpotifyPlayer
-        spotify_player = SpotifyPlayer(ctx.provider_states["spotify"])
+        # Create SpotifyPlayer with preferred device
+        spotify_player = SpotifyPlayer(
+            ctx.provider_states["spotify"],
+            preferred_device_id=ctx.config.spotify.preferred_device_id,
+            preferred_device_name=ctx.config.spotify.preferred_device_name,
+        )
 
         # Play via Spotify Connect
         success = spotify_player.play(playback_uri)
@@ -178,7 +206,9 @@ def play_track(
 
         # Store current track ID in player state for continuity with other commands
         # Update player state to mark as playing via Spotify
-        new_state = ctx.player_state.with_current_track(track_id, playback_uri)
+        new_state = ctx.player_state._replace(
+            current_track_id=track_id, current_track=playback_uri, is_playing=True
+        )
         ctx = ctx.with_player_state(new_state)
 
     else:
@@ -194,7 +224,9 @@ def play_track(
 
         # Play the track (works for both local files and streaming URLs)
         # Pass track_id so it's available in player state for add/remove commands
-        new_state, success = playback.play_file(ctx.player_state, playback_uri, track_id)
+        new_state, success = playback.play_file(
+            ctx.player_state, playback_uri, track_id
+        )
         ctx = ctx.with_player_state(new_state)
 
     if success:
@@ -663,7 +695,9 @@ def handle_history_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext
 
     # Get active library and fetch sessions filtered by source
     active_provider = database.get_active_provider()
-    sessions = database.get_recent_playback_sessions(limit, source_filter=active_provider)
+    sessions = database.get_recent_playback_sessions(
+        limit, source_filter=active_provider
+    )
 
     if not sessions:
         provider_label = active_provider.title() if active_provider != "all" else "All"
@@ -672,11 +706,13 @@ def handle_history_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext
 
     # Signal UI to show track viewer with history
     provider_label = active_provider.title() if active_provider != "all" else "All"
-    ctx = ctx.with_ui_action({
-        "type": "show_track_viewer",
-        "tracks": sessions,
-        "playlist_name": f"Playback History - {provider_label} (Last {len(sessions)} tracks)",
-        "playlist_type": "history",
-    })
+    ctx = ctx.with_ui_action(
+        {
+            "type": "show_track_viewer",
+            "tracks": sessions,
+            "playlist_name": f"Playback History - {provider_label} (Last {len(sessions)} tracks)",
+            "playlist_type": "history",
+        }
+    )
 
     return ctx, True

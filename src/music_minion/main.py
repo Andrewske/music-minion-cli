@@ -497,16 +497,8 @@ def interactive_mode() -> None:
             safe_print("⚠️  watchdog not installed - hot-reload disabled", style="yellow")
             safe_print("   Install with: uv pip install watchdog", style="dim")
 
-    # Auto-sync on startup if enabled (run in background thread)
-    if current_config.sync.auto_sync_on_startup:
-        print("🔄 Starting background sync...")
-        sync_thread = threading.Thread(
-            target=_auto_sync_background,
-            args=(current_config,),
-            daemon=True,
-            name="AutoSyncThread"
-        )
-        sync_thread.start()
+    # Auto-sync is now handled by blessed UI after first render (instant startup)
+    # The blessed UI starts context-aware background sync after displaying the dashboard
 
     # Check if dashboard is enabled
     if current_config.ui.enable_dashboard:

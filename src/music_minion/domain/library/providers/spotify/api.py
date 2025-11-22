@@ -24,7 +24,9 @@ TrackList = List[TrackData]
 API_BASE = "https://api.spotify.com/v1"
 
 
-def _ensure_valid_token(state: ProviderState) -> Tuple[ProviderState, Optional[Dict[str, Any]]]:
+def _ensure_valid_token(
+    state: ProviderState,
+) -> Tuple[ProviderState, Optional[Dict[str, Any]]]:
     """Ensure access token is valid, refreshing if expired.
 
     This helper is called by EVERY API function to handle token refresh
@@ -62,21 +64,27 @@ def _normalize_spotify_track(track: Dict[str, Any]) -> TrackMetadata:
     """Convert Spotify API track response to standard metadata format."""
     return {
         "title": track.get("name", "").strip(),
-        "artist": ", ".join([a["name"] for a in track.get("artists", [])]),
+        "artist": ", ".join(
+            [a["name"] for a in track.get("artists", []) if a.get("name") is not None]
+        ),
         "album": track.get("album", {}).get("name", ""),
         "year": (
             int(track["album"]["release_date"][:4])
             if track.get("album", {}).get("release_date")
             else None
         ),
-        "duration": track.get("duration_ms", 0) / 1000.0 if track.get("duration_ms") else None,
+        "duration": track.get("duration_ms", 0) / 1000.0
+        if track.get("duration_ms")
+        else None,
         "genre": None,  # Not in basic API response
-        "bpm": None,    # Audio features API deprecated
+        "bpm": None,  # Audio features API deprecated
         "key_signature": None,  # Audio features API deprecated
     }
 
 
-def sync_library(state: ProviderState, incremental: bool = True) -> Tuple[ProviderState, TrackList]:
+def sync_library(
+    state: ProviderState, incremental: bool = True
+) -> Tuple[ProviderState, TrackList]:
     """Sync user's saved tracks from Spotify with optimized incremental sync.
 
     Optimization strategy:
@@ -108,7 +116,9 @@ def sync_library(state: ProviderState, incremental: bool = True) -> Tuple[Provid
                     "SELECT spotify_id FROM tracks WHERE spotify_id IS NOT NULL"
                 )
                 existing_ids = {row[0] for row in cursor.fetchall()}
-            logger.info(f"Incremental sync: {len(existing_ids)} existing Spotify tracks")
+            logger.info(
+                f"Incremental sync: {len(existing_ids)} existing Spotify tracks"
+            )
 
         # Optimized fetch with count check and timestamp-based early exit
         tracks, all_liked_ids, new_state = _fetch_saved_tracks_optimized(
@@ -123,11 +133,11 @@ def sync_library(state: ProviderState, incremental: bool = True) -> Tuple[Provid
 
         # Sync like markers for collected liked tracks
         if all_liked_ids:
-            placeholders = ','.join(['?' for _ in all_liked_ids])
+            placeholders = ",".join(["?" for _ in all_liked_ids])
             with database.get_db_connection() as conn:
                 cursor = conn.execute(
                     f"SELECT id FROM tracks WHERE spotify_id IN ({placeholders})",
-                    list(all_liked_ids)
+                    list(all_liked_ids),
                 )
                 db_track_ids = [row[0] for row in cursor.fetchall()]
 
@@ -135,7 +145,9 @@ def sync_library(state: ProviderState, incremental: bool = True) -> Tuple[Provid
                 # Batch insert like markers
                 likes_synced = database.batch_add_spotify_likes(db_track_ids)
                 log(f"📊 Synced {likes_synced} Spotify like markers", level="info")
-                logger.info(f"Like markers synced: {likes_synced} for {len(db_track_ids)} tracks")
+                logger.info(
+                    f"Like markers synced: {likes_synced} for {len(db_track_ids)} tracks"
+                )
             else:
                 logger.debug("No database tracks found for like marker sync")
 
@@ -151,7 +163,9 @@ def sync_library(state: ProviderState, incremental: bool = True) -> Tuple[Provid
             log("❌ Authentication failed, please re-authenticate", level="error")
             return state.with_authenticated(False), []
         else:
-            logger.exception(f"HTTP error during library sync: {e.response.status_code}")
+            logger.exception(
+                f"HTTP error during library sync: {e.response.status_code}"
+            )
             log(f"❌ HTTP error: {e.response.status_code}", level="error")
             return state, []
     except Exception as e:
@@ -161,10 +175,7 @@ def sync_library(state: ProviderState, incremental: bool = True) -> Tuple[Provid
 
 
 def _fetch_saved_tracks_optimized(
-    token: str,
-    existing_ids: Set[str],
-    incremental: bool,
-    state: ProviderState
+    token: str, existing_ids: Set[str], incremental: bool, state: ProviderState
 ) -> Tuple[TrackList, Set[str], ProviderState]:
     """Fetch saved tracks with count check + timestamp-based early exit optimization.
 
@@ -207,11 +218,13 @@ def _fetch_saved_tracks_optimized(
         # Update state with current timestamp
         new_state = state.with_cache(
             last_liked_count=current_count,
-            last_like_sync_timestamp=datetime.utcnow().isoformat()
+            last_like_sync_timestamp=datetime.utcnow().isoformat(),
         )
         return [], set(), new_state
 
-    logger.info(f"Like count changed ({cached_count} → {current_count}), fetching updates...")
+    logger.info(
+        f"Like count changed ({cached_count} → {current_count}), fetching updates..."
+    )
 
     # Process first page
     stop_pagination = False
@@ -225,7 +238,9 @@ def _fetch_saved_tracks_optimized(
         # Timestamp-based early exit
         if incremental and last_sync_timestamp and added_at:
             if added_at < last_sync_timestamp:
-                logger.debug(f"Reached tracks older than last sync ({added_at} < {last_sync_timestamp})")
+                logger.debug(
+                    f"Reached tracks older than last sync ({added_at} < {last_sync_timestamp})"
+                )
                 stop_pagination = True
                 break
 
@@ -255,7 +270,9 @@ def _fetch_saved_tracks_optimized(
             # Timestamp-based early exit
             if incremental and last_sync_timestamp and added_at:
                 if added_at < last_sync_timestamp:
-                    logger.debug(f"Reached tracks older than last sync, stopping pagination")
+                    logger.debug(
+                        f"Reached tracks older than last sync, stopping pagination"
+                    )
                     url = None
                     break
 
@@ -275,10 +292,12 @@ def _fetch_saved_tracks_optimized(
     # Update state cache with new count and timestamp
     new_state = state.with_cache(
         last_liked_count=current_count,
-        last_like_sync_timestamp=datetime.utcnow().isoformat()
+        last_like_sync_timestamp=datetime.utcnow().isoformat(),
     )
 
-    logger.info(f"Fetch complete: {len(tracks)} new tracks, {len(all_liked_ids)} liked IDs collected")
+    logger.info(
+        f"Fetch complete: {len(tracks)} new tracks, {len(all_liked_ids)} liked IDs collected"
+    )
     return tracks, all_liked_ids, new_state
 
 
@@ -324,7 +343,9 @@ def search(state: ProviderState, query: str) -> Tuple[ProviderState, TrackList]:
         return state, []
 
 
-def like_track(state: ProviderState, track_id: str) -> Tuple[ProviderState, bool, Optional[str]]:
+def like_track(
+    state: ProviderState, track_id: str
+) -> Tuple[ProviderState, bool, Optional[str]]:
     """Save track to user's Spotify library.
 
     Args:
@@ -357,7 +378,9 @@ def like_track(state: ProviderState, track_id: str) -> Tuple[ProviderState, bool
         return state, False, str(e)
 
 
-def unlike_track(state: ProviderState, track_id: str) -> Tuple[ProviderState, bool, Optional[str]]:
+def unlike_track(
+    state: ProviderState, track_id: str
+) -> Tuple[ProviderState, bool, Optional[str]]:
     """Remove track from user's Spotify library.
 
     Args:
@@ -466,15 +489,21 @@ def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, A
                     # Playlist unchanged - return empty tracks list
                     tracks = []
                     skipped_count += 1
-                    logger.debug(f"Skipping unchanged playlist: {item['name']} (snapshot: {current_snapshot})")
+                    logger.debug(
+                        f"Skipping unchanged playlist: {item['name']} (snapshot: {current_snapshot})"
+                    )
                 else:
                     # Playlist changed or new - fetch tracks
                     state, tracks = get_playlist_tracks(state, playlist_id)
                     fetched_count += 1
                     if stored_snapshot:
-                        logger.debug(f"Fetching updated playlist: {item['name']} (snapshot: {stored_snapshot} → {current_snapshot})")
+                        logger.debug(
+                            f"Fetching updated playlist: {item['name']} (snapshot: {stored_snapshot} → {current_snapshot})"
+                        )
                     else:
-                        logger.debug(f"Fetching new playlist: {item['name']} (snapshot: {current_snapshot})")
+                        logger.debug(
+                            f"Fetching new playlist: {item['name']} (snapshot: {current_snapshot})"
+                        )
 
                 playlist_data = {
                     "id": playlist_id,
@@ -490,8 +519,13 @@ def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, A
             url = data.get("next")
             params = {}
 
-        log(f"✓ Fetched {len(playlists)} playlists ({fetched_count} updated, {skipped_count} unchanged)", level="info")
-        logger.info(f"Playlists fetch complete: {len(playlists)} total, {fetched_count} fetched, {skipped_count} skipped")
+        log(
+            f"✓ Fetched {len(playlists)} playlists ({fetched_count} updated, {skipped_count} unchanged)",
+            level="info",
+        )
+        logger.info(
+            f"Playlists fetch complete: {len(playlists)} total, {fetched_count} fetched, {skipped_count} skipped"
+        )
         return state, playlists
 
     except Exception as e:
@@ -500,7 +534,9 @@ def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, A
         return state, []
 
 
-def get_playlist_tracks(state: ProviderState, playlist_id: str) -> Tuple[ProviderState, TrackList]:
+def get_playlist_tracks(
+    state: ProviderState, playlist_id: str
+) -> Tuple[ProviderState, TrackList]:
     """Fetch tracks for specific playlist.
 
     Args:
@@ -551,9 +587,7 @@ def get_playlist_tracks(state: ProviderState, playlist_id: str) -> Tuple[Provide
 
 
 def create_playlist(
-    state: ProviderState,
-    name: str,
-    description: str = ""
+    state: ProviderState, name: str, description: str = ""
 ) -> Tuple[ProviderState, Optional[str], Optional[str]]:
     """Create new Spotify playlist.
 
@@ -574,23 +608,19 @@ def create_playlist(
         user_response = requests.get(
             f"{API_BASE}/me",
             headers={"Authorization": f"Bearer {token['access_token']}"},
-            timeout=30
+            timeout=30,
         )
         user_response.raise_for_status()
         user_id = user_response.json()["id"]
 
         # Create playlist
         url = f"{API_BASE}/users/{user_id}/playlists"
-        payload = {
-            "name": name,
-            "description": description,
-            "public": False
-        }
+        payload = {"name": name, "description": description, "public": False}
         response = requests.post(
             url,
             json=payload,
             headers={"Authorization": f"Bearer {token['access_token']}"},
-            timeout=30
+            timeout=30,
         )
         response.raise_for_status()
 
@@ -605,9 +635,7 @@ def create_playlist(
 
 
 def add_track_to_playlist(
-    state: ProviderState,
-    playlist_id: str,
-    track_id: str
+    state: ProviderState, playlist_id: str, track_id: str
 ) -> Tuple[ProviderState, bool, Optional[str]]:
     """Add track to Spotify playlist.
 
@@ -636,7 +664,7 @@ def add_track_to_playlist(
             url,
             json=payload,
             headers={"Authorization": f"Bearer {token['access_token']}"},
-            timeout=30
+            timeout=30,
         )
         response.raise_for_status()
 
@@ -649,9 +677,7 @@ def add_track_to_playlist(
 
 
 def remove_track_from_playlist(
-    state: ProviderState,
-    playlist_id: str,
-    track_id: str
+    state: ProviderState, playlist_id: str, track_id: str
 ) -> Tuple[ProviderState, bool, Optional[str]]:
     """Remove track from Spotify playlist.
 
@@ -680,7 +706,7 @@ def remove_track_from_playlist(
             url,
             json=payload,
             headers={"Authorization": f"Bearer {token['access_token']}"},
-            timeout=30
+            timeout=30,
         )
         response.raise_for_status()
 
@@ -695,7 +721,9 @@ def remove_track_from_playlist(
 # ==================== INTERNAL PLAYBACK FUNCTIONS ====================
 
 
-def _spotify_play(state: ProviderState, track_id: str, device_id: Optional[str]) -> bool:
+def _spotify_play(
+    state: ProviderState, track_id: str, device_id: Optional[str]
+) -> bool:
     """Internal: Start playback on device.
 
     Called by SpotifyPlayer class.
@@ -715,7 +743,7 @@ def _spotify_play(state: ProviderState, track_id: str, device_id: Optional[str])
             url,
             json=payload,
             headers={"Authorization": f"Bearer {token['access_token']}"},
-            timeout=30
+            timeout=30,
         )
         response.raise_for_status()
         logger.debug(f"Started playback: {track_id}")
@@ -724,7 +752,10 @@ def _spotify_play(state: ProviderState, track_id: str, device_id: Optional[str])
     except requests.HTTPError as e:
         if e.response.status_code == 404:
             logger.error("No active Spotify device found")
-            log("❌ No Spotify device available. Open Spotify on a device first.", level="error")
+            log(
+                "❌ No Spotify device available. Open Spotify on a device first.",
+                level="error",
+            )
         else:
             logger.exception(f"Error starting playback: {e.response.status_code}")
         return False
@@ -743,7 +774,7 @@ def _spotify_pause(state: ProviderState) -> bool:
         response = requests.put(
             f"{API_BASE}/me/player/pause",
             headers={"Authorization": f"Bearer {token['access_token']}"},
-            timeout=30
+            timeout=30,
         )
         response.raise_for_status()
         logger.debug("Paused Spotify playback")
@@ -763,7 +794,7 @@ def _spotify_resume(state: ProviderState) -> bool:
         response = requests.put(
             f"{API_BASE}/me/player/play",
             headers={"Authorization": f"Bearer {token['access_token']}"},
-            timeout=30
+            timeout=30,
         )
         response.raise_for_status()
         logger.debug("Resumed Spotify playback")
@@ -783,7 +814,7 @@ def _spotify_get_current_playback(state: ProviderState) -> Optional[Dict[str, An
         response = requests.get(
             f"{API_BASE}/me/player/currently-playing",
             headers={"Authorization": f"Bearer {token['access_token']}"},
-            timeout=30
+            timeout=30,
         )
         if response.status_code == 204:  # No content = nothing playing
             return None
@@ -804,7 +835,7 @@ def _spotify_seek(state: ProviderState, position_ms: int) -> bool:
         response = requests.put(
             f"{API_BASE}/me/player/seek?position_ms={position_ms}",
             headers={"Authorization": f"Bearer {token['access_token']}"},
-            timeout=30
+            timeout=30,
         )
         response.raise_for_status()
         logger.debug(f"Seeked to position: {position_ms}ms")
@@ -824,7 +855,7 @@ def _spotify_get_devices(state: ProviderState) -> List[Dict[str, Any]]:
         response = requests.get(
             f"{API_BASE}/me/player/devices",
             headers={"Authorization": f"Bearer {token['access_token']}"},
-            timeout=30
+            timeout=30,
         )
         response.raise_for_status()
         devices = response.json().get("devices", [])

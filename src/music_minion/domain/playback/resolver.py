@@ -83,21 +83,33 @@ def get_soundcloud_stream_url(
     if not provider_state:
         return None
 
-    # Check if authenticated
-    if not provider_state.get("authenticated"):
-        return None
+    # Handle both dict and ProviderState objects
+    if hasattr(provider_state, "authenticated"):
+        # ProviderState object
+        if not provider_state.authenticated:
+            return None
+        # For ProviderState, get token from cache
+        token_data = provider_state.cache.get("token_data", {})
+        access_token = token_data.get("access_token")
+        if not access_token:
+            return None
+        return f"https://api.soundcloud.com/tracks/{track_id}/stream?oauth_token={access_token}"
+    else:
+        # Dictionary format
+        if not provider_state.get("authenticated"):
+            return None
 
-    # Get OAuth token from provider state
-    # Provider state structure: {'authenticated': True, 'token_data': {...}, 'config': {...}}
-    token_data = provider_state.get("token_data", {})
-    access_token = token_data.get("access_token")
+        # Get OAuth token from provider state
+        # Provider state structure: {'authenticated': True, 'token_data': {...}, 'config': {...}}
+        token_data = provider_state.get("token_data", {})
+        access_token = token_data.get("access_token")
 
-    if not access_token:
-        return None
+        if not access_token:
+            return None
 
-    # Return SoundCloud stream URL
-    # MPV will follow redirects to the actual progressive HTTP stream
-    return f"https://api.soundcloud.com/tracks/{track_id}/stream?oauth_token={access_token}"
+        # Return SoundCloud stream URL
+        # MPV will follow redirects to the actual progressive HTTP stream
+        return f"https://api.soundcloud.com/tracks/{track_id}/stream?oauth_token={access_token}"
 
 
 def get_spotify_stream_url(
@@ -120,9 +132,15 @@ def get_spotify_stream_url(
     if not provider_state:
         return None
 
-    # Check if authenticated
-    if not provider_state.get("authenticated"):
-        return None
+    # Handle both dict and ProviderState objects
+    if hasattr(provider_state, "authenticated"):
+        # ProviderState object
+        if not provider_state.authenticated:
+            return None
+    else:
+        # Dictionary format
+        if not provider_state.get("authenticated"):
+            return None
 
     # Return Spotify URI for SpotifyPlayer routing
     return f"spotify:track:{track_id}"

@@ -39,7 +39,7 @@ def handle_playlist_list_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         active_library = row["provider"] if row else "local"
 
     # Check if there are any playlists (filtered by active library)
-    all_playlists = playlists.get_playlists_sorted_by_recent(provider=active_library)
+    all_playlists = playlists.get_playlists_sorted_by_recent(library=active_library)
 
     if not all_playlists:
         log(
@@ -823,6 +823,75 @@ def handle_playlist_active_command(
         if not is_blessed_mode:
             log(f"❌ Error setting active playlist: {e}", level="error")
         return ctx, True
+
+
+def handle_playlist_restart_command(
+    ctx: AppContext, args: List[str]
+) -> Tuple[AppContext, bool]:
+    """
+    Handle playlist restart command - restart active playlist from first track.
+    Turns off shuffle mode if enabled and clears any saved position.
+
+    Args:
+        ctx: Application context
+        args: Command arguments (unused for restart)
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    # Check if there's an active playlist
+    active = playlists.get_active_playlist()
+    if not active:
+        log("⚠️  No active playlist set", level="warning")
+        log("   Use 'playlist active <name>' to set one first", level="info")
+        return ctx, True
+
+    # Turn off shuffle mode if it's on
+    shuffle_enabled = playback.get_shuffle_mode()
+    if shuffle_enabled:
+        playback.set_shuffle_mode(False)
+        log("🔁 Shuffle mode disabled", level="info")
+
+    # Clear saved playlist position
+    playback.clear_playlist_position(active['id'])
+
+    # Import playback commands for play_track
+    from . import playback as playback_commands
+
+    # Get playlist tracks
+    playlist_tracks = playlists.get_playlist_tracks(active['id'])
+
+    if not playlist_tracks:
+        log(f"⚠️  Playlist '{active['name']}' is empty", level="warning")
+        return ctx, True
+
+    # Get first track (position 0)
+    first_track_dict = playback.get_next_sequential_track(
+        playlist_tracks, None
+    )
+
+    if not first_track_dict:
+        log("❌ Unable to find first track in playlist", level="error")
+        return ctx, True
+
+    # Find the Track object from music_tracks using database ID
+    first_track_id = first_track_dict.get('id')
+    if not first_track_id:
+        log("❌ First track has no database ID", level="error")
+        return ctx, True
+
+    for track in ctx.music_tracks:
+        if track.id == first_track_id:
+            log(f"🔄 Restarting playlist: {active['name']}", level="info")
+            log(f"   {len(playlist_tracks)} tracks in playlist", level="info")
+
+            # Play track with position 0
+            ctx, _ = playback_commands.play_track(ctx, track, 0)
+            return ctx, True
+
+    # Track not found in music_tracks (shouldn't happen)
+    log("❌ Track file not found in loaded library", level="error")
+    return ctx, True
 
 
 def handle_playlist_import_command(

@@ -27,10 +27,10 @@ def handle_sync_command(ctx: AppContext) -> Tuple[AppContext, bool]:
 
     active_provider = database.get_active_provider()
 
-    if active_provider == 'local':
+    if active_provider == "local":
         # Incremental import for local files
         return _sync_local_incremental(ctx)
-    elif active_provider == 'all':
+    elif active_provider == "all":
         log("❌ Cannot sync 'all' library. Switch to specific library:", level="error")
         log("  library active local", level="info")
         log("  library active soundcloud", level="info")
@@ -56,10 +56,10 @@ def handle_sync_full_command(ctx: AppContext) -> Tuple[AppContext, bool]:
 
     active_provider = database.get_active_provider()
 
-    if active_provider == 'local':
+    if active_provider == "local":
         # Full filesystem scan + import
         return _sync_local_full(ctx)
-    elif active_provider == 'all':
+    elif active_provider == "all":
         log("❌ Cannot sync 'all' library. Switch to specific library:", level="error")
         log("  library active local", level="info")
         log("  library active soundcloud", level="info")
@@ -89,7 +89,10 @@ def _sync_local_incremental(ctx: AppContext) -> Tuple[AppContext, bool]:
         log("✓ All files in sync", level="info")
         return ctx, True
 
-    log(f"Found {len(changed_tracks)} changed files, importing metadata...", level="info")
+    log(
+        f"Found {len(changed_tracks)} changed files, importing metadata...",
+        level="info",
+    )
 
     # Import metadata from changed files
     result = sync.sync_import(ctx.config, force_all=False, show_progress=True)
@@ -98,6 +101,7 @@ def _sync_local_incremental(ctx: AppContext) -> Tuple[AppContext, bool]:
 
     # Reload tracks in context
     from music_minion import helpers
+
     ctx = helpers.reload_tracks(ctx)
 
     return ctx, True
@@ -121,10 +125,7 @@ def _sync_local_full(ctx: AppContext) -> Tuple[AppContext, bool]:
     log("Scanning ~/Music for new files...", level="info")
 
     # Full filesystem scan with optimizations
-    tracks = scanner.scan_music_library_optimized(
-        ctx.config,
-        show_progress=True
-    )
+    tracks = scanner.scan_music_library_optimized(ctx.config, show_progress=True)
 
     if not tracks:
         log("✓ No new files found", level="info")
@@ -138,32 +139,39 @@ def _sync_local_full(ctx: AppContext) -> Tuple[AppContext, bool]:
 
     # Reload tracks in context
     from music_minion import helpers
+
     ctx = helpers.reload_tracks(ctx)
 
     return ctx, True
 
 
-def _sync_provider(ctx: AppContext, provider_name: str, full: bool) -> Tuple[AppContext, bool]:
-    """Sync from provider API (soundcloud, spotify, youtube).
-
-    Args:
-        ctx: Application context
-        provider_name: Provider to sync
-        full: If True, do full sync; if False, do incremental
-
-    Returns:
-        (updated_context, should_continue)
-    """
+def _sync_provider(
+    ctx: AppContext, provider_name: str, full: bool
+) -> Tuple[AppContext, bool]:
+    """Sync provider likes and playlists, respecting provider config."""
     from loguru import logger
     from music_minion.commands import library
 
     sync_type = "full" if full else "incremental"
     logger.info(f"Starting {sync_type} sync for provider: {provider_name}")
 
-    log(f"Syncing {provider_name} (likes + playlists)...", level="info")
+    sync_playlists = _should_sync_provider_playlists(ctx, provider_name)
+    sync_scope = "likes + playlists" if sync_playlists else "likes only"
+    log(f"Syncing {provider_name} ({sync_scope})...", level="info")
 
-    # Delegate to library.sync_library() function
-    # Note: This syncs both likes and playlists (always both)
     ctx, _ = library.sync_library(ctx, provider_name, full=full)
 
+    if sync_playlists:
+        ctx, _ = library.sync_playlists(ctx, provider_name, full=full)
+
     return ctx, True
+
+
+def _should_sync_provider_playlists(ctx: AppContext, provider_name: str) -> bool:
+    """Return True when provider playlists should be synced automatically."""
+    provider_config = getattr(ctx.config, provider_name, None)
+    return (
+        bool(getattr(provider_config, "sync_playlists", False))
+        if provider_config
+        else False
+    )

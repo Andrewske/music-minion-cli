@@ -64,6 +64,7 @@ Playlist Commands:
   playlist active <name>          Set active playlist
   playlist active none            Clear active playlist
   playlist none                   Clear active playlist (shorthand)
+  playlist restart                Restart active playlist from first track (disables shuffle)
   playlist import <file>          Import playlist from M3U/M3U8/Serato crate
   playlist export <name> [format] Export playlist (m3u8/crate/all, default: m3u8)
   add <playlist>                  Add current track to playlist
@@ -98,6 +99,9 @@ Library Commands:
   library sync [provider]          Sync tracks from provider
   library sync playlists <provider> Sync playlists from provider
   library auth <provider>          Authenticate with provider (OAuth)
+  library device list              List available Spotify devices
+  library device set <name/id>     Set preferred Spotify device
+  library device clear             Clear preferred device setting
 
 SoundCloud Setup:
   1. Get credentials: https://soundcloud.com/you/apps/new
@@ -138,7 +142,9 @@ Examples:
     print(help_text.strip())
 
 
-def handle_command(ctx: AppContext, command: str, args: List[str]) -> Tuple[AppContext, bool]:
+def handle_command(
+    ctx: AppContext, command: str, args: List[str]
+) -> Tuple[AppContext, bool]:
     """
     Handle a single command with explicit state passing.
 
@@ -150,7 +156,7 @@ def handle_command(ctx: AppContext, command: str, args: List[str]) -> Tuple[AppC
     Returns:
         (updated_context, should_continue) - Updated context and whether to continue
     """
-    if command in ['quit', 'exit']:
+    if command in ["quit", "exit"]:
         # Clean up MPV player before exiting
         if playback_domain.is_mpv_running(ctx.player_state):
             log("Stopping music playback...")
@@ -158,149 +164,169 @@ def handle_command(ctx: AppContext, command: str, args: List[str]) -> Tuple[AppC
         log("Goodbye!")
         return ctx, False
 
-    elif command == 'help':
+    elif command == "help":
         print_help()
         return ctx, True
 
-    elif command == 'init':
+    elif command == "init":
         return admin.handle_init_command(ctx)
 
-    elif command == 'play':
+    elif command == "play":
         return playback.handle_play_command(ctx, args)
 
-    elif command == 'pause':
+    elif command == "pause":
         return playback.handle_pause_command(ctx)
 
-    elif command == 'resume':
+    elif command == "resume":
         return playback.handle_resume_command(ctx)
 
-    elif command == 'skip':
+    elif command == "skip":
         return playback.handle_skip_command(ctx)
 
-    elif command == 'shuffle':
+    elif command == "shuffle":
         return playback.handle_shuffle_command(ctx, args)
 
-    elif command == 'stop':
+    elif command == "stop":
         return playback.handle_stop_command(ctx)
 
-    elif command == 'killall':
+    elif command == "killall":
         return admin.handle_killall_command(ctx)
 
-    elif command == 'archive':
+    elif command == "archive":
         return rating.handle_archive_command(ctx)
 
-    elif command == 'like':
+    elif command == "like":
         return rating.handle_like_command(ctx)
 
-    elif command == 'love':
+    elif command == "love":
         return rating.handle_love_command(ctx)
 
-    elif command == 'unlike':
+    elif command == "unlike":
         return rating.handle_unlike_command(ctx)
 
-    elif command == 'note':
+    elif command == "note":
         return rating.handle_note_command(ctx, args)
 
-    elif command == 'status':
+    elif command == "status":
         return playback.handle_status_command(ctx)
 
-    elif command == 'history':
+    elif command == "history":
         return playback.handle_history_command(ctx, args)
 
-    elif command == 'stats':
+    elif command == "stats":
         return admin.handle_stats_command(ctx)
 
-    elif command == 'scan':
+    elif command == "scan":
         return admin.handle_scan_command(ctx)
 
-    elif command == 'migrate':
+    elif command == "migrate":
         return admin.handle_migrate_command(ctx)
 
-    elif command == 'playlist':
+    elif command == "playlist":
         if not args:
             return playlist.handle_playlist_list_command(ctx)
-        elif args[0] == 'none':
-            return playlist.handle_playlist_active_command(ctx, ['none'])
-        elif args[0] == 'new':
+        elif args[0] == "none":
+            return playlist.handle_playlist_active_command(ctx, ["none"])
+        elif args[0] == "new":
             return playlist.handle_playlist_new_command(ctx, args[1:])
-        elif args[0] == 'delete':
+        elif args[0] == "delete":
             return playlist.handle_playlist_delete_command(ctx, args[1:])
-        elif args[0] == 'rename':
+        elif args[0] == "rename":
             return playlist.handle_playlist_rename_command(ctx, args[1:])
-        elif args[0] == 'show':
+        elif args[0] == "show":
             return playlist.handle_playlist_show_command(ctx, args[1:])
-        elif args[0] == 'analyze':
+        elif args[0] == "analyze":
             return playlist.handle_playlist_analyze_command(ctx, args[1:])
-        elif args[0] == 'active':
+        elif args[0] == "active":
             return playlist.handle_playlist_active_command(ctx, args[1:])
-        elif args[0] == 'import':
+        elif args[0] == "restart":
+            return playlist.handle_playlist_restart_command(ctx, args[1:])
+        elif args[0] == "import":
             return playlist.handle_playlist_import_command(ctx, args[1:])
-        elif args[0] == 'export':
+        elif args[0] == "export":
             return playlist.handle_playlist_export_command(ctx, args[1:])
         else:
             logger.warning(f"Unknown playlist subcommand: '{args[0]}'")
-            log(f"Unknown playlist subcommand: '{args[0]}'. Available: new, delete, rename, show, analyze, active, none, import, export", level="error")
+            log(
+                f"Unknown playlist subcommand: '{args[0]}'. Available: new, delete, rename, show, analyze, active, restart, import, export",
+                level="error",
+            )
             return ctx, True
 
-    elif command == 'add':
+    elif command == "add":
         return track.handle_add_command(ctx, args)
 
-    elif command == 'remove':
+    elif command == "remove":
         return track.handle_remove_command(ctx, args)
 
-    elif command == 'metadata':
+    elif command == "metadata":
         return track.handle_metadata_command(ctx, args)
 
-    elif command == 'ai':
+    elif command == "ai":
         if not args:
-            log("Error: AI command requires a subcommand. Usage: ai <setup|analyze|review|enhance|test|usage>", level="error")
+            log(
+                "Error: AI command requires a subcommand. Usage: ai <setup|analyze|review|enhance|test|usage>",
+                level="error",
+            )
             return ctx, True
-        elif args[0] == 'setup':
+        elif args[0] == "setup":
             return ai.handle_ai_setup_command(ctx, args[1:])
-        elif args[0] == 'analyze':
+        elif args[0] == "analyze":
             return ai.handle_ai_analyze_command(ctx)
-        elif args[0] == 'review':
+        elif args[0] == "review":
             return ai.handle_ai_review_command(ctx)
-        elif args[0] == 'enhance':
+        elif args[0] == "enhance":
             return ai.handle_ai_enhance_command(ctx, args[1:])
-        elif args[0] == 'test':
+        elif args[0] == "test":
             return ai.handle_ai_test_command(ctx)
-        elif args[0] == 'usage':
+        elif args[0] == "usage":
             return ai.handle_ai_usage_command(ctx, args[1:])
         else:
             logger.warning(f"Unknown AI subcommand: '{args[0]}'")
-            log(f"Unknown AI subcommand: '{args[0]}'. Available: setup, analyze, review, enhance, test, usage", level="error")
+            log(
+                f"Unknown AI subcommand: '{args[0]}'. Available: setup, analyze, review, enhance, test, usage",
+                level="error",
+            )
             return ctx, True
 
-    elif command == 'tag':
+    elif command == "tag":
         if not args:
-            log("Error: Tag command requires a subcommand. Usage: tag <remove|list>", level="error")
+            log(
+                "Error: Tag command requires a subcommand. Usage: tag <remove|list>",
+                level="error",
+            )
             return ctx, True
-        elif args[0] == 'remove':
+        elif args[0] == "remove":
             return admin.handle_tag_remove_command(ctx, args[1:])
-        elif args[0] == 'list':
+        elif args[0] == "list":
             return admin.handle_tag_list_command(ctx)
         else:
             logger.warning(f"Unknown tag subcommand: '{args[0]}'")
-            log(f"Unknown tag subcommand: '{args[0]}'. Available: remove, list", level="error")
+            log(
+                f"Unknown tag subcommand: '{args[0]}'. Available: remove, list",
+                level="error",
+            )
             return ctx, True
 
-    elif command == 'sync':
+    elif command == "sync":
         if not args:
             # sync (no arguments) - context-aware sync
             return sync.handle_sync_command(ctx)
-        elif args[0] == 'full':
+        elif args[0] == "full":
             # sync full - full sync bypassing cache
             return sync.handle_sync_full_command(ctx)
         else:
             logger.warning(f"Unknown sync subcommand: '{args[0]}'")
-            log(f"Unknown sync subcommand: '{args[0]}'. Use 'sync' or 'sync full'", level="error")
+            log(
+                f"Unknown sync subcommand: '{args[0]}'. Use 'sync' or 'sync full'",
+                level="error",
+            )
             return ctx, True
 
-    elif command == 'library':
+    elif command == "library":
         return library.handle_library_command(ctx, args)
 
-    elif command == 'composite':
+    elif command == "composite":
         # Composite actions (for IPC/hotkeys)
         if not args:
             log("Error: Composite action name required", level="error")
@@ -310,11 +336,14 @@ def handle_command(ctx: AppContext, command: str, args: List[str]) -> Tuple[AppC
         log(message)
         return ctx, True
 
-    elif command == '':
+    elif command == "":
         # Empty command, do nothing
         return ctx, True
 
     else:
         logger.warning(f"Unknown command: '{command}'")
-        log(f"Unknown command: '{command}'. Type 'help' for available commands.", level="error")
+        log(
+            f"Unknown command: '{command}'. Type 'help' for available commands.",
+            level="error",
+        )
         return ctx, True

@@ -36,9 +36,24 @@ Music Minion CLI is a smart music player that goes beyond simple ratings. Instea
 - Real-time progress tracking
 - Emergency controls (`killall` command)
 
+### 🌐 **Multi-Source Integration**
+- **Local Files**: MP3, M4A, FLAC from your filesystem
+- **SoundCloud**: Stream liked tracks, sync playlists via OAuth
+- **Spotify**: Full library sync with Web Playback SDK (Premium required)
+- **OAuth Authentication**: Secure provider login with PKCE
+- **Background Syncing**: Real-time progress with thread-safe updates
+- **Track Deduplication**: TF-IDF matching across providers (~10ms per track)
+
+### 🎮 **External Control**
+- **IPC System**: Background control via Unix socket
+- **CLI Commands**: `music-minion-cli play|skip|love|like|unlike`
+- **Desktop Notifications**: Track changes and playback events
+- **Control Anywhere**: From any terminal, script, or automation
+
 ### 🎨 **Advanced Features**
 - **Smart Playlists**: Filter-based playlists with AI natural language parsing
 - **Track Viewer**: Interactive UI for browsing playlist tracks
+- **Playback History**: Track all played songs with timestamps
 - **Hot-Reload**: Development mode with instant code reloading (`--dev`)
 - **Sync System**: Bidirectional metadata sync (Linux ↔ Windows/Serato)
 
@@ -89,8 +104,16 @@ winget install mpv
 # Start interactive mode
 music-minion
 
-# Scan your music library
+# Scan your local music library
 music-minion> scan
+
+# (Optional) Authenticate with streaming providers
+music-minion> library auth soundcloud
+music-minion> library auth spotify
+
+# (Optional) Sync provider libraries (runs in background)
+music-minion> library sync soundcloud
+music-minion> library sync spotify
 
 # Start playing
 music-minion> play
@@ -98,6 +121,10 @@ music-minion> play
 # Rate your first song!
 music-minion> love
 music-minion> note "Perfect morning energy track"
+
+# Control from external terminal (IPC)
+music-minion-cli skip
+music-minion-cli love
 ```
 
 ## 📖 Usage Guide
@@ -125,8 +152,33 @@ music-minion> resume                  # Resume playback ▶️
 music-minion> stop                    # Stop playback ⏹️
 
 # Library management
-music-minion> scan                    # Rescan music library
+music-minion> scan                    # Rescan local music library
 music-minion> stats                   # Show listening statistics
+
+# Multi-source library commands
+music-minion> library active          # Show current active library
+music-minion> library active spotify  # Switch to Spotify library
+music-minion> library auth soundcloud # Authenticate with SoundCloud
+music-minion> library sync spotify    # Sync Spotify library (background)
+music-minion> library playlists sync spotify  # Sync Spotify playlists
+
+# Playback history
+music-minion> history                 # Show last 50 played tracks
+```
+
+### External Control (IPC)
+
+Control Music Minion from any terminal or script:
+
+```bash
+# Playback control
+music-minion-cli play                 # Play current/next track
+music-minion-cli skip                 # Skip to next track
+
+# Rating commands
+music-minion-cli love                 # Love current track
+music-minion-cli like                 # Like current track
+music-minion-cli unlike               # Unlike current track
 ```
 
 ### Temporal Context Capture
@@ -185,7 +237,21 @@ model = "gpt-4o-mini"             # AI model for analysis
 show_progress_bar = true          # Show playback progress
 use_colors = true                 # Colorful terminal output
 history_length = 10               # Recent songs to display
+
+[providers.soundcloud]
+# OAuth tokens (auto-populated via `library auth soundcloud`)
+access_token = ""
+refresh_token = ""
+
+[providers.spotify]
+# OAuth tokens (auto-populated via `library auth spotify`)
+client_id = "your-client-id"
+client_secret = "your-client-secret"
+access_token = ""
+refresh_token = ""
 ```
+
+**Note**: Provider OAuth tokens are automatically managed after running `library auth <provider>`. No manual configuration needed.
 
 ## 🔧 Technical Architecture
 
@@ -214,21 +280,36 @@ music-minion-cli/
 
 ### Core Technologies
 
-- **Audio**: MPV with JSON IPC for cross-platform playback
+- **Audio**:
+  - MPV with JSON IPC for local/SoundCloud playback
+  - Spotify Web Playback SDK for Spotify Premium streaming
 - **Metadata**: Mutagen library for MP3/M4A tag reading/writing
-- **Database**: SQLite for ratings, context, and temporal data
-- **UI**: blessed for full-screen terminal interface with functional patterns
+- **Database**: SQLite for ratings, context, temporal data, provider state
+- **UI**: blessed for full-screen terminal with functional patterns
+  - Three-tier rendering (full/input/partial for flicker-free updates)
+  - Immutable state management via dataclasses
+- **Logging**: loguru for centralized logging with rotation
 - **Config**: Python's built-in tomllib for TOML configuration
+- **Providers**:
+  - spotipy for Spotify Web API integration
+  - OAuth 2.0 + PKCE for secure provider authentication
 - **AI**: OpenAI API for intelligent tagging and learning
+- **IPC**: Unix sockets for external control
 - **Dev Tools**: watchdog for hot-reload during development
 
 ### Database Schema
 
-Key tables:
+Key tables (v17+):
 - **tracks**: File paths, metadata, DJ info (key, BPM)
+  - Multi-source: `source` column ('local', 'soundcloud', 'spotify')
+  - Provider IDs: `soundcloud_id`, `spotify_id` for linking
 - **ratings**: User feedback with timestamps and context
+  - Source tracking: `source` column ('user', 'soundcloud', 'spotify')
 - **notes**: Rich annotations linked to specific tracks
-- **playback_sessions**: Listening history and session data
+- **playback_history**: All played songs with timestamps
+- **playlists**: Manual and smart playlists
+- **provider_state**: OAuth tokens and provider-specific state
+- **active_library**: Current active library ('local', 'soundcloud', 'spotify')
 
 ## 👨‍💻 Development
 
@@ -330,7 +411,7 @@ Logs are written to `~/.local/share/music-minion/logs/`
 
 ## 🗺️ Roadmap
 
-### ✅ Completed (Phases 1-7)
+### ✅ Completed (Phases 1-7 + Multi-Source)
 - ✅ Core playlist infrastructure (manual & smart playlists)
 - ✅ AI-powered natural language playlist parsing
 - ✅ Import/export (M3U, Serato .crate)
@@ -339,6 +420,14 @@ Logs are written to `~/.local/share/music-minion/logs/`
 - ✅ Prompt enhancement and learning accumulation
 - ✅ Hot-reload development mode
 - ✅ Track viewer and smart playlist wizard
+- ✅ **Multi-source integration** (SoundCloud, Spotify)
+- ✅ **OAuth 2.0 + PKCE authentication**
+- ✅ **Background library/playlist syncing**
+- ✅ **Playback history tracking**
+- ✅ **IPC control system** (music-minion-cli)
+- ✅ **Track deduplication** (TF-IDF matching)
+- ✅ **Spotify Web Playback SDK** integration
+- ✅ **blessed UI migration** (functional rendering)
 
 ### Phase 8: Polish & Testing (Current)
 - [ ] File watching for real-time sync
@@ -351,7 +440,8 @@ Logs are written to `~/.local/share/music-minion/logs/`
 - [ ] Web UI for mobile control
 - [ ] Global hotkey support (rate from anywhere)
 - [ ] USB button controller integration
-- [ ] Spotify/streaming service integration
+- [ ] YouTube Music integration
+- [ ] Apple Music integration
 - [ ] Advanced temporal analytics and visualizations
 - [ ] Social sharing of musical discoveries
 

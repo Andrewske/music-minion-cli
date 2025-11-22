@@ -14,7 +14,7 @@ from .config import get_data_dir
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 
 
 def get_database_path() -> Path:
@@ -428,16 +428,8 @@ def migrate_database(conn, current_version: int) -> None:
 
         conn.commit()
 
-    if current_version < 13:
-        # Migration from v12 to v13: Removed file_path column cleanup (now handled in v14)
-        # This migration is kept for historical compatibility but does nothing
-        print("  Skipping v13 migration (superseded by v14)")
-        conn.commit()
-
     if current_version < 14:
-        # Migration from v13 to v14: Remove file_path column (backward compatibility cleanup)
-        # Keep only local_path column since we're the only user
-
+        # Migration from v13 to v14: Remove file_path column
         print("  Migrating to v14: Removing file_path column...")
 
         # Commit any pending operations
@@ -446,18 +438,7 @@ def migrate_database(conn, current_version: int) -> None:
         # Step 1: Disable foreign keys during table recreation
         conn.execute("PRAGMA foreign_keys=OFF")
 
-        # Step 2: Copy any remaining file_path data to local_path (safety measure)
-        # This may fail if file_path column doesn't exist (already migrated)
-        try:
-            conn.execute(
-                "UPDATE tracks SET local_path = file_path WHERE local_path IS NULL AND file_path IS NOT NULL"
-            )
-        except sqlite3.OperationalError as e:
-            if "no such column" not in str(e).lower():
-                raise
-            # file_path column doesn't exist, which is fine
-
-        # Step 3: Create new tracks table without file_path column
+        # Step 2: Create new tracks table without file_path column
         conn.execute("""
             CREATE TABLE tracks_new (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -485,7 +466,7 @@ def migrate_database(conn, current_version: int) -> None:
             )
         """)
 
-        # Step 4: Copy all data from old table (excluding file_path)
+        # Step 3: Copy all data from old table
         conn.execute("""
             INSERT INTO tracks_new (
                 id, title, artist, album, genre, year, duration,
@@ -503,13 +484,13 @@ def migrate_database(conn, current_version: int) -> None:
             FROM tracks
         """)
 
-        # Step 5: Drop old table
+        # Step 4: Drop old table
         conn.execute("DROP TABLE tracks")
 
-        # Step 6: Rename new table
+        # Step 5: Rename new table
         conn.execute("ALTER TABLE tracks_new RENAME TO tracks")
 
-        # Step 7: Recreate all indexes (12 total, excluding idx_tracks_file_path)
+        # Step 6: Recreate all indexes
         # Regular indexes
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks (artist)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_year ON tracks (year)")
@@ -538,7 +519,7 @@ def migrate_database(conn, current_version: int) -> None:
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_youtube_id ON tracks (youtube_id) WHERE youtube_id IS NOT NULL"
         )
 
-        # Step 8: Re-enable foreign keys
+        # Step 7: Re-enable foreign keys
         conn.execute("PRAGMA foreign_keys=ON")
 
         print("  ✓ Migration to v14 complete: file_path column removed")
@@ -611,6 +592,88 @@ def migrate_database(conn, current_version: int) -> None:
                 raise
 
         print("  ✓ Migration to v18 complete: Spotify snapshot_id column added")
+        conn.commit()
+
+    if current_version < 19:
+        # Migration from v18 to v19: Library-specific playlists
+        print("  Migrating to v19: Adding library-specific playlists...")
+
+        # 1. Add library column to playlists table
+        try:
+            conn.execute("ALTER TABLE playlists ADD COLUMN library TEXT DEFAULT 'local'")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+
+        # 2. Set library based on provider IDs (smart migration)
+        # SoundCloud playlists
+        conn.execute("""
+            UPDATE playlists
+            SET library = 'soundcloud'
+            WHERE soundcloud_playlist_id IS NOT NULL
+        """)
+
+        # Spotify playlists
+        conn.execute("""
+            UPDATE playlists
+            SET library = 'spotify'
+            WHERE spotify_playlist_id IS NOT NULL
+        """)
+
+        # YouTube playlists (if any exist in future)
+        conn.execute("""
+            UPDATE playlists
+            SET library = 'youtube'
+            WHERE youtube_playlist_id IS NOT NULL
+        """)
+
+        # Local playlists (no provider ID)
+        conn.execute("""
+            UPDATE playlists
+            SET library = 'local'
+            WHERE library IS NULL
+        """)
+
+        # 3. Create index on library column for fast filtering
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_playlists_library ON playlists (library)"
+        )
+
+        # 4. Recreate active_playlist table to support per-library active playlists
+        # First, save the existing active playlist data
+        cursor = conn.execute("SELECT playlist_id, last_played_track_id, last_played_position, last_played_at, activated_at FROM active_playlist WHERE id = 1")
+        existing_data = cursor.fetchone()
+
+        # Drop the old singleton table
+        conn.execute("DROP TABLE IF EXISTS active_playlist")
+
+        # Create new active_playlist table with library column
+        conn.execute("""
+            CREATE TABLE active_playlist (
+                library TEXT PRIMARY KEY,
+                playlist_id INTEGER,
+                last_played_track_id INTEGER,
+                last_played_position INTEGER,
+                last_played_at TIMESTAMP,
+                activated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (playlist_id) REFERENCES playlists (id) ON DELETE SET NULL
+            )
+        """)
+
+        # Restore existing active playlist data for 'local' library
+        if existing_data and existing_data["playlist_id"]:
+            conn.execute("""
+                INSERT INTO active_playlist (library, playlist_id, last_played_track_id, last_played_position, last_played_at, activated_at)
+                VALUES ('local', ?, ?, ?, ?, ?)
+            """, (
+                existing_data["playlist_id"],
+                existing_data["last_played_track_id"],
+                existing_data["last_played_position"],
+                existing_data["last_played_at"],
+                existing_data["activated_at"]
+            ))
+
+        print("  ✓ Migration to v19 complete: Library-specific playlists added")
         conn.commit()
 
 
@@ -1578,6 +1641,7 @@ def db_track_to_library_track(db_track: Dict[str, Any]):
         soundcloud_id=db_track.get("soundcloud_id"),
         spotify_id=db_track.get("spotify_id"),
         youtube_id=db_track.get("youtube_id"),
+        id=db_track.get("id"),
     )
 
 

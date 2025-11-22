@@ -403,7 +403,15 @@ def refresh_token(token_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
         return new_token_data
 
+    except requests.HTTPError as e:
+        logger.warning(f"Failed to refresh Spotify token: {e}")
+        if e.response is not None:
+            try:
+                error_data = e.response.json()
+                logger.error(f"Spotify token refresh error: {error_data}")
+            except Exception:
+                logger.error(f"Spotify response: {e.response.text}")
+        return None
     except Exception as e:
         logger.warning(f"Failed to refresh Spotify token: {e}")
-        # Silently fail - caller will handle None return
         return None
