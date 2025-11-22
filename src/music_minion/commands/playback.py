@@ -207,7 +207,10 @@ def play_track(
         # Store current track ID in player state for continuity with other commands
         # Update player state to mark as playing via Spotify
         new_state = ctx.player_state._replace(
-            current_track_id=track_id, current_track=playback_uri, is_playing=True
+            current_track_id=track_id,
+            current_track=playback_uri,
+            is_playing=True,
+            playback_source="spotify",
         )
         ctx = ctx.with_player_state(new_state)
 
@@ -327,18 +330,41 @@ def handle_pause_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     Returns:
         (updated_context, should_continue)
     """
-    if not playback.is_mpv_running(ctx.player_state):
+    # Check if any playback is active
+    if not ctx.player_state.playback_source:
         log("No music is currently playing", "warning")
         return ctx, True
 
-    new_state, success = playback.pause_playback(ctx.player_state)
-    ctx = ctx.with_player_state(new_state)
+    # Route to appropriate player
+    if ctx.player_state.playback_source == "spotify":
+        from music_minion.domain.playback.spotify_player import SpotifyPlayer
 
-    if success:
-        log("⏸ Paused", "info")
+        spotify_player = SpotifyPlayer(
+            ctx.provider_states.get("spotify", {}),
+            preferred_device_id=ctx.config.spotify.preferred_device_id,
+            preferred_device_name=ctx.config.spotify.preferred_device_name,
+        )
+        success = spotify_player.pause()
 
-    else:
-        log("Failed to pause playback", "error")
+        if success:
+            new_state = ctx.player_state._replace(is_playing=False)
+            ctx = ctx.with_player_state(new_state)
+            log("⏸ Paused", "info")
+        else:
+            log("Failed to pause Spotify playback", "error")
+
+    elif ctx.player_state.playback_source == "mpv":
+        if not playback.is_mpv_running(ctx.player_state):
+            log("No music is currently playing", "warning")
+            return ctx, True
+
+        new_state, success = playback.pause_playback(ctx.player_state)
+        ctx = ctx.with_player_state(new_state)
+
+        if success:
+            log("⏸ Paused", "info")
+        else:
+            log("Failed to pause playback", "error")
 
     return ctx, True
 
@@ -352,17 +378,41 @@ def handle_resume_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     Returns:
         (updated_context, should_continue)
     """
-    if not playback.is_mpv_running(ctx.player_state):
+    # Check if any playback is active
+    if not ctx.player_state.playback_source:
         log("No music player is running", "warning")
         return ctx, True
 
-    new_state, success = playback.resume_playback(ctx.player_state)
-    ctx = ctx.with_player_state(new_state)
+    # Route to appropriate player
+    if ctx.player_state.playback_source == "spotify":
+        from music_minion.domain.playback.spotify_player import SpotifyPlayer
 
-    if success:
-        log("▶ Resumed", "info")
-    else:
-        log("Failed to resume playback", "error")
+        spotify_player = SpotifyPlayer(
+            ctx.provider_states.get("spotify", {}),
+            preferred_device_id=ctx.config.spotify.preferred_device_id,
+            preferred_device_name=ctx.config.spotify.preferred_device_name,
+        )
+        success = spotify_player.resume()
+
+        if success:
+            new_state = ctx.player_state._replace(is_playing=True)
+            ctx = ctx.with_player_state(new_state)
+            log("▶ Resumed", "info")
+        else:
+            log("Failed to resume Spotify playback", "error")
+
+    elif ctx.player_state.playback_source == "mpv":
+        if not playback.is_mpv_running(ctx.player_state):
+            log("No music player is running", "warning")
+            return ctx, True
+
+        new_state, success = playback.resume_playback(ctx.player_state)
+        ctx = ctx.with_player_state(new_state)
+
+        if success:
+            log("▶ Resumed", "info")
+        else:
+            log("Failed to resume playback", "error")
 
     return ctx, True
 
@@ -574,17 +624,43 @@ def handle_stop_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     Returns:
         (updated_context, should_continue)
     """
-    if not playback.is_mpv_running(ctx.player_state):
+    # Check if any playback is active
+    if not ctx.player_state.playback_source:
         log("No music is currently playing", "warning")
         return ctx, True
 
-    new_state, success = playback.stop_playback(ctx.player_state)
-    ctx = ctx.with_player_state(new_state)
+    # Route to appropriate player
+    if ctx.player_state.playback_source == "spotify":
+        from music_minion.domain.playback.spotify_player import SpotifyPlayer
 
-    if success:
-        log("⏹ Stopped", "info")
-    else:
-        log("Failed to stop playback", "error")
+        spotify_player = SpotifyPlayer(
+            ctx.provider_states.get("spotify", {}),
+            preferred_device_id=ctx.config.spotify.preferred_device_id,
+            preferred_device_name=ctx.config.spotify.preferred_device_name,
+        )
+        success = spotify_player.stop()
+
+        if success:
+            new_state = ctx.player_state._replace(
+                is_playing=False, playback_source=None
+            )
+            ctx = ctx.with_player_state(new_state)
+            log("⏹ Stopped", "info")
+        else:
+            log("Failed to stop Spotify playback", "error")
+
+    elif ctx.player_state.playback_source == "mpv":
+        if not playback.is_mpv_running(ctx.player_state):
+            log("No music is currently playing", "warning")
+            return ctx, True
+
+        new_state, success = playback.stop_playback(ctx.player_state)
+        ctx = ctx.with_player_state(new_state)
+
+        if success:
+            log("⏹ Stopped", "info")
+        else:
+            log("Failed to stop playback", "error")
 
     return ctx, True
 

@@ -27,6 +27,7 @@ class PlayerState(NamedTuple):
     is_playing: bool = False
     current_position: float = 0.0
     duration: float = 0.0
+    playback_source: Optional[str] = None  # 'mpv' or 'spotify'
 
     def __getattr__(self, name: str) -> Any:
         """Provide helpful error for missing attributes, especially with_* methods."""
@@ -253,7 +254,10 @@ def play_file(
         # Update status to get actual playback state
         updated_state = update_player_status(
             state._replace(
-                current_track=local_path, current_track_id=track_id, is_playing=True
+                current_track=local_path,
+                current_track_id=track_id,
+                is_playing=True,
+                playback_source="mpv",
             )
         )
         return updated_state, True
@@ -312,7 +316,12 @@ def stop_playback(state: PlayerState) -> Tuple[PlayerState, bool]:
     success = send_mpv_command(state.socket_path, {"command": ["stop"]})
 
     if success:
-        return state._replace(current_track=None, is_playing=False), True
+        return (
+            state._replace(
+                current_track=None, is_playing=False, playback_source=None
+            ),
+            True,
+        )
 
     return state, False
 
