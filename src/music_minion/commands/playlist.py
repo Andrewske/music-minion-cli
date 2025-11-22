@@ -691,129 +691,149 @@ def handle_playlist_active_command(
                 log(f"✅ Set active playlist: {name}", level="info")
                 log("   Now playing only tracks from this playlist", level="info")
 
-            # Check for saved position and shuffle mode
-            saved_position = playback.get_playlist_position(pl["id"])
-            shuffle_enabled = playback.get_shuffle_mode()
+            # Check if current track is in the new playlist
+            current_track_id = ctx.player_state.current_track_id
+            should_start_playback = True
 
-            # Sequential mode: offer to resume from saved position
-            if saved_position and not shuffle_enabled:
-                track_id, position = saved_position
-                # Get playlist tracks to find the saved track
+            if current_track_id is not None:
+                # Check if current track is in the new playlist
                 playlist_tracks = playlists.get_playlist_tracks(pl["id"])
+                track_ids_in_playlist = {track["id"] for track in playlist_tracks}
 
-                # Find track info
-                saved_track = None
-                for track in playlist_tracks:
-                    if track["id"] == track_id:
-                        saved_track = track
-                        break
-
-                if saved_track:
+                if current_track_id in track_ids_in_playlist:
+                    # Current track IS in new playlist - keep playing
+                    should_start_playback = False
                     if not is_blessed_mode:
                         log(
-                            f"\n💾 Last position: Track {position + 1}/{len(playlist_tracks)}",
-                            level="info",
-                        )
-                        log(
-                            f"   {saved_track.get('artist', 'Unknown')} - {saved_track.get('title', 'Unknown')}",
+                            "   Current track is in this playlist, continuing playback",
                             level="info",
                         )
 
-                    # In blessed mode, auto-resume; otherwise prompt
-                    if is_blessed_mode:
-                        response = "y"  # Auto-resume in blessed UI
-                    else:
-                        response = (
-                            input("   Resume from this position? [Y/n]: ")
-                            .strip()
-                            .lower()
-                        )
+            # Only start playback if current track is not in the new playlist
+            if should_start_playback:
+                # Check for saved position and shuffle mode
+                saved_position = playback.get_playlist_position(pl["id"])
+                shuffle_enabled = playback.get_shuffle_mode()
 
-                    if response != "n":
-                        # Find the Track object from music_tracks
-                        for track in ctx.music_tracks:
-                            if track.local_path == saved_track["local_path"]:
-                                if not is_blessed_mode:
-                                    log("▶️  Resuming playback...", level="info")
-                                # Import play_track from playback commands
-                                from . import playback as playback_commands
+                # Sequential mode: offer to resume from saved position
+                if saved_position and not shuffle_enabled:
+                    track_id, position = saved_position
+                    # Get playlist tracks to find the saved track
+                    playlist_tracks = playlists.get_playlist_tracks(pl["id"])
 
-                                ctx, _ = playback_commands.play_track(
-                                    ctx, track, position
-                                )
-                                break
+                    # Find track info
+                    saved_track = None
+                    for track in playlist_tracks:
+                        if track["id"] == track_id:
+                            saved_track = track
+                            break
 
-            # Shuffle mode: automatically start with random track
-            elif shuffle_enabled:
-                # Import playback commands for helper functions
-                from . import playback as playback_commands
-
-                # Get available tracks from this playlist (excluding archived)
-                available_tracks = playback_commands.get_available_tracks(ctx)
-
-                if available_tracks:
-                    if not is_blessed_mode:
-                        log(
-                            "\n🔀 Shuffle mode enabled - starting with random track",
-                            level="info",
-                        )
-                        log(
-                            f"   {len(available_tracks)} tracks available", level="info"
-                        )
-
-                    # Pick a random track from available
-                    random_track = library.get_random_track(available_tracks)
-                    if random_track:
+                    if saved_track:
                         if not is_blessed_mode:
-                            log("▶️  Starting shuffle playback...", level="info")
-                        ctx, _ = playback_commands.play_track(ctx, random_track)
-                else:
-                    if not is_blessed_mode:
-                        log(
-                            "\n⚠️  No tracks available in this playlist (all may be archived)",
-                            level="warning",
-                        )
+                            log(
+                                f"\n💾 Last position: Track {position + 1}/{len(playlist_tracks)}",
+                                level="info",
+                            )
+                            log(
+                                f"   {saved_track.get('artist', 'Unknown')} - {saved_track.get('title', 'Unknown')}",
+                                level="info",
+                            )
 
-            # Sequential mode with no saved position - start from first track
-            else:
-                # Import playback commands for helper functions
-                from . import playback as playback_commands
+                        # In blessed mode, auto-resume; otherwise prompt
+                        if is_blessed_mode:
+                            response = "y"  # Auto-resume in blessed UI
+                        else:
+                            response = (
+                                input("   Resume from this position? [Y/n]: ")
+                                .strip()
+                                .lower()
+                            )
 
-                # Get playlist tracks
-                playlist_tracks = playlists.get_playlist_tracks(pl["id"])
+                        if response != "n":
+                            # Find the Track object from music_tracks
+                            for track in ctx.music_tracks:
+                                if track.local_path == saved_track["local_path"]:
+                                    if not is_blessed_mode:
+                                        log("▶️  Resuming playback...", level="info")
+                                    # Import play_track from playback commands
+                                    from . import playback as playback_commands
 
-                if playlist_tracks:
-                    # Get first track (position 0)
-                    first_track_dict = playback.get_next_sequential_track(
-                        playlist_tracks, None
-                    )
-
-                    if first_track_dict:
-                        # Find the Track object from music_tracks
-                        for track in ctx.music_tracks:
-                            if track.local_path == first_track_dict["local_path"]:
-                                if not is_blessed_mode:
-                                    log(
-                                        "\n▶️  Starting from first track in playlist",
-                                        level="info",
+                                    ctx, _ = playback_commands.play_track(
+                                        ctx, track, position
                                     )
-                                    log(
-                                        f"   {len(playlist_tracks)} tracks in playlist",
-                                        level="info",
-                                    )
+                                    break
 
-                                # Play track with position 0
-                                ctx, _ = playback_commands.play_track(ctx, track, 0)
-                                break
+                # Shuffle mode: automatically start with random track
+                elif shuffle_enabled:
+                    # Import playback commands for helper functions
+                    from . import playback as playback_commands
+
+                    # Get available tracks from this playlist (excluding archived)
+                    available_tracks = playback_commands.get_available_tracks(ctx)
+
+                    if available_tracks:
+                        if not is_blessed_mode:
+                            log(
+                                "\n🔀 Shuffle mode enabled - starting with random track",
+                                level="info",
+                            )
+                            log(
+                                f"   {len(available_tracks)} tracks available", level="info"
+                            )
+
+                        # Pick a random track from available
+                        random_track = library.get_random_track(available_tracks)
+                        if random_track:
+                            if not is_blessed_mode:
+                                log("▶️  Starting shuffle playback...", level="info")
+                            ctx, _ = playback_commands.play_track(ctx, random_track)
                     else:
                         if not is_blessed_mode:
                             log(
-                                "\n⚠️  Unable to find first track in playlist",
+                                "\n⚠️  No tracks available in this playlist (all may be archived)",
                                 level="warning",
                             )
+
+                # Sequential mode with no saved position - start from first track
                 else:
-                    if not is_blessed_mode:
-                        log("\n⚠️  Playlist is empty", level="warning")
+                    # Import playback commands for helper functions
+                    from . import playback as playback_commands
+
+                    # Get playlist tracks
+                    playlist_tracks = playlists.get_playlist_tracks(pl["id"])
+
+                    if playlist_tracks:
+                        # Get first track (position 0)
+                        first_track_dict = playback.get_next_sequential_track(
+                            playlist_tracks, None
+                        )
+
+                        if first_track_dict:
+                            # Find the Track object from music_tracks
+                            for track in ctx.music_tracks:
+                                if track.local_path == first_track_dict["local_path"]:
+                                    if not is_blessed_mode:
+                                        log(
+                                            "\n▶️  Starting from first track in playlist",
+                                            level="info",
+                                        )
+                                        log(
+                                            f"   {len(playlist_tracks)} tracks in playlist",
+                                            level="info",
+                                        )
+
+                                    # Play track with position 0
+                                    ctx, _ = playback_commands.play_track(ctx, track, 0)
+                                    break
+                        else:
+                            if not is_blessed_mode:
+                                log(
+                                    "\n⚠️  Unable to find first track in playlist",
+                                    level="warning",
+                                )
+                    else:
+                        if not is_blessed_mode:
+                            log("\n⚠️  Playlist is empty", level="warning")
 
         else:
             if not is_blessed_mode:
