@@ -63,3 +63,4 @@
 2025-11-21 19:13:10 | INFO     | music_minion.core.output:83 | ♪ Now playing: Fall Out Boy - I Wan'na Be Like You (The Monkey Song) - From "The Jungle Book"
 2025-11-21 19:13:10 | INFO     | music_minion.core.output:83 |    Duration: 03:19
 2025-11-21 19:13:10 | INFO     | music_minion.core.output:83 |    2015
+2025-11-21 19:15:46 | WARNING  | music_minion.core.output:83 | No music is currently playing
