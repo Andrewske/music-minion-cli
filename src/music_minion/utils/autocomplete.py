@@ -168,7 +168,7 @@ class PlaylistCompleter(Completer):
                 active_library = row['provider'] if row else 'local'
 
             # Fetch playlists sorted by recently played (filtered by active library)
-            playlists = playlist_module.get_playlists_sorted_by_recent(provider=active_library)
+            playlists = playlist_module.get_playlists_sorted_by_recent(library=active_library)
 
             for pl in playlists:
                 name = pl['name']

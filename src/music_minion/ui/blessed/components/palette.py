@@ -5,7 +5,7 @@ from blessed import Terminal
 from ..state import UIState
 
 
-def load_playlist_items(active_library: str = 'all') -> list[tuple[str, str, str, str]]:
+def load_playlist_items(active_library: str = "all") -> list[tuple[str, str, str, str]]:
     """
     Load playlists from database and convert to palette items format.
 
@@ -19,32 +19,34 @@ def load_playlist_items(active_library: str = 'all') -> list[tuple[str, str, str
     # Import here to avoid circular dependencies
     from ....domain.playlists import crud as playlists
 
-    all_playlists = playlists.get_playlists_sorted_by_recent(provider=active_library)
+    all_playlists = playlists.get_playlists_sorted_by_recent(library=active_library)
     active = playlists.get_active_playlist()
-    active_id = active['id'] if active else None
+    active_id = active["id"] if active else None
 
     items = []
     for pl in all_playlists:
         # Determine category and icon
-        category = pl['type'].capitalize()
-        icon = "★" if pl['id'] == active_id else "◦"
+        category = pl["type"].capitalize()
+        icon = "★" if pl["id"] == active_id else "◦"
 
         # Build description with track count and type
-        track_count = pl.get('track_count', 0)
+        track_count = pl.get("track_count", 0)
         desc = f"{track_count} tracks"
-        if pl['type'] == 'smart':
+        if pl["type"] == "smart":
             desc = f"Smart • {desc}"
 
         # Add active indicator to description if active
-        if pl['id'] == active_id:
+        if pl["id"] == active_id:
             desc = f"ACTIVE • {desc}"
 
-        items.append((category, pl['name'], icon, desc))
+        items.append((category, pl["name"], icon, desc))
 
     return items
 
 
-def filter_playlist_items(query: str, items: list[tuple[str, str, str, str]]) -> list[tuple[str, str, str, str]]:
+def filter_playlist_items(
+    query: str, items: list[tuple[str, str, str, str]]
+) -> list[tuple[str, str, str, str]]:
     """
     Filter playlist items by name (case-insensitive substring match).
 
@@ -97,11 +99,13 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
 
     # Header - different based on palette mode
     if line_num < height:
-        if state.palette_mode == 'playlist':
+        if state.palette_mode == "playlist":
             header_text = "   📋 Select Playlist"
-        elif state.palette_mode == 'search':
+        elif state.palette_mode == "device":
+            header_text = "   🎵 Select Spotify Device"
+        elif state.palette_mode == "search":
             # Show current mode in header
-            if state.search_mode == 'detail':
+            if state.search_mode == "detail":
                 header_text = "   🔍 Track Details"
             else:
                 header_text = "   🔍 Track Search"
@@ -111,15 +115,17 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
         line_num += 1
 
     # Render items (different handling for search mode)
-    if state.palette_mode == 'search':
+    if state.palette_mode == "search":
         # Different rendering based on search mode (search/detail/action)
-        if state.search_mode == 'search':
+        if state.search_mode == "search":
             # Render track search results
             filtered_tracks = state.search_filtered_tracks
             if not filtered_tracks:
                 if line_num < height:
                     empty_msg = "  No matching tracks found"
-                    sys.stdout.write(term.move_xy(0, y + line_num) + term.white(empty_msg))
+                    sys.stdout.write(
+                        term.move_xy(0, y + line_num) + term.white(empty_msg)
+                    )
                     line_num += 1
             else:
                 # Render tracks with scroll offset
@@ -138,9 +144,9 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
 
                     # Format track display: "Artist - Title (Album)"
                     is_selected = track_index == state.search_selected
-                    artist = track.get('artist', 'Unknown')
-                    title = track.get('title', 'Unknown')
-                    album = track.get('album', '')
+                    artist = track.get("artist", "Unknown")
+                    title = track.get("title", "Unknown")
+                    album = track.get("album", "")
 
                     if album:
                         track_text = f"{artist} - {title} ({album})"
@@ -150,7 +156,7 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
                     # Truncate if too long
                     max_width = term.width - 6
                     if len(track_text) > max_width:
-                        track_text = track_text[:max_width-3] + "..."
+                        track_text = track_text[: max_width - 3] + "..."
 
                     if is_selected:
                         # Selected track: highlighted background
@@ -163,22 +169,39 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
                     line_num += 1
                     items_rendered += 1
 
-        elif state.search_mode == 'detail':
+        elif state.search_mode == "detail":
             # Render combined detail + actions view
-            if state.search_filtered_tracks and state.search_selected < len(state.search_filtered_tracks):
+            if state.search_filtered_tracks and state.search_selected < len(
+                state.search_filtered_tracks
+            ):
                 selected_track = state.search_filtered_tracks[state.search_selected]
-                line_num = _render_track_detail(term, state, selected_track, y, line_num, height, footer_lines, content_height)
+                line_num = _render_track_detail(
+                    term,
+                    state,
+                    selected_track,
+                    y,
+                    line_num,
+                    height,
+                    footer_lines,
+                    content_height,
+                )
     else:
-        # Render command/playlist items (existing logic)
+        # Render command/playlist/device items (existing logic)
         if not filtered_commands:
             if line_num < height:
-                empty_msg = "  No playlists found" if state.palette_mode == 'playlist' else "  No matching commands"
+                empty_msg = (
+                    "  No devices found"
+                    if state.palette_mode == "device"
+                    else "  No playlists found"
+                    if state.palette_mode == "playlist"
+                    else "  No matching commands"
+                )
                 sys.stdout.write(term.move_xy(0, y + line_num) + term.white(empty_msg))
                 line_num += 1
         else:
             # Render items with scroll offset
             items_rendered = 0
-            for item_index, (cat, cmd, icon, desc) in enumerate(filtered_commands):
+            for item_index, item in enumerate(filtered_commands):
                 # Skip items before scroll offset
                 if item_index < scroll_offset:
                     continue
@@ -190,27 +213,58 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
                 if line_num >= height - footer_lines:
                     break
 
-                # Create command item with highlighting
+                # Handle different item formats based on palette mode
                 is_selected = item_index == selected_index
-                cmd_text = f"{cmd:<20}"
 
-                if is_selected:
-                    # Selected item: highlighted background
-                    item_line = (
-                        term.black_on_cyan(f"  {icon} ") +
-                        term.black_on_cyan(cmd_text) +
-                        term.black_on_cyan(f" {desc}")
-                    )
+                if state.palette_mode == "device":
+                    # Device items: (display_name, description, command, device_id)
+                    display_name, description, command, device_id = item
+
+                    if is_selected:
+                        # Selected device: highlighted background
+                        item_line = term.black_on_cyan(f"  {display_name}")
+                        sys.stdout.write(term.move_xy(0, y + line_num) + item_line)
+                        line_num += 1
+
+                        # Show description on next line if there's space
+                        if line_num < height - footer_lines:
+                            desc_line = term.black_on_cyan(f"     {description}")
+                            sys.stdout.write(term.move_xy(0, y + line_num) + desc_line)
+                            line_num += 1
+                    else:
+                        # Normal device
+                        item_line = term.bold(f"  {display_name}")
+                        sys.stdout.write(term.move_xy(0, y + line_num) + item_line)
+                        line_num += 1
+
+                        # Show description on next line if there's space
+                        if line_num < height - footer_lines:
+                            desc_line = term.white(f"     {description}")
+                            sys.stdout.write(term.move_xy(0, y + line_num) + desc_line)
+                            line_num += 1
                 else:
-                    # Normal item
-                    item_line = (
-                        term.bold(f"  {icon} ") +
-                        term.cyan(cmd_text) +
-                        term.white(f" {desc}")
-                    )
+                    # Command/playlist items: (cat, cmd, icon, desc)
+                    cat, cmd, icon, desc = item
+                    cmd_text = f"{cmd:<20}"
 
-                sys.stdout.write(term.move_xy(0, y + line_num) + item_line)
-                line_num += 1
+                    if is_selected:
+                        # Selected item: highlighted background
+                        item_line = (
+                            term.black_on_cyan(f"  {icon} ")
+                            + term.black_on_cyan(cmd_text)
+                            + term.black_on_cyan(f" {desc}")
+                        )
+                    else:
+                        # Normal item
+                        item_line = (
+                            term.bold(f"  {icon} ")
+                            + term.cyan(cmd_text)
+                            + term.white(f" {desc}")
+                        )
+
+                    sys.stdout.write(term.move_xy(0, y + line_num) + item_line)
+                    line_num += 1
+
                 items_rendered += 1
 
     # Clear remaining lines
@@ -221,38 +275,42 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
     # Footer help text - confirmation or normal mode
     if line_num < height:
         if state.confirmation_active:
-            if state.confirmation_type == 'delete_playlist':
+            if state.confirmation_type == "delete_playlist":
                 # Show playlist deletion confirmation
-                playlist_name = state.confirmation_data.get('playlist_name', 'Unknown')
+                playlist_name = state.confirmation_data.get("playlist_name", "Unknown")
                 footer = f"   Delete '{playlist_name}'? [Enter/Y]es / [N]o"
                 sys.stdout.write(term.move_xy(0, y + line_num) + term.yellow(footer))
-            elif state.confirmation_type == 'remove_track_from_playlist':
+            elif state.confirmation_type == "remove_track_from_playlist":
                 # Show track removal confirmation
-                track_title = state.confirmation_data.get('track_title', 'Unknown')
-                track_artist = state.confirmation_data.get('track_artist', 'Unknown')
-                footer = f"   Remove '{track_artist} - {track_title}'? [Enter/Y]es / [N]o"
+                track_title = state.confirmation_data.get("track_title", "Unknown")
+                track_artist = state.confirmation_data.get("track_artist", "Unknown")
+                footer = (
+                    f"   Remove '{track_artist} - {track_title}'? [Enter/Y]es / [N]o"
+                )
                 sys.stdout.write(term.move_xy(0, y + line_num) + term.yellow(footer))
         else:
             # Normal footer with scroll indicator and help text
-            if state.palette_mode == 'search':
+            if state.palette_mode == "search":
                 # Track search footer - different help text based on mode
-                if state.search_mode == 'search':
+                if state.search_mode == "search":
                     total_items = len(state.search_filtered_tracks)
                     if total_items > content_height:
                         current_position = min(state.search_selected + 1, total_items)
                         footer = f"   [{current_position}/{total_items}] ↑↓ navigate  Enter details  Esc cancel"
                     else:
                         footer = "   ↑↓ navigate  Enter details  Esc cancel"
-                elif state.search_mode == 'detail':
+                elif state.search_mode == "detail":
                     footer = "   ↑↓ navigate  Enter select  p/a/e shortcuts  Esc back"
-            elif state.palette_mode == 'playlist':
+            elif state.palette_mode == "playlist":
                 # Playlist mode footer with view and delete key help
                 total_items = len(filtered_commands)
                 if total_items > content_height:
                     current_position = min(selected_index + 1, total_items)
                     footer = f"   [{current_position}/{total_items}] ↑↓ navigate  Enter activate  v view  Del delete  Esc cancel"
                 else:
-                    footer = "   ↑↓ navigate  Enter activate  v view  Del delete  Esc cancel"
+                    footer = (
+                        "   ↑↓ navigate  Enter activate  v view  Del delete  Esc cancel"
+                    )
             else:
                 # Command mode footer
                 total_items = len(filtered_commands)
@@ -266,7 +324,9 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
         line_num += 1
 
 
-def _render_track_detail(term, state, track, y, line_num, height, footer_lines, content_height):
+def _render_track_detail(
+    term, state, track, y, line_num, height, footer_lines, content_height
+):
     """
     Render combined detail view: metadata + actions.
 
@@ -287,23 +347,23 @@ def _render_track_detail(term, state, track, y, line_num, height, footer_lines, 
     """
     # Track metadata fields to display
     fields = [
-        ('Title', track.get('title', 'Unknown')),
-        ('Artist', track.get('artist', 'Unknown')),
-        ('Album', track.get('album', '')),
-        ('Genre', track.get('genre', '')),
-        ('Year', str(track.get('year', '')) if track.get('year') else ''),
-        ('BPM', str(track.get('bpm', '')) if track.get('bpm') else ''),
-        ('Key', track.get('key_signature', '')),
+        ("Title", track.get("title", "Unknown")),
+        ("Artist", track.get("artist", "Unknown")),
+        ("Album", track.get("album", "")),
+        ("Genre", track.get("genre", "")),
+        ("Year", str(track.get("year", "")) if track.get("year") else ""),
+        ("BPM", str(track.get("bpm", "")) if track.get("bpm") else ""),
+        ("Key", track.get("key_signature", "")),
     ]
 
     # Add tags and notes if present (database returns comma-separated strings from GROUP_CONCAT)
-    tags = track.get('tags', '')  # String, not list
+    tags = track.get("tags", "")  # String, not list
     if tags:
-        fields.append(('Tags', tags))
+        fields.append(("Tags", tags))
 
-    notes = track.get('notes', '')  # String, not list
+    notes = track.get("notes", "")  # String, not list
     if notes:
-        fields.append(('Notes', notes))
+        fields.append(("Notes", notes))
 
     # Render metadata fields
     for label, value in fields:
@@ -324,15 +384,17 @@ def _render_track_detail(term, state, track, y, line_num, height, footer_lines, 
 
     # Actions header
     if line_num < height - footer_lines:
-        sys.stdout.write(term.move_xy(0, y + line_num) + "  " + term.bold_white("Actions:"))
+        sys.stdout.write(
+            term.move_xy(0, y + line_num) + "  " + term.bold_white("Actions:")
+        )
         line_num += 1
 
     # Actions menu (4 items, one highlighted)
     actions = [
-        ('Play', 'p', 'Play this track now'),
-        ('Add to Playlist', 'a', 'Add to a playlist'),
-        ('Edit Metadata', 'e', 'Edit track metadata'),
-        ('Cancel', 'Esc', 'Go back'),
+        ("Play", "p", "Play this track now"),
+        ("Add to Playlist", "a", "Add to a playlist"),
+        ("Edit Metadata", "e", "Edit track metadata"),
+        ("Cancel", "Esc", "Go back"),
     ]
 
     for action_idx, (label, shortcut, desc) in enumerate(actions):
@@ -344,7 +406,9 @@ def _render_track_detail(term, state, track, y, line_num, height, footer_lines, 
 
         if is_selected:
             # Highlighted selection
-            item_line = term.black_on_cyan(f"{action_text:<30}") + term.black_on_cyan(f" {desc}")
+            item_line = term.black_on_cyan(f"{action_text:<30}") + term.black_on_cyan(
+                f" {desc}"
+            )
         else:
             # Normal item
             item_line = term.bold_cyan(action_text) + term.white(f" - {desc}")

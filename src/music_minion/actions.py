@@ -43,13 +43,8 @@ def get_current_track_info(ctx: AppContext) -> Optional[Tuple[int, dict, library
 
     # Get track ID from player state
     track_id = ctx.player_state.current_track_id
-
-    # Fallback to path lookup for backward compatibility
     if not track_id:
-        db_track = database.get_track_by_path(ctx.player_state.current_track)
-        if not db_track:
-            return None
-        track_id = db_track['id']
+        return None
 
     # Get full track info from database
     db_track = database.get_track_by_id(track_id)

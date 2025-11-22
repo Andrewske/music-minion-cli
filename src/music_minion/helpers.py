@@ -65,7 +65,7 @@ def parse_quoted_args(args: List[str]) -> List[str]:
         # Check if this arg ends the current quote
         elif in_quote and arg and arg[-1] == quote_char:
             current.append(arg[:-1])
-            parsed.append(' '.join(current))
+            parsed.append(" ".join(current))
             current = []
             in_quote = False
             quote_char = None
@@ -78,7 +78,7 @@ def parse_quoted_args(args: List[str]) -> List[str]:
 
     # If we have unclosed quotes, join what we have
     if current:
-        parsed.append(' '.join(current))
+        parsed.append(" ".join(current))
 
     return parsed
 
@@ -102,7 +102,9 @@ def ensure_mpv_available() -> bool:
         print("On Ubuntu/Debian: sudo apt install mpv")
         print("On Arch Linux: sudo pacman -S mpv")
         print("On macOS: brew install mpv")
-        print("On Windows: Download from https://mpv.io/installation/ or use 'winget install mpv'")
+        print(
+            "On Windows: Download from https://mpv.io/installation/ or use 'winget install mpv'"
+        )
         return False
     return True
 
@@ -111,20 +113,38 @@ def load_provider_states() -> Dict[str, Any]:
     """Load all provider authentication states from database.
 
     Returns:
-        Dictionary mapping provider names to their state data
+        Dictionary mapping provider names to their ProviderState objects
     """
+    from music_minion.domain.library.provider import ProviderState, ProviderConfig
+
     provider_states = {}
 
     # Load known providers
-    for provider in ['soundcloud', 'spotify', 'youtube']:
+    for provider in ["soundcloud", "spotify", "youtube"]:
         state = database.load_provider_state(provider)
-        if state and state.get('authenticated'):
-            # Store in format expected by resolver
-            provider_states[provider] = {
-                'authenticated': True,
-                'token_data': state.get('auth_data', {}),
-                'config': state.get('config', {})
-            }
+        if state and state.get("authenticated"):
+            # Extract token data from the nested structure
+            # The database stores it as: config.cache.token_data or auth_data
+            config_data = state.get("config", {})
+            cache_data = (
+                config_data.get("cache", {}) if isinstance(config_data, dict) else {}
+            )
+
+            # Use token_data from cache if available, otherwise from auth_data
+            token_data = cache_data.get("token_data") or state.get("auth_data", {})
+
+            # Create proper ProviderState object
+            config = ProviderConfig(name=provider)
+            provider_state = ProviderState(
+                config=config,
+                authenticated=True,
+                last_sync=None,
+                cache={
+                    "token_data": token_data,
+                    "config": config_data,
+                },
+            )
+            provider_states[provider] = provider_state
 
     return provider_states
 
@@ -176,6 +196,7 @@ def ensure_library_loaded(ctx: AppContext) -> tuple[AppContext, bool]:
         if provider_states:
             # Create new context with provider states using dataclasses.replace
             from dataclasses import replace
+
             ctx = replace(ctx, provider_states=provider_states)
 
     # Auto-sync streaming providers on startup (incremental sync is fast)
@@ -200,7 +221,9 @@ def ensure_library_loaded(ctx: AppContext) -> tuple[AppContext, bool]:
                 if not track.local_path or Path(track.local_path).exists():
                     existing_tracks.append(track)
             ctx = ctx.with_tracks(existing_tracks)
-            safe_print(ctx, f"Loaded {len(existing_tracks)} tracks from database", "green")
+            safe_print(
+                ctx, f"Loaded {len(existing_tracks)} tracks from database", "green"
+            )
 
         # If no database tracks or very few, fall back to filesystem scan
         if not ctx.music_tracks:
@@ -208,8 +231,14 @@ def ensure_library_loaded(ctx: AppContext) -> tuple[AppContext, bool]:
             tracks = library.scan_music_library(ctx.config, show_progress=False)
 
             if not tracks:
-                safe_print(ctx, "No music files found in configured library paths.", "red")
-                safe_print(ctx, "Run 'music-minion scan' to populate the database, or 'music-minion init' to set up library paths.", "yellow")
+                safe_print(
+                    ctx, "No music files found in configured library paths.", "red"
+                )
+                safe_print(
+                    ctx,
+                    "Run 'music-minion scan' to populate the database, or 'music-minion init' to set up library paths.",
+                    "yellow",
+                )
                 return ctx, False
 
             ctx = ctx.with_tracks(tracks)
@@ -242,11 +271,11 @@ def auto_export_if_enabled(playlist_id: int, ctx: Optional[AppContext] = None) -
     with database.get_db_connection() as conn:
         cursor = conn.execute("SELECT provider FROM active_library WHERE id = 1")
         row = cursor.fetchone()
-        active_library = row['provider'] if row else 'local'
+        active_library = row["provider"] if row else "local"
 
     # Skip export for streaming libraries (soundcloud, spotify, youtube)
     # Export is only supported for local file libraries
-    if active_library != 'local':
+    if active_library != "local":
         return
 
     # Validate library paths exist
@@ -263,7 +292,7 @@ def auto_export_if_enabled(playlist_id: int, ctx: Optional[AppContext] = None) -
             playlist_id=playlist_id,
             export_formats=cfg.playlists.export_formats,
             library_root=library_root,
-            use_relative_paths=cfg.playlists.use_relative_paths
+            use_relative_paths=cfg.playlists.use_relative_paths,
         )
     except (ValueError, FileNotFoundError, ImportError, OSError) as e:
         # Expected errors - log but don't interrupt workflow
@@ -293,7 +322,7 @@ def check_and_handle_track_completion(ctx: AppContext) -> AppContext:
     position, duration, percent = playback.get_progress_info(ctx.player_state)
 
     # If track has ended (reached 100% or very close), trigger analysis and play next
-    if duration > 0 and percent >= 99.0 and not status.get('playing', False):
+    if duration > 0 and percent >= 99.0 and not status.get("playing", False):
         # Find the track that just finished
         finished_track = None
         for track in ctx.music_tracks:
@@ -302,17 +331,13 @@ def check_and_handle_track_completion(ctx: AppContext) -> AppContext:
                 break
 
         if finished_track:
-            safe_print(ctx, f"✅ Finished: {library.get_display_name(finished_track)}", "green")
+            safe_print(
+                ctx, f"✅ Finished: {library.get_display_name(finished_track)}", "green"
+            )
 
             # Check if track is archived (don't analyze archived tracks)
             # Use track ID from player state (multi-source support)
             track_id = ctx.player_state.current_track_id
-
-            # Fallback to path lookup for backward compatibility
-            if not track_id and ctx.player_state.current_track:
-                db_track = database.get_track_by_path(ctx.player_state.current_track)
-                if db_track:
-                    track_id = db_track['id']
 
             if track_id:
                 archived_tracks = database.get_archived_tracks()
@@ -320,16 +345,28 @@ def check_and_handle_track_completion(ctx: AppContext) -> AppContext:
                     # Trigger auto-analysis
                     try:
                         safe_print(ctx, "🤖 Auto-analyzing completed track...", "cyan")
-                        result = ai.analyze_and_tag_track(finished_track, 'auto_analysis')
+                        result = ai.analyze_and_tag_track(
+                            finished_track, "auto_analysis"
+                        )
 
-                        if result['success'] and result['tags_added']:
-                            safe_print(ctx, f"✅ Added {len(result['tags_added'])} AI tags: {', '.join(result['tags_added'])}", "green")
-                        elif not result['success']:
-                            error_msg = result.get('error', 'Unknown error')
-                            if 'API key' in error_msg:
-                                safe_print(ctx, "⚠️  AI analysis skipped: No API key configured (use 'ai setup <key>')", "yellow")
+                        if result["success"] and result["tags_added"]:
+                            safe_print(
+                                ctx,
+                                f"✅ Added {len(result['tags_added'])} AI tags: {', '.join(result['tags_added'])}",
+                                "green",
+                            )
+                        elif not result["success"]:
+                            error_msg = result.get("error", "Unknown error")
+                            if "API key" in error_msg:
+                                safe_print(
+                                    ctx,
+                                    "⚠️  AI analysis skipped: No API key configured (use 'ai setup <key>')",
+                                    "yellow",
+                                )
                             else:
-                                safe_print(ctx, f"⚠️  AI analysis failed: {error_msg}", "yellow")
+                                safe_print(
+                                    ctx, f"⚠️  AI analysis failed: {error_msg}", "yellow"
+                                )
                     except Exception as e:
                         safe_print(ctx, f"⚠️  AI analysis error: {str(e)}", "yellow")
 
@@ -342,11 +379,14 @@ def check_and_handle_track_completion(ctx: AppContext) -> AppContext:
 
         # Get available tracks (using playback commands helper)
         from .commands import playback as playback_commands
+
         available_tracks = playback_commands.get_available_tracks(ctx)
 
         # Remove the track that just finished from options if possible
         if finished_track and len(available_tracks) > 1:
-            available_tracks = [t for t in available_tracks if t.local_path != finished_track.local_path]
+            available_tracks = [
+                t for t in available_tracks if t.local_path != finished_track.local_path
+            ]
 
         if available_tracks:
             next_track = library.get_random_track(available_tracks)
@@ -367,8 +407,8 @@ def sync_context_to_globals(ctx: AppContext) -> None:
     import sys
 
     # Get main module
-    if 'music_minion.main' in sys.modules:
-        main_module = sys.modules['music_minion.main']
+    if "music_minion.main" in sys.modules:
+        main_module = sys.modules["music_minion.main"]
         main_module.current_player_state = ctx.player_state
         main_module.music_tracks = ctx.music_tracks
         main_module.current_config = ctx.config
@@ -384,19 +424,20 @@ def create_context_from_globals() -> AppContext:
     from rich.console import Console
 
     # Get main module
-    if 'music_minion.main' in sys.modules:
-        main_module = sys.modules['music_minion.main']
+    if "music_minion.main" in sys.modules:
+        main_module = sys.modules["music_minion.main"]
 
         # Try to get console, create new if not available
-        console = getattr(main_module, 'console', None) or Console()
+        console = getattr(main_module, "console", None) or Console()
 
         return AppContext(
             config=main_module.current_config,
             music_tracks=main_module.music_tracks,
             player_state=main_module.current_player_state,
-            console=console
+            console=console,
         )
 
     # Fallback: create empty context
     from .core.config import Config
+
     return AppContext.create(Config(), Console())

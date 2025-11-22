@@ -8,6 +8,7 @@ from typing import Tuple
 
 from loguru import logger
 
+from music_minion.core.output import log
 from ...provider import ProviderConfig, ProviderState, TrackList
 
 # Import from submodules
@@ -75,7 +76,14 @@ def init_provider(config: ProviderConfig) -> ProviderState:
                     cache={"token_data": refreshed_token, "config": config_dict},
                 )
             logger.warning("Spotify token refresh failed")
-            # Refresh failed, fall through to check file tokens
+            log("⚠ Spotify authentication expired. Run: library auth spotify", level="warning")
+            # Refresh failed, return unauthenticated state
+            return ProviderState(
+                config=config,
+                authenticated=False,
+                last_sync=None,
+                cache={"config": config_dict}
+            )
         else:
             # Token still valid
             logger.debug("Spotify token is valid")
@@ -107,7 +115,14 @@ def init_provider(config: ProviderConfig) -> ProviderState:
                     cache={"token_data": refreshed_token, "config": config_dict},
                 )
             logger.warning("File-based token refresh failed")
-            # Refresh failed, fall through to unauthenticated
+            log("⚠ Spotify authentication expired. Run: library auth spotify", level="warning")
+            # Refresh failed, return unauthenticated state
+            return ProviderState(
+                config=config,
+                authenticated=False,
+                last_sync=None,
+                cache={"config": config_dict}
+            )
         else:
             # Token still valid
             logger.debug("File-based token is valid")

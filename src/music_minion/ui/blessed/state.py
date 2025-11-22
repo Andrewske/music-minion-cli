@@ -11,6 +11,7 @@ MAX_COMMAND_HISTORY = 1000
 @dataclass
 class TrackMetadata:
     """Track metadata from file."""
+
     title: str = "Unknown"
     artist: str = "Unknown"
     remix_artist: Optional[str] = None
@@ -24,6 +25,7 @@ class TrackMetadata:
 @dataclass
 class TrackDBInfo:
     """Track database information."""
+
     tags: list[str] = field(default_factory=list)
     notes: str = ""
     rating: Optional[int] = None
@@ -34,6 +36,7 @@ class TrackDBInfo:
 @dataclass
 class InternalCommand:
     """Type-safe internal command protocol for UI -> command handler communication."""
+
     action: str  # Command action type
     data: dict[str, Any] = field(default_factory=dict)  # Command data
 
@@ -41,6 +44,7 @@ class InternalCommand:
 @dataclass
 class PlaylistInfo:
     """Active playlist information."""
+
     id: Optional[int] = None
     name: Optional[str] = None
     type: str = "manual"
@@ -51,6 +55,7 @@ class PlaylistInfo:
 @dataclass
 class ScanProgress:
     """Library scan progress information."""
+
     is_scanning: bool = False
     files_scanned: int = 0
     total_files: int = 0
@@ -66,12 +71,13 @@ class UIState:
     All state transformations return new UIState instances.
     Application state (config, tracks, player) is in AppContext, not here.
     """
+
     # UI-derived dashboard cache (queried from DB/files for display)
     track_metadata: Optional[TrackMetadata] = None
     track_db_info: Optional[TrackDBInfo] = None
     playlist_info: PlaylistInfo = field(default_factory=PlaylistInfo)
     shuffle_enabled: bool = True  # Cached from database for display
-    active_library: str = 'local'  # Cached from database for display
+    active_library: str = "local"  # Cached from database for display
     current_track_has_soundcloud_like: bool = False  # Cached for heart indicator
 
     # Command history display
@@ -89,67 +95,91 @@ class UIState:
 
     # Command palette state
     palette_visible: bool = False
-    palette_mode: str = 'command'  # 'command', 'playlist', or 'search'
+    palette_mode: str = "command"  # 'command', 'playlist', or 'search'
     palette_query: str = ""
-    palette_items: list[tuple[str, str, str, str]] = field(default_factory=list)  # (cat, cmd, icon, desc)
+    palette_items: list[tuple[str, str, str, str]] = field(
+        default_factory=list
+    )  # (cat, cmd, icon, desc)
     palette_selected: int = 0
     palette_scroll: int = 0
 
     # Confirmation dialog state
     confirmation_active: bool = False
     confirmation_type: Optional[str] = None  # 'delete_playlist', etc.
-    confirmation_data: Optional[dict[str, Any]] = field(default=None)  # Data for confirmation action
+    confirmation_data: Optional[dict[str, Any]] = field(
+        default=None
+    )  # Data for confirmation action
 
     # Wizard state (for multi-step wizards like smart playlist creation)
     wizard_active: bool = False
     wizard_type: Optional[str] = None  # 'smart_playlist', etc.
-    wizard_step: str = 'field'  # Current step: 'field', 'operator', 'value', 'conjunction', 'preview'
+    wizard_step: str = (
+        "field"  # Current step: 'field', 'operator', 'value', 'conjunction', 'preview'
+    )
     wizard_data: dict[str, Any] = field(default_factory=dict)  # Wizard working data
     wizard_error: Optional[str] = None  # Error message for validation feedback
     wizard_selected: int = 0  # Selected option index (for arrow key navigation)
-    wizard_options: list[str] = field(default_factory=list)  # Available options for current step
+    wizard_options: list[str] = field(
+        default_factory=list
+    )  # Available options for current step
 
     # Track viewer state (for viewing and interacting with playlist tracks)
     track_viewer_visible: bool = False
     track_viewer_playlist_id: Optional[int] = None
     track_viewer_playlist_name: str = ""
     track_viewer_playlist_type: str = "manual"
-    track_viewer_tracks: list[dict[str, Any]] = field(default_factory=list)  # All tracks
-    track_viewer_filtered_tracks: list[dict[str, Any]] = field(default_factory=list)  # Filtered tracks
+    track_viewer_tracks: list[dict[str, Any]] = field(
+        default_factory=list
+    )  # All tracks
+    track_viewer_filtered_tracks: list[dict[str, Any]] = field(
+        default_factory=list
+    )  # Filtered tracks
     track_viewer_filter_query: str = ""  # Current filter query
     track_viewer_selected: int = 0
     track_viewer_scroll: int = 0
-    track_viewer_mode: str = 'list'  # 'list' | 'detail' (2-mode flow like search)
+    track_viewer_mode: str = "list"  # 'list' | 'detail' (2-mode flow like search)
     track_viewer_action_selected: int = 0  # Selected action in detail mode action menu
 
     # Analytics viewer state (for viewing playlist analytics in full screen)
     analytics_viewer_visible: bool = False
-    analytics_viewer_data: dict[str, Any] = field(default_factory=dict)  # Analytics data
+    analytics_viewer_data: dict[str, Any] = field(
+        default_factory=dict
+    )  # Analytics data
     analytics_viewer_scroll: int = 0  # Scroll offset in lines
     analytics_viewer_total_lines: int = 0  # Total formatted lines (pre-calculated)
 
     # Metadata editor state (for editing track metadata interactively)
     editor_visible: bool = False
-    editor_mode: str = 'main'  # 'main' | 'list_editor' | 'editing_field'
-    editor_data: dict[str, Any] = field(default_factory=dict)  # All editor state in one dict
+    editor_mode: str = "main"  # 'main' | 'list_editor' | 'editing_field'
+    editor_data: dict[str, Any] = field(
+        default_factory=dict
+    )  # All editor state in one dict
     editor_selected: int = 0  # Selected field/item index
     editor_scroll: int = 0  # Scroll offset
     editor_changes: dict[str, Any] = field(default_factory=dict)  # Pending changes
-    editor_input: str = ''  # Text input for field editing
+    editor_input: str = ""  # Text input for field editing
 
     # Track search state (for searching and browsing all tracks in palette mode)
     search_query: str = ""
-    search_all_tracks: list[dict[str, Any]] = field(default_factory=list)  # Pre-loaded once
-    search_filtered_tracks: list[dict[str, Any]] = field(default_factory=list)  # Filtered results
+    search_all_tracks: list[dict[str, Any]] = field(
+        default_factory=list
+    )  # Pre-loaded once
+    search_filtered_tracks: list[dict[str, Any]] = field(
+        default_factory=list
+    )  # Filtered results
     search_selected: int = 0  # Selected track index in filtered results
     search_scroll: int = 0  # Scroll offset for results list
-    search_mode: str = 'search'  # Current mode: 'search' | 'detail' (actions integrated in detail)
+    search_mode: str = (
+        "search"  # Current mode: 'search' | 'detail' (actions integrated in detail)
+    )
     search_detail_scroll: int = 0  # Scroll offset in detail view
     search_detail_selection: int = 0  # Selected item in detail view (action index: 0-3)
 
     # AI Review mode state (conversational tag review)
     review_mode: Optional[str] = None  # None, 'conversation', 'confirm'
-    review_data: dict[str, Any] = field(default_factory=dict)  # Track, tags, conversation history
+    review_data: dict[str, Any] = field(
+        default_factory=dict
+    )  # Track, tags, conversation history
 
     # Library scan progress
     scan_progress: ScanProgress = field(default_factory=ScanProgress)
@@ -167,28 +197,28 @@ def create_initial_state() -> UIState:
 def update_track_info(state: UIState, track_data: dict[str, Any]) -> UIState:
     """Update track metadata and DB info."""
     metadata = TrackMetadata(
-        title=track_data.get('title', 'Unknown'),
-        artist=track_data.get('artist', 'Unknown'),
-        remix_artist=track_data.get('remix_artist'),
-        album=track_data.get('album'),
-        year=track_data.get('year'),
-        genre=track_data.get('genre'),
-        bpm=track_data.get('bpm'),
-        key=track_data.get('key'),
+        title=track_data.get("title", "Unknown"),
+        artist=track_data.get("artist", "Unknown"),
+        remix_artist=track_data.get("remix_artist"),
+        album=track_data.get("album"),
+        year=track_data.get("year"),
+        genre=track_data.get("genre"),
+        bpm=track_data.get("bpm"),
+        key=track_data.get("key"),
     )
 
     db_info = TrackDBInfo(
-        tags=track_data.get('tags', []),
-        notes=track_data.get('notes', ''),
-        rating=track_data.get('rating'),
-        last_played=track_data.get('last_played'),
-        play_count=track_data.get('play_count', 0),
+        tags=track_data.get("tags", []),
+        notes=track_data.get("notes", ""),
+        rating=track_data.get("rating"),
+        last_played=track_data.get("last_played"),
+        play_count=track_data.get("play_count", 0),
     )
 
     return replace(state, track_metadata=metadata, track_db_info=db_info)
 
 
-def add_history_line(state: UIState, text: str, color: str = 'white') -> UIState:
+def add_history_line(state: UIState, text: str, color: str = "white") -> UIState:
     """Add a line to command history and reset scroll to bottom."""
     new_history = state.history + [(text, color)]
     # Trim history if it exceeds max size
@@ -288,7 +318,7 @@ def hide_palette(state: UIState) -> UIState:
     return replace(
         state,
         palette_visible=False,
-        palette_mode='command',
+        palette_mode="command",
         palette_selected=0,
         palette_scroll=0,
         palette_query="",
@@ -297,18 +327,54 @@ def hide_palette(state: UIState) -> UIState:
         search_filtered_tracks=[],
         search_selected=0,
         search_scroll=0,
-        search_mode='search',
+        search_mode="search",
         search_detail_scroll=0,
-        search_detail_selection=0
+        search_detail_selection=0,
     )
 
 
-def show_playlist_palette(state: UIState, items: list[tuple[str, str, str, str]]) -> UIState:
+def show_playlist_palette(
+    state: UIState, items: list[tuple[str, str, str, str]]
+) -> UIState:
     """Show playlist palette with items."""
-    return replace(state, palette_visible=True, palette_mode='playlist', palette_items=items, palette_selected=0, palette_scroll=0, palette_query="")
+    return replace(
+        state,
+        palette_visible=True,
+        palette_mode="playlist",
+        palette_items=items,
+        palette_selected=0,
+        palette_scroll=0,
+        palette_query="",
+    )
 
 
-def enable_palette_search_mode(state: UIState, all_tracks: list[dict[str, Any]]) -> UIState:
+def show_device_palette(
+    state: UIState, device_items: list[tuple[str, str, str, str]], device_count: int
+) -> UIState:
+    """Show device palette with Spotify devices.
+
+    Args:
+        state: Current UI state
+        device_items: List of device items as (display_name, description, command, device_id)
+        device_count: Number of devices found
+
+    Returns:
+        Updated state with palette in device mode
+    """
+    return replace(
+        state,
+        palette_visible=True,
+        palette_mode="device",
+        palette_items=device_items,
+        palette_selected=0,
+        palette_scroll=0,
+        palette_query="",
+    )
+
+
+def enable_palette_search_mode(
+    state: UIState, all_tracks: list[dict[str, Any]]
+) -> UIState:
     """
     Transform palette into track search mode.
 
@@ -322,7 +388,7 @@ def enable_palette_search_mode(state: UIState, all_tracks: list[dict[str, Any]])
     return replace(
         state,
         palette_visible=True,
-        palette_mode='search',
+        palette_mode="search",
         palette_selected=0,
         palette_scroll=0,
         palette_query="",
@@ -331,16 +397,26 @@ def enable_palette_search_mode(state: UIState, all_tracks: list[dict[str, Any]])
         search_all_tracks=all_tracks,
         search_filtered_tracks=all_tracks,  # Show all tracks initially
         search_selected=0,
-        search_scroll=0
+        search_scroll=0,
     )
 
 
-def update_palette_filter(state: UIState, query: str, items: list[tuple[str, str, str, str]]) -> UIState:
+def update_palette_filter(
+    state: UIState, query: str, items: list[tuple[str, str, str, str]]
+) -> UIState:
     """Update palette filter query and filtered items."""
-    return replace(state, palette_query=query, palette_items=items, palette_selected=0, palette_scroll=0)
+    return replace(
+        state,
+        palette_query=query,
+        palette_items=items,
+        palette_selected=0,
+        palette_scroll=0,
+    )
 
 
-def move_palette_selection(state: UIState, delta: int, visible_items: int = 10) -> UIState:
+def move_palette_selection(
+    state: UIState, delta: int, visible_items: int = 10
+) -> UIState:
     """
     Move palette selection up or down with scroll adjustment.
 
@@ -370,12 +446,19 @@ def move_palette_selection(state: UIState, delta: int, visible_items: int = 10) 
 
 def show_confirmation(state: UIState, conf_type: str, data: dict[str, Any]) -> UIState:
     """Show confirmation dialog."""
-    return replace(state, confirmation_active=True, confirmation_type=conf_type, confirmation_data=data)
+    return replace(
+        state,
+        confirmation_active=True,
+        confirmation_type=conf_type,
+        confirmation_data=data,
+    )
 
 
 def hide_confirmation(state: UIState) -> UIState:
     """Hide confirmation dialog."""
-    return replace(state, confirmation_active=False, confirmation_type=None, confirmation_data=None)
+    return replace(
+        state, confirmation_active=False, confirmation_type=None, confirmation_data=None
+    )
 
 
 def set_feedback(state: UIState, message: str, icon: Optional[str] = None) -> UIState:
@@ -418,7 +501,9 @@ def add_command_to_history(state: UIState, command: str) -> UIState:
     if len(new_history) > MAX_COMMAND_HISTORY:
         new_history = new_history[-MAX_COMMAND_HISTORY:]
 
-    return replace(state, command_history=new_history, history_index=None, history_temp_input="")
+    return replace(
+        state, command_history=new_history, history_index=None, history_temp_input=""
+    )
 
 
 def navigate_history_up(state: UIState) -> UIState:
@@ -454,7 +539,7 @@ def navigate_history_up(state: UIState) -> UIState:
         input_text=new_text,
         cursor_pos=len(new_text),
         history_index=new_index,
-        history_temp_input=new_temp_input
+        history_temp_input=new_temp_input,
     )
 
 
@@ -480,7 +565,7 @@ def navigate_history_down(state: UIState) -> UIState:
             state,
             input_text=new_text,
             cursor_pos=len(new_text),
-            history_index=new_index
+            history_index=new_index,
         )
     else:
         # Reached newest command, restore saved input
@@ -489,7 +574,7 @@ def navigate_history_down(state: UIState) -> UIState:
             input_text=state.history_temp_input,
             cursor_pos=len(state.history_temp_input),
             history_index=None,
-            history_temp_input=""
+            history_temp_input="",
         )
 
 
@@ -506,7 +591,9 @@ def reset_history_navigation(state: UIState) -> UIState:
     return replace(state, history_index=None, history_temp_input="")
 
 
-def start_wizard(state: UIState, wizard_type: str, initial_data: dict[str, Any]) -> UIState:
+def start_wizard(
+    state: UIState, wizard_type: str, initial_data: dict[str, Any]
+) -> UIState:
     """
     Start a wizard flow.
 
@@ -520,13 +607,14 @@ def start_wizard(state: UIState, wizard_type: str, initial_data: dict[str, Any])
     """
     # For smart_playlist, start with field options
     from ...domain.playlists import filters as playlist_filters
+
     initial_options = sorted(list(playlist_filters.VALID_FIELDS))
 
     return replace(
         state,
         wizard_active=True,
         wizard_type=wizard_type,
-        wizard_step='field',
+        wizard_step="field",
         wizard_data=initial_data,
         wizard_options=initial_options,
         wizard_selected=0,
@@ -536,12 +624,14 @@ def start_wizard(state: UIState, wizard_type: str, initial_data: dict[str, Any])
         analytics_viewer_visible=False,
         editor_visible=False,
         confirmation_active=False,
-        input_text='',
-        cursor_pos=0
+        input_text="",
+        cursor_pos=0,
     )
 
 
-def update_wizard_step(state: UIState, step: str, options: list[str] | None = None) -> UIState:
+def update_wizard_step(
+    state: UIState, step: str, options: list[str] | None = None
+) -> UIState:
     """
     Update wizard to a new step.
 
@@ -556,11 +646,11 @@ def update_wizard_step(state: UIState, step: str, options: list[str] | None = No
     return replace(
         state,
         wizard_step=step,
-        input_text='',
+        input_text="",
         cursor_pos=0,
         wizard_error=None,
         wizard_selected=0,
-        wizard_options=options or []
+        wizard_options=options or [],
     )
 
 
@@ -638,17 +728,23 @@ def cancel_wizard(state: UIState) -> UIState:
         state,
         wizard_active=False,
         wizard_type=None,
-        wizard_step='field',
+        wizard_step="field",
         wizard_data={},
         wizard_error=None,
         wizard_selected=0,
         wizard_options=[],
-        input_text='',
-        cursor_pos=0
+        input_text="",
+        cursor_pos=0,
     )
 
 
-def show_track_viewer(state: UIState, playlist_id: int, playlist_name: str, playlist_type: str, tracks: list[dict[str, Any]]) -> UIState:
+def show_track_viewer(
+    state: UIState,
+    playlist_id: int,
+    playlist_name: str,
+    playlist_type: str,
+    tracks: list[dict[str, Any]],
+) -> UIState:
     """
     Show track viewer with playlist tracks.
 
@@ -679,8 +775,8 @@ def show_track_viewer(state: UIState, playlist_id: int, playlist_name: str, play
         analytics_viewer_visible=False,
         editor_visible=False,
         confirmation_active=False,
-        input_text='',
-        cursor_pos=0
+        input_text="",
+        cursor_pos=0,
     )
 
 
@@ -698,19 +794,21 @@ def hide_track_viewer(state: UIState) -> UIState:
         state,
         track_viewer_visible=False,
         track_viewer_playlist_id=None,
-        track_viewer_playlist_name='',
-        track_viewer_playlist_type='manual',
+        track_viewer_playlist_name="",
+        track_viewer_playlist_type="manual",
         track_viewer_tracks=[],
         track_viewer_filtered_tracks=[],
-        track_viewer_filter_query='',
+        track_viewer_filter_query="",
         track_viewer_selected=0,
         track_viewer_scroll=0,
-        track_viewer_mode='list',
-        track_viewer_action_selected=0
+        track_viewer_mode="list",
+        track_viewer_action_selected=0,
     )
 
 
-def move_track_viewer_selection(state: UIState, delta: int, visible_items: int = 10) -> UIState:
+def move_track_viewer_selection(
+    state: UIState, delta: int, visible_items: int = 10
+) -> UIState:
     """
     Move track viewer selection up or down with scroll adjustment.
 
@@ -725,7 +823,9 @@ def move_track_viewer_selection(state: UIState, delta: int, visible_items: int =
     if not state.track_viewer_filtered_tracks:
         return state
 
-    new_selected = (state.track_viewer_selected + delta) % len(state.track_viewer_filtered_tracks)
+    new_selected = (state.track_viewer_selected + delta) % len(
+        state.track_viewer_filtered_tracks
+    )
 
     # Adjust scroll to keep selection visible
     new_scroll = state.track_viewer_scroll
@@ -738,7 +838,9 @@ def move_track_viewer_selection(state: UIState, delta: int, visible_items: int =
     elif new_selected < state.track_viewer_scroll:
         new_scroll = new_selected
 
-    return replace(state, track_viewer_selected=new_selected, track_viewer_scroll=new_scroll)
+    return replace(
+        state, track_viewer_selected=new_selected, track_viewer_scroll=new_scroll
+    )
 
 
 def set_track_viewer_mode(state: UIState, mode: str) -> UIState:
@@ -755,11 +857,13 @@ def set_track_viewer_mode(state: UIState, mode: str) -> UIState:
     return replace(
         state,
         track_viewer_mode=mode,
-        track_viewer_action_selected=0  # Reset action selection when changing modes
+        track_viewer_action_selected=0,  # Reset action selection when changing modes
     )
 
 
-def move_track_viewer_action_selection(state: UIState, delta: int, action_count: int) -> UIState:
+def move_track_viewer_action_selection(
+    state: UIState, delta: int, action_count: int
+) -> UIState:
     """
     Move action menu selection in track viewer detail mode.
 
@@ -778,7 +882,9 @@ def move_track_viewer_action_selection(state: UIState, delta: int, action_count:
     return replace(state, track_viewer_action_selected=new_selected)
 
 
-def update_track_viewer_filter(state: UIState, query: str, filtered_tracks: list[dict[str, Any]]) -> UIState:
+def update_track_viewer_filter(
+    state: UIState, query: str, filtered_tracks: list[dict[str, Any]]
+) -> UIState:
     """
     Update track viewer filter query and filtered tracks.
 
@@ -795,7 +901,7 @@ def update_track_viewer_filter(state: UIState, query: str, filtered_tracks: list
         track_viewer_filter_query=query,
         track_viewer_filtered_tracks=filtered_tracks,
         track_viewer_selected=0,
-        track_viewer_scroll=0
+        track_viewer_scroll=0,
     )
 
 
@@ -812,7 +918,9 @@ def show_analytics_viewer(state: UIState, analytics_data: dict[str, Any]) -> UIS
     """
     # Pre-calculate total line count to avoid re-formatting on every keystroke
     from blessed import Terminal
-    from music_minion.ui.blessed.components.analytics_viewer import format_analytics_lines
+    from music_minion.ui.blessed.components.analytics_viewer import (
+        format_analytics_lines,
+    )
 
     try:
         term = Terminal()
@@ -830,12 +938,12 @@ def show_analytics_viewer(state: UIState, analytics_data: dict[str, Any]) -> UIS
             wizard_active=False,
             track_viewer_visible=False,
             editor_visible=False,
-            confirmation_active=False
+            confirmation_active=False,
         )
     except Exception as e:
         # On error, show error message in history instead of crashing UI
         error_msg = f"❌ Error formatting analytics: {e}"
-        return add_history_line(state, error_msg, 'red')
+        return add_history_line(state, error_msg, "red")
 
 
 def hide_analytics_viewer(state: UIState) -> UIState:
@@ -853,7 +961,7 @@ def hide_analytics_viewer(state: UIState) -> UIState:
         analytics_viewer_visible=False,
         analytics_viewer_data={},
         analytics_viewer_scroll=0,
-        analytics_viewer_total_lines=0
+        analytics_viewer_total_lines=0,
     )
 
 
@@ -873,7 +981,9 @@ def scroll_analytics_viewer(state: UIState, delta: int, max_scroll: int) -> UISt
     return replace(state, analytics_viewer_scroll=new_scroll)
 
 
-def start_review_mode(state: UIState, track_data: dict[str, Any], tags_with_reasoning: dict[str, str]) -> UIState:
+def start_review_mode(
+    state: UIState, track_data: dict[str, Any], tags_with_reasoning: dict[str, str]
+) -> UIState:
     """
     Start AI review mode for tag conversation.
 
@@ -886,24 +996,26 @@ def start_review_mode(state: UIState, track_data: dict[str, Any], tags_with_reas
         Updated state with review mode active
     """
     conversation_lines = []
-    conversation_lines.append(f"Track: {track_data.get('artist', 'Unknown')} - {track_data.get('title', 'Unknown')}")
+    conversation_lines.append(
+        f"Track: {track_data.get('artist', 'Unknown')} - {track_data.get('title', 'Unknown')}"
+    )
     conversation_lines.append("")
     conversation_lines.append("Initial tags:")
     for tag, reasoning in tags_with_reasoning.items():
-        conversation_lines.append(f"  • {tag}: \"{reasoning}\"")
+        conversation_lines.append(f'  • {tag}: "{reasoning}"')
 
     review_data = {
-        'track': track_data,
-        'initial_tags': tags_with_reasoning,
-        'conversation_lines': conversation_lines
+        "track": track_data,
+        "initial_tags": tags_with_reasoning,
+        "conversation_lines": conversation_lines,
     }
 
     return replace(
         state,
-        review_mode='conversation',
+        review_mode="conversation",
         review_data=review_data,
-        input_text='',
-        cursor_pos=0
+        input_text="",
+        cursor_pos=0,
     )
 
 
@@ -918,13 +1030,9 @@ def enter_review_confirm(state: UIState, new_tags: dict[str, str]) -> UIState:
     Returns:
         Updated state in confirm mode
     """
-    new_data = {**state.review_data, 'new_tags': new_tags}
+    new_data = {**state.review_data, "new_tags": new_tags}
     return replace(
-        state,
-        review_mode='confirm',
-        review_data=new_data,
-        input_text='',
-        cursor_pos=0
+        state, review_mode="confirm", review_data=new_data, input_text="", cursor_pos=0
     )
 
 
@@ -938,13 +1046,7 @@ def exit_review_mode(state: UIState) -> UIState:
     Returns:
         Updated state with review mode exited
     """
-    return replace(
-        state,
-        review_mode=None,
-        review_data={},
-        input_text='',
-        cursor_pos=0
-    )
+    return replace(state, review_mode=None, review_data={}, input_text="", cursor_pos=0)
 
 
 def start_scan(state: UIState, total_files: int) -> UIState:
@@ -963,12 +1065,14 @@ def start_scan(state: UIState, total_files: int) -> UIState:
         files_scanned=0,
         total_files=total_files,
         current_file="",
-        phase="scanning"
+        phase="scanning",
     )
     return replace(state, scan_progress=scan_progress)
 
 
-def update_scan_progress(state: UIState, files_scanned: int, current_file: str, phase: str = "scanning") -> UIState:
+def update_scan_progress(
+    state: UIState, files_scanned: int, current_file: str, phase: str = "scanning"
+) -> UIState:
     """
     Update scan progress.
 
@@ -985,7 +1089,7 @@ def update_scan_progress(state: UIState, files_scanned: int, current_file: str, 
         state.scan_progress,
         files_scanned=files_scanned,
         current_file=current_file,
-        phase=phase
+        phase=phase,
     )
     return replace(state, scan_progress=scan_progress)
 
@@ -1017,7 +1121,7 @@ def show_metadata_editor(state: UIState, track_data: dict[str, Any]) -> UIState:
     return replace(
         state,
         editor_visible=True,
-        editor_mode='main',
+        editor_mode="main",
         editor_data=track_data,
         editor_selected=0,
         editor_scroll=0,
@@ -1028,8 +1132,8 @@ def show_metadata_editor(state: UIState, track_data: dict[str, Any]) -> UIState:
         track_viewer_visible=False,
         analytics_viewer_visible=False,
         confirmation_active=False,
-        input_text='',
-        cursor_pos=0
+        input_text="",
+        cursor_pos=0,
     )
 
 
@@ -1046,11 +1150,11 @@ def hide_metadata_editor(state: UIState) -> UIState:
     return replace(
         state,
         editor_visible=False,
-        editor_mode='main',
+        editor_mode="main",
         editor_data={},
         editor_selected=0,
         editor_scroll=0,
-        editor_changes={}
+        editor_changes={},
     )
 
 
@@ -1073,7 +1177,9 @@ def move_editor_selection(state: UIState, delta: int, max_items: int) -> UIState
     return replace(state, editor_selected=new_selected)
 
 
-def set_editor_mode(state: UIState, mode: str, data: dict[str, Any] | None = None) -> UIState:
+def set_editor_mode(
+    state: UIState, mode: str, data: dict[str, Any] | None = None
+) -> UIState:
     """
     Set editor mode (main or list_editor).
 
@@ -1087,7 +1193,13 @@ def set_editor_mode(state: UIState, mode: str, data: dict[str, Any] | None = Non
     """
     if data:
         new_data = {**state.editor_data, **data}
-        return replace(state, editor_mode=mode, editor_data=new_data, editor_selected=0, editor_scroll=0)
+        return replace(
+            state,
+            editor_mode=mode,
+            editor_data=new_data,
+            editor_selected=0,
+            editor_scroll=0,
+        )
     else:
         return replace(state, editor_mode=mode, editor_selected=0, editor_scroll=0)
 
@@ -1107,9 +1219,9 @@ def add_editor_change(state: UIState, change_type: str, change_data: Any) -> UIS
     new_changes = {**state.editor_changes}
 
     # For basic metadata, merge into 'basic' dict
-    if change_type == 'basic':
-        basic = new_changes.get('basic', {})
-        new_changes['basic'] = {**basic, **change_data}
+    if change_type == "basic":
+        basic = new_changes.get("basic", {})
+        new_changes["basic"] = {**basic, **change_data}
     else:
         # For list changes, append to list
         if change_type not in new_changes:
@@ -1132,17 +1244,17 @@ def start_field_editing(state: UIState, field_name: str, current_value: Any) -> 
         Updated state in editing_field mode
     """
     # Convert value to string for editing
-    value_str = str(current_value) if current_value is not None else ''
+    value_str = str(current_value) if current_value is not None else ""
 
     return replace(
         state,
-        editor_mode='editing_field',
+        editor_mode="editing_field",
         editor_input=value_str,
         editor_data={
             **state.editor_data,
-            'editing_field_name': field_name,
-            'editing_field_original': current_value
-        }
+            "editing_field_name": field_name,
+            "editing_field_original": current_value,
+        },
     )
 
 
@@ -1156,28 +1268,23 @@ def save_field_edit(state: UIState) -> UIState:
     Returns:
         Updated state with change saved
     """
-    if state.editor_mode != 'editing_field':
+    if state.editor_mode != "editing_field":
         return state
 
-    field_name = state.editor_data.get('editing_field_name', '')
+    field_name = state.editor_data.get("editing_field_name", "")
     new_value = state.editor_input.strip()
 
     # Add to pending changes
-    state = add_editor_change(state, 'basic', {field_name: new_value})
+    state = add_editor_change(state, "basic", {field_name: new_value})
 
     # Update the display data to show new value
     new_data = {**state.editor_data}
     new_data[field_name] = new_value
     # Clean up editing fields
-    new_data.pop('editing_field_name', None)
-    new_data.pop('editing_field_original', None)
+    new_data.pop("editing_field_name", None)
+    new_data.pop("editing_field_original", None)
 
-    return replace(
-        state,
-        editor_mode='main',
-        editor_data=new_data,
-        editor_input=''
-    )
+    return replace(state, editor_mode="main", editor_data=new_data, editor_input="")
 
 
 def cancel_field_edit(state: UIState) -> UIState:
@@ -1190,20 +1297,15 @@ def cancel_field_edit(state: UIState) -> UIState:
     Returns:
         Updated state with editing cancelled
     """
-    if state.editor_mode != 'editing_field':
+    if state.editor_mode != "editing_field":
         return state
 
     # Clean up editing fields
     new_data = {**state.editor_data}
-    new_data.pop('editing_field_name', None)
-    new_data.pop('editing_field_original', None)
+    new_data.pop("editing_field_name", None)
+    new_data.pop("editing_field_original", None)
 
-    return replace(
-        state,
-        editor_mode='main',
-        editor_data=new_data,
-        editor_input=''
-    )
+    return replace(state, editor_mode="main", editor_data=new_data, editor_input="")
 
 
 def save_add_item(state: UIState) -> UIState:
@@ -1216,10 +1318,10 @@ def save_add_item(state: UIState) -> UIState:
     Returns:
         Updated state with item added to pending changes
     """
-    if state.editor_mode != 'adding_item':
+    if state.editor_mode != "adding_item":
         return state
 
-    item_type = state.editor_data.get('adding_item_type', '')
+    item_type = state.editor_data.get("adding_item_type", "")
     new_value = state.editor_input.strip()
 
     if not new_value:
@@ -1227,20 +1329,17 @@ def save_add_item(state: UIState) -> UIState:
         return cancel_add_item(state)
 
     # Add to pending changes based on type
-    if item_type == 'notes':
-        state = add_editor_change(state, 'add_note', {'note_text': new_value})
-    elif item_type == 'tags':
-        state = add_editor_change(state, 'add_tag', {'tag_name': new_value})
+    if item_type == "notes":
+        state = add_editor_change(state, "add_note", {"note_text": new_value})
+    elif item_type == "tags":
+        state = add_editor_change(state, "add_tag", {"tag_name": new_value})
 
     # Clean up adding fields
     new_data = {**state.editor_data}
-    new_data.pop('adding_item_type', None)
+    new_data.pop("adding_item_type", None)
 
     return replace(
-        state,
-        editor_mode='list_editor',
-        editor_data=new_data,
-        editor_input=''
+        state, editor_mode="list_editor", editor_data=new_data, editor_input=""
     )
 
 
@@ -1254,25 +1353,24 @@ def cancel_add_item(state: UIState) -> UIState:
     Returns:
         Updated state with adding cancelled
     """
-    if state.editor_mode != 'adding_item':
+    if state.editor_mode != "adding_item":
         return state
 
     # Clean up adding fields
     new_data = {**state.editor_data}
-    new_data.pop('adding_item_type', None)
+    new_data.pop("adding_item_type", None)
 
     return replace(
-        state,
-        editor_mode='list_editor',
-        editor_data=new_data,
-        editor_input=''
+        state, editor_mode="list_editor", editor_data=new_data, editor_input=""
     )
 
 
 # Track search helper functions (for palette search mode)
 
 
-def update_search_query(state: UIState, query: str, filtered: list[dict[str, Any]]) -> UIState:
+def update_search_query(
+    state: UIState, query: str, filtered: list[dict[str, Any]]
+) -> UIState:
     """
     Update search query and filtered results.
 
@@ -1290,11 +1388,13 @@ def update_search_query(state: UIState, query: str, filtered: list[dict[str, Any
         search_query=query,
         search_filtered_tracks=filtered,
         search_selected=0,
-        search_scroll=0
+        search_scroll=0,
     )
 
 
-def move_search_selection(state: UIState, delta: int, visible_items: int = 20) -> UIState:
+def move_search_selection(
+    state: UIState, delta: int, visible_items: int = 20
+) -> UIState:
     """
     Move selection in search results with scroll adjustment.
 
@@ -1336,7 +1436,7 @@ def set_search_mode(state: UIState, mode: str) -> UIState:
         state,
         search_mode=mode,
         search_detail_scroll=0,
-        search_detail_selection=0  # Reset selection when changing modes
+        search_detail_selection=0,  # Reset selection when changing modes
     )
 
 

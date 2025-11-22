@@ -1,23 +1,38 @@
 """
 Library management command handlers for Music Minion CLI.
 
-Handles: library, library list, library active, library sync, library auth
+Handles: library, library list, library active, library sync, library auth, library device
 """
 
 import threading
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from music_minion.context import AppContext
-from music_minion.core import database
+from music_minion.core import config, database
 from music_minion.core.output import log
 from music_minion.domain.library import providers
-from music_minion.domain.library.provider import ProviderConfig
+from music_minion.domain.library.provider import ProviderConfig, ProviderState
 
 # Removed: old sync_provider_tracks import (replaced with batch_insert_provider_tracks)
 
 # Global sync state (thread-safe)
 _sync_state_lock = threading.Lock()
 _sync_state: Optional[Dict[str, Any]] = None
+
+
+def _save_provider_state_to_db(provider_name: str, state: ProviderState) -> None:
+    """Save provider state to database after sync completes."""
+
+    # Extract cache data and auth data from state
+    cache_data = state.cache if state.cache else {}
+
+    # Extract token_data from cache for auth_data column (needed for token refresh)
+    auth_data = cache_data.get("token_data", {})
+
+    # Save config with remaining cache data for next sync
+    config_data = {"cache": cache_data}
+
+    database.save_provider_state(provider_name, auth_data, config_data)
 
 
 def get_sync_state() -> Optional[Dict[str, Any]]:
@@ -42,10 +57,19 @@ def _clear_sync_state() -> None:
         _sync_state = None
 
 
-def _threaded_sync_worker(
-    ctx: AppContext, provider_name: str, full: bool
-) -> None:
-    """Background worker thread for library syncing."""
+def _threaded_sync_worker(ctx: AppContext, provider_name: str, full: bool) -> None:
+    """Background worker thread for library syncing.
+
+    Note: As of blessed-aware log() implementation:
+    - Blessed mode: log() routes ALL messages through UI callback (visible in command history)
+    - CLI mode: silent_logging=True suppresses stdout printing (backwards compatibility)
+    """
+    import threading
+
+    # Set silent_logging for CLI mode (suppresses stdout printing)
+    # In blessed mode, this flag is ignored - messages route through UI callback
+    threading.current_thread().silent_logging = True
+
     try:
         # Initialize state
         _update_sync_state(
@@ -93,6 +117,9 @@ def _threaded_sync_worker(
 
     except Exception as e:
         _update_sync_state({"completed": True, "error": str(e)})
+    finally:
+        # Always clear the flag
+        threading.current_thread().silent_logging = False
 
 
 def sync_library_background(
@@ -124,6 +151,11 @@ def _threaded_playlist_sync_worker(
     ctx: AppContext, provider_name: str, full: bool
 ) -> None:
     """Background worker thread for playlist syncing."""
+    import threading
+
+    # Suppress stdout printing from log() calls (prevents UI interference)
+    threading.current_thread().silent_logging = True
+
     try:
         # Initialize state
         _update_sync_state(
@@ -143,7 +175,10 @@ def _threaded_playlist_sync_worker(
         def progress_callback(event_type: str, data: dict) -> None:
             if event_type == "init":
                 _update_sync_state(
-                    {"total_playlists": data.get("total", 0), "phase": "syncing_playlists"}
+                    {
+                        "total_playlists": data.get("total", 0),
+                        "phase": "syncing_playlists",
+                    }
                 )
             elif event_type == "playlist_start":
                 _update_sync_state(
@@ -156,23 +191,34 @@ def _threaded_playlist_sync_worker(
                 stats = data.get("stats", {})
                 _update_sync_state({"stats": stats})
             elif event_type == "complete":
-                stats = data.get("stats", {}) if "stats" in data else {
-                    "created": data.get("created", 0),
-                    "updated": data.get("updated", 0),
-                    "skipped": data.get("skipped", 0),
-                    "failed": data.get("failed", 0),
-                }
+                stats = (
+                    data.get("stats", {})
+                    if "stats" in data
+                    else {
+                        "created": data.get("created", 0),
+                        "updated": data.get("updated", 0),
+                        "skipped": data.get("skipped", 0),
+                        "failed": data.get("failed", 0),
+                    }
+                )
                 _update_sync_state({"completed": True, "stats": stats})
             elif event_type == "error":
                 _update_sync_state({"completed": True, "error": data.get("error")})
 
         # Run playlist sync with progress callback
         sync_playlists(
-            ctx, provider_name, full=full, progress_callback=progress_callback, silent=True
+            ctx,
+            provider_name,
+            full=full,
+            progress_callback=progress_callback,
+            silent=True,
         )
 
     except Exception as e:
         _update_sync_state({"completed": True, "error": str(e)})
+    finally:
+        # Always clear the flag
+        threading.current_thread().silent_logging = False
 
 
 def sync_playlists_background(
@@ -193,7 +239,9 @@ def sync_playlists_background(
 
     # Start worker thread
     thread = threading.Thread(
-        target=_threaded_playlist_sync_worker, args=(ctx, provider_name, full), daemon=True
+        target=_threaded_playlist_sync_worker,
+        args=(ctx, provider_name, full),
+        daemon=True,
     )
     thread.start()
 
@@ -301,9 +349,12 @@ def handle_library_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext
             return ctx, True
         return authenticate_provider(ctx, args[1])
 
+    elif args[0] == "device":
+        return handle_device_commands(ctx, args[1:])
+
     else:
         log(f"❌ Unknown library command: {args[0]}", level="error")
-        log("Available: list, active, sync, auth", level="info")
+        log("Available: list, active, sync, auth, device", level="info")
         return ctx, True
 
 
@@ -429,6 +480,11 @@ def switch_active_library(ctx: AppContext, provider: str) -> Tuple[AppContext, b
         )
         conn.commit()
 
+    # Restore active playlist for this library (if it has one)
+    # The active_playlist table now tracks per-library active playlists
+    # No action needed - get_active_playlist() will automatically use the new library
+    # This allows seamless switching between libraries with their own active playlists
+
     # Auto-sync streaming providers (incremental sync is fast)
     if provider == "spotify" and ctx.config.spotify.enabled:
         log("🔄 Auto-syncing Spotify library (incremental)...", level="info")
@@ -509,6 +565,9 @@ def sync_library(
             row = cursor.fetchone()
             provider_name = row["provider"] if row else "local"
 
+    # At this point provider_name is guaranteed to be a string
+    provider_name = str(provider_name)
+
     # Validate provider
     if not providers.provider_exists(provider_name):
         log(f"❌ Unknown provider: {provider_name}", level="error")
@@ -525,9 +584,23 @@ def sync_library(
         # Get provider module
         provider = providers.get_provider(provider_name)
 
-        # Initialize provider state (TODO: load from database in final implementation)
-        config = ProviderConfig(name=provider_name, enabled=True)
-        state = provider.init_provider(config)
+        # Load provider state from database (includes cached sync data for incremental sync)
+        assert provider_name is not None, (
+            "provider_name should not be None at this point"
+        )
+        db_state = database.load_provider_state(provider_name)
+        if db_state:
+            # Reconstruct state from database with existing cache
+            config = ProviderConfig(name=provider_name, enabled=True)
+            state = provider.init_provider(config)
+            # Restore cached values for incremental sync optimization
+            if db_state.get("config"):
+                cache_data = db_state["config"].get("cache", {})
+                state = state.with_cache(**cache_data)
+        else:
+            # Initialize fresh state if no database record exists
+            config = ProviderConfig(name=provider_name, enabled=True)
+            state = provider.init_provider(config)
 
         # Check authentication
         if not state.authenticated and provider_name != "local":
@@ -556,6 +629,11 @@ def sync_library(
                 log("💡 Tip: Use '--full' flag to re-sync all tracks", level="info")
             else:
                 log(message, level="warning")
+
+            # Save updated provider state even when no tracks found (updates cache/timestamps)
+            # This is important for incremental sync - the cache/timestamps get updated even when no new tracks
+            _save_provider_state_to_db(provider_name, new_state)
+
             if progress_callback:
                 progress_callback("complete", {"created": 0, "skipped": 0})
             return ctx, True
@@ -588,7 +666,9 @@ def sync_library(
         stats = batch_insert_provider_tracks(provider_tracks, provider_name)
 
         log("✓ Import complete!", level="info")
-        log(f"  Created:  {stats['created']} (new {provider_name} tracks)", level="info")
+        log(
+            f"  Created:  {stats['created']} (new {provider_name} tracks)", level="info"
+        )
         log(f"  Skipped:  {stats['skipped']} (already synced)", level="info")
         log("", level="info")
         log(
@@ -617,7 +697,8 @@ def sync_library(
                 log(f"Found {len(playlists)} playlists:", level="info")
                 for i, pl in enumerate(playlists[:5], 1):
                     log(
-                        f"  {i}. {pl['name']} ({pl['track_count']} tracks)", level="info"
+                        f"  {i}. {pl['name']} ({pl['track_count']} tracks)",
+                        level="info",
                     )
 
                 if len(playlists) > 5:
@@ -628,6 +709,10 @@ def sync_library(
                     "💡 Tip: Use 'playlist import soundcloud' to import playlists",
                     level="info",
                 )
+
+        # Save updated provider state to database for next incremental sync
+        if new_state and new_state != state:
+            _save_provider_state_to_db(provider_name, new_state)
 
         # Reload tracks if this is the active provider
         active_provider = database.get_active_provider()
@@ -679,8 +764,9 @@ def sync_playlists(
 
     # Helper to print with silent mode check
     def print_if_not_silent(message: str, style: Optional[str] = None):
-        if not silent:
-            log(message, style=style, level="info")
+        if silent:
+            return
+        log(message, level="info")
 
     # Validate provider
     if not providers.provider_exists(provider_name):
@@ -702,9 +788,16 @@ def sync_playlists(
         # Get provider module
         provider = providers.get_provider(provider_name)
 
-        # Initialize provider state
+        # Initialize provider state - load from database if available (includes cached sync data for incremental sync)
         config = ProviderConfig(name=provider_name, enabled=True)
         state = provider.init_provider(config)
+
+        # Load cached state from database for incremental sync optimization
+        db_state = database.load_provider_state(provider_name)
+        if db_state and db_state.get("config"):
+            cache_data = db_state["config"].get("cache", {})
+            if cache_data:
+                state = state.with_cache(**cache_data)
 
         # Check authentication
         if not state.authenticated:
@@ -1261,5 +1354,234 @@ def authenticate_provider(
 
     except Exception as e:
         log(f"❌ Authentication error: {e}", level="error")
+
+    return ctx, True
+
+
+def handle_device_commands(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
+    """Handle device management commands for Spotify.
+
+    Args:
+        ctx: Application context
+        args: Command arguments (list, set, clear)
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    if not args or args[0] == "list":
+        return list_spotify_devices(ctx)
+    elif args[0] == "set":
+        if len(args) < 2:
+            log("❌ Usage: library device set <device_name_or_id>", level="error")
+            return ctx, True
+        return set_spotify_device(ctx, args[1])
+    elif args[0] == "clear":
+        return clear_spotify_device(ctx)
+    else:
+        log(f"❌ Unknown device command: {args[0]}", level="error")
+        log("Available: list, set, clear", level="info")
+        return ctx, True
+
+
+def list_spotify_devices(ctx: AppContext) -> Tuple[AppContext, bool]:
+    """List available Spotify devices using command palette.
+
+    Args:
+        ctx: Application context
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    from music_minion.domain.library.providers import spotify
+    import shlex
+
+    # Check if Spotify is enabled
+    if not ctx.config.spotify.enabled:
+        log("❌ Spotify is not enabled in configuration", level="error")
+        return ctx, True
+
+    # Get Spotify provider state
+    spotify_state = ctx.provider_states.get("spotify")
+    if not spotify_state or not spotify_state.authenticated:
+        log(
+            "❌ Spotify is not authenticated. Run 'library auth spotify' first.",
+            level="error",
+        )
+        return ctx, True
+
+    try:
+        # Get available devices
+        devices = spotify.api._spotify_get_devices(spotify_state)
+
+        if not devices:
+            log(
+                "⚠ No Spotify devices found. Open Spotify on a device first.",
+                level="warning",
+            )
+            return ctx, True
+
+        # Build device items for command palette
+        device_items = []
+        preferred_id = ctx.config.spotify.preferred_device_id
+        preferred_name = ctx.config.spotify.preferred_device_name
+
+        for device in devices:
+            name = device.get("name", "Unknown")
+            device_id = device.get("id", "unknown")
+            device_type = device.get("type", "unknown")
+            is_active = device.get("is_active", False)
+            volume = device.get("volume_percent", 0)
+
+            # Build display name with status indicators
+            status_indicators = []
+            if is_active:
+                status_indicators.append("🟢")
+            if device_id == preferred_id or name == preferred_name:
+                status_indicators.append("⭐")
+
+            display_name = f"{' '.join(status_indicators)} {name} ({device_type})"
+
+            # Build description with details
+            description_parts = [f"ID: {device_id}", f"Volume: {volume}%"]
+            if is_active:
+                description_parts.append("Currently active")
+
+            description = " | ".join(description_parts)
+
+            # Command to execute when selected
+            command = f"library device set {shlex.quote(name)}"
+
+            device_items.append((display_name, description, command, device_id))
+
+        # Signal UI to show device palette
+        ctx = ctx.with_ui_action(
+            {
+                "type": "show_device_palette",
+                "device_items": device_items,
+                "device_count": len(devices),
+            }
+        )
+
+    except Exception as e:
+        log(f"❌ Error listing devices: {e}", level="error")
+
+    return ctx, True
+
+
+def set_spotify_device(
+    ctx: AppContext, device_identifier: str
+) -> Tuple[AppContext, bool]:
+    """Set preferred Spotify device.
+
+    Args:
+        ctx: Application context
+        device_identifier: Device name or ID to set as preferred
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    from music_minion.domain.library.providers import spotify
+
+    # Check if Spotify is enabled
+    if not ctx.config.spotify.enabled:
+        log("❌ Spotify is not enabled in configuration", level="error")
+        return ctx, True
+
+    # Get Spotify provider state
+    spotify_state = ctx.provider_states.get("spotify")
+    if not spotify_state or not spotify_state.authenticated:
+        log(
+            "❌ Spotify is not authenticated. Run 'library auth spotify' first.",
+            level="error",
+        )
+        return ctx, True
+
+    try:
+        # Get available devices
+        devices = spotify.api._spotify_get_devices(spotify_state)
+
+        if not devices:
+            log(
+                "⚠ No Spotify devices found. Open Spotify on a device first.",
+                level="warning",
+            )
+            return ctx, True
+
+        # Find matching device
+        matching_device = None
+        for device in devices:
+            name = device.get("name", "")
+            device_id = device.get("id", "")
+
+            if device_identifier == name or device_identifier == device_id:
+                matching_device = device
+                break
+
+        if not matching_device:
+            log(
+                f"❌ Device '{device_identifier}' not found in available devices",
+                level="error",
+            )
+            log("Run 'library device list' to see available devices", level="info")
+            return ctx, True
+
+        # Update config with preferred device
+        device_name = matching_device.get("name", "")
+        device_id = matching_device.get("id", "")
+
+        ctx.config.spotify.preferred_device_name = device_name
+        ctx.config.spotify.preferred_device_id = device_id
+
+        # Save config to file
+        if config.save_config(ctx.config):
+            log(f"✓ Set preferred device to: {device_name}", level="info")
+            log(f"  Device ID: {device_id}", level="info")
+        else:
+            log("❌ Failed to save device preference", level="error")
+
+    except Exception as e:
+        log(f"❌ Error setting device: {e}", level="error")
+
+    return ctx, True
+
+
+def clear_spotify_device(ctx: AppContext) -> Tuple[AppContext, bool]:
+    """Clear preferred Spotify device setting.
+
+    Args:
+        ctx: Application context
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    # Check if there's a preferred device to clear
+    if (
+        not ctx.config.spotify.preferred_device_id
+        and not ctx.config.spotify.preferred_device_name
+    ):
+        log("ℹ No preferred device is currently set", level="info")
+        return ctx, True
+
+    try:
+        # Clear preferred device settings
+        current_device = (
+            ctx.config.spotify.preferred_device_name
+            or ctx.config.spotify.preferred_device_id
+        )
+        ctx.config.spotify.preferred_device_name = ""
+        ctx.config.spotify.preferred_device_id = ""
+
+        # Save config to file
+        if config.save_config(ctx.config):
+            log(f"✓ Cleared preferred device: {current_device}", level="info")
+            log(
+                "Device selection will now use automatic priority (active → first available)",
+                level="info",
+            )
+        else:
+            log("❌ Failed to clear device preference", level="error")
+
+    except Exception as e:
+        log(f"❌ Error clearing device preference: {e}", level="error")
 
     return ctx, True

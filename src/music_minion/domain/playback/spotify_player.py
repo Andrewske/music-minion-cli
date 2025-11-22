@@ -27,15 +27,25 @@ class SpotifyPlayer:
     Pattern: Thin class wrapper around pure API functions (in api.py).
     """
 
-    def __init__(self, provider_state: ProviderState, device_id: Optional[str] = None):
+    def __init__(
+        self,
+        provider_state: ProviderState,
+        device_id: Optional[str] = None,
+        preferred_device_id: Optional[str] = None,
+        preferred_device_name: Optional[str] = None,
+    ):
         """Initialize Spotify player.
 
         Args:
             provider_state: Spotify provider state with auth tokens
             device_id: Optional specific device ID (otherwise uses active device)
+            preferred_device_id: Optional preferred device ID
+            preferred_device_name: Optional preferred device name
         """
         self.provider_state = provider_state
-        self.device_id = device_id or self._get_active_device()
+        self.device_id = device_id or self._get_active_device(
+            preferred_device_id, preferred_device_name
+        )
 
         # Cached state for rate-limit-friendly polling
         self.cached_position = 0.0
@@ -63,7 +73,10 @@ class SpotifyPlayer:
 
         if not self.device_id:
             logger.error("Cannot play - no Spotify device available")
-            log("❌ No Spotify device available. Open Spotify on a device first.", level="error")
+            log(
+                "❌ No Spotify device available. Open Spotify on a device first.",
+                level="error",
+            )
             return False
 
         success = api._spotify_play(self.provider_state, track_id, self.device_id)
@@ -150,12 +163,16 @@ class SpotifyPlayer:
             if playback:
                 self.cached_position = playback.get("progress_ms", 0) / 1000.0
                 if playback.get("item"):
-                    self.cached_duration = playback["item"].get("duration_ms", 0) / 1000.0
+                    self.cached_duration = (
+                        playback["item"].get("duration_ms", 0) / 1000.0
+                    )
                 self.cached_is_playing = playback.get("is_playing", False)
                 self.last_actual_position = self.cached_position
                 self.last_position_time = now
                 self.last_poll_time = now
-                logger.debug(f"Polled playback state: pos={self.cached_position}s, playing={self.cached_is_playing}")
+                logger.debug(
+                    f"Polled playback state: pos={self.cached_position}s, playing={self.cached_is_playing}"
+                )
         elif self.cached_is_playing:
             # Interpolate between polls (only if playing)
             elapsed = now - self.last_position_time
@@ -179,8 +196,16 @@ class SpotifyPlayer:
         """
         return self.cached_duration if self.cached_duration > 0 else None
 
-    def _get_active_device(self) -> Optional[str]:
-        """Get active Spotify device or first available.
+    def _get_active_device(
+        self,
+        preferred_device_id: Optional[str] = None,
+        preferred_device_name: Optional[str] = None,
+    ) -> Optional[str]:
+        """Get active Spotify device with preference support.
+
+        Args:
+            preferred_device_id: Optional preferred device ID
+            preferred_device_name: Optional preferred device name
 
         Returns:
             Device ID or None if no devices available
@@ -189,21 +214,34 @@ class SpotifyPlayer:
 
         devices = api._spotify_get_devices(self.provider_state)
 
-        # Try active device first
+        if not devices:
+            logger.warning("No Spotify devices available")
+            log(
+                "⚠ No Spotify devices found. Open Spotify on a device first.",
+                level="warning",
+            )
+            return None
+
+        # Try preferred device first (if specified)
+        if preferred_device_id or preferred_device_name:
+            for device in devices:
+                device_id = device.get("id", "")
+                device_name = device.get("name", "")
+                if (preferred_device_id and device_id == preferred_device_id) or (
+                    preferred_device_name and device_name == preferred_device_name
+                ):
+                    logger.debug(f"Using preferred Spotify device: {device_name}")
+                    return device_id
+
+        # Try active device
         for device in devices:
             if device.get("is_active"):
                 logger.debug(f"Using active Spotify device: {device['name']}")
                 return device["id"]
 
         # Fall back to first available
-        if devices:
-            logger.debug(f"No active device, using first available: {devices[0]['name']}")
-            return devices[0]["id"]
-
-        # No devices available
-        logger.warning("No Spotify devices available")
-        log("⚠ No Spotify devices found. Open Spotify on a device first.", level="warning")
-        return None
+        logger.debug(f"No active device, using first available: {devices[0]['name']}")
+        return devices[0]["id"]
 
     def _refresh_cached_state(self) -> None:
         """Force immediate cache refresh (e.g., after play command)."""

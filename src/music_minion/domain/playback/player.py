@@ -28,6 +28,16 @@ class PlayerState(NamedTuple):
     current_position: float = 0.0
     duration: float = 0.0
 
+    def __getattr__(self, name: str) -> Any:
+        """Provide helpful error for missing attributes, especially with_* methods."""
+        if name.startswith("with_"):
+            raise AttributeError(
+                f"PlayerState is a NamedTuple and does not have '{name}' method. "
+                f"Use '._replace({name[5:]}=value)' instead. "
+                f"For example: state._replace(current_track='new_track')"
+            )
+        raise AttributeError(f"PlayerState has no attribute '{name}'")
+
 
 def check_mpv_available() -> bool:
     """Check if MPV is available on the system."""
@@ -199,7 +209,9 @@ def get_mpv_property(socket_path: Optional[str], property_name: str) -> Any:
         return None
 
 
-def play_file(state: PlayerState, local_path: str, track_id: Optional[int] = None) -> Tuple[PlayerState, bool]:
+def play_file(
+    state: PlayerState, local_path: str, track_id: Optional[int] = None
+) -> Tuple[PlayerState, bool]:
     """Play a specific audio file and return updated state.
 
     Args:
@@ -240,7 +252,9 @@ def play_file(state: PlayerState, local_path: str, track_id: Optional[int] = Non
 
         # Update status to get actual playback state
         updated_state = update_player_status(
-            state._replace(current_track=local_path, current_track_id=track_id, is_playing=True)
+            state._replace(
+                current_track=local_path, current_track_id=track_id, is_playing=True
+            )
         )
         return updated_state, True
 
@@ -359,6 +373,47 @@ def update_player_status(state: PlayerState) -> PlayerState:
     return state._replace(
         current_position=position, duration=duration, is_playing=is_playing
     )
+
+
+def get_unified_player_status(
+    state: PlayerState, spotify_player=None
+) -> Dict[str, Any]:
+    """Get current player status for both MPV and Spotify players.
+
+    Args:
+        state: Current player state
+        spotify_player: Optional SpotifyPlayer instance for Spotify tracks
+
+    Returns:
+        Unified status dict for both MPV and Spotify playback
+    """
+    # Check if current track is Spotify URI
+    if state.current_track and state.current_track.startswith("spotify:"):
+        if spotify_player:
+            # Use Spotify player status
+            position = spotify_player.get_time_pos() or 0.0
+            duration = spotify_player.get_duration() or 0.0
+            is_playing = spotify_player.is_playing()
+
+            return {
+                "playing": is_playing,
+                "file": state.current_track,
+                "position": position,
+                "duration": duration,
+                "volume": 0,  # Spotify doesn't expose volume via API
+            }
+        else:
+            # No Spotify player available, but track is Spotify URI
+            return {
+                "playing": False,
+                "file": state.current_track,
+                "position": 0.0,
+                "duration": 0.0,
+                "volume": 0,
+            }
+
+    # Default to MPV player status
+    return get_player_status(state)
 
 
 def get_player_status(state: PlayerState) -> Dict[str, Any]:

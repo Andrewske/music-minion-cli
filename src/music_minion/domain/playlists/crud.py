@@ -13,15 +13,17 @@ from . import filters
 from . import sync
 
 
-def create_playlist(name: str, playlist_type: str, description: Optional[str] = None) -> int:
+def create_playlist(
+    name: str, playlist_type: str, description: Optional[str] = None
+) -> int:
     """
-    Create a new playlist.
+    Create a new playlist in the current active library.
 
-    If active library is SoundCloud, automatically creates a SoundCloud playlist
+    If active library is SoundCloud/Spotify, automatically creates a remote playlist
     and links it to the local playlist.
 
     Args:
-        name: Playlist name (must be unique)
+        name: Playlist name (must be unique within library)
         playlist_type: 'manual' or 'smart'
         description: Optional description
 
@@ -29,30 +31,39 @@ def create_playlist(name: str, playlist_type: str, description: Optional[str] = 
         Playlist ID
 
     Raises:
-        ValueError: If playlist name already exists or type is invalid
+        ValueError: If playlist name already exists in this library or type is invalid
     """
-    if playlist_type not in ['manual', 'smart']:
-        raise ValueError(f"Invalid playlist type: {playlist_type}. Must be 'manual' or 'smart'")
+    if playlist_type not in ["manual", "smart"]:
+        raise ValueError(
+            f"Invalid playlist type: {playlist_type}. Must be 'manual' or 'smart'"
+        )
 
-    # Check if active library is SoundCloud
+    # Get active library to assign playlist to it
     active_library = sync.get_active_library()
 
     with get_db_connection() as conn:
         try:
-            cursor = conn.execute("""
-                INSERT INTO playlists (name, type, description)
-                VALUES (?, ?, ?)
-            """, (name, playlist_type, description))
+            cursor = conn.execute(
+                """
+                INSERT INTO playlists (name, type, description, library)
+                VALUES (?, ?, ?, ?)
+            """,
+                (name, playlist_type, description, active_library),
+            )
             conn.commit()
             playlist_id = cursor.lastrowid
         except Exception as e:
-            if 'UNIQUE constraint failed' in str(e):
-                raise ValueError(f"Playlist '{name}' already exists")
+            if "UNIQUE constraint failed" in str(e):
+                raise ValueError(
+                    f"Playlist '{name}' already exists in {active_library} library"
+                )
             raise
 
     # If active library is SoundCloud, create remote playlist and link it
-    if active_library == 'soundcloud':
-        logger.info(f"Active library is SoundCloud, creating remote playlist for '{name}'")
+    if active_library == "soundcloud":
+        logger.info(
+            f"Active library is SoundCloud, creating remote playlist for '{name}'"
+        )
         success, soundcloud_id, error = sync._ensure_soundcloud_playlist_linked(
             playlist_id, name
         )
@@ -80,24 +91,30 @@ def update_playlist_track_count(playlist_id: int) -> None:
         # Begin explicit transaction for atomicity
         conn.execute("BEGIN")
         try:
-            if playlist['type'] == 'manual':
+            if playlist["type"] == "manual":
                 # Count tracks in playlist_tracks table
-                cursor = conn.execute("""
+                cursor = conn.execute(
+                    """
                     SELECT COUNT(*) as count
                     FROM playlist_tracks
                     WHERE playlist_id = ?
-                """, (playlist_id,))
-                count = cursor.fetchone()['count']
+                """,
+                    (playlist_id,),
+                )
+                count = cursor.fetchone()["count"]
             else:
                 # Smart playlist - evaluate filters
                 matching_tracks = filters.evaluate_filters(playlist_id)
                 count = len(matching_tracks)
 
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE playlists
                 SET track_count = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-            """, (count, playlist_id))
+            """,
+                (count, playlist_id),
+            )
             conn.commit()
         except Exception:
             conn.rollback()
@@ -118,11 +135,8 @@ def delete_playlist(playlist_id: int) -> bool:
         # Begin explicit transaction for atomicity
         conn.execute("BEGIN")
         try:
-            # Clear active playlist if this is the active one
-            cursor = conn.execute("SELECT playlist_id FROM active_playlist WHERE id = 1")
-            row = cursor.fetchone()
-            if row and row['playlist_id'] == playlist_id:
-                conn.execute("DELETE FROM active_playlist WHERE id = 1")
+            # Clear active playlist entry if this is active (CASCADE handles this via FK constraint)
+            # No manual deletion needed - FK ON DELETE SET NULL will handle it
 
             # Delete playlist (CASCADE will handle playlist_tracks and filters)
             cursor = conn.execute("DELETE FROM playlists WHERE id = ?", (playlist_id,))
@@ -151,100 +165,39 @@ def rename_playlist(playlist_id: int, new_name: str) -> bool:
     """
     with get_db_connection() as conn:
         try:
-            cursor = conn.execute("""
+            cursor = conn.execute(
+                """
                 UPDATE playlists
                 SET name = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-            """, (new_name, playlist_id))
+            """,
+                (new_name, playlist_id),
+            )
             conn.commit()
             return cursor.rowcount > 0
         except Exception as e:
-            if 'UNIQUE constraint failed' in str(e):
+            if "UNIQUE constraint failed" in str(e):
                 raise ValueError(f"Playlist '{new_name}' already exists")
             raise
 
 
-def get_all_playlists() -> List[Dict[str, Any]]:
+def get_all_playlists(library: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    Get all playlists with metadata.
+    Get all playlists with metadata for the active library.
+
+    Args:
+        library: Library to filter by. If None, uses active library from database.
 
     Returns:
         List of playlist dicts with id, name, type, description, created_at, updated_at, track_count
     """
     with get_db_connection() as conn:
-        cursor = conn.execute("""
-            SELECT
-                id,
-                name,
-                type,
-                description,
-                track_count,
-                created_at,
-                updated_at,
-                last_played_at
-            FROM playlists
-            ORDER BY name
-        """)
-        return [dict(row) for row in cursor.fetchall()]
+        # Get active library if not specified
+        if library is None:
+            library = sync.get_active_library()
 
-
-def get_playlists_sorted_by_recent(provider: Optional[str] = None) -> List[Dict[str, Any]]:
-    """
-    Get all playlists sorted by recently played/added, optionally filtered by provider.
-
-    Sorting logic:
-    - For provider playlists (soundcloud, spotify, etc.): Sort by provider_created_at DESC (newest first)
-    - For local playlists: Sort by last_played_at DESC, then updated_at DESC
-    - For mixed ('all' or None): Combine both approaches
-
-    Args:
-        provider: Optional provider filter ('local', 'soundcloud', 'spotify', 'youtube', 'all', or None)
-                  - 'local': Only playlists without provider IDs
-                  - 'soundcloud': Only SoundCloud playlists (sorted by creation date)
-                  - 'spotify': Only Spotify playlists (sorted by creation date)
-                  - 'youtube': Only YouTube playlists (sorted by creation date)
-                  - 'all' or None: All playlists (mixed sorting)
-
-    Returns:
-        List of playlist dicts with id, name, type, description, track_count, created_at, updated_at, last_played_at
-    """
-    # Build WHERE clause based on provider
-    where_clause = ""
-    order_clause = ""
-
-    if provider == 'local':
-        where_clause = """
-            WHERE soundcloud_playlist_id IS NULL
-              AND spotify_playlist_id IS NULL
-        """
-        # Local playlists: Sort by play history
-        order_clause = """
-            ORDER BY
-                CASE WHEN last_played_at IS NULL THEN 1 ELSE 0 END,
-                last_played_at DESC,
-                updated_at DESC
-        """
-    elif provider in ('soundcloud', 'spotify', 'youtube'):
-        # Provider playlists: Sort by creation date on the provider
-        provider_id_field = f"{provider}_playlist_id"
-        where_clause = f"WHERE {provider_id_field} IS NOT NULL"
-        order_clause = """
-            ORDER BY
-                CASE WHEN provider_created_at IS NULL THEN 1 ELSE 0 END,
-                provider_created_at DESC
-        """
-    else:
-        # Mixed (all or None): Sort by play history for local, creation date for providers
-        order_clause = """
-            ORDER BY
-                CASE WHEN last_played_at IS NULL THEN 1 ELSE 0 END,
-                last_played_at DESC,
-                provider_created_at DESC,
-                updated_at DESC
-        """
-
-    with get_db_connection() as conn:
-        cursor = conn.execute(f"""
+        cursor = conn.execute(
+            """
             SELECT
                 id,
                 name,
@@ -254,72 +207,109 @@ def get_playlists_sorted_by_recent(provider: Optional[str] = None) -> List[Dict[
                 created_at,
                 updated_at,
                 last_played_at,
-                provider_created_at
+                library
             FROM playlists
-            {where_clause}
-            {order_clause}
-        """)
+            WHERE library = ?
+            ORDER BY name
+        """,
+            (library,),
+        )
         return [dict(row) for row in cursor.fetchall()]
 
 
-def get_playlist_by_name(name: str, provider: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def get_playlists_sorted_by_recent(
+    library: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     """
-    Get playlist by name, filtered by provider.
+    Get all playlists sorted by recently played/added, filtered by library.
+
+    Sorting logic:
+    - For provider playlists (soundcloud, spotify, etc.): Sort by provider_created_at DESC (newest first)
+    - For local playlists: Sort by last_played_at DESC, then updated_at DESC
+
+    Args:
+        library: Library to filter by. If None, uses active library from database.
+
+    Returns:
+        List of playlist dicts with id, name, type, description, track_count, created_at, updated_at, last_played_at
+    """
+    with get_db_connection() as conn:
+        # Get active library if not specified
+        if library is None:
+            library = sync.get_active_library()
+
+        # Choose sort order based on library type
+        if library == "local":
+            # Local playlists: Sort by play history
+            order_clause = """
+                ORDER BY
+                    CASE WHEN last_played_at IS NULL THEN 1 ELSE 0 END,
+                    last_played_at DESC,
+                    updated_at DESC
+            """
+        else:
+            # Provider playlists: Sort by creation date on the provider
+            order_clause = """
+                ORDER BY
+                    CASE WHEN provider_created_at IS NULL THEN 1 ELSE 0 END,
+                    provider_created_at DESC
+            """
+
+        # Handle 'all' library case - no filtering
+        if library == "all":
+            where_clause = ""
+            params = ()
+        else:
+            where_clause = "WHERE library = ?"
+            params = (library,)
+
+        cursor = conn.execute(
+            f"""
+            SELECT
+                id,
+                name,
+                type,
+                description,
+                track_count,
+                created_at,
+                updated_at,
+                last_played_at,
+                provider_created_at,
+                library
+            FROM playlists
+            {where_clause}
+            {order_clause}
+        """,
+            params,
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def get_playlist_by_name(
+    name: str, library: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """
+    Get playlist by name, filtered by library.
 
     Args:
         name: Playlist name
-        provider: Provider to filter by ('local', 'soundcloud', 'spotify', 'youtube').
-                 If None, uses active library from database.
+        library: Library to filter by. If None, uses active library from database.
 
     Returns:
-        Playlist dict or None if not found (includes all columns including provider IDs)
+        Playlist dict or None if not found (includes all columns)
     """
     with get_db_connection() as conn:
-        # Get active library if provider not specified
-        if provider is None:
-            cursor = conn.execute("SELECT provider FROM active_library WHERE id = 1")
-            row = cursor.fetchone()
-            provider = row['provider'] if row else 'local'
+        # Get active library if not specified
+        if library is None:
+            library = sync.get_active_library()
 
-        # Build query based on provider
-        if provider == 'local':
-            # Local playlists have no provider IDs
-            query = """
-                SELECT * FROM playlists
-                WHERE name = ?
-                AND soundcloud_playlist_id IS NULL
-                AND spotify_playlist_id IS NULL
-                AND youtube_playlist_id IS NULL
+        cursor = conn.execute(
             """
-        elif provider == 'soundcloud':
-            # SoundCloud playlists must have soundcloud_playlist_id
-            query = """
-                SELECT * FROM playlists
-                WHERE name = ? AND soundcloud_playlist_id IS NOT NULL
-            """
-        elif provider == 'spotify':
-            # Spotify playlists must have spotify_playlist_id
-            query = """
-                SELECT * FROM playlists
-                WHERE name = ? AND spotify_playlist_id IS NOT NULL
-            """
-        elif provider == 'youtube':
-            # YouTube playlists must have youtube_playlist_id
-            query = """
-                SELECT * FROM playlists
-                WHERE name = ? AND youtube_playlist_id IS NOT NULL
-            """
-        else:
-            # Unknown provider - default to local
-            query = """
-                SELECT * FROM playlists
-                WHERE name = ?
-                AND soundcloud_playlist_id IS NULL
-                AND spotify_playlist_id IS NULL
-                AND youtube_playlist_id IS NULL
-            """
-
-        cursor = conn.execute(query, (name,))
+            SELECT * FROM playlists
+            WHERE name = ? AND library = ?
+        """,
+            (name, library),
+        )
         row = cursor.fetchone()
         return dict(row) if row else None
 
@@ -335,9 +325,12 @@ def get_playlist_by_id(playlist_id: int) -> Optional[Dict[str, Any]]:
         Playlist dict or None if not found (includes all columns including provider IDs)
     """
     with get_db_connection() as conn:
-        cursor = conn.execute("""
+        cursor = conn.execute(
+            """
             SELECT * FROM playlists WHERE id = ?
-        """, (playlist_id,))
+        """,
+            (playlist_id,),
+        )
         row = cursor.fetchone()
         return dict(row) if row else None
 
@@ -359,9 +352,10 @@ def get_playlist_tracks(playlist_id: int) -> List[Dict[str, Any]]:
         return []
 
     with get_db_connection() as conn:
-        if playlist['type'] == 'manual':
+        if playlist["type"] == "manual":
             # Get tracks from playlist_tracks table in order
-            cursor = conn.execute("""
+            cursor = conn.execute(
+                """
                 SELECT
                     t.*,
                     pt.position,
@@ -370,7 +364,9 @@ def get_playlist_tracks(playlist_id: int) -> List[Dict[str, Any]]:
                 JOIN playlist_tracks pt ON t.id = pt.track_id
                 WHERE pt.playlist_id = ?
                 ORDER BY pt.position
-            """, (playlist_id,))
+            """,
+                (playlist_id,),
+            )
             return [dict(row) for row in cursor.fetchall()]
         else:
             # Smart playlist - evaluate filters
@@ -394,15 +390,18 @@ def get_playlist_track_count(playlist_id: int) -> int:
         return 0
 
     with get_db_connection() as conn:
-        if playlist['type'] == 'manual':
+        if playlist["type"] == "manual":
             # Count tracks directly without fetching data
-            cursor = conn.execute("""
+            cursor = conn.execute(
+                """
                 SELECT COUNT(*) as count
                 FROM playlist_tracks
                 WHERE playlist_id = ?
-            """, (playlist_id,))
+            """,
+                (playlist_id,),
+            )
             row = cursor.fetchone()
-            return row['count'] if row else 0
+            return row["count"] if row else 0
         else:
             # Smart playlist - need to evaluate filters (no way to optimize without duplicating filter logic)
             tracks = filters.evaluate_filters(playlist_id)
@@ -427,38 +426,50 @@ def add_track_to_playlist(playlist_id: int, track_id: int) -> bool:
     if not playlist:
         return False
 
-    if playlist['type'] != 'manual':
+    if playlist["type"] != "manual":
         raise ValueError("Cannot manually add tracks to smart playlists")
 
     with get_db_connection() as conn:
         # Check if track is already in playlist
-        cursor = conn.execute("""
+        cursor = conn.execute(
+            """
             SELECT id FROM playlist_tracks
             WHERE playlist_id = ? AND track_id = ?
-        """, (playlist_id, track_id))
+        """,
+            (playlist_id, track_id),
+        )
         if cursor.fetchone():
             return False  # Already in playlist
 
         # Get next position (0 if playlist is empty, otherwise max + 1)
-        cursor = conn.execute("""
+        cursor = conn.execute(
+            """
             SELECT COALESCE(MAX(position) + 1, 0) as next_position
             FROM playlist_tracks
             WHERE playlist_id = ?
-        """, (playlist_id,))
-        next_position = cursor.fetchone()['next_position']
+        """,
+            (playlist_id,),
+        )
+        next_position = cursor.fetchone()["next_position"]
 
         # Add track
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO playlist_tracks (playlist_id, track_id, position)
             VALUES (?, ?, ?)
-        """, (playlist_id, track_id, next_position))
+        """,
+            (playlist_id, track_id, next_position),
+        )
 
         # Update playlist updated_at and track_count
-        conn.execute("""
+        conn.execute(
+            """
             UPDATE playlists
             SET updated_at = CURRENT_TIMESTAMP, track_count = track_count + 1
             WHERE id = ?
-        """, (playlist_id,))
+        """,
+            (playlist_id,),
+        )
 
         conn.commit()
 
@@ -490,7 +501,7 @@ def remove_track_from_playlist(playlist_id: int, track_id: int) -> bool:
     if not playlist:
         return False
 
-    if playlist['type'] != 'manual':
+    if playlist["type"] != "manual":
         raise ValueError("Cannot manually remove tracks from smart playlists")
 
     with get_db_connection() as conn:
@@ -498,43 +509,57 @@ def remove_track_from_playlist(playlist_id: int, track_id: int) -> bool:
         conn.execute("BEGIN")
         try:
             # Remove track
-            cursor = conn.execute("""
+            cursor = conn.execute(
+                """
                 DELETE FROM playlist_tracks
                 WHERE playlist_id = ? AND track_id = ?
-            """, (playlist_id, track_id))
+            """,
+                (playlist_id, track_id),
+            )
 
             if cursor.rowcount == 0:
                 conn.rollback()
                 return False  # Track wasn't in playlist
 
             # Reorder remaining tracks to fill gap (O(n) instead of O(n²))
-            cursor = conn.execute("""
+            cursor = conn.execute(
+                """
                 SELECT id FROM playlist_tracks
                 WHERE playlist_id = ?
                 ORDER BY position
-            """, (playlist_id,))
-            remaining_track_ids = [row['id'] for row in cursor.fetchall()]
+            """,
+                (playlist_id,),
+            )
+            remaining_track_ids = [row["id"] for row in cursor.fetchall()]
 
             # Update positions in order
             for new_position, track_id in enumerate(remaining_track_ids):
-                conn.execute("""
+                conn.execute(
+                    """
                     UPDATE playlist_tracks
                     SET position = ?
                     WHERE id = ?
-                """, (new_position, track_id))
+                """,
+                    (new_position, track_id),
+                )
 
             # Update playlist updated_at and track_count
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE playlists
                 SET updated_at = CURRENT_TIMESTAMP, track_count = track_count - 1
                 WHERE id = ?
-            """, (playlist_id,))
+            """,
+                (playlist_id,),
+            )
 
             conn.commit()
 
             # Sync to SoundCloud if needed (after database commit)
             if sync.should_sync_to_soundcloud(playlist_id):
-                success, error = sync.remove_track_from_soundcloud_playlist(playlist_id, track_id)
+                success, error = sync.remove_track_from_soundcloud_playlist(
+                    playlist_id, track_id
+                )
                 if not success:
                     logger.warning(f"Failed to sync remove to SoundCloud: {error}")
                     # Don't fail the operation - database was updated successfully
@@ -562,11 +587,14 @@ def reorder_playlist_track(playlist_id: int, from_pos: int, to_pos: int) -> bool
         conn.execute("BEGIN")
         try:
             # Get all tracks in order
-            cursor = conn.execute("""
+            cursor = conn.execute(
+                """
                 SELECT id, position FROM playlist_tracks
                 WHERE playlist_id = ?
                 ORDER BY position
-            """, (playlist_id,))
+            """,
+                (playlist_id,),
+            )
             tracks = [dict(row) for row in cursor.fetchall()]
 
             if not tracks or from_pos >= len(tracks) or to_pos >= len(tracks):
@@ -579,18 +607,24 @@ def reorder_playlist_track(playlist_id: int, from_pos: int, to_pos: int) -> bool
 
             # Update all positions
             for i, track in enumerate(tracks):
-                conn.execute("""
+                conn.execute(
+                    """
                     UPDATE playlist_tracks
                     SET position = ?
                     WHERE id = ?
-                """, (i, track['id']))
+                """,
+                    (i, track["id"]),
+                )
 
             # Update playlist updated_at
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE playlists
                 SET updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-            """, (playlist_id,))
+            """,
+                (playlist_id,),
+            )
 
             conn.commit()
             return True
@@ -601,7 +635,7 @@ def reorder_playlist_track(playlist_id: int, from_pos: int, to_pos: int) -> bool
 
 def set_active_playlist(playlist_id: int) -> bool:
     """
-    Set a playlist as the active playlist for playback filtering.
+    Set a playlist as the active playlist for the current library.
     Also updates last_played_at timestamp on the playlist.
 
     Args:
@@ -610,57 +644,85 @@ def set_active_playlist(playlist_id: int) -> bool:
     Returns:
         True if set successfully, False if playlist not found
     """
-    # Verify playlist exists
-    if not get_playlist_by_id(playlist_id):
+    # Verify playlist exists and get its library
+    playlist = get_playlist_by_id(playlist_id)
+    if not playlist:
         return False
+
+    library = playlist["library"]
 
     with get_db_connection() as conn:
         # Update last_played_at on the playlist
-        conn.execute("""
+        conn.execute(
+            """
             UPDATE playlists
             SET last_played_at = CURRENT_TIMESTAMP
             WHERE id = ?
-        """, (playlist_id,))
+        """,
+            (playlist_id,),
+        )
 
-        # Insert or update active playlist (only one row allowed)
-        conn.execute("""
-            INSERT INTO active_playlist (id, playlist_id, activated_at)
-            VALUES (1, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(id) DO UPDATE SET
+        # Insert or update active playlist for this library
+        conn.execute(
+            """
+            INSERT INTO active_playlist (library, playlist_id, activated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(library) DO UPDATE SET
                 playlist_id = excluded.playlist_id,
                 activated_at = excluded.activated_at
-        """, (playlist_id,))
+        """,
+            (library, playlist_id),
+        )
         conn.commit()
         return True
 
 
-def get_active_playlist() -> Optional[Dict[str, Any]]:
+def get_active_playlist(library: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
-    Get the currently active playlist.
+    Get the currently active playlist for the specified library.
+
+    Args:
+        library: Library to get active playlist for. If None, uses active library from database.
 
     Returns:
         Playlist dict or None if no active playlist
     """
     with get_db_connection() as conn:
-        cursor = conn.execute("""
-            SELECT p.id, p.name, p.type, p.description, p.created_at, p.updated_at
+        # Get active library if not specified
+        if library is None:
+            library = sync.get_active_library()
+
+        cursor = conn.execute(
+            """
+            SELECT p.id, p.name, p.type, p.description, p.created_at, p.updated_at, p.library
             FROM playlists p
             JOIN active_playlist ap ON p.id = ap.playlist_id
-            WHERE ap.id = 1
-        """)
+            WHERE ap.library = ?
+        """,
+            (library,),
+        )
         row = cursor.fetchone()
         return dict(row) if row else None
 
 
-def clear_active_playlist() -> bool:
+def clear_active_playlist(library: Optional[str] = None) -> bool:
     """
-    Clear the active playlist (return to playing all tracks).
+    Clear the active playlist for the current library (return to playing all tracks).
+
+    Args:
+        library: Library to clear active playlist for. If None, uses active library from database.
 
     Returns:
         True if cleared, False if no active playlist was set
     """
     with get_db_connection() as conn:
-        cursor = conn.execute("DELETE FROM active_playlist WHERE id = 1")
+        # Get active library if not specified
+        if library is None:
+            library = sync.get_active_library()
+
+        cursor = conn.execute(
+            "DELETE FROM active_playlist WHERE library = ?", (library,)
+        )
         conn.commit()
         return cursor.rowcount > 0
 
@@ -682,17 +744,20 @@ def get_available_playlist_tracks(playlist_id: int) -> List[str]:
         return []
 
     with get_db_connection() as conn:
-        if playlist['type'] == 'manual':
+        if playlist["type"] == "manual":
             # Manual playlist - get from playlist_tracks
-            cursor = conn.execute("""
+            cursor = conn.execute(
+                """
                 SELECT DISTINCT t.local_path
                 FROM tracks t
                 JOIN playlist_tracks pt ON t.id = pt.track_id
                 LEFT JOIN ratings r ON t.id = r.track_id AND r.rating_type = 'archive'
                 WHERE pt.playlist_id = ? AND r.id IS NULL
                 ORDER BY pt.position
-            """, (playlist_id,))
-            return [row['local_path'] for row in cursor.fetchall()]
+            """,
+                (playlist_id,),
+            )
+            return [row["local_path"] for row in cursor.fetchall()]
         else:
             # Smart playlist - evaluate filters
             playlist_filters = filters.get_playlist_filters(playlist_id)
@@ -704,11 +769,14 @@ def get_available_playlist_tracks(playlist_id: int) -> List[str]:
             # Query with filter and exclude archived tracks
             # Note: f-string is safe here because build_filter_query() validates column names
             # via FIELD_TO_COLUMN whitelist and returns parameterized WHERE clause with ? placeholders
-            cursor = conn.execute(f"""
+            cursor = conn.execute(
+                f"""
                 SELECT DISTINCT t.local_path
                 FROM tracks t
                 LEFT JOIN ratings r ON t.id = r.track_id AND r.rating_type = 'archive'
                 WHERE ({where_clause}) AND r.id IS NULL
                 ORDER BY t.artist, t.album, t.title
-            """, params)
-            return [row['local_path'] for row in cursor.fetchall()]
+            """,
+                params,
+            )
+            return [row["local_path"] for row in cursor.fetchall()]
