@@ -261,19 +261,25 @@ def poll_player_state(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, U
 
     # Get player status (handle both MPV and Spotify)
     try:
-        # Check if we need Spotify player for current track
-        spotify_player = None
+        # Reuse or create Spotify player for current track
+        spotify_player = ctx.spotify_player
         if ctx.player_state.current_track and ctx.player_state.current_track.startswith(
             "spotify:"
         ):
-            # Get Spotify player instance if available
-            from ...domain.playback.spotify_player import SpotifyPlayer
+            # Create new instance only if needed
+            if not spotify_player:
+                from ...domain.playback.spotify_player import SpotifyPlayer
 
-            spotify_state = ctx.provider_states.get("spotify")
-            if spotify_state and spotify_state.authenticated:
-                # Create SpotifyPlayer instance for status polling
-                device_id = getattr(ctx, "spotify_device_id", None)
-                spotify_player = SpotifyPlayer(spotify_state, device_id)
+                spotify_state = ctx.provider_states.get("spotify")
+                if spotify_state and spotify_state.authenticated:
+                    device_id = getattr(ctx, "spotify_device_id", None)
+                    spotify_player = SpotifyPlayer(spotify_state, device_id)
+                    # Update context with new player instance
+                    ctx = dataclasses.replace(ctx, spotify_player=spotify_player)
+        elif spotify_player:
+            # Clear player if not playing Spotify track
+            spotify_player = None
+            ctx = dataclasses.replace(ctx, spotify_player=None)
 
         status = player.get_unified_player_status(ctx.player_state, spotify_player)
 
@@ -542,25 +548,26 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
     needs_full_redraw = True
     last_input_text = ""
     last_palette_state = (
-        False,
-        0,
-        False,
-        False,
-        0,
-        False,
-        0,
-        False,
-        0,
-        False,
-        0,
-        "main",
-        "",
-        0,
-        0,
-        "search",
-        0,
-        0,
-    )  # (palette_visible, palette_selected, confirmation_active, wizard_active, wizard_selected, track_viewer_visible, track_viewer_selected, analytics_viewer_visible, analytics_viewer_scroll, editor_visible, editor_selected, editor_mode, editor_input, search_selected, search_scroll, search_mode, search_detail_scroll, search_detail_selection)
+        False,          # palette_visible
+        0,              # palette_selected
+        False,          # confirmation_active
+        False,          # wizard_active
+        0,              # wizard_selected
+        False,          # track_viewer_visible
+        0,              # track_viewer_selected
+        "main",         # track_viewer_mode
+        False,          # analytics_viewer_visible
+        0,              # analytics_viewer_scroll
+        False,          # editor_visible
+        0,              # editor_selected
+        "main",         # editor_mode
+        "",             # editor_input
+        0,              # search_selected
+        0,              # search_scroll
+        "search",       # search_mode
+        0,              # search_detail_scroll
+        0,              # search_detail_selection
+    )
     layout = None
     last_position = (
         0.0  # Track position separately for partial updates (float for smooth updates)
@@ -583,7 +590,11 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
             last_track_file = current_track_file
 
         # Poll player state at configured interval OR immediately on track change
-        should_poll = (frame_count % PLAYER_POLL_INTERVAL == 0) or track_changed
+        # For Spotify: poll every frame (uses internal cache, no API cost)
+        # For MPV: poll every PLAYER_POLL_INTERVAL frames
+        is_spotify = ctx.player_state.current_track and ctx.player_state.current_track.startswith("spotify:")
+        should_poll_mpv = (frame_count % PLAYER_POLL_INTERVAL == 0) or track_changed
+        should_poll = is_spotify or should_poll_mpv
         if should_poll:
             ctx, ui_state = poll_player_state(ctx, ui_state)
 
@@ -626,8 +637,12 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
 
         # Check if state changed (only redraw if needed)
         # Only compute hash when we polled or when other state changes might have occurred
+        # For Spotify: don't recompute hash every frame (we poll every frame for position updates)
+        # Only recompute on MPV polls or scan polls
         current_state_hash = None
-        if should_poll or should_poll_scan or last_state_hash is None:
+        should_recompute_hash = should_poll_mpv or should_poll_scan or last_state_hash is None
+
+        if should_recompute_hash:
             # Hash excludes current_position to avoid full redraws every second
             # Position is tracked separately for partial dashboard updates
             # Include scan state for progress updates
@@ -654,6 +669,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
             ui_state.wizard_selected,
             ui_state.track_viewer_visible,
             ui_state.track_viewer_selected,
+            ui_state.track_viewer_mode,  # <- MISSING! Must match last_palette_state
             ui_state.analytics_viewer_visible,
             ui_state.analytics_viewer_scroll,
             ui_state.editor_visible,
@@ -914,25 +930,32 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         else:
             # Only check for position updates if playing and we have layout
             if ctx.player_state.is_playing and layout and dashboard_line_mapping:
-                # Calculate interpolated position for smooth updates between MPV polls
-                # This gives sub-second visual updates without extra MPV queries
-                time_since_poll = time.time() - last_poll_time
-                interpolated_position = last_position + time_since_poll
+                # Use position directly from player state
+                # For Spotify: already interpolated by SpotifyPlayer (polled every frame)
+                # For MPV: interpolated here for smooth updates between polls
+                is_spotify_track = ctx.player_state.current_track and ctx.player_state.current_track.startswith("spotify:")
 
-                # Check if interpolated position crossed threshold
+                if is_spotify_track:
+                    # Use SpotifyPlayer's cached position directly (already interpolated)
+                    current_position = ctx.player_state.current_position
+                else:
+                    # For MPV: calculate interpolated position for smooth updates between polls
+                    time_since_poll = time.time() - last_poll_time
+                    current_position = last_position + time_since_poll
+
+                # Check if position crossed threshold
                 position_changed = (
-                    abs(interpolated_position - last_rendered_position)
+                    abs(current_position - last_rendered_position)
                     >= POSITION_UPDATE_THRESHOLD
                 )
 
                 if position_changed:
                     # Partial update - only update time-sensitive dashboard elements
-                    # Create temporary player state with interpolated position for rendering
                     from .components.dashboard import render_dashboard_partial
 
-                    # Use interpolated position for smooth visual updates
+                    # Use current position for smooth visual updates
                     display_state = ctx.player_state._replace(
-                        current_position=interpolated_position
+                        current_position=current_position
                     )
 
                     render_dashboard_partial(
@@ -944,7 +967,8 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     )
 
                     sys.stdout.flush()
-                    last_rendered_position = interpolated_position
+                    last_rendered_position = current_position
+
 
         # Wait for input (with timeout for background updates)
         key = term.inkey(timeout=0.1)

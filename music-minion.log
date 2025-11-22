@@ -1,66 +1,527 @@
-2025-11-21 18:59:14 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
-2025-11-21 18:59:14 | INFO     | music_minion.core.database:683 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
-2025-11-21 18:59:14 | INFO     | music_minion.core.config:224 | Using project config: /home/kevin/coding/music-minion-cli/config.toml
-2025-11-21 18:59:14 | INFO     | music_minion.ui.blessed.app:779 | Starting background sync after UI render
-2025-11-21 18:59:14 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: spotify
-2025-11-21 18:59:14 | INFO     | music_minion.core.output:83 | Syncing spotify (likes + playlists)...
-2025-11-21 18:59:14 | INFO     | music_minion.core.output:83 | 🔄 Syncing from spotify...
-2025-11-21 18:59:14 | INFO     | music_minion.domain.library.providers.spotify.api:119 | Incremental sync: 8883 existing Spotify tracks
-2025-11-21 18:59:15 | INFO     | music_minion.domain.library.providers.spotify.api:212 | Current liked tracks: 1715, Cached: None
-2025-11-21 18:59:15 | INFO     | music_minion.domain.library.providers.spotify.api:225 | Like count changed (None → 1715), fetching updates...
-2025-11-21 18:59:22 | INFO     | music_minion.domain.playback.spotify_player:84 | Playing Spotify track: 2uBVAOWBvVMIxtkOLp76Ja
-2025-11-21 18:59:22 | INFO     | music_minion.core.output:83 | ♪ Now playing: Jump5 - Hawaiian Roller Coaster Ride - Pop Version
-2025-11-21 18:59:22 | INFO     | music_minion.core.output:83 |    Duration: 03:03
-2025-11-21 18:59:22 | INFO     | music_minion.core.output:83 |    2005
-2025-11-21 18:59:30 | INFO     | music_minion.domain.library.providers.spotify.api:298 | Fetch complete: 0 new tracks, 1715 liked IDs collected
-2025-11-21 18:59:30 | INFO     | music_minion.core.output:83 | ✓ Fetched 0 new tracks from Spotify
-2025-11-21 18:59:30 | INFO     | music_minion.domain.library.providers.spotify.api:132 | Collected 1715 liked track IDs for sync
-2025-11-21 18:59:30 | INFO     | music_minion.core.output:83 | 📊 Synced 1715 Spotify like markers
-2025-11-21 18:59:30 | INFO     | music_minion.domain.library.providers.spotify.api:148 | Like markers synced: 1715 for 1715 tracks
-2025-11-21 18:59:30 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in spotify library (incremental mode - all tracks already synced)
-2025-11-21 18:59:30 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
-2025-11-21 18:59:30 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
-2025-11-21 18:59:30 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
-2025-11-21 18:59:30 | INFO     | music_minion.domain.library.providers.spotify:65 | Spotify token expired, attempting refresh
-2025-11-21 18:59:30 | INFO     | music_minion.core.config:224 | Using project config: /home/kevin/coding/music-minion-cli/config.toml
-2025-11-21 18:59:30 | WARNING  | music_minion.domain.library.providers.spotify.auth:369 | Missing credentials or refresh token for Spotify token refresh
-2025-11-21 18:59:30 | WARNING  | music_minion.domain.library.providers.spotify:78 | Spotify token refresh failed
-2025-11-21 18:59:30 | WARNING  | music_minion.core.output:83 | ⚠ Spotify authentication expired. Run: library auth spotify
-2025-11-21 18:59:30 | ERROR    | music_minion.core.output:83 | ❌ Not authenticated with spotify
-2025-11-21 18:59:30 | INFO     | music_minion.core.output:83 | ❌ Not authenticated with spotify
-2025-11-21 18:59:30 | INFO     | music_minion.core.output:83 | Run: library auth spotify
-2025-11-21 19:13:00 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
-2025-11-21 19:13:00 | INFO     | music_minion.core.database:683 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
-2025-11-21 19:13:00 | INFO     | music_minion.core.config:224 | Using project config: /home/kevin/coding/music-minion-cli/config.toml
-2025-11-21 19:13:00 | INFO     | music_minion.ui.blessed.app:779 | Starting background sync after UI render
-2025-11-21 19:13:00 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: spotify
-2025-11-21 19:13:00 | INFO     | music_minion.core.output:83 | Syncing spotify (likes + playlists)...
-2025-11-21 19:13:00 | INFO     | music_minion.core.output:83 | 🔄 Syncing from spotify...
-2025-11-21 19:13:00 | INFO     | music_minion.domain.library.providers.spotify.api:119 | Incremental sync: 8883 existing Spotify tracks
-2025-11-21 19:13:01 | INFO     | music_minion.domain.library.providers.spotify.api:212 | Current liked tracks: 1715, Cached: 1715
-2025-11-21 19:13:01 | INFO     | music_minion.domain.library.providers.spotify.api:216 | ✓ Like count unchanged - skipping pagination (0 API calls)
-2025-11-21 19:13:01 | INFO     | music_minion.core.output:83 | ✓ No new liked tracks detected
-2025-11-21 19:13:01 | INFO     | music_minion.core.output:83 | ✓ Fetched 0 new tracks from Spotify
-2025-11-21 19:13:01 | INFO     | music_minion.domain.library.providers.spotify.api:132 | Collected 0 liked track IDs for sync
-2025-11-21 19:13:01 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in spotify library (incremental mode - all tracks already synced)
-2025-11-21 19:13:01 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
-2025-11-21 19:13:01 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
-2025-11-21 19:13:01 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
-2025-11-21 19:13:01 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from spotify...
-2025-11-21 19:13:02 | INFO     | music_minion.core.output:83 | ✓ Fetched 151 playlists (0 updated, 151 unchanged)
-2025-11-21 19:13:02 | INFO     | music_minion.domain.library.providers.spotify.api:526 | Playlists fetch complete: 151 total, 0 fetched, 151 skipped
-2025-11-21 19:13:02 | INFO     | music_minion.core.output:83 | ✓ Found 151 playlists
-2025-11-21 19:13:02 | INFO     | music_minion.core.output:83 | ✓ Found 151 playlists
-2025-11-21 19:13:02 | INFO     | music_minion.core.output:83 | 
-2025-11-21 19:13:02 | INFO     | music_minion.core.output:83 | 🔍 Looking up existing playlists...
-2025-11-21 19:13:02 | INFO     | music_minion.core.output:83 | ✓ Found 151 existing playlists
-2025-11-21 19:13:02 | INFO     | music_minion.core.output:83 | 
+2025-11-21 20:13:46 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-21 20:13:46 | INFO     | music_minion.core.database:683 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-21 20:13:46 | INFO     | music_minion.core.config:224 | Using project config: /home/kevin/coding/music-minion-cli/config.toml
+2025-11-21 20:13:46 | INFO     | music_minion.ui.blessed.app:803 | Starting background sync after UI render
+2025-11-21 20:13:46 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: spotify
+2025-11-21 20:13:46 | INFO     | music_minion.core.output:83 | Syncing spotify (likes + playlists)...
+2025-11-21 20:13:46 | INFO     | music_minion.core.output:83 | 🔄 Syncing from spotify...
+2025-11-21 20:13:46 | INFO     | music_minion.domain.library.providers.spotify.api:119 | Incremental sync: 8883 existing Spotify tracks
+2025-11-21 20:13:47 | INFO     | music_minion.domain.library.providers.spotify.api:212 | Current liked tracks: 1715, Cached: 1715
+2025-11-21 20:13:47 | INFO     | music_minion.domain.library.providers.spotify.api:216 | ✓ Like count unchanged - skipping pagination (0 API calls)
+2025-11-21 20:13:47 | INFO     | music_minion.core.output:83 | ✓ No new liked tracks detected
+2025-11-21 20:13:47 | INFO     | music_minion.core.output:83 | ✓ Fetched 0 new tracks from Spotify
+2025-11-21 20:13:47 | INFO     | music_minion.domain.library.providers.spotify.api:132 | Collected 0 liked track IDs for sync
+2025-11-21 20:13:47 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in spotify library (incremental mode - all tracks already synced)
+2025-11-21 20:13:47 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-21 20:13:47 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-21 20:13:47 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-21 20:13:47 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from spotify...
+2025-11-21 20:13:48 | INFO     | music_minion.core.output:83 | ✓ Fetched 151 playlists (0 updated, 151 unchanged)
+2025-11-21 20:13:48 | INFO     | music_minion.domain.library.providers.spotify.api:526 | Playlists fetch complete: 151 total, 0 fetched, 151 skipped
+2025-11-21 20:13:48 | INFO     | music_minion.core.output:83 | ✓ Found 151 playlists
+2025-11-21 20:13:48 | INFO     | music_minion.core.output:83 | ✓ Found 151 playlists
+2025-11-21 20:13:48 | INFO     | music_minion.core.output:83 | 
+2025-11-21 20:13:48 | INFO     | music_minion.core.output:83 | 🔍 Looking up existing playlists...
+2025-11-21 20:13:48 | INFO     | music_minion.core.output:83 | ✓ Found 151 existing playlists
+2025-11-21 20:13:48 | INFO     | music_minion.core.output:83 | 
 📦 Collecting tracks from playlists...
-2025-11-21 19:13:02 | INFO     | music_minion.core.output:83 | ✓ Collected 0 unique tracks from 0 playlists
-2025-11-21 19:13:02 | INFO     | music_minion.core.output:83 | 
+2025-11-21 20:13:48 | INFO     | music_minion.core.output:83 | ✓ Collected 0 unique tracks from 0 playlists
+2025-11-21 20:13:48 | INFO     | music_minion.core.output:83 | 
 ⚠ No playlists need syncing
-2025-11-21 19:13:10 | INFO     | music_minion.domain.playback.spotify_player:84 | Playing Spotify track: 6zMNLIFrUss4qklFUdpzjp
-2025-11-21 19:13:10 | INFO     | music_minion.core.output:83 | ♪ Now playing: Fall Out Boy - I Wan'na Be Like You (The Monkey Song) - From "The Jungle Book"
-2025-11-21 19:13:10 | INFO     | music_minion.core.output:83 |    Duration: 03:19
-2025-11-21 19:13:10 | INFO     | music_minion.core.output:83 |    2015
-2025-11-21 19:15:46 | WARNING  | music_minion.core.output:83 | No music is currently playing
+2025-11-21 20:13:48 | INFO     | music_minion.domain.playback.spotify_player:84 | Playing Spotify track: 5kaeajTMHlm30a1vzyVAs3
+2025-11-21 20:13:48 | INFO     | music_minion.core.output:83 | ♪ Now playing: Puzzles to Pieces - Be Prepared
+2025-11-21 20:13:48 | INFO     | music_minion.core.output:83 |    Duration: 04:03
+2025-11-21 20:13:48 | INFO     | music_minion.core.output:83 |    2017
+2025-11-21 20:13:50 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 30: needs_full_redraw=False, hash_recomputed=True, is_playing=True, position=2.21
+2025-11-21 20:13:54 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 60: needs_full_redraw=False, hash_recomputed=True, is_playing=True, position=5.88
+2025-11-21 20:13:57 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 90: needs_full_redraw=False, hash_recomputed=True, is_playing=True, position=9.26
+2025-11-21 20:14:01 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 120: needs_full_redraw=False, hash_recomputed=True, is_playing=True, position=12.84
+2025-11-21 20:14:05 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 150: needs_full_redraw=False, hash_recomputed=True, is_playing=True, position=16.42
+2025-11-21 20:14:08 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 180: needs_full_redraw=False, hash_recomputed=True, is_playing=True, position=19.81
+2025-11-21 20:16:24 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-21 20:16:24 | INFO     | music_minion.core.database:683 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-21 20:16:25 | INFO     | music_minion.core.config:224 | Using project config: /home/kevin/coding/music-minion-cli/config.toml
+2025-11-21 20:16:25 | INFO     | music_minion.ui.blessed.app:803 | Starting background sync after UI render
+2025-11-21 20:16:25 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: spotify
+2025-11-21 20:16:25 | INFO     | music_minion.core.output:83 | Syncing spotify (likes + playlists)...
+2025-11-21 20:16:25 | INFO     | music_minion.core.output:83 | 🔄 Syncing from spotify...
+2025-11-21 20:16:25 | INFO     | music_minion.domain.library.providers.spotify.api:119 | Incremental sync: 8883 existing Spotify tracks
+2025-11-21 20:16:25 | INFO     | music_minion.domain.library.providers.spotify.api:212 | Current liked tracks: 1715, Cached: 1715
+2025-11-21 20:16:25 | INFO     | music_minion.domain.library.providers.spotify.api:216 | ✓ Like count unchanged - skipping pagination (0 API calls)
+2025-11-21 20:16:25 | INFO     | music_minion.core.output:83 | ✓ No new liked tracks detected
+2025-11-21 20:16:25 | INFO     | music_minion.core.output:83 | ✓ Fetched 0 new tracks from Spotify
+2025-11-21 20:16:25 | INFO     | music_minion.domain.library.providers.spotify.api:132 | Collected 0 liked track IDs for sync
+2025-11-21 20:16:25 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in spotify library (incremental mode - all tracks already synced)
+2025-11-21 20:16:25 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-21 20:16:25 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-21 20:16:25 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-21 20:16:25 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from spotify...
+2025-11-21 20:16:27 | INFO     | music_minion.core.output:83 | ✓ Fetched 151 playlists (0 updated, 151 unchanged)
+2025-11-21 20:16:27 | INFO     | music_minion.domain.library.providers.spotify.api:526 | Playlists fetch complete: 151 total, 0 fetched, 151 skipped
+2025-11-21 20:16:27 | INFO     | music_minion.core.output:83 | ✓ Found 151 playlists
+2025-11-21 20:16:27 | INFO     | music_minion.core.output:83 | ✓ Found 151 playlists
+2025-11-21 20:16:27 | INFO     | music_minion.core.output:83 | 
+2025-11-21 20:16:27 | INFO     | music_minion.core.output:83 | 🔍 Looking up existing playlists...
+2025-11-21 20:16:27 | INFO     | music_minion.core.output:83 | ✓ Found 151 existing playlists
+2025-11-21 20:16:27 | INFO     | music_minion.core.output:83 | 
+📦 Collecting tracks from playlists...
+2025-11-21 20:16:27 | INFO     | music_minion.core.output:83 | ✓ Collected 0 unique tracks from 0 playlists
+2025-11-21 20:16:27 | INFO     | music_minion.core.output:83 | 
+⚠ No playlists need syncing
+2025-11-21 20:16:30 | INFO     | music_minion.domain.playback.spotify_player:84 | Playing Spotify track: 2rz3ljEsRWXBMQ1LMiRiuz
+2025-11-21 20:16:30 | INFO     | music_minion.core.output:83 | ♪ Now playing: New Found Glory - Let It Go
+2025-11-21 20:16:30 | INFO     | music_minion.core.output:83 |    Duration: 03:16
+2025-11-21 20:16:30 | INFO     | music_minion.core.output:83 |    2019
+2025-11-21 20:16:32 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 60: needs_full_redraw=False, hash_recomputed=True, is_playing=True, position=1.97
+2025-11-21 20:16:32 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:16:36 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 90: needs_full_redraw=False, hash_recomputed=True, is_playing=True, position=5.53
+2025-11-21 20:16:36 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:16:39 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 120: needs_full_redraw=False, hash_recomputed=True, is_playing=True, position=8.95
+2025-11-21 20:16:39 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:16:43 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 150: needs_full_redraw=False, hash_recomputed=True, is_playing=True, position=12.49
+2025-11-21 20:16:43 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:16:46 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 180: needs_full_redraw=False, hash_recomputed=True, is_playing=True, position=16.04
+2025-11-21 20:16:46 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:16:50 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 210: needs_full_redraw=False, hash_recomputed=True, is_playing=True, position=19.48
+2025-11-21 20:16:50 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:16:53 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 240: needs_full_redraw=False, hash_recomputed=True, is_playing=True, position=23.05
+2025-11-21 20:16:53 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:16:57 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 270: needs_full_redraw=False, hash_recomputed=True, is_playing=True, position=26.81
+2025-11-21 20:16:57 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:17:00 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 300: needs_full_redraw=False, hash_recomputed=True, is_playing=True, position=30.22
+2025-11-21 20:17:00 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:17:04 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 330: needs_full_redraw=False, hash_recomputed=True, is_playing=True, position=33.79
+2025-11-21 20:17:04 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:17:07 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 360: needs_full_redraw=False, hash_recomputed=True, is_playing=True, position=37.32
+2025-11-21 20:17:07 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:17:11 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 390: needs_full_redraw=False, hash_recomputed=True, is_playing=True, position=40.64
+2025-11-21 20:17:11 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:17:14 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 420: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:17:14 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:17:18 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 450: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:17:18 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:17:22 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 480: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:17:22 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:17:25 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 510: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:17:25 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:17:29 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 540: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:17:29 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:17:32 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 570: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:17:32 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:17:36 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 600: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:17:36 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:17:39 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 630: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:17:39 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:17:43 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 660: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:17:43 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:17:47 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 690: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:17:47 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:17:50 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 720: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:17:50 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:17:54 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 750: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:17:54 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:17:57 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 780: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:17:57 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:18:01 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 810: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:18:01 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:18:04 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 840: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:18:04 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:18:08 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 870: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:18:08 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:18:11 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 900: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:18:11 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:18:15 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 930: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:18:15 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:18:18 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 960: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:18:18 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:18:22 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 990: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:18:22 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:18:26 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1020: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:18:26 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:18:29 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1050: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:18:29 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:18:33 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1080: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:18:33 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:18:36 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1110: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:18:36 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:18:40 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1140: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:18:40 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:18:44 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1170: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:18:44 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:18:47 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1200: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:18:47 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:18:50 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1230: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:18:50 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:18:54 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1260: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:18:54 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:18:57 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1290: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:18:57 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:19:01 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1320: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:19:01 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:19:04 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1350: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:19:04 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:19:08 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1380: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:19:08 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:19:11 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1410: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:19:11 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:19:15 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1440: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:19:15 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:19:18 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1470: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:19:18 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:19:22 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1500: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:19:22 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:19:25 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1530: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:19:25 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:19:29 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1560: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:19:29 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:19:33 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1590: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:19:33 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:19:36 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1620: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:19:36 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:19:40 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1650: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:19:40 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:19:43 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1680: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:19:43 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:19:47 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1710: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:19:47 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:19:50 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1740: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:19:50 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:19:54 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1770: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:19:54 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:19:58 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1800: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:19:58 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:20:01 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1830: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:20:01 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:20:05 | INFO     | music_minion.ui.blessed.app:691 | [SPOTIFY] Frame 1860: needs_full_redraw=False, hash_recomputed=True, is_playing=False, position=35.97
+2025-11-21 20:20:05 | INFO     | music_minion.ui.blessed.app:861 | [SPOTIFY INPUT] input_changed=False, palette_state_changed=True
+2025-11-21 20:20:08 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-21 20:20:08 | INFO     | music_minion.core.database:683 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-21 20:20:08 | INFO     | music_minion.core.config:224 | Using project config: /home/kevin/coding/music-minion-cli/config.toml
+2025-11-21 20:20:09 | INFO     | music_minion.ui.blessed.app:793 | Starting background sync after UI render
+2025-11-21 20:20:09 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: spotify
+2025-11-21 20:20:09 | INFO     | music_minion.core.output:83 | Syncing spotify (likes + playlists)...
+2025-11-21 20:20:09 | INFO     | music_minion.core.output:83 | 🔄 Syncing from spotify...
+2025-11-21 20:20:09 | INFO     | music_minion.domain.library.providers.spotify.api:119 | Incremental sync: 8883 existing Spotify tracks
+2025-11-21 20:20:09 | INFO     | music_minion.domain.library.providers.spotify.api:212 | Current liked tracks: 1715, Cached: 1715
+2025-11-21 20:20:09 | INFO     | music_minion.domain.library.providers.spotify.api:216 | ✓ Like count unchanged - skipping pagination (0 API calls)
+2025-11-21 20:20:09 | INFO     | music_minion.core.output:83 | ✓ No new liked tracks detected
+2025-11-21 20:20:09 | INFO     | music_minion.core.output:83 | ✓ Fetched 0 new tracks from Spotify
+2025-11-21 20:20:09 | INFO     | music_minion.domain.library.providers.spotify.api:132 | Collected 0 liked track IDs for sync
+2025-11-21 20:20:09 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in spotify library (incremental mode - all tracks already synced)
+2025-11-21 20:20:09 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-21 20:20:09 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-21 20:20:09 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-21 20:20:09 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from spotify...
+2025-11-21 20:20:10 | INFO     | music_minion.core.output:83 | ✓ Fetched 151 playlists (0 updated, 151 unchanged)
+2025-11-21 20:20:10 | INFO     | music_minion.domain.library.providers.spotify.api:526 | Playlists fetch complete: 151 total, 0 fetched, 151 skipped
+2025-11-21 20:20:10 | INFO     | music_minion.core.output:83 | ✓ Found 151 playlists
+2025-11-21 20:20:10 | INFO     | music_minion.core.output:83 | ✓ Found 151 playlists
+2025-11-21 20:20:10 | INFO     | music_minion.core.output:83 | 
+2025-11-21 20:20:10 | INFO     | music_minion.core.output:83 | 🔍 Looking up existing playlists...
+2025-11-21 20:20:10 | INFO     | music_minion.core.output:83 | ✓ Found 151 existing playlists
+2025-11-21 20:20:10 | INFO     | music_minion.core.output:83 | 
+📦 Collecting tracks from playlists...
+2025-11-21 20:20:10 | INFO     | music_minion.core.output:83 | ✓ Collected 0 unique tracks from 0 playlists
+2025-11-21 20:20:10 | INFO     | music_minion.core.output:83 | 
+⚠ No playlists need syncing
+2025-11-21 20:20:14 | INFO     | music_minion.domain.playback.spotify_player:84 | Playing Spotify track: 4ApiSI43RsVcDheijMmWTD
+2025-11-21 20:20:14 | INFO     | music_minion.core.output:83 | ♪ Now playing: BOYS LIKE GIRLS, Disney - You'll Be in My Heart
+2025-11-21 20:20:14 | INFO     | music_minion.core.output:83 |    Duration: 03:54
+2025-11-21 20:20:14 | INFO     | music_minion.core.output:83 |    2024
+2025-11-21 20:22:54 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-21 20:22:54 | INFO     | music_minion.core.database:683 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-21 20:22:54 | INFO     | music_minion.core.config:224 | Using project config: /home/kevin/coding/music-minion-cli/config.toml
+2025-11-21 20:22:55 | INFO     | music_minion.ui.blessed.app:824 | Starting background sync after UI render
+2025-11-21 20:22:55 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: spotify
+2025-11-21 20:22:55 | INFO     | music_minion.core.output:83 | Syncing spotify (likes + playlists)...
+2025-11-21 20:22:55 | INFO     | music_minion.core.output:83 | 🔄 Syncing from spotify...
+2025-11-21 20:22:55 | INFO     | music_minion.domain.library.providers.spotify.api:119 | Incremental sync: 8883 existing Spotify tracks
+2025-11-21 20:22:55 | INFO     | music_minion.domain.library.providers.spotify.api:212 | Current liked tracks: 1715, Cached: 1715
+2025-11-21 20:22:55 | INFO     | music_minion.domain.library.providers.spotify.api:216 | ✓ Like count unchanged - skipping pagination (0 API calls)
+2025-11-21 20:22:55 | INFO     | music_minion.core.output:83 | ✓ No new liked tracks detected
+2025-11-21 20:22:55 | INFO     | music_minion.core.output:83 | ✓ Fetched 0 new tracks from Spotify
+2025-11-21 20:22:55 | INFO     | music_minion.domain.library.providers.spotify.api:132 | Collected 0 liked track IDs for sync
+2025-11-21 20:22:55 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in spotify library (incremental mode - all tracks already synced)
+2025-11-21 20:22:55 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-21 20:22:55 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-21 20:22:55 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-21 20:22:55 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from spotify...
+2025-11-21 20:22:57 | INFO     | music_minion.core.output:83 | ✓ Fetched 151 playlists (0 updated, 151 unchanged)
+2025-11-21 20:22:57 | INFO     | music_minion.domain.library.providers.spotify.api:526 | Playlists fetch complete: 151 total, 0 fetched, 151 skipped
+2025-11-21 20:22:57 | INFO     | music_minion.core.output:83 | ✓ Found 151 playlists
+2025-11-21 20:22:57 | INFO     | music_minion.core.output:83 | ✓ Found 151 playlists
+2025-11-21 20:22:57 | INFO     | music_minion.core.output:83 | 
+2025-11-21 20:22:57 | INFO     | music_minion.core.output:83 | 🔍 Looking up existing playlists...
+2025-11-21 20:22:57 | INFO     | music_minion.core.output:83 | ✓ Found 151 existing playlists
+2025-11-21 20:22:57 | INFO     | music_minion.core.output:83 | 
+📦 Collecting tracks from playlists...
+2025-11-21 20:22:57 | INFO     | music_minion.core.output:83 | ✓ Collected 0 unique tracks from 0 playlists
+2025-11-21 20:22:57 | INFO     | music_minion.core.output:83 | 
+⚠ No playlists need syncing
+2025-11-21 20:22:59 | INFO     | music_minion.domain.playback.spotify_player:84 | Playing Spotify track: 2lyXxEbikvcTzMFBfbqSMT
+2025-11-21 20:22:59 | INFO     | music_minion.core.output:83 | ♪ Now playing: Suburban Legends - Under the Sea
+2025-11-21 20:22:59 | INFO     | music_minion.core.output:83 |    Duration: 03:15
+2025-11-21 20:22:59 | INFO     | music_minion.core.output:83 |    2012
+2025-11-21 20:23:02 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:23:02 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:23:02 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:23:02 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:23:02 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:23:02 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:23:06 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:23:06 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:23:06 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:23:06 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:23:06 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:23:06 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:23:09 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:23:09 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:23:09 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:23:09 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:23:09 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:23:09 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:23:13 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:23:13 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:23:13 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:23:13 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:23:13 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:23:13 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:23:16 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:23:16 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:23:16 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:23:16 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:23:16 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:23:16 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:23:20 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:23:20 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:23:20 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:23:20 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:23:20 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:23:20 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:23:24 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:23:24 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:23:24 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:23:24 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:23:24 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:23:24 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:23:27 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:23:27 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:23:27 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:23:27 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:23:27 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:23:27 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:23:31 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:23:31 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:23:31 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:23:31 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:23:31 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:23:31 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:23:34 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:23:34 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:23:34 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:23:34 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:23:34 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:23:34 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:23:38 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:23:38 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:23:38 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:23:38 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:23:38 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:23:38 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:23:41 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:23:41 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:23:41 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:23:41 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:23:41 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:23:41 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:23:45 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:23:45 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:23:45 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:23:45 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:23:45 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:23:45 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:23:48 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:23:48 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:23:48 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:23:48 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:23:48 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:23:48 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:23:52 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:23:52 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:23:52 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:23:52 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:23:52 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:23:52 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:23:55 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:23:55 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:23:55 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:23:55 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:23:55 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:23:55 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:23:59 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:23:59 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:23:59 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:23:59 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:23:59 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:23:59 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:24:02 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:24:02 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:24:02 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:24:02 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:24:02 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:24:02 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:24:06 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:24:06 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:24:06 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:24:06 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:24:06 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:24:06 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:24:09 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:24:09 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:24:09 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:24:09 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:24:09 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:24:09 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:24:13 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:24:13 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:24:13 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:24:13 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:24:13 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:24:13 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:24:16 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:24:16 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:24:16 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:24:16 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:24:16 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:24:16 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:24:20 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:24:20 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:24:20 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:24:20 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:24:20 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:24:20 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:24:23 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:24:23 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:24:23 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:24:23 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:24:23 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:24:23 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:24:27 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:24:27 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:24:27 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:24:27 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:24:27 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:24:27 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:24:30 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:24:30 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:24:30 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:24:30 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:24:30 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:24:30 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:24:34 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:24:34 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:24:34 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:24:34 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:24:34 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:24:34 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:24:38 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:24:38 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:24:38 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:24:38 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:24:38 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:24:38 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:24:41 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:24:41 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:24:41 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:24:41 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:24:41 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:24:41 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:24:45 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:24:45 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:24:45 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:24:45 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:24:45 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:24:45 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:24:48 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:24:48 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:24:48 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:24:48 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:24:48 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:24:48 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:24:52 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:24:52 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:24:52 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:24:52 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:24:52 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:24:52 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:24:55 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:24:55 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:24:55 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:24:55 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:24:55 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:24:55 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:24:59 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:24:59 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:24:59 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:24:59 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:24:59 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:24:59 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:25:02 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:25:02 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:25:02 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:25:02 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:25:02 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:25:02 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:25:06 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:25:06 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:25:06 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:25:06 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:25:06 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:25:06 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:25:10 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:25:10 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:25:10 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:25:10 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:25:10 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:25:10 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:25:13 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] analytics_viewer_visible: list → False
+2025-11-21 20:25:13 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_mode: 0 → main
+2025-11-21 20:25:13 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] editor_input: main → 
+2025-11-21 20:25:13 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_selected:  → 0
+2025-11-21 20:25:13 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_mode: 0 → search
+2025-11-21 20:25:13 | INFO     | music_minion.ui.blessed.app:713 | [PALETTE DIFF] search_detail_scroll: search → 0
+2025-11-21 20:25:16 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-21 20:25:16 | INFO     | music_minion.core.database:683 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-21 20:25:16 | INFO     | music_minion.core.config:224 | Using project config: /home/kevin/coding/music-minion-cli/config.toml
+2025-11-21 20:25:17 | INFO     | music_minion.ui.blessed.app:795 | Starting background sync after UI render
+2025-11-21 20:25:17 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: spotify
+2025-11-21 20:25:17 | INFO     | music_minion.core.output:83 | Syncing spotify (likes + playlists)...
+2025-11-21 20:25:17 | INFO     | music_minion.core.output:83 | 🔄 Syncing from spotify...
+2025-11-21 20:25:17 | INFO     | music_minion.domain.library.providers.spotify.api:119 | Incremental sync: 8883 existing Spotify tracks
+2025-11-21 20:25:17 | INFO     | music_minion.domain.library.providers.spotify.api:212 | Current liked tracks: 1715, Cached: 1715
+2025-11-21 20:25:17 | INFO     | music_minion.domain.library.providers.spotify.api:216 | ✓ Like count unchanged - skipping pagination (0 API calls)
+2025-11-21 20:25:17 | INFO     | music_minion.core.output:83 | ✓ No new liked tracks detected
+2025-11-21 20:25:17 | INFO     | music_minion.core.output:83 | ✓ Fetched 0 new tracks from Spotify
+2025-11-21 20:25:17 | INFO     | music_minion.domain.library.providers.spotify.api:132 | Collected 0 liked track IDs for sync
+2025-11-21 20:25:17 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in spotify library (incremental mode - all tracks already synced)
+2025-11-21 20:25:17 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-21 20:25:17 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-21 20:25:17 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-21 20:25:17 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from spotify...
+2025-11-21 20:25:18 | INFO     | music_minion.core.output:83 | ✓ Fetched 151 playlists (0 updated, 151 unchanged)
+2025-11-21 20:25:18 | INFO     | music_minion.domain.library.providers.spotify.api:526 | Playlists fetch complete: 151 total, 0 fetched, 151 skipped
+2025-11-21 20:25:18 | INFO     | music_minion.core.output:83 | ✓ Found 151 playlists
+2025-11-21 20:25:18 | INFO     | music_minion.core.output:83 | ✓ Found 151 playlists
+2025-11-21 20:25:18 | INFO     | music_minion.core.output:83 | 
+2025-11-21 20:25:18 | INFO     | music_minion.core.output:83 | 🔍 Looking up existing playlists...
+2025-11-21 20:25:18 | INFO     | music_minion.core.output:83 | ✓ Found 151 existing playlists
+2025-11-21 20:25:18 | INFO     | music_minion.core.output:83 | 
+📦 Collecting tracks from playlists...
+2025-11-21 20:25:18 | INFO     | music_minion.core.output:83 | ✓ Collected 0 unique tracks from 0 playlists
+2025-11-21 20:25:18 | INFO     | music_minion.core.output:83 | 
+⚠ No playlists need syncing
+2025-11-21 20:25:20 | INFO     | music_minion.domain.playback.spotify_player:84 | Playing Spotify track: 0OV0avLlyYvFccKNM85pdj
+2025-11-21 20:25:20 | INFO     | music_minion.core.output:83 | ♪ Now playing: No Resolve - Surface Pressure
+2025-11-21 20:25:20 | INFO     | music_minion.core.output:83 |    Duration: 03:32
+2025-11-21 20:25:20 | INFO     | music_minion.core.output:83 |    2022
+2025-11-21 20:25:33 | WARNING  | music_minion.core.output:83 | No music is currently playing
