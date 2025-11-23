@@ -698,7 +698,7 @@ def sync_library(
             log("", level="info")
             log("📋 Checking SoundCloud playlists...", level="warning")
 
-            new_state2, playlists = provider.get_playlists(new_state)
+            new_state2, playlists = provider.get_playlists(new_state, full=full)
 
             if playlists:
                 log(f"Found {len(playlists)} playlists:", level="info")
@@ -817,7 +817,7 @@ def sync_playlists(
         import time
         print_if_not_silent(f"📋 Fetching playlists from {provider_name}...")
         fetch_start = time.time()
-        state, playlists = provider.get_playlists(state)
+        state, playlists = provider.get_playlists(state, full=full)
         fetch_time = time.time() - fetch_start
         log(f"Fetched {len(playlists) if playlists else 0} playlists metadata in {fetch_time:.2f}s", level="debug")
 

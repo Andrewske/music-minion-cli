@@ -7,8 +7,9 @@ Handles: playlist list, playlist new, playlist delete, playlist rename,
 
 import shlex
 import sys
+import threading
 from pathlib import Path
-from typing import List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from music_minion import helpers
 from music_minion.context import AppContext
@@ -20,6 +21,51 @@ from music_minion.domain.playlists import analytics as playlist_analytics
 from music_minion.domain.playlists import exporters as playlist_export
 from music_minion.domain.playlists import filters as playlist_filters
 from music_minion.domain.playlists import importers as playlist_import
+
+
+# ============================================================================
+# Background Conversion State Management (Thread-Safe)
+# ============================================================================
+
+_conversion_state_lock = threading.Lock()
+_conversion_state: Optional[Dict[str, Any]] = None
+
+
+def get_conversion_state() -> Optional[Dict[str, Any]]:
+    """
+    Get current playlist conversion state (thread-safe).
+
+    Returns:
+        Copy of conversion state dict, or None if no conversion in progress
+    """
+    with _conversion_state_lock:
+        return _conversion_state.copy() if _conversion_state else None
+
+
+def _update_conversion_state(updates: Dict[str, Any]) -> None:
+    """
+    Update playlist conversion state (thread-safe, internal use only).
+
+    Args:
+        updates: Dict of state fields to update
+    """
+    global _conversion_state
+    with _conversion_state_lock:
+        if _conversion_state is None:
+            _conversion_state = {}
+        _conversion_state.update(updates)
+
+
+def _clear_conversion_state() -> None:
+    """Clear playlist conversion state (internal use only)."""
+    global _conversion_state
+    with _conversion_state_lock:
+        _conversion_state = None
+
+
+# ============================================================================
+# Playlist Command Handlers
+# ============================================================================
 
 
 def handle_playlist_list_command(ctx: AppContext) -> Tuple[AppContext, bool]:
@@ -1190,6 +1236,141 @@ def handle_playlist_analyze_command(
         return ctx, True
 
 
+# ============================================================================
+# Background Playlist Conversion
+# ============================================================================
+
+
+def _threaded_conversion_worker(
+    ctx: AppContext,
+    spotify_playlist_id: str,
+    spotify_name: str,
+    soundcloud_name: str,
+) -> None:
+    """
+    Background worker thread for playlist conversion.
+
+    Args:
+        ctx: Application context
+        spotify_playlist_id: Spotify playlist ID
+        spotify_name: Spotify playlist name (for logging)
+        soundcloud_name: Target SoundCloud playlist name
+    """
+    from loguru import logger
+
+    from ..domain.playlists.conversion import convert_spotify_to_soundcloud
+
+    # Suppress stdout printing (blessed mode compatibility)
+    threading.current_thread().silent_logging = True
+
+    try:
+        # Initialize conversion state
+        _update_conversion_state(
+            {
+                "phase": "init",
+                "spotify_name": spotify_name,
+                "soundcloud_name": soundcloud_name,
+                "current_track": 0,
+                "total_tracks": 0,
+                "completed": False,
+                "error": None,
+            }
+        )
+
+        logger.info(
+            f"Background conversion started: {spotify_name} → {soundcloud_name}"
+        )
+
+        # Progress callback to update state
+        def progress_callback(current: int, total: int) -> None:
+            _update_conversion_state(
+                {
+                    "phase": "matching",
+                    "current_track": current,
+                    "total_tracks": total,
+                }
+            )
+            logger.info(f"Matching progress: {current}/{total}")
+
+        # Run conversion
+        result = convert_spotify_to_soundcloud(
+            spotify_playlist_id, soundcloud_name, progress_callback
+        )
+
+        # Update state with results
+        if result.success:
+            _update_conversion_state(
+                {
+                    "phase": "completed",
+                    "completed": True,
+                    "success": True,
+                    "total_tracks": result.total_tracks,
+                    "matched_tracks": result.matched_tracks,
+                    "failed_tracks": result.failed_tracks,
+                    "average_confidence": result.average_confidence,
+                    "soundcloud_playlist_url": result.soundcloud_playlist_url,
+                    "unmatched_track_names": result.unmatched_track_names,
+                }
+            )
+            logger.info(
+                f"Conversion completed: {result.matched_tracks}/{result.total_tracks} matched"
+            )
+        else:
+            _update_conversion_state(
+                {
+                    "phase": "completed",
+                    "completed": True,
+                    "success": False,
+                    "error": result.error_message,
+                }
+            )
+            logger.error(f"Conversion failed: {result.error_message}")
+
+    except Exception as e:
+        logger.exception("Conversion worker error")
+        _update_conversion_state(
+            {"phase": "error", "completed": True, "success": False, "error": str(e)}
+        )
+    finally:
+        threading.current_thread().silent_logging = False
+
+
+def convert_playlist_background(
+    ctx: AppContext,
+    spotify_playlist_id: str,
+    spotify_name: str,
+    soundcloud_name: str,
+) -> Tuple[AppContext, bool]:
+    """
+    Start playlist conversion in background thread.
+
+    Args:
+        ctx: Application context
+        spotify_playlist_id: Spotify playlist ID
+        spotify_name: Spotify playlist name
+        soundcloud_name: Target SoundCloud playlist name
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    # Clear any previous conversion state
+    _clear_conversion_state()
+
+    # Start worker thread
+    thread = threading.Thread(
+        target=_threaded_conversion_worker,
+        args=(ctx, spotify_playlist_id, spotify_name, soundcloud_name),
+        daemon=True,
+    )
+    thread.start()
+
+    log("✅ Playlist conversion started in background", level="info")
+    log(f"   {spotify_name} → {soundcloud_name}", level="info")
+    log("   You'll be notified when it completes", level="info")
+
+    return ctx, True
+
+
 def handle_playlist_convert_command(
     ctx: AppContext, args: List[str]
 ) -> Tuple[AppContext, bool]:
@@ -1244,6 +1425,13 @@ def handle_playlist_convert_command(
         log(f"❌ Playlist '{spotify_name}' has no Spotify ID", level="error")
         return ctx, True
 
+    # Use background conversion in blessed UI mode for non-blocking behavior
+    if ctx.ui_mode == "blessed" and ctx.update_ui_state:
+        return convert_playlist_background(
+            ctx, spotify_playlist_id, spotify_name, soundcloud_name
+        )
+
+    # Otherwise, run synchronous conversion (CLI mode)
     # Progress callback for user feedback
     def progress_callback(current: int, total: int) -> None:
         percentage = (current / total * 100) if total > 0 else 0

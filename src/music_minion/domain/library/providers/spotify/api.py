@@ -430,11 +430,16 @@ def get_stream_url(state: ProviderState, spotify_id: str) -> Optional[str]:
 # ==================== PLAYLIST FUNCTIONS ====================
 
 
-def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, Any]]]:
+def get_playlists(state: ProviderState, full: bool = False) -> Tuple[ProviderState, List[Dict[str, Any]]]:
     """Fetch user's playlists with snapshot_id change detection optimization.
 
     Optimization: Only fetches tracks for playlists with changed snapshot_id.
     This reduces API calls from 51 (1 + 50 playlists) to 1-6 typically (88-98% reduction).
+    Can be bypassed with full=True to always fetch tracks.
+
+    Args:
+        state: Provider state
+        full: If True, bypass snapshot_id optimization and fetch all tracks (default: False)
 
     Returns list of playlist dicts with structure:
     {
@@ -485,8 +490,8 @@ def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, A
                 current_snapshot = item["snapshot_id"]
                 stored_snapshot = stored_snapshots.get(playlist_id)
 
-                # Optimization: Only fetch tracks if snapshot_id changed
-                if stored_snapshot and current_snapshot == stored_snapshot:
+                # Optimization: Only fetch tracks if snapshot_id changed (unless full=True)
+                if stored_snapshot and current_snapshot == stored_snapshot and not full:
                     # Playlist unchanged - return empty tracks list
                     tracks = []
                     created_at = None  # Will preserve existing DB value during sync
@@ -498,7 +503,11 @@ def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, A
                     # Playlist changed or new - fetch tracks
                     state, tracks, created_at = get_playlist_tracks(state, playlist_id)
                     fetched_count += 1
-                    if stored_snapshot:
+                    if full:
+                        logger.debug(
+                            f"Fetching playlist (full sync): {item['name']} (snapshot: {current_snapshot})"
+                        )
+                    elif stored_snapshot:
                         logger.debug(
                             f"Fetching updated playlist: {item['name']} (snapshot: {stored_snapshot} → {current_snapshot})"
                         )

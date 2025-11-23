@@ -96,11 +96,13 @@ def get_stream_url(state: ProviderState, provider_id: str) -> Optional[str]:
     return None
 
 
-def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, Any]]]:
+def get_playlists(state: ProviderState, full: bool = False) -> Tuple[ProviderState, List[Dict[str, Any]]]:
     """Get playlists from local filesystem.
 
     Args:
         state: Current provider state
+        full: If True, bypass optimizations and fetch all data (default: False)
+              Note: Local provider doesn't have playlists
 
     Returns:
         (state, []) - local provider doesn't have playlists
