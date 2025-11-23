@@ -149,6 +149,22 @@ class IPCServer:
             command = payload.get('command', '')
             args = payload.get('args', [])
 
+            # Send immediate notification for composite actions
+            if command == 'composite' and args:
+                action_name = args[0]
+                # Map action names to immediate notification messages
+                immediate_messages = {
+                    'like_and_add_dated': '❤️ Liking and adding...',
+                    'add_not_quite': '🤔 Adding to Not Quite...',
+                    'add_not_interested_and_skip': '⏭️ Adding to Not Interested...',
+                }
+                if action_name in immediate_messages:
+                    notifications.notify(
+                        'Music Minion',
+                        immediate_messages[action_name],
+                        urgency='low'
+                    )
+
             # Put command in queue for main thread
             request_id = id(payload)  # Unique ID for this request
             self.command_queue.put((request_id, command, args))
