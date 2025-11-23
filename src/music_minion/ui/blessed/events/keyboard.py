@@ -90,6 +90,14 @@ def parse_key(key: Keystroke) -> dict:
         event["type"] = "arrow_up"
     elif key.name == "KEY_DOWN":
         event["type"] = "arrow_down"
+    elif key.name == "KEY_LEFT":
+        event["type"] = "arrow_left"
+    elif key.name == "KEY_RIGHT":
+        event["type"] = "arrow_right"
+    elif key.name == "KEY_SLEFT":  # Shift+Left
+        event["type"] = "shift_arrow_left"
+    elif key.name == "KEY_SRIGHT":  # Shift+Right
+        event["type"] = "shift_arrow_right"
     elif key.name == "KEY_PGUP":  # Page Up (blessed uses PGUP not PPAGE)
         event["type"] = "page_up"
     elif key.name == "KEY_PGDOWN":  # Page Down (blessed uses PGDOWN not NPAGE)
@@ -1102,6 +1110,44 @@ def handle_key(
                 state = update_palette_filter(state, query, filtered)
 
             return state, None
+
+    # Handle seek controls in normal mode (no modals, no input)
+    if (
+        not state.palette_visible
+        and not state.track_viewer_visible
+        and not state.wizard_active
+        and not state.analytics_viewer_visible
+        and not state.editor_visible
+        and not state.review_mode
+        and not state.input_text
+    ):
+        # Numeric keys 0-9: Jump to percentage (0%-90%)
+        if event["type"] == "char" and event["char"] and event["char"].isdigit():
+            digit = int(event["char"])
+            percentage = digit * 10
+            return state, InternalCommand(
+                action="seek_percentage", data={"percentage": percentage}
+            )
+
+        # Left/Right arrows: Seek ±5 seconds
+        if event["type"] == "arrow_left":
+            return state, InternalCommand(
+                action="seek_relative", data={"seconds": -5.0}
+            )
+        if event["type"] == "arrow_right":
+            return state, InternalCommand(
+                action="seek_relative", data={"seconds": 5.0}
+            )
+
+        # Shift+Left/Right: Seek ±1 second
+        if event["type"] == "shift_arrow_left":
+            return state, InternalCommand(
+                action="seek_relative", data={"seconds": -1.0}
+            )
+        if event["type"] == "shift_arrow_right":
+            return state, InternalCommand(
+                action="seek_relative", data={"seconds": 1.0}
+            )
 
     # Handle regular characters
     if event["type"] == "char" and event["char"]:
