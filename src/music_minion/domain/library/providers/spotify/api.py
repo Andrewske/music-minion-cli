@@ -67,6 +67,7 @@ def _normalize_spotify_track(track: Dict[str, Any]) -> TrackMetadata:
         "artist": ", ".join(
             [a["name"] for a in track.get("artists", []) if a.get("name") is not None]
         ),
+        "top_level_artist": track.get("artists", [{}])[0].get("name", ""),
         "album": track.get("album", {}).get("name", ""),
         "year": (
             int(track["album"]["release_date"][:4])
@@ -271,7 +272,7 @@ def _fetch_saved_tracks_optimized(
             if incremental and last_sync_timestamp and added_at:
                 if added_at < last_sync_timestamp:
                     logger.debug(
-                        f"Reached tracks older than last sync, stopping pagination"
+                        "Reached tracks older than last sync, stopping pagination"
                     )
                     url = None
                     break
@@ -443,7 +444,7 @@ def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, A
         "tracks": [(track_id, metadata), ...],  # Empty if snapshot_id unchanged
         "description": "...",
         "last_modified": "snapshot_id",
-        "created_at": None  # Spotify doesn't provide
+        "created_at": "ISO-8601 timestamp" or None  # Oldest track added_at (proxy for creation)
     }
     """
     state, token = _ensure_valid_token(state)
@@ -488,13 +489,14 @@ def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, A
                 if stored_snapshot and current_snapshot == stored_snapshot:
                     # Playlist unchanged - return empty tracks list
                     tracks = []
+                    created_at = None  # Will preserve existing DB value during sync
                     skipped_count += 1
                     logger.debug(
                         f"Skipping unchanged playlist: {item['name']} (snapshot: {current_snapshot})"
                     )
                 else:
                     # Playlist changed or new - fetch tracks
-                    state, tracks = get_playlist_tracks(state, playlist_id)
+                    state, tracks, created_at = get_playlist_tracks(state, playlist_id)
                     fetched_count += 1
                     if stored_snapshot:
                         logger.debug(
@@ -512,7 +514,7 @@ def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, A
                     "tracks": tracks,
                     "description": item.get("description", ""),
                     "last_modified": current_snapshot,
-                    "created_at": None,
+                    "created_at": created_at,
                 }
                 playlists.append(playlist_data)
 
@@ -536,7 +538,7 @@ def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, A
 
 def get_playlist_tracks(
     state: ProviderState, playlist_id: str
-) -> Tuple[ProviderState, TrackList]:
+) -> Tuple[ProviderState, TrackList, Optional[str]]:
     """Fetch tracks for specific playlist.
 
     Args:
@@ -544,18 +546,20 @@ def get_playlist_tracks(
         playlist_id: Spotify playlist ID or URN (spotify:playlists:{id})
 
     Returns:
-        (updated_state, track_list)
+        (updated_state, track_list, oldest_added_at_timestamp)
+        oldest_added_at_timestamp is ISO 8601 string or None if no tracks
     """
     state, token = _ensure_valid_token(state)
     if not token:
-        return state, []
+        return state, [], None
 
     # Handle URN format: spotify:playlists:{id}
     if ":" in playlist_id:
         playlist_id = playlist_id.split(":")[-1]
 
     tracks = []
-    url = f"{API_BASE}/playlists/{playlist_id}/tracks"
+    oldest_added_at = None
+    url = f"{API_BASE}/playlists/{playlist_id}"
     params = {"limit": 100}
     headers = {"Authorization": f"Bearer {token['access_token']}"}
 
@@ -565,7 +569,7 @@ def get_playlist_tracks(
             response.raise_for_status()
             data = response.json()
 
-            for item in data["items"]:
+            for item in data["tracks"]["items"]:
                 if not item.get("track"):  # Skip local files and removed tracks
                     continue
                 if item["track"].get("is_local"):  # Skip local files
@@ -575,15 +579,21 @@ def get_playlist_tracks(
                 metadata = _normalize_spotify_track(item["track"])
                 tracks.append((track_id, metadata))
 
+                # Track oldest added_at timestamp (proxy for playlist creation date)
+                added_at = item.get("added_at")
+                if added_at:
+                    if oldest_added_at is None or added_at < oldest_added_at:
+                        oldest_added_at = added_at
+
             url = data.get("next")
             params = {}
 
-        logger.debug(f"Fetched {len(tracks)} tracks for playlist {playlist_id}")
-        return state, tracks
+        logger.debug(f"Fetched {len(tracks)} tracks for playlist {playlist_id}, oldest track: {oldest_added_at}")
+        return state, tracks, oldest_added_at
 
-    except Exception as e:
+    except Exception:
         logger.exception(f"Error fetching playlist tracks: {playlist_id}")
-        return state, []
+        return state, [], None
 
 
 def create_playlist(
@@ -759,7 +769,7 @@ def _spotify_play(
         else:
             logger.exception(f"Error starting playback: {e.response.status_code}")
         return False
-    except Exception as e:
+    except Exception:
         logger.exception("Error starting playback")
         return False
 
@@ -779,7 +789,7 @@ def _spotify_pause(state: ProviderState) -> bool:
         response.raise_for_status()
         logger.debug("Paused Spotify playback")
         return True
-    except Exception as e:
+    except Exception:
         logger.exception("Error pausing playback")
         return False
 
@@ -799,7 +809,7 @@ def _spotify_resume(state: ProviderState) -> bool:
         response.raise_for_status()
         logger.debug("Resumed Spotify playback")
         return True
-    except Exception as e:
+    except Exception:
         logger.exception("Error resuming playback")
         return False
 
@@ -840,7 +850,7 @@ def _spotify_seek(state: ProviderState, position_ms: int) -> bool:
         response.raise_for_status()
         logger.debug(f"Seeked to position: {position_ms}ms")
         return True
-    except Exception as e:
+    except Exception:
         logger.exception("Error seeking")
         return False
 
@@ -861,6 +871,6 @@ def _spotify_get_devices(state: ProviderState) -> List[Dict[str, Any]]:
         devices = response.json().get("devices", [])
         logger.debug(f"Found {len(devices)} Spotify devices")
         return devices
-    except Exception as e:
+    except Exception:
         logger.exception("Error getting devices")
         return []

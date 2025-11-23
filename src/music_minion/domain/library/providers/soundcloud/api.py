@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 from loguru import logger
+from requests.exceptions import HTTPError
 
 from music_minion.core.output import log
 
@@ -21,7 +22,9 @@ from .auth import TOKEN_URL
 API_BASE_URL = "https://api.soundcloud.com"
 
 
-def _ensure_valid_token(state: ProviderState) -> Tuple[ProviderState, Optional[Dict[str, Any]]]:
+def _ensure_valid_token(
+    state: ProviderState,
+) -> Tuple[ProviderState, Optional[Dict[str, Any]]]:
     """Ensure access token is valid, refreshing if expired.
 
     Handles token expiry check and automatic refresh. Returns None if
@@ -133,18 +136,32 @@ def sync_library(
     # Fetch user's likes (with progress reporting)
     logger.info("Starting SoundCloud likes sync")
     log("\n🔄 Syncing SoundCloud likes...", level="info")
-    tracks, all_liked_ids = _fetch_user_likes_with_markers(
-        access_token, existing_ids=existing_ids, incremental=incremental
-    )
-    logger.info(
-        f"Fetched {len(tracks)} new tracks, {len(all_liked_ids)} total liked tracks"
-    )
+    try:
+        tracks, all_liked_ids = _fetch_user_likes_with_markers(
+            access_token, existing_ids=existing_ids, incremental=incremental
+        )
+        logger.info(
+            f"Fetched {len(tracks)} new tracks, {len(all_liked_ids)} total liked tracks"
+        )
+    except HTTPError as e:
+        # Authentication failures - mark state as unauthenticated
+        if e.response.status_code in (401, 403):
+            from dataclasses import replace
+            state = replace(state, authenticated=False)
+            return state, []
+        else:
+            # Other HTTP errors - log and return empty
+            logger.error(f"HTTP error syncing library: {e}")
+            return state, []
 
     # Sync like markers for all matched tracks (both new and existing)
     likes_synced = 0
     try:
         if all_liked_ids:
-            log(f"📊 Syncing like markers for {len(all_liked_ids)} liked tracks...", level="info")
+            log(
+                f"📊 Syncing like markers for {len(all_liked_ids)} liked tracks...",
+                level="info",
+            )
             logger.debug(
                 f"Syncing like markers for {len(all_liked_ids)} SoundCloud tracks"
             )
@@ -168,7 +185,10 @@ def sync_library(
                 logger.info(f"Synced {likes_synced} like markers to database")
                 # Show combined status: likes synced + new tracks imported
                 new_tracks_msg = f"{len(tracks)} new" if tracks else "no new"
-                log(f"✓ Synced {likes_synced} like markers ({new_tracks_msg} tracks to import)", level="info")
+                log(
+                    f"✓ Synced {likes_synced} like markers ({new_tracks_msg} tracks to import)",
+                    level="info",
+                )
     except Exception as e:
         logger.error(f"Error syncing like markers: {e}", exc_info=True)
         log(f"⚠ Error syncing like markers: {e}", level="warning")
@@ -178,7 +198,10 @@ def sync_library(
     return new_state, tracks
 
 
-def search(state: ProviderState, query: str) -> Tuple[ProviderState, TrackList]:
+def search(
+    state: ProviderState,
+    query: str,
+) -> Tuple[ProviderState, TrackList]:
     """Search SoundCloud tracks.
 
     Args:
@@ -190,29 +213,44 @@ def search(state: ProviderState, query: str) -> Tuple[ProviderState, TrackList]:
     """
     # Use client credentials for public search
     try:
-        token = _get_client_credentials_token()
+        token = state.cache.get("token_data", {}).get("access_token")
+        if not token:
+            token = _get_client_credentials_token()
     except Exception:
-        return state, []
+        print("⚠ SoundCloud client credentials not configured")
+        log("⚠ SoundCloud client credentials not configured", level="warning")
 
     # Search API
     url = f"{API_BASE_URL}/tracks"
-    params = {"q": query, "limit": 50}
+    params = {
+        "q": query,
+        "limit": 50,
+        "access": "[playable, preview, blocked]",  # Include all dates
+    }
+
     headers = {"Authorization": f"OAuth {token}"}
 
     try:
         response = requests.get(url, params=params, headers=headers, timeout=30)
+
         response.raise_for_status()
         data = response.json()
 
+        # for item in data:
+        #     artist = (
+        #         item.get("metadata_artist") or item.get("user", {}).get("username", "")
+        #     ).strip()
+        #     print(item["title"], artist, item.get("duration"))
+
         tracks = []
-        if "collection" in data:
-            for track in data["collection"]:
-                track_id = str(track["id"])
-                metadata = _normalize_soundcloud_track(track)
-                tracks.append((track_id, metadata))
+        for track in data:
+            track_id = str(track["id"])
+            metadata = _normalize_soundcloud_track(track)
+            tracks.append((track_id, metadata))
 
         return state, tracks
-    except Exception:
+    except Exception as exc:
+        print("exception", exc)
         return state, []
 
 
@@ -242,17 +280,18 @@ def get_stream_url(state: ProviderState, provider_id: str) -> Optional[str]:
 
 
 def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, Any]]]:
-    """Get user's SoundCloud playlists with tracks (optimized batch fetch).
+    """Get user's SoundCloud playlists metadata (optimized for incremental sync).
 
     Args:
         state: Current provider state
 
     Returns:
-        (state, [{"id": "...", "name": "...", "track_count": N, "tracks": [(id, metadata), ...]}, ...])
+        (state, [{"id": "...", "name": "...", "track_count": N, "last_modified": "..."}, ...])
 
     Note:
-        Includes "tracks" key with pre-fetched track data to eliminate per-playlist API calls.
-        For playlists with >200 tracks, may fall back to individual fetch.
+        Returns playlist metadata only. Tracks should be fetched separately using
+        get_playlist_tracks() for playlists that need syncing (determined by last_modified).
+        This avoids downloading thousands of track objects that won't be used.
     """
     if not state.authenticated:
         return state, []
@@ -264,17 +303,17 @@ def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, A
 
     access_token = token_data["access_token"]
 
-    # Fetch user's playlists with tracks
+    # Fetch user's playlists metadata only (tracks fetched lazily as needed)
     url = f"{API_BASE_URL}/me/playlists"
     headers = {"Authorization": f"OAuth {access_token}"}
-    params = {"limit": 200, "show_tracks": True}
+    params = {"limit": 200, "show_tracks": False}
 
     playlists = []
 
     try:
         while url:
-            # Increased timeout for larger payloads (with show_tracks=True)
-            response = requests.get(url, params=params, headers=headers, timeout=60)
+            # Fetch metadata only - tracks loaded separately as needed
+            response = requests.get(url, params=params, headers=headers, timeout=30)
             response.raise_for_status()
             data = response.json()
 
@@ -285,6 +324,8 @@ def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, A
                 collection = data["collection"]
             else:
                 collection = []
+
+            log(f"API response: type={type(data)}, has_collection={'collection' in data if isinstance(data, dict) else False}, collection_size={len(collection)}", level="debug")
 
             # Process playlists
             for playlist in collection:
@@ -312,16 +353,36 @@ def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, A
             url = data.get("next_href") if isinstance(data, dict) else None
             params = {}  # Pagination URL contains all params
 
+        log(f"get_playlists returning {len(playlists)} playlists", level="debug")
         return state, playlists
 
+    except HTTPError as e:
+        # Authentication failures (401/403) indicate expired/invalid token
+        if e.response.status_code in (401, 403):
+            log(
+                "SoundCloud authentication expired. Please re-authenticate with: library auth soundcloud",
+                level="error",
+            )
+            # Mark state as unauthenticated so caller can show proper message
+            from dataclasses import replace
+            state = replace(state, authenticated=False)
+            return state, []
+        else:
+            # Other HTTP errors (rate limit, server errors, etc.)
+            log(
+                f"HTTP error fetching playlists (status {e.response.status_code}): {e}",
+                level="error",
+            )
+            return state, []
     except Exception as e:
+        # Network errors, JSON parsing errors, etc.
         log(f"Error fetching playlists: {e}", level="error")
         return state, []
 
 
 def get_playlist_tracks(
     state: ProviderState, playlist_id: str
-) -> Tuple[ProviderState, TrackList]:
+) -> Tuple[ProviderState, TrackList, Optional[str]]:
     """Get tracks in a SoundCloud playlist.
 
     Args:
@@ -329,15 +390,16 @@ def get_playlist_tracks(
         playlist_id: SoundCloud playlist ID
 
     Returns:
-        (state, [(track_id, metadata), ...])
+        (state, [(track_id, metadata), ...], created_at_timestamp)
+        created_at_timestamp is None (SoundCloud provides creation date in get_playlists())
     """
     if not state.authenticated:
-        return state, []
+        return state, [], None
 
     # Ensure token is valid, refresh if needed
     state, token_data = _ensure_valid_token(state)
     if not token_data:
-        return state, []
+        return state, [], None
 
     access_token = token_data["access_token"]
 
@@ -359,11 +421,12 @@ def get_playlist_tracks(
                 metadata = _normalize_soundcloud_track(track)
                 tracks.append((track_id, metadata))
 
-        return state, tracks
+        # SoundCloud provides creation date in get_playlists(), not here
+        return state, tracks, None
 
     except Exception as e:
         logger.error(f"Error fetching playlist tracks: {e}", exc_info=True)
-        return state, []
+        return state, [], None
 
 
 def like_track(
@@ -619,19 +682,38 @@ def _fetch_user_likes_with_markers(
             total_fetched = len(all_liked_ids)
 
             # Show progress per page
-            log(f"  → {total_fetched} (page {page}, +{fetched_this_page})", level="info")
+            log(
+                f"  → {total_fetched} (page {page}, +{fetched_this_page})", level="info"
+            )
 
             # Incremental mode: Stop if we found an existing track
             if found_existing:
-                log("  ✓ Stopping at first existing track (incremental mode)", level="info")
+                log(
+                    "  ✓ Stopping at first existing track (incremental mode)",
+                    level="info",
+                )
                 break
 
             # Next page
             url = data.get("next_href")
             params = {}  # Pagination URL contains all params
 
+    except HTTPError as e:
+        # Authentication failures should be raised to caller
+        if e.response.status_code in (401, 403):
+            log(
+                "SoundCloud authentication expired. Please re-authenticate with: library auth soundcloud",
+                level="error",
+            )
+            raise  # Re-raise to let caller handle auth failure
+        else:
+            # Other HTTP errors - log but return what we have
+            log(
+                f"  ⚠ HTTP error fetching likes (status {e.response.status_code}): {e}",
+                level="warning",
+            )
     except Exception as e:
-        # Show error but return what we have
+        # Network errors - show error but return what we have
         log(f"  ⚠ Error fetching likes: {e}", level="warning")
 
     log(f"  ✓ Fetched {total_fetched} liked tracks", level="info")

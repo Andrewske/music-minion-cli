@@ -900,17 +900,20 @@ def handle_playlist_restart_command(
         log("❌ First track has no database ID", level="error")
         return ctx, True
 
-    for track in ctx.music_tracks:
-        if track.id == first_track_id:
-            log(f"🔄 Restarting playlist: {active['name']}", level="info")
-            log(f"   {len(playlist_tracks)} tracks in playlist", level="info")
+    # Query track directly from database instead of searching ctx.music_tracks
+    db_track = database.get_track_by_id(first_track_id)
+    if not db_track:
+        log("❌ Track not found in database", level="error")
+        return ctx, True
 
-            # Play track with position 0
-            ctx, _ = playback_commands.play_track(ctx, track, 0)
-            return ctx, True
+    # Convert database track to Track object
+    track = database.db_track_to_library_track(db_track)
 
-    # Track not found in music_tracks (shouldn't happen)
-    log("❌ Track file not found in loaded library", level="error")
+    log(f"🔄 Restarting playlist: {active['name']}", level="info")
+    log(f"   {len(playlist_tracks)} tracks in playlist", level="info")
+
+    # Play track with position 0
+    ctx, _ = playback_commands.play_track(ctx, track, 0)
     return ctx, True
 
 
@@ -1185,3 +1188,114 @@ def handle_playlist_analyze_command(
 
         traceback.print_exc()
         return ctx, True
+
+
+def handle_playlist_convert_command(
+    ctx: AppContext, args: List[str]
+) -> Tuple[AppContext, bool]:
+    """
+    Handle playlist convert command - convert Spotify playlist to SoundCloud.
+
+    Usage:
+      playlist convert <spotify_playlist_name> <soundcloud_playlist_name>
+
+    Args:
+        ctx: Application context
+        args: [spotify_name, soundcloud_name]
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    from ..domain.playlists.conversion import convert_spotify_to_soundcloud
+
+    if len(args) < 2:
+        log("Error: Please specify both Spotify and SoundCloud playlist names", level="error")
+        log('Usage: playlist convert "Spotify Name" "SoundCloud Name"', level="info")
+        log('Example: playlist convert "Release Radar" "SC Release Radar"', level="info")
+        return ctx, True
+
+    # Parse quoted args
+    parsed_args = helpers.parse_quoted_args(args)
+
+    if len(parsed_args) < 2:
+        log("Error: Please specify both playlist names", level="error")
+        log('Usage: playlist convert "Spotify Name" "SoundCloud Name"', level="info")
+        return ctx, True
+
+    spotify_name = parsed_args[0]
+    soundcloud_name = parsed_args[1]
+
+    # Find Spotify playlist
+    spotify_playlist = playlists.get_playlist_by_name(spotify_name, library='spotify')
+
+    if not spotify_playlist:
+        log(f"❌ Spotify playlist '{spotify_name}' not found", level="error")
+        log("   Make sure you've synced your Spotify library first", level="info")
+        return ctx, True
+
+    # Check if it's actually a Spotify playlist
+    if spotify_playlist.get("library") != "spotify":
+        log(f"❌ '{spotify_name}' is not a Spotify playlist", level="error")
+        log(f"   Library: {spotify_playlist.get('library', 'unknown')}", level="info")
+        return ctx, True
+
+    spotify_playlist_id = spotify_playlist.get("spotify_playlist_id")
+    if not spotify_playlist_id:
+        log(f"❌ Playlist '{spotify_name}' has no Spotify ID", level="error")
+        return ctx, True
+
+    # Progress callback for user feedback
+    def progress_callback(current: int, total: int) -> None:
+        percentage = (current / total * 100) if total > 0 else 0
+        log(f"⏳ Matching tracks: {current}/{total} ({percentage:.0f}%)", level="info")
+
+    # Run conversion
+    log("\n🎵 Starting Spotify → SoundCloud conversion", level="info")
+    log(f"   Source: {spotify_name}", level="info")
+    log(f"   Target: {soundcloud_name}", level="info")
+    log("", level="info")
+
+    result = convert_spotify_to_soundcloud(
+        spotify_playlist_id, soundcloud_name, progress_callback
+    )
+
+    # Report results
+    log("\n" + "=" * 60, level="info")
+    if result.success:
+        log("✅ Conversion completed successfully!", level="info")
+        log(f"   Total tracks: {result.total_tracks}", level="info")
+        log(
+            f"   Matched: {result.matched_tracks} ({result.matched_tracks / result.total_tracks * 100:.1f}%)",
+            level="info",
+        )
+
+        if result.matched_tracks > 0:
+            log(
+                f"   Average confidence: {result.average_confidence:.2f}",
+                level="info",
+            )
+
+        if result.soundcloud_playlist_url:
+            log(f"   Playlist URL: {result.soundcloud_playlist_url}", level="info")
+
+        if result.failed_tracks > 0:
+            log(
+                f"\n⚠️  {result.failed_tracks} tracks could not be matched:",
+                level="warning",
+            )
+            for track_name in result.unmatched_track_names[:10]:
+                log(f"     • {track_name}", level="warning")
+
+            if len(result.unmatched_track_names) > 10:
+                log(
+                    f"     ... and {len(result.unmatched_track_names) - 10} more",
+                    level="warning",
+                )
+    else:
+        log("❌ Conversion failed", level="error")
+        if result.error_message:
+            log(f"   Error: {result.error_message}", level="error")
+
+    log("=" * 60, level="info")
+
+    return ctx, True

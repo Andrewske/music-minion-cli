@@ -804,7 +804,20 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     try:
                         from music_minion.commands import sync
 
-                        ctx, _ = sync.handle_sync_command(ctx)
+                        # Capture current player state before sync
+                        current_player_state = ctx.player_state
+                        current_spotify_player = ctx.spotify_player
+
+                        # Run sync (updates tracks but may lose player state)
+                        updated_ctx, _ = sync.handle_sync_command(ctx)
+
+                        # Preserve current player state (prevent clearing current track)
+                        ctx = dataclasses.replace(
+                            updated_ctx,
+                            player_state=current_player_state,
+                            spotify_player=current_spotify_player,
+                        )
+
                         # Update UI state from background thread
                         if ctx.update_ui_state:
                             ctx.update_ui_state(

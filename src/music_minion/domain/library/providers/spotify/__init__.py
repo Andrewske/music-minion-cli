@@ -9,6 +9,7 @@ from typing import Tuple
 from loguru import logger
 
 from music_minion.core.output import log
+
 from ...provider import ProviderConfig, ProviderState, TrackList
 
 # Import from submodules
@@ -47,9 +48,13 @@ def init_provider(config: ProviderConfig) -> ProviderState:
 
     # Inject config into cache for auth functions to access
     config_dict = {
-        "client_id": config.client_id if hasattr(config, 'client_id') else "",
-        "client_secret": config.client_secret if hasattr(config, 'client_secret') else "",
-        "redirect_uri": getattr(config, 'redirect_uri', "http://localhost:8080/callback"),
+        "client_id": config.client_id if hasattr(config, "client_id") else "",
+        "client_secret": config.client_secret
+        if hasattr(config, "client_secret")
+        else "",
+        "redirect_uri": getattr(
+            config, "redirect_uri", "http://localhost:8080/callback"
+        ),
     }
 
     # Try to load state from database
@@ -67,7 +72,9 @@ def init_provider(config: ProviderConfig) -> ProviderState:
             refreshed_token = auth.refresh_token(auth_data)
             if refreshed_token:
                 # Update database with refreshed token
-                database.save_provider_state("spotify", refreshed_token, db_state.get("config", {}))
+                database.save_provider_state(
+                    "spotify", refreshed_token, db_state.get("config", {})
+                )
                 logger.info("Spotify token refreshed successfully")
                 return ProviderState(
                     config=config,
@@ -76,13 +83,16 @@ def init_provider(config: ProviderConfig) -> ProviderState:
                     cache={"token_data": refreshed_token, "config": config_dict},
                 )
             logger.warning("Spotify token refresh failed")
-            log("⚠ Spotify authentication expired. Run: library auth spotify", level="warning")
+            log(
+                "⚠ Spotify authentication expired. Run: library auth spotify",
+                level="warning",
+            )
             # Refresh failed, return unauthenticated state
             return ProviderState(
                 config=config,
                 authenticated=False,
                 last_sync=None,
-                cache={"config": config_dict}
+                cache={"config": config_dict},
             )
         else:
             # Token still valid
@@ -115,13 +125,16 @@ def init_provider(config: ProviderConfig) -> ProviderState:
                     cache={"token_data": refreshed_token, "config": config_dict},
                 )
             logger.warning("File-based token refresh failed")
-            log("⚠ Spotify authentication expired. Run: library auth spotify", level="warning")
+            log(
+                "⚠ Spotify authentication expired. Run: library auth spotify",
+                level="warning",
+            )
             # Refresh failed, return unauthenticated state
             return ProviderState(
                 config=config,
                 authenticated=False,
                 last_sync=None,
-                cache={"config": config_dict}
+                cache={"config": config_dict},
             )
         else:
             # Token still valid
@@ -139,7 +152,7 @@ def init_provider(config: ProviderConfig) -> ProviderState:
         config=config,
         authenticated=False,
         last_sync=None,
-        cache={"config": config_dict}
+        cache={"config": config_dict},
     )
 
 
@@ -157,6 +170,7 @@ unlike_track = api.unlike_track
 add_track_to_playlist = api.add_track_to_playlist
 remove_track_from_playlist = api.remove_track_from_playlist
 create_playlist = api.create_playlist
+_ensure_valid_token = api._ensure_valid_token
 
 
 __all__ = [
@@ -172,4 +186,5 @@ __all__ = [
     "add_track_to_playlist",
     "remove_track_from_playlist",
     "create_playlist",
+    "_ensure_valid_token",
 ]

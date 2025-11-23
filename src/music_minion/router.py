@@ -96,9 +96,14 @@ Library Commands:
   library                          List all available libraries with track counts
   library active                   Show current active library
   library active <provider>        Switch to provider (local/soundcloud/spotify/all)
+  local                            Switch to local library (shortcut)
+  soundcloud                       Switch to SoundCloud library (shortcut)
+  spotify                          Switch to Spotify library (shortcut)
+  youtube                          Switch to YouTube library (shortcut)
   library sync [provider]          Sync tracks from provider
   library sync playlists <provider> Sync playlists from provider
-  library auth <provider>          Authenticate with provider (OAuth)
+  auth                             Authenticate with active library provider
+  library auth <provider>          Authenticate with specific provider (OAuth)
   library device list              List available Spotify devices
   library device set <name/id>     Set preferred Spotify device
   library device clear             Clear preferred device setting
@@ -136,7 +141,7 @@ Examples:
   playlist new manual "NYE 2025"  # Create playlist
   add "NYE 2025"          # Add current track to playlist
   library auth soundcloud # Authenticate with SoundCloud
-  library active soundcloud # Switch to SoundCloud library
+  soundcloud              # Switch to SoundCloud library (shortcut)
   play                    # Play SoundCloud stream via MPV
 """
     print(help_text.strip())
@@ -245,10 +250,12 @@ def handle_command(
             return playlist.handle_playlist_import_command(ctx, args[1:])
         elif args[0] == "export":
             return playlist.handle_playlist_export_command(ctx, args[1:])
+        elif args[0] == "convert":
+            return playlist.handle_playlist_convert_command(ctx, args[1:])
         else:
             logger.warning(f"Unknown playlist subcommand: '{args[0]}'")
             log(
-                f"Unknown playlist subcommand: '{args[0]}'. Available: new, delete, rename, show, analyze, active, restart, import, export",
+                f"Unknown playlist subcommand: '{args[0]}'. Available: new, delete, rename, show, analyze, active, restart, import, export, convert",
                 level="error",
             )
             return ctx, True
@@ -325,6 +332,21 @@ def handle_command(
 
     elif command == "library":
         return library.handle_library_command(ctx, args)
+
+    elif command == "local":
+        return library.switch_active_library(ctx, "local")
+
+    elif command == "soundcloud":
+        return library.switch_active_library(ctx, "soundcloud")
+
+    elif command == "spotify":
+        return library.switch_active_library(ctx, "spotify")
+
+    elif command == "youtube":
+        return library.switch_active_library(ctx, "youtube")
+
+    elif command == "auth":
+        return library.handle_auth_command(ctx)
 
     elif command == "composite":
         # Composite actions (for IPC/hotkeys)
