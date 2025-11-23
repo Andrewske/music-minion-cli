@@ -8,29 +8,23 @@ and IPC commands for hotkey integration.
 import argparse
 import sys
 import os
-from music_minion import ipc, notifications
+from music_minion import ipc
 
 
-def send_ipc_command(command: str, args: list, notify: bool = True) -> int:
+def send_ipc_command(command: str, args: list) -> int:
     """
     Send a command to running Music Minion instance via IPC.
 
     Args:
         command: Command name
         args: Command arguments
-        notify: Whether to show desktop notification
 
     Returns:
         Exit code (0 for success, 1 for failure)
     """
     success, message = ipc.send_command(command, args)
 
-    # Show notification if requested (default ON)
-    if notify:
-        if success:
-            notifications.notify_success(message)
-        else:
-            notifications.notify_error(message)
+    # Server handles notifications - no client-side notifications to avoid duplicates
 
     # Print message to stdout/stderr
     if success:
@@ -55,11 +49,6 @@ def main() -> None:
         action='store_true',
         help='Enable hot-reload for development (requires watchdog)'
     )
-    parser.add_argument(
-        '--no-notify',
-        action='store_true',
-        help='Disable desktop notifications for IPC commands'
-    )
 
     # Create subparsers for IPC commands
     subparsers = parser.add_subparsers(dest='subcommand', help='Available commands')
@@ -83,32 +72,30 @@ def main() -> None:
 
     # Handle IPC commands
     if args.subcommand:
-        notify = not args.no_notify
-
         if args.subcommand == 'like':
-            sys.exit(send_ipc_command('like', [], notify))
+            sys.exit(send_ipc_command('like', []))
 
         elif args.subcommand == 'love':
-            sys.exit(send_ipc_command('love', [], notify))
+            sys.exit(send_ipc_command('love', []))
 
         elif args.subcommand == 'skip':
-            sys.exit(send_ipc_command('skip', [], notify))
+            sys.exit(send_ipc_command('skip', []))
 
         elif args.subcommand == 'add':
             playlist_name = ' '.join(args.playlist)
-            sys.exit(send_ipc_command('add', [playlist_name], notify))
+            sys.exit(send_ipc_command('add', [playlist_name]))
 
         elif args.subcommand == 'la':
             # Composite: like_and_add_dated
-            sys.exit(send_ipc_command('composite', ['like_and_add_dated'], notify))
+            sys.exit(send_ipc_command('composite', ['like_and_add_dated']))
 
         elif args.subcommand == 'nq':
             # Composite: add_not_quite
-            sys.exit(send_ipc_command('composite', ['add_not_quite'], notify))
+            sys.exit(send_ipc_command('composite', ['add_not_quite']))
 
         elif args.subcommand == 'ni':
             # Composite: add_not_interested_and_skip
-            sys.exit(send_ipc_command('composite', ['add_not_interested_and_skip'], notify))
+            sys.exit(send_ipc_command('composite', ['add_not_interested_and_skip']))
 
     # No subcommand - start interactive mode
     if args.dev:

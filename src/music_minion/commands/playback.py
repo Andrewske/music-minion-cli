@@ -298,13 +298,48 @@ def handle_play_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, b
             else:
                 log("❌ Failed to resume playback", level="error")
         else:
-            # Play random track from available (non-archived) tracks
+            # Play first track (respecting shuffle mode)
             available_tracks = get_available_tracks(ctx)
-            if available_tracks:
-                track = library.get_random_track(available_tracks)
-                return play_track(ctx, track)
-            else:
+            if not available_tracks:
                 log("No tracks available to play (all may be archived)", "warning")
+                return ctx, True
+
+            # Check shuffle mode and active playlist
+            shuffle_enabled = playback.get_shuffle_mode()
+            active = playlists.get_active_playlist()
+
+            # Sequential mode: play first track in playlist order
+            if not shuffle_enabled and active:
+                # Get playlist tracks (in order)
+                playlist_tracks = playlists.get_playlist_tracks(active["id"])
+
+                if playlist_tracks:
+                    # Get first track (current_track_id=None means start from beginning)
+                    first_track_dict = playback.get_next_sequential_track(
+                        playlist_tracks, None
+                    )
+
+                    if first_track_dict:
+                        # Find matching Track object from available_tracks
+                        for track in available_tracks:
+                            track_identifier = (
+                                track.local_path or "",
+                                track.soundcloud_id or "",
+                                track.spotify_id or "",
+                                track.youtube_id or "",
+                            )
+                            db_identifier = (
+                                first_track_dict.get("local_path") or "",
+                                first_track_dict.get("soundcloud_id") or "",
+                                first_track_dict.get("spotify_id") or "",
+                                first_track_dict.get("youtube_id") or "",
+                            )
+                            if track_identifier == db_identifier:
+                                return play_track(ctx, track)
+
+            # Shuffle mode or no active playlist: random selection
+            track = library.get_random_track(available_tracks)
+            return play_track(ctx, track)
     else:
         # Search for track by query
         query = " ".join(args)
@@ -470,10 +505,25 @@ def get_next_track(
             if next_db_track is None:
                 # Track not found in playlist
                 if current_track_id is not None:
-                    # Current track removed from playlist, start from beginning
-                    current_track_id = None
-                    attempts += 1
-                    continue
+                    # Current track was removed from playlist
+                    # Try to continue from saved position instead of restarting
+                    saved_position_data = playback.get_playlist_position(active["id"])
+                    if saved_position_data:
+                        _, last_position = saved_position_data
+                        # Use the track at saved position (what was "next" is now at this position)
+                        if 0 <= last_position < len(playlist_tracks):
+                            next_db_track = playlist_tracks[last_position]
+                            # Found our track, continue with normal flow below
+                        else:
+                            # Position out of bounds, start from beginning
+                            current_track_id = None
+                            attempts += 1
+                            continue
+                    else:
+                        # No saved position, start from beginning
+                        current_track_id = None
+                        attempts += 1
+                        continue
                 else:
                     # Empty playlist or other error
                     return None

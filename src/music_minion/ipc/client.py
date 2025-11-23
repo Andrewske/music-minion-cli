@@ -51,7 +51,7 @@ def send_command(command: str, args: List[str] = None) -> Tuple[bool, str]:
     try:
         # Connect to Unix socket
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.settimeout(5.0)  # 5 second timeout
+        sock.settimeout(15.0)  # 15 second timeout
         sock.connect(str(socket_path))
 
         # Send command as JSON

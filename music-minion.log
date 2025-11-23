@@ -5082,3 +5082,666 @@ ValueError: could not convert string to float: '2025-11-22T19:56:31.400294'
 2025-11-22 21:55:58 | INFO     | music_minion.domain.playlists.sync:334 | Synced 57 tracks from SoundCloud for playlist 'Nov 25'
 2025-11-22 21:55:58 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Nov 25'
 2025-11-22 21:55:58 | INFO     | music_minion.core.output:83 |    ✓ Added to Nov 25
+2025-11-22 21:58:26 | INFO     | music_minion.core.output:83 | ♪ Now playing: AZASSIN - AZASSIN - JUNGLE JUICE (FLIP)
+2025-11-22 21:58:26 | INFO     | music_minion.core.output:83 |    Duration: 04:04
+2025-11-22 21:58:46 | INFO     | music_minion.core.output:83 | ⏭ Next track (sequential)...
+2025-11-22 21:58:47 | INFO     | music_minion.core.output:83 | ♪ Now playing: Foxily - Foxily - Be Happy [Lofi Pet Records]
+2025-11-22 21:58:47 | INFO     | music_minion.core.output:83 |    Duration: 02:48
+2025-11-22 21:58:47 | INFO     | music_minion.core.output:83 |    lofi
+2025-11-22 21:59:01 | INFO     | music_minion.core.output:83 | ⏭ Next track (sequential)...
+2025-11-22 21:59:02 | INFO     | music_minion.core.output:83 | ♪ Now playing: SubCarbon Records - sfam x KTRL - wake up
+2025-11-22 21:59:02 | INFO     | music_minion.core.output:83 |    Duration: 02:24
+2025-11-22 21:59:02 | INFO     | music_minion.core.output:83 |    Dubstep
+2025-11-22 21:59:02 | INFO     | music_minion.domain.playlists.crud:506 | Removing track 22554 from playlist 26
+2025-11-22 21:59:02 | INFO     | music_minion.domain.playlists.crud:560 | Removing track 22554 from soundcloud playlist 26
+2025-11-22 21:59:02 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 22554 from SoundCloud playlist sync for playlist 26
+2025-11-22 21:59:02 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2164518543 (local track 22554: Foxily - Foxily - Be Happy [Lofi Pet Records]) from playlist 2068606557 (reposts)
+2025-11-22 21:59:04 | INFO     | music_minion.domain.playlists.sync:334 | Synced 95 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 21:59:04 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 21:59:04 | INFO     | music_minion.actions:265 | Removed track 22554 from reposts playlist
+2025-11-22 21:59:04 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2164518543 to SoundCloud playlist 2100919255
+2025-11-22 21:59:06 | INFO     | music_minion.domain.playlists.sync:334 | Synced 123 tracks from SoundCloud for playlist 'Not Interested'
+2025-11-22 21:59:06 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Not Interested'
+2025-11-22 22:01:28 | INFO     | music_minion.core.output:83 | ♪ Now playing: WHOiSEE - Tommy Richman - Devil Is A Lie (WHOiSEE Remix)
+2025-11-22 22:01:28 | INFO     | music_minion.core.output:83 |    Duration: 02:18
+2025-11-22 22:01:28 | INFO     | music_minion.core.output:83 |    Dance & EDM
+2025-11-22 22:03:49 | INFO     | music_minion.core.output:83 | ♪ Now playing: SAINT MILLER - fuck the world
+2025-11-22 22:03:49 | INFO     | music_minion.core.output:83 |    Duration: 02:01
+2025-11-22 22:03:49 | INFO     | music_minion.core.output:83 |    Dubstep
+2025-11-22 22:05:53 | INFO     | music_minion.core.output:83 | ♪ Now playing: Luhv - Luhv @ Big Dub 2025 (Tracklist + IDs In Description)
+2025-11-22 22:05:53 | INFO     | music_minion.core.output:83 |    Duration: 59:25
+2025-11-22 22:05:53 | INFO     | music_minion.core.output:83 |    Dance & EDM
+2025-11-22 22:06:56 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-22 22:06:56 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-22 22:06:56 | INFO     | music_minion.ui.blessed.app:903 | Starting background sync after UI render
+2025-11-22 22:06:56 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: soundcloud
+2025-11-22 22:06:56 | INFO     | music_minion.core.output:83 | Syncing soundcloud (likes + playlists)...
+2025-11-22 22:06:56 | INFO     | music_minion.core.output:83 | 🔄 Syncing from soundcloud...
+2025-11-22 22:06:56 | ERROR    | music_minion.core.output:83 | Token refresh failed (HTTP 400): {'error': 'invalid_grant'}
+2025-11-22 22:06:56 | ERROR    | music_minion.core.output:83 | Refresh token expired or invalid. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:06:56 | ERROR    | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:06:56 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 22:06:56 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 22:06:56 | ERROR    | music_minion.core.output:83 | Token refresh failed (HTTP 400): {'error': 'invalid_grant'}
+2025-11-22 22:06:56 | ERROR    | music_minion.core.output:83 | Refresh token expired or invalid. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:06:56 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from soundcloud...
+2025-11-22 22:06:57 | ERROR    | music_minion.core.output:83 | Token refresh failed (HTTP 400): {'error': 'invalid_grant'}
+2025-11-22 22:06:57 | ERROR    | music_minion.core.output:83 | Refresh token expired or invalid. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:06:57 | ERROR    | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:06:57 | INFO     | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:06:58 | INFO     | music_minion.core.output:83 | Starting music playback...
+2025-11-22 22:06:58 | INFO     | music_minion.domain.playback.player:63 | Starting MPV player with socket: /tmp/mpv-socket-129848
+2025-11-22 22:06:58 | INFO     | music_minion.domain.playback.player:102 | MPV started successfully
+2025-11-22 22:06:59 | INFO     | music_minion.core.output:83 | ♪ Now playing: Modley - GIVING UP
+2025-11-22 22:06:59 | INFO     | music_minion.core.output:83 |    Duration: 03:18
+2025-11-22 22:06:59 | INFO     | music_minion.core.output:83 |    Dubstep
+2025-11-22 22:08:26 | INFO     | music_minion.actions:202 | Track ID:
+2025-11-22 22:08:26 | INFO     | music_minion.domain.playlists.crud:506 | Removing track 22613 from playlist 26
+2025-11-22 22:08:26 | INFO     | music_minion.domain.playlists.crud:560 | Removing track 22613 from soundcloud playlist 26
+2025-11-22 22:08:26 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 22613 from SoundCloud playlist sync for playlist 26
+2025-11-22 22:08:26 | ERROR    | music_minion.core.output:83 | Token refresh failed (HTTP 400): {'error': 'invalid_grant'}
+2025-11-22 22:08:26 | ERROR    | music_minion.core.output:83 | Refresh token expired or invalid. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:08:26 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2135463558 (local track 22613: Modley - GIVING UP) from playlist 2068606557 (reposts)
+2025-11-22 22:08:28 | ERROR    | music_minion.core.output:83 | Token refresh failed (HTTP 400): {'error': 'invalid_grant'}
+2025-11-22 22:08:28 | ERROR    | music_minion.core.output:83 | Refresh token expired or invalid. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:08:29 | INFO     | music_minion.domain.playlists.sync:334 | Synced 94 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 22:08:29 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 22:08:29 | INFO     | music_minion.actions:207 | Removed track 22613 from reposts playlist
+2025-11-22 22:08:29 | ERROR    | music_minion.core.output:83 | Token refresh failed (HTTP 400): {'error': 'invalid_grant'}
+2025-11-22 22:08:29 | ERROR    | music_minion.core.output:83 | Refresh token expired or invalid. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:08:30 | INFO     | music_minion.domain.playlists.sync:334 | Synced 413 tracks from SoundCloud for playlist 'Not Quite'
+2025-11-22 22:08:31 | ERROR    | music_minion.core.output:83 | Token refresh failed (HTTP 400): {'error': 'invalid_grant'}
+2025-11-22 22:08:31 | ERROR    | music_minion.core.output:83 | Refresh token expired or invalid. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:08:31 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2135463558 to SoundCloud playlist 2101314851
+2025-11-22 22:08:33 | ERROR    | music_minion.core.output:83 | Token refresh failed (HTTP 400): {'error': 'invalid_grant'}
+2025-11-22 22:08:33 | ERROR    | music_minion.core.output:83 | Refresh token expired or invalid. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:08:35 | INFO     | music_minion.domain.playlists.sync:334 | Synced 414 tracks from SoundCloud for playlist 'Not Quite'
+2025-11-22 22:08:35 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Not Quite'
+2025-11-22 22:10:21 | INFO     | music_minion.core.output:83 | ♪ Now playing: AZASSIN - AZASSIN - JUNGLE JUICE (FLIP)
+2025-11-22 22:10:21 | INFO     | music_minion.core.output:83 |    Duration: 04:04
+2025-11-22 22:14:28 | INFO     | music_minion.core.output:83 | ♪ Now playing: SubCarbon Records - sfam x KTRL - wake up
+2025-11-22 22:14:28 | INFO     | music_minion.core.output:83 |    Duration: 02:24
+2025-11-22 22:14:28 | INFO     | music_minion.core.output:83 |    Dubstep
+2025-11-22 22:14:52 | INFO     | music_minion.core.output:83 | ⏭ Next track (sequential)...
+2025-11-22 22:14:53 | INFO     | music_minion.core.output:83 | ♪ Now playing: WHOiSEE - Tommy Richman - Devil Is A Lie (WHOiSEE Remix)
+2025-11-22 22:14:53 | INFO     | music_minion.core.output:83 |    Duration: 02:18
+2025-11-22 22:14:53 | INFO     | music_minion.core.output:83 |    Dance & EDM
+2025-11-22 22:16:34 | INFO     | music_minion.actions:202 | Track ID:
+2025-11-22 22:16:34 | INFO     | music_minion.domain.playlists.crud:506 | Removing track 12280 from playlist 26
+2025-11-22 22:16:34 | INFO     | music_minion.domain.playlists.crud:560 | Removing track 12280 from soundcloud playlist 26
+2025-11-22 22:16:34 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 12280 from SoundCloud playlist sync for playlist 26
+2025-11-22 22:16:34 | ERROR    | music_minion.core.output:83 | Token refresh failed (HTTP 400): {'error': 'invalid_grant'}
+2025-11-22 22:16:34 | ERROR    | music_minion.core.output:83 | Refresh token expired or invalid. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:16:34 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2181746703 (local track 12280: WHOiSEE - Tommy Richman - Devil Is A Lie (WHOiSEE Remix)) from playlist 2068606557 (reposts)
+2025-11-22 22:16:36 | ERROR    | music_minion.core.output:83 | Token refresh failed (HTTP 400): {'error': 'invalid_grant'}
+2025-11-22 22:16:36 | ERROR    | music_minion.core.output:83 | Refresh token expired or invalid. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:16:37 | INFO     | music_minion.domain.playlists.sync:334 | Synced 93 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 22:16:37 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 22:16:37 | INFO     | music_minion.actions:207 | Removed track 12280 from reposts playlist
+2025-11-22 22:16:37 | ERROR    | music_minion.core.output:83 | Token refresh failed (HTTP 400): {'error': 'invalid_grant'}
+2025-11-22 22:16:37 | ERROR    | music_minion.core.output:83 | Refresh token expired or invalid. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:16:37 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2181746703 to SoundCloud playlist 2101314851
+2025-11-22 22:16:40 | ERROR    | music_minion.core.output:83 | Token refresh failed (HTTP 400): {'error': 'invalid_grant'}
+2025-11-22 22:16:40 | ERROR    | music_minion.core.output:83 | Refresh token expired or invalid. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:16:42 | INFO     | music_minion.domain.playlists.sync:334 | Synced 415 tracks from SoundCloud for playlist 'Not Quite'
+2025-11-22 22:16:42 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Not Quite'
+2025-11-22 22:17:14 | INFO     | music_minion.core.output:83 | ♪ Now playing: AZASSIN - AZASSIN - JUNGLE JUICE (FLIP)
+2025-11-22 22:17:14 | INFO     | music_minion.core.output:83 |    Duration: 04:04
+2025-11-22 22:18:07 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-22 22:18:07 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-22 22:18:08 | INFO     | music_minion.ui.blessed.app:903 | Starting background sync after UI render
+2025-11-22 22:21:22 | INFO     | music_minion.core.output:83 | ♪ Now playing: SubCarbon Records - sfam x KTRL - wake up
+2025-11-22 22:21:22 | INFO     | music_minion.core.output:83 |    Duration: 02:24
+2025-11-22 22:21:22 | INFO     | music_minion.core.output:83 |    Dubstep
+2025-11-22 22:23:48 | INFO     | music_minion.core.output:83 | ♪ Now playing: SAINT MILLER - fuck the world
+2025-11-22 22:23:48 | INFO     | music_minion.core.output:83 |    Duration: 02:01
+2025-11-22 22:23:48 | INFO     | music_minion.core.output:83 |    Dubstep
+2025-11-22 22:25:52 | INFO     | music_minion.core.output:83 | ♪ Now playing: Luhv - Luhv @ Big Dub 2025 (Tracklist + IDs In Description)
+2025-11-22 22:25:52 | INFO     | music_minion.core.output:83 |    Duration: 59:25
+2025-11-22 22:25:52 | INFO     | music_minion.core.output:83 |    Dance & EDM
+2025-11-22 22:30:30 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-22 22:30:30 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-22 22:30:30 | INFO     | music_minion.ui.blessed.app:903 | Starting background sync after UI render
+2025-11-22 22:30:30 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: soundcloud
+2025-11-22 22:30:30 | INFO     | music_minion.core.output:83 | Syncing soundcloud (likes + playlists)...
+2025-11-22 22:30:30 | INFO     | music_minion.core.output:83 | 🔄 Syncing from soundcloud...
+2025-11-22 22:30:31 | WARNING  | music_minion.domain.library.providers.soundcloud.auth:373 | SoundCloud refresh token invalid or expired (HTTP 400: invalid_grant). User must re-authenticate with: library auth soundcloud
+2025-11-22 22:30:31 | ERROR    | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:30:31 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 22:30:31 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 22:30:31 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from soundcloud...
+2025-11-22 22:30:31 | WARNING  | music_minion.domain.library.providers.soundcloud.auth:373 | SoundCloud refresh token invalid or expired (HTTP 400: invalid_grant). User must re-authenticate with: library auth soundcloud
+2025-11-22 22:30:31 | ERROR    | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:30:31 | INFO     | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:30:34 | INFO     | music_minion.core.output:83 | Starting music playback...
+2025-11-22 22:30:34 | INFO     | music_minion.domain.playback.player:63 | Starting MPV player with socket: /tmp/mpv-socket-145505
+2025-11-22 22:30:34 | INFO     | music_minion.domain.playback.player:102 | MPV started successfully
+2025-11-22 22:30:34 | INFO     | music_minion.core.output:83 | ♪ Now playing: AZASSIN - AZASSIN - JUNGLE JUICE (FLIP)
+2025-11-22 22:30:34 | INFO     | music_minion.core.output:83 |    Duration: 04:04
+2025-11-22 22:30:39 | INFO     | music_minion.core.output:83 | ⏭ Next track (sequential)...
+2025-11-22 22:30:39 | INFO     | music_minion.core.output:83 | ♪ Now playing: SubCarbon Records - sfam x KTRL - wake up
+2025-11-22 22:30:39 | INFO     | music_minion.core.output:83 |    Duration: 02:24
+2025-11-22 22:30:39 | INFO     | music_minion.core.output:83 |    Dubstep
+2025-11-22 22:30:49 | INFO     | music_minion.core.output:83 | ⏳ Processing like and add to playlist...
+2025-11-22 22:30:49 | INFO     | music_minion.domain.playlists.crud:506 | Removing track 22556 from playlist 26
+2025-11-22 22:30:49 | INFO     | music_minion.domain.playlists.crud:560 | Removing track 22556 from soundcloud playlist 26
+2025-11-22 22:30:49 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 22556 from SoundCloud playlist sync for playlist 26
+2025-11-22 22:30:51 | INFO     | music_minion.domain.playlists.sync:334 | Synced 93 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 22:30:51 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2194891587 (local track 22556: SubCarbon Records - sfam x KTRL - wake up) from playlist 2068606557 (reposts)
+2025-11-22 22:30:53 | INFO     | music_minion.domain.playlists.sync:334 | Synced 92 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 22:30:53 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 22:30:53 | INFO     | music_minion.actions:135 | Removed track 22556 from reposts playlist
+2025-11-22 22:30:53 | INFO     | music_minion.core.output:83 |    ✓ Removed from reposts
+2025-11-22 22:30:53 | INFO     | music_minion.core.output:83 | 👍 Liked: SubCarbon Records - sfam x KTRL - wake up
+2025-11-22 22:30:53 | INFO     | music_minion.core.output:83 |    Liked on Saturday at 22:30
+2025-11-22 22:30:54 | INFO     | music_minion.core.output:83 |    ✓ Synced like to SoundCloud
+2025-11-22 22:30:54 | INFO     | music_minion.domain.playlists.sync:334 | Synced 57 tracks from SoundCloud for playlist 'Nov 25'
+2025-11-22 22:30:54 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2194891587 to SoundCloud playlist 2107077439
+2025-11-22 22:30:56 | INFO     | music_minion.domain.playlists.sync:334 | Synced 58 tracks from SoundCloud for playlist 'Nov 25'
+2025-11-22 22:30:56 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Nov 25'
+2025-11-22 22:30:56 | INFO     | music_minion.core.output:83 |    ✓ Added to Nov 25
+2025-11-22 22:31:10 | INFO     | music_minion.core.output:83 | ⏭ Next track (sequential)...
+2025-11-22 22:31:11 | INFO     | music_minion.core.output:83 | ♪ Now playing: AZASSIN - AZASSIN - JUNGLE JUICE (FLIP)
+2025-11-22 22:31:11 | INFO     | music_minion.core.output:83 |    Duration: 04:04
+2025-11-22 22:31:15 | INFO     | music_minion.core.output:83 | ⏭ Next track (sequential)...
+2025-11-22 22:31:15 | INFO     | music_minion.core.output:83 | ♪ Now playing: SAINT MILLER - fuck the world
+2025-11-22 22:31:15 | INFO     | music_minion.core.output:83 |    Duration: 02:01
+2025-11-22 22:31:15 | INFO     | music_minion.core.output:83 |    Dubstep
+2025-11-22 22:33:19 | INFO     | music_minion.core.output:83 | ♪ Now playing: Luhv - Luhv @ Big Dub 2025 (Tracklist + IDs In Description)
+2025-11-22 22:33:19 | INFO     | music_minion.core.output:83 |    Duration: 59:25
+2025-11-22 22:33:19 | INFO     | music_minion.core.output:83 |    Dance & EDM
+2025-11-22 22:36:06 | INFO     | music_minion.core.output:83 | ⏭ Next track (sequential)...
+2025-11-22 22:36:07 | INFO     | music_minion.core.output:83 | ♪ Now playing: CRASH OVERIDE - TAKE TIME
+2025-11-22 22:36:07 | INFO     | music_minion.core.output:83 |    Duration: 03:26
+2025-11-22 22:36:07 | INFO     | music_minion.core.output:83 |    Dubstep
+2025-11-22 22:36:07 | INFO     | music_minion.domain.playlists.crud:506 | Removing track 22558 from playlist 26
+2025-11-22 22:36:07 | INFO     | music_minion.domain.playlists.crud:560 | Removing track 22558 from soundcloud playlist 26
+2025-11-22 22:36:07 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 22558 from SoundCloud playlist sync for playlist 26
+2025-11-22 22:36:07 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2172079371 (local track 22558: Luhv - Luhv @ Big Dub 2025 (Tracklist + IDs In Description)) from playlist 2068606557 (reposts)
+2025-11-22 22:36:09 | INFO     | music_minion.domain.playlists.sync:334 | Synced 91 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 22:36:10 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 22:36:10 | INFO     | music_minion.actions:265 | Removed track 22558 from reposts playlist
+2025-11-22 22:36:10 | INFO     | music_minion.domain.playlists.sync:334 | Synced 123 tracks from SoundCloud for playlist 'Not Interested'
+2025-11-22 22:36:10 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2172079371 to SoundCloud playlist 2100919255
+2025-11-22 22:36:14 | INFO     | music_minion.domain.playlists.sync:334 | Synced 124 tracks from SoundCloud for playlist 'Not Interested'
+2025-11-22 22:36:14 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Not Interested'
+2025-11-22 22:37:29 | INFO     | music_minion.actions:202 | Track ID:
+2025-11-22 22:37:29 | INFO     | music_minion.domain.playlists.crud:506 | Removing track 22559 from playlist 26
+2025-11-22 22:37:29 | INFO     | music_minion.domain.playlists.crud:560 | Removing track 22559 from soundcloud playlist 26
+2025-11-22 22:37:29 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 22559 from SoundCloud playlist sync for playlist 26
+2025-11-22 22:37:29 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2208464042 (local track 22559: CRASH OVERIDE - TAKE TIME) from playlist 2068606557 (reposts)
+2025-11-22 22:37:32 | INFO     | music_minion.domain.playlists.sync:334 | Synced 90 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 22:37:32 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 22:37:32 | INFO     | music_minion.actions:207 | Removed track 22559 from reposts playlist
+2025-11-22 22:37:34 | INFO     | music_minion.domain.playlists.sync:334 | Synced 415 tracks from SoundCloud for playlist 'Not Quite'
+2025-11-22 22:37:34 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2208464042 to SoundCloud playlist 2101314851
+2025-11-22 22:37:37 | INFO     | music_minion.domain.playlists.sync:334 | Synced 416 tracks from SoundCloud for playlist 'Not Quite'
+2025-11-22 22:37:37 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Not Quite'
+2025-11-22 22:39:36 | INFO     | music_minion.core.output:83 | ♪ Now playing: AZASSIN - AZASSIN - JUNGLE JUICE (FLIP)
+2025-11-22 22:39:36 | INFO     | music_minion.core.output:83 |    Duration: 04:04
+2025-11-22 22:40:48 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-22 22:40:48 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-22 22:40:48 | INFO     | music_minion.ui.blessed.app:903 | Starting background sync after UI render
+2025-11-22 22:40:48 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: soundcloud
+2025-11-22 22:40:48 | INFO     | music_minion.core.output:83 | Syncing soundcloud (likes + playlists)...
+2025-11-22 22:40:48 | INFO     | music_minion.core.output:83 | 🔄 Syncing from soundcloud...
+2025-11-22 22:40:49 | WARNING  | music_minion.domain.library.providers.soundcloud.auth:373 | SoundCloud refresh token invalid or expired (HTTP 400: invalid_grant). User must re-authenticate with: library auth soundcloud
+2025-11-22 22:40:49 | ERROR    | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:40:49 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 22:40:49 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 22:40:49 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from soundcloud...
+2025-11-22 22:40:49 | WARNING  | music_minion.domain.library.providers.soundcloud.auth:373 | SoundCloud refresh token invalid or expired (HTTP 400: invalid_grant). User must re-authenticate with: library auth soundcloud
+2025-11-22 22:40:49 | ERROR    | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:40:49 | INFO     | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:40:55 | INFO     | music_minion.core.output:83 | Starting music playback...
+2025-11-22 22:40:55 | INFO     | music_minion.domain.playback.player:63 | Starting MPV player with socket: /tmp/mpv-socket-151710
+2025-11-22 22:40:55 | INFO     | music_minion.domain.playback.player:102 | MPV started successfully
+2025-11-22 22:40:56 | INFO     | music_minion.core.output:83 | ♪ Now playing: AZASSIN - AZASSIN - JUNGLE JUICE (FLIP)
+2025-11-22 22:40:56 | INFO     | music_minion.core.output:83 |    Duration: 04:04
+2025-11-22 22:41:08 | INFO     | music_minion.core.output:83 | ⏳ Processing like and add to playlist...
+2025-11-22 22:41:08 | INFO     | music_minion.domain.playlists.crud:506 | Removing track 12894 from playlist 26
+2025-11-22 22:41:08 | INFO     | music_minion.domain.playlists.crud:560 | Removing track 12894 from soundcloud playlist 26
+2025-11-22 22:41:08 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 12894 from SoundCloud playlist sync for playlist 26
+2025-11-22 22:41:08 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2199220935 (local track 12894: AZASSIN - AZASSIN - JUNGLE JUICE (FLIP)) from playlist 2068606557 (reposts)
+2025-11-22 22:41:11 | INFO     | music_minion.domain.playlists.sync:334 | Synced 89 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 22:41:11 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 22:41:11 | INFO     | music_minion.actions:135 | Removed track 12894 from reposts playlist
+2025-11-22 22:41:11 | INFO     | music_minion.core.output:83 |    ✓ Removed from reposts
+2025-11-22 22:41:11 | INFO     | music_minion.core.output:83 | 👍 Liked: AZASSIN - AZASSIN - JUNGLE JUICE (FLIP)
+2025-11-22 22:41:11 | INFO     | music_minion.core.output:83 |    Liked on Saturday at 22:41
+2025-11-22 22:41:12 | INFO     | music_minion.domain.playlists.sync:334 | Synced 58 tracks from SoundCloud for playlist 'Nov 25'
+2025-11-22 22:41:12 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2199220935 to SoundCloud playlist 2107077439
+2025-11-22 22:41:14 | INFO     | music_minion.domain.playlists.sync:334 | Synced 59 tracks from SoundCloud for playlist 'Nov 25'
+2025-11-22 22:41:14 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Nov 25'
+2025-11-22 22:41:14 | INFO     | music_minion.core.output:83 |    ✓ Added to Nov 25
+2025-11-22 22:41:25 | INFO     | music_minion.core.output:83 | ⏭ Next track (sequential)...
+2025-11-22 22:41:26 | INFO     | music_minion.core.output:83 | ♪ Now playing: SAINT MILLER - fuck the world
+2025-11-22 22:41:26 | INFO     | music_minion.core.output:83 |    Duration: 02:01
+2025-11-22 22:41:26 | INFO     | music_minion.core.output:83 |    Dubstep
+2025-11-22 22:42:13 | INFO     | music_minion.core.output:83 | ⏳ Processing like and add to playlist...
+2025-11-22 22:42:13 | INFO     | music_minion.domain.playlists.crud:506 | Removing track 22557 from playlist 26
+2025-11-22 22:42:13 | INFO     | music_minion.domain.playlists.crud:560 | Removing track 22557 from soundcloud playlist 26
+2025-11-22 22:42:13 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 22557 from SoundCloud playlist sync for playlist 26
+2025-11-22 22:42:13 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2182400191 (local track 22557: SAINT MILLER - fuck the world) from playlist 2068606557 (reposts)
+2025-11-22 22:42:16 | INFO     | music_minion.domain.playlists.sync:334 | Synced 88 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 22:42:16 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 22:42:16 | INFO     | music_minion.actions:135 | Removed track 22557 from reposts playlist
+2025-11-22 22:42:16 | INFO     | music_minion.core.output:83 |    ✓ Removed from reposts
+2025-11-22 22:42:16 | INFO     | music_minion.core.output:83 | 👍 Liked: SAINT MILLER - fuck the world
+2025-11-22 22:42:16 | INFO     | music_minion.core.output:83 |    Liked on Saturday at 22:42
+2025-11-22 22:42:16 | INFO     | music_minion.core.output:83 |    ✓ Synced like to SoundCloud
+2025-11-22 22:42:16 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2182400191 to SoundCloud playlist 2107077439
+2025-11-22 22:42:18 | INFO     | music_minion.domain.playlists.sync:334 | Synced 60 tracks from SoundCloud for playlist 'Nov 25'
+2025-11-22 22:42:18 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Nov 25'
+2025-11-22 22:42:18 | INFO     | music_minion.core.output:83 |    ✓ Added to Nov 25
+2025-11-22 22:43:30 | INFO     | music_minion.core.output:83 | ♪ Now playing: WHALES - LABRINTH - FORMULA (WHALES REMIX)
+2025-11-22 22:43:30 | INFO     | music_minion.core.output:83 |    Duration: 01:42
+2025-11-22 22:43:30 | INFO     | music_minion.core.output:83 |    Dubstep
+2025-11-22 22:43:36 | INFO     | music_minion.core.output:83 | ⏭ Next track (sequential)...
+2025-11-22 22:43:37 | INFO     | music_minion.core.output:83 | ♪ Now playing: BLVCKMORE - BLVCKMORE - OOPA [Gold Digger]
+2025-11-22 22:43:37 | INFO     | music_minion.core.output:83 |    Duration: 04:01
+2025-11-22 22:43:37 | INFO     | music_minion.core.output:83 |    House
+2025-11-22 22:44:43 | INFO     | music_minion.core.output:83 | ⏳ Processing like and add to playlist...
+2025-11-22 22:44:43 | INFO     | music_minion.domain.playlists.crud:506 | Removing track 22561 from playlist 26
+2025-11-22 22:44:43 | INFO     | music_minion.domain.playlists.crud:560 | Removing track 22561 from soundcloud playlist 26
+2025-11-22 22:44:43 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 22561 from SoundCloud playlist sync for playlist 26
+2025-11-22 22:44:43 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2200626347 (local track 22561: BLVCKMORE - BLVCKMORE - OOPA [Gold Digger]) from playlist 2068606557 (reposts)
+2025-11-22 22:44:46 | INFO     | music_minion.domain.playlists.sync:334 | Synced 87 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 22:44:46 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 22:44:46 | INFO     | music_minion.actions:135 | Removed track 22561 from reposts playlist
+2025-11-22 22:44:46 | INFO     | music_minion.core.output:83 |    ✓ Removed from reposts
+2025-11-22 22:44:46 | INFO     | music_minion.core.output:83 | 👍 Liked: BLVCKMORE - BLVCKMORE - OOPA [Gold Digger]
+2025-11-22 22:44:46 | INFO     | music_minion.core.output:83 |    Liked on Saturday at 22:44
+2025-11-22 22:44:46 | INFO     | music_minion.core.output:83 |    ✓ Synced like to SoundCloud
+2025-11-22 22:44:46 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2200626347 to SoundCloud playlist 2107077439
+2025-11-22 22:44:48 | INFO     | music_minion.domain.playlists.sync:334 | Synced 61 tracks from SoundCloud for playlist 'Nov 25'
+2025-11-22 22:44:48 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Nov 25'
+2025-11-22 22:44:48 | INFO     | music_minion.core.output:83 |    ✓ Added to Nov 25
+2025-11-22 22:45:15 | INFO     | music_minion.core.output:83 | ⏭ Next track (sequential)...
+2025-11-22 22:45:16 | INFO     | music_minion.core.output:83 | ♪ Now playing: RECESS, Ogge - RECESS, Ogge - Over U [Future Bass Release]
+2025-11-22 22:45:16 | INFO     | music_minion.core.output:83 |    Duration: 03:24
+2025-11-22 22:45:16 | INFO     | music_minion.core.output:83 |    Electronic
+2025-11-22 22:46:50 | INFO     | music_minion.actions:202 | Track ID:
+2025-11-22 22:46:50 | INFO     | music_minion.domain.playlists.crud:506 | Removing track 22562 from playlist 26
+2025-11-22 22:46:50 | INFO     | music_minion.domain.playlists.crud:560 | Removing track 22562 from soundcloud playlist 26
+2025-11-22 22:46:50 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 22562 from SoundCloud playlist sync for playlist 26
+2025-11-22 22:46:50 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2164511928 (local track 22562: RECESS, Ogge - RECESS, Ogge - Over U [Future Bass Release]) from playlist 2068606557 (reposts)
+2025-11-22 22:46:54 | INFO     | music_minion.domain.playlists.sync:334 | Synced 86 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 22:46:54 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 22:46:54 | INFO     | music_minion.actions:207 | Removed track 22562 from reposts playlist
+2025-11-22 22:46:54 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2164511928 to SoundCloud playlist 2101314851
+2025-11-22 22:46:58 | INFO     | music_minion.domain.playlists.sync:334 | Synced 417 tracks from SoundCloud for playlist 'Not Quite'
+2025-11-22 22:46:58 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Not Quite'
+2025-11-22 22:48:43 | INFO     | music_minion.core.output:83 | ♪ Now playing: Gustavo Mota - Said, Gustavo Mota - Party Rock | FREE DOWNLOAD
+2025-11-22 22:48:43 | INFO     | music_minion.core.output:83 |    Duration: 10:12
+2025-11-22 22:48:43 | INFO     | music_minion.core.output:83 |    Bass House
+2025-11-22 22:49:39 | INFO     | music_minion.actions:202 | Track ID:
+2025-11-22 22:49:39 | INFO     | music_minion.domain.playlists.crud:506 | Removing track 22563 from playlist 26
+2025-11-22 22:49:39 | INFO     | music_minion.domain.playlists.crud:560 | Removing track 22563 from soundcloud playlist 26
+2025-11-22 22:49:39 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 22563 from SoundCloud playlist sync for playlist 26
+2025-11-22 22:49:39 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2216266832 (local track 22563: Gustavo Mota - Said, Gustavo Mota - Party Rock | FREE DOWNLOAD) from playlist 2068606557 (reposts)
+2025-11-22 22:49:42 | INFO     | music_minion.domain.playlists.sync:334 | Synced 85 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 22:49:42 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 22:49:42 | INFO     | music_minion.actions:207 | Removed track 22563 from reposts playlist
+2025-11-22 22:49:42 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2216266832 to SoundCloud playlist 2101314851
+2025-11-22 22:49:45 | INFO     | music_minion.domain.playlists.sync:334 | Synced 418 tracks from SoundCloud for playlist 'Not Quite'
+2025-11-22 22:49:45 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Not Quite'
+2025-11-22 22:50:21 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-22 22:50:21 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-22 22:50:21 | INFO     | music_minion.ui.blessed.app:903 | Starting background sync after UI render
+2025-11-22 22:50:21 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: soundcloud
+2025-11-22 22:50:21 | INFO     | music_minion.core.output:83 | Syncing soundcloud (likes + playlists)...
+2025-11-22 22:50:21 | INFO     | music_minion.core.output:83 | 🔄 Syncing from soundcloud...
+2025-11-22 22:50:21 | WARNING  | music_minion.domain.library.providers.soundcloud.auth:373 | SoundCloud refresh token invalid or expired (HTTP 400: invalid_grant). User must re-authenticate with: library auth soundcloud
+2025-11-22 22:50:21 | ERROR    | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:50:21 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 22:50:21 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 22:50:21 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from soundcloud...
+2025-11-22 22:50:22 | WARNING  | music_minion.domain.library.providers.soundcloud.auth:373 | SoundCloud refresh token invalid or expired (HTTP 400: invalid_grant). User must re-authenticate with: library auth soundcloud
+2025-11-22 22:50:22 | ERROR    | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:50:22 | INFO     | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:50:25 | INFO     | music_minion.core.output:83 | Starting music playback...
+2025-11-22 22:50:25 | INFO     | music_minion.domain.playback.player:63 | Starting MPV player with socket: /tmp/mpv-socket-158145
+2025-11-22 22:50:25 | INFO     | music_minion.domain.playback.player:102 | MPV started successfully
+2025-11-22 22:50:25 | INFO     | music_minion.core.output:83 | ♪ Now playing: WHALES - LABRINTH - FORMULA (WHALES REMIX)
+2025-11-22 22:50:25 | INFO     | music_minion.core.output:83 |    Duration: 01:42
+2025-11-22 22:50:25 | INFO     | music_minion.core.output:83 |    Dubstep
+2025-11-22 22:51:46 | INFO     | music_minion.core.output:83 | ⏳ Processing like and add to playlist...
+2025-11-22 22:51:46 | INFO     | music_minion.domain.playlists.crud:531 | Removing track 22560 from playlist 26
+2025-11-22 22:51:46 | INFO     | music_minion.domain.playlists.crud:556 | Removing track 22560 from SoundCloud playlist 26
+2025-11-22 22:51:46 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 22560 from SoundCloud playlist sync for playlist 26
+2025-11-22 22:51:46 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2184974927 (local track 22560: WHALES - LABRINTH - FORMULA (WHALES REMIX)) from playlist 2068606557 (reposts)
+2025-11-22 22:51:48 | INFO     | music_minion.domain.playlists.sync:334 | Synced 84 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 22:51:48 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 22:51:48 | INFO     | music_minion.domain.playlists.crud:566 | Successfully removed track 22560 from SoundCloud and database
+2025-11-22 22:51:48 | INFO     | music_minion.actions:135 | Removed track 22560 from reposts playlist
+2025-11-22 22:51:48 | INFO     | music_minion.core.output:83 |    ✓ Removed from reposts
+2025-11-22 22:51:48 | INFO     | music_minion.core.output:83 | 👍 Liked: WHALES - LABRINTH - FORMULA (WHALES REMIX)
+2025-11-22 22:51:48 | INFO     | music_minion.core.output:83 |    Liked on Saturday at 22:51
+2025-11-22 22:51:49 | INFO     | music_minion.core.output:83 |    ✓ Synced like to SoundCloud
+2025-11-22 22:51:49 | INFO     | music_minion.domain.playlists.crud:452 | Adding track 22560 to SoundCloud playlist 19
+2025-11-22 22:51:49 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2184974927 to SoundCloud playlist 2107077439
+2025-11-22 22:51:51 | INFO     | music_minion.domain.playlists.sync:334 | Synced 62 tracks from SoundCloud for playlist 'Nov 25'
+2025-11-22 22:51:51 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Nov 25'
+2025-11-22 22:51:51 | INFO     | music_minion.domain.playlists.crud:458 | Successfully added track 22560 to SoundCloud and database
+2025-11-22 22:51:51 | INFO     | music_minion.core.output:83 |    ✓ Added to Nov 25
+2025-11-22 22:52:11 | INFO     | music_minion.core.output:83 | ♪ Now playing: Psyoptic - Psyoptic - Horus
+2025-11-22 22:52:11 | INFO     | music_minion.core.output:83 |    Duration: 02:37
+2025-11-22 22:52:11 | INFO     | music_minion.core.output:83 |    Dubstep
+2025-11-22 22:52:47 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-22 22:52:47 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-22 22:52:47 | INFO     | music_minion.ui.blessed.app:903 | Starting background sync after UI render
+2025-11-22 22:52:47 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: soundcloud
+2025-11-22 22:52:47 | INFO     | music_minion.core.output:83 | Syncing soundcloud (likes + playlists)...
+2025-11-22 22:52:47 | INFO     | music_minion.core.output:83 | 🔄 Syncing from soundcloud...
+2025-11-22 22:52:48 | WARNING  | music_minion.domain.library.providers.soundcloud.auth:373 | SoundCloud refresh token invalid or expired (HTTP 400: invalid_grant). User must re-authenticate with: library auth soundcloud
+2025-11-22 22:52:48 | ERROR    | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:52:48 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 22:52:48 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 22:52:48 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from soundcloud...
+2025-11-22 22:52:48 | WARNING  | music_minion.domain.library.providers.soundcloud.auth:373 | SoundCloud refresh token invalid or expired (HTTP 400: invalid_grant). User must re-authenticate with: library auth soundcloud
+2025-11-22 22:52:48 | ERROR    | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:52:48 | INFO     | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 22:52:55 | INFO     | music_minion.core.output:83 | Starting music playback...
+2025-11-22 22:52:55 | INFO     | music_minion.domain.playback.player:63 | Starting MPV player with socket: /tmp/mpv-socket-159714
+2025-11-22 22:52:55 | INFO     | music_minion.domain.playback.player:102 | MPV started successfully
+2025-11-22 22:52:56 | INFO     | music_minion.core.output:83 | ♪ Now playing: Psyoptic - Psyoptic - Horus
+2025-11-22 22:52:56 | INFO     | music_minion.core.output:83 |    Duration: 02:37
+2025-11-22 22:52:56 | INFO     | music_minion.core.output:83 |    Dubstep
+2025-11-22 22:53:16 | INFO     | music_minion.core.output:83 | ⏭ Next track (sequential)...
+2025-11-22 22:53:16 | INFO     | music_minion.core.output:83 | ♪ Now playing: PATAYA - Land of Isolation (Free DL)
+2025-11-22 22:53:16 | INFO     | music_minion.core.output:83 |    Duration: 02:33
+2025-11-22 22:53:16 | INFO     | music_minion.core.output:83 |    Dubstep
+2025-11-22 22:53:16 | INFO     | music_minion.domain.playlists.crud:531 | Removing track 22564 from playlist 26
+2025-11-22 22:53:16 | INFO     | music_minion.domain.playlists.crud:556 | Removing track 22564 from SoundCloud playlist 26
+2025-11-22 22:53:16 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 22564 from SoundCloud playlist sync for playlist 26
+2025-11-22 22:53:16 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2198041943 (local track 22564: Psyoptic - Psyoptic - Horus) from playlist 2068606557 (reposts)
+2025-11-22 22:53:20 | INFO     | music_minion.domain.playlists.sync:334 | Synced 83 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 22:53:20 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 22:53:20 | INFO     | music_minion.domain.playlists.crud:566 | Successfully removed track 22564 from SoundCloud and database
+2025-11-22 22:53:20 | INFO     | music_minion.actions:265 | Removed track 22564 from reposts playlist
+2025-11-22 22:53:20 | INFO     | music_minion.domain.playlists.crud:452 | Adding track 22564 to SoundCloud playlist 23
+2025-11-22 22:53:20 | INFO     | music_minion.domain.playlists.sync:334 | Synced 124 tracks from SoundCloud for playlist 'Not Interested'
+2025-11-22 22:53:20 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2198041943 to SoundCloud playlist 2100919255
+2025-11-22 22:53:23 | INFO     | music_minion.domain.playlists.sync:334 | Synced 125 tracks from SoundCloud for playlist 'Not Interested'
+2025-11-22 22:53:23 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Not Interested'
+2025-11-22 22:53:23 | INFO     | music_minion.domain.playlists.crud:458 | Successfully added track 22564 to SoundCloud and database
+2025-11-22 22:54:04 | INFO     | music_minion.actions:202 | Track ID:
+2025-11-22 22:54:04 | INFO     | music_minion.domain.playlists.crud:531 | Removing track 15276 from playlist 26
+2025-11-22 22:54:04 | INFO     | music_minion.domain.playlists.crud:556 | Removing track 15276 from SoundCloud playlist 26
+2025-11-22 22:54:04 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 15276 from SoundCloud playlist sync for playlist 26
+2025-11-22 22:54:04 | INFO     | music_minion.domain.library.providers.soundcloud:42 | SoundCloud token expired, attempting refresh
+2025-11-22 22:54:04 | INFO     | music_minion.domain.library.providers.soundcloud:46 | Successfully refreshed SoundCloud token
+2025-11-22 22:54:04 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2209335473 (local track 15276: PATAYA - Land of Isolation (Free DL)) from playlist 2068606557 (reposts)
+2025-11-22 22:54:06 | INFO     | music_minion.domain.playlists.sync:334 | Synced 82 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 22:54:06 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 22:54:06 | INFO     | music_minion.domain.playlists.crud:566 | Successfully removed track 15276 from SoundCloud and database
+2025-11-22 22:54:06 | INFO     | music_minion.actions:207 | Removed track 15276 from reposts playlist
+2025-11-22 22:54:06 | INFO     | music_minion.domain.playlists.crud:452 | Adding track 15276 to SoundCloud playlist 22
+2025-11-22 22:54:06 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2209335473 to SoundCloud playlist 2101314851
+2025-11-22 22:54:10 | INFO     | music_minion.domain.playlists.sync:334 | Synced 419 tracks from SoundCloud for playlist 'Not Quite'
+2025-11-22 22:54:10 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Not Quite'
+2025-11-22 22:54:10 | INFO     | music_minion.domain.playlists.crud:458 | Successfully added track 15276 to SoundCloud and database
+2025-11-22 22:55:52 | INFO     | music_minion.core.output:83 | ♪ Now playing: 23 Odd Cats - Mix 25
+2025-11-22 22:55:52 | INFO     | music_minion.core.output:83 |    Duration: 57:25
+2025-11-22 22:55:52 | INFO     | music_minion.core.output:83 |    Dubstep
+2025-11-22 22:57:37 | INFO     | music_minion.core.output:83 | ⏭ Next track (sequential)...
+2025-11-22 22:57:37 | INFO     | music_minion.core.output:83 | ♪ Now playing: 3Dee - Burn For You
+2025-11-22 22:57:37 | INFO     | music_minion.core.output:83 |    Duration: 02:15
+2025-11-22 22:57:37 | INFO     | music_minion.core.output:83 |    Dubstep
+2025-11-22 22:57:38 | INFO     | music_minion.domain.playlists.crud:531 | Removing track 12297 from playlist 26
+2025-11-22 22:57:38 | INFO     | music_minion.domain.playlists.crud:556 | Removing track 12297 from SoundCloud playlist 26
+2025-11-22 22:57:38 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 12297 from SoundCloud playlist sync for playlist 26
+2025-11-22 22:57:38 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2181260375 (local track 12297: 23 Odd Cats - Mix 25) from playlist 2068606557 (reposts)
+2025-11-22 22:57:40 | INFO     | music_minion.domain.playlists.sync:334 | Synced 81 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 22:57:40 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 22:57:40 | INFO     | music_minion.domain.playlists.crud:566 | Successfully removed track 12297 from SoundCloud and database
+2025-11-22 22:57:40 | INFO     | music_minion.actions:265 | Removed track 12297 from reposts playlist
+2025-11-22 22:57:40 | INFO     | music_minion.domain.playlists.crud:452 | Adding track 12297 to SoundCloud playlist 23
+2025-11-22 22:57:40 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2181260375 to SoundCloud playlist 2100919255
+2025-11-22 22:57:43 | INFO     | music_minion.domain.playlists.sync:334 | Synced 126 tracks from SoundCloud for playlist 'Not Interested'
+2025-11-22 22:57:43 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Not Interested'
+2025-11-22 22:57:43 | INFO     | music_minion.domain.playlists.crud:458 | Successfully added track 12297 to SoundCloud and database
+2025-11-22 22:59:42 | INFO     | music_minion.actions:202 | Track ID:
+2025-11-22 22:59:42 | INFO     | music_minion.domain.playlists.crud:531 | Removing track 22566 from playlist 26
+2025-11-22 22:59:42 | INFO     | music_minion.domain.playlists.crud:556 | Removing track 22566 from SoundCloud playlist 26
+2025-11-22 22:59:42 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 22566 from SoundCloud playlist sync for playlist 26
+2025-11-22 22:59:42 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2194008051 (local track 22566: 3Dee - Burn For You) from playlist 2068606557 (reposts)
+2025-11-22 22:59:45 | INFO     | music_minion.domain.playlists.sync:334 | Synced 80 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 22:59:45 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 22:59:45 | INFO     | music_minion.domain.playlists.crud:566 | Successfully removed track 22566 from SoundCloud and database
+2025-11-22 22:59:45 | INFO     | music_minion.actions:207 | Removed track 22566 from reposts playlist
+2025-11-22 22:59:45 | INFO     | music_minion.domain.playlists.crud:452 | Adding track 22566 to SoundCloud playlist 22
+2025-11-22 22:59:45 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2194008051 to SoundCloud playlist 2101314851
+2025-11-22 22:59:49 | INFO     | music_minion.domain.playlists.sync:334 | Synced 420 tracks from SoundCloud for playlist 'Not Quite'
+2025-11-22 22:59:49 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Not Quite'
+2025-11-22 22:59:49 | INFO     | music_minion.domain.playlists.crud:458 | Successfully added track 22566 to SoundCloud and database
+2025-11-22 22:59:56 | INFO     | music_minion.core.output:83 | ♪ Now playing: TIMFTW - FREEDOM (Melodic House & Techno mix)
+2025-11-22 22:59:56 | INFO     | music_minion.core.output:83 |    Duration: 63:51
+2025-11-22 22:59:56 | INFO     | music_minion.core.output:83 |    House
+2025-11-22 23:01:12 | INFO     | music_minion.core.output:83 | ⏭ Next track (sequential)...
+2025-11-22 23:01:13 | INFO     | music_minion.core.output:83 | ♪ Now playing: HOUND. - Lunatic
+2025-11-22 23:01:13 | INFO     | music_minion.core.output:83 |    Duration: 02:59
+2025-11-22 23:01:13 | INFO     | music_minion.domain.playlists.crud:531 | Removing track 22568 from playlist 26
+2025-11-22 23:01:13 | INFO     | music_minion.domain.playlists.crud:556 | Removing track 22568 from SoundCloud playlist 26
+2025-11-22 23:01:13 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 22568 from SoundCloud playlist sync for playlist 26
+2025-11-22 23:01:13 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2201462763 (local track 22568: TIMFTW - FREEDOM (Melodic House & Techno mix)) from playlist 2068606557 (reposts)
+2025-11-22 23:01:15 | INFO     | music_minion.domain.playlists.sync:334 | Synced 79 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 23:01:15 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 23:01:15 | INFO     | music_minion.domain.playlists.crud:566 | Successfully removed track 22568 from SoundCloud and database
+2025-11-22 23:01:15 | INFO     | music_minion.actions:265 | Removed track 22568 from reposts playlist
+2025-11-22 23:01:15 | INFO     | music_minion.domain.playlists.crud:452 | Adding track 22568 to SoundCloud playlist 23
+2025-11-22 23:01:15 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2201462763 to SoundCloud playlist 2100919255
+2025-11-22 23:01:18 | INFO     | music_minion.domain.playlists.sync:334 | Synced 127 tracks from SoundCloud for playlist 'Not Interested'
+2025-11-22 23:01:18 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Not Interested'
+2025-11-22 23:01:18 | INFO     | music_minion.domain.playlists.crud:458 | Successfully added track 22568 to SoundCloud and database
+2025-11-22 23:03:13 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: soundcloud
+2025-11-22 23:03:13 | INFO     | music_minion.core.output:83 | Syncing soundcloud (likes + playlists)...
+2025-11-22 23:03:13 | INFO     | music_minion.core.output:83 | 🔄 Syncing from soundcloud...
+2025-11-22 23:03:13 | WARNING  | music_minion.domain.library.providers.soundcloud.auth:373 | SoundCloud refresh token invalid or expired (HTTP 400: invalid_grant). User must re-authenticate with: library auth soundcloud
+2025-11-22 23:03:13 | ERROR    | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 23:03:13 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 23:03:13 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 23:03:13 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from soundcloud...
+2025-11-22 23:03:13 | WARNING  | music_minion.domain.library.providers.soundcloud.auth:373 | SoundCloud refresh token invalid or expired (HTTP 400: invalid_grant). User must re-authenticate with: library auth soundcloud
+2025-11-22 23:03:13 | ERROR    | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 23:03:13 | INFO     | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 23:03:22 | INFO     | music_minion.core.output:83 | ✅ Set active playlist: Release Radar
+2025-11-22 23:03:22 | INFO     | music_minion.core.output:83 |    Now playing only tracks from this playlist
+2025-11-22 23:03:30 | INFO     | music_minion.core.output:83 | ✅ Set active playlist: reposts
+2025-11-22 23:03:30 | INFO     | music_minion.core.output:83 |    Now playing only tracks from this playlist
+2025-11-22 23:03:30 | INFO     | music_minion.core.output:83 |    Current track is in this playlist, continuing playback
+2025-11-22 23:04:15 | INFO     | music_minion.core.output:83 | ♪ Now playing: NGHT VISION - Desolate
+2025-11-22 23:04:15 | INFO     | music_minion.core.output:83 |    Duration: 03:12
+2025-11-22 23:04:15 | INFO     | music_minion.core.output:83 |    Dubstep
+2025-11-22 23:05:27 | INFO     | music_minion.actions:202 | Track ID:
+2025-11-22 23:05:27 | INFO     | music_minion.domain.playlists.crud:531 | Removing track 22570 from playlist 26
+2025-11-22 23:05:27 | INFO     | music_minion.domain.playlists.crud:556 | Removing track 22570 from SoundCloud playlist 26
+2025-11-22 23:05:27 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 22570 from SoundCloud playlist sync for playlist 26
+2025-11-22 23:05:27 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2201433399 (local track 22570: NGHT VISION - Desolate) from playlist 2068606557 (reposts)
+2025-11-22 23:05:30 | INFO     | music_minion.domain.playlists.sync:334 | Synced 78 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 23:05:30 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 23:05:30 | INFO     | music_minion.domain.playlists.crud:566 | Successfully removed track 22570 from SoundCloud and database
+2025-11-22 23:05:30 | INFO     | music_minion.actions:207 | Removed track 22570 from reposts playlist
+2025-11-22 23:05:30 | INFO     | music_minion.domain.playlists.crud:452 | Adding track 22570 to SoundCloud playlist 22
+2025-11-22 23:05:30 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2201433399 to SoundCloud playlist 2101314851
+2025-11-22 23:05:33 | INFO     | music_minion.domain.playlists.sync:334 | Synced 421 tracks from SoundCloud for playlist 'Not Quite'
+2025-11-22 23:05:33 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Not Quite'
+2025-11-22 23:05:33 | INFO     | music_minion.domain.playlists.crud:458 | Successfully added track 22570 to SoundCloud and database
+2025-11-22 23:05:35 | INFO     | music_minion.core.output:83 | ⏭ Next track (sequential)...
+2025-11-22 23:05:36 | INFO     | music_minion.core.output:83 | ♪ Now playing: Hybrid Noise - Mileage
+2025-11-22 23:05:36 | INFO     | music_minion.core.output:83 |    Duration: 02:56
+2025-11-22 23:05:36 | INFO     | music_minion.core.output:83 |    Dance & Electronic : Trap / Wave
+2025-11-22 23:06:26 | INFO     | music_minion.core.output:83 | ⏳ Processing like and add to playlist...
+2025-11-22 23:06:26 | INFO     | music_minion.domain.playlists.crud:531 | Removing track 22571 from playlist 26
+2025-11-22 23:06:26 | INFO     | music_minion.domain.playlists.crud:556 | Removing track 22571 from SoundCloud playlist 26
+2025-11-22 23:06:26 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 22571 from SoundCloud playlist sync for playlist 26
+2025-11-22 23:06:26 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2119830669 (local track 22571: Hybrid Noise - Mileage) from playlist 2068606557 (reposts)
+2025-11-22 23:06:29 | INFO     | music_minion.domain.playlists.sync:334 | Synced 77 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 23:06:29 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 23:06:29 | INFO     | music_minion.domain.playlists.crud:566 | Successfully removed track 22571 from SoundCloud and database
+2025-11-22 23:06:29 | INFO     | music_minion.actions:135 | Removed track 22571 from reposts playlist
+2025-11-22 23:06:29 | INFO     | music_minion.core.output:83 |    ✓ Removed from reposts
+2025-11-22 23:06:29 | INFO     | music_minion.core.output:83 | 👍 Liked: Hybrid Noise - Mileage
+2025-11-22 23:06:29 | INFO     | music_minion.core.output:83 |    Liked on Saturday at 23:06
+2025-11-22 23:06:30 | INFO     | music_minion.core.output:83 |    ✓ Synced like to SoundCloud
+2025-11-22 23:06:30 | INFO     | music_minion.domain.playlists.crud:452 | Adding track 22571 to SoundCloud playlist 19
+2025-11-22 23:06:31 | INFO     | music_minion.domain.playlists.sync:334 | Synced 62 tracks from SoundCloud for playlist 'Nov 25'
+2025-11-22 23:06:31 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2119830669 to SoundCloud playlist 2107077439
+2025-11-22 23:06:32 | INFO     | music_minion.domain.playlists.sync:334 | Synced 63 tracks from SoundCloud for playlist 'Nov 25'
+2025-11-22 23:06:32 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Nov 25'
+2025-11-22 23:06:32 | INFO     | music_minion.domain.playlists.crud:458 | Successfully added track 22571 to SoundCloud and database
+2025-11-22 23:06:32 | INFO     | music_minion.core.output:83 |    ✓ Added to Nov 25
+2025-11-22 23:08:22 | INFO     | music_minion.core.output:83 | ⏭ Next track (sequential)...
+2025-11-22 23:08:23 | INFO     | music_minion.core.output:83 | ♪ Now playing: YoungWolf - YoungWolf - This Is Salvation
+2025-11-22 23:08:23 | INFO     | music_minion.core.output:83 |    Duration: 02:05
+2025-11-22 23:08:23 | INFO     | music_minion.core.output:83 |    Trap
+2025-11-22 23:09:08 | INFO     | music_minion.actions:202 | Track ID:
+2025-11-22 23:09:08 | INFO     | music_minion.domain.playlists.crud:531 | Removing track 12322 from playlist 26
+2025-11-22 23:09:08 | INFO     | music_minion.domain.playlists.crud:556 | Removing track 12322 from SoundCloud playlist 26
+2025-11-22 23:09:08 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 12322 from SoundCloud playlist sync for playlist 26
+2025-11-22 23:09:08 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2180261463 (local track 12322: YoungWolf - YoungWolf - This Is Salvation) from playlist 2068606557 (reposts)
+2025-11-22 23:09:11 | INFO     | music_minion.domain.playlists.sync:334 | Synced 76 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 23:09:11 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 23:09:11 | INFO     | music_minion.domain.playlists.crud:566 | Successfully removed track 12322 from SoundCloud and database
+2025-11-22 23:09:11 | INFO     | music_minion.actions:207 | Removed track 12322 from reposts playlist
+2025-11-22 23:09:11 | INFO     | music_minion.domain.playlists.crud:452 | Adding track 12322 to SoundCloud playlist 22
+2025-11-22 23:09:11 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2180261463 to SoundCloud playlist 2101314851
+2025-11-22 23:09:15 | INFO     | music_minion.domain.playlists.sync:334 | Synced 422 tracks from SoundCloud for playlist 'Not Quite'
+2025-11-22 23:09:15 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Not Quite'
+2025-11-22 23:09:15 | INFO     | music_minion.domain.playlists.crud:458 | Successfully added track 12322 to SoundCloud and database
+2025-11-22 23:09:24 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-22 23:09:24 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-22 23:09:24 | INFO     | music_minion.ui.blessed.app:903 | Starting background sync after UI render
+2025-11-22 23:09:24 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: soundcloud
+2025-11-22 23:09:24 | INFO     | music_minion.core.output:83 | Syncing soundcloud (likes + playlists)...
+2025-11-22 23:09:24 | INFO     | music_minion.core.output:83 | 🔄 Syncing from soundcloud...
+2025-11-22 23:09:24 | ERROR    | music_minion.core.output:83 | ❌ Sync failed: cannot access local variable 'logger' where it is not associated with a value
+2025-11-22 23:09:24 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 23:09:24 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 23:09:24 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from soundcloud...
+2025-11-22 23:09:24 | ERROR    | music_minion.core.output:83 | ❌ Playlist sync failed: cannot access local variable 'logger' where it is not associated with a value
+2025-11-22 23:09:24 | INFO     | music_minion.core.output:83 | ❌ Playlist sync failed: cannot access local variable 'logger' where it is not associated with a value
+2025-11-22 23:10:30 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-22 23:10:30 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-22 23:10:31 | INFO     | music_minion.ui.blessed.app:903 | Starting background sync after UI render
+2025-11-22 23:10:31 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: soundcloud
+2025-11-22 23:10:31 | INFO     | music_minion.core.output:83 | Syncing soundcloud (likes + playlists)...
+2025-11-22 23:10:31 | INFO     | music_minion.core.output:83 | 🔄 Syncing from soundcloud...
+2025-11-22 23:10:31 | WARNING  | music_minion.domain.library.providers.soundcloud.auth:376 | SoundCloud refresh token invalid or expired (HTTP 400: invalid_grant). User must re-authenticate with: library auth soundcloud
+2025-11-22 23:10:31 | ERROR    | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 23:10:31 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 23:10:31 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 23:10:31 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from soundcloud...
+2025-11-22 23:10:31 | WARNING  | music_minion.domain.library.providers.soundcloud.auth:376 | SoundCloud refresh token invalid or expired (HTTP 400: invalid_grant). User must re-authenticate with: library auth soundcloud
+2025-11-22 23:10:31 | ERROR    | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 23:10:31 | INFO     | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 23:10:48 | INFO     | music_minion.core.output:83 | Starting music playback...
+2025-11-22 23:10:48 | INFO     | music_minion.domain.playback.player:63 | Starting MPV player with socket: /tmp/mpv-socket-168505
+2025-11-22 23:10:48 | INFO     | music_minion.domain.playback.player:102 | MPV started successfully
+2025-11-22 23:10:48 | INFO     | music_minion.core.output:83 | ♪ Now playing: HOUND. - Act Like That
+2025-11-22 23:10:48 | INFO     | music_minion.core.output:83 |    Duration: 02:34
+2025-11-22 23:13:20 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-22 23:13:20 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-22 23:13:20 | INFO     | music_minion.ui.blessed.app:903 | Starting background sync after UI render
+2025-11-22 23:13:20 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: soundcloud
+2025-11-22 23:13:20 | INFO     | music_minion.core.output:83 | Syncing soundcloud (likes + playlists)...
+2025-11-22 23:13:20 | INFO     | music_minion.core.output:83 | 🔄 Syncing from soundcloud...
+2025-11-22 23:13:21 | WARNING  | music_minion.domain.library.providers.soundcloud.auth:376 | SoundCloud refresh token invalid or expired (HTTP 400: invalid_grant). User must re-authenticate with: library auth soundcloud
+2025-11-22 23:13:21 | ERROR    | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 23:13:21 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 23:13:21 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 23:13:21 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from soundcloud...
+2025-11-22 23:13:21 | WARNING  | music_minion.domain.library.providers.soundcloud.auth:376 | SoundCloud refresh token invalid or expired (HTTP 400: invalid_grant). User must re-authenticate with: library auth soundcloud
+2025-11-22 23:13:21 | ERROR    | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 23:13:21 | INFO     | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 23:15:49 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-22 23:15:49 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-22 23:15:50 | INFO     | music_minion.ui.blessed.app:903 | Starting background sync after UI render
+2025-11-22 23:15:50 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: soundcloud
+2025-11-22 23:15:50 | INFO     | music_minion.core.output:83 | Syncing soundcloud (likes + playlists)...
+2025-11-22 23:15:50 | INFO     | music_minion.core.output:83 | 🔄 Syncing from soundcloud...
+2025-11-22 23:15:50 | INFO     | music_minion.domain.library.providers.soundcloud:35 | [SYNC DEBUG] SoundCloud token loaded from file: found
+2025-11-22 23:15:50 | INFO     | music_minion.domain.library.providers.soundcloud:43 | [SYNC DEBUG] SoundCloud token expired check: False, expires_at: 2025-11-22T23:54:03.485278
+2025-11-22 23:15:50 | INFO     | music_minion.domain.library.providers.soundcloud:62 | [SYNC DEBUG] SoundCloud token is valid
+2025-11-22 23:15:50 | INFO     | music_minion.domain.library.providers.soundcloud.auth:334 | [SYNC DEBUG] refresh_token called: client_id=present, client_secret=present, refresh_token=present
+2025-11-22 23:15:50 | WARNING  | music_minion.domain.library.providers.soundcloud.auth:376 | SoundCloud refresh token invalid or expired (HTTP 400: invalid_grant). User must re-authenticate with: library auth soundcloud
+2025-11-22 23:15:50 | ERROR    | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 23:15:50 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 23:15:50 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 23:15:50 | INFO     | music_minion.domain.library.providers.soundcloud:35 | [SYNC DEBUG] SoundCloud token loaded from file: found
+2025-11-22 23:15:50 | INFO     | music_minion.domain.library.providers.soundcloud:43 | [SYNC DEBUG] SoundCloud token expired check: False, expires_at: 2025-11-22T23:54:03.485278
+2025-11-22 23:15:50 | INFO     | music_minion.domain.library.providers.soundcloud:62 | [SYNC DEBUG] SoundCloud token is valid
+2025-11-22 23:15:50 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from soundcloud...
+2025-11-22 23:15:50 | INFO     | music_minion.domain.library.providers.soundcloud.auth:334 | [SYNC DEBUG] refresh_token called: client_id=present, client_secret=present, refresh_token=present
+2025-11-22 23:15:50 | WARNING  | music_minion.domain.library.providers.soundcloud.auth:376 | SoundCloud refresh token invalid or expired (HTTP 400: invalid_grant). User must re-authenticate with: library auth soundcloud
+2025-11-22 23:15:50 | ERROR    | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 23:15:50 | INFO     | music_minion.core.output:83 | ❌ Authentication failed for soundcloud. Please re-authenticate with: library auth soundcloud
+2025-11-22 23:19:41 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-22 23:19:41 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-22 23:19:41 | INFO     | music_minion.ui.blessed.app:903 | Starting background sync after UI render
+2025-11-22 23:19:41 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: soundcloud
+2025-11-22 23:19:41 | INFO     | music_minion.core.output:83 | Syncing soundcloud (likes + playlists)...
+2025-11-22 23:19:41 | INFO     | music_minion.core.output:83 | 🔄 Syncing from soundcloud...
+2025-11-22 23:19:41 | INFO     | music_minion.domain.library.providers.soundcloud.api:128 | Found 7683 existing SoundCloud tracks for incremental sync
+2025-11-22 23:19:41 | INFO     | music_minion.domain.library.providers.soundcloud.api:137 | Starting SoundCloud likes sync
+2025-11-22 23:19:41 | INFO     | music_minion.core.output:83 | 
+🔄 Syncing SoundCloud likes...
+2025-11-22 23:19:42 | INFO     | music_minion.core.output:83 |   → 1 (page 1, +193)
+2025-11-22 23:19:42 | INFO     | music_minion.core.output:83 |   ✓ Stopping at first existing track (incremental mode)
+2025-11-22 23:19:42 | INFO     | music_minion.core.output:83 |   ✓ Fetched 1 liked tracks
+2025-11-22 23:19:42 | INFO     | music_minion.domain.library.providers.soundcloud.api:143 | Fetched 0 new tracks, 1 total liked tracks
+2025-11-22 23:19:42 | INFO     | music_minion.core.output:83 | 📊 Syncing like markers for 1 liked tracks...
+2025-11-22 23:19:42 | INFO     | music_minion.domain.library.providers.soundcloud.api:185 | Synced 1 like markers to database
+2025-11-22 23:19:42 | INFO     | music_minion.core.output:83 | ✓ Synced 1 like markers (no new tracks to import)
+2025-11-22 23:19:42 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in soundcloud library (incremental mode - all tracks already synced)
+2025-11-22 23:19:42 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-22 23:19:42 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 23:19:42 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 23:19:42 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from soundcloud...
+2025-11-22 23:19:42 | INFO     | music_minion.core.output:83 | ✓ Found 186 playlists
+2025-11-22 23:19:42 | INFO     | music_minion.core.output:83 | ✓ Found 186 playlists
+2025-11-22 23:19:42 | INFO     | music_minion.core.output:83 | 
+2025-11-22 23:19:42 | INFO     | music_minion.core.output:83 | 🔍 Looking up existing playlists...
+2025-11-22 23:19:42 | INFO     | music_minion.core.output:83 | ✓ Found 184 existing playlists
+2025-11-22 23:19:42 | INFO     | music_minion.core.output:83 | 
+📦 Collecting tracks from playlists...
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 | ✓ Collected 688 unique tracks from 4 playlists
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 | Playlist filter: 180 skipped (unchanged), 4 syncing
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 | 
+🔍 Looking up tracks in database...
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 | ✓ Found 688/688 tracks in database
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 | ✓ Ready to sync 4 playlists with 688 tracks
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 | 
+💾 Updating playlists...
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 | 
+[1/4] Processing: Nov 25
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 |   ✓ Mapped 63/63 tracks from global map
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Nov 25' with 63 tracks
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 | 
+[2/4] Processing: Not Quite
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 |   ✓ Mapped 422/422 tracks from global map
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Not Quite' with 422 tracks
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 | 
+[3/4] Processing: Not Interested
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 |   ✓ Mapped 127/127 tracks from global map
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Not Interested' with 127 tracks
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 | 
+[4/4] Processing: reposts
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 |   ✓ Mapped 76/76 tracks from global map
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 |   ✅ Updated 'reposts' with 76 tracks
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 | 
+✓ Committed all playlist changes to database
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 | 
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 | ==================================================
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 | ✓ Playlist sync complete!
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 |   Created:  0 playlists
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 |   Updated:  4 playlists
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 |   Skipped:  182 (unchanged)
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 |   Failed:   0 playlists
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 |   Tracks:   688 total tracks added
+2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 | 
