@@ -113,7 +113,7 @@ def execute_like_and_add_dated(ctx: AppContext) -> Tuple[AppContext, bool, str]:
     # Get current track info
     track_info = get_current_track_info(ctx)
     if not track_info:
-        return ctx, False, "No track playing"
+        return ctx, False, "❌ No track playing"
 
     track_id, db_track, current_track = track_info
     display_name = library.get_display_name(current_track)
@@ -148,7 +148,7 @@ def execute_like_and_add_dated(ctx: AppContext) -> Tuple[AppContext, bool, str]:
         return (
             ctx,
             False,
-            f"Liked {display_name}\n✗ Failed to create playlist '{playlist_name}'",
+            f"❌ Failed to create playlist '{playlist_name}'",
         )
 
     # Add to playlist
@@ -156,17 +156,17 @@ def execute_like_and_add_dated(ctx: AppContext) -> Tuple[AppContext, bool, str]:
         if playlists.add_track_to_playlist(playlist["id"], track_id):
             # Success
             log(f"   ✓ Added to {playlist_name}", level="info")
-            return ctx, True, f"Liked {display_name}\n+ Added to {playlist_name}"
+            return ctx, True, f"👍 Liked {display_name}\n+ Added to {playlist_name}"
         else:
             # Already in playlist
             log(f"   • Already in {playlist_name}", level="info")
-            return ctx, True, f"Liked {display_name}\n(Already in {playlist_name})"
+            return ctx, True, f"👍 Liked {display_name}\n(Already in {playlist_name})"
     except Exception as e:
         log(f"   ✗ Failed to add to {playlist_name}: {str(e)}", level="error")
         return (
             ctx,
             False,
-            f"Liked {display_name}\n✗ Failed to add to {playlist_name}: {str(e)}",
+            f"❌ Failed to add to {playlist_name}: {str(e)}",
         )
 
 
@@ -183,7 +183,7 @@ def execute_add_not_quite(ctx: AppContext) -> Tuple[AppContext, bool, str]:
     # Get current track info
     track_info = get_current_track_info(ctx)
     if not track_info:
-        return ctx, False, "No track playing"
+        return ctx, False, "❌ No track playing"
 
     track_id, db_track, current_track = track_info
     display_name = library.get_display_name(current_track)
@@ -212,16 +212,16 @@ def execute_add_not_quite(ctx: AppContext) -> Tuple[AppContext, bool, str]:
     # Ensure playlist exists
     playlist = ensure_playlist_exists(playlist_name)
     if not playlist:
-        return ctx, False, f"Failed to create playlist '{playlist_name}'"
+        return ctx, False, f"❌ Failed to create playlist '{playlist_name}'"
 
     # Add to playlist
     try:
         if playlists.add_track_to_playlist(playlist["id"], track_id):
-            return ctx, True, f"Added {display_name}\nto {playlist_name}"
+            return ctx, True, f"🤔 Added {display_name}\nto {playlist_name}"
         else:
-            return ctx, True, f"{display_name}\n(Already in {playlist_name})"
+            return ctx, True, f"🤔 {display_name}\n(Already in {playlist_name})"
     except Exception as e:
-        return ctx, False, f"Failed to add to {playlist_name}: {str(e)}"
+        return ctx, False, f"❌ Failed to add to {playlist_name}: {str(e)}"
 
 
 def execute_add_not_interested_and_skip(
@@ -239,7 +239,7 @@ def execute_add_not_interested_and_skip(
     # Get current track info BEFORE skipping
     track_info = get_current_track_info(ctx)
     if not track_info:
-        return ctx, False, "No track playing"
+        return ctx, False, "❌ No track playing"
 
     track_id, db_track, current_track = track_info
     display_name = library.get_display_name(current_track)
@@ -270,7 +270,7 @@ def execute_add_not_interested_and_skip(
     # Ensure playlist exists
     playlist = ensure_playlist_exists(playlist_name)
     if not playlist:
-        return ctx, False, f"⏭ Skipped\n✗ Failed to create playlist '{playlist_name}'"
+        return ctx, False, f"❌ Skipped\nFailed to create playlist '{playlist_name}'"
 
     # Add to playlist (after skip)
     add_success = False
@@ -280,12 +280,12 @@ def execute_add_not_interested_and_skip(
         else:
             add_success = True  # Already in playlist is still success
     except Exception as e:
-        return ctx, False, f"⏭ Skipped\n✗ Failed to add to {playlist_name}: {str(e)}"
+        return ctx, False, f"❌ Skipped\nFailed to add to {playlist_name}: {str(e)}"
 
     if add_success:
-        return ctx, True, f"⏭ Skipped\n+ Added {display_name}\nto {playlist_name}"
+        return ctx, True, f"⏭️ Skipped\n+ Added {display_name}\nto {playlist_name}"
     else:
-        return ctx, False, f"⏭ Skipped\n✗ Failed to add {display_name}"
+        return ctx, False, f"❌ Skipped\nFailed to add {display_name}"
 
 
 # Action registry for routing
@@ -310,7 +310,7 @@ def execute_composite_action(
         (updated_context, success, message)
     """
     if action_name not in ACTIONS:
-        return ctx, False, f"Unknown action: {action_name}"
+        return ctx, False, f"❌ Unknown action: {action_name}"
 
     action_func = ACTIONS[action_name]
     return action_func(ctx)

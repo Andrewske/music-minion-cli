@@ -93,11 +93,11 @@ def _refresh_ui_state_from_db(ui_state: UIState, ctx: AppContext) -> UIState:
             ui_state = replace(ui_state, playlist_info=PlaylistInfo())
 
         # Update current track metadata if a track is playing
-        current_file = ctx.player_state.current_track
-        if current_file:
+        current_track_id = ctx.player_state.current_track_id
+        if current_track_id:
             from music_minion.ui.blessed.state import update_track_info
 
-            db_track = database.get_track_by_path(current_file)
+            db_track = database.get_track_by_id(current_track_id)
             if db_track:
                 # Build track data for UI display
                 track_data = {
@@ -340,6 +340,28 @@ def _handle_internal_command(
         track_id = cmd.data.get("track_id")
         if track_id is not None:
             ctx, ui_state = handle_track_viewer_unlike(ctx, ui_state, track_id)
+        return ctx, ui_state, False
+
+    elif cmd.action == "seek_percentage":
+        # Seek to percentage position (0-90%)
+        from music_minion.commands.playback import handle_seek_percentage
+
+        percentage = cmd.data.get("percentage")
+        if percentage is not None:
+            ctx, _ = handle_seek_percentage(ctx, percentage)
+            # Refresh UI state to update progress display
+            ui_state = _refresh_ui_state_from_db(ui_state, ctx)
+        return ctx, ui_state, False
+
+    elif cmd.action == "seek_relative":
+        # Seek relative to current position (±N seconds)
+        from music_minion.commands.playback import handle_seek_relative
+
+        seconds = cmd.data.get("seconds")
+        if seconds is not None:
+            ctx, _ = handle_seek_relative(ctx, seconds)
+            # Refresh UI state to update progress display
+            ui_state = _refresh_ui_state_from_db(ui_state, ctx)
         return ctx, ui_state, False
 
     else:

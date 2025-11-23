@@ -715,6 +715,130 @@ def handle_stop_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     return ctx, True
 
 
+def handle_seek_percentage(
+    ctx: AppContext, percentage: int
+) -> Tuple[AppContext, bool]:
+    """Seek to a percentage position in the current track (0-90%).
+
+    Args:
+        ctx: Application context
+        percentage: Target percentage (0-90)
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    # Check if any playback is active
+    if not ctx.player_state.playback_source:
+        return ctx, True
+
+    # Route to appropriate player
+    if ctx.player_state.playback_source == "spotify":
+        from music_minion.domain.playback.spotify_player import SpotifyPlayer
+
+        spotify_player = SpotifyPlayer(
+            ctx.provider_states.get("spotify", {}),
+            preferred_device_id=ctx.config.spotify.preferred_device_id,
+            preferred_device_name=ctx.config.spotify.preferred_device_name,
+        )
+
+        # Get current playback info to determine duration
+        playback_info = spotify_player.get_current_playback()
+        if not playback_info or not playback_info.get("item"):
+            return ctx, True
+
+        duration_ms = playback_info["item"].get("duration_ms", 0)
+        if duration_ms == 0:
+            return ctx, True
+
+        # Calculate target position in milliseconds
+        target_position_ms = int((percentage / 100.0) * duration_ms)
+
+        # Spotify seek takes position in milliseconds
+        success = spotify_player.seek(target_position_ms)
+
+        if not success:
+            log("Failed to seek in Spotify playback", "error")
+
+    elif ctx.player_state.playback_source == "mpv":
+        if not playback.is_mpv_running(ctx.player_state):
+            return ctx, True
+
+        # Get duration from player
+        _, duration, _ = playback.get_progress_info(ctx.player_state)
+
+        if duration == 0:
+            return ctx, True
+
+        # Calculate target position in seconds
+        target_position = (percentage / 100.0) * duration
+
+        # Seek to absolute position
+        new_state, success = playback.seek_to_position(ctx.player_state, target_position)
+        ctx = ctx.with_player_state(new_state)
+
+        if not success:
+            log("Failed to seek in playback", "error")
+
+    return ctx, True
+
+
+def handle_seek_relative(ctx: AppContext, seconds: float) -> Tuple[AppContext, bool]:
+    """Seek relative to current position (+/- seconds).
+
+    Args:
+        ctx: Application context
+        seconds: Seconds to seek (positive=forward, negative=backward)
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    # Check if any playback is active
+    if not ctx.player_state.playback_source:
+        return ctx, True
+
+    # Route to appropriate player
+    if ctx.player_state.playback_source == "spotify":
+        from music_minion.domain.playback.spotify_player import SpotifyPlayer
+
+        spotify_player = SpotifyPlayer(
+            ctx.provider_states.get("spotify", {}),
+            preferred_device_id=ctx.config.spotify.preferred_device_id,
+            preferred_device_name=ctx.config.spotify.preferred_device_name,
+        )
+
+        # Get current playback info
+        playback_info = spotify_player.get_current_playback()
+        if not playback_info or not playback_info.get("item"):
+            return ctx, True
+
+        # Get current position and duration
+        current_position_ms = playback_info.get("progress_ms", 0)
+        duration_ms = playback_info["item"].get("duration_ms", 0)
+
+        # Calculate target position (clamp to valid range)
+        target_position_ms = int(current_position_ms + (seconds * 1000))
+        target_position_ms = max(0, min(target_position_ms, duration_ms))
+
+        # Seek to calculated position
+        success = spotify_player.seek(target_position_ms)
+
+        if not success:
+            log("Failed to seek in Spotify playback", "error")
+
+    elif ctx.player_state.playback_source == "mpv":
+        if not playback.is_mpv_running(ctx.player_state):
+            return ctx, True
+
+        # Use relative seek function
+        new_state, success = playback.seek_relative(ctx.player_state, seconds)
+        ctx = ctx.with_player_state(new_state)
+
+        if not success:
+            log("Failed to seek in playback", "error")
+
+    return ctx, True
+
+
 def handle_status_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     """Handle status command - show current player and track status.
 

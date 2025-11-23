@@ -154,7 +154,7 @@ class IPCServer:
                 action_name = args[0]
                 # Map action names to immediate notification messages
                 immediate_messages = {
-                    'like_and_add_dated': '❤️ Liking and adding...',
+                    'like_and_add_dated': '👍 Liking and adding...',
                     'add_not_quite': '🤔 Adding to Not Quite...',
                     'add_not_interested_and_skip': '⏭️ Adding to Not Interested...',
                 }

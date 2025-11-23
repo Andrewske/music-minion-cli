@@ -5745,3 +5745,198 @@ ValueError: could not convert string to float: '2025-11-22T19:56:31.400294'
 2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 |   Failed:   0 playlists
 2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 |   Tracks:   688 total tracks added
 2025-11-22 23:19:47 | INFO     | music_minion.core.output:83 | 
+2025-11-22 23:23:31 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-22 23:23:31 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-22 23:23:31 | INFO     | music_minion.ui.blessed.app:903 | Starting background sync after UI render
+2025-11-22 23:23:31 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: soundcloud
+2025-11-22 23:23:31 | INFO     | music_minion.core.output:83 | Syncing soundcloud (likes + playlists)...
+2025-11-22 23:23:31 | INFO     | music_minion.core.output:83 | 🔄 Syncing from soundcloud...
+2025-11-22 23:23:31 | INFO     | music_minion.domain.library.providers.soundcloud.api:128 | Found 7683 existing SoundCloud tracks for incremental sync
+2025-11-22 23:23:31 | INFO     | music_minion.domain.library.providers.soundcloud.api:137 | Starting SoundCloud likes sync
+2025-11-22 23:23:31 | INFO     | music_minion.core.output:83 | 
+🔄 Syncing SoundCloud likes...
+2025-11-22 23:23:33 | INFO     | music_minion.core.output:83 |   → 1 (page 1, +193)
+2025-11-22 23:23:33 | INFO     | music_minion.core.output:83 |   ✓ Stopping at first existing track (incremental mode)
+2025-11-22 23:23:33 | INFO     | music_minion.core.output:83 |   ✓ Fetched 1 liked tracks
+2025-11-22 23:23:33 | INFO     | music_minion.domain.library.providers.soundcloud.api:143 | Fetched 0 new tracks, 1 total liked tracks
+2025-11-22 23:23:33 | INFO     | music_minion.core.output:83 | 📊 Syncing like markers for 1 liked tracks...
+2025-11-22 23:23:33 | INFO     | music_minion.domain.library.providers.soundcloud.api:185 | Synced 1 like markers to database
+2025-11-22 23:23:33 | INFO     | music_minion.core.output:83 | ✓ Synced 1 like markers (no new tracks to import)
+2025-11-22 23:23:33 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in soundcloud library (incremental mode - all tracks already synced)
+2025-11-22 23:23:33 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-22 23:23:33 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 23:23:33 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 23:23:33 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from soundcloud...
+2025-11-22 23:23:33 | INFO     | music_minion.core.output:83 | ✓ Found 186 playlists
+2025-11-22 23:23:33 | INFO     | music_minion.core.output:83 | ✓ Found 186 playlists
+2025-11-22 23:23:33 | INFO     | music_minion.core.output:83 | 
+2025-11-22 23:23:33 | INFO     | music_minion.core.output:83 | 🔍 Looking up existing playlists...
+2025-11-22 23:23:33 | INFO     | music_minion.core.output:83 | ✓ Found 184 existing playlists
+2025-11-22 23:23:33 | INFO     | music_minion.core.output:83 | 
+📦 Collecting tracks from playlists...
+2025-11-22 23:23:34 | INFO     | music_minion.core.output:83 | ✓ Collected 0 unique tracks from 0 playlists
+2025-11-22 23:23:34 | INFO     | music_minion.core.output:83 | Playlist filter: 184 skipped (unchanged), 0 syncing
+2025-11-22 23:23:34 | INFO     | music_minion.core.output:83 | 
+⚠ No playlists need syncing (184 unchanged)
+2025-11-22 23:23:36 | INFO     | music_minion.core.output:83 | Starting music playback...
+2025-11-22 23:23:36 | INFO     | music_minion.domain.playback.player:63 | Starting MPV player with socket: /tmp/mpv-socket-171695
+2025-11-22 23:23:36 | INFO     | music_minion.domain.playback.player:102 | MPV started successfully
+2025-11-22 23:23:37 | INFO     | music_minion.core.output:83 | ♪ Now playing: HOUND. - Act Like That
+2025-11-22 23:23:37 | INFO     | music_minion.core.output:83 |    Duration: 02:34
+2025-11-22 23:23:58 | INFO     | music_minion.core.output:83 | ⏳ Processing like and add to playlist...
+2025-11-22 23:23:58 | INFO     | music_minion.domain.playlists.crud:531 | Removing track 22565 from playlist 26
+2025-11-22 23:23:58 | INFO     | music_minion.domain.playlists.crud:556 | Removing track 22565 from SoundCloud playlist 26
+2025-11-22 23:23:58 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 22565 from SoundCloud playlist sync for playlist 26
+2025-11-22 23:23:58 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2000352411 (local track 22565: HOUND. - Act Like That) from playlist 2068606557 (reposts)
+2025-11-22 23:24:01 | INFO     | music_minion.domain.playlists.sync:334 | Synced 75 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 23:24:01 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 23:24:01 | INFO     | music_minion.domain.playlists.crud:566 | Successfully removed track 22565 from SoundCloud and database
+2025-11-22 23:24:01 | INFO     | music_minion.actions:135 | Removed track 22565 from reposts playlist
+2025-11-22 23:24:01 | INFO     | music_minion.core.output:83 |    ✓ Removed from reposts
+2025-11-22 23:24:01 | INFO     | music_minion.core.output:83 | 👍 Liked: HOUND. - Act Like That
+2025-11-22 23:24:01 | INFO     | music_minion.core.output:83 |    Liked on Saturday at 23:24
+2025-11-22 23:24:01 | INFO     | music_minion.core.output:83 |    ✓ Synced like to SoundCloud
+2025-11-22 23:24:01 | INFO     | music_minion.domain.playlists.crud:452 | Adding track 22565 to SoundCloud playlist 19
+2025-11-22 23:24:01 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2000352411 to SoundCloud playlist 2107077439
+2025-11-22 23:24:03 | INFO     | music_minion.domain.playlists.sync:334 | Synced 64 tracks from SoundCloud for playlist 'Nov 25'
+2025-11-22 23:24:03 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Nov 25'
+2025-11-22 23:24:03 | INFO     | music_minion.domain.playlists.crud:458 | Successfully added track 22565 to SoundCloud and database
+2025-11-22 23:24:03 | INFO     | music_minion.core.output:83 |    ✓ Added to Nov 25
+2025-11-22 23:24:47 | INFO     | music_minion.core.output:83 | ⏭ Next track (sequential)...
+2025-11-22 23:24:47 | INFO     | music_minion.core.output:83 | ♪ Now playing: ROYALFLU$H, GuarZino, TIMBUH - ROYALFLU$H & GuarZino - Astronaut (TIMBUH REMIX)
+2025-11-22 23:24:47 | INFO     | music_minion.core.output:83 |    Duration: 04:00
+2025-11-22 23:24:47 | INFO     | music_minion.core.output:83 |    Trap
+2025-11-22 23:26:15 | INFO     | music_minion.core.output:83 | ⏳ Processing like and add to playlist...
+2025-11-22 23:26:15 | INFO     | music_minion.domain.playlists.crud:531 | Removing track 22567 from playlist 26
+2025-11-22 23:26:15 | INFO     | music_minion.domain.playlists.crud:556 | Removing track 22567 from SoundCloud playlist 26
+2025-11-22 23:26:15 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 22567 from SoundCloud playlist sync for playlist 26
+2025-11-22 23:26:15 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2209607792 (local track 22567: ROYALFLU$H, GuarZino, TIMBUH - ROYALFLU$H & GuarZino - Astronaut (TIMBUH REMIX)) from playlist 2068606557 (reposts)
+2025-11-22 23:26:17 | INFO     | music_minion.domain.playlists.sync:334 | Synced 74 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 23:26:17 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 23:26:17 | INFO     | music_minion.domain.playlists.crud:566 | Successfully removed track 22567 from SoundCloud and database
+2025-11-22 23:26:17 | INFO     | music_minion.actions:135 | Removed track 22567 from reposts playlist
+2025-11-22 23:26:17 | INFO     | music_minion.core.output:83 |    ✓ Removed from reposts
+2025-11-22 23:26:17 | INFO     | music_minion.core.output:83 | 👍 Liked: ROYALFLU$H, GuarZino, TIMBUH - ROYALFLU$H & GuarZino - Astronaut (TIMBUH REMIX)
+2025-11-22 23:26:17 | INFO     | music_minion.core.output:83 |    Liked on Saturday at 23:26
+2025-11-22 23:26:18 | INFO     | music_minion.core.output:83 |    ✓ Synced like to SoundCloud
+2025-11-22 23:26:18 | INFO     | music_minion.domain.playlists.crud:452 | Adding track 22567 to SoundCloud playlist 19
+2025-11-22 23:26:18 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2209607792 to SoundCloud playlist 2107077439
+2025-11-22 23:26:19 | INFO     | music_minion.domain.playlists.sync:334 | Synced 65 tracks from SoundCloud for playlist 'Nov 25'
+2025-11-22 23:26:19 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Nov 25'
+2025-11-22 23:26:19 | INFO     | music_minion.domain.playlists.crud:458 | Successfully added track 22567 to SoundCloud and database
+2025-11-22 23:26:19 | INFO     | music_minion.core.output:83 |    ✓ Added to Nov 25
+2025-11-22 23:28:50 | INFO     | music_minion.core.output:83 | ♪ Now playing: HOUND. - Lunatic
+2025-11-22 23:28:50 | INFO     | music_minion.core.output:83 |    Duration: 02:59
+2025-11-22 23:30:07 | INFO     | music_minion.actions:202 | Track ID:
+2025-11-22 23:30:07 | INFO     | music_minion.domain.playlists.crud:531 | Removing track 22569 from playlist 26
+2025-11-22 23:30:07 | INFO     | music_minion.domain.playlists.crud:556 | Removing track 22569 from SoundCloud playlist 26
+2025-11-22 23:30:07 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 22569 from SoundCloud playlist sync for playlist 26
+2025-11-22 23:30:07 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2162115636 (local track 22569: HOUND. - Lunatic) from playlist 2068606557 (reposts)
+2025-11-22 23:30:10 | INFO     | music_minion.domain.playlists.sync:334 | Synced 73 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 23:30:10 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 23:30:10 | INFO     | music_minion.domain.playlists.crud:566 | Successfully removed track 22569 from SoundCloud and database
+2025-11-22 23:30:10 | INFO     | music_minion.actions:207 | Removed track 22569 from reposts playlist
+2025-11-22 23:30:10 | INFO     | music_minion.domain.playlists.crud:452 | Adding track 22569 to SoundCloud playlist 22
+2025-11-22 23:30:11 | INFO     | music_minion.domain.playlists.sync:334 | Synced 422 tracks from SoundCloud for playlist 'Not Quite'
+2025-11-22 23:30:11 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2162115636 to SoundCloud playlist 2101314851
+2025-11-22 23:30:15 | INFO     | music_minion.domain.playlists.sync:334 | Synced 423 tracks from SoundCloud for playlist 'Not Quite'
+2025-11-22 23:30:15 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Not Quite'
+2025-11-22 23:30:15 | INFO     | music_minion.domain.playlists.crud:458 | Successfully added track 22569 to SoundCloud and database
+2025-11-22 23:30:19 | INFO     | music_minion.core.output:83 | ⏭ Next track (sequential)...
+2025-11-22 23:30:20 | INFO     | music_minion.core.output:83 | ♪ Now playing: Valy Mo - Valy Mo - Reboot (Do it Do it)
+2025-11-22 23:30:20 | INFO     | music_minion.core.output:83 |    Duration: 03:49
+2025-11-22 23:30:20 | INFO     | music_minion.core.output:83 |    Tech House
+2025-11-22 23:30:29 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-22 23:30:29 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-22 23:30:29 | INFO     | music_minion.ui.blessed.app:903 | Starting background sync after UI render
+2025-11-22 23:30:29 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: soundcloud
+2025-11-22 23:30:29 | INFO     | music_minion.core.output:83 | Syncing soundcloud (likes + playlists)...
+2025-11-22 23:30:29 | INFO     | music_minion.core.output:83 | 🔄 Syncing from soundcloud...
+2025-11-22 23:30:29 | INFO     | music_minion.domain.library.providers.soundcloud.api:128 | Found 7683 existing SoundCloud tracks for incremental sync
+2025-11-22 23:30:29 | INFO     | music_minion.domain.library.providers.soundcloud.api:137 | Starting SoundCloud likes sync
+2025-11-22 23:30:29 | INFO     | music_minion.core.output:83 | 
+🔄 Syncing SoundCloud likes...
+2025-11-22 23:30:30 | INFO     | music_minion.core.output:83 |   → 1 (page 1, +193)
+2025-11-22 23:30:30 | INFO     | music_minion.core.output:83 |   ✓ Stopping at first existing track (incremental mode)
+2025-11-22 23:30:30 | INFO     | music_minion.core.output:83 |   ✓ Fetched 1 liked tracks
+2025-11-22 23:30:30 | INFO     | music_minion.domain.library.providers.soundcloud.api:143 | Fetched 0 new tracks, 1 total liked tracks
+2025-11-22 23:30:30 | INFO     | music_minion.core.output:83 | 📊 Syncing like markers for 1 liked tracks...
+2025-11-22 23:30:30 | INFO     | music_minion.domain.library.providers.soundcloud.api:185 | Synced 1 like markers to database
+2025-11-22 23:30:30 | INFO     | music_minion.core.output:83 | ✓ Synced 1 like markers (no new tracks to import)
+2025-11-22 23:30:30 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in soundcloud library (incremental mode - all tracks already synced)
+2025-11-22 23:30:30 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-22 23:30:30 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 23:30:30 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-22 23:30:30 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from soundcloud...
+2025-11-22 23:30:31 | INFO     | music_minion.core.output:83 | Starting music playback...
+2025-11-22 23:30:31 | INFO     | music_minion.domain.playback.player:63 | Starting MPV player with socket: /tmp/mpv-socket-175448
+2025-11-22 23:30:31 | ERROR    | music_minion.domain.playback.player:105 | MPV socket connection test failed
+2025-11-22 23:30:31 | ERROR    | music_minion.core.output:83 | Failed to start music player
+2025-11-22 23:30:31 | INFO     | music_minion.core.output:83 | ✓ Found 186 playlists
+2025-11-22 23:30:31 | INFO     | music_minion.core.output:83 | ✓ Found 186 playlists
+2025-11-22 23:30:31 | INFO     | music_minion.core.output:83 | 
+2025-11-22 23:30:31 | INFO     | music_minion.core.output:83 | 🔍 Looking up existing playlists...
+2025-11-22 23:30:31 | INFO     | music_minion.core.output:83 | ✓ Found 184 existing playlists
+2025-11-22 23:30:31 | INFO     | music_minion.core.output:83 | 
+📦 Collecting tracks from playlists...
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 | ✓ Collected 561 unique tracks from 3 playlists
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 | Playlist filter: 181 skipped (unchanged), 3 syncing
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 | 
+🔍 Looking up tracks in database...
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 | ✓ Found 561/561 tracks in database
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 | ✓ Ready to sync 3 playlists with 561 tracks
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 | 
+💾 Updating playlists...
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 | 
+[1/3] Processing: Nov 25
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 |   ✓ Mapped 65/65 tracks from global map
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Nov 25' with 65 tracks
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 | 
+[2/3] Processing: Not Quite
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 |   ✓ Mapped 423/423 tracks from global map
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Not Quite' with 423 tracks
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 | 
+[3/3] Processing: reposts
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 |   ✓ Mapped 73/73 tracks from global map
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 |   ✅ Updated 'reposts' with 73 tracks
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 | 
+✓ Committed all playlist changes to database
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 | 
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 | ==================================================
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 | ✓ Playlist sync complete!
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 |   Created:  0 playlists
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 |   Updated:  3 playlists
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 |   Skipped:  183 (unchanged)
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 |   Failed:   0 playlists
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 |   Tracks:   561 total tracks added
+2025-11-22 23:30:34 | INFO     | music_minion.core.output:83 | 
+2025-11-22 23:30:37 | INFO     | music_minion.core.output:83 | Starting music playback...
+2025-11-22 23:30:37 | INFO     | music_minion.domain.playback.player:63 | Starting MPV player with socket: /tmp/mpv-socket-175448
+2025-11-22 23:30:37 | INFO     | music_minion.domain.playback.player:102 | MPV started successfully
+2025-11-22 23:30:38 | INFO     | music_minion.core.output:83 | ♪ Now playing: Valy Mo - Valy Mo - Reboot (Do it Do it)
+2025-11-22 23:30:38 | INFO     | music_minion.core.output:83 |    Duration: 03:49
+2025-11-22 23:30:38 | INFO     | music_minion.core.output:83 |    Tech House
+2025-11-22 23:32:58 | INFO     | music_minion.core.output:83 | ♪ Now playing: Dan Lee - ATLANTIS (DAN LEE EDIT)
+2025-11-22 23:32:58 | INFO     | music_minion.core.output:83 |    Duration: 02:41
+2025-11-22 23:34:07 | INFO     | music_minion.core.output:83 | ⏳ Processing like and add to playlist...
+2025-11-22 23:34:07 | INFO     | music_minion.domain.playlists.crud:531 | Removing track 22573 from playlist 26
+2025-11-22 23:34:07 | INFO     | music_minion.domain.playlists.crud:556 | Removing track 22573 from SoundCloud playlist 26
+2025-11-22 23:34:07 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 22573 from SoundCloud playlist sync for playlist 26
+2025-11-22 23:34:07 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2153412090 (local track 22573: Dan Lee - ATLANTIS (DAN LEE EDIT)) from playlist 2068606557 (reposts)
+2025-11-22 23:34:09 | INFO     | music_minion.domain.playlists.sync:334 | Synced 72 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 23:34:09 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 23:34:09 | INFO     | music_minion.domain.playlists.crud:566 | Successfully removed track 22573 from SoundCloud and database
+2025-11-22 23:34:09 | INFO     | music_minion.actions:135 | Removed track 22573 from reposts playlist
+2025-11-22 23:34:09 | INFO     | music_minion.core.output:83 |    ✓ Removed from reposts
+2025-11-22 23:34:09 | INFO     | music_minion.core.output:83 | 👍 Liked: Dan Lee - ATLANTIS (DAN LEE EDIT)
+2025-11-22 23:34:09 | INFO     | music_minion.core.output:83 |    Liked on Saturday at 23:34
+2025-11-22 23:34:10 | INFO     | music_minion.core.output:83 |    ✓ Synced like to SoundCloud
+2025-11-22 23:34:10 | INFO     | music_minion.domain.playlists.crud:452 | Adding track 22573 to SoundCloud playlist 19
+2025-11-22 23:34:10 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2153412090 to SoundCloud playlist 2107077439
+2025-11-22 23:34:11 | INFO     | music_minion.domain.playlists.sync:334 | Synced 66 tracks from SoundCloud for playlist 'Nov 25'
+2025-11-22 23:34:11 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Nov 25'
+2025-11-22 23:34:11 | INFO     | music_minion.domain.playlists.crud:458 | Successfully added track 22573 to SoundCloud and database
+2025-11-22 23:34:11 | INFO     | music_minion.core.output:83 |    ✓ Added to Nov 25
