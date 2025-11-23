@@ -360,23 +360,28 @@ def refresh_token(token_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
     except HTTPError as e:
         # Log HTTP errors with details for debugging
+        from loguru import logger
+
         error_body = ""
         try:
             error_body = e.response.json()
         except Exception:
             error_body = e.response.text if hasattr(e.response, "text") else ""
 
-        log(
-            f"Token refresh failed (HTTP {e.response.status_code}): {error_body}",
-            level="error",
-        )
-        if e.response.status_code == 400:
-            log(
-                "Refresh token expired or invalid. Please re-authenticate with: library auth soundcloud",
-                level="error",
+        if e.response.status_code == 400 and isinstance(error_body, dict) and error_body.get("error") == "invalid_grant":
+            # Specific handling for invalid_grant - refresh token expired/revoked
+            logger.warning(
+                f"SoundCloud refresh token invalid or expired (HTTP 400: invalid_grant). "
+                f"User must re-authenticate with: library auth soundcloud"
             )
+        else:
+            # Other HTTP errors
+            logger.error(f"SoundCloud token refresh failed (HTTP {e.response.status_code}): {error_body}")
+
         return None
     except Exception as e:
         # Network errors, JSON parsing errors, etc.
-        log(f"Token refresh error: {e}", level="error")
+        from loguru import logger
+
+        logger.error(f"SoundCloud token refresh error: {e}")
         return None

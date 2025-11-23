@@ -428,8 +428,39 @@ def add_track_to_playlist(playlist_id: int, track_id: int) -> bool:
     if playlist["type"] != "manual":
         raise ValueError("Cannot manually add tracks to smart playlists")
 
+    # Check if track is already in playlist and get soundcloud_id (SoundCloud-first approach)
     with get_db_connection() as conn:
-        # Check if track is already in playlist
+        cursor = conn.execute(
+            """
+            SELECT soundcloud_id FROM tracks
+            WHERE id = ? AND NOT EXISTS (
+                SELECT 1 FROM playlist_tracks
+                WHERE playlist_id = ? AND track_id = ?
+            )
+        """,
+            (track_id, playlist_id, track_id),
+        )
+        track_row = cursor.fetchone()
+
+        if not track_row:
+            return False  # Already in playlist or track doesn't exist
+
+        has_soundcloud_id = track_row["soundcloud_id"] is not None
+
+    # If this needs SoundCloud sync and track is on SoundCloud, sync FIRST
+    if sync.should_sync_to_soundcloud(playlist_id) and has_soundcloud_id:
+        logger.info(f"Adding track {track_id} to SoundCloud playlist {playlist_id}")
+        success, error = sync.add_track_to_soundcloud_playlist(playlist_id, track_id)
+        if not success:
+            logger.error(f"Failed to add track to SoundCloud: {error}")
+            return False
+        # Success - sync function already updated database via post-sync
+        logger.info(f"Successfully added track {track_id} to SoundCloud and database")
+        return True
+
+    # Local-only playlist or local-only track: update database only
+    with get_db_connection() as conn:
+        # Double-check track is not already in playlist (for local-only path)
         cursor = conn.execute(
             """
             SELECT id FROM playlist_tracks
@@ -471,13 +502,7 @@ def add_track_to_playlist(playlist_id: int, track_id: int) -> bool:
         )
 
         conn.commit()
-
-    # Sync to SoundCloud if needed (after database commit)
-    if sync.should_sync_to_soundcloud(playlist_id):
-        success, error = sync.add_track_to_soundcloud_playlist(playlist_id, track_id)
-        if not success and error:
-            logger.warning(f"Failed to sync add to SoundCloud: {error}")
-            # Don't fail the operation - database was updated successfully
+        logger.info(f"Successfully added track {track_id} to local database")
 
     return True
 
@@ -505,6 +530,43 @@ def remove_track_from_playlist(playlist_id: int, track_id: int) -> bool:
 
     logger.info(f"Removing track {track_id} from playlist {playlist_id}")
 
+    # Check if this needs SoundCloud sync (SoundCloud-first approach)
+    if sync.should_sync_to_soundcloud(playlist_id):
+        # Verify track exists in playlist before attempting SoundCloud sync
+        with get_db_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT soundcloud_id FROM tracks
+                WHERE id = ? AND EXISTS (
+                    SELECT 1 FROM playlist_tracks
+                    WHERE playlist_id = ? AND track_id = ?
+                )
+            """,
+                (track_id, playlist_id, track_id),
+            )
+            track_row = cursor.fetchone()
+
+            if not track_row:
+                return False  # Track not in playlist
+
+            has_soundcloud_id = track_row["soundcloud_id"] is not None
+
+        # If track is on SoundCloud, sync there FIRST
+        if has_soundcloud_id:
+            logger.info(
+                f"Removing track {track_id} from SoundCloud playlist {playlist_id}"
+            )
+            success, error = sync.remove_track_from_soundcloud_playlist(
+                playlist_id, track_id
+            )
+            if not success:
+                logger.error(f"Failed to remove track from SoundCloud: {error}")
+                return False
+            # Success - sync function already updated database via post-sync
+            logger.info(f"Successfully removed track {track_id} from SoundCloud and database")
+            return True
+
+    # Local-only playlist or local-only track: update database only
     with get_db_connection() as conn:
         # Begin explicit transaction for atomicity
         conn.execute("BEGIN")
@@ -555,19 +617,7 @@ def remove_track_from_playlist(playlist_id: int, track_id: int) -> bool:
             )
 
             conn.commit()
-
-            # Sync to SoundCloud if needed (after database commit)
-            logger.info(
-                f"Removing track {track_id} from soundcloud playlist {playlist_id}"
-            )
-            if sync.should_sync_to_soundcloud(playlist_id):
-                success, error = sync.remove_track_from_soundcloud_playlist(
-                    playlist_id, track_id
-                )
-                if not success and error:
-                    logger.warning(f"Failed to sync remove to SoundCloud: {error}")
-                    # Don't fail the operation - database was updated successfully
-
+            logger.info(f"Successfully removed track {track_id} from local database")
             return True
         except Exception:
             conn.rollback()

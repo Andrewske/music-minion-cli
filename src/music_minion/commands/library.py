@@ -593,14 +593,34 @@ def sync_library(
             # Reconstruct state from database with existing cache
             config = ProviderConfig(name=provider_name, enabled=True)
             state = provider.init_provider(config)
-            # Restore cached values for incremental sync optimization
-            if db_state.get("config"):
-                cache_data = db_state["config"].get("cache", {})
-                state = state.with_cache(**cache_data)
         else:
             # Initialize fresh state if no database record exists
             config = ProviderConfig(name=provider_name, enabled=True)
             state = provider.init_provider(config)
+
+        # Inject provider credentials into state cache (required for OAuth refresh)
+        if provider_name == "soundcloud":
+            config_dict = {
+                "client_id": ctx.config.soundcloud.client_id,
+                "client_secret": ctx.config.soundcloud.client_secret,
+                "redirect_uri": ctx.config.soundcloud.redirect_uri,
+            }
+            state = state.with_cache(config=config_dict)
+        elif provider_name == "spotify":
+            config_dict = {
+                "client_id": ctx.config.spotify.client_id,
+                "client_secret": ctx.config.spotify.client_secret,
+                "redirect_uri": ctx.config.spotify.redirect_uri,
+            }
+            state = state.with_cache(config=config_dict)
+
+        # Restore cached values for incremental sync optimization (after credentials)
+        # IMPORTANT: Never restore token_data from database - file system is source of truth
+        if db_state and db_state.get("config"):
+            cache_data = db_state["config"].get("cache", {})
+            # Remove token_data if present - init_provider() loads fresh token from file
+            cache_data.pop("token_data", None)
+            state = state.with_cache(**cache_data)
 
         # Check authentication
         if not state.authenticated and provider_name != "local":

@@ -155,7 +155,7 @@ class IPCServer:
 
             # Wait for response from main thread (with timeout)
             try:
-                response_id, success, message = self.response_queue.get(timeout=5.0)
+                response_id, success, message = self.response_queue.get(timeout=15.0)
                 if response_id == request_id:
                     # Send response
                     response = {
