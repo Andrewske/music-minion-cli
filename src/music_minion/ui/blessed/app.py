@@ -33,6 +33,7 @@ from .events.commands import execute_command
 PLAYER_POLL_INTERVAL = 10  # Poll MPV every 10 frames (~1 second)
 SCAN_POLL_INTERVAL = 5  # Poll scan progress every 5 frames (~0.5 seconds)
 SYNC_POLL_INTERVAL = 5  # Poll sync progress every 5 frames (~0.5 seconds)
+CONVERSION_POLL_INTERVAL = 5  # Poll conversion progress every 5 frames (~0.5 seconds)
 POSITION_UPDATE_THRESHOLD = 0.1  # Update display every ~3 Unicode blocks (100ms)
 
 
@@ -235,6 +236,108 @@ def poll_sync_state(ui_state: UIState) -> UIState:
         # Add progress status to UI if not already showing
         # (In the future, we could add a dedicated sync progress UI component)
         # For now, the log messages from the sync functions will show in history
+
+    return ui_state
+
+
+def poll_conversion_state(ui_state: UIState) -> UIState:
+    """
+    Poll playlist conversion state and update UI state.
+
+    Args:
+        ui_state: Current UI state
+
+    Returns:
+        Updated UI state with conversion progress
+    """
+    from dataclasses import replace
+
+    from ...commands import playlist
+    from .state import add_history_line
+
+    # Get current conversion state
+    conversion_state = playlist.get_conversion_state()
+
+    if conversion_state is None:
+        # No conversion running
+        return ui_state
+
+    # Check if conversion completed
+    if conversion_state.get("completed", False):
+        # Show results in history
+        spotify_name = conversion_state.get("spotify_name", "unknown")
+        soundcloud_name = conversion_state.get("soundcloud_name", "unknown")
+
+        if conversion_state.get("error"):
+            ui_state = add_history_line(
+                ui_state,
+                f"❌ Playlist conversion failed: {conversion_state['error']}",
+                "red",
+            )
+        elif conversion_state.get("success"):
+            # Conversion completed successfully
+            total_tracks = conversion_state.get("total_tracks", 0)
+            matched_tracks = conversion_state.get("matched_tracks", 0)
+            failed_tracks = conversion_state.get("failed_tracks", 0)
+            average_confidence = conversion_state.get("average_confidence", 0.0)
+            playlist_url = conversion_state.get("soundcloud_playlist_url", "")
+            unmatched_track_names = conversion_state.get("unmatched_track_names", [])
+
+            ui_state = add_history_line(
+                ui_state,
+                f"✅ Playlist conversion complete: {spotify_name} → {soundcloud_name}",
+                "green",
+            )
+
+            if total_tracks > 0:
+                match_pct = (matched_tracks / total_tracks * 100) if total_tracks > 0 else 0
+                ui_state = add_history_line(
+                    ui_state,
+                    f"  📊 Matched: {matched_tracks}/{total_tracks} ({match_pct:.1f}%)",
+                    "white",
+                )
+
+            if matched_tracks > 0:
+                ui_state = add_history_line(
+                    ui_state,
+                    f"  🎯 Avg confidence: {average_confidence:.2f}",
+                    "white",
+                )
+
+            if playlist_url:
+                ui_state = add_history_line(
+                    ui_state, f"  🔗 Playlist: {playlist_url}", "white"
+                )
+
+            if failed_tracks > 0:
+                ui_state = add_history_line(
+                    ui_state,
+                    f"  ⚠️  {failed_tracks} tracks could not be matched",
+                    "yellow",
+                )
+                # Show first 3 unmatched tracks
+                for track_name in unmatched_track_names[:3]:
+                    ui_state = add_history_line(
+                        ui_state, f"     • {track_name}", "yellow"
+                    )
+                if len(unmatched_track_names) > 3:
+                    remaining = len(unmatched_track_names) - 3
+                    ui_state = add_history_line(
+                        ui_state, f"     ... and {remaining} more", "yellow"
+                    )
+        else:
+            # Completed but not successful and no error (shouldn't happen)
+            ui_state = add_history_line(
+                ui_state, "⚠️  Playlist conversion completed with unknown status", "yellow"
+            )
+
+        # Clear conversion state so completion messages don't repeat on next poll
+        playlist._clear_conversion_state()
+
+    else:
+        # Conversion still running - progress is already logged via background worker
+        # (In the future, we could add a dedicated conversion progress UI component)
+        pass
 
     return ui_state
 
@@ -607,6 +710,11 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         should_poll_sync = frame_count % SYNC_POLL_INTERVAL == 0
         if should_poll_sync:
             ui_state = poll_sync_state(ui_state)
+
+        # Poll conversion state at configured interval for smoother progress updates
+        should_poll_conversion = frame_count % CONVERSION_POLL_INTERVAL == 0
+        if should_poll_conversion:
+            ui_state = poll_conversion_state(ui_state)
 
         # Process IPC commands from external clients (hotkeys)
         try:

@@ -4157,3 +4157,928 @@ ValueError: could not convert string to float: '2025-11-22T19:56:31.400294'
 2025-11-22 21:07:29 | INFO     | music_minion.core.output:83 | Playlist filter: 152 skipped (unchanged), 0 syncing
 2025-11-22 21:07:29 | INFO     | music_minion.core.output:83 | 
 ⚠ No playlists need syncing (152 unchanged)
+2025-11-22 21:26:27 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-22 21:26:27 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-22 21:26:28 | INFO     | music_minion.ui.blessed.app:903 | Starting background sync after UI render
+2025-11-22 21:26:28 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: spotify
+2025-11-22 21:26:28 | INFO     | music_minion.core.output:83 | Syncing spotify (likes + playlists)...
+2025-11-22 21:26:28 | INFO     | music_minion.core.output:83 | 🔄 Syncing from spotify...
+2025-11-22 21:26:28 | INFO     | music_minion.domain.library.providers.spotify.api:120 | Incremental sync: 8913 existing Spotify tracks
+2025-11-22 21:26:28 | INFO     | music_minion.domain.library.providers.spotify.api:213 | Current liked tracks: 1715, Cached: 1715
+2025-11-22 21:26:28 | INFO     | music_minion.domain.library.providers.spotify.api:217 | ✓ Like count unchanged - skipping pagination (0 API calls)
+2025-11-22 21:26:28 | INFO     | music_minion.core.output:83 | ✓ No new liked tracks detected
+2025-11-22 21:26:28 | INFO     | music_minion.core.output:83 | ✓ Fetched 0 new tracks from Spotify
+2025-11-22 21:26:28 | INFO     | music_minion.domain.library.providers.spotify.api:133 | Collected 0 liked track IDs for sync
+2025-11-22 21:26:28 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in spotify library (incremental mode - all tracks already synced)
+2025-11-22 21:26:28 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-22 21:26:28 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-22 21:26:28 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-22 21:26:28 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from spotify...
+2025-11-22 21:26:30 | INFO     | music_minion.core.output:83 | ✓ Fetched 152 playlists (0 updated, 152 unchanged)
+2025-11-22 21:26:30 | INFO     | music_minion.domain.library.providers.spotify.api:537 | Playlists fetch complete: 152 total, 0 fetched, 152 skipped
+2025-11-22 21:26:30 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-22 21:26:30 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-22 21:26:30 | INFO     | music_minion.core.output:83 | 
+2025-11-22 21:26:30 | INFO     | music_minion.core.output:83 | 🔍 Looking up existing playlists...
+2025-11-22 21:26:30 | INFO     | music_minion.core.output:83 | ✓ Found 152 existing playlists
+2025-11-22 21:26:30 | INFO     | music_minion.core.output:83 | 
+📦 Collecting tracks from playlists...
+2025-11-22 21:26:30 | INFO     | music_minion.core.output:83 | ✓ Collected 0 unique tracks from 0 playlists
+2025-11-22 21:26:30 | INFO     | music_minion.core.output:83 | Playlist filter: 152 skipped (unchanged), 0 syncing
+2025-11-22 21:26:30 | INFO     | music_minion.core.output:83 | 
+⚠ No playlists need syncing (152 unchanged)
+2025-11-22 21:26:34 | INFO     | music_minion.commands.sync:156 | Starting full sync for provider: spotify
+2025-11-22 21:26:34 | INFO     | music_minion.core.output:83 | Syncing spotify (likes + playlists)...
+2025-11-22 21:26:34 | INFO     | music_minion.core.output:83 | 🔄 Syncing from spotify...
+2025-11-22 21:26:35 | INFO     | music_minion.domain.library.providers.spotify.api:213 | Current liked tracks: 1715, Cached: 1715
+2025-11-22 21:26:35 | INFO     | music_minion.domain.library.providers.spotify.api:226 | Like count changed (1715 → 1715), fetching updates...
+2025-11-22 21:26:49 | INFO     | music_minion.domain.library.providers.spotify.api:299 | Fetch complete: 1715 new tracks, 1715 liked IDs collected
+2025-11-22 21:26:49 | INFO     | music_minion.core.output:83 | ✓ Fetched 1715 new tracks from Spotify
+2025-11-22 21:26:49 | INFO     | music_minion.domain.library.providers.spotify.api:133 | Collected 1715 liked track IDs for sync
+2025-11-22 21:26:49 | INFO     | music_minion.core.output:83 | 📊 Synced 1715 Spotify like markers
+2025-11-22 21:26:49 | INFO     | music_minion.domain.library.providers.spotify.api:149 | Like markers synced: 1715 for 1715 tracks
+2025-11-22 21:26:49 | INFO     | music_minion.core.output:83 | 📥 Importing 1715 spotify tracks to database...
+2025-11-22 21:26:49 | INFO     | music_minion.core.output:83 | ✓ Import complete!
+2025-11-22 21:26:49 | INFO     | music_minion.core.output:83 |   Created:  0 (new spotify tracks)
+2025-11-22 21:26:49 | INFO     | music_minion.core.output:83 |   Skipped:  1715 (already synced)
+2025-11-22 21:26:49 | INFO     | music_minion.core.output:83 | 
+2025-11-22 21:26:49 | INFO     | music_minion.core.output:83 | 💡 Tip: Run 'library match spotify' to link spotify tracks to local files
+2025-11-22 21:26:49 | INFO     | music_minion.core.output:83 | 🔄 Auto-syncing Spotify library (incremental)...
+2025-11-22 21:26:49 | INFO     | music_minion.core.output:83 | 🔄 Syncing from spotify...
+2025-11-22 21:26:49 | INFO     | music_minion.domain.library.providers.spotify.api:120 | Incremental sync: 8913 existing Spotify tracks
+2025-11-22 21:26:49 | INFO     | music_minion.core.output:83 | ✓ Switched to spotify library (8,913 tracks)
+2025-11-22 21:26:49 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (full)...
+2025-11-22 21:26:49 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (full)...
+2025-11-22 21:26:49 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from spotify...
+2025-11-22 21:26:50 | INFO     | music_minion.domain.library.providers.spotify.api:213 | Current liked tracks: 1715, Cached: 1715
+2025-11-22 21:26:50 | INFO     | music_minion.domain.library.providers.spotify.api:217 | ✓ Like count unchanged - skipping pagination (0 API calls)
+2025-11-22 21:26:50 | INFO     | music_minion.core.output:83 | ✓ No new liked tracks detected
+2025-11-22 21:26:50 | INFO     | music_minion.core.output:83 | ✓ Fetched 0 new tracks from Spotify
+2025-11-22 21:26:50 | INFO     | music_minion.domain.library.providers.spotify.api:133 | Collected 0 liked track IDs for sync
+2025-11-22 21:26:50 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in spotify library (incremental mode - all tracks already synced)
+2025-11-22 21:26:50 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-22 21:27:50 | INFO     | music_minion.core.output:83 | ✓ Fetched 152 playlists (152 updated, 0 unchanged)
+2025-11-22 21:27:50 | INFO     | music_minion.domain.library.providers.spotify.api:537 | Playlists fetch complete: 152 total, 152 fetched, 0 skipped
+2025-11-22 21:27:50 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-22 21:27:50 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-22 21:27:50 | INFO     | music_minion.core.output:83 | 
+2025-11-22 21:27:50 | INFO     | music_minion.core.output:83 | 🔍 Looking up existing playlists...
+2025-11-22 21:27:50 | INFO     | music_minion.core.output:83 | ✓ Found 152 existing playlists
+2025-11-22 21:27:50 | INFO     | music_minion.core.output:83 | 
+📦 Collecting tracks from playlists...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | ✓ Collected 5552 unique tracks from 152 playlists
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | Playlist filter: 0 skipped (unchanged), 152 syncing
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+🔍 Looking up tracks in database...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | ✓ Found 5552/5552 tracks in database
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | ✓ Ready to sync 152 playlists with 5552 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+💾 Updating playlists...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[1/152] Processing: Release Radar (All)
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 58/58 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Release Radar (All)' with 58 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[2/152] Processing: Chill evening maybe sexy all
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 100/100 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Chill evening maybe sexy all' with 100 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[3/152] Processing: My playlist #133
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 31/31 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'My playlist #133' with 31 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[4/152] Processing: Sept 25
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 100/100 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ❌ Failed: UNIQUE constraint failed: playlist_tracks.playlist_id, playlist_tracks.track_id
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[5/152] Processing: New & Unused
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 1/1 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'New & Unused' with 1 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[6/152] Processing: K Trip #11
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 15/15 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'K Trip #11' with 15 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[7/152] Processing: K Trip #4
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 16/16 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'K Trip #4' with 16 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[8/152] Processing: K Trip #6
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 16/16 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'K Trip #6' with 16 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[9/152] Processing: All Ketamine Tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 62/62 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ❌ Failed: UNIQUE constraint failed: playlist_tracks.playlist_id, playlist_tracks.track_id
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[10/152] Processing: K trip #7
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 17/17 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'K trip #7' with 17 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[11/152] Processing: K Trip #8
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 16/16 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'K Trip #8' with 16 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[12/152] Processing: How's vibes
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 1/1 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'How's vibes' with 1 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[13/152] Processing: Chill Evening/ Maybe Sexy Vol 4
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 14/14 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Chill Evening/ Maybe Sexy Vol 4' with 14 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[14/152] Processing: maybs?
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 16/16 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'maybs?' with 16 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[15/152] Processing: Perfect Ketamine Treatment
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 10/10 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Perfect Ketamine Treatment' with 10 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[16/152] Processing: Flow State
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 17/17 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Flow State' with 17 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[17/152] Processing: Stormy ladies / Art pop / dreamy pop
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 100/100 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Stormy ladies / Art pop / dreamy pop' with 100 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[18/152] Processing: Punk Goes Disney
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 51/51 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Punk Goes Disney' with 51 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[19/152] Processing: Chill Evening/Maybe Sexy Vol 3
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 30/30 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Chill Evening/Maybe Sexy Vol 3' with 30 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[20/152] Processing: You&Me(but mostly we)
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 79/79 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'You&Me(but mostly we)' with 79 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[21/152] Processing: Spacey Mc Bassey
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 1/1 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Spacey Mc Bassey' with 1 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[22/152] Processing: ToRunInPlace
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 1/1 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'ToRunInPlace' with 1 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[23/152] Processing: Beautiful and Wompy
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 14/14 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Beautiful and Wompy' with 14 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[24/152] Processing: Bass Heads Delight - UKG
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 1/1 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Bass Heads Delight - UKG' with 1 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[25/152] Processing: Stoned with Headphones
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 66/66 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Stoned with Headphones' with 66 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[26/152] Processing: Stoned with Headphones - Archive
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 100/100 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Stoned with Headphones - Archive' with 100 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[27/152] Processing: a list needs no name
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 11/11 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'a list needs no name' with 11 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[28/152] Processing: Fuckin' Tiesto
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 24/24 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Fuckin' Tiesto' with 24 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[29/152] Processing: Worth it
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 5/5 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Worth it' with 5 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[30/152] Processing: Chill Evening/Maybe Sexy Vol 2
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 41/41 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Chill Evening/Maybe Sexy Vol 2' with 41 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[31/152] Processing: Whomp Whomp 1.0
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 47/47 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Whomp Whomp 1.0' with 47 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[32/152] Processing: Open Your Eyes Kevin
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 46/46 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Open Your Eyes Kevin' with 46 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[33/152] Processing: Uberchills
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 1/1 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Uberchills' with 1 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[34/152] Processing: Happy Hardcore (2)
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 35/35 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Happy Hardcore (2)' with 35 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[35/152] Processing: cHiLl 🌞 ViBeS
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 6/6 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'cHiLl 🌞 ViBeS' with 6 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[36/152] Processing: Stoned with Headphones (2)
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 63/63 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Stoned with Headphones (2)' with 63 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[37/152] Processing: Dubstep
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 1/1 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Dubstep' with 1 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[38/152] Processing: Jump-Up (2)
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 39/39 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Jump-Up (2)' with 39 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[39/152] Processing: BIG BASS TINGS
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 73/73 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'BIG BASS TINGS' with 73 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[40/152] Processing: Chill Evening/Maybe Sexy (2)
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 44/44 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Chill Evening/Maybe Sexy (2)' with 44 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[41/152] Processing: Happy Hardcore Playlist
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 22/22 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Happy Hardcore Playlist' with 22 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[42/152] Processing: toastergoesbzzz
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 45/45 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'toastergoesbzzz' with 45 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[43/152] Processing: dripdropgoestheclock
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 33/33 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'dripdropgoestheclock' with 33 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[44/152] Processing: Dark Bass
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 2/2 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Dark Bass' with 2 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[45/152] Processing: DnB
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 2/2 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'DnB' with 2 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[46/152] Processing: Funk Bass
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 4/4 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Funk Bass' with 4 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[47/152] Processing: Deep House
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 1/1 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Deep House' with 1 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[48/152] Processing: Wonky
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 6/6 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Wonky' with 6 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[49/152] Processing: Hard Dance
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 1/1 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Hard Dance' with 1 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[50/152] Processing: Hybrid Trap
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 26/26 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Hybrid Trap' with 26 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[51/152] Processing: PsyTrance
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 21/21 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'PsyTrance' with 21 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[52/152] Processing: Future Bass
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 34/34 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Future Bass' with 34 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[53/152] Processing: Hardstyle
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 25/25 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Hardstyle' with 25 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[54/152] Processing: Happy Hardcore
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 53/53 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Happy Hardcore' with 53 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[55/152] Processing: MidTempo Bass
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 25/25 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'MidTempo Bass' with 25 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[56/152] Processing: Space Bass
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 27/27 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Space Bass' with 27 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[57/152] Processing: Brostep
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 32/32 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Brostep' with 32 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[58/152] Processing: Chillstep
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 23/23 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Chillstep' with 23 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[59/152] Processing: Colour Bass
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 16/16 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Colour Bass' with 16 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[60/152] Processing: Melodic Dubstep
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 22/22 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Melodic Dubstep' with 22 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[61/152] Processing: Riddim
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 22/22 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Riddim' with 22 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[62/152] Processing: Acid House
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 21/21 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Acid House' with 21 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[63/152] Processing: Bass House
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 47/47 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Bass House' with 47 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[64/152] Processing: Electro House
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 26/26 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Electro House' with 26 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[65/152] Processing: Future House
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 20/20 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Future House' with 20 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[66/152] Processing: Progressive House
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 12/12 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Progressive House' with 12 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[67/152] Processing: Speed House
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 13/13 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Speed House' with 13 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[68/152] Processing: Tech House
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 39/39 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Tech House' with 39 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[69/152] Processing: Drumstep
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 30/30 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Drumstep' with 30 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[70/152] Processing: Jump-Up
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 49/49 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Jump-Up' with 49 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[71/152] Processing: Liquid DnB
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 40/40 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Liquid DnB' with 40 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[72/152] Processing: Neurofunk
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 45/45 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Neurofunk' with 45 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[73/152] Processing: Jungle
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 7/7 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Jungle' with 7 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[74/152] Processing: Drum & Bass Top 40
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 40/40 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Drum & Bass Top 40' with 40 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[75/152] Processing: Drum & Bass Adventure | Simplify.
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 100/100 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Drum & Bass Adventure | Simplify.' with 100 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[76/152] Processing: Bass Bae's Tears
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 100/100 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Bass Bae's Tears' with 100 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[77/152] Processing: Brain Tickling Wubs
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 100/100 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Brain Tickling Wubs' with 100 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[78/152] Processing: B&L Fresh Batch Friday
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 100/100 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'B&L Fresh Batch Friday' with 100 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[79/152] Processing: DOES IT DOUBLE BANGAZ
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 100/100 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'DOES IT DOUBLE BANGAZ' with 100 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[80/152] Processing: Bass / Dubstep New Releases
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 50/50 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Bass / Dubstep New Releases' with 50 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[81/152] Processing: Lost Lands Full Lineup Taste Test 2022
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 100/100 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Lost Lands Full Lineup Taste Test 2022' with 100 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[82/152] Processing: H2L: New Drum & Bass 2025 | updated weekly
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 99/99 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'H2L: New Drum & Bass 2025 | updated weekly' with 99 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[83/152] Processing: DnB 2022 Light
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 53/53 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'DnB 2022 Light' with 53 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[84/152] Processing: DnB 2022 Dark
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 90/90 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'DnB 2022 Dark' with 90 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[85/152] Processing: Drip drop
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 9/9 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Drip drop' with 9 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[86/152] Processing: Is it stupid that I love you (2)
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 41/41 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Is it stupid that I love you (2)' with 41 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[87/152] Processing: R&B (2)
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 38/38 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'R&B (2)' with 38 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[88/152] Processing: Chill Evening/Maybe Sexy
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 67/67 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Chill Evening/Maybe Sexy' with 67 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[89/152] Processing: 
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 100/100 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated '' with 100 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[90/152] Processing: 90s-ish R&B
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 66/66 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated '90s-ish R&B' with 66 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[91/152] Processing: Dreamland 4me
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 11/11 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Dreamland 4me' with 11 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[92/152] Processing: Cool Stuff?
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 11/11 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Cool Stuff?' with 11 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[93/152] Processing: Random Maybzzz Shit
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 61/61 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Random Maybzzz Shit' with 61 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[94/152] Processing: Who Wants to Rock?
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 100/100 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ❌ Failed: UNIQUE constraint failed: playlist_tracks.playlist_id, playlist_tracks.track_id
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[95/152] Processing: college prty 
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 100/100 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'college prty ' with 100 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[96/152] Processing: ItsOnTheHouse
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 25/25 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'ItsOnTheHouse' with 25 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[97/152] Processing: ItsOnTheHouse - Deep Chill
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 3/3 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'ItsOnTheHouse - Deep Chill' with 3 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[98/152] Processing: Bass Heads Delight - Freeform
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 1/1 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Bass Heads Delight - Freeform' with 1 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[99/152] Processing: DNB - Meditation
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 8/8 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'DNB - Meditation' with 8 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[100/152] Processing: BassHeadsDelight - Bass House
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 10/10 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'BassHeadsDelight - Bass House' with 10 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[101/152] Processing: BassHeadsDelight - End of the Night
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 3/3 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'BassHeadsDelight - End of the Night' with 3 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[102/152] Processing: BassHeadsDelight
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 100/100 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'BassHeadsDelight' with 100 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[103/152] Processing: BassHeadsDelight - DnB
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 42/42 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'BassHeadsDelight - DnB' with 42 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[104/152] Processing: BassHeadsDelight - PsyTrance
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 23/23 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ❌ Failed: UNIQUE constraint failed: playlist_tracks.playlist_id, playlist_tracks.track_id
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[105/152] Processing: BassHeadsDelight - MidTempo
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 79/79 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'BassHeadsDelight - MidTempo' with 79 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[106/152] Processing: BassHeadsDelight - Deep Trippy
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 30/30 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'BassHeadsDelight - Deep Trippy' with 30 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[107/152] Processing: BassHeadsDelight - Happy Hardcore
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 7/7 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'BassHeadsDelight - Happy Hardcore' with 7 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[108/152] Processing: Other cool tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 21/21 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Other cool tracks' with 21 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[109/152] Processing: Dubstep 2021
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 15/15 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Dubstep 2021' with 15 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[110/152] Processing: Is it stupid that I love you
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 53/53 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Is it stupid that I love you' with 53 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[111/152] Processing: 10's throwback
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 6/6 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated '10's throwback' with 6 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[112/152] Processing: Excision Selections
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 40/40 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Excision Selections' with 40 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[113/152] Processing: 2020
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 100/100 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated '2020' with 100 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[114/152] Processing: Karaoke
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 31/31 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Karaoke' with 31 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[115/152] Processing: 70's Throwback
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 30/30 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated '70's Throwback' with 30 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[116/152] Processing: 60's Throwback
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 5/5 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated '60's Throwback' with 5 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[117/152] Processing: 00's Throwback
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 48/48 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated '00's Throwback' with 48 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[118/152] Processing: 80's throwback
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 53/53 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated '80's throwback' with 53 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[119/152] Processing: 90's throwback
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 100/100 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated '90's throwback' with 100 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[120/152] Processing: 2019
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 23/23 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated '2019' with 23 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[121/152] Processing: EDM 2019
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 33/33 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ❌ Failed: UNIQUE constraint failed: playlist_tracks.playlist_id, playlist_tracks.track_id
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[122/152] Processing: Chillzee
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 20/20 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Chillzee' with 20 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[123/152] Processing: September
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 19/19 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'September' with 19 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[124/152] Processing: Disco/Funk
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 39/39 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Disco/Funk' with 39 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[125/152] Processing: All are welcome here
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 28/28 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'All are welcome here' with 28 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[126/152] Processing: Moving Forward
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 79/79 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Moving Forward' with 79 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[127/152] Processing: EDM 2018
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 40/40 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'EDM 2018' with 40 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[128/152] Processing: myhousewerk
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 43/43 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'myhousewerk' with 43 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[129/152] Processing: HardStyleBaby
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 8/8 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'HardStyleBaby' with 8 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[130/152] Processing: A Glimpse
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 92/92 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'A Glimpse' with 92 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[131/152] Processing: GenreILikeButCannotName
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 47/47 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'GenreILikeButCannotName' with 47 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[132/152] Processing: EDM 2017
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 100/100 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'EDM 2017' with 100 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[133/152] Processing: Newest list
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 100/100 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Newest list' with 100 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[134/152] Processing: Time for some new stuff
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 73/73 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Time for some new stuff' with 73 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[135/152] Processing: Deep Bass
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 27/27 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Deep Bass' with 27 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[136/152] Processing: Punk
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 74/74 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Punk' with 74 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[137/152] Processing: Happy
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 29/29 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Happy' with 29 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[138/152] Processing: Jazz
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 39/39 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Jazz' with 39 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[139/152] Processing: Metal
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 25/25 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Metal' with 25 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[140/152] Processing: EVERYTHING
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 100/100 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'EVERYTHING' with 100 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[141/152] Processing: Colin Bounce
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 35/35 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Colin Bounce' with 35 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[142/152] Processing: pARTy
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 87/87 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'pARTy' with 87 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[143/152] Processing: Speak
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 27/27 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Speak' with 27 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[144/152] Processing: SoundCloud Likes
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 100/100 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'SoundCloud Likes' with 100 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[145/152] Processing: EDM/Dubstep
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 100/100 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ❌ Failed: UNIQUE constraint failed: playlist_tracks.playlist_id, playlist_tracks.track_id
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[146/152] Processing: Hardstyle
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 7/7 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Hardstyle' with 7 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[147/152] Processing: trap
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 9/9 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'trap' with 9 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[148/152] Processing: Yeah.
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 62/62 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Yeah.' with 62 tracks
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[149/152] Processing: Wub Dub
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 100/100 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ❌ Failed: UNIQUE constraint failed: playlist_tracks.playlist_id, playlist_tracks.track_id
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[150/152] Processing: offline 2
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 62/62 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ❌ Failed: UNIQUE constraint failed: playlist_tracks.playlist_id, playlist_tracks.track_id
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[151/152] Processing: Liked from Radio
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 65/65 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ❌ Failed: UNIQUE constraint failed: playlist_tracks.playlist_id, playlist_tracks.track_id
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+[152/152] Processing: offline
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ✓ Mapped 77/77 tracks from global map
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   ❌ Failed: UNIQUE constraint failed: playlist_tracks.playlist_id, playlist_tracks.track_id
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+✓ Committed all playlist changes to database
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | ==================================================
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | ✓ Playlist sync complete!
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   Created:  0 playlists
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   Updated:  142 playlists
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   Skipped:  0 (unchanged)
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   Failed:   10 playlists
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   Tracks:   5576 total tracks added
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | ⚠ Failed playlists:
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   - Sept 25: UNIQUE constraint failed: playlist_tracks.playlist_id, playlist_tracks.track_id
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   - All Ketamine Tracks: UNIQUE constraint failed: playlist_tracks.playlist_id, playlist_tracks.track_id
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   - Who Wants to Rock?: UNIQUE constraint failed: playlist_tracks.playlist_id, playlist_tracks.track_id
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   - BassHeadsDelight - PsyTrance: UNIQUE constraint failed: playlist_tracks.playlist_id, playlist_tracks.track_id
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   - EDM 2019: UNIQUE constraint failed: playlist_tracks.playlist_id, playlist_tracks.track_id
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   - EDM/Dubstep: UNIQUE constraint failed: playlist_tracks.playlist_id, playlist_tracks.track_id
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   - Wub Dub: UNIQUE constraint failed: playlist_tracks.playlist_id, playlist_tracks.track_id
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   - offline 2: UNIQUE constraint failed: playlist_tracks.playlist_id, playlist_tracks.track_id
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   - Liked from Radio: UNIQUE constraint failed: playlist_tracks.playlist_id, playlist_tracks.track_id
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 |   - offline: UNIQUE constraint failed: playlist_tracks.playlist_id, playlist_tracks.track_id
+2025-11-22 21:28:49 | INFO     | music_minion.core.output:83 | 
+2025-11-22 21:51:41 | INFO     | music_minion.core.output:83 | ✅ Set active playlist: Release Radar (All)
+2025-11-22 21:51:41 | INFO     | music_minion.core.output:83 |    Now playing only tracks from this playlist
+2025-11-22 21:51:48 | INFO     | music_minion.core.output:83 | 🔄 Auto-syncing SoundCloud library (incremental)...
+2025-11-22 21:51:48 | INFO     | music_minion.core.output:83 | 🔄 Syncing from soundcloud...
+2025-11-22 21:51:48 | INFO     | music_minion.domain.library.providers.soundcloud.api:128 | Found 7683 existing SoundCloud tracks for incremental sync
+2025-11-22 21:51:48 | INFO     | music_minion.domain.library.providers.soundcloud.api:137 | Starting SoundCloud likes sync
+2025-11-22 21:51:48 | INFO     | music_minion.core.output:83 | 
+🔄 Syncing SoundCloud likes...
+2025-11-22 21:51:49 | INFO     | music_minion.core.output:83 | ✓ Switched to soundcloud library (7,683 tracks)
+2025-11-22 21:51:50 | INFO     | music_minion.core.output:83 |   → 1 (page 1, +193)
+2025-11-22 21:51:50 | INFO     | music_minion.core.output:83 |   ✓ Stopping at first existing track (incremental mode)
+2025-11-22 21:51:50 | INFO     | music_minion.core.output:83 |   ✓ Fetched 1 liked tracks
+2025-11-22 21:51:50 | INFO     | music_minion.domain.library.providers.soundcloud.api:143 | Fetched 0 new tracks, 1 total liked tracks
+2025-11-22 21:51:50 | INFO     | music_minion.core.output:83 | 📊 Syncing like markers for 1 liked tracks...
+2025-11-22 21:51:50 | INFO     | music_minion.domain.library.providers.soundcloud.api:185 | Synced 1 like markers to database
+2025-11-22 21:51:50 | INFO     | music_minion.core.output:83 | ✓ Synced 1 like markers (no new tracks to import)
+2025-11-22 21:51:50 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in soundcloud library (incremental mode - all tracks already synced)
+2025-11-22 21:51:50 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-22 21:51:53 | INFO     | music_minion.core.output:83 | Starting music playback...
+2025-11-22 21:51:53 | INFO     | music_minion.domain.playback.player:63 | Starting MPV player with socket: /tmp/mpv-socket-119582
+2025-11-22 21:51:53 | INFO     | music_minion.domain.playback.player:102 | MPV started successfully
+2025-11-22 21:51:54 | INFO     | music_minion.core.output:83 | ♪ Now playing: AZASSIN - AZASSIN - JUNGLE JUICE (FLIP)
+2025-11-22 21:51:54 | INFO     | music_minion.core.output:83 |    Duration: 04:04
+2025-11-22 21:52:07 | INFO     | music_minion.core.output:83 | 👍 Liked: AZASSIN - AZASSIN - JUNGLE JUICE (FLIP)
+2025-11-22 21:52:07 | INFO     | music_minion.core.output:83 |    Liked on Saturday at 21:52
+2025-11-22 21:52:12 | INFO     | music_minion.core.output:83 | ⏭ Next track (sequential)...
+2025-11-22 21:52:12 | INFO     | music_minion.core.output:83 | ♪ Now playing: ARTO - 𝗔𝗿𝘁𝗼 - 𝗗𝗮 𝗟𝗼𝗰𝗮  [Camel VIP Records]
+2025-11-22 21:52:12 | INFO     | music_minion.core.output:83 |    Duration: 05:41
+2025-11-22 21:52:12 | INFO     | music_minion.core.output:83 |    Organic House
+2025-11-22 21:52:21 | INFO     | music_minion.core.output:83 | ⏭ Next track (sequential)...
+2025-11-22 21:52:21 | INFO     | music_minion.core.output:83 | ♪ Now playing: Foxily - Foxily - Be Happy [Lofi Pet Records]
+2025-11-22 21:52:21 | INFO     | music_minion.core.output:83 |    Duration: 02:48
+2025-11-22 21:52:21 | INFO     | music_minion.core.output:83 |    lofi
+2025-11-22 21:52:21 | INFO     | music_minion.domain.playlists.crud:506 | Removing track 22553 from playlist 26
+2025-11-22 21:52:21 | INFO     | music_minion.domain.playlists.crud:560 | Removing track 22553 from soundcloud playlist 26
+2025-11-22 21:52:21 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 22553 from SoundCloud playlist sync for playlist 26
+2025-11-22 21:52:22 | INFO     | music_minion.domain.playlists.sync:334 | Synced 98 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 21:52:22 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2197874927 (local track 22553: ARTO - 𝗔𝗿𝘁𝗼 - 𝗗𝗮 𝗟𝗼𝗰𝗮  [Camel VIP Records]) from playlist 2068606557 (reposts)
+2025-11-22 21:52:24 | INFO     | music_minion.domain.playlists.sync:334 | Synced 97 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 21:52:24 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 21:52:24 | INFO     | music_minion.actions:265 | Removed track 22553 from reposts playlist
+2025-11-22 21:52:25 | INFO     | music_minion.domain.playlists.sync:334 | Synced 121 tracks from SoundCloud for playlist 'Not Interested'
+2025-11-22 21:52:25 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2197874927 to SoundCloud playlist 2100919255
+2025-11-22 21:52:27 | INFO     | music_minion.domain.playlists.sync:334 | Synced 122 tracks from SoundCloud for playlist 'Not Interested'
+2025-11-22 21:52:27 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Not Interested'
+2025-11-22 21:55:12 | INFO     | music_minion.core.output:83 | ♪ Now playing: Speckz - SPECKZ - HUSTLE
+2025-11-22 21:55:12 | INFO     | music_minion.core.output:83 |    Duration: 03:12
+2025-11-22 21:55:12 | INFO     | music_minion.core.output:83 |    Trap
+2025-11-22 21:55:52 | INFO     | music_minion.core.output:83 | ⏳ Processing like and add to playlist...
+2025-11-22 21:55:52 | INFO     | music_minion.domain.playlists.crud:506 | Removing track 22555 from playlist 26
+2025-11-22 21:55:52 | INFO     | music_minion.domain.playlists.crud:560 | Removing track 22555 from soundcloud playlist 26
+2025-11-22 21:55:52 | INFO     | music_minion.domain.playlists.sync:479 | Removing track 22555 from SoundCloud playlist sync for playlist 26
+2025-11-22 21:55:52 | INFO     | music_minion.domain.playlists.sync:553 | Removing SoundCloud track 2210550401 (local track 22555: Speckz - SPECKZ - HUSTLE) from playlist 2068606557 (reposts)
+2025-11-22 21:55:55 | INFO     | music_minion.domain.playlists.sync:334 | Synced 96 tracks from SoundCloud for playlist 'reposts'
+2025-11-22 21:55:55 | INFO     | music_minion.domain.playlists.sync:575 | Successfully removed track from SoundCloud playlist 'reposts'
+2025-11-22 21:55:55 | INFO     | music_minion.actions:135 | Removed track 22555 from reposts playlist
+2025-11-22 21:55:55 | INFO     | music_minion.core.output:83 |    ✓ Removed from reposts
+2025-11-22 21:55:55 | INFO     | music_minion.core.output:83 | 👍 Liked: Speckz - SPECKZ - HUSTLE
+2025-11-22 21:55:55 | INFO     | music_minion.core.output:83 |    Liked on Saturday at 21:55
+2025-11-22 21:55:55 | INFO     | music_minion.core.output:83 |    ✓ Synced like to SoundCloud
+2025-11-22 21:55:56 | INFO     | music_minion.domain.playlists.sync:334 | Synced 56 tracks from SoundCloud for playlist 'Nov 25'
+2025-11-22 21:55:56 | INFO     | music_minion.domain.playlists.sync:438 | Adding track 2210550401 to SoundCloud playlist 2107077439
+2025-11-22 21:55:58 | INFO     | music_minion.domain.playlists.sync:334 | Synced 57 tracks from SoundCloud for playlist 'Nov 25'
+2025-11-22 21:55:58 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Nov 25'
+2025-11-22 21:55:58 | INFO     | music_minion.core.output:83 |    ✓ Added to Nov 25

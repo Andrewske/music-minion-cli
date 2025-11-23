@@ -279,11 +279,13 @@ def get_stream_url(state: ProviderState, provider_id: str) -> Optional[str]:
     return f"{API_BASE_URL}/tracks/{provider_id}/stream?oauth_token={access_token}"
 
 
-def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, Any]]]:
+def get_playlists(state: ProviderState, full: bool = False) -> Tuple[ProviderState, List[Dict[str, Any]]]:
     """Get user's SoundCloud playlists metadata (optimized for incremental sync).
 
     Args:
         state: Current provider state
+        full: If True, bypass optimizations and fetch all data (default: False)
+              Note: SoundCloud doesn't currently use optimizations in get_playlists()
 
     Returns:
         (state, [{"id": "...", "name": "...", "track_count": N, "last_modified": "..."}, ...])

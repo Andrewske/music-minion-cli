@@ -164,11 +164,12 @@ class LibraryProvider(Protocol):
         """
         ...
 
-    def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, Any]]]:
+    def get_playlists(state: ProviderState, full: bool = False) -> Tuple[ProviderState, List[Dict[str, Any]]]:
         """Get user's playlists from provider.
 
         Args:
             state: Current provider state
+            full: If True, bypass optimizations and fetch all data (default: False)
 
         Returns:
             (new_state, [{"id": "...", "name": "...", "track_count": N}, ...])
