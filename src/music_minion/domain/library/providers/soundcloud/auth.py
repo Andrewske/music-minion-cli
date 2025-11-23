@@ -17,6 +17,7 @@ from typing import Any, Dict, Optional, Tuple
 from urllib.parse import parse_qs, quote, urlparse
 
 import requests
+from requests.exceptions import HTTPError
 
 from music_minion.core.output import log
 
@@ -357,6 +358,25 @@ def refresh_token(token_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
         return new_token_data
 
-    except Exception:
-        # Silently fail - caller will handle None return
+    except HTTPError as e:
+        # Log HTTP errors with details for debugging
+        error_body = ""
+        try:
+            error_body = e.response.json()
+        except Exception:
+            error_body = e.response.text if hasattr(e.response, "text") else ""
+
+        log(
+            f"Token refresh failed (HTTP {e.response.status_code}): {error_body}",
+            level="error",
+        )
+        if e.response.status_code == 400:
+            log(
+                "Refresh token expired or invalid. Please re-authenticate with: library auth soundcloud",
+                level="error",
+            )
+        return None
+    except Exception as e:
+        # Network errors, JSON parsing errors, etc.
+        log(f"Token refresh error: {e}", level="error")
         return None

@@ -622,13 +622,20 @@ def sync_library(
         )
 
         if not provider_tracks:
-            message = f"⚠ No tracks found in {provider_name} library"
-            if incremental:
-                message += " (incremental mode - all tracks already synced)"
-                log(message, level="warning")
-                log("💡 Tip: Use '--full' flag to re-sync all tracks", level="info")
+            # Check if this is due to authentication failure vs genuinely no tracks
+            if not new_state.authenticated:
+                log(
+                    f"❌ Authentication failed for {provider_name}. Please re-authenticate with: library auth {provider_name}",
+                    level="error",
+                )
             else:
-                log(message, level="warning")
+                message = f"⚠ No tracks found in {provider_name} library"
+                if incremental:
+                    message += " (incremental mode - all tracks already synced)"
+                    log(message, level="warning")
+                    log("💡 Tip: Use '--full' flag to re-sync all tracks", level="info")
+                else:
+                    log(message, level="warning")
 
             # Save updated provider state even when no tracks found (updates cache/timestamps)
             # This is important for incremental sync - the cache/timestamps get updated even when no new tracks
@@ -807,12 +814,26 @@ def sync_playlists(
             return ctx, True
 
         # Get playlists from provider
+        import time
         print_if_not_silent(f"📋 Fetching playlists from {provider_name}...")
+        fetch_start = time.time()
         state, playlists = provider.get_playlists(state)
+        fetch_time = time.time() - fetch_start
+        log(f"Fetched {len(playlists) if playlists else 0} playlists metadata in {fetch_time:.2f}s", level="debug")
 
         if not playlists:
-            log(f"⚠ No playlists found in {provider_name}", level="warning")
-            print_if_not_silent(f"⚠ No playlists found in {provider_name}")
+            # Check if this is due to authentication failure vs genuinely no playlists
+            if not state.authenticated:
+                log(
+                    f"❌ Authentication failed for {provider_name}. Please re-authenticate with: library auth {provider_name}",
+                    level="error",
+                )
+                print_if_not_silent(
+                    f"❌ Authentication failed for {provider_name}. Please re-authenticate with: library auth {provider_name}"
+                )
+            else:
+                log(f"⚠ No playlists found in {provider_name}", level="warning")
+                print_if_not_silent(f"⚠ No playlists found in {provider_name}")
             return ctx, True
 
         log(f"✓ Found {len(playlists)} playlists", level="info")
@@ -872,21 +893,17 @@ def sync_playlists(
             pl_name = pl_data["name"]
             pl_last_modified = pl_data.get("last_modified")
 
-            # Apply incremental sync filter (same logic as current code)
+            # Apply incremental sync filter BEFORE fetching tracks
             existing = existing_playlists_map.get(pl_id)
             if existing and not full and pl_last_modified:
                 existing_modified = existing["provider_last_modified"]
                 if existing_modified and pl_last_modified <= existing_modified:
                     # Skip - no changes since last sync
+                    skipped_count += 1
                     continue
 
-            # Get tracks for this playlist (pre-fetched or fetch individually)
-            provider_tracks = None
-            if "tracks" in pl_data and pl_data["tracks"]:
-                provider_tracks = pl_data["tracks"]
-            else:
-                # Fall back to individual fetch for large playlists
-                state, provider_tracks = provider.get_playlist_tracks(state, pl_id)
+            # Fetch tracks for this playlist (metadata-only API means we need individual fetches)
+            state, provider_tracks, _ = provider.get_playlist_tracks(state, pl_id)
 
             if not provider_tracks:
                 continue  # Skip empty playlists
@@ -902,9 +919,13 @@ def sync_playlists(
         print_if_not_silent(
             f"✓ Collected {len(all_tracks_to_sync)} unique tracks from {len(playlists_to_sync)} playlists",
         )
+        log(
+            f"Playlist filter: {skipped_count} skipped (unchanged), {len(playlists_to_sync)} syncing",
+            level="info",
+        )
 
         if not playlists_to_sync:
-            print_if_not_silent("\n⚠ No playlists need syncing")
+            print_if_not_silent(f"\n⚠ No playlists need syncing ({skipped_count} unchanged)")
             return ctx, True
 
         # ========================================================================
@@ -1048,18 +1069,20 @@ def sync_playlists(
                                     UPDATE playlists
                                     SET last_synced_at = ?,
                                         provider_last_modified = ?,
-                                        provider_created_at = ?,
+                                        provider_created_at = COALESCE(?, provider_created_at),
                                         track_count = ?,
                                         spotify_snapshot_id = ?,
+                                        library = ?,
                                         updated_at = CURRENT_TIMESTAMP
                                     WHERE id = ?
                                 """,
                                     (
-                                        datetime.now().isoformat(),
+                                        time.time(),
                                         pl_last_modified,
                                         pl_created_at,
                                         len(track_ids),
                                         pl_last_modified,  # snapshot_id
+                                        provider_name,
                                         playlist_id,
                                     ),
                                 )
@@ -1069,16 +1092,18 @@ def sync_playlists(
                                     UPDATE playlists
                                     SET last_synced_at = ?,
                                         provider_last_modified = ?,
-                                        provider_created_at = ?,
+                                        provider_created_at = COALESCE(?, provider_created_at),
                                         track_count = ?,
+                                        library = ?,
                                         updated_at = CURRENT_TIMESTAMP
                                     WHERE id = ?
                                 """,
                                     (
-                                        datetime.now().isoformat(),
+                                        time.time(),
                                         pl_last_modified,
                                         pl_created_at,
                                         len(track_ids),
+                                        provider_name,
                                         playlist_id,
                                     ),
                                 )
@@ -1121,14 +1146,15 @@ def sync_playlists(
                             # Create playlist in database (inline to use same transaction)
                             cursor = conn.execute(
                                 """
-                                INSERT INTO playlists (name, type, description, track_count, created_at, updated_at)
-                                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                                INSERT INTO playlists (name, type, description, track_count, library, created_at, updated_at)
+                                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                             """,
                                 (
                                     final_name,
                                     "manual",
                                     pl_data.get("description"),
                                     len(track_ids),
+                                    provider_name,
                                 ),
                             )
                             playlist_id = cursor.lastrowid
@@ -1288,6 +1314,35 @@ def sync_playlists(
         traceback.print_exc()
 
     return ctx, True
+
+
+def handle_auth_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+    """Authenticate with the currently active library provider.
+
+    Args:
+        ctx: Application context
+
+    Returns:
+        (ctx, True)
+    """
+    # Get active provider from database
+    with database.get_db_connection() as conn:
+        cursor = conn.execute("SELECT provider FROM active_library WHERE id = 1")
+        row = cursor.fetchone()
+        active_provider = row["provider"] if row else "local"
+
+    # Validate provider
+    if active_provider == "local":
+        log("✓ Local provider doesn't require authentication", level="info")
+        return ctx, True
+
+    if active_provider == "all":
+        log("❌ Cannot authenticate 'all' - switch to a specific provider first", level="error")
+        log("Available: soundcloud, spotify, youtube", level="info")
+        return ctx, True
+
+    # Authenticate the active provider
+    return authenticate_provider(ctx, active_provider)
 
 
 def authenticate_provider(

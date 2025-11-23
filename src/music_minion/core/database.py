@@ -14,7 +14,7 @@ from .config import get_data_dir
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 
 
 def get_database_path() -> Path:
@@ -676,6 +676,29 @@ def migrate_database(conn, current_version: int) -> None:
         print("  ✓ Migration to v19 complete: Library-specific playlists added")
         conn.commit()
 
+    if current_version < 20:
+        # Migration from v19 to v20: Add top_level_artist column for better matching
+        print("  Migrating to v20: Adding top_level_artist column...")
+
+        try:
+            conn.execute("ALTER TABLE tracks ADD COLUMN top_level_artist TEXT")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+
+        # Populate top_level_artist for existing tracks (extract first artist from artist field)
+        conn.execute("""
+            UPDATE tracks
+            SET top_level_artist = CASE
+                WHEN artist LIKE '%,%' THEN SUBSTR(artist, 1, INSTR(artist, ',') - 1)
+                ELSE artist
+            END
+            WHERE top_level_artist IS NULL AND artist IS NOT NULL
+        """)
+
+        print("  ✓ Migration to v20 complete: top_level_artist column added")
+        conn.commit()
+
 
 def init_database() -> None:
     """Initialize the database with required tables."""
@@ -700,6 +723,7 @@ def init_database() -> None:
                 local_path TEXT,
                 title TEXT,
                 artist TEXT,
+                top_level_artist TEXT,
                 album TEXT,
                 genre TEXT,
                 year INTEGER,

@@ -4,10 +4,9 @@ Configuration management for Music Minion CLI
 
 import os
 import tomllib
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
-from dataclasses import dataclass, field
-from loguru import logger
 
 
 @dataclass
@@ -92,6 +91,7 @@ class SyncConfig:
     tag_prefix: str = "mm:"  # Prefix for Music Minion tags in metadata
     sync_method: str = "manual"  # 'manual' or 'syncthing' (future)
     auto_watch_files: bool = False  # Watch for file changes (future)
+    playlist_sync_ttl_seconds: int = 600  # TTL for playlist sync cache
 
 
 @dataclass
@@ -221,18 +221,15 @@ def get_config_path() -> Path:
     # Check for project root config (development mode)
     project_config = _find_project_config()
     if project_config:
-        logger.info(f"Using project config: {project_config}")
         return project_config
 
     # Check current directory
     local_config = Path.cwd() / "config.toml"
     if local_config.exists():
-        logger.info(f"Using local config: {local_config}")
         return local_config
 
     # Fall back to XDG config directory
     global_config = get_config_dir() / "config.toml"
-    logger.info(f"Using global config: {global_config}")
     return global_config
 
 

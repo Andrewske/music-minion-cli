@@ -175,7 +175,7 @@ class LibraryProvider(Protocol):
         """
         ...
 
-    def get_playlist_tracks(state: ProviderState, playlist_id: str) -> Tuple[ProviderState, List[Tuple[str, Dict[str, Any]]]]:
+    def get_playlist_tracks(state: ProviderState, playlist_id: str) -> Tuple[ProviderState, List[Tuple[str, Dict[str, Any]]], Optional[str]]:
         """Get tracks in a specific playlist.
 
         Args:
@@ -183,7 +183,8 @@ class LibraryProvider(Protocol):
             playlist_id: Provider's playlist ID
 
         Returns:
-            (new_state, [(provider_id, metadata), ...])
+            (new_state, [(provider_id, metadata), ...], created_at_timestamp)
+            created_at_timestamp is ISO 8601 string or None if not available
         """
         ...
 

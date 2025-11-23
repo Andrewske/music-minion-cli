@@ -3,14 +3,13 @@ Playlist management for Music Minion CLI
 Functional approach with explicit state passing
 """
 
-from typing import List, Optional, Dict, Any
-from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
 from music_minion.core.database import get_db_connection
-from . import filters
-from . import sync
+
+from . import filters, sync
 
 
 def create_playlist(
@@ -476,7 +475,7 @@ def add_track_to_playlist(playlist_id: int, track_id: int) -> bool:
     # Sync to SoundCloud if needed (after database commit)
     if sync.should_sync_to_soundcloud(playlist_id):
         success, error = sync.add_track_to_soundcloud_playlist(playlist_id, track_id)
-        if not success:
+        if not success and error:
             logger.warning(f"Failed to sync add to SoundCloud: {error}")
             # Don't fail the operation - database was updated successfully
 
@@ -503,6 +502,8 @@ def remove_track_from_playlist(playlist_id: int, track_id: int) -> bool:
 
     if playlist["type"] != "manual":
         raise ValueError("Cannot manually remove tracks from smart playlists")
+
+    logger.info(f"Removing track {track_id} from playlist {playlist_id}")
 
     with get_db_connection() as conn:
         # Begin explicit transaction for atomicity
@@ -533,14 +534,14 @@ def remove_track_from_playlist(playlist_id: int, track_id: int) -> bool:
             remaining_track_ids = [row["id"] for row in cursor.fetchall()]
 
             # Update positions in order
-            for new_position, track_id in enumerate(remaining_track_ids):
+            for new_position, playlist_track_id in enumerate(remaining_track_ids):
                 conn.execute(
                     """
                     UPDATE playlist_tracks
                     SET position = ?
                     WHERE id = ?
                 """,
-                    (new_position, track_id),
+                    (new_position, playlist_track_id),
                 )
 
             # Update playlist updated_at and track_count
@@ -556,11 +557,14 @@ def remove_track_from_playlist(playlist_id: int, track_id: int) -> bool:
             conn.commit()
 
             # Sync to SoundCloud if needed (after database commit)
+            logger.info(
+                f"Removing track {track_id} from soundcloud playlist {playlist_id}"
+            )
             if sync.should_sync_to_soundcloud(playlist_id):
                 success, error = sync.remove_track_from_soundcloud_playlist(
                     playlist_id, track_id
                 )
-                if not success:
+                if not success and error:
                     logger.warning(f"Failed to sync remove to SoundCloud: {error}")
                     # Don't fail the operation - database was updated successfully
 

@@ -113,7 +113,7 @@ def get_playlists(state: ProviderState) -> Tuple[ProviderState, List[Dict[str, A
 
 def get_playlist_tracks(
     state: ProviderState, playlist_id: str
-) -> Tuple[ProviderState, TrackList]:
+) -> Tuple[ProviderState, TrackList, Optional[str]]:
     """Get tracks in a local playlist.
 
     Args:
@@ -121,12 +121,12 @@ def get_playlist_tracks(
         playlist_id: Playlist ID
 
     Returns:
-        (state, []) - local provider doesn't have playlists
+        (state, [], None) - local provider doesn't have playlists
 
     Note:
         Playlists are managed in the database, not at provider level.
     """
-    return state, []
+    return state, [], None
 
 
 def scan_local_library(
