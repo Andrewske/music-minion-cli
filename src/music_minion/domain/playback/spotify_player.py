@@ -79,7 +79,9 @@ class SpotifyPlayer:
             )
             return False
 
-        success = api._spotify_play(self.provider_state, track_id, self.device_id)
+        self.provider_state, success = api._spotify_play(
+            self.provider_state, track_id, self.device_id
+        )
         if success:
             logger.info(f"Playing Spotify track: {track_id}")
             self._refresh_cached_state()
@@ -95,7 +97,7 @@ class SpotifyPlayer:
         """
         from music_minion.domain.library.providers.spotify import api
 
-        success = api._spotify_pause(self.provider_state)
+        self.provider_state, success = api._spotify_pause(self.provider_state)
         if success:
             self.cached_is_playing = False
             logger.debug("Paused Spotify playback")
@@ -109,7 +111,7 @@ class SpotifyPlayer:
         """
         from music_minion.domain.library.providers.spotify import api
 
-        success = api._spotify_resume(self.provider_state)
+        self.provider_state, success = api._spotify_resume(self.provider_state)
         if success:
             self.cached_is_playing = True
             self.last_position_time = time.time()
@@ -136,7 +138,7 @@ class SpotifyPlayer:
         from music_minion.domain.library.providers.spotify import api
 
         position_ms = int(position * 1000)
-        success = api._spotify_seek(self.provider_state, position_ms)
+        self.provider_state, success = api._spotify_seek(self.provider_state, position_ms)
         if success:
             self.cached_position = position
             self.last_actual_position = position
@@ -159,7 +161,9 @@ class SpotifyPlayer:
 
         # Poll Spotify API every 5 seconds
         if now - self.last_poll_time > 5.0:
-            playback = api._spotify_get_current_playback(self.provider_state)
+            self.provider_state, playback = api._spotify_get_current_playback(
+                self.provider_state
+            )
             if playback:
                 self.cached_position = playback.get("progress_ms", 0) / 1000.0
                 if playback.get("item"):
@@ -212,7 +216,7 @@ class SpotifyPlayer:
         """
         from music_minion.domain.library.providers.spotify import api
 
-        devices = api._spotify_get_devices(self.provider_state)
+        self.provider_state, devices = api._spotify_get_devices(self.provider_state)
 
         if not devices:
             logger.warning("No Spotify devices available")

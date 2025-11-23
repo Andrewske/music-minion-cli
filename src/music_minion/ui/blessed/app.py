@@ -386,6 +386,12 @@ def poll_player_state(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, U
 
         status = player.get_unified_player_status(ctx.player_state, spotify_player)
 
+        # Update provider state if Spotify player was used (token may have been refreshed)
+        if spotify_player:
+            ctx = ctx.with_provider_states(
+                {**ctx.provider_states, "spotify": spotify_player.provider_state}
+            )
+
         # Update player state in AppContext
         new_player_state = ctx.player_state._replace(
             current_track=status.get("file"),
@@ -580,8 +586,7 @@ def run_interactive_ui(ctx: AppContext) -> AppContext:
         try:
             ctx = main_loop(term, ctx)
         except KeyboardInterrupt:
-            # Clean exit on Ctrl+C
-            pass
+            pass  # Cleanup already done in main_loop
 
     return ctx
 
@@ -682,192 +687,95 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
     last_track_file = None  # Track previous track to detect changes
     startup_sync_started = False  # Track if we've started background sync
 
-    while not should_quit:
-        # Check for file changes if hot-reload is enabled
-        _check_and_reload_files()
+    try:
+        while not should_quit:
+            # Check for file changes if hot-reload is enabled
+            _check_and_reload_files()
 
-        # Detect track changes (immediate poll for instant metadata)
-        current_track_file = ctx.player_state.current_track
-        track_changed = current_track_file != last_track_file
-        if track_changed:
-            last_track_file = current_track_file
+            # Detect track changes (immediate poll for instant metadata)
+            current_track_file = ctx.player_state.current_track
+            track_changed = current_track_file != last_track_file
+            if track_changed:
+                last_track_file = current_track_file
 
-        # Poll player state at configured interval OR immediately on track change
-        # For Spotify: poll every frame (uses internal cache, no API cost)
-        # For MPV: poll every PLAYER_POLL_INTERVAL frames
-        is_spotify = ctx.player_state.current_track and ctx.player_state.current_track.startswith("spotify:")
-        should_poll_mpv = (frame_count % PLAYER_POLL_INTERVAL == 0) or track_changed
-        should_poll = is_spotify or should_poll_mpv
-        if should_poll:
-            ctx, ui_state = poll_player_state(ctx, ui_state)
+            # Poll player state at configured interval OR immediately on track change
+            # For Spotify: poll every frame (uses internal cache, no API cost)
+            # For MPV: poll every PLAYER_POLL_INTERVAL frames
+            is_spotify = ctx.player_state.current_track and ctx.player_state.current_track.startswith("spotify:")
+            should_poll_mpv = (frame_count % PLAYER_POLL_INTERVAL == 0) or track_changed
+            should_poll = is_spotify or should_poll_mpv
+            if should_poll:
+                ctx, ui_state = poll_player_state(ctx, ui_state)
 
-        # Poll scan state at configured interval for smoother progress updates
-        should_poll_scan = frame_count % SCAN_POLL_INTERVAL == 0
-        if should_poll_scan:
-            ui_state = poll_scan_state(ui_state)
+            # Poll scan state at configured interval for smoother progress updates
+            should_poll_scan = frame_count % SCAN_POLL_INTERVAL == 0
+            if should_poll_scan:
+                ui_state = poll_scan_state(ui_state)
 
-        # Poll sync state at configured interval for smoother progress updates
-        should_poll_sync = frame_count % SYNC_POLL_INTERVAL == 0
-        if should_poll_sync:
-            ui_state = poll_sync_state(ui_state)
+            # Poll sync state at configured interval for smoother progress updates
+            should_poll_sync = frame_count % SYNC_POLL_INTERVAL == 0
+            if should_poll_sync:
+                ui_state = poll_sync_state(ui_state)
 
-        # Poll conversion state at configured interval for smoother progress updates
-        should_poll_conversion = frame_count % CONVERSION_POLL_INTERVAL == 0
-        if should_poll_conversion:
-            ui_state = poll_conversion_state(ui_state)
+            # Poll conversion state at configured interval for smoother progress updates
+            should_poll_conversion = frame_count % CONVERSION_POLL_INTERVAL == 0
+            if should_poll_conversion:
+                ui_state = poll_conversion_state(ui_state)
 
-        # Process IPC commands from external clients (hotkeys)
-        try:
-            while not command_queue.empty():
-                request_id, command, args = command_queue.get_nowait()
+            # Process IPC commands from external clients (hotkeys)
+            try:
+                while not command_queue.empty():
+                    request_id, command, args = command_queue.get_nowait()
 
-                # Helper to add to history
-                def add_to_history(text):
-                    nonlocal ui_state
-                    # Use cyan color for IPC commands to distinguish them
-                    ui_state = add_history_line(ui_state, text, "cyan")
+                    # Helper to add to history
+                    def add_to_history(text):
+                        nonlocal ui_state
+                        # Use cyan color for IPC commands to distinguish them
+                        ui_state = add_history_line(ui_state, text, "cyan")
 
-                # Process command
-                ctx, success, message = ipc_server.process_ipc_command(
-                    ctx, command, args, add_to_history
+                    # Process command
+                    ctx, success, message = ipc_server.process_ipc_command(
+                        ctx, command, args, add_to_history
+                    )
+
+                    # Send response back to IPC server
+                    response_queue.put((request_id, success, message))
+
+                    # Force full redraw after IPC command
+                    needs_full_redraw = True
+            except queue.Empty:
+                pass
+            except Exception as e:
+                # Log IPC errors but don't crash UI
+                ui_state = add_history_line(ui_state, f"⚠ IPC error: {e}", "yellow")
+
+            # Check if state changed (only redraw if needed)
+            # Only compute hash when we polled or when other state changes might have occurred
+            # For Spotify: don't recompute hash every frame (we poll every frame for position updates)
+            # Only recompute on MPV polls or scan polls
+            current_state_hash = None
+            should_recompute_hash = should_poll_mpv or should_poll_scan or last_state_hash is None
+
+            if should_recompute_hash:
+                # Hash excludes current_position to avoid full redraws every second
+                # Position is tracked separately for partial dashboard updates
+                # Include scan state for progress updates
+                current_state_hash = hash(
+                    (
+                        ctx.player_state.current_track,
+                        ctx.player_state.is_playing,
+                        ctx.player_state.duration,
+                        len(ui_state.history),
+                        ui_state.feedback_message,
+                        ui_state.scan_progress.is_scanning,
+                        ui_state.scan_progress.files_scanned,
+                        ui_state.scan_progress.phase,
+                    )
                 )
 
-                # Send response back to IPC server
-                response_queue.put((request_id, success, message))
-
-                # Force full redraw after IPC command
-                needs_full_redraw = True
-        except queue.Empty:
-            pass
-        except Exception as e:
-            # Log IPC errors but don't crash UI
-            ui_state = add_history_line(ui_state, f"⚠ IPC error: {e}", "yellow")
-
-        # Check if state changed (only redraw if needed)
-        # Only compute hash when we polled or when other state changes might have occurred
-        # For Spotify: don't recompute hash every frame (we poll every frame for position updates)
-        # Only recompute on MPV polls or scan polls
-        current_state_hash = None
-        should_recompute_hash = should_poll_mpv or should_poll_scan or last_state_hash is None
-
-        if should_recompute_hash:
-            # Hash excludes current_position to avoid full redraws every second
-            # Position is tracked separately for partial dashboard updates
-            # Include scan state for progress updates
-            current_state_hash = hash(
-                (
-                    ctx.player_state.current_track,
-                    ctx.player_state.is_playing,
-                    ctx.player_state.duration,
-                    len(ui_state.history),
-                    ui_state.feedback_message,
-                    ui_state.scan_progress.is_scanning,
-                    ui_state.scan_progress.files_scanned,
-                    ui_state.scan_progress.phase,
-                )
-            )
-
-        # Check for input-only changes (no full redraw needed)
-        input_changed = ui_state.input_text != last_input_text
-        palette_state_changed = (
-            ui_state.palette_visible,
-            ui_state.palette_selected,
-            ui_state.confirmation_active,
-            ui_state.wizard_active,
-            ui_state.wizard_selected,
-            ui_state.track_viewer_visible,
-            ui_state.track_viewer_selected,
-            ui_state.track_viewer_mode,  # <- MISSING! Must match last_palette_state
-            ui_state.analytics_viewer_visible,
-            ui_state.analytics_viewer_scroll,
-            ui_state.editor_visible,
-            ui_state.editor_selected,
-            ui_state.editor_mode,
-            ui_state.editor_input,
-            ui_state.search_selected,
-            ui_state.search_scroll,
-            ui_state.search_mode,
-            ui_state.search_detail_scroll,
-            ui_state.search_detail_selection,
-        ) != last_palette_state
-
-        # Determine if we need a full redraw
-        needs_full_redraw = needs_full_redraw or (
-            current_state_hash is not None and current_state_hash != last_state_hash
-        )
-
-        if needs_full_redraw:
-            # Render dashboard first to check if height changed (lock for thread safety)
-            with ui_state_lock:
-                dashboard_height, dashboard_line_mapping = render_dashboard(
-                    term,
-                    ctx.player_state,
-                    ui_state,
-                    0,  # Dashboard always starts at y=0
-                )
-
-            # Only clear screen if dashboard height changed or first render
-            height_changed = last_dashboard_height != dashboard_height
-            if height_changed or last_dashboard_height is None:
-                # Clear screen and re-render everything
-                print(term.clear)
-
-                # Re-render dashboard after clear
-                dashboard_height, dashboard_line_mapping = render_dashboard(
-                    term, ctx.player_state, ui_state, 0
-                )
-
-            # Update tracking variables
-            last_state_hash = current_state_hash
-            needs_full_redraw = False
-            last_dashboard_height = dashboard_height
-
-            # Calculate layout with actual dashboard height
-            layout = calculate_layout(term, ui_state, dashboard_height)
-
-            # Render remaining sections
-            render_history(
-                term, ui_state, layout["history_y"], layout["history_height"]
-            )
-
-            render_input(term, ui_state, layout["input_y"])
-
-            # Render palette, wizard, or track viewer (mutually exclusive)
-            if ui_state.wizard_active:
-                render_smart_playlist_wizard(
-                    term, ui_state, layout["palette_y"], layout["palette_height"]
-                )
-            elif ui_state.palette_visible:
-                render_palette(
-                    term, ui_state, layout["palette_y"], layout["palette_height"]
-                )
-            elif ui_state.track_viewer_visible:
-                render_track_viewer(
-                    term,
-                    ui_state,
-                    layout["track_viewer_y"],
-                    layout["track_viewer_height"],
-                )
-            elif ui_state.analytics_viewer_visible:
-                render_analytics_viewer(
-                    term,
-                    ui_state,
-                    layout["analytics_viewer_y"],
-                    layout["analytics_viewer_height"],
-                )
-            elif ui_state.editor_visible:
-                render_metadata_editor(
-                    term,
-                    ui_state,
-                    layout["palette_y"],  # Use palette area
-                    layout["palette_height"],
-                )
-
-            # Flush output
-            sys.stdout.flush()
-
-            last_input_text = ui_state.input_text
-            last_palette_state = (
+            # Check for input-only changes (no full redraw needed)
+            input_changed = ui_state.input_text != last_input_text
+            palette_state_changed = (
                 ui_state.palette_visible,
                 ui_state.palette_selected,
                 ui_state.confirmation_active,
@@ -875,7 +783,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 ui_state.wizard_selected,
                 ui_state.track_viewer_visible,
                 ui_state.track_viewer_selected,
-                ui_state.track_viewer_mode,
+                ui_state.track_viewer_mode,  # <- MISSING! Must match last_palette_state
                 ui_state.analytics_viewer_visible,
                 ui_state.analytics_viewer_scroll,
                 ui_state.editor_visible,
@@ -887,114 +795,50 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 ui_state.search_mode,
                 ui_state.search_detail_scroll,
                 ui_state.search_detail_selection,
+            ) != last_palette_state
+
+            # Determine if we need a full redraw
+            needs_full_redraw = needs_full_redraw or (
+                current_state_hash is not None and current_state_hash != last_state_hash
             )
 
-            # Update position tracking atomically after full redraw
-            last_position = ctx.player_state.current_position
-            last_poll_time = time.time()
-            last_rendered_position = ctx.player_state.current_position
+            if needs_full_redraw:
+                # Render dashboard first to check if height changed (lock for thread safety)
+                with ui_state_lock:
+                    dashboard_height, dashboard_line_mapping = render_dashboard(
+                        term,
+                        ctx.player_state,
+                        ui_state,
+                        0,  # Dashboard always starts at y=0
+                    )
 
-            # Start background sync after first render (instant UI)
-            if not startup_sync_started:
-                startup_sync_started = True
-                ui_state = add_history_line(
-                    ui_state, "🔄 Starting background sync...", "cyan"
+                # Only clear screen if dashboard height changed or first render
+                height_changed = last_dashboard_height != dashboard_height
+                if height_changed or last_dashboard_height is None:
+                    # Clear screen and re-render everything
+                    print(term.clear)
+
+                    # Re-render dashboard after clear
+                    dashboard_height, dashboard_line_mapping = render_dashboard(
+                        term, ctx.player_state, ui_state, 0
+                    )
+
+                # Update tracking variables
+                last_state_hash = current_state_hash
+                needs_full_redraw = False
+                last_dashboard_height = dashboard_height
+
+                # Calculate layout with actual dashboard height
+                layout = calculate_layout(term, ui_state, dashboard_height)
+
+                # Render remaining sections
+                render_history(
+                    term, ui_state, layout["history_y"], layout["history_height"]
                 )
-                logger.info("Starting background sync after UI render")
 
-                def _background_sync_worker():
-                    """Background thread for context-aware sync."""
-                    nonlocal ctx
-
-                    # Suppress stdout printing from log() calls (prevents UI interference)
-                    threading.current_thread().silent_logging = True
-
-                    try:
-                        from music_minion.commands import sync
-
-                        # Capture current player state before sync
-                        current_player_state = ctx.player_state
-                        current_spotify_player = ctx.spotify_player
-
-                        # Run sync (updates tracks but may lose player state)
-                        updated_ctx, _ = sync.handle_sync_command(ctx)
-
-                        # Preserve current player state (prevent clearing current track)
-                        ctx = dataclasses.replace(
-                            updated_ctx,
-                            player_state=current_player_state,
-                            spotify_player=current_spotify_player,
-                        )
-
-                        # Update UI state from background thread
-                        if ctx.update_ui_state:
-                            ctx.update_ui_state(
-                                {
-                                    "history_messages": [
-                                        ("✅ Auto-sync complete", "green")
-                                    ]
-                                }
-                            )
-                    except Exception as e:
-                        logger.exception(f"Background sync failed: {e}")
-                        if ctx.update_ui_state:
-                            ctx.update_ui_state(
-                                {
-                                    "history_messages": [
-                                        (f"⚠ Auto-sync failed: {e}", "yellow")
-                                    ]
-                                }
-                            )
-                    finally:
-                        # Always clear the flag
-                        threading.current_thread().silent_logging = False
-
-                # Start background thread
-                sync_thread = threading.Thread(
-                    target=_background_sync_worker,
-                    daemon=True,
-                    name="StartupSyncThread",
-                )
-                sync_thread.start()
-
-        # Check if modal visibility changed (requires full redraw)
-        if palette_state_changed and (
-            ui_state.palette_visible != last_palette_state[0]
-            or ui_state.wizard_active != last_palette_state[3]
-            or ui_state.track_viewer_visible != last_palette_state[5]
-            or ui_state.track_viewer_mode != last_palette_state[7]
-            or ui_state.analytics_viewer_visible != last_palette_state[8]
-            or ui_state.editor_visible != last_palette_state[10]
-        ):
-            needs_full_redraw = True
-
-        if input_changed or palette_state_changed:
-            # Partial update - only input and palette changed
-            if layout and not needs_full_redraw:
-                # Clear input area (3 lines: top border, input, bottom border)
-                input_y = layout["input_y"]
-                for i in range(3):
-                    sys.stdout.write(term.move_xy(0, input_y + i) + term.clear_eol)
-
-                # Clear palette/wizard/track viewer/analytics viewer/editor area if visible
-                if (
-                    ui_state.palette_visible
-                    or ui_state.wizard_active
-                    or ui_state.track_viewer_visible
-                    or ui_state.analytics_viewer_visible
-                    or ui_state.editor_visible
-                ):
-                    overlay_y = layout["palette_y"]  # Same position for all overlays
-                    overlay_height = layout["palette_height"]
-                    for i in range(overlay_height):
-                        sys.stdout.write(
-                            term.move_xy(0, overlay_y + i) + term.clear_eol
-                        )
-
-                # Re-render
                 render_input(term, ui_state, layout["input_y"])
 
-                # Render palette, wizard, track viewer, or analytics viewer (mutually exclusive)
+                # Render palette, wizard, or track viewer (mutually exclusive)
                 if ui_state.wizard_active:
                     render_smart_playlist_wizard(
                         term, ui_state, layout["palette_y"], layout["palette_height"]
@@ -1019,7 +863,10 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     )
                 elif ui_state.editor_visible:
                     render_metadata_editor(
-                        term, ui_state, layout["palette_y"], layout["palette_height"]
+                        term,
+                        ui_state,
+                        layout["palette_y"],  # Use palette area
+                        layout["palette_height"],
                     )
 
                 # Flush output
@@ -1048,71 +895,241 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     ui_state.search_detail_selection,
                 )
 
-        else:
-            # Only check for position updates if playing and we have layout
-            if ctx.player_state.is_playing and layout and dashboard_line_mapping:
-                # Use position directly from player state
-                # For Spotify: already interpolated by SpotifyPlayer (polled every frame)
-                # For MPV: interpolated here for smooth updates between polls
-                is_spotify_track = ctx.player_state.current_track and ctx.player_state.current_track.startswith("spotify:")
+                # Update position tracking atomically after full redraw
+                last_position = ctx.player_state.current_position
+                last_poll_time = time.time()
+                last_rendered_position = ctx.player_state.current_position
 
-                if is_spotify_track:
-                    # Use SpotifyPlayer's cached position directly (already interpolated)
-                    current_position = ctx.player_state.current_position
-                else:
-                    # For MPV: calculate interpolated position for smooth updates between polls
-                    time_since_poll = time.time() - last_poll_time
-                    current_position = last_position + time_since_poll
-
-                # Check if position crossed threshold
-                position_changed = (
-                    abs(current_position - last_rendered_position)
-                    >= POSITION_UPDATE_THRESHOLD
-                )
-
-                if position_changed:
-                    # Partial update - only update time-sensitive dashboard elements
-                    from .components.dashboard import render_dashboard_partial
-
-                    # Use current position for smooth visual updates
-                    display_state = ctx.player_state._replace(
-                        current_position=current_position
+                # Start background sync after first render (instant UI)
+                if not startup_sync_started:
+                    startup_sync_started = True
+                    ui_state = add_history_line(
+                        ui_state, "🔄 Starting background sync...", "cyan"
                     )
+                    logger.info("Starting background sync after UI render")
 
-                    render_dashboard_partial(
-                        term,
-                        display_state,
-                        ui_state,
-                        layout["dashboard_y"],
-                        dashboard_line_mapping,
+                    def _background_sync_worker():
+                        """Background thread for context-aware sync."""
+                        nonlocal ctx
+
+                        # Suppress stdout printing from log() calls (prevents UI interference)
+                        threading.current_thread().silent_logging = True
+
+                        try:
+                            from music_minion.commands import sync
+
+                            # Capture current player state before sync
+                            current_player_state = ctx.player_state
+                            current_spotify_player = ctx.spotify_player
+
+                            # Run sync (updates tracks but may lose player state)
+                            updated_ctx, _ = sync.handle_sync_command(ctx)
+
+                            # Preserve current player state (prevent clearing current track)
+                            ctx = dataclasses.replace(
+                                updated_ctx,
+                                player_state=current_player_state,
+                                spotify_player=current_spotify_player,
+                            )
+
+                            # Update UI state from background thread
+                            if ctx.update_ui_state:
+                                ctx.update_ui_state(
+                                    {
+                                        "history_messages": [
+                                            ("✅ Auto-sync complete", "green")
+                                        ]
+                                    }
+                                )
+                        except Exception as e:
+                            logger.exception(f"Background sync failed: {e}")
+                            if ctx.update_ui_state:
+                                ctx.update_ui_state(
+                                    {
+                                        "history_messages": [
+                                            (f"⚠ Auto-sync failed: {e}", "yellow")
+                                        ]
+                                    }
+                                )
+                        finally:
+                            # Always clear the flag
+                            threading.current_thread().silent_logging = False
+
+                    # Start background thread
+                    sync_thread = threading.Thread(
+                        target=_background_sync_worker,
+                        daemon=True,
+                        name="StartupSyncThread",
                     )
+                    sync_thread.start()
 
-                    sys.stdout.flush()
-                    last_rendered_position = current_position
-
-
-        # Wait for input (with timeout for background updates)
-        key = term.inkey(timeout=0.1)
-
-        if key:
-            # Handle keyboard input
-            palette_height = layout["palette_height"] if layout else 10
-            analytics_viewer_height = (
-                layout["analytics_viewer_height"] if layout else 30
-            )
-            ui_state, command_line = handle_key(
-                ui_state, key, palette_height, analytics_viewer_height
-            )
-
-            # Execute command if one was triggered
-            if command_line:
-                ctx, ui_state, should_quit = execute_command(
-                    ctx, ui_state, command_line
-                )
-                # Full redraw after command execution
+            # Check if modal visibility changed (requires full redraw)
+            if palette_state_changed and (
+                ui_state.palette_visible != last_palette_state[0]
+                or ui_state.wizard_active != last_palette_state[3]
+                or ui_state.track_viewer_visible != last_palette_state[5]
+                or ui_state.track_viewer_mode != last_palette_state[7]
+                or ui_state.analytics_viewer_visible != last_palette_state[8]
+                or ui_state.editor_visible != last_palette_state[10]
+            ):
                 needs_full_redraw = True
 
-        frame_count += 1
+            if input_changed or palette_state_changed:
+                # Partial update - only input and palette changed
+                if layout and not needs_full_redraw:
+                    # Clear input area (3 lines: top border, input, bottom border)
+                    input_y = layout["input_y"]
+                    for i in range(3):
+                        sys.stdout.write(term.move_xy(0, input_y + i) + term.clear_eol)
+
+                    # Clear palette/wizard/track viewer/analytics viewer/editor area if visible
+                    if (
+                        ui_state.palette_visible
+                        or ui_state.wizard_active
+                        or ui_state.track_viewer_visible
+                        or ui_state.analytics_viewer_visible
+                        or ui_state.editor_visible
+                    ):
+                        overlay_y = layout["palette_y"]  # Same position for all overlays
+                        overlay_height = layout["palette_height"]
+                        for i in range(overlay_height):
+                            sys.stdout.write(
+                                term.move_xy(0, overlay_y + i) + term.clear_eol
+                            )
+
+                    # Re-render
+                    render_input(term, ui_state, layout["input_y"])
+
+                    # Render palette, wizard, track viewer, or analytics viewer (mutually exclusive)
+                    if ui_state.wizard_active:
+                        render_smart_playlist_wizard(
+                            term, ui_state, layout["palette_y"], layout["palette_height"]
+                        )
+                    elif ui_state.palette_visible:
+                        render_palette(
+                            term, ui_state, layout["palette_y"], layout["palette_height"]
+                        )
+                    elif ui_state.track_viewer_visible:
+                        render_track_viewer(
+                            term,
+                            ui_state,
+                            layout["track_viewer_y"],
+                            layout["track_viewer_height"],
+                        )
+                    elif ui_state.analytics_viewer_visible:
+                        render_analytics_viewer(
+                            term,
+                            ui_state,
+                            layout["analytics_viewer_y"],
+                            layout["analytics_viewer_height"],
+                        )
+                    elif ui_state.editor_visible:
+                        render_metadata_editor(
+                            term, ui_state, layout["palette_y"], layout["palette_height"]
+                        )
+
+                    # Flush output
+                    sys.stdout.flush()
+
+                    last_input_text = ui_state.input_text
+                    last_palette_state = (
+                        ui_state.palette_visible,
+                        ui_state.palette_selected,
+                        ui_state.confirmation_active,
+                        ui_state.wizard_active,
+                        ui_state.wizard_selected,
+                        ui_state.track_viewer_visible,
+                        ui_state.track_viewer_selected,
+                        ui_state.track_viewer_mode,
+                        ui_state.analytics_viewer_visible,
+                        ui_state.analytics_viewer_scroll,
+                        ui_state.editor_visible,
+                        ui_state.editor_selected,
+                        ui_state.editor_mode,
+                        ui_state.editor_input,
+                        ui_state.search_selected,
+                        ui_state.search_scroll,
+                        ui_state.search_mode,
+                        ui_state.search_detail_scroll,
+                        ui_state.search_detail_selection,
+                    )
+
+            else:
+                # Only check for position updates if playing and we have layout
+                if ctx.player_state.is_playing and layout and dashboard_line_mapping:
+                    # Use position directly from player state
+                    # For Spotify: already interpolated by SpotifyPlayer (polled every frame)
+                    # For MPV: interpolated here for smooth updates between polls
+                    is_spotify_track = ctx.player_state.current_track and ctx.player_state.current_track.startswith("spotify:")
+
+                    if is_spotify_track:
+                        # Use SpotifyPlayer's cached position directly (already interpolated)
+                        current_position = ctx.player_state.current_position
+                    else:
+                        # For MPV: calculate interpolated position for smooth updates between polls
+                        time_since_poll = time.time() - last_poll_time
+                        current_position = last_position + time_since_poll
+
+                    # Check if position crossed threshold
+                    position_changed = (
+                        abs(current_position - last_rendered_position)
+                        >= POSITION_UPDATE_THRESHOLD
+                    )
+
+                    if position_changed:
+                        # Partial update - only update time-sensitive dashboard elements
+                        from .components.dashboard import render_dashboard_partial
+
+                        # Use current position for smooth visual updates
+                        display_state = ctx.player_state._replace(
+                            current_position=current_position
+                        )
+
+                        render_dashboard_partial(
+                            term,
+                            display_state,
+                            ui_state,
+                            layout["dashboard_y"],
+                            dashboard_line_mapping,
+                        )
+
+                        sys.stdout.flush()
+                        last_rendered_position = current_position
+
+
+            # Wait for input (with timeout for background updates)
+            key = term.inkey(timeout=0.1)
+
+            if key:
+                # Handle keyboard input
+                palette_height = layout["palette_height"] if layout else 10
+                analytics_viewer_height = (
+                    layout["analytics_viewer_height"] if layout else 30
+                )
+                ui_state, command_line = handle_key(
+                    ui_state, key, palette_height, analytics_viewer_height
+                )
+
+                # Execute command if one was triggered
+                if command_line:
+                    ctx, ui_state, should_quit = execute_command(
+                        ctx, ui_state, command_line
+                    )
+                    # Full redraw after command execution
+                    needs_full_redraw = True
+
+            frame_count += 1
+    except KeyboardInterrupt:
+        # Cleanup BEFORE propagating exception
+        logger.info("Ctrl+C detected - cleaning up")
+        if ctx.player_state.playback_source == "spotify" and ctx.spotify_player:
+            try:
+                ctx.spotify_player.pause()
+                logger.info("Paused Spotify playback on exit")
+            except Exception as e:
+                logger.exception(f"Failed to pause Spotify: {e}")
+        # Re-raise to let outer handlers know we're exiting
+        raise
 
     # Cleanup: Stop IPC server
     if ipc_srv:

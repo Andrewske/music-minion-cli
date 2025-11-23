@@ -50,7 +50,8 @@ def _ensure_valid_token(
     logger.info("Spotify token expired, attempting refresh")
     new_token_data = auth.refresh_token(token_data)
     if new_token_data:
-        auth._save_user_tokens(new_token_data)
+        # Save to database (file save done in refresh_token)
+        database.save_provider_state("spotify", new_token_data, {})
         state = state.with_cache(token_data=new_token_data)
         logger.debug("Token refreshed successfully")
         return state, new_token_data
@@ -742,7 +743,7 @@ def remove_track_from_playlist(
 
 def _spotify_play(
     state: ProviderState, track_id: str, device_id: Optional[str]
-) -> bool:
+) -> Tuple[ProviderState, bool]:
     """Internal: Start playback on device.
 
     Called by SpotifyPlayer class.
@@ -750,7 +751,7 @@ def _spotify_play(
     state, token = _ensure_valid_token(state)
     if not token:
         logger.warning("Cannot play - not authenticated")
-        return False
+        return state, False
 
     try:
         url = f"{API_BASE}/me/player/play"
@@ -766,7 +767,7 @@ def _spotify_play(
         )
         response.raise_for_status()
         logger.debug(f"Started playback: {track_id}")
-        return True
+        return state, True
 
     except requests.HTTPError as e:
         if e.response.status_code == 404:
@@ -777,17 +778,17 @@ def _spotify_play(
             )
         else:
             logger.exception(f"Error starting playback: {e.response.status_code}")
-        return False
+        return state, False
     except Exception:
         logger.exception("Error starting playback")
-        return False
+        return state, False
 
 
-def _spotify_pause(state: ProviderState) -> bool:
+def _spotify_pause(state: ProviderState) -> Tuple[ProviderState, bool]:
     """Internal: Pause playback."""
     state, token = _ensure_valid_token(state)
     if not token:
-        return False
+        return state, False
 
     try:
         response = requests.put(
@@ -797,17 +798,17 @@ def _spotify_pause(state: ProviderState) -> bool:
         )
         response.raise_for_status()
         logger.debug("Paused Spotify playback")
-        return True
+        return state, True
     except Exception:
         logger.exception("Error pausing playback")
-        return False
+        return state, False
 
 
-def _spotify_resume(state: ProviderState) -> bool:
+def _spotify_resume(state: ProviderState) -> Tuple[ProviderState, bool]:
     """Internal: Resume playback."""
     state, token = _ensure_valid_token(state)
     if not token:
-        return False
+        return state, False
 
     try:
         response = requests.put(
@@ -817,17 +818,19 @@ def _spotify_resume(state: ProviderState) -> bool:
         )
         response.raise_for_status()
         logger.debug("Resumed Spotify playback")
-        return True
+        return state, True
     except Exception:
         logger.exception("Error resuming playback")
-        return False
+        return state, False
 
 
-def _spotify_get_current_playback(state: ProviderState) -> Optional[Dict[str, Any]]:
+def _spotify_get_current_playback(
+    state: ProviderState,
+) -> Tuple[ProviderState, Optional[Dict[str, Any]]]:
     """Internal: Get current playback state."""
     state, token = _ensure_valid_token(state)
     if not token:
-        return None
+        return state, None
 
     try:
         response = requests.get(
@@ -836,19 +839,19 @@ def _spotify_get_current_playback(state: ProviderState) -> Optional[Dict[str, An
             timeout=30,
         )
         if response.status_code == 204:  # No content = nothing playing
-            return None
+            return state, None
         response.raise_for_status()
-        return response.json()
+        return state, response.json()
     except Exception as e:
         logger.debug(f"Error getting playback state: {e}")
-        return None
+        return state, None
 
 
-def _spotify_seek(state: ProviderState, position_ms: int) -> bool:
+def _spotify_seek(state: ProviderState, position_ms: int) -> Tuple[ProviderState, bool]:
     """Internal: Seek to position."""
     state, token = _ensure_valid_token(state)
     if not token:
-        return False
+        return state, False
 
     try:
         response = requests.put(
@@ -858,17 +861,19 @@ def _spotify_seek(state: ProviderState, position_ms: int) -> bool:
         )
         response.raise_for_status()
         logger.debug(f"Seeked to position: {position_ms}ms")
-        return True
+        return state, True
     except Exception:
         logger.exception("Error seeking")
-        return False
+        return state, False
 
 
-def _spotify_get_devices(state: ProviderState) -> List[Dict[str, Any]]:
+def _spotify_get_devices(
+    state: ProviderState,
+) -> Tuple[ProviderState, List[Dict[str, Any]]]:
     """Internal: Get available Spotify devices."""
     state, token = _ensure_valid_token(state)
     if not token:
-        return []
+        return state, []
 
     try:
         response = requests.get(
@@ -879,7 +884,7 @@ def _spotify_get_devices(state: ProviderState) -> List[Dict[str, Any]]:
         response.raise_for_status()
         devices = response.json().get("devices", [])
         logger.debug(f"Found {len(devices)} Spotify devices")
-        return devices
+        return state, devices
     except Exception:
         logger.exception("Error getting devices")
-        return []
+        return state, []

@@ -200,6 +200,11 @@ def play_track(
         # Play via Spotify Connect
         success = spotify_player.play(playback_uri)
 
+        # Update provider state (token may have been refreshed)
+        ctx = ctx.with_provider_states(
+            {**ctx.provider_states, "spotify": spotify_player.provider_state}
+        )
+
         if not success:
             log("❌ Failed to play via Spotify", level="error")
             return ctx, True
@@ -381,6 +386,11 @@ def handle_pause_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         )
         success = spotify_player.pause()
 
+        # Update provider state (token may have been refreshed)
+        ctx = ctx.with_provider_states(
+            {**ctx.provider_states, "spotify": spotify_player.provider_state}
+        )
+
         if success:
             new_state = ctx.player_state._replace(is_playing=False)
             ctx = ctx.with_player_state(new_state)
@@ -428,6 +438,11 @@ def handle_resume_command(ctx: AppContext) -> Tuple[AppContext, bool]:
             preferred_device_name=ctx.config.spotify.preferred_device_name,
         )
         success = spotify_player.resume()
+
+        # Update provider state (token may have been refreshed)
+        ctx = ctx.with_provider_states(
+            {**ctx.provider_states, "spotify": spotify_player.provider_state}
+        )
 
         if success:
             new_state = ctx.player_state._replace(is_playing=True)
@@ -690,6 +705,11 @@ def handle_stop_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         )
         success = spotify_player.stop()
 
+        # Update provider state (token may have been refreshed)
+        ctx = ctx.with_provider_states(
+            {**ctx.provider_states, "spotify": spotify_player.provider_state}
+        )
+
         if success:
             new_state = ctx.player_state._replace(
                 is_playing=False, playback_source=None
@@ -756,6 +776,11 @@ def handle_seek_percentage(
         # Spotify seek takes position in milliseconds
         success = spotify_player.seek(target_position_ms)
 
+        # Update provider state (token may have been refreshed)
+        ctx = ctx.with_provider_states(
+            {**ctx.provider_states, "spotify": spotify_player.provider_state}
+        )
+
         if not success:
             log("Failed to seek in Spotify playback", "error")
 
@@ -821,6 +846,11 @@ def handle_seek_relative(ctx: AppContext, seconds: float) -> Tuple[AppContext, b
 
         # Seek to calculated position
         success = spotify_player.seek(target_position_ms)
+
+        # Update provider state (token may have been refreshed)
+        ctx = ctx.with_provider_states(
+            {**ctx.provider_states, "spotify": spotify_player.provider_state}
+        )
 
         if not success:
             log("Failed to seek in Spotify playback", "error")
