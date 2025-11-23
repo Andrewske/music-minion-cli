@@ -5940,3 +5940,452 @@ ValueError: could not convert string to float: '2025-11-22T19:56:31.400294'
 2025-11-22 23:34:11 | INFO     | music_minion.domain.playlists.sync:456 | Successfully added track to SoundCloud playlist 'Nov 25'
 2025-11-22 23:34:11 | INFO     | music_minion.domain.playlists.crud:458 | Successfully added track 22573 to SoundCloud and database
 2025-11-22 23:34:11 | INFO     | music_minion.core.output:83 |    ✓ Added to Nov 25
+2025-11-23 11:05:12 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-23 11:05:12 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-23 11:05:12 | INFO     | music_minion.ui.blessed.app:903 | Starting background sync after UI render
+2025-11-23 11:05:12 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: soundcloud
+2025-11-23 11:05:12 | INFO     | music_minion.core.output:83 | Syncing soundcloud (likes + playlists)...
+2025-11-23 11:05:12 | INFO     | music_minion.core.output:83 | 🔄 Syncing from soundcloud...
+2025-11-23 11:05:12 | INFO     | music_minion.domain.library.providers.soundcloud:42 | SoundCloud token expired, attempting refresh
+2025-11-23 11:05:12 | INFO     | music_minion.domain.library.providers.soundcloud:46 | Successfully refreshed SoundCloud token
+2025-11-23 11:05:12 | INFO     | music_minion.domain.library.providers.soundcloud.api:128 | Found 7683 existing SoundCloud tracks for incremental sync
+2025-11-23 11:05:12 | INFO     | music_minion.domain.library.providers.soundcloud.api:137 | Starting SoundCloud likes sync
+2025-11-23 11:05:12 | INFO     | music_minion.core.output:83 | 
+🔄 Syncing SoundCloud likes...
+2025-11-23 11:05:13 | INFO     | music_minion.core.output:83 |   → 1 (page 1, +193)
+2025-11-23 11:05:13 | INFO     | music_minion.core.output:83 |   ✓ Stopping at first existing track (incremental mode)
+2025-11-23 11:05:13 | INFO     | music_minion.core.output:83 |   ✓ Fetched 1 liked tracks
+2025-11-23 11:05:13 | INFO     | music_minion.domain.library.providers.soundcloud.api:143 | Fetched 0 new tracks, 1 total liked tracks
+2025-11-23 11:05:13 | INFO     | music_minion.core.output:83 | 📊 Syncing like markers for 1 liked tracks...
+2025-11-23 11:05:13 | INFO     | music_minion.domain.library.providers.soundcloud.api:185 | Synced 1 like markers to database
+2025-11-23 11:05:13 | INFO     | music_minion.core.output:83 | ✓ Synced 1 like markers (no new tracks to import)
+2025-11-23 11:05:13 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in soundcloud library (incremental mode - all tracks already synced)
+2025-11-23 11:05:13 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-23 11:05:13 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-23 11:05:13 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from soundcloud (incremental)...
+2025-11-23 11:05:13 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from soundcloud...
+2025-11-23 11:05:14 | INFO     | music_minion.core.output:83 | ✓ Found 186 playlists
+2025-11-23 11:05:14 | INFO     | music_minion.core.output:83 | ✓ Found 186 playlists
+2025-11-23 11:05:14 | INFO     | music_minion.core.output:83 | 
+2025-11-23 11:05:14 | INFO     | music_minion.core.output:83 | 🔍 Looking up existing playlists...
+2025-11-23 11:05:14 | INFO     | music_minion.core.output:83 | ✓ Found 184 existing playlists
+2025-11-23 11:05:14 | INFO     | music_minion.core.output:83 | 
+📦 Collecting tracks from playlists...
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 | ✓ Collected 138 unique tracks from 2 playlists
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 | Playlist filter: 182 skipped (unchanged), 2 syncing
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 | 
+🔍 Looking up tracks in database...
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 | ✓ Found 138/138 tracks in database
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 | ✓ Ready to sync 2 playlists with 138 tracks
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 | 
+💾 Updating playlists...
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 | 
+[1/2] Processing: Nov 25
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 |   ✓ Mapped 66/66 tracks from global map
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 |   ✅ Updated 'Nov 25' with 66 tracks
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 | 
+[2/2] Processing: reposts
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 |   ✓ Mapped 72/72 tracks from global map
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 |   💾 Updating existing playlist...
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 |   ✅ Updated 'reposts' with 72 tracks
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 | 
+✓ Committed all playlist changes to database
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 | 
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 | ==================================================
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 | ✓ Playlist sync complete!
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 |   Created:  0 playlists
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 |   Updated:  2 playlists
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 |   Skipped:  184 (unchanged)
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 |   Failed:   0 playlists
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 |   Tracks:   138 total tracks added
+2025-11-23 11:05:16 | INFO     | music_minion.core.output:83 | 
+2025-11-23 11:05:21 | INFO     | music_minion.core.output:83 | 🔄 Auto-syncing Spotify library (incremental)...
+2025-11-23 11:05:21 | INFO     | music_minion.core.output:83 | 🔄 Syncing from spotify...
+2025-11-23 11:05:21 | INFO     | music_minion.domain.library.providers.spotify:70 | Spotify token expired, attempting refresh
+2025-11-23 11:05:21 | INFO     | music_minion.domain.library.providers.spotify.auth:402 | Spotify token refreshed successfully, expires: 2025-11-23 12:05:21.445885
+2025-11-23 11:05:21 | INFO     | music_minion.core.output:83 | ✓ Switched to spotify library (8,913 tracks)
+2025-11-23 11:05:21 | INFO     | music_minion.domain.library.providers.spotify:78 | Spotify token refreshed successfully
+2025-11-23 11:05:21 | INFO     | music_minion.domain.library.providers.spotify.api:120 | Incremental sync: 8913 existing Spotify tracks
+2025-11-23 11:05:22 | INFO     | music_minion.domain.library.providers.spotify.api:213 | Current liked tracks: 1715, Cached: 1715
+2025-11-23 11:05:22 | INFO     | music_minion.domain.library.providers.spotify.api:217 | ✓ Like count unchanged - skipping pagination (0 API calls)
+2025-11-23 11:05:22 | INFO     | music_minion.core.output:83 | ✓ No new liked tracks detected
+2025-11-23 11:05:22 | INFO     | music_minion.core.output:83 | ✓ Fetched 0 new tracks from Spotify
+2025-11-23 11:05:22 | INFO     | music_minion.domain.library.providers.spotify.api:133 | Collected 0 liked track IDs for sync
+2025-11-23 11:05:22 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in spotify library (incremental mode - all tracks already synced)
+2025-11-23 11:05:22 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-23 11:05:44 | INFO     | music_minion.domain.library.providers.spotify.api:50 | Spotify token expired, attempting refresh
+2025-11-23 11:05:44 | WARNING  | music_minion.domain.library.providers.spotify.auth:407 | Failed to refresh Spotify token: 400 Client Error: Bad Request for url: https://accounts.spotify.com/api/token
+2025-11-23 11:05:44 | ERROR    | music_minion.domain.library.providers.spotify.auth:411 | Spotify token refresh error: {'error': 'invalid_grant', 'error_description': 'Refresh token revoked'}
+2025-11-23 11:05:44 | WARNING  | music_minion.domain.library.providers.spotify.api:59 | Token refresh failed, marking as unauthenticated
+2025-11-23 11:05:44 | WARNING  | music_minion.domain.playback.spotify_player:218 | No Spotify devices available
+2025-11-23 11:05:44 | WARNING  | music_minion.core.output:83 | ⚠ No Spotify devices found. Open Spotify on a device first.
+2025-11-23 11:05:44 | ERROR    | music_minion.domain.playback.spotify_player:75 | Cannot play - no Spotify device available
+2025-11-23 11:05:44 | ERROR    | music_minion.core.output:83 | ❌ No Spotify device available. Open Spotify on a device first.
+2025-11-23 11:05:44 | ERROR    | music_minion.core.output:83 | ❌ Failed to play via Spotify
+2025-11-23 11:05:52 | WARNING  | music_minion.router:366 | Unknown command: 'devices'
+2025-11-23 11:05:52 | ERROR    | music_minion.core.output:83 | Unknown command: 'devices'. Type 'help' for available commands.
+2025-11-23 11:05:56 | WARNING  | music_minion.router:366 | Unknown command: 'device'
+2025-11-23 11:05:56 | ERROR    | music_minion.core.output:83 | Unknown command: 'device'. Type 'help' for available commands.
+2025-11-23 11:06:07 | INFO     | music_minion.domain.library.providers.spotify.api:50 | Spotify token expired, attempting refresh
+2025-11-23 11:06:07 | WARNING  | music_minion.domain.library.providers.spotify.auth:407 | Failed to refresh Spotify token: 400 Client Error: Bad Request for url: https://accounts.spotify.com/api/token
+2025-11-23 11:06:07 | ERROR    | music_minion.domain.library.providers.spotify.auth:411 | Spotify token refresh error: {'error': 'invalid_grant', 'error_description': 'Refresh token revoked'}
+2025-11-23 11:06:07 | WARNING  | music_minion.domain.library.providers.spotify.api:59 | Token refresh failed, marking as unauthenticated
+2025-11-23 11:06:07 | WARNING  | music_minion.core.output:83 | ⚠ No Spotify devices found. Open Spotify on a device first.
+2025-11-23 12:23:36 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-23 12:23:36 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-23 12:23:37 | INFO     | music_minion.ui.blessed.app:903 | Starting background sync after UI render
+2025-11-23 12:23:37 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: spotify
+2025-11-23 12:23:37 | INFO     | music_minion.core.output:83 | Syncing spotify (likes + playlists)...
+2025-11-23 12:23:37 | INFO     | music_minion.core.output:83 | 🔄 Syncing from spotify...
+2025-11-23 12:23:37 | INFO     | music_minion.domain.library.providers.spotify:70 | Spotify token expired, attempting refresh
+2025-11-23 12:23:37 | INFO     | music_minion.domain.library.providers.spotify.auth:402 | Spotify token refreshed successfully, expires: 2025-11-23 13:23:37.431328
+2025-11-23 12:23:37 | INFO     | music_minion.domain.library.providers.spotify:78 | Spotify token refreshed successfully
+2025-11-23 12:23:37 | INFO     | music_minion.domain.library.providers.spotify.api:121 | Incremental sync: 8913 existing Spotify tracks
+2025-11-23 12:23:38 | INFO     | music_minion.domain.library.providers.spotify.api:214 | Current liked tracks: 1715, Cached: 1715
+2025-11-23 12:23:38 | INFO     | music_minion.domain.library.providers.spotify.api:218 | ✓ Like count unchanged - skipping pagination (0 API calls)
+2025-11-23 12:23:38 | INFO     | music_minion.core.output:83 | ✓ No new liked tracks detected
+2025-11-23 12:23:38 | INFO     | music_minion.core.output:83 | ✓ Fetched 0 new tracks from Spotify
+2025-11-23 12:23:38 | INFO     | music_minion.domain.library.providers.spotify.api:134 | Collected 0 liked track IDs for sync
+2025-11-23 12:23:38 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in spotify library (incremental mode - all tracks already synced)
+2025-11-23 12:23:38 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-23 12:23:38 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-23 12:23:38 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-23 12:23:38 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from spotify...
+2025-11-23 12:23:39 | INFO     | music_minion.core.output:83 | ✓ Fetched 152 playlists (0 updated, 152 unchanged)
+2025-11-23 12:23:39 | INFO     | music_minion.domain.library.providers.spotify.api:538 | Playlists fetch complete: 152 total, 0 fetched, 152 skipped
+2025-11-23 12:23:39 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-23 12:23:39 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-23 12:23:39 | INFO     | music_minion.core.output:83 | 
+2025-11-23 12:23:39 | INFO     | music_minion.core.output:83 | 🔍 Looking up existing playlists...
+2025-11-23 12:23:39 | INFO     | music_minion.core.output:83 | ✓ Found 152 existing playlists
+2025-11-23 12:23:39 | INFO     | music_minion.core.output:83 | 
+📦 Collecting tracks from playlists...
+2025-11-23 12:23:39 | INFO     | music_minion.core.output:83 | ✓ Collected 0 unique tracks from 0 playlists
+2025-11-23 12:23:39 | INFO     | music_minion.core.output:83 | Playlist filter: 152 skipped (unchanged), 0 syncing
+2025-11-23 12:23:39 | INFO     | music_minion.core.output:83 | 
+⚠ No playlists need syncing (152 unchanged)
+2025-11-23 12:23:48 | INFO     | music_minion.domain.library.providers.spotify.api:50 | Spotify token expired, attempting refresh
+2025-11-23 12:23:48 | WARNING  | music_minion.domain.library.providers.spotify.auth:407 | Failed to refresh Spotify token: 400 Client Error: Bad Request for url: https://accounts.spotify.com/api/token
+2025-11-23 12:23:48 | ERROR    | music_minion.domain.library.providers.spotify.auth:411 | Spotify token refresh error: {'error': 'invalid_grant', 'error_description': 'Refresh token revoked'}
+2025-11-23 12:23:48 | WARNING  | music_minion.domain.library.providers.spotify.api:60 | Token refresh failed, marking as unauthenticated
+2025-11-23 12:23:48 | WARNING  | music_minion.domain.playback.spotify_player:218 | No Spotify devices available
+2025-11-23 12:23:48 | WARNING  | music_minion.core.output:83 | ⚠ No Spotify devices found. Open Spotify on a device first.
+2025-11-23 12:23:48 | ERROR    | music_minion.domain.playback.spotify_player:75 | Cannot play - no Spotify device available
+2025-11-23 12:23:48 | ERROR    | music_minion.core.output:83 | ❌ No Spotify device available. Open Spotify on a device first.
+2025-11-23 12:23:48 | ERROR    | music_minion.core.output:83 | ❌ Failed to play via Spotify
+2025-11-23 12:31:31 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-23 12:31:31 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-23 12:31:31 | INFO     | music_minion.ui.blessed.app:909 | Starting background sync after UI render
+2025-11-23 12:31:31 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: spotify
+2025-11-23 12:31:31 | INFO     | music_minion.core.output:83 | Syncing spotify (likes + playlists)...
+2025-11-23 12:31:31 | INFO     | music_minion.core.output:83 | 🔄 Syncing from spotify...
+2025-11-23 12:31:31 | INFO     | music_minion.domain.library.providers.spotify.api:121 | Incremental sync: 8913 existing Spotify tracks
+2025-11-23 12:31:31 | INFO     | music_minion.domain.library.providers.spotify.api:214 | Current liked tracks: 1715, Cached: 1715
+2025-11-23 12:31:31 | INFO     | music_minion.domain.library.providers.spotify.api:218 | ✓ Like count unchanged - skipping pagination (0 API calls)
+2025-11-23 12:31:31 | INFO     | music_minion.core.output:83 | ✓ No new liked tracks detected
+2025-11-23 12:31:31 | INFO     | music_minion.core.output:83 | ✓ Fetched 0 new tracks from Spotify
+2025-11-23 12:31:31 | INFO     | music_minion.domain.library.providers.spotify.api:134 | Collected 0 liked track IDs for sync
+2025-11-23 12:31:31 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in spotify library (incremental mode - all tracks already synced)
+2025-11-23 12:31:31 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-23 12:31:31 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-23 12:31:31 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-23 12:31:31 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from spotify...
+2025-11-23 12:31:33 | INFO     | music_minion.core.output:83 | ✓ Fetched 152 playlists (0 updated, 152 unchanged)
+2025-11-23 12:31:33 | INFO     | music_minion.domain.library.providers.spotify.api:538 | Playlists fetch complete: 152 total, 0 fetched, 152 skipped
+2025-11-23 12:31:33 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-23 12:31:33 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-23 12:31:33 | INFO     | music_minion.core.output:83 | 
+2025-11-23 12:31:33 | INFO     | music_minion.core.output:83 | 🔍 Looking up existing playlists...
+2025-11-23 12:31:33 | INFO     | music_minion.core.output:83 | ✓ Found 152 existing playlists
+2025-11-23 12:31:33 | INFO     | music_minion.core.output:83 | 
+📦 Collecting tracks from playlists...
+2025-11-23 12:31:33 | INFO     | music_minion.core.output:83 | ✓ Collected 0 unique tracks from 0 playlists
+2025-11-23 12:31:33 | INFO     | music_minion.core.output:83 | Playlist filter: 152 skipped (unchanged), 0 syncing
+2025-11-23 12:31:33 | INFO     | music_minion.core.output:83 | 
+⚠ No playlists need syncing (152 unchanged)
+2025-11-23 12:31:39 | INFO     | music_minion.domain.playback.spotify_player:86 | Playing Spotify track: 3Vk3AcdGJRwzgtjnRQUcqQ
+2025-11-23 12:31:39 | INFO     | music_minion.core.output:83 | ♪ Now playing: Zomboy - Doomsday
+2025-11-23 12:31:39 | INFO     | music_minion.core.output:83 |    Duration: 03:32
+2025-11-23 12:31:39 | INFO     | music_minion.core.output:83 |    2025
+2025-11-23 12:36:27 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-23 12:36:27 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-23 12:36:28 | INFO     | music_minion.ui.blessed.app:909 | Starting background sync after UI render
+2025-11-23 12:36:28 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: spotify
+2025-11-23 12:36:28 | INFO     | music_minion.core.output:83 | Syncing spotify (likes + playlists)...
+2025-11-23 12:36:28 | INFO     | music_minion.core.output:83 | 🔄 Syncing from spotify...
+2025-11-23 12:36:28 | INFO     | music_minion.domain.library.providers.spotify.api:121 | Incremental sync: 8913 existing Spotify tracks
+2025-11-23 12:36:28 | INFO     | music_minion.domain.library.providers.spotify.api:214 | Current liked tracks: 1715, Cached: 1715
+2025-11-23 12:36:28 | INFO     | music_minion.domain.library.providers.spotify.api:218 | ✓ Like count unchanged - skipping pagination (0 API calls)
+2025-11-23 12:36:28 | INFO     | music_minion.core.output:83 | ✓ No new liked tracks detected
+2025-11-23 12:36:28 | INFO     | music_minion.core.output:83 | ✓ Fetched 0 new tracks from Spotify
+2025-11-23 12:36:28 | INFO     | music_minion.domain.library.providers.spotify.api:134 | Collected 0 liked track IDs for sync
+2025-11-23 12:36:28 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in spotify library (incremental mode - all tracks already synced)
+2025-11-23 12:36:28 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-23 12:36:28 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-23 12:36:28 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-23 12:36:28 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from spotify...
+2025-11-23 12:36:30 | INFO     | music_minion.core.output:83 | ✓ Fetched 152 playlists (0 updated, 152 unchanged)
+2025-11-23 12:36:30 | INFO     | music_minion.domain.library.providers.spotify.api:538 | Playlists fetch complete: 152 total, 0 fetched, 152 skipped
+2025-11-23 12:36:30 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-23 12:36:30 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-23 12:36:30 | INFO     | music_minion.core.output:83 | 
+2025-11-23 12:36:30 | INFO     | music_minion.core.output:83 | 🔍 Looking up existing playlists...
+2025-11-23 12:36:30 | INFO     | music_minion.core.output:83 | ✓ Found 152 existing playlists
+2025-11-23 12:36:30 | INFO     | music_minion.core.output:83 | 
+📦 Collecting tracks from playlists...
+2025-11-23 12:36:30 | INFO     | music_minion.core.output:83 | ✓ Collected 0 unique tracks from 0 playlists
+2025-11-23 12:36:30 | INFO     | music_minion.core.output:83 | Playlist filter: 152 skipped (unchanged), 0 syncing
+2025-11-23 12:36:30 | INFO     | music_minion.core.output:83 | 
+⚠ No playlists need syncing (152 unchanged)
+2025-11-23 12:36:32 | INFO     | music_minion.domain.playback.spotify_player:86 | Playing Spotify track: 3Vk3AcdGJRwzgtjnRQUcqQ
+2025-11-23 12:36:32 | INFO     | music_minion.core.output:83 | ♪ Now playing: Zomboy - Doomsday
+2025-11-23 12:36:32 | INFO     | music_minion.core.output:83 |    Duration: 03:32
+2025-11-23 12:36:32 | INFO     | music_minion.core.output:83 |    2025
+2025-11-23 12:36:40 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-23 12:36:40 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-23 12:36:40 | INFO     | music_minion.ui.blessed.app:909 | Starting background sync after UI render
+2025-11-23 12:36:40 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: spotify
+2025-11-23 12:36:40 | INFO     | music_minion.core.output:83 | Syncing spotify (likes + playlists)...
+2025-11-23 12:36:40 | INFO     | music_minion.core.output:83 | 🔄 Syncing from spotify...
+2025-11-23 12:36:40 | INFO     | music_minion.domain.library.providers.spotify.api:121 | Incremental sync: 8913 existing Spotify tracks
+2025-11-23 12:36:41 | INFO     | music_minion.domain.library.providers.spotify.api:214 | Current liked tracks: 1715, Cached: 1715
+2025-11-23 12:36:41 | INFO     | music_minion.domain.library.providers.spotify.api:218 | ✓ Like count unchanged - skipping pagination (0 API calls)
+2025-11-23 12:36:41 | INFO     | music_minion.core.output:83 | ✓ No new liked tracks detected
+2025-11-23 12:36:41 | INFO     | music_minion.core.output:83 | ✓ Fetched 0 new tracks from Spotify
+2025-11-23 12:36:41 | INFO     | music_minion.domain.library.providers.spotify.api:134 | Collected 0 liked track IDs for sync
+2025-11-23 12:36:41 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in spotify library (incremental mode - all tracks already synced)
+2025-11-23 12:36:41 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-23 12:36:41 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-23 12:36:41 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-23 12:36:41 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from spotify...
+2025-11-23 12:36:42 | INFO     | music_minion.core.output:83 | ✓ Fetched 152 playlists (0 updated, 152 unchanged)
+2025-11-23 12:36:42 | INFO     | music_minion.domain.library.providers.spotify.api:538 | Playlists fetch complete: 152 total, 0 fetched, 152 skipped
+2025-11-23 12:36:42 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-23 12:36:42 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-23 12:36:42 | INFO     | music_minion.core.output:83 | 
+2025-11-23 12:36:42 | INFO     | music_minion.core.output:83 | 🔍 Looking up existing playlists...
+2025-11-23 12:36:42 | INFO     | music_minion.core.output:83 | ✓ Found 152 existing playlists
+2025-11-23 12:36:42 | INFO     | music_minion.core.output:83 | 
+📦 Collecting tracks from playlists...
+2025-11-23 12:36:42 | INFO     | music_minion.core.output:83 | ✓ Collected 0 unique tracks from 0 playlists
+2025-11-23 12:36:42 | INFO     | music_minion.core.output:83 | Playlist filter: 152 skipped (unchanged), 0 syncing
+2025-11-23 12:36:42 | INFO     | music_minion.core.output:83 | 
+⚠ No playlists need syncing (152 unchanged)
+2025-11-23 12:44:26 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-23 12:44:26 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-23 12:44:26 | INFO     | music_minion.ui.blessed.app:916 | Starting background sync after UI render
+2025-11-23 12:44:26 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: spotify
+2025-11-23 12:44:26 | INFO     | music_minion.core.output:83 | Syncing spotify (likes + playlists)...
+2025-11-23 12:44:26 | INFO     | music_minion.core.output:83 | 🔄 Syncing from spotify...
+2025-11-23 12:44:26 | INFO     | music_minion.domain.library.providers.spotify.api:121 | Incremental sync: 8913 existing Spotify tracks
+2025-11-23 12:44:27 | INFO     | music_minion.domain.library.providers.spotify.api:214 | Current liked tracks: 1715, Cached: 1715
+2025-11-23 12:44:27 | INFO     | music_minion.domain.library.providers.spotify.api:218 | ✓ Like count unchanged - skipping pagination (0 API calls)
+2025-11-23 12:44:27 | INFO     | music_minion.core.output:83 | ✓ No new liked tracks detected
+2025-11-23 12:44:27 | INFO     | music_minion.core.output:83 | ✓ Fetched 0 new tracks from Spotify
+2025-11-23 12:44:27 | INFO     | music_minion.domain.library.providers.spotify.api:134 | Collected 0 liked track IDs for sync
+2025-11-23 12:44:27 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in spotify library (incremental mode - all tracks already synced)
+2025-11-23 12:44:27 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-23 12:44:27 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-23 12:44:27 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-23 12:44:27 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from spotify...
+2025-11-23 12:44:28 | INFO     | music_minion.core.output:83 | ✓ Fetched 152 playlists (0 updated, 152 unchanged)
+2025-11-23 12:44:28 | INFO     | music_minion.domain.library.providers.spotify.api:538 | Playlists fetch complete: 152 total, 0 fetched, 152 skipped
+2025-11-23 12:44:28 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-23 12:44:28 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-23 12:44:28 | INFO     | music_minion.core.output:83 | 
+2025-11-23 12:44:28 | INFO     | music_minion.core.output:83 | 🔍 Looking up existing playlists...
+2025-11-23 12:44:28 | INFO     | music_minion.core.output:83 | ✓ Found 152 existing playlists
+2025-11-23 12:44:28 | INFO     | music_minion.core.output:83 | 
+📦 Collecting tracks from playlists...
+2025-11-23 12:44:28 | INFO     | music_minion.core.output:83 | ✓ Collected 0 unique tracks from 0 playlists
+2025-11-23 12:44:28 | INFO     | music_minion.core.output:83 | Playlist filter: 152 skipped (unchanged), 0 syncing
+2025-11-23 12:44:28 | INFO     | music_minion.core.output:83 | 
+⚠ No playlists need syncing (152 unchanged)
+2025-11-23 12:44:30 | INFO     | music_minion.domain.playback.spotify_player:86 | Playing Spotify track: 3Vk3AcdGJRwzgtjnRQUcqQ
+2025-11-23 12:44:30 | INFO     | music_minion.core.output:83 | ♪ Now playing: Zomboy - Doomsday
+2025-11-23 12:44:30 | INFO     | music_minion.core.output:83 |    Duration: 03:32
+2025-11-23 12:44:30 | INFO     | music_minion.core.output:83 |    2025
+2025-11-23 12:57:45 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-23 12:57:45 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-23 12:57:46 | INFO     | music_minion.ui.blessed.app:931 | Starting background sync after UI render
+2025-11-23 12:57:46 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: spotify
+2025-11-23 12:57:46 | INFO     | music_minion.core.output:83 | Syncing spotify (likes + playlists)...
+2025-11-23 12:57:46 | INFO     | music_minion.core.output:83 | 🔄 Syncing from spotify...
+2025-11-23 12:57:46 | INFO     | music_minion.domain.library.providers.spotify.api:121 | Incremental sync: 8913 existing Spotify tracks
+2025-11-23 12:57:46 | INFO     | music_minion.domain.library.providers.spotify.api:214 | Current liked tracks: 1715, Cached: 1715
+2025-11-23 12:57:46 | INFO     | music_minion.domain.library.providers.spotify.api:218 | ✓ Like count unchanged - skipping pagination (0 API calls)
+2025-11-23 12:57:46 | INFO     | music_minion.core.output:83 | ✓ No new liked tracks detected
+2025-11-23 12:57:46 | INFO     | music_minion.core.output:83 | ✓ Fetched 0 new tracks from Spotify
+2025-11-23 12:57:46 | INFO     | music_minion.domain.library.providers.spotify.api:134 | Collected 0 liked track IDs for sync
+2025-11-23 12:57:46 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in spotify library (incremental mode - all tracks already synced)
+2025-11-23 12:57:46 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-23 12:57:46 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-23 12:57:46 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-23 12:57:46 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from spotify...
+2025-11-23 12:57:48 | INFO     | music_minion.core.output:83 | ✓ Fetched 152 playlists (0 updated, 152 unchanged)
+2025-11-23 12:57:48 | INFO     | music_minion.domain.library.providers.spotify.api:538 | Playlists fetch complete: 152 total, 0 fetched, 152 skipped
+2025-11-23 12:57:48 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-23 12:57:48 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-23 12:57:48 | INFO     | music_minion.core.output:83 | 
+2025-11-23 12:57:48 | INFO     | music_minion.core.output:83 | 🔍 Looking up existing playlists...
+2025-11-23 12:57:48 | INFO     | music_minion.core.output:83 | ✓ Found 152 existing playlists
+2025-11-23 12:57:48 | INFO     | music_minion.core.output:83 | 
+📦 Collecting tracks from playlists...
+2025-11-23 12:57:48 | INFO     | music_minion.core.output:83 | ✓ Collected 0 unique tracks from 0 playlists
+2025-11-23 12:57:48 | INFO     | music_minion.core.output:83 | Playlist filter: 152 skipped (unchanged), 0 syncing
+2025-11-23 12:57:48 | INFO     | music_minion.core.output:83 | 
+⚠ No playlists need syncing (152 unchanged)
+2025-11-23 12:57:48 | INFO     | music_minion.domain.playback.spotify_player:86 | Playing Spotify track: 3Vk3AcdGJRwzgtjnRQUcqQ
+2025-11-23 12:57:48 | INFO     | music_minion.core.output:83 | ♪ Now playing: Zomboy - Doomsday
+2025-11-23 12:57:48 | INFO     | music_minion.core.output:83 |    Duration: 03:32
+2025-11-23 12:57:48 | INFO     | music_minion.core.output:83 |    2025
+2025-11-23 12:58:00 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-23 12:58:00 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-23 12:58:01 | INFO     | music_minion.ui.blessed.app:931 | Starting background sync after UI render
+2025-11-23 12:58:01 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: spotify
+2025-11-23 12:58:01 | INFO     | music_minion.core.output:83 | Syncing spotify (likes + playlists)...
+2025-11-23 12:58:01 | INFO     | music_minion.core.output:83 | 🔄 Syncing from spotify...
+2025-11-23 12:58:01 | INFO     | music_minion.domain.library.providers.spotify.api:121 | Incremental sync: 8913 existing Spotify tracks
+2025-11-23 12:58:01 | INFO     | music_minion.domain.library.providers.spotify.api:214 | Current liked tracks: 1715, Cached: 1715
+2025-11-23 12:58:01 | INFO     | music_minion.domain.library.providers.spotify.api:218 | ✓ Like count unchanged - skipping pagination (0 API calls)
+2025-11-23 12:58:01 | INFO     | music_minion.core.output:83 | ✓ No new liked tracks detected
+2025-11-23 12:58:01 | INFO     | music_minion.core.output:83 | ✓ Fetched 0 new tracks from Spotify
+2025-11-23 12:58:01 | INFO     | music_minion.domain.library.providers.spotify.api:134 | Collected 0 liked track IDs for sync
+2025-11-23 12:58:01 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in spotify library (incremental mode - all tracks already synced)
+2025-11-23 12:58:01 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-23 12:58:01 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-23 12:58:01 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-23 12:58:01 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from spotify...
+2025-11-23 12:58:03 | INFO     | music_minion.core.output:83 | ✓ Fetched 152 playlists (0 updated, 152 unchanged)
+2025-11-23 12:58:03 | INFO     | music_minion.domain.library.providers.spotify.api:538 | Playlists fetch complete: 152 total, 0 fetched, 152 skipped
+2025-11-23 12:58:03 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-23 12:58:03 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-23 12:58:03 | INFO     | music_minion.core.output:83 | 
+2025-11-23 12:58:03 | INFO     | music_minion.core.output:83 | 🔍 Looking up existing playlists...
+2025-11-23 12:58:03 | INFO     | music_minion.core.output:83 | ✓ Found 152 existing playlists
+2025-11-23 12:58:03 | INFO     | music_minion.core.output:83 | 
+📦 Collecting tracks from playlists...
+2025-11-23 12:58:03 | INFO     | music_minion.core.output:83 | ✓ Collected 0 unique tracks from 0 playlists
+2025-11-23 12:58:03 | INFO     | music_minion.core.output:83 | Playlist filter: 152 skipped (unchanged), 0 syncing
+2025-11-23 12:58:03 | INFO     | music_minion.core.output:83 | 
+⚠ No playlists need syncing (152 unchanged)
+2025-11-23 12:58:07 | INFO     | music_minion.domain.playback.spotify_player:86 | Playing Spotify track: 3Vk3AcdGJRwzgtjnRQUcqQ
+2025-11-23 12:58:07 | INFO     | music_minion.core.output:83 | ♪ Now playing: Zomboy - Doomsday
+2025-11-23 12:58:07 | INFO     | music_minion.core.output:83 |    Duration: 03:32
+2025-11-23 12:58:07 | INFO     | music_minion.core.output:83 |    2025
+2025-11-23 13:05:06 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-23 13:05:06 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-23 13:05:07 | INFO     | music_minion.ui.blessed.app:920 | Starting background sync after UI render
+2025-11-23 13:05:07 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: spotify
+2025-11-23 13:05:07 | INFO     | music_minion.core.output:83 | Syncing spotify (likes + playlists)...
+2025-11-23 13:05:07 | INFO     | music_minion.core.output:83 | 🔄 Syncing from spotify...
+2025-11-23 13:05:07 | INFO     | music_minion.domain.library.providers.spotify.api:121 | Incremental sync: 8913 existing Spotify tracks
+2025-11-23 13:05:07 | INFO     | music_minion.domain.library.providers.spotify.api:214 | Current liked tracks: 1715, Cached: 1715
+2025-11-23 13:05:07 | INFO     | music_minion.domain.library.providers.spotify.api:218 | ✓ Like count unchanged - skipping pagination (0 API calls)
+2025-11-23 13:05:07 | INFO     | music_minion.core.output:83 | ✓ No new liked tracks detected
+2025-11-23 13:05:07 | INFO     | music_minion.core.output:83 | ✓ Fetched 0 new tracks from Spotify
+2025-11-23 13:05:07 | INFO     | music_minion.domain.library.providers.spotify.api:134 | Collected 0 liked track IDs for sync
+2025-11-23 13:05:07 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in spotify library (incremental mode - all tracks already synced)
+2025-11-23 13:05:07 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-23 13:05:07 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-23 13:05:07 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-23 13:05:07 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from spotify...
+2025-11-23 13:05:08 | INFO     | music_minion.core.output:83 | ✓ Fetched 152 playlists (0 updated, 152 unchanged)
+2025-11-23 13:05:08 | INFO     | music_minion.domain.library.providers.spotify.api:538 | Playlists fetch complete: 152 total, 0 fetched, 152 skipped
+2025-11-23 13:05:08 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-23 13:05:08 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-23 13:05:08 | INFO     | music_minion.core.output:83 | 
+2025-11-23 13:05:08 | INFO     | music_minion.core.output:83 | 🔍 Looking up existing playlists...
+2025-11-23 13:05:08 | INFO     | music_minion.core.output:83 | ✓ Found 152 existing playlists
+2025-11-23 13:05:08 | INFO     | music_minion.core.output:83 | 
+📦 Collecting tracks from playlists...
+2025-11-23 13:05:08 | INFO     | music_minion.core.output:83 | ✓ Collected 0 unique tracks from 0 playlists
+2025-11-23 13:05:08 | INFO     | music_minion.core.output:83 | Playlist filter: 152 skipped (unchanged), 0 syncing
+2025-11-23 13:05:08 | INFO     | music_minion.core.output:83 | 
+⚠ No playlists need syncing (152 unchanged)
+2025-11-23 13:05:11 | INFO     | music_minion.domain.playback.spotify_player:86 | Playing Spotify track: 3Vk3AcdGJRwzgtjnRQUcqQ
+2025-11-23 13:05:11 | INFO     | music_minion.core.output:83 | ♪ Now playing: Zomboy - Doomsday
+2025-11-23 13:05:11 | INFO     | music_minion.core.output:83 |    Duration: 03:32
+2025-11-23 13:05:11 | INFO     | music_minion.core.output:83 |    2025
+2025-11-23 13:20:28 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-23 13:20:28 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-23 13:21:31 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-23 13:21:31 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-23 13:21:31 | INFO     | music_minion.ui.blessed.app:909 | Starting background sync after UI render
+2025-11-23 13:21:31 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: spotify
+2025-11-23 13:21:31 | INFO     | music_minion.core.output:83 | Syncing spotify (likes + playlists)...
+2025-11-23 13:21:31 | INFO     | music_minion.core.output:83 | 🔄 Syncing from spotify...
+2025-11-23 13:21:31 | INFO     | music_minion.domain.library.providers.spotify:70 | Spotify token expired, attempting refresh
+2025-11-23 13:21:31 | INFO     | music_minion.domain.library.providers.spotify.auth:402 | Spotify token refreshed successfully, expires: 2025-11-23 14:21:31.785235
+2025-11-23 13:21:31 | INFO     | music_minion.domain.library.providers.spotify:78 | Spotify token refreshed successfully
+2025-11-23 13:21:31 | INFO     | music_minion.domain.library.providers.spotify.api:121 | Incremental sync: 8913 existing Spotify tracks
+2025-11-23 13:21:32 | INFO     | music_minion.domain.library.providers.spotify.api:214 | Current liked tracks: 1715, Cached: 1715
+2025-11-23 13:21:32 | INFO     | music_minion.domain.library.providers.spotify.api:218 | ✓ Like count unchanged - skipping pagination (0 API calls)
+2025-11-23 13:21:32 | INFO     | music_minion.core.output:83 | ✓ No new liked tracks detected
+2025-11-23 13:21:32 | INFO     | music_minion.core.output:83 | ✓ Fetched 0 new tracks from Spotify
+2025-11-23 13:21:32 | INFO     | music_minion.domain.library.providers.spotify.api:134 | Collected 0 liked track IDs for sync
+2025-11-23 13:21:32 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in spotify library (incremental mode - all tracks already synced)
+2025-11-23 13:21:32 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-23 13:21:32 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-23 13:21:32 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-23 13:21:32 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from spotify...
+2025-11-23 13:21:33 | INFO     | music_minion.core.output:83 | ✓ Fetched 152 playlists (0 updated, 152 unchanged)
+2025-11-23 13:21:33 | INFO     | music_minion.domain.library.providers.spotify.api:538 | Playlists fetch complete: 152 total, 0 fetched, 152 skipped
+2025-11-23 13:21:33 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-23 13:21:33 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-23 13:21:33 | INFO     | music_minion.core.output:83 | 
+2025-11-23 13:21:33 | INFO     | music_minion.core.output:83 | 🔍 Looking up existing playlists...
+2025-11-23 13:21:33 | INFO     | music_minion.core.output:83 | ✓ Found 152 existing playlists
+2025-11-23 13:21:33 | INFO     | music_minion.core.output:83 | 
+📦 Collecting tracks from playlists...
+2025-11-23 13:21:33 | INFO     | music_minion.core.output:83 | ✓ Collected 0 unique tracks from 0 playlists
+2025-11-23 13:21:33 | INFO     | music_minion.core.output:83 | Playlist filter: 152 skipped (unchanged), 0 syncing
+2025-11-23 13:21:33 | INFO     | music_minion.core.output:83 | 
+⚠ No playlists need syncing (152 unchanged)
+2025-11-23 13:21:36 | INFO     | music_minion.domain.library.providers.spotify.api:50 | Spotify token expired, attempting refresh
+2025-11-23 13:21:36 | WARNING  | music_minion.domain.library.providers.spotify.auth:407 | Failed to refresh Spotify token: 400 Client Error: Bad Request for url: https://accounts.spotify.com/api/token
+2025-11-23 13:21:36 | ERROR    | music_minion.domain.library.providers.spotify.auth:411 | Spotify token refresh error: {'error': 'invalid_grant', 'error_description': 'Refresh token revoked'}
+2025-11-23 13:21:36 | WARNING  | music_minion.domain.library.providers.spotify.api:60 | Token refresh failed, marking as unauthenticated
+2025-11-23 13:21:36 | WARNING  | music_minion.domain.playback.spotify_player:222 | No Spotify devices available
+2025-11-23 13:21:36 | WARNING  | music_minion.core.output:83 | ⚠ No Spotify devices found. Open Spotify on a device first.
+2025-11-23 13:21:36 | ERROR    | music_minion.domain.playback.spotify_player:75 | Cannot play - no Spotify device available
+2025-11-23 13:21:36 | ERROR    | music_minion.core.output:83 | ❌ No Spotify device available. Open Spotify on a device first.
+2025-11-23 13:21:36 | ERROR    | music_minion.core.output:83 | ❌ Failed to play via Spotify
+2025-11-23 13:21:50 | INFO     | music_minion.ui.blessed.app:1124 | Ctrl+C detected - cleaning up
+2025-11-23 13:21:51 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
+2025-11-23 13:21:51 | INFO     | music_minion.core.database:706 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
+2025-11-23 13:21:51 | INFO     | music_minion.ui.blessed.app:909 | Starting background sync after UI render
+2025-11-23 13:21:51 | INFO     | music_minion.commands.sync:156 | Starting incremental sync for provider: spotify
+2025-11-23 13:21:51 | INFO     | music_minion.core.output:83 | Syncing spotify (likes + playlists)...
+2025-11-23 13:21:51 | INFO     | music_minion.core.output:83 | 🔄 Syncing from spotify...
+2025-11-23 13:21:51 | INFO     | music_minion.domain.library.providers.spotify.api:121 | Incremental sync: 8913 existing Spotify tracks
+2025-11-23 13:21:52 | INFO     | music_minion.domain.library.providers.spotify.api:214 | Current liked tracks: 1715, Cached: 1715
+2025-11-23 13:21:52 | INFO     | music_minion.domain.library.providers.spotify.api:218 | ✓ Like count unchanged - skipping pagination (0 API calls)
+2025-11-23 13:21:52 | INFO     | music_minion.core.output:83 | ✓ No new liked tracks detected
+2025-11-23 13:21:52 | INFO     | music_minion.core.output:83 | ✓ Fetched 0 new tracks from Spotify
+2025-11-23 13:21:52 | INFO     | music_minion.domain.library.providers.spotify.api:134 | Collected 0 liked track IDs for sync
+2025-11-23 13:21:52 | WARNING  | music_minion.core.output:83 | ⚠ No tracks found in spotify library (incremental mode - all tracks already synced)
+2025-11-23 13:21:52 | INFO     | music_minion.core.output:83 | 💡 Tip: Use '--full' flag to re-sync all tracks
+2025-11-23 13:21:52 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-23 13:21:52 | INFO     | music_minion.core.output:83 | 🔄 Syncing playlists from spotify (incremental)...
+2025-11-23 13:21:52 | INFO     | music_minion.core.output:83 | 📋 Fetching playlists from spotify...
+2025-11-23 13:21:53 | INFO     | music_minion.core.output:83 | ✓ Fetched 152 playlists (0 updated, 152 unchanged)
+2025-11-23 13:21:53 | INFO     | music_minion.domain.library.providers.spotify.api:538 | Playlists fetch complete: 152 total, 0 fetched, 152 skipped
+2025-11-23 13:21:53 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-23 13:21:53 | INFO     | music_minion.core.output:83 | ✓ Found 152 playlists
+2025-11-23 13:21:53 | INFO     | music_minion.core.output:83 | 
+2025-11-23 13:21:53 | INFO     | music_minion.core.output:83 | 🔍 Looking up existing playlists...
+2025-11-23 13:21:53 | INFO     | music_minion.core.output:83 | ✓ Found 152 existing playlists
+2025-11-23 13:21:53 | INFO     | music_minion.core.output:83 | 
+📦 Collecting tracks from playlists...
+2025-11-23 13:21:53 | INFO     | music_minion.core.output:83 | ✓ Collected 0 unique tracks from 0 playlists
+2025-11-23 13:21:53 | INFO     | music_minion.core.output:83 | Playlist filter: 152 skipped (unchanged), 0 syncing
+2025-11-23 13:21:53 | INFO     | music_minion.core.output:83 | 
+⚠ No playlists need syncing (152 unchanged)
+2025-11-23 13:21:59 | INFO     | music_minion.domain.playback.spotify_player:86 | Playing Spotify track: 3Vk3AcdGJRwzgtjnRQUcqQ
+2025-11-23 13:21:59 | INFO     | music_minion.core.output:83 | ♪ Now playing: Zomboy - Doomsday
+2025-11-23 13:21:59 | INFO     | music_minion.core.output:83 |    Duration: 03:32
+2025-11-23 13:21:59 | INFO     | music_minion.core.output:83 |    2025
+2025-11-23 13:22:04 | INFO     | music_minion.ui.blessed.app:1124 | Ctrl+C detected - cleaning up
+2025-11-23 13:22:04 | INFO     | music_minion.ui.blessed.app:1128 | Paused Spotify playback on exit
