@@ -364,6 +364,44 @@ def _handle_internal_command(
             ui_state = _refresh_ui_state_from_db(ui_state, ctx)
         return ctx, ui_state, False
 
+    elif cmd.action == "comparison_play_track":
+        # Play/pause comparison track (toggle behavior)
+        from music_minion.commands.playback import play_track, handle_pause_command, handle_resume_command
+
+        track = cmd.data.get("track")
+        if track:
+            # Determine track ID
+            track_id = track.get('track_id') or track.get('id')
+            if track_id:
+                # Check if this track is already the current playing track
+                current_track_id = ctx.player_state.current_track_id
+
+                if current_track_id == track_id:
+                    # Same track - toggle pause/play
+                    if ctx.player_state.is_playing:
+                        # Pause the current track
+                        ctx, _ = handle_pause_command(ctx)
+                    else:
+                        # Resume the current track
+                        ctx, _ = handle_resume_command(ctx)
+                else:
+                    # Different track - play it (will stop any existing playback)
+                    from music_minion.core import database
+                    db_track = database.get_track_by_id(track_id)
+                    if db_track:
+                        # Convert DB row to Track object
+                        track_obj = database.db_track_to_library_track(db_track)
+                        ctx, _ = play_track(ctx, track_obj, None)
+
+        return ctx, ui_state, False
+
+    elif cmd.action == "comparison_restore_playback":
+        # Restore playback after comparison session
+        saved_state = cmd.data.get("player_state")
+        if saved_state:
+            ctx = replace(ctx, player_state=saved_state)
+        return ctx, ui_state, False
+
     else:
         # Unknown command action, log it and continue
         ui_state = add_history_line(
@@ -550,8 +588,11 @@ def _process_ui_action(
     """
     from music_minion.ui.blessed.components.palette import load_playlist_items
     from music_minion.ui.blessed.state import show_playlist_palette
+    from loguru import logger
 
     action = ctx.ui_action
+
+    logger.info(f"🔧 _process_ui_action called: action={'None' if not action else action.get('type', 'unknown')}")
 
     if not action:
         return ctx, ui_state
@@ -584,6 +625,20 @@ def _process_ui_action(
             ctx, ui_state, playlist_name, playlist_type, tracks
         )
 
+    elif action["type"] == "show_rating_history":
+        # Show rating history viewer
+        from music_minion.ui.blessed.state import show_rating_history
+
+        ratings = action.get("ratings", [])
+        ui_state = show_rating_history(ui_state, ratings)
+
+    elif action["type"] == "show_comparison_history":
+        # Show comparison history viewer
+        from music_minion.ui.blessed.state import show_comparison_history
+
+        comparisons = action.get("comparisons", [])
+        ui_state = show_comparison_history(ui_state, comparisons)
+
     elif action["type"] == "start_review_mode":
         # Start AI review mode
         from music_minion.ui.blessed.state import start_review_mode
@@ -596,6 +651,30 @@ def _process_ui_action(
         # Show analytics viewer with data
         analytics_data = action.get("analytics_data", {})
         ui_state = _show_analytics_viewer_if_data(ui_state, analytics_data)
+
+    elif action["type"] == "start_comparison":
+        # Start comparison session
+        from loguru import logger
+        from music_minion.core.output import log
+
+        comparison = action.get("comparison")
+        filtered_tracks = action.get("filtered_tracks", [])
+        ratings_cache = action.get("ratings_cache", {})
+
+        log(f"🔍 DEBUG: Processing start_comparison action", level="info")
+        logger.info(f"Processing start_comparison action: comparison={comparison is not None}, filtered_tracks={len(filtered_tracks)}, active={comparison.active if comparison else 'N/A'}")
+
+        if comparison:
+            # Update comparison state with filtered tracks and ratings cache
+            comparison_with_data = replace(
+                comparison,
+                filtered_tracks=filtered_tracks,
+                ratings_cache=ratings_cache
+            )
+            # Update UI state
+            ui_state = replace(ui_state, comparison=comparison_with_data)
+            log(f"🔍 DEBUG: Updated UI state - comparison active={ui_state.comparison.active}", level="info")
+            logger.info(f"Updated ui_state.comparison: active={ui_state.comparison.active}, track_a={ui_state.comparison.track_a is not None}, track_b={ui_state.comparison.track_b is not None}")
 
     # Clear the ui_action after processing
     ctx = ctx.with_ui_action(None)

@@ -14,7 +14,7 @@ from .config import get_data_dir
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 
 
 def get_database_path() -> Path:
@@ -699,6 +699,59 @@ def migrate_database(conn, current_version: int) -> None:
         print("  ✓ Migration to v20 complete: top_level_artist column added")
         conn.commit()
 
+    if current_version < 21:
+        # Migration from v20 to v21: Add Elo rating system
+        logger.info("Migrating database to schema version 21 (Elo ratings)...")
+
+        # Create elo_ratings table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS elo_ratings (
+                track_id INTEGER PRIMARY KEY,
+                rating REAL DEFAULT 1500.0,
+                comparison_count INTEGER DEFAULT 0,
+                last_compared TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (track_id) REFERENCES tracks (id) ON DELETE CASCADE
+            )
+        """)
+
+        # Create comparison_history table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS comparison_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                track_a_id INTEGER NOT NULL,
+                track_b_id INTEGER NOT NULL,
+                winner_id INTEGER NOT NULL,
+                track_a_rating_before REAL NOT NULL,
+                track_b_rating_before REAL NOT NULL,
+                track_a_rating_after REAL NOT NULL,
+                track_b_rating_after REAL NOT NULL,
+                session_id TEXT NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (track_a_id) REFERENCES tracks (id) ON DELETE CASCADE,
+                FOREIGN KEY (track_b_id) REFERENCES tracks (id) ON DELETE CASCADE,
+                FOREIGN KEY (winner_id) REFERENCES tracks (id) ON DELETE CASCADE
+            )
+        """)
+
+        # Create indexes for performance
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_elo_rating ON elo_ratings(rating DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_elo_comparison_count ON elo_ratings(comparison_count)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_comparison_session ON comparison_history(session_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_comparison_timestamp ON comparison_history(timestamp DESC)")
+
+        # Initialize ratings for all existing tracks
+        conn.execute("""
+            INSERT INTO elo_ratings (track_id, rating, comparison_count)
+            SELECT id, 1500.0, 0
+            FROM tracks
+            WHERE id NOT IN (SELECT track_id FROM elo_ratings)
+        """)
+
+        logger.info("Migration to schema version 21 complete")
+        conn.commit()
+
 
 def init_database() -> None:
     """Initialize the database with required tables."""
@@ -1158,6 +1211,78 @@ def get_recent_ratings(limit: int = 10) -> List[Dict[str, Any]]:
             (limit,),
         )
         return [dict(row) for row in cursor.fetchall()]
+
+
+def get_rating_history(limit: int = 100) -> List[Dict[str, Any]]:
+    """Get rating history with full track information for interactive review.
+
+    Args:
+        limit: Maximum number of ratings to return
+
+    Returns:
+        List of rating dicts with fields:
+        - rating_id: Rating record ID
+        - track_id: Track ID
+        - rating_type: Type of rating (like, love, archive, skip)
+        - timestamp: When rating was created
+        - context: Optional context text
+        - source: Source of rating (user, soundcloud, spotify, etc.)
+        - title: Track title
+        - artist: Track artist
+        - album: Track album
+        - year: Track year
+        - genre: Track genre
+        - local_path: Track local file path
+        - soundcloud_id: Track SoundCloud ID
+        - spotify_id: Track Spotify ID
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT
+                r.id as rating_id,
+                r.track_id,
+                r.rating_type,
+                r.timestamp,
+                r.context,
+                r.source,
+                t.title,
+                t.artist,
+                t.album,
+                t.year,
+                t.genre,
+                t.local_path,
+                t.soundcloud_id,
+                t.spotify_id
+            FROM ratings r
+            JOIN tracks t ON r.track_id = t.id
+            ORDER BY r.timestamp DESC
+            LIMIT ?
+        """,
+            (limit,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def delete_rating_by_id(rating_id: int) -> bool:
+    """Delete a rating by its ID.
+
+    Args:
+        rating_id: ID of the rating record to delete
+
+    Returns:
+        True if rating was deleted, False otherwise
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            DELETE FROM ratings
+            WHERE id = ?
+        """,
+            (rating_id,),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
 
 
 def get_recent_playback_sessions(

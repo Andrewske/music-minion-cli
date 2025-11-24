@@ -25,6 +25,8 @@ from .components import (
     render_analytics_viewer,
 )
 from .components.track_viewer import render_track_viewer
+from .components.rating_history import render_rating_history_viewer
+from .components.comparison_history import render_comparison_history_viewer
 from .components.metadata_editor import render_metadata_editor
 from .events.keyboard import handle_key
 from .events.commands import execute_command
@@ -675,6 +677,8 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         "search",       # search_mode
         0,              # search_detail_scroll
         0,              # search_detail_selection
+        False,          # comparison.active
+        "a",            # comparison.highlighted
     )
     layout = None
     last_position = (
@@ -795,6 +799,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 ui_state.search_mode,
                 ui_state.search_detail_scroll,
                 ui_state.search_detail_selection,
+                ui_state.comparison.active,
             ) != last_palette_state
 
             # Determine if we need a full redraw
@@ -838,8 +843,17 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
 
                 render_input(term, ui_state, layout["input_y"])
 
-                # Render palette, wizard, or track viewer (mutually exclusive)
-                if ui_state.wizard_active:
+                # Render palette, wizard, track viewer, or comparison (mutually exclusive)
+                if ui_state.comparison.active:
+                    from music_minion.ui.blessed.components.comparison import render_comparison_overlay
+
+                    render_comparison_overlay(
+                        term,
+                        ui_state.comparison,
+                        ctx.player_state,
+                        layout,
+                    )
+                elif ui_state.wizard_active:
                     render_smart_playlist_wizard(
                         term, ui_state, layout["palette_y"], layout["palette_height"]
                     )
@@ -853,6 +867,20 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                         ui_state,
                         layout["track_viewer_y"],
                         layout["track_viewer_height"],
+                    )
+                elif ui_state.rating_history_visible:
+                    render_rating_history_viewer(
+                        term,
+                        ui_state,
+                        layout["palette_y"],  # Use palette area
+                        layout["palette_height"],
+                    )
+                elif ui_state.comparison_history_visible:
+                    render_comparison_history_viewer(
+                        term,
+                        ui_state,
+                        layout["palette_y"],  # Use palette area
+                        layout["palette_height"],
                     )
                 elif ui_state.analytics_viewer_visible:
                     render_analytics_viewer(
@@ -893,6 +921,8 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     ui_state.search_mode,
                     ui_state.search_detail_scroll,
                     ui_state.search_detail_selection,
+                    ui_state.comparison.active,
+                    ui_state.comparison.highlighted,  # Track highlighted track changes
                 )
 
                 # Update position tracking atomically after full redraw
@@ -971,6 +1001,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 or ui_state.track_viewer_mode != last_palette_state[7]
                 or ui_state.analytics_viewer_visible != last_palette_state[8]
                 or ui_state.editor_visible != last_palette_state[10]
+                or ui_state.comparison.active != last_palette_state[19]  # Check comparison state
             ):
                 needs_full_redraw = True
 
@@ -982,13 +1013,14 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     for i in range(3):
                         sys.stdout.write(term.move_xy(0, input_y + i) + term.clear_eol)
 
-                    # Clear palette/wizard/track viewer/analytics viewer/editor area if visible
+                    # Clear palette/wizard/track viewer/analytics viewer/editor/comparison area if visible
                     if (
                         ui_state.palette_visible
                         or ui_state.wizard_active
                         or ui_state.track_viewer_visible
                         or ui_state.analytics_viewer_visible
                         or ui_state.editor_visible
+                        or ui_state.comparison.active
                     ):
                         overlay_y = layout["palette_y"]  # Same position for all overlays
                         overlay_height = layout["palette_height"]
@@ -1000,8 +1032,17 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     # Re-render
                     render_input(term, ui_state, layout["input_y"])
 
-                    # Render palette, wizard, track viewer, or analytics viewer (mutually exclusive)
-                    if ui_state.wizard_active:
+                    # Render palette, wizard, track viewer, analytics viewer, or comparison (mutually exclusive)
+                    if ui_state.comparison.active:
+                        from music_minion.ui.blessed.components.comparison import render_comparison_overlay
+
+                        render_comparison_overlay(
+                            term,
+                            ui_state.comparison,
+                            ctx.player_state,
+                            layout,
+                        )
+                    elif ui_state.wizard_active:
                         render_smart_playlist_wizard(
                             term, ui_state, layout["palette_y"], layout["palette_height"]
                         )
@@ -1015,6 +1056,20 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                             ui_state,
                             layout["track_viewer_y"],
                             layout["track_viewer_height"],
+                        )
+                    elif ui_state.rating_history_visible:
+                        render_rating_history_viewer(
+                            term,
+                            ui_state,
+                            layout["palette_y"],
+                            layout["palette_height"],
+                        )
+                    elif ui_state.comparison_history_visible:
+                        render_comparison_history_viewer(
+                            term,
+                            ui_state,
+                            layout["palette_y"],
+                            layout["palette_height"],
                         )
                     elif ui_state.analytics_viewer_visible:
                         render_analytics_viewer(
@@ -1052,6 +1107,8 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                         ui_state.search_mode,
                         ui_state.search_detail_scroll,
                         ui_state.search_detail_selection,
+                        ui_state.comparison.active,
+                        ui_state.comparison.highlighted,  # Track highlighted track changes
                     )
 
             else:

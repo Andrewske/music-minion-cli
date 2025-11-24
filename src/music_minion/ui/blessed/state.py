@@ -1,8 +1,9 @@
 """UI state management - immutable state updates."""
 
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from time import time
-from typing import Optional, Any
+from typing import Any, Optional
 
 # Maximum number of commands to keep in history
 MAX_COMMAND_HISTORY = 1000
@@ -61,6 +62,28 @@ class ScanProgress:
     total_files: int = 0
     current_file: str = ""
     phase: str = "scanning"  # 'scanning' or 'database'
+
+
+@dataclass
+class ComparisonState:
+    """Immutable comparison session state."""
+
+    active: bool = False
+    loading: bool = False  # True while loading tracks in background
+    track_a: Optional[dict[str, Any]] = None
+    track_b: Optional[dict[str, Any]] = None
+    highlighted: str = "a"  # "a" or "b" - which track is selected
+    session_id: str = ""
+    comparisons_done: int = 0
+    target_comparisons: int = 15
+    playlist_id: Optional[int] = None
+    genre_filter: Optional[str] = None
+    year_filter: Optional[int] = None
+    source_filter: Optional[str] = None  # 'local', 'spotify', 'soundcloud', etc.
+    session_start: Optional[datetime] = None
+    saved_player_state: Optional[Any] = None  # PlayerState saved before session
+    filtered_tracks: list[dict[str, Any]] = field(default_factory=list)  # Tracks for session
+    ratings_cache: Optional[dict[int, dict[str, Any]]] = None  # Cache of {track_id: {rating, comparison_count}}
 
 
 @dataclass
@@ -183,6 +206,21 @@ class UIState:
 
     # Library scan progress
     scan_progress: ScanProgress = field(default_factory=ScanProgress)
+
+    # Comparison mode state (for Elo-style track comparisons)
+    comparison: ComparisonState = field(default_factory=ComparisonState)
+
+    # Rating history viewer state (for reviewing and deleting ratings)
+    rating_history_visible: bool = False
+    rating_history_ratings: list[dict[str, Any]] = field(default_factory=list)  # All ratings
+    rating_history_selected: int = 0  # Selected rating index
+    rating_history_scroll: int = 0  # Scroll offset
+
+    # Comparison history viewer state (for reviewing Elo comparison decisions)
+    comparison_history_visible: bool = False
+    comparison_history_comparisons: list[dict[str, Any]] = field(default_factory=list)  # All comparisons
+    comparison_history_selected: int = 0  # Selected comparison index
+    comparison_history_scroll: int = 0  # Scroll offset
 
     # UI feedback (toast notifications)
     feedback_message: Optional[str] = None
@@ -918,6 +956,7 @@ def show_analytics_viewer(state: UIState, analytics_data: dict[str, Any]) -> UIS
     """
     # Pre-calculate total line count to avoid re-formatting on every keystroke
     from blessed import Terminal
+
     from music_minion.ui.blessed.components.analytics_viewer import (
         format_analytics_lines,
     )
@@ -1470,3 +1509,216 @@ def scroll_search_detail(state: UIState, delta: int, max_scroll: int) -> UIState
     """
     new_scroll = max(0, min(state.search_detail_scroll + delta, max_scroll))
     return replace(state, search_detail_scroll=new_scroll)
+
+
+def show_rating_history(
+    state: UIState, ratings: list[dict[str, Any]]
+) -> UIState:
+    """
+    Show rating history viewer with ratings.
+
+    Args:
+        state: Current UI state
+        ratings: List of rating dictionaries with track info
+
+    Returns:
+        Updated state with rating history viewer visible
+    """
+    return replace(
+        state,
+        rating_history_visible=True,
+        rating_history_ratings=ratings,
+        rating_history_selected=0,
+        rating_history_scroll=0,
+        # Close all other modals
+        palette_visible=False,
+        wizard_active=False,
+        track_viewer_visible=False,
+        analytics_viewer_visible=False,
+        editor_visible=False,
+        confirmation_active=False,
+        input_text="",
+        cursor_pos=0,
+    )
+
+
+def hide_rating_history(state: UIState) -> UIState:
+    """
+    Hide rating history viewer and reset state.
+
+    Args:
+        state: Current UI state
+
+    Returns:
+        Updated state with rating history viewer hidden
+    """
+    return replace(
+        state,
+        rating_history_visible=False,
+        rating_history_ratings=[],
+        rating_history_selected=0,
+        rating_history_scroll=0,
+    )
+
+
+def move_rating_history_selection(
+    state: UIState, delta: int, visible_items: int = 10
+) -> UIState:
+    """
+    Move rating history selection up or down with scroll adjustment.
+
+    Args:
+        state: Current UI state
+        delta: Direction and amount to move (-1 for up, 1 for down)
+        visible_items: Number of items visible in viewport
+
+    Returns:
+        Updated state with new selection and scroll position
+    """
+    if not state.rating_history_ratings:
+        return state
+
+    new_selected = (state.rating_history_selected + delta) % len(
+        state.rating_history_ratings
+    )
+
+    # Adjust scroll to keep selection visible
+    new_scroll = state.rating_history_scroll
+
+    # Scroll down if selection goes below visible area
+    if new_selected >= state.rating_history_scroll + visible_items:
+        new_scroll = new_selected - visible_items + 1
+
+    # Scroll up if selection goes above visible area
+    elif new_selected < state.rating_history_scroll:
+        new_scroll = new_selected
+
+    return replace(
+        state, rating_history_selected=new_selected, rating_history_scroll=new_scroll
+    )
+
+
+def delete_rating_history_item(state: UIState, index: int) -> UIState:
+    """
+    Delete a rating from the history list.
+
+    Args:
+        state: Current UI state
+        index: Index of rating to delete
+
+    Returns:
+        Updated state with rating removed from list
+    """
+    if not state.rating_history_ratings or index >= len(state.rating_history_ratings):
+        return state
+
+    new_ratings = [
+        r for i, r in enumerate(state.rating_history_ratings) if i != index
+    ]
+
+    # Adjust selection if needed
+    new_selected = state.rating_history_selected
+    if new_selected >= len(new_ratings) and len(new_ratings) > 0:
+        new_selected = len(new_ratings) - 1
+    elif len(new_ratings) == 0:
+        new_selected = 0
+
+    # Adjust scroll if needed
+    new_scroll = state.rating_history_scroll
+    if new_scroll > 0 and new_selected < new_scroll:
+        new_scroll = max(0, new_selected)
+
+    return replace(
+        state,
+        rating_history_ratings=new_ratings,
+        rating_history_selected=new_selected,
+        rating_history_scroll=new_scroll,
+    )
+
+
+def show_comparison_history(
+    state: UIState, comparisons: list[dict[str, Any]]
+) -> UIState:
+    """
+    Show comparison history viewer with comparisons.
+
+    Args:
+        state: Current UI state
+        comparisons: List of comparison dictionaries with track info
+
+    Returns:
+        Updated state with comparison history viewer visible
+    """
+    return replace(
+        state,
+        comparison_history_visible=True,
+        comparison_history_comparisons=comparisons,
+        comparison_history_selected=0,
+        comparison_history_scroll=0,
+        # Close all other modals
+        palette_visible=False,
+        wizard_active=False,
+        track_viewer_visible=False,
+        rating_history_visible=False,
+        analytics_viewer_visible=False,
+        editor_visible=False,
+        confirmation_active=False,
+        input_text="",
+        cursor_pos=0,
+    )
+
+
+def hide_comparison_history(state: UIState) -> UIState:
+    """
+    Hide comparison history viewer and reset state.
+
+    Args:
+        state: Current UI state
+
+    Returns:
+        Updated state with comparison history viewer hidden
+    """
+    return replace(
+        state,
+        comparison_history_visible=False,
+        comparison_history_comparisons=[],
+        comparison_history_selected=0,
+        comparison_history_scroll=0,
+    )
+
+
+def move_comparison_history_selection(
+    state: UIState, delta: int, visible_items: int = 10
+) -> UIState:
+    """
+    Move comparison history selection up or down with scroll adjustment.
+
+    Args:
+        state: Current UI state
+        delta: Direction and amount to move (-1 for up, 1 for down)
+        visible_items: Number of items visible in viewport
+
+    Returns:
+        Updated state with new selection and scroll position
+    """
+    if not state.comparison_history_comparisons:
+        return state
+
+    new_selected = (state.comparison_history_selected + delta) % len(
+        state.comparison_history_comparisons
+    )
+
+    # Adjust scroll to keep selection visible
+    new_scroll = state.comparison_history_scroll
+
+    # Scroll down if selection goes below visible area
+    if new_selected >= state.comparison_history_scroll + visible_items:
+        new_scroll = new_selected - visible_items + 1
+
+    # Scroll up if selection goes above visible area
+    elif new_selected < state.comparison_history_scroll:
+        new_scroll = new_selected
+
+    return replace(
+        state, comparison_history_selected=new_selected, comparison_history_scroll=new_scroll
+    )
