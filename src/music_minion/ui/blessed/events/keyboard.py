@@ -402,8 +402,6 @@ def handle_track_viewer_key(
             return state, None
         elif state.track_viewer_filter_query:
             # List with filter -> Clear filter
-            from ..components.track_search import filter_tracks
-
             state = update_track_viewer_filter(state, "", state.track_viewer_tracks)
             return state, None
         else:
@@ -526,10 +524,11 @@ def handle_track_viewer_key(
         # Backspace - remove last character from filter
         if event["type"] == "backspace":
             if state.track_viewer_filter_query:
-                from ..components.track_search import filter_tracks
+                from ..state_selectors import filter_search_tracks
 
                 new_query = state.track_viewer_filter_query[:-1]
-                filtered = filter_tracks(new_query, state.track_viewer_tracks)
+                # Use memoized selector (convert list to tuple for cache comparison)
+                filtered = filter_search_tracks(new_query, tuple(state.track_viewer_tracks))
                 state = update_track_viewer_filter(state, new_query, filtered)
                 return state, None
 
@@ -538,10 +537,11 @@ def handle_track_viewer_key(
             char = event["char"]
             # Skip shortcut keys
             if char.lower() not in ["p", "d", "e", "a", "f", "q", "j", "k", "l", "u"]:
-                from ..components.track_search import filter_tracks
+                from ..state_selectors import filter_search_tracks
 
                 new_query = state.track_viewer_filter_query + char
-                filtered = filter_tracks(new_query, state.track_viewer_tracks)
+                # Use memoized selector (convert list to tuple for cache comparison)
+                filtered = filter_search_tracks(new_query, tuple(state.track_viewer_tracks))
                 state = update_track_viewer_filter(state, new_query, filtered)
                 return state, None
 
@@ -1174,9 +1174,10 @@ def handle_key(
         if state.palette_visible:
             if state.palette_mode == "search":
                 # Filter tracks in search mode
-                from ..components.track_search import filter_tracks
+                from ..state_selectors import filter_search_tracks
 
-                filtered = filter_tracks(state.input_text, state.search_all_tracks)
+                # Use memoized selector (convert list to tuple for cache comparison)
+                filtered = filter_search_tracks(state.input_text, tuple(state.search_all_tracks))
                 state = update_search_query(state, state.input_text, filtered)
             elif state.palette_mode == "playlist":
                 # Filter playlists by name
@@ -1345,9 +1346,10 @@ def handle_key(
             if state.palette_visible:
                 if state.palette_mode == "search":
                     # Filter tracks in search mode
-                    from ..components.track_search import filter_tracks
+                    from ..state_selectors import filter_search_tracks
 
-                    filtered = filter_tracks(state.input_text, state.search_all_tracks)
+                    # Use memoized selector (convert list to tuple for cache comparison)
+                    filtered = filter_search_tracks(state.input_text, tuple(state.search_all_tracks))
                     state = update_search_query(state, state.input_text, filtered)
                 elif state.palette_mode == "playlist":
                     # Filter playlists by name
