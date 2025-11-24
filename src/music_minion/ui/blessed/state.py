@@ -1,5 +1,6 @@
 """UI state management - immutable state updates."""
 
+from collections import deque
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from time import time
@@ -258,12 +259,11 @@ def update_track_info(state: UIState, track_data: dict[str, Any]) -> UIState:
 
 def add_history_line(state: UIState, text: str, color: str = "white") -> UIState:
     """Add a line to command history and reset scroll to bottom."""
-    new_history = state.history + [(text, color)]
-    # Trim history if it exceeds max size
-    if len(new_history) > MAX_COMMAND_HISTORY:
-        new_history = new_history[-MAX_COMMAND_HISTORY:]
+    # Use deque for automatic eviction, convert to list for state
+    temp = deque(state.history, maxlen=MAX_COMMAND_HISTORY)
+    temp.append((text, color))
     # Reset scroll to bottom when new content added
-    return replace(state, history=new_history, history_scroll=0)
+    return replace(state, history=list(temp), history_scroll=0)
 
 
 def clear_history(state: UIState) -> UIState:
@@ -532,15 +532,12 @@ def add_command_to_history(state: UIState, command: str) -> UIState:
     if state.command_history and state.command_history[-1] == command:
         return replace(state, history_index=None, history_temp_input="")
 
-    # Add command to history
-    new_history = state.command_history + [command]
-
-    # Enforce history size limit
-    if len(new_history) > MAX_COMMAND_HISTORY:
-        new_history = new_history[-MAX_COMMAND_HISTORY:]
+    # Use deque for automatic eviction, convert to list for state
+    temp = deque(state.command_history, maxlen=MAX_COMMAND_HISTORY)
+    temp.append(command)
 
     return replace(
-        state, command_history=new_history, history_index=None, history_temp_input=""
+        state, command_history=list(temp), history_index=None, history_temp_input=""
     )
 
 

@@ -395,13 +395,6 @@ def _handle_internal_command(
 
         return ctx, ui_state, False
 
-    elif cmd.action == "comparison_restore_playback":
-        # Restore playback after comparison session
-        saved_state = cmd.data.get("player_state")
-        if saved_state:
-            ctx = replace(ctx, player_state=saved_state)
-        return ctx, ui_state, False
-
     else:
         # Unknown command action, log it and continue
         ui_state = add_history_line(

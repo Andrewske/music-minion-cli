@@ -1602,11 +1602,4 @@ def exit_comparison_mode(state: UIState) -> tuple[UIState, InternalCommand | Non
 
     new_state = dataclasses.replace(state, comparison=new_comparison)
 
-    # Use InternalCommand to restore playback if needed
-    if comparison.saved_player_state:
-        return new_state, InternalCommand(
-            action="comparison_restore_playback",
-            data={"player_state": comparison.saved_player_state}
-        )
-
     return new_state, None

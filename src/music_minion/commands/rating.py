@@ -1034,9 +1034,6 @@ def handle_rate_command(
             log(f"❌ Failed to select tracks: {e}", level="error")
             return ctx, True
 
-        # Save current playback state
-        saved_state = ctx.player_state
-
         # Generate session ID
         session_id = str(uuid.uuid4())
 
@@ -1055,7 +1052,7 @@ def handle_rate_command(
             year_filter=year_filter,
             source_filter=source_filter,
             session_start=datetime.now(),
-            saved_player_state=saved_state,
+            saved_player_state=None,
             filtered_tracks=tracks,
             ratings_cache=ratings_cache,
         )
