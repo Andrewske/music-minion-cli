@@ -46,6 +46,8 @@ Available commands:
   love              Rate current song as loved
   unlike            Remove SoundCloud like for current song
   note <text>       Add a note to the current song
+  rate [opts]       Start pairwise track comparison (--count=N --genre=X --year=Y)
+  rankings [opts]   Show top-rated tracks (--genre=X --year=Y --limit=N)
   status            Show current song and player status
   history [limit]   Show recent playback history (default: 50 tracks)
   stats             Show library and rating statistics
@@ -96,14 +98,31 @@ Library Commands:
   library                          List all available libraries with track counts
   library active                   Show current active library
   library active <provider>        Switch to provider (local/soundcloud/spotify/all)
-  local                            Switch to local library (shortcut)
-  soundcloud                       Switch to SoundCloud library (shortcut)
-  spotify                          Switch to Spotify library (shortcut)
-  youtube                          Switch to YouTube library (shortcut)
+
+  Provider shortcuts (switch library):
+  local                            Switch to local library
+  soundcloud                       Switch to SoundCloud library
+  spotify                          Switch to Spotify library
+  youtube                          Switch to YouTube library
+
+  Provider-specific commands:
+  local auth                       Authenticate local library
+  local scan                       Scan local music files
+  soundcloud auth                  Authenticate SoundCloud
+  soundcloud sync                  Sync SoundCloud library
+  spotify auth                     Authenticate Spotify
+  spotify sync                     Sync Spotify library
+  spotify device list              List available Spotify devices
+  spotify device set <name/id>     Set preferred Spotify device
+  spotify device clear             Clear device preference
+  youtube auth                     Authenticate YouTube
+  youtube sync                     Sync YouTube library
+
+  Legacy syntax (still supported):
+  auth                             Authenticate with active library provider
+  library auth <provider>          Authenticate with specific provider
   library sync [provider]          Sync tracks from provider
   library sync playlists <provider> Sync playlists from provider
-  auth                             Authenticate with active library provider
-  library auth <provider>          Authenticate with specific provider (OAuth)
   library device list              List available Spotify devices
   library device set <name/id>     Set preferred Spotify device
   library device clear             Clear preferred device setting
@@ -211,6 +230,12 @@ def handle_command(
 
     elif command == "note":
         return rating.handle_note_command(ctx, args)
+
+    elif command == "rate":
+        return rating.handle_rate_command(ctx, command, args)
+
+    elif command == "rankings":
+        return rating.handle_rankings_command(ctx, args)
 
     elif command == "status":
         return playback.handle_status_command(ctx)
@@ -334,16 +359,66 @@ def handle_command(
         return library.handle_library_command(ctx, args)
 
     elif command == "local":
-        return library.switch_active_library(ctx, "local")
+        if not args:
+            return library.switch_active_library(ctx, "local")
+        elif args[0] == "auth":
+            return library.handle_library_command(ctx, ["auth", "local"] + args[1:])
+        elif args[0] == "scan":
+            return admin.handle_scan_command(ctx)
+        else:
+            logger.warning(f"Unknown local subcommand: '{args[0]}'")
+            log(
+                f"Unknown local subcommand: '{args[0]}'. Available: auth, scan",
+                level="error",
+            )
+            return ctx, True
 
     elif command == "soundcloud":
-        return library.switch_active_library(ctx, "soundcloud")
+        if not args:
+            return library.switch_active_library(ctx, "soundcloud")
+        elif args[0] == "auth":
+            return library.handle_library_command(ctx, ["auth", "soundcloud"] + args[1:])
+        elif args[0] == "sync":
+            return library.handle_library_command(ctx, ["sync", "soundcloud"] + args[1:])
+        else:
+            logger.warning(f"Unknown soundcloud subcommand: '{args[0]}'")
+            log(
+                f"Unknown soundcloud subcommand: '{args[0]}'. Available: auth, sync",
+                level="error",
+            )
+            return ctx, True
 
     elif command == "spotify":
-        return library.switch_active_library(ctx, "spotify")
+        if not args:
+            return library.switch_active_library(ctx, "spotify")
+        elif args[0] == "auth":
+            return library.handle_library_command(ctx, ["auth", "spotify"] + args[1:])
+        elif args[0] == "sync":
+            return library.handle_library_command(ctx, ["sync", "spotify"] + args[1:])
+        elif args[0] == "device":
+            return library.handle_library_command(ctx, ["device"] + args[1:])
+        else:
+            logger.warning(f"Unknown spotify subcommand: '{args[0]}'")
+            log(
+                f"Unknown spotify subcommand: '{args[0]}'. Available: auth, sync, device",
+                level="error",
+            )
+            return ctx, True
 
     elif command == "youtube":
-        return library.switch_active_library(ctx, "youtube")
+        if not args:
+            return library.switch_active_library(ctx, "youtube")
+        elif args[0] == "auth":
+            return library.handle_library_command(ctx, ["auth", "youtube"] + args[1:])
+        elif args[0] == "sync":
+            return library.handle_library_command(ctx, ["sync", "youtube"] + args[1:])
+        else:
+            logger.warning(f"Unknown youtube subcommand: '{args[0]}'")
+            log(
+                f"Unknown youtube subcommand: '{args[0]}'. Available: auth, sync",
+                level="error",
+            )
+            return ctx, True
 
     elif command == "auth":
         return library.handle_auth_command(ctx)
