@@ -14,8 +14,24 @@ from music_minion.domain import library, playback, playlists
 from music_minion.domain.playback import resolver
 
 
+def _get_track_source(track: library.Track) -> Optional[str]:
+    """Determine which library a track belongs to."""
+    if track.local_path:
+        return "local"
+    elif track.soundcloud_id:
+        return "soundcloud"
+    elif track.spotify_id:
+        return "spotify"
+    elif track.youtube_id:
+        return "youtube"
+    return None
+
+
 def get_available_tracks(ctx: AppContext) -> List[library.Track]:
-    """Get available tracks (respects active playlist and excludes archived)."""
+    """Get available tracks (respects active library, playlist, and excludes archived)."""
+    # Get active library for filtering
+    active_library = database.get_active_provider()
+
     # Get archived track IDs
     archived_ids = set(database.get_archived_tracks())
 
@@ -61,6 +77,10 @@ def get_available_tracks(ctx: AppContext) -> List[library.Track]:
                 available.append(t)
     else:
         available = ctx.music_tracks
+
+    # Filter by active library (unless "all")
+    if active_library != "all":
+        available = [t for t in available if _get_track_source(t) == active_library]
 
     # Exclude archived tracks using O(1) dictionary lookups
     filtered = []
