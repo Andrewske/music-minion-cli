@@ -460,6 +460,30 @@ def show_device_palette(
     )
 
 
+def show_rankings_palette(
+    state: UIState, items: list[tuple[str, str, str, str]], title: str = "Top Rated Tracks"
+) -> UIState:
+    """Show rankings palette with top-rated tracks.
+
+    Args:
+        state: Current UI state
+        items: List of ranking items as (rank, artist_title, rating_icon, rating_info)
+        title: Title to display in header
+
+    Returns:
+        Updated state with palette in rankings mode
+    """
+    return replace(
+        state,
+        palette_visible=True,
+        palette_mode="rankings",
+        palette_items=items,
+        palette_selected=0,
+        palette_scroll=0,
+        palette_query=title,  # Store title in query field for display
+    )
+
+
 def enable_palette_search_mode(
     state: UIState, all_tracks: list[dict[str, Any]]
 ) -> UIState:

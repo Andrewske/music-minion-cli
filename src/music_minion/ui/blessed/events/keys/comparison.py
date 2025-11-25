@@ -19,10 +19,11 @@ def handle_comparison_key(key: Keystroke, state: UIState) -> tuple[UIState, Inte
     Handle keyboard input during comparison mode.
 
     Keyboard shortcuts:
-    - Left Arrow / A: Highlight Track A (left side)
-    - Right Arrow / D: Highlight Track B (right side)
+    - Left Arrow: Highlight Track A (left side)
+    - Right Arrow: Highlight Track B (right side)
     - Space: Play currently highlighted track
     - Enter: Choose highlighted track as winner, record comparison
+    - A: Archive highlighted track (mark to never play again)
     - Esc / Q: Exit comparison mode, restore playback
 
     Args:
@@ -40,16 +41,20 @@ def handle_comparison_key(key: Keystroke, state: UIState) -> tuple[UIState, Inte
     # Log key press for debugging
     logger.debug(f"Comparison mode key: name={key.name}, event_type={event['type']}, char={event.get('char')}")
 
-    # Arrow keys or A/D: Change highlighted track
-    if event["type"] == "arrow_left" or (event["type"] == "char" and event["char"] and event["char"].lower() == "a"):
+    # Arrow keys: Change highlighted track
+    if event["type"] == "arrow_left":
         new_comparison = dataclasses.replace(comparison, highlighted="a")
         new_state = dataclasses.replace(state, comparison=new_comparison)
         return new_state, None
 
-    elif event["type"] == "arrow_right" or (event["type"] == "char" and event["char"] and event["char"].lower() == "d"):
+    elif event["type"] == "arrow_right":
         new_comparison = dataclasses.replace(comparison, highlighted="b")
         new_state = dataclasses.replace(state, comparison=new_comparison)
         return new_state, None
+
+    # A: Archive highlighted track
+    elif event["type"] == "char" and event["char"] and event["char"].lower() == "a":
+        return handle_archive_track(state)
 
     # Space: Play highlighted track
     elif key == ' ' or event["type"] == "char" and event["char"] == " ":
@@ -230,4 +235,59 @@ def exit_comparison_mode(state: UIState) -> tuple[UIState, InternalCommand | Non
 
     new_state = dataclasses.replace(state, comparison=new_comparison)
 
+    return new_state, None
+
+
+def handle_archive_track(state: UIState) -> tuple[UIState, InternalCommand | None]:
+    """
+    Archive the highlighted track (mark to never play again) and load next pair.
+
+    Args:
+        state: Current UI state
+
+    Returns:
+        Tuple of (updated state, command to execute or None)
+    """
+    from music_minion.core import database
+
+    comparison = state.comparison
+    track = comparison.track_a if comparison.highlighted == "a" else comparison.track_b
+
+    if not track:
+        log("No track to archive", level="warning")
+        return state, None
+
+    track_id = track.get("id")
+    if not track_id:
+        log("Track has no ID", level="error")
+        return state, None
+
+    # Archive the track
+    database.add_rating(track_id, "archive", "Archived during comparison")
+    title = track.get("title", "Unknown")
+    artist = track.get("artist", "Unknown")
+    log(f"📦 Archived: {artist} - {title}", level="info")
+
+    # Remove archived track from filtered_tracks to prevent it appearing again
+    filtered_tracks = [t for t in comparison.filtered_tracks if t.get("id") != track_id]
+
+    # Check if we still have enough tracks
+    if len(filtered_tracks) < 2:
+        log("Not enough tracks remaining after archive", level="warning")
+        return end_comparison_session(state)
+
+    # Select a new pair (replacing the archived track)
+    ratings_cache = comparison.ratings_cache or {}
+    track_a, track_b = select_strategic_pair(filtered_tracks, ratings_cache)
+
+    # Update comparison state
+    new_comparison = dataclasses.replace(
+        comparison,
+        track_a=track_a,
+        track_b=track_b,
+        highlighted="a",
+        filtered_tracks=filtered_tracks,
+    )
+
+    new_state = dataclasses.replace(state, comparison=new_comparison)
     return new_state, None

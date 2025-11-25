@@ -114,7 +114,7 @@ def render_comparison_overlay(
 
     # Footer help text
     if line_num < height:
-        footer = "   [←/→ or A/D] Select  [Space] Play  [Enter] Choose  [Esc/Q] Exit"
+        footer = "   [←/→] Select  [Space] Play  [Enter] Choose  [A] Archive  [Esc] Exit"
         sys.stdout.write(term.move_xy(0, y + line_num) + term.white(footer))
         line_num += 1
 
@@ -189,8 +189,8 @@ def _render_tracks_side_by_side(
         # Clear the line first to remove any leftover placeholder text
         sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
 
-        artist_a = track_a.get("artist", "Unknown")
-        artist_b = track_b.get("artist", "Unknown")
+        artist_a = track_a.get("artist") or "Unknown"
+        artist_b = track_b.get("artist") or "Unknown"
 
         # Truncate to fit in half-width
         max_width_a = center_col - 4
@@ -227,8 +227,8 @@ def _render_tracks_side_by_side(
         # Clear the line first to remove any leftover placeholder text
         sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
 
-        title_a = track_a.get("title", "Unknown")
-        title_b = track_b.get("title", "Unknown")
+        title_a = track_a.get("title") or "Unknown"
+        title_b = track_b.get("title") or "Unknown"
 
         # Truncate to fit
         max_width_a = center_col - 4
@@ -262,7 +262,7 @@ def _render_tracks_side_by_side(
 
     # Album and year
     if line_num < max_height:
-        album_a = track_a.get("album", "")
+        album_a = track_a.get("album") or ""
         year_a = track_a.get("year")
         info_a = (
             f"{album_a} • {year_a}"
@@ -272,7 +272,7 @@ def _render_tracks_side_by_side(
             else ""
         )
 
-        album_b = track_b.get("album", "")
+        album_b = track_b.get("album") or ""
         year_b = track_b.get("year")
         info_b = (
             f"{album_b} • {year_b}"
@@ -321,9 +321,9 @@ def _render_tracks_side_by_side(
         # Clear the line first to remove any leftover placeholder text
         sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
 
-        rating_val_a = rating_a.get("rating", 1500)
+        rating_val_a = round(rating_a.get("rating", 1500))
         count_a = rating_a.get("comparison_count", 0)
-        rating_val_b = rating_b.get("rating", 1500)
+        rating_val_b = round(rating_b.get("rating", 1500))
         count_b = rating_b.get("comparison_count", 0)
 
         # Format rating text with icon based on comparison count threshold

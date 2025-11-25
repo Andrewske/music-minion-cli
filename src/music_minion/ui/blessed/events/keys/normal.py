@@ -247,7 +247,7 @@ def _handle_enter_search_mode(
 
 def _handle_enter_palette_selection(
     state: UIState,
-) -> tuple[UIState, str | None]:
+) -> tuple[UIState, str | InternalCommand | None]:
     """Handle Enter to select palette item."""
     if not state.palette_items or state.palette_selected >= len(state.palette_items):
         return state, None
@@ -256,14 +256,24 @@ def _handle_enter_palette_selection(
 
     if state.palette_mode == "playlist":
         command = f"__SELECT_PLAYLIST__ {selected[1]}"
+        state = hide_palette(state)
+        state = set_input_text(state, "")
+        return state, command
     elif state.palette_mode == "device":
         command = selected[2]
+        state = hide_palette(state)
+        state = set_input_text(state, "")
+        return state, command
+    elif state.palette_mode == "rankings":
+        # Rankings items: (rank, artist_title, icon, rating_info, track_id)
+        track_id = selected[4]
+        state = hide_palette(state)
+        return state, InternalCommand(action="track_viewer_play", data={"track_id": track_id})
     else:
         command = selected[1]
-
-    state = hide_palette(state)
-    state = set_input_text(state, "")
-    return state, command
+        state = hide_palette(state)
+        state = set_input_text(state, "")
+        return state, command
 
 
 def _handle_enter(
@@ -318,6 +328,27 @@ def _handle_view_playlist(
         state = hide_palette(state)
         return state, InternalCommand(
             action="view_playlist_tracks", data={"playlist_name": playlist_name}
+        )
+
+    return state, None
+
+
+def _handle_play_ranking(
+    state: UIState, event: dict
+) -> tuple[UIState, InternalCommand | None] | None:
+    """Handle 'p' key to play selected track in rankings mode."""
+    if event["type"] != "char" or event["char"] != "p":
+        return None
+
+    if not (state.palette_visible and state.palette_mode == "rankings"):
+        return None
+
+    if state.palette_items and state.palette_selected < len(state.palette_items):
+        # Rankings items: (rank, artist_title, icon, rating_info, track_id)
+        track_id = state.palette_items[state.palette_selected][4]
+        state = hide_palette(state)
+        return state, InternalCommand(
+            action="track_viewer_play", data={"track_id": track_id}
         )
 
     return state, None
@@ -516,6 +547,11 @@ def handle_normal_mode_key(
 
     # View playlist ('v' key)
     result = _handle_view_playlist(state, event)
+    if result is not None:
+        return result
+
+    # Play ranking ('p' key)
+    result = _handle_play_ranking(state, event)
     if result is not None:
         return result
 
