@@ -26,6 +26,418 @@ from music_minion.ui.blessed.state import (
     move_detail_selection,
 )
 from music_minion.ui.blessed.styles.palette import filter_commands, COMMAND_DEFINITIONS
+from music_minion.ui.blessed.state_selectors import filter_search_tracks
+from music_minion.ui.blessed.components.palette import (
+    filter_playlist_items,
+    load_playlist_items,
+)
+
+
+def _update_palette_filter(state: UIState) -> UIState:
+    """Update palette filter based on current mode and input text."""
+    if not state.palette_visible:
+        return state
+
+    if state.palette_mode == "search":
+        # Filter tracks in search mode (use memoized selector)
+        filtered = filter_search_tracks(state.input_text, tuple(state.search_all_tracks))
+        return update_search_query(state, state.input_text, filtered)
+    elif state.palette_mode == "playlist":
+        # Filter playlists by name
+        all_items = load_playlist_items(state.active_library)
+        filtered = filter_playlist_items(state.input_text, all_items)
+        return update_palette_filter(state, state.input_text, filtered)
+    else:
+        # Filter commands (remove "/" prefix)
+        query = state.input_text[1:] if state.input_text.startswith("/") else state.input_text
+        filtered = filter_commands(query, COMMAND_DEFINITIONS)
+        return update_palette_filter(state, query, filtered)
+
+
+def _confirm_action(state: UIState) -> tuple[UIState, InternalCommand]:
+    """Execute confirmed action based on confirmation type."""
+    if state.confirmation_type == "delete_playlist":
+        cmd = InternalCommand(
+            action="delete_playlist",
+            data={"playlist_name": state.confirmation_data["playlist_name"]},
+        )
+    else:  # remove_track_from_playlist
+        cmd = InternalCommand(
+            action="remove_track_from_playlist",
+            data={
+                "track_id": state.confirmation_data["track_id"],
+                "playlist_name": state.confirmation_data["playlist_name"],
+            },
+        )
+    return hide_confirmation(state), cmd
+
+
+def _handle_confirmation_dialog(
+    state: UIState, event: dict
+) -> tuple[UIState, str | InternalCommand | None] | None:
+    """Handle confirmation dialog keys. Returns None if not in confirmation mode."""
+    if not state.confirmation_active:
+        return None
+
+    # Enter or 'y' confirms
+    if event["type"] == "enter" or (event["char"] and event["char"].lower() == "y"):
+        return _confirm_action(state)
+
+    # 'n' or Escape cancels
+    if (event["char"] and event["char"].lower() == "n") or event["type"] == "escape":
+        return hide_confirmation(state), None
+
+    # Ignore other keys during confirmation
+    return state, None
+
+
+def _handle_review_mode(
+    state: UIState, event: dict
+) -> tuple[UIState, str | InternalCommand | None] | None:
+    """Handle review mode input. Returns None if not in review mode."""
+    if not state.review_mode:
+        return None
+
+    # Enter sends input to review handler
+    if event["type"] == "enter" and state.input_text.strip():
+        user_input = state.input_text.strip()
+        state = set_input_text(state, "")
+        return state, InternalCommand(action="review_input", data={"input": user_input})
+
+    return None
+
+
+def _is_idle_mode(state: UIState) -> bool:
+    """Check if UI is in idle mode (no modals, no input)."""
+    return (
+        not state.palette_visible
+        and not state.track_viewer_visible
+        and not state.wizard_active
+        and not state.analytics_viewer_visible
+        and not state.editor_visible
+        and not state.review_mode
+        and not state.input_text
+    )
+
+
+def _handle_history_scrolling(
+    state: UIState, event: dict
+) -> tuple[UIState, None] | None:
+    """Handle history scrolling keys (Page Up/Down, Home/End)."""
+    # Only allow scrolling when input is empty and no modal active
+    if not _is_idle_mode(state) or state.input_text:
+        return None
+
+    if event["type"] == "page_up":
+        return scroll_history_up(state, lines=20), None
+    elif event["type"] == "page_down":
+        return scroll_history_down(state, lines=20), None
+    elif event["type"] == "home":
+        return scroll_history_to_top(state), None
+    elif event["type"] == "end":
+        return scroll_history_to_bottom(state), None
+
+    return None
+
+
+def _handle_escape(state: UIState, event: dict) -> tuple[UIState, None] | None:
+    """Handle Escape key (hide palette or navigate back)."""
+    if event["type"] != "escape":
+        return None
+
+    if state.palette_visible:
+        # Search mode: Navigate back or close
+        if state.palette_mode == "search" and state.search_mode == "detail":
+            return set_search_mode(state, "search"), None
+        else:
+            return hide_palette(state), None
+
+    return state, None
+
+
+def _autofill_command(state: UIState) -> UIState:
+    """Autofill input with selected command from palette."""
+    if state.palette_items and state.palette_selected < len(state.palette_items):
+        selected_cmd = state.palette_items[state.palette_selected][1]
+        return set_input_text(state, selected_cmd)
+    return state
+
+
+def _handle_arrow_up(
+    state: UIState, visible_items: int
+) -> tuple[UIState, None]:
+    """Handle arrow up navigation."""
+    if state.palette_visible:
+        if state.palette_mode == "search":
+            if state.search_mode == "search":
+                return move_search_selection(state, -1, visible_items), None
+            elif state.search_mode == "detail":
+                return move_detail_selection(state, -1), None
+        else:
+            # Palette navigation with autofill
+            state = move_palette_selection(state, -1, visible_items)
+            return _autofill_command(state), None
+    else:
+        # Command history navigation
+        return navigate_history_up(state), None
+
+
+def _handle_arrow_down(
+    state: UIState, visible_items: int
+) -> tuple[UIState, None]:
+    """Handle arrow down navigation."""
+    if state.palette_visible:
+        if state.palette_mode == "search":
+            if state.search_mode == "search":
+                return move_search_selection(state, 1, visible_items), None
+            elif state.search_mode == "detail":
+                return move_detail_selection(state, 1), None
+        else:
+            # Palette navigation with autofill
+            state = move_palette_selection(state, 1, visible_items)
+            return _autofill_command(state), None
+    else:
+        # Command history navigation
+        return navigate_history_down(state), None
+
+
+def _execute_search_action(
+    state: UIState, track_id: int
+) -> tuple[UIState, InternalCommand | None]:
+    """Execute selected search detail action."""
+    action_map = [
+        ("search_play_track", {}),
+        ("search_add_to_playlist", {}),
+        ("search_edit_metadata", {}),
+        (None, {}),  # Cancel
+    ]
+    action_name, action_data = action_map[state.search_detail_selection]
+
+    if action_name:
+        state = hide_palette(state)
+        action_data["track_id"] = track_id
+        return state, InternalCommand(action=action_name, data=action_data)
+    else:
+        return set_search_mode(state, "search"), None
+
+
+def _handle_enter_search_mode(
+    state: UIState,
+) -> tuple[UIState, str | InternalCommand | None] | None:
+    """Handle Enter in search mode."""
+    if state.palette_mode != "search":
+        return None
+
+    if not state.search_filtered_tracks or state.search_selected >= len(
+        state.search_filtered_tracks
+    ):
+        return state, None
+
+    track_id = state.search_filtered_tracks[state.search_selected].get("id")
+    if track_id is None:
+        return state, None
+
+    if state.search_mode == "search":
+        return set_search_mode(state, "detail"), None
+    elif state.search_mode == "detail":
+        return _execute_search_action(state, track_id)
+
+    return state, None
+
+
+def _handle_enter_palette_selection(
+    state: UIState,
+) -> tuple[UIState, str | None]:
+    """Handle Enter to select palette item."""
+    if not state.palette_items or state.palette_selected >= len(state.palette_items):
+        return state, None
+
+    selected = state.palette_items[state.palette_selected]
+
+    if state.palette_mode == "playlist":
+        command = f"__SELECT_PLAYLIST__ {selected[1]}"
+    elif state.palette_mode == "device":
+        command = selected[2]
+    else:
+        command = selected[1]
+
+    state = hide_palette(state)
+    state = set_input_text(state, "")
+    return state, command
+
+
+def _handle_enter(
+    state: UIState, event: dict
+) -> tuple[UIState, str | InternalCommand | None] | None:
+    """Handle Enter key (execute command or select palette item)."""
+    if event["type"] != "enter":
+        return None
+
+    if state.palette_visible:
+        # Try search mode first
+        result = _handle_enter_search_mode(state)
+        if result:
+            return result
+        # Fall back to palette selection
+        return _handle_enter_palette_selection(state)
+    else:
+        # Execute typed command
+        if state.input_text.strip():
+            command = state.input_text.strip()
+            state = set_input_text(state, "")
+            return state, command
+
+    return state, None
+
+
+def _handle_backspace(
+    state: UIState, event: dict
+) -> tuple[UIState, None] | None:
+    """Handle backspace key (delete character and update filter)."""
+    if event["type"] != "backspace":
+        return None
+
+    state = delete_input_char(state)
+    state = reset_history_navigation(state)
+    state = _update_palette_filter(state)
+    return state, None
+
+
+def _handle_view_playlist(
+    state: UIState, event: dict
+) -> tuple[UIState, InternalCommand | None] | None:
+    """Handle 'v' key to view playlist tracks."""
+    if event["type"] != "char" or event["char"] != "v":
+        return None
+
+    if not (state.palette_visible and state.palette_mode == "playlist"):
+        return None
+
+    if state.palette_items and state.palette_selected < len(state.palette_items):
+        playlist_name = state.palette_items[state.palette_selected][1]
+        state = hide_palette(state)
+        return state, InternalCommand(
+            action="view_playlist_tracks", data={"playlist_name": playlist_name}
+        )
+
+    return state, None
+
+
+def _handle_delete_key(
+    state: UIState, event: dict
+) -> tuple[UIState, None] | None:
+    """Handle delete key (delete playlist or backspace)."""
+    if event["type"] != "delete":
+        return None
+
+    # Delete playlist if in playlist palette mode
+    if state.palette_visible and state.palette_mode == "playlist":
+        if state.palette_items and state.palette_selected < len(state.palette_items):
+            playlist_name = state.palette_items[state.palette_selected][1]
+            state = show_confirmation(state, "delete_playlist", {"playlist_name": playlist_name})
+        return state, None
+    else:
+        # Normal delete (backspace)
+        state = delete_input_char(state)
+        state = reset_history_navigation(state)
+        state = _update_palette_filter(state)
+        return state, None
+
+
+def _handle_seek_controls(
+    state: UIState, event: dict
+) -> tuple[UIState, InternalCommand] | None:
+    """Handle seek controls (0-9, arrows, shift+arrows) in idle mode."""
+    if not _is_idle_mode(state):
+        return None
+
+    # Numeric keys 0-9: Jump to percentage
+    if event["type"] == "char" and event["char"] and event["char"].isdigit():
+        percentage = int(event["char"]) * 10
+        return state, InternalCommand(action="seek_percentage", data={"percentage": percentage})
+
+    # Map event types to seek commands
+    seek_map = {
+        "arrow_left": -5.0,
+        "arrow_right": 5.0,
+        "shift_arrow_left": -1.0,
+        "shift_arrow_right": 1.0,
+    }
+    seconds = seek_map.get(event["type"])
+    if seconds is not None:
+        return state, InternalCommand(action="seek_relative", data={"seconds": seconds})
+
+    return None
+
+
+def _handle_search_shortcuts(
+    state: UIState, char: str
+) -> tuple[UIState, InternalCommand] | None:
+    """Handle search detail mode shortcuts (p/a/e)."""
+    if not (
+        state.palette_visible
+        and state.palette_mode == "search"
+        and state.search_mode == "detail"
+    ):
+        return None
+
+    if not state.search_filtered_tracks or state.search_selected >= len(
+        state.search_filtered_tracks
+    ):
+        return None
+
+    track_id = state.search_filtered_tracks[state.search_selected].get("id")
+    if track_id is None:
+        return None
+
+    action_map = {"p": "search_play_track", "a": "search_add_to_playlist", "e": "search_edit_metadata"}
+    action = action_map.get(char.lower())
+
+    if action:
+        return hide_palette(state), InternalCommand(action=action, data={"track_id": track_id})
+
+    return None
+
+
+def _trigger_command_palette(state: UIState) -> UIState:
+    """Trigger command palette with '/' character."""
+    state = append_input_char(state, "/")
+    filtered = filter_commands("", COMMAND_DEFINITIONS)
+    state = update_palette_filter(state, "", filtered)
+    return show_palette(state)
+
+
+def _handle_character_input(
+    state: UIState, event: dict
+) -> tuple[UIState, str | InternalCommand | None] | None:
+    """Handle regular character input and filtering."""
+    if event["type"] != "char" or not event["char"]:
+        return None
+
+    char = event["char"]
+
+    # Check for search shortcuts first
+    shortcut_result = _handle_search_shortcuts(state, char)
+    if shortcut_result:
+        return shortcut_result
+
+    # Reset history navigation when typing
+    state = reset_history_navigation(state)
+
+    # Space closes palette after selection
+    if char == " " and state.palette_visible and state.input_text:
+        state = hide_palette(state)
+        state = append_input_char(state, char)
+        return state, None
+
+    # "/" triggers palette
+    if char == "/" and not state.input_text:
+        return _trigger_command_palette(state), None
+
+    # Regular character input
+    state = append_input_char(state, char)
+    state = _update_palette_filter(state)
+    return state, None
 
 
 def handle_normal_mode_key(
@@ -36,18 +448,16 @@ def handle_normal_mode_key(
     """
     Handle keyboard events for normal mode (no modals active).
 
-    Handles:
-    - Confirmation dialogs
+    Dispatches to focused sub-handlers for each key type:
+    - Confirmation dialogs (highest priority)
     - Review mode input
-    - Ctrl+C (quit)
-    - Ctrl+L (clear history)
+    - Global shortcuts (Ctrl+C, Ctrl+L)
     - History scrolling (Page Up/Down, Home/End)
-    - Escape (hide palette or navigate back in search)
+    - Escape (hide palette or navigate back)
     - Arrow navigation (palette or command history)
     - Enter (execute command or select palette item)
     - Backspace/Delete (input editing + filter updates)
     - 'v' key (view playlist tracks)
-    - Delete key (delete playlist)
     - Seek controls (0-9, arrows, shift+arrows)
     - Regular characters (input + filtering)
 
@@ -59,434 +469,69 @@ def handle_normal_mode_key(
     Returns:
         Tuple of (updated state, command to execute or None)
     """
-    command_to_execute = None
+    # Priority order: confirmation > review > shortcuts > navigation > input
 
-    # Handle confirmation dialog keys (highest priority)
-    if state.confirmation_active:
-        if event["type"] == "enter" or (event["char"] and event["char"].lower() == "y"):
-            # Confirmed (Enter defaults to Yes) - trigger action based on confirmation type
-            if state.confirmation_type == "delete_playlist":
-                command_to_execute = InternalCommand(
-                    action="delete_playlist",
-                    data={"playlist_name": state.confirmation_data["playlist_name"]},
-                )
-                state = hide_confirmation(state)
-                return state, command_to_execute
-            elif state.confirmation_type == "remove_track_from_playlist":
-                command_to_execute = InternalCommand(
-                    action="remove_track_from_playlist",
-                    data={
-                        "track_id": state.confirmation_data["track_id"],
-                        "playlist_name": state.confirmation_data["playlist_name"],
-                    },
-                )
-                state = hide_confirmation(state)
-                return state, command_to_execute
-        elif (
-            event["char"] and event["char"].lower() == "n" or event["type"] == "escape"
-        ):
-            # Cancelled
-            state = hide_confirmation(state)
-            return state, None
-        # Ignore other keys during confirmation
-        return state, None
+    # Confirmation dialog (highest priority)
+    result = _handle_confirmation_dialog(state, event)
+    if result is not None:
+        return result
 
-    # Handle review mode keys
-    if state.review_mode:
-        # In review mode, Enter sends input to review handler
-        if event["type"] == "enter" and state.input_text.strip():
-            # Return special command to trigger review handler
-            user_input = state.input_text.strip()
-            state = set_input_text(state, "")
-            # Use InternalCommand to pass review input
-            return state, InternalCommand(
-                action="review_input", data={"input": user_input}
-            )
+    # Review mode
+    result = _handle_review_mode(state, event)
+    if result is not None:
+        return result
 
-    # Handle Ctrl+C (quit)
+    # Global shortcuts
     if event["type"] == "ctrl_c":
         return state, "QUIT"
-
-    # Handle Ctrl+L (clear history)
     if event["type"] == "ctrl_l":
-        state = clear_history(state)
-        return state, None
+        return clear_history(state), None
 
-    # Handle history scrolling (Ctrl+U/D, Home/End) - only when input is empty and no modal active
-    # This allows scrolling through command history output (like analytics) without conflicting with typing
-    if (
-        not state.palette_visible
-        and not state.wizard_active
-        and not state.track_viewer_visible
-        and not state.review_mode
-        and not state.input_text
-    ):  # Only scroll when input is empty
-        if event["type"] == "page_up":
-            # Scroll history up by ~visible height (Ctrl+U)
-            state = scroll_history_up(state, lines=20)
-            return state, None
-        elif event["type"] == "page_down":
-            # Scroll history down by ~visible height (Ctrl+D)
-            state = scroll_history_down(state, lines=20)
-            return state, None
-        elif event["type"] == "home":
-            # Jump to top of history (oldest messages)
-            state = scroll_history_to_top(state)
-            return state, None
-        elif event["type"] == "end":
-            # Jump to bottom of history (newest messages)
-            state = scroll_history_to_bottom(state)
-            return state, None
+    # History scrolling
+    result = _handle_history_scrolling(state, event)
+    if result is not None:
+        return result
 
-    # Handle Escape (hide palette or navigate back in search modes)
-    if event["type"] == "escape":
-        if state.palette_visible:
-            # Search mode: Navigate back or close
-            if state.palette_mode == "search":
-                if state.search_mode == "detail":
-                    # Detail -> Search
-                    state = set_search_mode(state, "search")
-                else:
-                    # Search -> Close
-                    state = hide_palette(state)
-            else:
-                # Other modes: just close palette
-                state = hide_palette(state)
-        return state, None
+    # Escape
+    result = _handle_escape(state, event)
+    if result is not None:
+        return result
 
-    # Calculate visible items (subtract header and footer lines)
+    # Arrow navigation
     visible_items = max(1, palette_height - 2)
-
-    # Handle arrows - palette navigation OR command history navigation
     if event["type"] == "arrow_up":
-        if state.palette_visible:
-            if state.palette_mode == "search":
-                # Search mode: different behavior based on current mode
-                if state.search_mode == "search":
-                    # Navigate tracks
-                    state = move_search_selection(state, -1, visible_items)
-                elif state.search_mode == "detail":
-                    # Navigate action menu (4 items)
-                    state = move_detail_selection(state, -1)
-            else:
-                # Palette navigation with autofill
-                state = move_palette_selection(state, -1, visible_items)
-                # Autofill input with selected command (not for search)
-                if state.palette_items and state.palette_selected < len(
-                    state.palette_items
-                ):
-                    selected_cmd = state.palette_items[state.palette_selected][
-                        1
-                    ]  # Command name
-                    state = set_input_text(state, selected_cmd)
-        else:
-            # Command history navigation (when palette not visible)
-            state = navigate_history_up(state)
-        return state, None
-
+        return _handle_arrow_up(state, visible_items)
     if event["type"] == "arrow_down":
-        if state.palette_visible:
-            if state.palette_mode == "search":
-                # Search mode: different behavior based on current mode
-                if state.search_mode == "search":
-                    # Navigate tracks
-                    state = move_search_selection(state, 1, visible_items)
-                elif state.search_mode == "detail":
-                    # Navigate action menu (4 items)
-                    state = move_detail_selection(state, 1)
-            else:
-                # Palette navigation with autofill
-                state = move_palette_selection(state, 1, visible_items)
-                # Autofill input with selected command (not for search)
-                if state.palette_items and state.palette_selected < len(
-                    state.palette_items
-                ):
-                    selected_cmd = state.palette_items[state.palette_selected][
-                        1
-                    ]  # Command name
-                    state = set_input_text(state, selected_cmd)
-        else:
-            # Command history navigation (when palette not visible)
-            state = navigate_history_down(state)
-        return state, None
+        return _handle_arrow_down(state, visible_items)
 
-    # Handle Enter (execute command or select palette item)
-    if event["type"] == "enter":
-        command_to_execute = None
+    # Enter
+    result = _handle_enter(state, event)
+    if result is not None:
+        return result
 
-        if state.palette_visible:
-            # Search mode: Navigate to detail or execute action
-            if state.palette_mode == "search":
-                if state.search_filtered_tracks and state.search_selected < len(
-                    state.search_filtered_tracks
-                ):
-                    selected_track = state.search_filtered_tracks[state.search_selected]
-                    track_id = selected_track.get("id")
+    # Backspace
+    result = _handle_backspace(state, event)
+    if result is not None:
+        return result
 
-                    if track_id is not None:
-                        if state.search_mode == "search":
-                            # Search -> Detail: Show track details
-                            state = set_search_mode(state, "detail")
-                            return state, None
-                        elif state.search_mode == "detail":
-                            # Detail -> Execute: Execute selected action
-                            action_map = [
-                                ("search_play_track", {}),
-                                ("search_add_to_playlist", {}),
-                                ("search_edit_metadata", {}),
-                                (None, {}),  # Cancel (do nothing)
-                            ]
-                            action_name, action_data = action_map[
-                                state.search_detail_selection
-                            ]
+    # View playlist ('v' key)
+    result = _handle_view_playlist(state, event)
+    if result is not None:
+        return result
 
-                            if action_name:
-                                # Close search and execute action
-                                state = hide_palette(state)
-                                action_data["track_id"] = track_id
-                                return state, InternalCommand(
-                                    action=action_name, data=action_data
-                                )
-                            else:
-                                # Cancel: go back to search
-                                state = set_search_mode(state, "search")
-                                return state, None
-                return state, None
+    # Delete key
+    result = _handle_delete_key(state, event)
+    if result is not None:
+        return result
 
-            # Command/Playlist mode: select item
-            elif state.palette_items:
-                if state.palette_selected < len(state.palette_items):
-                    selected = state.palette_items[state.palette_selected]
+    # Seek controls
+    result = _handle_seek_controls(state, event)
+    if result is not None:
+        return result
 
-                    # Different handling based on palette mode
-                    if state.palette_mode == "playlist":
-                        # For playlist mode, send special command with playlist name
-                        playlist_name = selected[1]  # Playlist name
-                        command_to_execute = f"__SELECT_PLAYLIST__ {playlist_name}"
-                    elif state.palette_mode == "device":
-                        # For device mode, send special command with device command
-                        device_command = selected[2]  # Command to execute
-                        command_to_execute = device_command
-                    else:
-                        # For command mode, just use the command name
-                        command_to_execute = selected[1]  # Command name
-
-                    state = hide_palette(state)
-                    state = set_input_text(state, "")
-        else:
-            # Execute typed command
-            if state.input_text.strip():
-                command_to_execute = state.input_text.strip()
-                state = set_input_text(state, "")
-
-        return state, command_to_execute
-
-    # Handle backspace
-    if event["type"] == "backspace":
-        state = delete_input_char(state)
-        state = reset_history_navigation(state)
-
-        # Update palette filter if visible
-        if state.palette_visible:
-            if state.palette_mode == "search":
-                # Filter tracks in search mode
-                from music_minion.ui.blessed.state_selectors import filter_search_tracks
-
-                # Use memoized selector (convert list to tuple for cache comparison)
-                filtered = filter_search_tracks(state.input_text, tuple(state.search_all_tracks))
-                state = update_search_query(state, state.input_text, filtered)
-            elif state.palette_mode == "playlist":
-                # Filter playlists by name
-                from music_minion.ui.blessed.components.palette import (
-                    filter_playlist_items,
-                    load_playlist_items,
-                )
-
-                all_items = load_playlist_items(state.active_library)
-                filtered = filter_playlist_items(state.input_text, all_items)
-                state = update_palette_filter(state, state.input_text, filtered)
-            else:
-                # Filter commands
-                query = (
-                    state.input_text[1:]
-                    if state.input_text.startswith("/")
-                    else state.input_text
-                )
-                filtered = filter_commands(query, COMMAND_DEFINITIONS)
-                state = update_palette_filter(state, query, filtered)
-
-        return state, None
-
-    # Handle 'v' key - view playlist tracks (only in playlist palette mode)
-    if event["type"] == "char" and event["char"] == "v":
-        if state.palette_visible and state.palette_mode == "playlist":
-            # Get selected playlist
-            if state.palette_items and state.palette_selected < len(
-                state.palette_items
-            ):
-                selected = state.palette_items[state.palette_selected]
-                playlist_name = selected[1]  # Playlist name
-
-                # Close palette and open track viewer
-                state = hide_palette(state)
-                return state, InternalCommand(
-                    action="view_playlist_tracks", data={"playlist_name": playlist_name}
-                )
-            return state, None
-
-    # Handle delete key
-    if event["type"] == "delete":
-        # Check if in playlist palette mode - delete selected playlist
-        if state.palette_visible and state.palette_mode == "playlist":
-            # Get selected playlist
-            if state.palette_items and state.palette_selected < len(
-                state.palette_items
-            ):
-                selected = state.palette_items[state.palette_selected]
-                playlist_name = selected[1]  # Playlist name
-
-                # Show confirmation dialog
-                state = show_confirmation(
-                    state, "delete_playlist", {"playlist_name": playlist_name}
-                )
-            return state, None
-        else:
-            # Normal delete behavior (backspace)
-            state = delete_input_char(state)
-            state = reset_history_navigation(state)
-
-            # Update palette filter if visible
-            if state.palette_visible:
-                # Remove "/" prefix for filtering
-                query = (
-                    state.input_text[1:]
-                    if state.input_text.startswith("/")
-                    else state.input_text
-                )
-                filtered = filter_commands(query, COMMAND_DEFINITIONS)
-                # Convert to format expected by state (category, cmd, icon, desc)
-                state = update_palette_filter(state, query, filtered)
-
-            return state, None
-
-    # Handle seek controls in normal mode (no modals, no input)
-    if (
-        not state.palette_visible
-        and not state.track_viewer_visible
-        and not state.wizard_active
-        and not state.analytics_viewer_visible
-        and not state.editor_visible
-        and not state.review_mode
-        and not state.input_text
-    ):
-        # Numeric keys 0-9: Jump to percentage (0%-90%)
-        if event["type"] == "char" and event["char"] and event["char"].isdigit():
-            digit = int(event["char"])
-            percentage = digit * 10
-            return state, InternalCommand(
-                action="seek_percentage", data={"percentage": percentage}
-            )
-
-        # Left/Right arrows: Seek ±5 seconds
-        if event["type"] == "arrow_left":
-            return state, InternalCommand(
-                action="seek_relative", data={"seconds": -5.0}
-            )
-        if event["type"] == "arrow_right":
-            return state, InternalCommand(
-                action="seek_relative", data={"seconds": 5.0}
-            )
-
-        # Shift+Left/Right: Seek ±1 second
-        if event["type"] == "shift_arrow_left":
-            return state, InternalCommand(
-                action="seek_relative", data={"seconds": -1.0}
-            )
-        if event["type"] == "shift_arrow_right":
-            return state, InternalCommand(
-                action="seek_relative", data={"seconds": 1.0}
-            )
-
-    # Handle regular characters
-    if event["type"] == "char" and event["char"]:
-        char = event["char"]
-
-        # Shortcut keys in search detail mode (p/a/e for quick actions)
-        if (
-            state.palette_visible
-            and state.palette_mode == "search"
-            and state.search_mode == "detail"
-        ):
-            if state.search_filtered_tracks and state.search_selected < len(
-                state.search_filtered_tracks
-            ):
-                track_id = state.search_filtered_tracks[state.search_selected].get("id")
-
-                if track_id is not None:
-                    if char.lower() == "p":  # Play
-                        state = hide_palette(state)
-                        return state, InternalCommand(
-                            action="search_play_track", data={"track_id": track_id}
-                        )
-                    elif char.lower() == "a":  # Add to playlist
-                        state = hide_palette(state)
-                        return state, InternalCommand(
-                            action="search_add_to_playlist", data={"track_id": track_id}
-                        )
-                    elif char.lower() == "e":  # Edit metadata
-                        state = hide_palette(state)
-                        return state, InternalCommand(
-                            action="search_edit_metadata", data={"track_id": track_id}
-                        )
-
-        # Reset history navigation when typing
-        state = reset_history_navigation(state)
-
-        # Check if space closes palette after selection
-        if char == " " and state.palette_visible and state.input_text:
-            state = hide_palette(state)
-            state = append_input_char(state, char)
-            return state, None
-
-        # Check if "/" triggers palette
-        if char == "/" and not state.input_text:
-            state = append_input_char(state, char)
-            # Show palette with all commands
-            filtered = filter_commands("", COMMAND_DEFINITIONS)
-            state = update_palette_filter(state, "", filtered)
-            state = show_palette(state)
-        else:
-            state = append_input_char(state, char)
-
-            # Update palette filter if visible
-            if state.palette_visible:
-                if state.palette_mode == "search":
-                    # Filter tracks in search mode
-                    from music_minion.ui.blessed.state_selectors import filter_search_tracks
-
-                    # Use memoized selector (convert list to tuple for cache comparison)
-                    filtered = filter_search_tracks(state.input_text, tuple(state.search_all_tracks))
-                    state = update_search_query(state, state.input_text, filtered)
-                elif state.palette_mode == "playlist":
-                    # Filter playlists by name
-                    from music_minion.ui.blessed.components.palette import (
-                        filter_playlist_items,
-                        load_playlist_items,
-                    )
-
-                    all_items = load_playlist_items(state.active_library)
-                    filtered = filter_playlist_items(state.input_text, all_items)
-                    state = update_palette_filter(state, state.input_text, filtered)
-                else:
-                    # Filter commands
-                    query = (
-                        state.input_text[1:]
-                        if state.input_text.startswith("/")
-                        else state.input_text
-                    )
-                    filtered = filter_commands(query, COMMAND_DEFINITIONS)
-                    state = update_palette_filter(state, query, filtered)
-
-        return state, None
+    # Regular character input
+    result = _handle_character_input(state, event)
+    if result is not None:
+        return result
 
     return state, None
