@@ -637,7 +637,10 @@ def _load_comparison_data_background(
             )
 
         logger.info(
-            f"Loaded comparison data: {len(tracks)} tracks, session_id={session_id}"
+            f"Loaded comparison data: {len(tracks)} tracks, session_id={session_id}, "
+            f"track_a={track_a.get('title') if track_a else None}, "
+            f"track_b={track_b.get('title') if track_b else None}, "
+            f"comparison.active={comparison.active}, comparison.loading={comparison.loading}"
         )
 
     except Exception as e:

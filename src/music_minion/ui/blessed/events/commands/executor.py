@@ -658,13 +658,13 @@ def _process_ui_action(
         logger.info(f"Processing start_comparison action: comparison={comparison is not None}, filtered_tracks={len(filtered_tracks)}, active={comparison.active if comparison else 'N/A'}")
 
         if comparison:
-            # Update comparison state with filtered tracks and ratings cache
+            # Update UI state with comparison data
+            # The validation in update_ui_state_safe prevents background thread from overwriting this
             comparison_with_data = replace(
                 comparison,
                 filtered_tracks=filtered_tracks,
                 ratings_cache=ratings_cache
             )
-            # Update UI state
             ui_state = replace(ui_state, comparison=comparison_with_data)
             log(f"🔍 DEBUG: Updated UI state - comparison active={ui_state.comparison.active}", level="info")
             logger.info(f"Updated ui_state.comparison: active={ui_state.comparison.active}, track_a={ui_state.comparison.track_a is not None}, track_b={ui_state.comparison.track_b is not None}")
