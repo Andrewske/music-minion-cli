@@ -228,9 +228,9 @@ def render_dashboard(
         separator_chars.append(colors[i % 4]("━"))
     lines.append("".join(separator_chars))
 
-    # Render all lines
+    # Render all lines (clear_eol prevents overlap when new text is shorter)
     for i, line in enumerate(lines):
-        print(term.move_xy(0, y_start + i) + line)
+        print(term.move_xy(0, y_start + i) + term.clear_eol + line)
 
     return len(lines), line_mapping
 
