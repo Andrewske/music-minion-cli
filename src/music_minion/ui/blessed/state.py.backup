@@ -6,11 +6,6 @@ from datetime import datetime
 from time import time
 from typing import Any, Optional
 
-from music_minion.ui.blessed.helpers.scrolling import (
-    calculate_scroll_offset,
-    move_selection,
-)
-
 # Maximum number of commands to keep in history
 MAX_COMMAND_HISTORY = 1000
 
@@ -101,9 +96,6 @@ class UIState:
     Application state (config, tracks, player) is in AppContext, not here.
     """
 
-    # ============================================================================
-    # DASHBOARD CACHE & DISPLAY
-    # ============================================================================
     # UI-derived dashboard cache (queried from DB/files for display)
     track_metadata: Optional[TrackMetadata] = None
     track_db_info: Optional[TrackDBInfo] = None
@@ -112,9 +104,6 @@ class UIState:
     active_library: str = "local"  # Cached from database for display
     current_track_has_soundcloud_like: bool = False  # Cached for heart indicator
 
-    # ============================================================================
-    # COMMAND INPUT & HISTORY
-    # ============================================================================
     # Command history display
     history: list[tuple[str, str]] = field(default_factory=list)  # (text, color)
     history_scroll: int = 0
@@ -128,9 +117,6 @@ class UIState:
     history_index: int | None = None  # Current position in history (None = at prompt)
     history_temp_input: str = ""  # Saved input when browsing history
 
-    # ============================================================================
-    # COMMAND PALETTE
-    # ============================================================================
     # Command palette state
     palette_visible: bool = False
     palette_mode: str = "command"  # 'command', 'playlist', or 'search'
@@ -141,9 +127,6 @@ class UIState:
     palette_selected: int = 0
     palette_scroll: int = 0
 
-    # ============================================================================
-    # CONFIRMATION DIALOG
-    # ============================================================================
     # Confirmation dialog state
     confirmation_active: bool = False
     confirmation_type: Optional[str] = None  # 'delete_playlist', etc.
@@ -151,9 +134,6 @@ class UIState:
         default=None
     )  # Data for confirmation action
 
-    # ============================================================================
-    # WIZARD (MULTI-STEP FLOWS)
-    # ============================================================================
     # Wizard state (for multi-step wizards like smart playlist creation)
     wizard_active: bool = False
     wizard_type: Optional[str] = None  # 'smart_playlist', etc.
@@ -167,9 +147,6 @@ class UIState:
         default_factory=list
     )  # Available options for current step
 
-    # ============================================================================
-    # TRACK VIEWER MODAL
-    # ============================================================================
     # Track viewer state (for viewing and interacting with playlist tracks)
     track_viewer_visible: bool = False
     track_viewer_playlist_id: Optional[int] = None
@@ -187,9 +164,6 @@ class UIState:
     track_viewer_mode: str = "list"  # 'list' | 'detail' (2-mode flow like search)
     track_viewer_action_selected: int = 0  # Selected action in detail mode action menu
 
-    # ============================================================================
-    # ANALYTICS VIEWER MODAL
-    # ============================================================================
     # Analytics viewer state (for viewing playlist analytics in full screen)
     analytics_viewer_visible: bool = False
     analytics_viewer_data: dict[str, Any] = field(
@@ -198,9 +172,6 @@ class UIState:
     analytics_viewer_scroll: int = 0  # Scroll offset in lines
     analytics_viewer_total_lines: int = 0  # Total formatted lines (pre-calculated)
 
-    # ============================================================================
-    # METADATA EDITOR MODAL
-    # ============================================================================
     # Metadata editor state (for editing track metadata interactively)
     editor_visible: bool = False
     editor_mode: str = "main"  # 'main' | 'list_editor' | 'editing_field'
@@ -212,9 +183,6 @@ class UIState:
     editor_changes: dict[str, Any] = field(default_factory=dict)  # Pending changes
     editor_input: str = ""  # Text input for field editing
 
-    # ============================================================================
-    # TRACK SEARCH (PALETTE MODE)
-    # ============================================================================
     # Track search state (for searching and browsing all tracks in palette mode)
     search_query: str = ""
     search_all_tracks: list[dict[str, Any]] = field(
@@ -231,48 +199,30 @@ class UIState:
     search_detail_scroll: int = 0  # Scroll offset in detail view
     search_detail_selection: int = 0  # Selected item in detail view (action index: 0-3)
 
-    # ============================================================================
-    # AI REVIEW MODE
-    # ============================================================================
     # AI Review mode state (conversational tag review)
     review_mode: Optional[str] = None  # None, 'conversation', 'confirm'
     review_data: dict[str, Any] = field(
         default_factory=dict
     )  # Track, tags, conversation history
 
-    # ============================================================================
-    # LIBRARY SCAN PROGRESS
-    # ============================================================================
     # Library scan progress
     scan_progress: ScanProgress = field(default_factory=ScanProgress)
 
-    # ============================================================================
-    # COMPARISON MODE (ELO RATING)
-    # ============================================================================
     # Comparison mode state (for Elo-style track comparisons)
     comparison: ComparisonState = field(default_factory=ComparisonState)
 
-    # ============================================================================
-    # RATING HISTORY VIEWER MODAL
-    # ============================================================================
     # Rating history viewer state (for reviewing and deleting ratings)
     rating_history_visible: bool = False
     rating_history_ratings: list[dict[str, Any]] = field(default_factory=list)  # All ratings
     rating_history_selected: int = 0  # Selected rating index
     rating_history_scroll: int = 0  # Scroll offset
 
-    # ============================================================================
-    # COMPARISON HISTORY VIEWER MODAL
-    # ============================================================================
     # Comparison history viewer state (for reviewing Elo comparison decisions)
     comparison_history_visible: bool = False
     comparison_history_comparisons: list[dict[str, Any]] = field(default_factory=list)  # All comparisons
     comparison_history_selected: int = 0  # Selected comparison index
     comparison_history_scroll: int = 0  # Scroll offset
 
-    # ============================================================================
-    # UI FEEDBACK (TOAST)
-    # ============================================================================
     # UI feedback (toast notifications)
     feedback_message: Optional[str] = None
     feedback_time: Optional[float] = None
@@ -516,12 +466,18 @@ def move_palette_selection(
     if not state.palette_items:
         return state
 
-    new_selected = move_selection(
-        state.palette_selected, delta, len(state.palette_items)
-    )
-    new_scroll = calculate_scroll_offset(
-        new_selected, state.palette_scroll, visible_items, len(state.palette_items)
-    )
+    new_selected = (state.palette_selected + delta) % len(state.palette_items)
+
+    # Adjust scroll to keep selection visible
+    new_scroll = state.palette_scroll
+
+    # Scroll down if selection goes below visible area
+    if new_selected >= state.palette_scroll + visible_items:
+        new_scroll = new_selected - visible_items + 1
+
+    # Scroll up if selection goes above visible area
+    elif new_selected < state.palette_scroll:
+        new_scroll = new_selected
 
     return replace(state, palette_selected=new_selected, palette_scroll=new_scroll)
 
@@ -902,15 +858,20 @@ def move_track_viewer_selection(
     if not state.track_viewer_filtered_tracks:
         return state
 
-    new_selected = move_selection(
-        state.track_viewer_selected, delta, len(state.track_viewer_filtered_tracks)
+    new_selected = (state.track_viewer_selected + delta) % len(
+        state.track_viewer_filtered_tracks
     )
-    new_scroll = calculate_scroll_offset(
-        new_selected,
-        state.track_viewer_scroll,
-        visible_items,
-        len(state.track_viewer_filtered_tracks),
-    )
+
+    # Adjust scroll to keep selection visible
+    new_scroll = state.track_viewer_scroll
+
+    # Scroll down if selection goes below visible area
+    if new_selected >= state.track_viewer_scroll + visible_items:
+        new_scroll = new_selected - visible_items + 1
+
+    # Scroll up if selection goes above visible area
+    elif new_selected < state.track_viewer_scroll:
+        new_scroll = new_selected
 
     return replace(
         state, track_viewer_selected=new_selected, track_viewer_scroll=new_scroll
@@ -1484,15 +1445,14 @@ def move_search_selection(
     if not state.search_filtered_tracks:
         return state
 
-    new_selected = move_selection(
-        state.search_selected, delta, len(state.search_filtered_tracks)
-    )
-    new_scroll = calculate_scroll_offset(
-        new_selected,
-        state.search_scroll,
-        visible_items,
-        len(state.search_filtered_tracks),
-    )
+    new_selected = (state.search_selected + delta) % len(state.search_filtered_tracks)
+
+    # Adjust scroll to keep selection visible
+    new_scroll = state.search_scroll
+    if new_selected >= state.search_scroll + visible_items:
+        new_scroll = new_selected - visible_items + 1
+    elif new_selected < state.search_scroll:
+        new_scroll = new_selected
 
     return replace(state, search_selected=new_selected, search_scroll=new_scroll)
 
@@ -1615,15 +1575,20 @@ def move_rating_history_selection(
     if not state.rating_history_ratings:
         return state
 
-    new_selected = move_selection(
-        state.rating_history_selected, delta, len(state.rating_history_ratings)
+    new_selected = (state.rating_history_selected + delta) % len(
+        state.rating_history_ratings
     )
-    new_scroll = calculate_scroll_offset(
-        new_selected,
-        state.rating_history_scroll,
-        visible_items,
-        len(state.rating_history_ratings),
-    )
+
+    # Adjust scroll to keep selection visible
+    new_scroll = state.rating_history_scroll
+
+    # Scroll down if selection goes below visible area
+    if new_selected >= state.rating_history_scroll + visible_items:
+        new_scroll = new_selected - visible_items + 1
+
+    # Scroll up if selection goes above visible area
+    elif new_selected < state.rating_history_scroll:
+        new_scroll = new_selected
 
     return replace(
         state, rating_history_selected=new_selected, rating_history_scroll=new_scroll
@@ -1736,20 +1701,21 @@ def move_comparison_history_selection(
     if not state.comparison_history_comparisons:
         return state
 
-    new_selected = move_selection(
-        state.comparison_history_selected,
-        delta,
-        len(state.comparison_history_comparisons),
-    )
-    new_scroll = calculate_scroll_offset(
-        new_selected,
-        state.comparison_history_scroll,
-        visible_items,
-        len(state.comparison_history_comparisons),
+    new_selected = (state.comparison_history_selected + delta) % len(
+        state.comparison_history_comparisons
     )
 
+    # Adjust scroll to keep selection visible
+    new_scroll = state.comparison_history_scroll
+
+    # Scroll down if selection goes below visible area
+    if new_selected >= state.comparison_history_scroll + visible_items:
+        new_scroll = new_selected - visible_items + 1
+
+    # Scroll up if selection goes above visible area
+    elif new_selected < state.comparison_history_scroll:
+        new_scroll = new_selected
+
     return replace(
-        state,
-        comparison_history_selected=new_selected,
-        comparison_history_scroll=new_scroll,
+        state, comparison_history_selected=new_selected, comparison_history_scroll=new_scroll
     )
