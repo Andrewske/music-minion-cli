@@ -1255,6 +1255,9 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                         )
                     # Full redraw after command execution
                     needs_full_redraw = True
+                    # Reset interpolation baseline to new position (critical for seek commands)
+                    last_position = ctx.player_state.current_position
+                    last_poll_time = time.time()
 
             frame_count += 1
     except KeyboardInterrupt:

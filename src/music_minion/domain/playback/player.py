@@ -336,7 +336,10 @@ def seek_to_position(state: PlayerState, position: float) -> Tuple[PlayerState, 
     )
 
     if success:
-        return update_player_status(state), True
+        # Brief wait for MPV to process seek before querying status
+        time.sleep(0.05)
+        # Use position-only update to preserve is_playing state
+        return update_player_position_only(state), True
 
     return state, False
 
@@ -351,7 +354,10 @@ def seek_relative(state: PlayerState, seconds: float) -> Tuple[PlayerState, bool
     )
 
     if success:
-        return update_player_status(state), True
+        # Brief wait for MPV to process seek before querying status
+        time.sleep(0.05)
+        # Use position-only update to preserve is_playing state
+        return update_player_position_only(state), True
 
     return state, False
 
@@ -374,13 +380,35 @@ def update_player_status(state: PlayerState) -> PlayerState:
     if not is_mpv_running(state):
         return state
 
-    position = get_mpv_property(state.socket_path, "time-pos") or 0.0
-    duration = get_mpv_property(state.socket_path, "duration") or 0.0
+    position = get_mpv_property(state.socket_path, "time-pos")
+    duration = get_mpv_property(state.socket_path, "duration")
     paused = get_mpv_property(state.socket_path, "pause")
-    is_playing = not (paused if paused is not None else True)
+
+    # Preserve previous state if query fails (None) to prevent 0:00 display during seek
+    return state._replace(
+        current_position=position if position is not None else state.current_position,
+        duration=duration if duration is not None else state.duration,
+        is_playing=not paused if paused is not None else state.is_playing,
+    )
+
+
+def update_player_position_only(state: PlayerState) -> PlayerState:
+    """Update only position/duration after seek - preserves is_playing state.
+
+    Used after seek operations to avoid MPV briefly reporting paused=True
+    during seek processing, which would cause is_playing to become False
+    and stop partial UI updates.
+    """
+    if not is_mpv_running(state):
+        return state
+
+    position = get_mpv_property(state.socket_path, "time-pos")
+    duration = get_mpv_property(state.socket_path, "duration")
 
     return state._replace(
-        current_position=position, duration=duration, is_playing=is_playing
+        current_position=position if position is not None else state.current_position,
+        duration=duration if duration is not None else state.duration,
+        # Deliberately NOT querying or updating is_playing
     )
 
 
@@ -436,19 +464,19 @@ def get_player_status(state: PlayerState) -> Dict[str, Any]:
             "volume": 0,
         }
 
-    # Get current values from MPV
-    position = get_mpv_property(state.socket_path, "time-pos") or 0.0
-    duration = get_mpv_property(state.socket_path, "duration") or 0.0
-    volume = get_mpv_property(state.socket_path, "volume") or 0
+    # Get current values from MPV - preserve previous on failure
+    position = get_mpv_property(state.socket_path, "time-pos")
+    duration = get_mpv_property(state.socket_path, "duration")
+    volume = get_mpv_property(state.socket_path, "volume")
     paused = get_mpv_property(state.socket_path, "pause")
-    is_playing = not (paused if paused is not None else True)
 
+    # Preserve previous state if query fails (None) to prevent 0:00 display during seek
     return {
-        "playing": is_playing,
+        "playing": not paused if paused is not None else state.is_playing,
         "file": state.current_track,
-        "position": position,
-        "duration": duration,
-        "volume": volume,
+        "position": position if position is not None else state.current_position,
+        "duration": duration if duration is not None else state.duration,
+        "volume": volume if volume is not None else 0,
     }
 
 
