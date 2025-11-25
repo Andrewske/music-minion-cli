@@ -33,18 +33,12 @@ def render_comparison_overlay(
     """
     from loguru import logger
 
-    logger.info(
-        f"render_comparison_overlay called: active={comparison.active}, track_a={comparison.track_a is not None}, track_b={comparison.track_b is not None}"
-    )
-
     if not comparison.active:
         logger.info("Comparison not active, returning")
         return
 
     y = layout.get("palette_y", 0)
     height = layout.get("palette_height", 0)
-
-    logger.info(f"Layout: palette_y={y}, palette_height={height}")
 
     if height <= 0:
         logger.info("Height <= 0, returning")
@@ -505,7 +499,7 @@ def _render_loading_skeleton(
     if line_num < height:
         # Build filter description
         filter_parts = []
-        if comparison.source_filter and comparison.source_filter != 'all':
+        if comparison.source_filter and comparison.source_filter != "all":
             filter_parts.append(f"{comparison.source_filter}")
         if comparison.genre_filter:
             filter_parts.append(f"genre={comparison.genre_filter}")
