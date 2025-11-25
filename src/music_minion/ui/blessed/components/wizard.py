@@ -1,7 +1,8 @@
 """Smart Playlist Wizard rendering component."""
 
-import sys
 from blessed import Terminal
+
+from ..helpers import write_at
 from ..state import UIState
 
 
@@ -43,33 +44,33 @@ def render_smart_playlist_wizard(term: Terminal, state: UIState, y: int, height:
     # Header with progress
     if line_num < height:
         header_text = f"   🧙 Smart Playlist Wizard: {playlist_name}"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.bold_cyan(header_text))
+        write_at(term, 0, y + line_num, term.bold_cyan(header_text))
         line_num += 1
 
     # Progress indicator
     if line_num < height:
         progress_text = f"   Step {step_num}/{total_steps}: {step_title}"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white(progress_text))
+        write_at(term, 0, y + line_num, term.white(progress_text))
         line_num += 1
 
     # Separator
     if line_num < height:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white("   " + "─" * 60))
+        write_at(term, 0, y + line_num, term.white("   " + "─" * 60))
         line_num += 1
 
     # Show error message if validation failed
     if state.wizard_error and line_num < height:
         error_text = f"   ❌ {state.wizard_error}"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.red(error_text))
+        write_at(term, 0, y + line_num, term.red(error_text))
         line_num += 1
         # Blank line after error
         if line_num < height:
-            sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+            write_at(term, 0, y + line_num, "")
             line_num += 1
 
     # Show filters added so far
     if filters_added and line_num < height:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.bold("   Filters added:"))
+        write_at(term, 0, y + line_num, term.bold("   Filters added:"))
         line_num += 1
 
         for i, f in enumerate(filters_added, 1):
@@ -81,12 +82,12 @@ def render_smart_playlist_wizard(term: Terminal, state: UIState, y: int, height:
             conjunction = f.get('conjunction', 'AND')
             prefix = f"   {conjunction}" if i > 1 else "   "
             filter_text = f"{prefix} {field} {operator} '{value}'"
-            sys.stdout.write(term.move_xy(0, y + line_num) + term.green(filter_text))
+            write_at(term, 0, y + line_num, term.green(filter_text))
             line_num += 1
 
         # Blank line after filters
         if line_num < height:
-            sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+            write_at(term, 0, y + line_num, "")
             line_num += 1
 
     # Step-specific content (each returns lines rendered)
@@ -108,7 +109,7 @@ def render_smart_playlist_wizard(term: Terminal, state: UIState, y: int, height:
 
     # Clear remaining lines
     while line_num < height:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+        write_at(term, 0, y + line_num, "")
         line_num += 1
 
 
@@ -126,7 +127,7 @@ def _render_field_step(term: Terminal, state: UIState, y: int, height: int) -> i
 
     # Instructions
     if line_num < height:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white("   Select field (↑↓ arrows, Enter to choose):"))
+        write_at(term, 0, y + line_num, term.white("   Select field (↑↓ arrows, Enter to choose):"))
         line_num += 1
 
     # Render options with selection highlighting
@@ -142,7 +143,7 @@ def _render_field_step(term: Terminal, state: UIState, y: int, height: int) -> i
             prefix = "     "
             text = term.white(option)
 
-        sys.stdout.write(term.move_xy(0, y + line_num) + prefix + text)
+        write_at(term, 0, y + line_num, prefix + text)
         line_num += 1
 
     return line_num
@@ -166,7 +167,7 @@ def _render_operator_step(term: Terminal, state: UIState, y: int, height: int) -
     # Instructions
     if line_num < height:
         instruction = f"   Select operator for '{field}' (↑↓ arrows, Enter to choose):"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white(instruction))
+        write_at(term, 0, y + line_num, term.white(instruction))
         line_num += 1
 
     # Render options with selection highlighting
@@ -182,7 +183,7 @@ def _render_operator_step(term: Terminal, state: UIState, y: int, height: int) -
             prefix = "     "
             text = term.white(option)
 
-        sys.stdout.write(term.move_xy(0, y + line_num) + prefix + text)
+        write_at(term, 0, y + line_num, prefix + text)
         line_num += 1
 
     return line_num
@@ -207,14 +208,14 @@ def _render_value_step(term: Terminal, state: UIState, y: int, height: int) -> i
     # Instructions
     if line_num < height:
         instruction = f"   Enter value for: {field} {operator}"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white(instruction))
+        write_at(term, 0, y + line_num, term.white(instruction))
         line_num += 1
 
     # Show current input
     if line_num < height:
         current_value = state.input_text
         value_line = f"   Value: {current_value}_"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.cyan(value_line))
+        write_at(term, 0, y + line_num, term.cyan(value_line))
         line_num += 1
 
     return line_num
@@ -234,7 +235,7 @@ def _render_conjunction_step(term: Terminal, state: UIState, y: int, height: int
 
     # Instructions
     if line_num < height:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white("   Combine with previous filter (↑↓ arrows, Enter to choose):"))
+        write_at(term, 0, y + line_num, term.white("   Combine with previous filter (↑↓ arrows, Enter to choose):"))
         line_num += 1
 
     # Options with descriptions
@@ -258,7 +259,7 @@ def _render_conjunction_step(term: Terminal, state: UIState, y: int, height: int
             prefix = "     "
             text = term.white(f"{option} - {desc}")
 
-        sys.stdout.write(term.move_xy(0, y + line_num) + prefix + text)
+        write_at(term, 0, y + line_num, prefix + text)
         line_num += 1
 
     return line_num
@@ -283,17 +284,17 @@ def _render_preview_step(term: Terminal, state: UIState, y: int, height: int) ->
     # Matching count
     if line_num < height:
         count_line = f"   ✅ Found {matching_count} matching tracks"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.green(count_line))
+        write_at(term, 0, y + line_num, term.green(count_line))
         line_num += 1
 
     # Blank line
     if line_num < height:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+        write_at(term, 0, y + line_num, "")
         line_num += 1
 
     # Preview tracks
     if preview_tracks and line_num < height:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white("   Preview (first 5):"))
+        write_at(term, 0, y + line_num, term.white("   Preview (first 5):"))
         line_num += 1
 
         for i, track in enumerate(preview_tracks[:5], 1):
@@ -302,7 +303,7 @@ def _render_preview_step(term: Terminal, state: UIState, y: int, height: int) ->
             artist = track.get('artist', 'Unknown')
             title = track.get('title', 'Unknown')
             track_line = f"     {i}. {artist} - {title}"
-            sys.stdout.write(term.move_xy(0, y + line_num) + term.white(track_line))
+            write_at(term, 0, y + line_num, term.white(track_line))
             line_num += 1
 
     return line_num

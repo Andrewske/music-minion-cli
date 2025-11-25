@@ -1,7 +1,8 @@
 """Metadata editor rendering for editing track metadata."""
 
-import sys
 from blessed import Terminal
+
+from ..helpers import write_at
 from ..state import UIState
 
 # Layout constants
@@ -90,7 +91,7 @@ def render_main_editor(term: Terminal, state: UIState, y: int, height: int) -> N
         artist = track_data.get('artist', 'Unknown')
         title = track_data.get('title', 'Unknown')
         header_text = f"   🔧 Metadata: {artist} - {title}"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.bold_cyan(header_text))
+        write_at(term, 0, y + line_num, term.bold_cyan(header_text))
         line_num += 1
 
     # Metadata line - pending changes indicator
@@ -98,15 +99,15 @@ def render_main_editor(term: Terminal, state: UIState, y: int, height: int) -> N
         changes_count = count_pending_changes(state.editor_changes)
         if changes_count > 0:
             metadata_text = f"   ⚠️  {changes_count} pending change(s)"
-            sys.stdout.write(term.move_xy(0, y + line_num) + term.yellow(metadata_text))
+            write_at(term, 0, y + line_num, term.yellow(metadata_text))
         else:
             metadata_text = "   No pending changes"
-            sys.stdout.write(term.move_xy(0, y + line_num) + term.white(metadata_text))
+            write_at(term, 0, y + line_num, term.white(metadata_text))
         line_num += 1
 
     # Separator
     if line_num < height:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white("   " + "─" * 60))
+        write_at(term, 0, y + line_num, term.white("   " + "─" * 60))
         line_num += 1
 
     # Calculate content area
@@ -140,19 +141,19 @@ def render_main_editor(term: Terminal, state: UIState, y: int, height: int) -> N
             # Normal field
             item_line = term.white(f"  {field_text[:70]}")
 
-        sys.stdout.write(term.move_xy(0, y + line_num) + item_line)
+        write_at(term, 0, y + line_num, item_line)
         line_num += 1
         items_rendered += 1
 
     # Clear remaining lines
     while line_num < height - EDITOR_FOOTER_LINES:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+        write_at(term, 0, y + line_num, "")
         line_num += 1
 
     # Footer help text
     if line_num < height:
         footer = "   ↑↓ navigate  Enter edit  Esc save & close"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white(footer))
+        write_at(term, 0, y + line_num, term.white(footer))
 
 
 def render_list_editor(term: Terminal, state: UIState, y: int, height: int) -> None:
@@ -181,18 +182,18 @@ def render_list_editor(term: Terminal, state: UIState, y: int, height: int) -> N
     # Header - Field name
     if line_num < height:
         header_text = f"   📝 Edit {field_type.capitalize()}"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.bold_cyan(header_text))
+        write_at(term, 0, y + line_num, term.bold_cyan(header_text))
         line_num += 1
 
     # Count line
     if line_num < height:
         count_text = f"   {len(items)} item(s)"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white(count_text))
+        write_at(term, 0, y + line_num, term.white(count_text))
         line_num += 1
 
     # Separator
     if line_num < height:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white("   " + "─" * 60))
+        write_at(term, 0, y + line_num, term.white("   " + "─" * 60))
         line_num += 1
 
     # Calculate content area
@@ -202,7 +203,7 @@ def render_list_editor(term: Terminal, state: UIState, y: int, height: int) -> N
     if not items:
         if line_num < height:
             empty_msg = "  No items"
-            sys.stdout.write(term.move_xy(0, y + line_num) + term.white(empty_msg))
+            write_at(term, 0, y + line_num, term.white(empty_msg))
             line_num += 1
     else:
         items_rendered = 0
@@ -225,19 +226,19 @@ def render_list_editor(term: Terminal, state: UIState, y: int, height: int) -> N
                 # Normal item
                 item_line = term.white(f"  {item_text[:70]}")
 
-            sys.stdout.write(term.move_xy(0, y + line_num) + item_line)
+            write_at(term, 0, y + line_num, item_line)
             line_num += 1
             items_rendered += 1
 
     # Clear remaining lines
     while line_num < height - EDITOR_FOOTER_LINES:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+        write_at(term, 0, y + line_num, "")
         line_num += 1
 
     # Footer help text
     if line_num < height:
         footer = "   ↑↓ navigate  d delete  a add  q back"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white(footer))
+        write_at(term, 0, y + line_num, term.white(footer))
 
 
 def render_field_editor(term: Terminal, state: UIState, y: int, height: int) -> None:
@@ -272,30 +273,30 @@ def render_field_editor(term: Terminal, state: UIState, y: int, height: int) -> 
     # Header
     if line_num < height:
         header_text = f"   ✏️  Edit {field_label}"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.bold_cyan(header_text))
+        write_at(term, 0, y + line_num, term.bold_cyan(header_text))
         line_num += 1
 
     # Hint line
     if line_num < height:
         hint_text = "   Type new value and press Enter to save, Esc to cancel"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white(hint_text))
+        write_at(term, 0, y + line_num, term.white(hint_text))
         line_num += 1
 
     # Separator
     if line_num < height:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white("   " + "─" * 60))
+        write_at(term, 0, y + line_num, term.white("   " + "─" * 60))
         line_num += 1
 
     # Input field
     if line_num < height:
         # Show input with cursor
         input_display = f"   {field_label}: {input_text}█"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white(input_display))
+        write_at(term, 0, y + line_num, term.white(input_display))
         line_num += 1
 
     # Clear remaining lines
     while line_num < height:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+        write_at(term, 0, y + line_num, "")
         line_num += 1
 
 
@@ -325,30 +326,30 @@ def render_add_item_editor(term: Terminal, state: UIState, y: int, height: int) 
     # Header
     if line_num < height:
         header_text = f"   ➕ Add New {type_label}"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.bold_cyan(header_text))
+        write_at(term, 0, y + line_num, term.bold_cyan(header_text))
         line_num += 1
 
     # Hint line
     if line_num < height:
         hint_text = "   Type text and press Enter to add, Esc to cancel"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white(hint_text))
+        write_at(term, 0, y + line_num, term.white(hint_text))
         line_num += 1
 
     # Separator
     if line_num < height:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white("   " + "─" * 60))
+        write_at(term, 0, y + line_num, term.white("   " + "─" * 60))
         line_num += 1
 
     # Input field
     if line_num < height:
         # Show input with cursor
         input_display = f"   {type_label}: {input_text}█"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white(input_display))
+        write_at(term, 0, y + line_num, term.white(input_display))
         line_num += 1
 
     # Clear remaining lines
     while line_num < height:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+        write_at(term, 0, y + line_num, "")
         line_num += 1
 
 

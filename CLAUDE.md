@@ -37,6 +37,7 @@ Music Minion CLI: Contextual music curation with multi-source support (local, So
 - Partial redraw: Clock/progress bar only (flicker elimination)
 - Immutable state: All updates via `dataclasses.replace()`, never mutation
 - Pure render functions: `(terminal, state, position) -> height_used`
+- **Always use `write_at()` for positioned output** (clears line by default, prevents text overlap)
 
 **Multi-Source Provider Architecture**:
 - Provider protocol: Pure functions (`authenticate()`, `sync_library()`, `get_stream_url()`)
@@ -44,6 +45,12 @@ Music Minion CLI: Contextual music curation with multi-source support (local, So
 - No global variables or class instance state
 - Background syncing: Thread-safe state updates via global sync state
 - Track deduplication: TF-IDF cosine similarity matching
+
+**UI Component Organization**:
+- Keyboard handlers: `ui/blessed/events/keys/` (modular by mode: normal, wizard, comparison, etc.)
+- Components: `ui/blessed/components/` (pure render functions)
+- Helpers: `ui/blessed/helpers/` (scrolling, terminal utilities)
+- State selectors: `ui/blessed/state_selectors.py` (memoized state derivations)
 
 ## Code Requirements
 

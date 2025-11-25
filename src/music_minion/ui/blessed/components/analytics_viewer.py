@@ -1,7 +1,8 @@
 """Analytics viewer rendering for playlist analytics."""
 
-import sys
 from blessed import Terminal
+
+from ..helpers import write_at
 from ..state import UIState
 
 # Layout constants
@@ -290,21 +291,20 @@ def render_analytics_viewer(term: Terminal, state: UIState, y: int, height: int)
     # Render visible lines
     for i, line in enumerate(visible_lines):
         if i < content_height:
-            sys.stdout.write(term.move_xy(0, y + i) + line + term.clear_eol)
+            write_at(term, 0, y + i, line)
 
     # Clear remaining lines
     for i in range(len(visible_lines), content_height):
-        sys.stdout.write(term.move_xy(0, y + i) + term.clear_eol)
+        write_at(term, 0, y + i, "")
 
     # Footer help text
     footer_y = y + height - ANALYTICS_VIEWER_FOOTER_LINES
     help_text = "[j/k: scroll] [q/Esc: close]"
     scroll_info = f"Line {scroll_offset + 1}/{len(all_lines)}" if all_lines else ""
 
-    # Left-align help, right-align scroll info
-    help_x = 2
-    scroll_x = max(help_x + len(help_text) + 4, term.width - len(scroll_info) - 2)
-
-    sys.stdout.write(term.move_xy(help_x, footer_y) + term.bold_white(help_text))
+    # Left-align help, right-align scroll info (clear line first, then write both parts)
+    write_at(term, 0, footer_y, "")  # Clear footer line
+    write_at(term, 2, footer_y, term.bold_white(help_text), clear=False)
     if scroll_info:
-        sys.stdout.write(term.move_xy(scroll_x, footer_y) + term.white(scroll_info))
+        scroll_x = max(2 + len(help_text) + 4, term.width - len(scroll_info) - 2)
+        write_at(term, scroll_x, footer_y, term.white(scroll_info), clear=False)

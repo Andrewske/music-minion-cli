@@ -5,6 +5,7 @@ from typing import Any
 
 from blessed import Terminal
 
+from music_minion.ui.blessed.helpers import write_at
 from music_minion.ui.blessed.state import ComparisonState
 
 
@@ -54,12 +55,12 @@ def render_comparison_overlay(
     # Header
     if line_num < height:
         header_text = "   🎵 Track Comparison"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.bold_cyan(header_text))
+        write_at(term, 0, y + line_num, term.bold_cyan(header_text))
         line_num += 1
 
     # Separator
     if line_num < height:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white("   " + "─" * 60))
+        write_at(term, 0, y + line_num, term.white("   " + "─" * 60))
         line_num += 1
 
     # Calculate rating info for both tracks
@@ -109,13 +110,13 @@ def render_comparison_overlay(
 
     # Clear remaining lines
     while line_num < height - 1:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+        write_at(term, 0, y + line_num, "")
         line_num += 1
 
     # Footer help text
     if line_num < height:
         footer = "   [←/→] Select  [Space] Play  [Enter] Choose  [A] Archive  [Esc] Exit"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white(footer))
+        write_at(term, 0, y + line_num, term.white(footer))
         line_num += 1
 
 
@@ -173,7 +174,8 @@ def _render_tracks_side_by_side(
             header_b = "[→] Track B"
             header_b_text = term.white(header_b)
 
-        # Render headers with divider
+        # Clear line then render headers with divider
+        write_at(term, 0, y + line_num, "")
         sys.stdout.write(
             term.move_xy(2, y + line_num)
             + header_a_text
@@ -187,7 +189,7 @@ def _render_tracks_side_by_side(
     # Artist names
     if line_num < max_height:
         # Clear the line first to remove any leftover placeholder text
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+        write_at(term, 0, y + line_num, "")
 
         artist_a = track_a.get("artist") or "Unknown"
         artist_b = track_b.get("artist") or "Unknown"
@@ -225,7 +227,7 @@ def _render_tracks_side_by_side(
     # Title
     if line_num < max_height:
         # Clear the line first to remove any leftover placeholder text
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+        write_at(term, 0, y + line_num, "")
 
         title_a = track_a.get("title") or "Unknown"
         title_b = track_b.get("title") or "Unknown"
@@ -304,7 +306,7 @@ def _render_tracks_side_by_side(
 
         if info_a or info_b:
             # Clear the line first to remove any leftover placeholder text
-            sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+            write_at(term, 0, y + line_num, "")
 
             sys.stdout.write(
                 term.move_xy(2, y + line_num)
@@ -319,7 +321,7 @@ def _render_tracks_side_by_side(
     # Ratings
     if line_num < max_height:
         # Clear the line first to remove any leftover placeholder text
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+        write_at(term, 0, y + line_num, "")
 
         rating_val_a = round(rating_a.get("rating", 1500))
         count_a = rating_a.get("comparison_count", 0)
@@ -366,7 +368,7 @@ def _render_tracks_side_by_side(
     if is_playing_a or is_playing_b:
         if line_num < max_height:
             # Clear the line first to remove any leftover placeholder text
-            sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+            write_at(term, 0, y + line_num, "")
 
             playing_a_text = "▶ Playing..." if is_playing_a else ""
             playing_b_text = "▶ Playing..." if is_playing_b else ""
@@ -398,7 +400,7 @@ def _render_tracks_side_by_side(
 
     # Blank line separator
     if line_num < max_height:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+        write_at(term, 0, y + line_num, "")
         line_num += 1
 
     return line_num
@@ -424,7 +426,7 @@ def render_session_progress(
     # Session progress
     if line_num < height:
         progress_text = f"   Session: {comparison.comparisons_done}/{comparison.target_comparisons} comparisons"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.cyan(progress_text))
+        write_at(term, 0, y + line_num, term.cyan(progress_text))
         line_num += 1
 
     # Filter info (if applicable)
@@ -440,12 +442,12 @@ def render_session_progress(
         # Get track count from database (placeholder - would need actual query)
         # For now, just show filter info
         filter_text = f"   Filter: {' • '.join(filter_parts)}"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white(filter_text))
+        write_at(term, 0, y + line_num, term.white(filter_text))
         line_num += 1
 
     # Blank line before footer
     if line_num < height:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+        write_at(term, 0, y + line_num, "")
         line_num += 1
 
     return line_num
@@ -487,12 +489,12 @@ def _render_loading_skeleton(
     # Header
     if line_num < height:
         header_text = "   🎵 Track Comparison"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.bold_cyan(header_text))
+        write_at(term, 0, y + line_num, term.bold_cyan(header_text))
         line_num += 1
 
     # Separator
     if line_num < height:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white("   " + "─" * 60))
+        write_at(term, 0, y + line_num, term.white("   " + "─" * 60))
         line_num += 1
 
     # Loading message with spinner
@@ -511,12 +513,12 @@ def _render_loading_skeleton(
         filter_desc = f" ({', '.join(filter_parts)})" if filter_parts else ""
 
         loading_text = f"   ⏳ Loading tracks{filter_desc}..."
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.yellow(loading_text))
+        write_at(term, 0, y + line_num, term.yellow(loading_text))
         line_num += 1
 
     # Blank lines for spacing
     if line_num < height:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+        write_at(term, 0, y + line_num, "")
         line_num += 1
 
     # Skeleton track placeholders
@@ -524,6 +526,7 @@ def _render_loading_skeleton(
         center_col = term.width // 2
 
         # Track headers
+        write_at(term, 0, y + line_num, "")
         sys.stdout.write(
             term.move_xy(2, y + line_num)
             + term.white("[←] Track A")
@@ -540,6 +543,7 @@ def _render_loading_skeleton(
             placeholder_a = "   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓"
             placeholder_b = "   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓"
 
+            write_at(term, 0, y + line_num, "")
             sys.stdout.write(
                 term.move_xy(2, y + line_num)
                 + term.bright_black(placeholder_a)
@@ -552,22 +556,22 @@ def _render_loading_skeleton(
 
     # Blank line
     if line_num < height:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+        write_at(term, 0, y + line_num, "")
         line_num += 1
 
     # Session progress
     if line_num < height:
         progress_text = f"   Session: 0/{comparison.target_comparisons} comparisons"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.cyan(progress_text))
+        write_at(term, 0, y + line_num, term.cyan(progress_text))
         line_num += 1
 
     # Clear remaining lines
     while line_num < height - 1:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+        write_at(term, 0, y + line_num, "")
         line_num += 1
 
     # Footer help text
     if line_num < height:
         footer = "   Please wait..."
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.bright_black(footer))
+        write_at(term, 0, y + line_num, term.bright_black(footer))
         line_num += 1

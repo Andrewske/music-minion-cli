@@ -1,7 +1,8 @@
 """Command palette rendering functions."""
 
-import sys
 from blessed import Terminal
+
+from ..helpers import write_at
 from ..state import UIState
 
 
@@ -151,8 +152,6 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
         y: Starting y position
         height: Available height for palette
     """
-    import sys
-
     if not state.palette_visible or height <= 0:
         return
 
@@ -185,7 +184,7 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
                 header_text = "   🔍 Track Search"
         else:
             header_text = "   Command Palette"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.bold_cyan(header_text))
+        write_at(term, 0, y + line_num, term.bold_cyan(header_text))
         line_num += 1
 
     # Render items (different handling for search mode)
@@ -197,9 +196,7 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
             if not filtered_tracks:
                 if line_num < height:
                     empty_msg = "  No matching tracks found"
-                    sys.stdout.write(
-                        term.move_xy(0, y + line_num) + term.white(empty_msg)
-                    )
+                    write_at(term, 0, y + line_num, term.white(empty_msg))
                     line_num += 1
             else:
                 # Render tracks with scroll offset
@@ -239,7 +236,7 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
                         # Normal track
                         item_line = term.bold("  ♪ ") + term.white(track_text)
 
-                    sys.stdout.write(term.move_xy(0, y + line_num) + item_line)
+                    write_at(term, 0, y + line_num, item_line)
                     line_num += 1
                     items_rendered += 1
 
@@ -272,7 +269,7 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
                     if state.palette_mode == "rankings"
                     else "  No matching commands"
                 )
-                sys.stdout.write(term.move_xy(0, y + line_num) + term.white(empty_msg))
+                write_at(term, 0, y + line_num, term.white(empty_msg))
                 line_num += 1
         else:
             # Render items with scroll offset
@@ -299,24 +296,24 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
                     if is_selected:
                         # Selected device: highlighted background
                         item_line = term.black_on_cyan(f"  {display_name}")
-                        sys.stdout.write(term.move_xy(0, y + line_num) + item_line)
+                        write_at(term, 0, y + line_num, item_line)
                         line_num += 1
 
                         # Show description on next line if there's space
                         if line_num < height - footer_lines:
                             desc_line = term.black_on_cyan(f"     {description}")
-                            sys.stdout.write(term.move_xy(0, y + line_num) + desc_line)
+                            write_at(term, 0, y + line_num, desc_line)
                             line_num += 1
                     else:
                         # Normal device
                         item_line = term.bold(f"  {display_name}")
-                        sys.stdout.write(term.move_xy(0, y + line_num) + item_line)
+                        write_at(term, 0, y + line_num, item_line)
                         line_num += 1
 
                         # Show description on next line if there's space
                         if line_num < height - footer_lines:
                             desc_line = term.white(f"     {description}")
-                            sys.stdout.write(term.move_xy(0, y + line_num) + desc_line)
+                            write_at(term, 0, y + line_num, desc_line)
                             line_num += 1
                 elif state.palette_mode == "rankings":
                     # Rankings items: (rank, artist_title, icon, rating_info, track_id)
@@ -330,13 +327,13 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
                     if is_selected:
                         # Selected item: highlighted background
                         item_line = term.black_on_cyan(f"  {rank} {icon} {artist_title}")
-                        sys.stdout.write(term.move_xy(0, y + line_num) + item_line)
+                        write_at(term, 0, y + line_num, item_line)
                         line_num += 1
 
                         # Show rating info on next line if there's space
                         if line_num < height - footer_lines:
                             rating_line = term.black_on_cyan(f"       {rating_info}")
-                            sys.stdout.write(term.move_xy(0, y + line_num) + rating_line)
+                            write_at(term, 0, y + line_num, rating_line)
                             line_num += 1
                     else:
                         # Normal item
@@ -345,7 +342,7 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
                             + term.white(f" {icon} ")
                             + term.cyan(artist_title)
                         )
-                        sys.stdout.write(term.move_xy(0, y + line_num) + item_line)
+                        write_at(term, 0, y + line_num, item_line)
                         line_num += 1
                 else:
                     # Command/playlist items: (cat, cmd, icon, desc)
@@ -367,14 +364,14 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
                             + term.white(f" {desc}")
                         )
 
-                    sys.stdout.write(term.move_xy(0, y + line_num) + item_line)
+                    write_at(term, 0, y + line_num, item_line)
                     line_num += 1
 
                 items_rendered += 1
 
     # Clear remaining lines
     while line_num < height - footer_lines:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+        write_at(term, 0, y + line_num, "")
         line_num += 1
 
     # Footer help text - confirmation or normal mode
@@ -384,7 +381,7 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
                 # Show playlist deletion confirmation
                 playlist_name = state.confirmation_data.get("playlist_name", "Unknown")
                 footer = f"   Delete '{playlist_name}'? [Enter/Y]es / [N]o"
-                sys.stdout.write(term.move_xy(0, y + line_num) + term.yellow(footer))
+                write_at(term, 0, y + line_num, term.yellow(footer))
             elif state.confirmation_type == "remove_track_from_playlist":
                 # Show track removal confirmation
                 track_title = state.confirmation_data.get("track_title", "Unknown")
@@ -392,7 +389,7 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
                 footer = (
                     f"   Remove '{track_artist} - {track_title}'? [Enter/Y]es / [N]o"
                 )
-                sys.stdout.write(term.move_xy(0, y + line_num) + term.yellow(footer))
+                write_at(term, 0, y + line_num, term.yellow(footer))
         else:
             # Normal footer with scroll indicator and help text
             if state.palette_mode == "search":
@@ -433,7 +430,7 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
                 else:
                     footer = "   ↑↓ navigate  Enter select  Esc cancel"
 
-            sys.stdout.write(term.move_xy(0, y + line_num) + term.white(footer))
+            write_at(term, 0, y + line_num, term.white(footer))
         line_num += 1
 
 
@@ -487,19 +484,17 @@ def _render_track_detail(
             break
 
         detail_line = f"  {term.bold_cyan(label + ':')} {term.white(value)}"
-        sys.stdout.write(term.move_xy(0, y + line_num) + detail_line)
+        write_at(term, 0, y + line_num, detail_line)
         line_num += 1
 
     # Separator line before actions
     if line_num < height - footer_lines:
-        sys.stdout.write(term.move_xy(0, y + line_num) + "")
+        write_at(term, 0, y + line_num, "")
         line_num += 1
 
     # Actions header
     if line_num < height - footer_lines:
-        sys.stdout.write(
-            term.move_xy(0, y + line_num) + "  " + term.bold_white("Actions:")
-        )
+        write_at(term, 0, y + line_num, "  " + term.bold_white("Actions:"))
         line_num += 1
 
     # Actions menu (4 items, one highlighted)
@@ -526,7 +521,7 @@ def _render_track_detail(
             # Normal item
             item_line = term.bold_cyan(action_text) + term.white(f" - {desc}")
 
-        sys.stdout.write(term.move_xy(0, y + line_num) + item_line)
+        write_at(term, 0, y + line_num, item_line)
         line_num += 1
 
     return line_num
