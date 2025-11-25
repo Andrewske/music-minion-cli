@@ -614,12 +614,55 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
     ui_state = UIState(active_library=active_library)
 
     # Thread-safe UIState updater for background tasks
-    ui_state_lock = threading.Lock()
+    # Use RLock (reentrant lock) to allow same thread to acquire multiple times
+    # This prevents deadlock when executor calls log() which calls update_ui_state_safe
+    ui_state_lock = threading.RLock()
 
     def update_ui_state_safe(updates: dict):
         """Thread-safe UIState update from background threads."""
         nonlocal ui_state
         with ui_state_lock:
+            # Session ID validation for comparison updates
+            # Prevents race condition where old background thread overwrites new session
+            if "comparison" in updates:
+                new_comparison = updates["comparison"]
+                current_comparison = ui_state.comparison
+
+                logger.info(
+                    f"🔍 update_ui_state_safe: comparing sessions - "
+                    f"current(active={current_comparison.active}, session_id={current_comparison.session_id!r}, loading={current_comparison.loading}) vs "
+                    f"new(active={new_comparison.active}, session_id={new_comparison.session_id!r}, loading={new_comparison.loading}, tracks={len(new_comparison.filtered_tracks)})"
+                )
+
+                # Rule 1: Block updates from different sessions (only if current is active)
+                if (
+                    hasattr(current_comparison, 'active') and current_comparison.active
+                    and hasattr(new_comparison, 'session_id') and new_comparison.session_id
+                    and hasattr(current_comparison, 'session_id') and current_comparison.session_id
+                    and new_comparison.session_id != current_comparison.session_id
+                ):
+                    logger.warning(
+                        f"❌ Ignoring stale comparison update (different session): "
+                        f"current_session={current_comparison.session_id}, "
+                        f"update_session={new_comparison.session_id}"
+                    )
+                    return  # Ignore this update
+
+                # Rule 2: Never overwrite loaded state with loading state (same session)
+                # This prevents executor from overwriting background thread's loaded data
+                if (
+                    hasattr(current_comparison, 'loading') and not current_comparison.loading
+                    and hasattr(new_comparison, 'loading') and new_comparison.loading
+                    and hasattr(current_comparison, 'session_id') and current_comparison.session_id
+                    and hasattr(new_comparison, 'session_id') and new_comparison.session_id
+                    and current_comparison.session_id == new_comparison.session_id
+                ):
+                    logger.warning(
+                        f"❌ Ignoring loading state update (already loaded): "
+                        f"session_id={current_comparison.session_id}"
+                    )
+                    return  # Ignore this update
+
             # Handle history_messages specially (add to history)
             if "history_messages" in updates:
                 messages = updates.pop("history_messages")
@@ -627,6 +670,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     ui_state = add_history_line(ui_state, text, color)
 
             # Replace state with updated fields
+            logger.info(f"✅ Applying update_ui_state_safe: {list(updates.keys())}")
             ui_state = dataclasses.replace(ui_state, **updates)
 
     # Inject updater into context for background tasks
@@ -1169,9 +1213,10 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
 
                 # Execute command if one was triggered
                 if command_line:
-                    ctx, ui_state, should_quit = execute_command(
-                        ctx, ui_state, command_line
-                    )
+                    with ui_state_lock:
+                        ctx, ui_state, should_quit = execute_command(
+                            ctx, ui_state, command_line
+                        )
                     # Full redraw after command execution
                     needs_full_redraw = True
 
