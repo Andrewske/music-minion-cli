@@ -770,11 +770,12 @@ def handle_seek_percentage(
         if duration_ms == 0:
             return ctx, True
 
-        # Calculate target position in milliseconds
+        # Calculate target position in milliseconds then convert to seconds for seek()
         target_position_ms = int((percentage / 100.0) * duration_ms)
+        target_position_seconds = target_position_ms / 1000.0
 
-        # Spotify seek takes position in milliseconds
-        success = spotify_player.seek(target_position_ms)
+        # seek() expects seconds (converts to ms internally)
+        success = spotify_player.seek(target_position_seconds)
 
         # Update provider state (token may have been refreshed)
         ctx = ctx.with_provider_states(
@@ -840,12 +841,13 @@ def handle_seek_relative(ctx: AppContext, seconds: float) -> Tuple[AppContext, b
         current_position_ms = playback_info.get("progress_ms", 0)
         duration_ms = playback_info["item"].get("duration_ms", 0)
 
-        # Calculate target position (clamp to valid range)
+        # Calculate target position in ms, clamp to valid range, then convert to seconds
         target_position_ms = int(current_position_ms + (seconds * 1000))
         target_position_ms = max(0, min(target_position_ms, duration_ms))
+        target_position_seconds = target_position_ms / 1000.0
 
-        # Seek to calculated position
-        success = spotify_player.seek(target_position_ms)
+        # seek() expects seconds (converts to ms internally)
+        success = spotify_player.seek(target_position_seconds)
 
         # Update provider state (token may have been refreshed)
         ctx = ctx.with_provider_states(
