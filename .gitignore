@@ -37,3 +37,6 @@ config.toml
 !README.md
 !.env.example
 !CLAUDE.md
+
+*.log
+*.backup
