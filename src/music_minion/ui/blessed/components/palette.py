@@ -71,6 +71,76 @@ def filter_playlist_items(
     return filtered
 
 
+def load_rankings_items(tracks: list[dict]) -> list[tuple[str, str, str, str, int]]:
+    """
+    Convert ranked tracks to palette items format.
+
+    Args:
+        tracks: List of track dicts with rating info from get_leaderboard()
+
+    Returns:
+        List of palette items: (rank, artist_title, rating_icon, rating_info, track_id)
+    """
+    items = []
+    for i, track in enumerate(tracks, 1):
+        # Format rank with padding
+        rank = f"#{i:<3}"
+
+        # Format artist - title
+        artist = track.get("artist", "Unknown")
+        title = track.get("title", "Unknown")
+        artist_title = f"{artist} - {title}"
+
+        # Rating icon based on rating value
+        rating = track.get("rating", 1500)
+        if rating >= 1700:
+            icon = "🔥"  # Fire for top rated
+        elif rating >= 1600:
+            icon = "⭐"  # Star for high rated
+        elif rating >= 1500:
+            icon = "✓"  # Check for above average
+        else:
+            icon = "◦"  # Dot for lower rated
+
+        # Rating info with comparison count
+        comparisons = track.get("comparison_count", 0)
+        rating_info = f"Rating: {rating:.0f} ({comparisons} comparisons)"
+
+        # Track ID for playing
+        track_id = track.get("id", 0)
+
+        items.append((rank, artist_title, icon, rating_info, track_id))
+
+    return items
+
+
+def filter_rankings_items(
+    query: str, items: list[tuple[str, str, str, str, int]]
+) -> list[tuple[str, str, str, str, int]]:
+    """
+    Filter ranking items by artist/title (case-insensitive substring match).
+
+    Args:
+        query: Search query string
+        items: List of ranking items to filter
+
+    Returns:
+        Filtered list of items matching query
+    """
+    if not query:
+        return items
+
+    query_lower = query.lower()
+    filtered = []
+    for item in items:
+        rank, artist_title, icon, rating_info, track_id = item
+        # Match against artist-title (case-insensitive)
+        if query_lower in artist_title.lower():
+            filtered.append(item)
+
+    return filtered
+
+
 def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
     """
     Render command palette with scrolling support.
@@ -103,6 +173,10 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
             header_text = "   📋 Select Playlist"
         elif state.palette_mode == "device":
             header_text = "   🎵 Select Spotify Device"
+        elif state.palette_mode == "rankings":
+            # Use stored title from palette_query or default
+            title = state.palette_query if state.palette_query else "Top Rated Tracks"
+            header_text = f"   🏆 {title}"
         elif state.palette_mode == "search":
             # Show current mode in header
             if state.search_mode == "detail":
@@ -186,7 +260,7 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
                     content_height,
                 )
     else:
-        # Render command/playlist/device items (existing logic)
+        # Render command/playlist/device/rankings items (existing logic)
         if not filtered_commands:
             if line_num < height:
                 empty_msg = (
@@ -194,6 +268,8 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
                     if state.palette_mode == "device"
                     else "  No playlists found"
                     if state.palette_mode == "playlist"
+                    else "  No ranked tracks found"
+                    if state.palette_mode == "rankings"
                     else "  No matching commands"
                 )
                 sys.stdout.write(term.move_xy(0, y + line_num) + term.white(empty_msg))
@@ -242,6 +318,35 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
                             desc_line = term.white(f"     {description}")
                             sys.stdout.write(term.move_xy(0, y + line_num) + desc_line)
                             line_num += 1
+                elif state.palette_mode == "rankings":
+                    # Rankings items: (rank, artist_title, icon, rating_info, track_id)
+                    rank, artist_title, icon, rating_info, track_id = item
+
+                    # Truncate artist_title if too long
+                    max_width = term.width - 20  # Leave room for rank, icon, and rating
+                    if len(artist_title) > max_width:
+                        artist_title = artist_title[: max_width - 3] + "..."
+
+                    if is_selected:
+                        # Selected item: highlighted background
+                        item_line = term.black_on_cyan(f"  {rank} {icon} {artist_title}")
+                        sys.stdout.write(term.move_xy(0, y + line_num) + item_line)
+                        line_num += 1
+
+                        # Show rating info on next line if there's space
+                        if line_num < height - footer_lines:
+                            rating_line = term.black_on_cyan(f"       {rating_info}")
+                            sys.stdout.write(term.move_xy(0, y + line_num) + rating_line)
+                            line_num += 1
+                    else:
+                        # Normal item
+                        item_line = (
+                            term.bold_yellow(f"  {rank}")
+                            + term.white(f" {icon} ")
+                            + term.cyan(artist_title)
+                        )
+                        sys.stdout.write(term.move_xy(0, y + line_num) + item_line)
+                        line_num += 1
                 else:
                     # Command/playlist items: (cat, cmd, icon, desc)
                     cat, cmd, icon, desc = item
@@ -311,6 +416,14 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
                     footer = (
                         "   ↑↓ navigate  Enter activate  v view  Del delete  Esc cancel"
                     )
+            elif state.palette_mode == "rankings":
+                # Rankings mode footer with play key help
+                total_items = len(filtered_commands)
+                if total_items > content_height:
+                    current_position = min(selected_index + 1, total_items)
+                    footer = f"   [{current_position}/{total_items}] ↑↓ navigate  Enter/p play  Esc cancel"
+                else:
+                    footer = "   ↑↓ navigate  Enter/p play  Esc cancel"
             else:
                 # Command mode footer
                 total_items = len(filtered_commands)

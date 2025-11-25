@@ -1,35 +1,37 @@
 """Main event loop and entry point for blessed UI."""
 
-import sys
-import time
-import threading
 import dataclasses
 import queue
+import sys
+import threading
+import time
 from pathlib import Path
+
 from blessed import Terminal
 from loguru import logger
 
-from music_minion.context import AppContext
 from music_minion.commands import admin
+from music_minion.context import AppContext
 from music_minion.core import database
-from music_minion.core.output import set_blessed_mode, clear_blessed_mode
+from music_minion.core.output import clear_blessed_mode, set_blessed_mode
 from music_minion.ipc import server as ipc_server
-from .state import UIState, PlaylistInfo, update_track_info, add_history_line
+
 from .components import (
+    calculate_layout,
+    render_analytics_viewer,
     render_dashboard,
     render_history,
     render_input,
     render_palette,
     render_smart_playlist_wizard,
-    calculate_layout,
-    render_analytics_viewer,
 )
-from .components.track_viewer import render_track_viewer
-from .components.rating_history import render_rating_history_viewer
 from .components.comparison_history import render_comparison_history_viewer
 from .components.metadata_editor import render_metadata_editor
-from .events.keyboard import handle_key
+from .components.rating_history import render_rating_history_viewer
+from .components.track_viewer import render_track_viewer
 from .events.commands import execute_command
+from .events.keyboard import handle_key
+from .state import PlaylistInfo, UIState, add_history_line, update_track_info
 
 # Frame interval constants for background updates
 PLAYER_POLL_INTERVAL = 10  # Poll MPV every 10 frames (~1 second)
@@ -71,7 +73,8 @@ def poll_scan_state(ui_state: UIState) -> UIState:
         Updated UI state with scan progress
     """
     from dataclasses import replace
-    from .state import update_scan_progress, end_scan, add_history_line
+
+    from .state import add_history_line, end_scan, update_scan_progress
 
     # Get current scan state
     scan_state = admin.get_scan_state()
@@ -168,9 +171,8 @@ def poll_sync_state(ui_state: UIState) -> UIState:
     Returns:
         Updated UI state with sync progress
     """
-    from dataclasses import replace
-    from .state import add_history_line
     from ...commands import library
+    from .state import add_history_line
 
     # Get current sync state
     sync_state = library.get_sync_state()
@@ -252,7 +254,6 @@ def poll_conversion_state(ui_state: UIState) -> UIState:
     Returns:
         Updated UI state with conversion progress
     """
-    from dataclasses import replace
 
     from ...commands import playlist
     from .state import add_history_line
@@ -292,7 +293,9 @@ def poll_conversion_state(ui_state: UIState) -> UIState:
             )
 
             if total_tracks > 0:
-                match_pct = (matched_tracks / total_tracks * 100) if total_tracks > 0 else 0
+                match_pct = (
+                    (matched_tracks / total_tracks * 100) if total_tracks > 0 else 0
+                )
                 ui_state = add_history_line(
                     ui_state,
                     f"  📊 Matched: {matched_tracks}/{total_tracks} ({match_pct:.1f}%)",
@@ -330,7 +333,9 @@ def poll_conversion_state(ui_state: UIState) -> UIState:
         else:
             # Completed but not successful and no error (shouldn't happen)
             ui_state = add_history_line(
-                ui_state, "⚠️  Playlist conversion completed with unknown status", "yellow"
+                ui_state,
+                "⚠️  Playlist conversion completed with unknown status",
+                "yellow",
             )
 
         # Clear conversion state so completion messages don't repeat on next poll
@@ -359,10 +364,12 @@ def poll_player_state(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, U
     """
     # Import modules (lazy import to avoid circular deps)
     from dataclasses import replace
-    from ...core import database
-    from ...domain.playback import player, state as playback_state
-    from ...domain.playlists import crud as playlists
+
     from ...commands.playback import get_available_tracks, get_next_track, play_track
+    from ...core import database
+    from ...domain.playback import player
+    from ...domain.playback import state as playback_state
+    from ...domain.playlists import crud as playlists
 
     # Get player status (handle both MPV and Spotify)
     try:
@@ -636,9 +643,12 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
 
                 # Rule 1: Block updates from different sessions (only if current is active)
                 if (
-                    hasattr(current_comparison, 'active') and current_comparison.active
-                    and hasattr(new_comparison, 'session_id') and new_comparison.session_id
-                    and hasattr(current_comparison, 'session_id') and current_comparison.session_id
+                    hasattr(current_comparison, "active")
+                    and current_comparison.active
+                    and hasattr(new_comparison, "session_id")
+                    and new_comparison.session_id
+                    and hasattr(current_comparison, "session_id")
+                    and current_comparison.session_id
                     and new_comparison.session_id != current_comparison.session_id
                 ):
                     logger.warning(
@@ -651,10 +661,14 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 # Rule 2: Never overwrite loaded state with loading state (same session)
                 # This prevents executor from overwriting background thread's loaded data
                 if (
-                    hasattr(current_comparison, 'loading') and not current_comparison.loading
-                    and hasattr(new_comparison, 'loading') and new_comparison.loading
-                    and hasattr(current_comparison, 'session_id') and current_comparison.session_id
-                    and hasattr(new_comparison, 'session_id') and new_comparison.session_id
+                    hasattr(current_comparison, "loading")
+                    and not current_comparison.loading
+                    and hasattr(new_comparison, "loading")
+                    and new_comparison.loading
+                    and hasattr(current_comparison, "session_id")
+                    and current_comparison.session_id
+                    and hasattr(new_comparison, "session_id")
+                    and new_comparison.session_id
                     and current_comparison.session_id == new_comparison.session_id
                 ):
                     logger.warning(
@@ -670,7 +684,6 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     ui_state = add_history_line(ui_state, text, color)
 
             # Replace state with updated fields
-            logger.info(f"✅ Applying update_ui_state_safe: {list(updates.keys())}")
             ui_state = dataclasses.replace(ui_state, **updates)
 
     # Inject updater into context for background tasks
@@ -702,27 +715,27 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
     needs_full_redraw = True
     last_input_text = ""
     last_palette_state = (
-        False,          # palette_visible
-        0,              # palette_selected
-        False,          # confirmation_active
-        False,          # wizard_active
-        0,              # wizard_selected
-        False,          # track_viewer_visible
-        0,              # track_viewer_selected
-        "main",         # track_viewer_mode
-        False,          # analytics_viewer_visible
-        0,              # analytics_viewer_scroll
-        False,          # editor_visible
-        0,              # editor_selected
-        "main",         # editor_mode
-        "",             # editor_input
-        0,              # search_selected
-        0,              # search_scroll
-        "search",       # search_mode
-        0,              # search_detail_scroll
-        0,              # search_detail_selection
-        False,          # comparison.active
-        "a",            # comparison.highlighted
+        False,  # palette_visible
+        0,  # palette_selected
+        False,  # confirmation_active
+        False,  # wizard_active
+        0,  # wizard_selected
+        False,  # track_viewer_visible
+        0,  # track_viewer_selected
+        "main",  # track_viewer_mode
+        False,  # analytics_viewer_visible
+        0,  # analytics_viewer_scroll
+        False,  # editor_visible
+        0,  # editor_selected
+        "main",  # editor_mode
+        "",  # editor_input
+        0,  # search_selected
+        0,  # search_scroll
+        "search",  # search_mode
+        0,  # search_detail_scroll
+        0,  # search_detail_selection
+        False,  # comparison.active
+        "a",  # comparison.highlighted
     )
     layout = None
     last_position = (
@@ -749,7 +762,10 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
             # Poll player state at configured interval OR immediately on track change
             # For Spotify: poll every frame (uses internal cache, no API cost)
             # For MPV: poll every PLAYER_POLL_INTERVAL frames
-            is_spotify = ctx.player_state.current_track and ctx.player_state.current_track.startswith("spotify:")
+            is_spotify = (
+                ctx.player_state.current_track
+                and ctx.player_state.current_track.startswith("spotify:")
+            )
             should_poll_mpv = (frame_count % PLAYER_POLL_INTERVAL == 0) or track_changed
             should_poll = is_spotify or should_poll_mpv
             if should_poll:
@@ -802,7 +818,9 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
             # For Spotify: don't recompute hash every frame (we poll every frame for position updates)
             # Only recompute on MPV polls or scan polls
             current_state_hash = None
-            should_recompute_hash = should_poll_mpv or should_poll_scan or last_state_hash is None
+            should_recompute_hash = (
+                should_poll_mpv or should_poll_scan or last_state_hash is None
+            )
 
             if should_recompute_hash:
                 # Hash excludes current_position to avoid full redraws every second
@@ -889,7 +907,9 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
 
                 # Render palette, wizard, track viewer, or comparison (mutually exclusive)
                 if ui_state.comparison.active:
-                    from music_minion.ui.blessed.components.comparison import render_comparison_overlay
+                    from music_minion.ui.blessed.components.comparison import (
+                        render_comparison_overlay,
+                    )
 
                     render_comparison_overlay(
                         term,
@@ -1045,7 +1065,8 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 or ui_state.track_viewer_mode != last_palette_state[7]
                 or ui_state.analytics_viewer_visible != last_palette_state[8]
                 or ui_state.editor_visible != last_palette_state[10]
-                or ui_state.comparison.active != last_palette_state[19]  # Check comparison state
+                or ui_state.comparison.active
+                != last_palette_state[19]  # Check comparison state
             ):
                 needs_full_redraw = True
 
@@ -1066,7 +1087,9 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                         or ui_state.editor_visible
                         or ui_state.comparison.active
                     ):
-                        overlay_y = layout["palette_y"]  # Same position for all overlays
+                        overlay_y = layout[
+                            "palette_y"
+                        ]  # Same position for all overlays
                         overlay_height = layout["palette_height"]
                         for i in range(overlay_height):
                             sys.stdout.write(
@@ -1078,7 +1101,9 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
 
                     # Render palette, wizard, track viewer, analytics viewer, or comparison (mutually exclusive)
                     if ui_state.comparison.active:
-                        from music_minion.ui.blessed.components.comparison import render_comparison_overlay
+                        from music_minion.ui.blessed.components.comparison import (
+                            render_comparison_overlay,
+                        )
 
                         render_comparison_overlay(
                             term,
@@ -1088,11 +1113,17 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                         )
                     elif ui_state.wizard_active:
                         render_smart_playlist_wizard(
-                            term, ui_state, layout["palette_y"], layout["palette_height"]
+                            term,
+                            ui_state,
+                            layout["palette_y"],
+                            layout["palette_height"],
                         )
                     elif ui_state.palette_visible:
                         render_palette(
-                            term, ui_state, layout["palette_y"], layout["palette_height"]
+                            term,
+                            ui_state,
+                            layout["palette_y"],
+                            layout["palette_height"],
                         )
                     elif ui_state.track_viewer_visible:
                         render_track_viewer(
@@ -1124,7 +1155,10 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                         )
                     elif ui_state.editor_visible:
                         render_metadata_editor(
-                            term, ui_state, layout["palette_y"], layout["palette_height"]
+                            term,
+                            ui_state,
+                            layout["palette_y"],
+                            layout["palette_height"],
                         )
 
                     # Flush output
@@ -1161,7 +1195,10 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     # Use position directly from player state
                     # For Spotify: already interpolated by SpotifyPlayer (polled every frame)
                     # For MPV: interpolated here for smooth updates between polls
-                    is_spotify_track = ctx.player_state.current_track and ctx.player_state.current_track.startswith("spotify:")
+                    is_spotify_track = (
+                        ctx.player_state.current_track
+                        and ctx.player_state.current_track.startswith("spotify:")
+                    )
 
                     if is_spotify_track:
                         # Use SpotifyPlayer's cached position directly (already interpolated)
@@ -1196,7 +1233,6 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
 
                         sys.stdout.flush()
                         last_rendered_position = current_position
-
 
             # Wait for input (with timeout for background updates)
             key = term.inkey(timeout=0.1)

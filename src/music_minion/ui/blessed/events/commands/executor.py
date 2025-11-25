@@ -29,6 +29,342 @@ from .track_viewer_handlers import (
 from .wizard_handlers import handle_wizard_save
 
 
+# Type alias for internal command handlers
+InternalHandlerResult = tuple[AppContext, UIState, bool]
+InternalHandlerData = dict
+
+
+# -----------------------------------------------------------------------------
+# Internal Command Handler Wrappers
+# Each wrapper has signature: (ctx, ui_state, data) -> (AppContext, UIState, bool)
+# -----------------------------------------------------------------------------
+
+
+def _handle_play_track_from_viewer_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Play track from viewer."""
+    playlist_id = data.get("playlist_id")
+    track_index = data.get("track_index")
+    if playlist_id is not None and track_index is not None:
+        ctx, ui_state = handle_play_track_from_viewer(ctx, ui_state, playlist_id, track_index)
+    return ctx, ui_state, False
+
+
+def _handle_remove_track_from_playlist_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Remove track from playlist."""
+    track_id = data.get("track_id")
+    playlist_name = data.get("playlist_name")
+    if track_id is not None and playlist_name:
+        ctx, ui_state = handle_remove_track_from_playlist(ctx, ui_state, track_id, playlist_name)
+    return ctx, ui_state, False
+
+
+def _handle_delete_playlist_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Delete playlist."""
+    playlist_name = data.get("playlist_name")
+    if playlist_name:
+        ctx, ui_state = handle_playlist_deletion(ctx, ui_state, playlist_name)
+    return ctx, ui_state, False
+
+
+def _handle_review_input_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Handle review mode input."""
+    user_input = data.get("input", "")
+    if user_input:
+        from music_minion.ui.blessed.events.review_handler import (
+            handle_review_input,
+            handle_review_confirmation,
+        )
+
+        if ui_state.review_mode == "conversation":
+            ctx, ui_state = handle_review_input(ctx, ui_state, user_input)
+        elif ui_state.review_mode == "confirm":
+            ctx, ui_state = handle_review_confirmation(ctx, ui_state, user_input)
+
+    return ctx, ui_state, False
+
+
+def _handle_show_analytics_viewer_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Show analytics viewer."""
+    analytics_data = data.get("analytics_data", {})
+    ui_state = _show_analytics_viewer_if_data(ui_state, analytics_data)
+    return ctx, ui_state, False
+
+
+def _handle_metadata_save_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Save metadata and close editor."""
+    from music_minion.ui.blessed.events.commands.metadata_handlers import (
+        handle_metadata_editor_save,
+    )
+
+    ctx, ui_state = handle_metadata_editor_save(ctx, ui_state)
+    return ctx, ui_state, False
+
+
+def _handle_metadata_edit_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Edit selected field."""
+    from music_minion.ui.blessed.events.commands.metadata_handlers import (
+        handle_metadata_editor_enter,
+    )
+
+    ctx, ui_state = handle_metadata_editor_enter(ctx, ui_state)
+    return ctx, ui_state, False
+
+
+def _handle_metadata_delete_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Delete selected item."""
+    from music_minion.ui.blessed.events.commands.metadata_handlers import (
+        handle_metadata_editor_delete,
+    )
+
+    ctx, ui_state = handle_metadata_editor_delete(ctx, ui_state)
+    return ctx, ui_state, False
+
+
+def _handle_metadata_add_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Add new item."""
+    from music_minion.ui.blessed.events.commands.metadata_handlers import (
+        handle_metadata_editor_add,
+    )
+
+    ctx, ui_state = handle_metadata_editor_add(ctx, ui_state)
+    return ctx, ui_state, False
+
+
+def _handle_search_play_track_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Play track from search."""
+    from music_minion.ui.blessed.events.commands.search_handlers import (
+        handle_search_play_track,
+    )
+
+    track_id = data.get("track_id")
+    if track_id is not None:
+        ctx, ui_state = handle_search_play_track(ctx, ui_state, track_id)
+    return ctx, ui_state, False
+
+
+def _handle_search_add_to_playlist_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Add track to playlist from search."""
+    from music_minion.ui.blessed.events.commands.search_handlers import (
+        handle_search_add_to_playlist,
+    )
+
+    track_id = data.get("track_id")
+    if track_id is not None:
+        ctx, ui_state = handle_search_add_to_playlist(ctx, ui_state, track_id)
+    return ctx, ui_state, False
+
+
+def _handle_search_edit_metadata_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Edit track metadata from search."""
+    from music_minion.ui.blessed.events.commands.search_handlers import (
+        handle_search_edit_metadata,
+    )
+
+    track_id = data.get("track_id")
+    if track_id is not None:
+        ctx, ui_state = handle_search_edit_metadata(ctx, ui_state, track_id)
+    return ctx, ui_state, False
+
+
+def _handle_view_playlist_tracks_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Show track viewer for playlist."""
+    playlist_name = data.get("playlist_name")
+    if playlist_name:
+        ctx, ui_state = handle_show_track_viewer(ctx, ui_state, playlist_name)
+    return ctx, ui_state, False
+
+
+def _handle_track_viewer_play_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Play track from viewer."""
+    track_id = data.get("track_id")
+    if track_id is not None:
+        ctx, ui_state = handle_track_viewer_play(ctx, ui_state, track_id)
+    return ctx, ui_state, False
+
+
+def _handle_track_viewer_edit_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Edit track metadata from viewer."""
+    track_id = data.get("track_id")
+    if track_id is not None:
+        ctx, ui_state = handle_track_viewer_edit(ctx, ui_state, track_id)
+    return ctx, ui_state, False
+
+
+def _handle_track_viewer_add_to_playlist_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Add track to another playlist from viewer."""
+    track_id = data.get("track_id")
+    if track_id is not None:
+        ctx, ui_state = handle_track_viewer_add_to_playlist(ctx, ui_state, track_id)
+    return ctx, ui_state, False
+
+
+def _handle_track_viewer_remove_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Remove track from playlist."""
+    track_id = data.get("track_id")
+    if track_id is not None:
+        ctx, ui_state = handle_track_viewer_remove(ctx, ui_state, track_id)
+    return ctx, ui_state, False
+
+
+def _handle_track_viewer_edit_filters_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Edit smart playlist filters."""
+    playlist_id = data.get("playlist_id")
+    if playlist_id is not None:
+        ctx, ui_state = handle_track_viewer_edit_filters(ctx, ui_state, playlist_id)
+    return ctx, ui_state, False
+
+
+def _handle_track_viewer_like_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Like track from viewer."""
+    track_id = data.get("track_id")
+    if track_id is not None:
+        ctx, ui_state = handle_track_viewer_like(ctx, ui_state, track_id)
+    return ctx, ui_state, False
+
+
+def _handle_track_viewer_unlike_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Unlike track from viewer."""
+    track_id = data.get("track_id")
+    if track_id is not None:
+        ctx, ui_state = handle_track_viewer_unlike(ctx, ui_state, track_id)
+    return ctx, ui_state, False
+
+
+def _handle_seek_percentage_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Seek to percentage position (0-90%)."""
+    from music_minion.commands.playback import handle_seek_percentage
+
+    percentage = data.get("percentage")
+    if percentage is not None:
+        ctx, _ = handle_seek_percentage(ctx, percentage)
+        ui_state = _refresh_ui_state_from_db(ui_state, ctx)
+    return ctx, ui_state, False
+
+
+def _handle_seek_relative_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Seek relative to current position (±N seconds)."""
+    from music_minion.commands.playback import handle_seek_relative
+
+    seconds = data.get("seconds")
+    if seconds is not None:
+        ctx, _ = handle_seek_relative(ctx, seconds)
+        ui_state = _refresh_ui_state_from_db(ui_state, ctx)
+    return ctx, ui_state, False
+
+
+def _handle_comparison_play_track_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Play/pause comparison track (toggle behavior)."""
+    from music_minion.commands.playback import (
+        play_track,
+        handle_pause_command,
+        handle_resume_command,
+    )
+
+    track = data.get("track")
+    if track:
+        track_id = track.get("track_id") or track.get("id")
+        if track_id:
+            current_track_id = ctx.player_state.current_track_id
+
+            if current_track_id == track_id:
+                # Same track - toggle pause/play
+                if ctx.player_state.is_playing:
+                    ctx, _ = handle_pause_command(ctx)
+                else:
+                    ctx, _ = handle_resume_command(ctx)
+            else:
+                # Different track - play it
+                from music_minion.core import database
+
+                db_track = database.get_track_by_id(track_id)
+                if db_track:
+                    track_obj = database.db_track_to_library_track(db_track)
+                    ctx, _ = play_track(ctx, track_obj, None)
+
+    return ctx, ui_state, False
+
+
+# -----------------------------------------------------------------------------
+# Internal Command Dispatch Table
+# -----------------------------------------------------------------------------
+
+from typing import Callable
+
+InternalHandler = Callable[[AppContext, UIState, InternalHandlerData], InternalHandlerResult]
+
+INTERNAL_HANDLERS: dict[str, InternalHandler] = {
+    "play_track_from_viewer": _handle_play_track_from_viewer_cmd,
+    "remove_track_from_playlist": _handle_remove_track_from_playlist_cmd,
+    "delete_playlist": _handle_delete_playlist_cmd,
+    "review_input": _handle_review_input_cmd,
+    "show_analytics_viewer": _handle_show_analytics_viewer_cmd,
+    "metadata_save": _handle_metadata_save_cmd,
+    "metadata_edit": _handle_metadata_edit_cmd,
+    "metadata_delete": _handle_metadata_delete_cmd,
+    "metadata_add": _handle_metadata_add_cmd,
+    "search_play_track": _handle_search_play_track_cmd,
+    "search_add_to_playlist": _handle_search_add_to_playlist_cmd,
+    "search_edit_metadata": _handle_search_edit_metadata_cmd,
+    "view_playlist_tracks": _handle_view_playlist_tracks_cmd,
+    "track_viewer_play": _handle_track_viewer_play_cmd,
+    "track_viewer_edit": _handle_track_viewer_edit_cmd,
+    "track_viewer_add_to_playlist": _handle_track_viewer_add_to_playlist_cmd,
+    "track_viewer_remove": _handle_track_viewer_remove_cmd,
+    "track_viewer_edit_filters": _handle_track_viewer_edit_filters_cmd,
+    "track_viewer_like": _handle_track_viewer_like_cmd,
+    "track_viewer_unlike": _handle_track_viewer_unlike_cmd,
+    "seek_percentage": _handle_seek_percentage_cmd,
+    "seek_relative": _handle_seek_relative_cmd,
+    "comparison_play_track": _handle_comparison_play_track_cmd,
+}
+
+
 def _show_analytics_viewer_if_data(ui_state: UIState, analytics_data: dict) -> UIState:
     """
     Show analytics viewer if data is provided.
@@ -160,7 +496,7 @@ def _handle_internal_command(
     ctx: AppContext, ui_state: UIState, cmd: InternalCommand
 ) -> tuple[AppContext, UIState, bool]:
     """
-    Handle type-safe internal commands from UI.
+    Handle type-safe internal commands from UI using dispatch table.
 
     Args:
         ctx: Application context
@@ -170,237 +506,15 @@ def _handle_internal_command(
     Returns:
         Tuple of (updated AppContext, updated UIState, should_quit)
     """
-    if cmd.action == "play_track_from_viewer":
-        playlist_id = cmd.data.get("playlist_id")
-        track_index = cmd.data.get("track_index")
-        if playlist_id is not None and track_index is not None:
-            ctx, ui_state = handle_play_track_from_viewer(
-                ctx, ui_state, playlist_id, track_index
-            )
-        return ctx, ui_state, False
+    handler = INTERNAL_HANDLERS.get(cmd.action)
+    if handler:
+        return handler(ctx, ui_state, cmd.data)
 
-    elif cmd.action == "remove_track_from_playlist":
-        track_id = cmd.data.get("track_id")
-        playlist_name = cmd.data.get("playlist_name")
-        if track_id is not None and playlist_name:
-            ctx, ui_state = handle_remove_track_from_playlist(
-                ctx, ui_state, track_id, playlist_name
-            )
-        return ctx, ui_state, False
-
-    elif cmd.action == "delete_playlist":
-        playlist_name = cmd.data.get("playlist_name")
-        if playlist_name:
-            ctx, ui_state = handle_playlist_deletion(ctx, ui_state, playlist_name)
-        return ctx, ui_state, False
-
-    elif cmd.action == "review_input":
-        # Handle review mode input
-        user_input = cmd.data.get("input", "")
-        if user_input:
-            from music_minion.ui.blessed.events.review_handler import (
-                handle_review_input,
-                handle_review_confirmation,
-            )
-
-            if ui_state.review_mode == "conversation":
-                ctx, ui_state = handle_review_input(ctx, ui_state, user_input)
-            elif ui_state.review_mode == "confirm":
-                ctx, ui_state = handle_review_confirmation(ctx, ui_state, user_input)
-
-        return ctx, ui_state, False
-
-    elif cmd.action == "show_analytics_viewer":
-        # Show analytics viewer with data
-        analytics_data = cmd.data.get("analytics_data", {})
-        ui_state = _show_analytics_viewer_if_data(ui_state, analytics_data)
-        return ctx, ui_state, False
-
-    elif cmd.action == "metadata_save":
-        # Save metadata and close editor
-        from music_minion.ui.blessed.events.commands.metadata_handlers import (
-            handle_metadata_editor_save,
-        )
-
-        ctx, ui_state = handle_metadata_editor_save(ctx, ui_state)
-        return ctx, ui_state, False
-
-    elif cmd.action == "metadata_edit":
-        # Edit selected field
-        from music_minion.ui.blessed.events.commands.metadata_handlers import (
-            handle_metadata_editor_enter,
-        )
-
-        ctx, ui_state = handle_metadata_editor_enter(ctx, ui_state)
-        return ctx, ui_state, False
-
-    elif cmd.action == "metadata_delete":
-        # Delete selected item
-        from music_minion.ui.blessed.events.commands.metadata_handlers import (
-            handle_metadata_editor_delete,
-        )
-
-        ctx, ui_state = handle_metadata_editor_delete(ctx, ui_state)
-        return ctx, ui_state, False
-
-    elif cmd.action == "metadata_add":
-        # Add new item
-        from music_minion.ui.blessed.events.commands.metadata_handlers import (
-            handle_metadata_editor_add,
-        )
-
-        ctx, ui_state = handle_metadata_editor_add(ctx, ui_state)
-        return ctx, ui_state, False
-
-    elif cmd.action == "search_play_track":
-        # Play track from search
-        from music_minion.ui.blessed.events.commands.search_handlers import (
-            handle_search_play_track,
-        )
-
-        track_id = cmd.data.get("track_id")
-        if track_id is not None:
-            ctx, ui_state = handle_search_play_track(ctx, ui_state, track_id)
-        return ctx, ui_state, False
-
-    elif cmd.action == "search_add_to_playlist":
-        # Add track to playlist from search
-        from music_minion.ui.blessed.events.commands.search_handlers import (
-            handle_search_add_to_playlist,
-        )
-
-        track_id = cmd.data.get("track_id")
-        if track_id is not None:
-            ctx, ui_state = handle_search_add_to_playlist(ctx, ui_state, track_id)
-        return ctx, ui_state, False
-
-    elif cmd.action == "search_edit_metadata":
-        # Edit track metadata from search
-        from music_minion.ui.blessed.events.commands.search_handlers import (
-            handle_search_edit_metadata,
-        )
-
-        track_id = cmd.data.get("track_id")
-        if track_id is not None:
-            ctx, ui_state = handle_search_edit_metadata(ctx, ui_state, track_id)
-        return ctx, ui_state, False
-
-    # Track viewer actions
-    elif cmd.action == "view_playlist_tracks":
-        # Show track viewer for playlist
-        playlist_name = cmd.data.get("playlist_name")
-        if playlist_name:
-            ctx, ui_state = handle_show_track_viewer(ctx, ui_state, playlist_name)
-        return ctx, ui_state, False
-
-    elif cmd.action == "track_viewer_play":
-        # Play track from viewer
-        track_id = cmd.data.get("track_id")
-        if track_id is not None:
-            ctx, ui_state = handle_track_viewer_play(ctx, ui_state, track_id)
-        return ctx, ui_state, False
-
-    elif cmd.action == "track_viewer_edit":
-        # Edit track metadata from viewer
-        track_id = cmd.data.get("track_id")
-        if track_id is not None:
-            ctx, ui_state = handle_track_viewer_edit(ctx, ui_state, track_id)
-        return ctx, ui_state, False
-
-    elif cmd.action == "track_viewer_add_to_playlist":
-        # Add track to another playlist from viewer
-        track_id = cmd.data.get("track_id")
-        if track_id is not None:
-            ctx, ui_state = handle_track_viewer_add_to_playlist(ctx, ui_state, track_id)
-        return ctx, ui_state, False
-
-    elif cmd.action == "track_viewer_remove":
-        # Remove track from playlist
-        track_id = cmd.data.get("track_id")
-        if track_id is not None:
-            ctx, ui_state = handle_track_viewer_remove(ctx, ui_state, track_id)
-        return ctx, ui_state, False
-
-    elif cmd.action == "track_viewer_edit_filters":
-        # Edit smart playlist filters
-        playlist_id = cmd.data.get("playlist_id")
-        if playlist_id is not None:
-            ctx, ui_state = handle_track_viewer_edit_filters(ctx, ui_state, playlist_id)
-        return ctx, ui_state, False
-
-    elif cmd.action == "track_viewer_like":
-        # Like track from viewer
-        track_id = cmd.data.get("track_id")
-        if track_id is not None:
-            ctx, ui_state = handle_track_viewer_like(ctx, ui_state, track_id)
-        return ctx, ui_state, False
-
-    elif cmd.action == "track_viewer_unlike":
-        # Unlike track from viewer
-        track_id = cmd.data.get("track_id")
-        if track_id is not None:
-            ctx, ui_state = handle_track_viewer_unlike(ctx, ui_state, track_id)
-        return ctx, ui_state, False
-
-    elif cmd.action == "seek_percentage":
-        # Seek to percentage position (0-90%)
-        from music_minion.commands.playback import handle_seek_percentage
-
-        percentage = cmd.data.get("percentage")
-        if percentage is not None:
-            ctx, _ = handle_seek_percentage(ctx, percentage)
-            # Refresh UI state to update progress display
-            ui_state = _refresh_ui_state_from_db(ui_state, ctx)
-        return ctx, ui_state, False
-
-    elif cmd.action == "seek_relative":
-        # Seek relative to current position (±N seconds)
-        from music_minion.commands.playback import handle_seek_relative
-
-        seconds = cmd.data.get("seconds")
-        if seconds is not None:
-            ctx, _ = handle_seek_relative(ctx, seconds)
-            # Refresh UI state to update progress display
-            ui_state = _refresh_ui_state_from_db(ui_state, ctx)
-        return ctx, ui_state, False
-
-    elif cmd.action == "comparison_play_track":
-        # Play/pause comparison track (toggle behavior)
-        from music_minion.commands.playback import play_track, handle_pause_command, handle_resume_command
-
-        track = cmd.data.get("track")
-        if track:
-            # Determine track ID
-            track_id = track.get('track_id') or track.get('id')
-            if track_id:
-                # Check if this track is already the current playing track
-                current_track_id = ctx.player_state.current_track_id
-
-                if current_track_id == track_id:
-                    # Same track - toggle pause/play
-                    if ctx.player_state.is_playing:
-                        # Pause the current track
-                        ctx, _ = handle_pause_command(ctx)
-                    else:
-                        # Resume the current track
-                        ctx, _ = handle_resume_command(ctx)
-                else:
-                    # Different track - play it (will stop any existing playback)
-                    from music_minion.core import database
-                    db_track = database.get_track_by_id(track_id)
-                    if db_track:
-                        # Convert DB row to Track object
-                        track_obj = database.db_track_to_library_track(db_track)
-                        ctx, _ = play_track(ctx, track_obj, None)
-
-        return ctx, ui_state, False
-
-    else:
-        # Unknown command action, log it and continue
-        ui_state = add_history_line(
-            ui_state, f"⚠️ Unknown internal command: {cmd.action}", "yellow"
-        )
-        return ctx, ui_state, False
+    # Unknown command action
+    ui_state = add_history_line(
+        ui_state, f"⚠️ Unknown internal command: {cmd.action}", "yellow"
+    )
+    return ctx, ui_state, False
 
 
 def execute_command(
@@ -602,6 +716,16 @@ def _process_ui_action(
         from music_minion.ui.blessed.state import show_device_palette
 
         ui_state = show_device_palette(ui_state, device_items, device_count)
+
+    elif action["type"] == "show_rankings_palette":
+        # Show rankings palette with top-rated tracks
+        from music_minion.ui.blessed.components.palette import load_rankings_items
+        from music_minion.ui.blessed.state import show_rankings_palette
+
+        tracks = action.get("tracks", [])
+        title = action.get("title", "Top Rated Tracks")
+        items = load_rankings_items(tracks)
+        ui_state = show_rankings_palette(ui_state, items, title)
 
     elif action["type"] == "start_wizard":
         # Start wizard with given type and data

@@ -459,7 +459,7 @@ def parse_rankings_args(args: List[str]) -> dict:
 def handle_rankings_command(
     ctx: AppContext, args: List[str]
 ) -> Tuple[AppContext, bool]:
-    """Display top-rated tracks using track viewer.
+    """Display top-rated tracks in command palette.
 
     Args:
         ctx: Application context
@@ -483,7 +483,7 @@ def handle_rankings_command(
     try:
         tracks = get_leaderboard(
             limit=parsed["limit"],
-            min_comparisons=10,
+            min_comparisons=1,  # Show any track with at least 1 comparison
             genre_filter=parsed["genre"],
             year_filter=parsed["year"],
         )
@@ -507,13 +507,12 @@ def handle_rankings_command(
             filters.append(str(parsed["year"]))
         title = f"Top Rated: {' • '.join(filters)}"
 
-    # Show in track viewer using UI action
+    # Show in rankings palette using UI action
     ctx = ctx.with_ui_action(
         {
-            "type": "show_track_viewer",
+            "type": "show_rankings_palette",
             "tracks": tracks,
-            "playlist_name": title,
-            "playlist_type": "history",  # Use history type for read-only view
+            "title": title,
         }
     )
 
