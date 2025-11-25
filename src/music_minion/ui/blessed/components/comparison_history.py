@@ -1,11 +1,11 @@
 """Comparison history viewer rendering component."""
 
-import sys
 from datetime import datetime
 from typing import Any
 
 from blessed import Terminal
 
+from music_minion.ui.blessed.helpers import write_at
 from music_minion.ui.blessed.state import UIState
 
 
@@ -38,15 +38,13 @@ def render_comparison_history_viewer(
     # Header
     if line_num < height:
         header_text = "   🏆 Comparison History"
-        sys.stdout.write(
-            term.move_xy(0, y_start + line_num) + term.bold_cyan(header_text)
-        )
+        write_at(term, 0, y_start + line_num, term.bold_cyan(header_text))
         line_num += 1
 
     # Separator
     if line_num < height:
         separator = "   " + "─" * (term.width - 6)
-        sys.stdout.write(term.move_xy(0, y_start + line_num) + term.white(separator))
+        write_at(term, 0, y_start + line_num, term.white(separator))
         line_num += 1
 
     # Calculate visible window
@@ -56,9 +54,7 @@ def render_comparison_history_viewer(
         # Empty state
         if line_num < height - 2:
             empty_msg = "   No comparisons found. Run 'rate' to start comparing tracks."
-            sys.stdout.write(
-                term.move_xy(0, y_start + line_num) + term.yellow(empty_msg)
-            )
+            write_at(term, 0, y_start + line_num, term.yellow(empty_msg))
             line_num += 1
     else:
         # Render comparisons list
@@ -76,27 +72,25 @@ def render_comparison_history_viewer(
             # Format comparison line
             comparison_line = _format_comparison_line(comparison, term, is_selected)
 
-            sys.stdout.write(term.move_xy(0, y_start + line_num) + comparison_line)
+            write_at(term, 0, y_start + line_num, comparison_line)
             line_num += 1
 
     # Clear remaining lines
     while line_num < height - 2:
-        sys.stdout.write(term.move_xy(0, y_start + line_num) + term.clear_eol)
+        write_at(term, 0, y_start + line_num, "")
         line_num += 1
 
     # Scroll indicator (if scrolled)
     if line_num < height - 1:
         if scroll > 0 or (len(comparisons) > scroll + visible_height):
             indicator = f"   Showing {scroll + 1}-{min(scroll + visible_height, len(comparisons))} of {len(comparisons)}"
-            sys.stdout.write(
-                term.move_xy(0, y_start + line_num) + term.bright_black(indicator)
-            )
+            write_at(term, 0, y_start + line_num, term.bright_black(indicator))
         line_num += 1
 
     # Footer help text
     if line_num < height:
         footer = "   [↑/↓] Navigate  [Esc/Q] Close"
-        sys.stdout.write(term.move_xy(0, y_start + line_num) + term.white(footer))
+        write_at(term, 0, y_start + line_num, term.white(footer))
         line_num += 1
 
 

@@ -1,6 +1,8 @@
 """Command history rendering functions."""
 
 from blessed import Terminal
+
+from ..helpers import write_at
 from ..state import UIState
 
 
@@ -47,16 +49,16 @@ def render_history(term: Terminal, state: UIState, y_start: int, height: int) ->
     # Render each line
     for i, (text, color) in enumerate(visible_lines):
         color_func = color_map.get(color, term.white)
-        print(term.move_xy(0, y_start + i) + term.clear_eol + color_func(text))
+        write_at(term, 0, y_start + i, color_func(text))
 
     # Clear any remaining lines in the region
     for i in range(len(visible_lines), height):
-        print(term.move_xy(0, y_start + i) + term.clear_eol)
+        write_at(term, 0, y_start + i, "")
 
     # Show scroll indicator if scrolled up
     if scroll_offset > 0:
         total_lines = len(history)
         indicator = f"↑ Scrolled ({scroll_offset}/{total_lines} lines from bottom)"
-        # Display in top-right corner of history area
+        # Display in top-right corner of history area (line already cleared above)
         indicator_x = max(0, term.width - len(indicator) - 2)
-        print(term.move_xy(indicator_x, y_start) + term.bold_yellow(indicator))
+        write_at(term, indicator_x, y_start, term.bold_yellow(indicator), clear=False)

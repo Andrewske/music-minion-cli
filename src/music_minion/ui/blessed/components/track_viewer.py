@@ -1,7 +1,8 @@
 """Track viewer rendering for playlist tracks."""
 
-import sys
 from blessed import Terminal
+
+from ..helpers import write_at
 from ..state import UIState
 
 # Layout constants
@@ -46,7 +47,7 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
             header_text = f"   🎵 Track Details"
         else:
             header_text = f"   📋 Playlist: {playlist_name}"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.bold_cyan(header_text))
+        write_at(term, 0, y + line_num, term.bold_cyan(header_text))
         line_num += 1
 
     # Metadata line - type, track count, and filter indicator (only in list mode)
@@ -68,7 +69,7 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
         else:
             # Show total count
             metadata_text = f"   {type_icon} {type_display} • {len(all_tracks)} tracks"
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white(metadata_text))
+        write_at(term, 0, y + line_num, term.white(metadata_text))
         line_num += 1
 
     # Render based on mode
@@ -87,7 +88,7 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
                     empty_msg = f"  No tracks match filter: '{filter_query}'"
                 else:
                     empty_msg = "  No tracks in this playlist"
-                sys.stdout.write(term.move_xy(0, y + line_num) + term.white(empty_msg))
+                write_at(term, 0, y + line_num, term.white(empty_msg))
                 line_num += 1
         else:
             # Batch query for liked tracks (performance optimization)
@@ -142,13 +143,13 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
                     # Normal item
                     item_line = term.white(f"  {track_text[:max_track_width]}")
 
-                sys.stdout.write(term.move_xy(0, y + line_num) + item_line)
+                write_at(term, 0, y + line_num, item_line)
                 line_num += 1
                 items_rendered += 1
 
     # Clear remaining lines
     while line_num < height - TRACK_VIEWER_FOOTER_LINES:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+        write_at(term, 0, y + line_num, "")
         line_num += 1
 
     # Footer help text - different based on mode
@@ -181,7 +182,7 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
                 else:
                     footer = "   ↑↓/j/k navigate  Enter details  p/l/u/e/a/f (play/like/unlike/edit/add/filters)  q close"
 
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.white(footer))
+        write_at(term, 0, y + line_num, term.white(footer))
         line_num += 1
 
 
@@ -257,18 +258,18 @@ def _render_track_detail_and_actions(
         if field_value:  # Only show non-empty fields
             # Format: "  Field: Value"
             field_line = term.cyan(f"  {field_name}: ") + term.white(str(field_value))
-            sys.stdout.write(term.move_xy(0, y + line_num) + field_line)
+            write_at(term, 0, y + line_num, field_line)
             line_num += 1
 
     # Add spacing before action menu
     if line_num < height - footer_lines:
-        sys.stdout.write(term.move_xy(0, y + line_num) + term.clear_eol)
+        write_at(term, 0, y + line_num, "")
         line_num += 1
 
     # Render action menu (context-aware based on playlist type)
     if line_num < height - footer_lines:
         action_header = term.bold_cyan("  Actions:")
-        sys.stdout.write(term.move_xy(0, y + line_num) + action_header)
+        write_at(term, 0, y + line_num, action_header)
         line_num += 1
 
     # Define actions based on playlist type
@@ -307,10 +308,10 @@ def _render_track_detail_and_actions(
 
         if is_selected:
             # Selected action: highlighted background
-            sys.stdout.write(term.move_xy(0, y + line_num) + term.black_on_cyan(action_line))
+            write_at(term, 0, y + line_num, term.black_on_cyan(action_line))
         else:
             # Normal action
-            sys.stdout.write(term.move_xy(0, y + line_num) + term.white(action_line))
+            write_at(term, 0, y + line_num, term.white(action_line))
 
         line_num += 1
 

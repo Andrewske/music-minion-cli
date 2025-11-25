@@ -28,6 +28,7 @@ from .components import (
 from .components.comparison_history import render_comparison_history_viewer
 from .components.metadata_editor import render_metadata_editor
 from .components.rating_history import render_rating_history_viewer
+from .helpers import write_at
 from .components.track_viewer import render_track_viewer
 from .events.commands import execute_command
 from .events.keyboard import handle_key
@@ -1076,7 +1077,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     # Clear input area (3 lines: top border, input, bottom border)
                     input_y = layout["input_y"]
                     for i in range(3):
-                        sys.stdout.write(term.move_xy(0, input_y + i) + term.clear_eol)
+                        write_at(term, 0, input_y + i, "")
 
                     # Clear palette/wizard/track viewer/analytics viewer/editor/comparison area if visible
                     if (
