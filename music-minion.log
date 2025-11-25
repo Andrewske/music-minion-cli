@@ -1,5 +1,0 @@
-2025-11-24 15:03:47 | INFO     | music_minion.core.output:39 | Loguru initialized: /home/kevin/coding/music-minion-cli/music-minion.log (level=INFO)
-2025-11-24 15:03:47 | INFO     | music_minion.core.database:759 | Initializing database at: /home/kevin/.local/share/music-minion/music_minion.db
-2025-11-24 15:03:48 | INFO     | music_minion.ui.blessed.app:939 | Starting background sync after UI render
-2025-11-24 15:03:48 | INFO     | music_minion.commands.sync:83 | Starting incremental local sync...
-2025-11-24 15:03:48 | INFO     | music_minion.core.output:83 | ✓ All files in sync
