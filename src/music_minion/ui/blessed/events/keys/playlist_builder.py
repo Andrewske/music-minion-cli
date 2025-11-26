@@ -67,7 +67,7 @@ def _handle_main_builder_key(
         return move_builder_selection(state, -1, viewer_height), None
 
     # Toggle track in playlist
-    if char == " ":
+    if event_type == "enter":
         track = _get_selected_track(state)
         if track:
             return toggle_builder_track(state, track["id"]), InternalCommand(
@@ -80,15 +80,18 @@ def _handle_main_builder_key(
             )
         return state, None
 
-    # Play track
-    if char == "p" or event_type == "enter":
+    # Toggle play/pause
+    if char == " ":
         track = _get_selected_track(state)
-        if track:
-            return state, InternalCommand(
-                action="builder_play_track",
-                data={"track_id": track["id"]},
-            )
-        return state, None
+        return state, InternalCommand(
+            action="builder_toggle_playback",
+            data={"track_id": track["id"] if track else None},
+        )
+
+    # Numeric keys 0-9: Jump to percentage of track
+    if event_type == "char" and char and char.isdigit():
+        percentage = int(char) * 10
+        return state, InternalCommand(action="seek_percentage", data={"percentage": percentage})
 
     # Sort dropdown
     if char == "s":

@@ -399,26 +399,31 @@ def _handle_builder_toggle_track_cmd(
     return ctx, ui_state, False
 
 
-def _handle_builder_play_track_cmd(
+def _handle_builder_toggle_playback_cmd(
     ctx: AppContext, ui_state: UIState, data: InternalHandlerData
 ) -> InternalHandlerResult:
-    """Play track from builder."""
+    """Toggle playback in builder mode - play selected track or pause/resume."""
     from music_minion.core import database
-    from music_minion.commands.playback import play_track
+    from music_minion.commands.playback import (
+        play_track,
+        handle_pause_command,
+        handle_resume_command,
+    )
 
     track_id = data.get("track_id")
-    if track_id is None:
-        return ctx, ui_state, False
 
-    # Get track from database
-    db_track = database.get_track_by_id(track_id)
-    if not db_track:
-        ui_state = add_history_line(ui_state, f"❌ Track not found: {track_id}", "red")
-        return ctx, ui_state, False
-
-    # Convert to LibraryTrack and play
-    track_obj = database.db_track_to_library_track(db_track)
-    ctx, _ = play_track(ctx, track_obj, None)
+    # If playing, pause
+    if ctx.player_state.is_playing:
+        ctx, _ = handle_pause_command(ctx)
+    # If paused (has current track), resume
+    elif ctx.player_state.current_track_id:
+        ctx, _ = handle_resume_command(ctx)
+    # Nothing playing - play selected track
+    elif track_id:
+        db_track = database.get_track_by_id(track_id)
+        if db_track:
+            track_obj = database.db_track_to_library_track(db_track)
+            ctx, _ = play_track(ctx, track_obj, None)
 
     return ctx, ui_state, False
 
@@ -483,7 +488,7 @@ INTERNAL_HANDLERS: dict[str, InternalHandler] = {
     "comparison_play_track": _handle_comparison_play_track_cmd,
     "enter_playlist_builder": _handle_enter_playlist_builder_cmd,
     "builder_toggle_track": _handle_builder_toggle_track_cmd,
-    "builder_play_track": _handle_builder_play_track_cmd,
+    "builder_toggle_playback": _handle_builder_toggle_playback_cmd,
     "builder_save_and_exit": _handle_builder_save_and_exit_cmd,
 }
 

@@ -722,6 +722,8 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         False,  # wizard_active
         0,  # wizard_selected
         False,  # builder.active
+        0,  # builder.selected_index
+        0,  # builder.scroll_offset
         False,  # track_viewer_visible
         0,  # track_viewer_selected
         "main",  # track_viewer_mode
@@ -738,6 +740,8 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         0,  # search_detail_selection
         False,  # comparison.active
         "a",  # comparison.highlighted
+        None,  # comparison.track_a id
+        None,  # comparison.track_b id
     )
     layout = None
     last_position = (
@@ -853,6 +857,8 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 ui_state.wizard_active,
                 ui_state.wizard_selected,
                 ui_state.builder.active,
+                ui_state.builder.selected_index,
+                ui_state.builder.scroll_offset,
                 ui_state.track_viewer_visible,
                 ui_state.track_viewer_selected,
                 ui_state.track_viewer_mode,
@@ -868,7 +874,9 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 ui_state.search_detail_scroll,
                 ui_state.search_detail_selection,
                 ui_state.comparison.active,
-                ui_state.comparison.highlighted,  # Must match last_palette_state tuple
+                ui_state.comparison.highlighted,
+                ui_state.comparison.track_a.get('id') if ui_state.comparison.track_a else None,
+                ui_state.comparison.track_b.get('id') if ui_state.comparison.track_b else None,
             ) != last_palette_state
 
             # Determine if we need a full redraw
@@ -987,6 +995,8 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     ui_state.wizard_active,
                     ui_state.wizard_selected,
                     ui_state.builder.active,
+                    ui_state.builder.selected_index,
+                    ui_state.builder.scroll_offset,
                     ui_state.track_viewer_visible,
                     ui_state.track_viewer_selected,
                     ui_state.track_viewer_mode,
@@ -1002,7 +1012,9 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     ui_state.search_detail_scroll,
                     ui_state.search_detail_selection,
                     ui_state.comparison.active,
-                    ui_state.comparison.highlighted,  # Track highlighted track changes
+                    ui_state.comparison.highlighted,
+                    ui_state.comparison.track_a.get('id') if ui_state.comparison.track_a else None,
+                    ui_state.comparison.track_b.get('id') if ui_state.comparison.track_b else None,
                 )
 
                 # Update rendered position for partial update threshold
@@ -1076,12 +1088,12 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 ui_state.palette_visible != last_palette_state[0]
                 or ui_state.wizard_active != last_palette_state[3]
                 or ui_state.builder.active != last_palette_state[5]
-                or ui_state.track_viewer_visible != last_palette_state[6]
-                or ui_state.track_viewer_mode != last_palette_state[8]
-                or ui_state.analytics_viewer_visible != last_palette_state[9]
-                or ui_state.editor_visible != last_palette_state[11]
+                or ui_state.track_viewer_visible != last_palette_state[8]
+                or ui_state.track_viewer_mode != last_palette_state[10]
+                or ui_state.analytics_viewer_visible != last_palette_state[11]
+                or ui_state.editor_visible != last_palette_state[13]
                 or ui_state.comparison.active
-                != last_palette_state[20]  # Check comparison state
+                != last_palette_state[22]  # Check comparison state
             ):
                 needs_full_redraw = True
 
@@ -1199,6 +1211,8 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                         ui_state.wizard_active,
                         ui_state.wizard_selected,
                         ui_state.builder.active,
+                        ui_state.builder.selected_index,
+                        ui_state.builder.scroll_offset,
                         ui_state.track_viewer_visible,
                         ui_state.track_viewer_selected,
                         ui_state.track_viewer_mode,
@@ -1214,7 +1228,9 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                         ui_state.search_detail_scroll,
                         ui_state.search_detail_selection,
                         ui_state.comparison.active,
-                        ui_state.comparison.highlighted,  # Track highlighted track changes
+                        ui_state.comparison.highlighted,
+                        ui_state.comparison.track_a.get('id') if ui_state.comparison.track_a else None,
+                        ui_state.comparison.track_b.get('id') if ui_state.comparison.track_b else None,
                     )
 
             else:

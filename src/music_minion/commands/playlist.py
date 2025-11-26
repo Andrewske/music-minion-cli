@@ -761,7 +761,7 @@ def handle_playlist_active_command(
                 saved_position = playback.get_playlist_position(pl["id"])
                 shuffle_enabled = playback.get_shuffle_mode()
 
-                # Sequential mode: offer to resume from saved position
+                # Sequential mode: auto-resume from saved position
                 if saved_position and not shuffle_enabled:
                     track_id, position = saved_position
                     # Get playlist tracks to find the saved track
@@ -775,39 +775,20 @@ def handle_playlist_active_command(
                             break
 
                     if saved_track:
-                        if not is_blessed_mode:
-                            log(
-                                f"\n💾 Last position: Track {position + 1}/{len(playlist_tracks)}",
-                                level="info",
-                            )
-                            log(
-                                f"   {saved_track.get('artist', 'Unknown')} - {saved_track.get('title', 'Unknown')}",
-                                level="info",
-                            )
-
-                        # In blessed mode, auto-resume; otherwise prompt
-                        if is_blessed_mode:
-                            response = "y"  # Auto-resume in blessed UI
-                        else:
-                            response = (
-                                input("   Resume from this position? [Y/n]: ")
-                                .strip()
-                                .lower()
-                            )
-
-                        if response != "n":
-                            # Find the Track object from music_tracks
-                            for track in ctx.music_tracks:
-                                if track.local_path == saved_track["local_path"]:
-                                    if not is_blessed_mode:
-                                        log("▶️  Resuming playback...", level="info")
-                                    # Import play_track from playback commands
-                                    from . import playback as playback_commands
-
-                                    ctx, _ = playback_commands.play_track(
-                                        ctx, track, position
+                        # Find the Track object from music_tracks and resume
+                        for track in ctx.music_tracks:
+                            if track.local_path == saved_track["local_path"]:
+                                if not is_blessed_mode:
+                                    log(
+                                        f"▶️  Resuming: {saved_track.get('artist', 'Unknown')} - {saved_track.get('title', 'Unknown')}",
+                                        level="info",
                                     )
-                                    break
+                                from . import playback as playback_commands
+
+                                ctx, _ = playback_commands.play_track(
+                                    ctx, track, position
+                                )
+                                break
 
                 # Shuffle mode: automatically start with random track
                 elif shuffle_enabled:
