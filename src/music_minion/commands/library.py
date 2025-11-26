@@ -502,32 +502,7 @@ def switch_active_library(ctx: AppContext, provider: str) -> Tuple[AppContext, b
             log("✓ SoundCloud sync complete", level="info")
 
     # Reload tracks based on provider
-    if provider == "local":
-        # Only tracks with local files
-        db_tracks = database.get_all_tracks()
-        filtered = [t for t in db_tracks if t.get("local_path")]
-
-    elif provider == "soundcloud":
-        # Only tracks with SoundCloud IDs
-        db_tracks = database.get_all_tracks()
-        filtered = [t for t in db_tracks if t.get("soundcloud_id")]
-
-    elif provider == "spotify":
-        # Only tracks with Spotify IDs
-        db_tracks = database.get_all_tracks()
-        filtered = [t for t in db_tracks if t.get("spotify_id")]
-
-    elif provider == "youtube":
-        # Only tracks with YouTube IDs
-        db_tracks = database.get_all_tracks()
-        filtered = [t for t in db_tracks if t.get("youtube_id")]
-
-    elif provider == "all":
-        # All tracks
-        filtered = database.get_all_tracks()
-
-    else:
-        filtered = []
+    filtered = database.filter_tracks_by_library(database.get_all_tracks(), provider)
 
     # Convert to Track objects
     tracks = [database.db_track_to_library_track(t) for t in filtered]

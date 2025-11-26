@@ -338,7 +338,7 @@ def _handle_enter_playlist_builder_cmd(
         get_playlist_tracks,
         get_playlist_builder_state,
     )
-    from music_minion.core.database import get_all_tracks
+    from music_minion.core.database import get_all_tracks, filter_tracks_by_library
     from music_minion.ui.blessed.state import show_playlist_builder
 
     playlist_id = data.get("playlist_id")
@@ -349,7 +349,7 @@ def _handle_enter_playlist_builder_cmd(
         return ctx, ui_state, False
 
     # Load all tracks from current library
-    all_tracks = get_all_tracks(library=ui_state.active_library)
+    all_tracks = filter_tracks_by_library(get_all_tracks(), ui_state.active_library)
 
     # Get track IDs already in playlist
     playlist_tracks = get_playlist_tracks(playlist_id)

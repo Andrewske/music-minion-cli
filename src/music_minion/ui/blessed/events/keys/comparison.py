@@ -1,20 +1,28 @@
 """Comparison mode (Elo rating) keyboard handlers."""
 
 import dataclasses
-from loguru import logger
+
 from blessed.keyboard import Keystroke
-from music_minion.ui.blessed.state import UIState, InternalCommand
-from music_minion.domain.rating.elo import update_ratings, get_k_factor, select_strategic_pair
+
+from music_minion.core.output import log
 from music_minion.domain.rating.database import (
     get_or_create_rating,
-    record_comparison,
     get_ratings_coverage,
+    record_comparison,
 )
-from music_minion.core.output import log
+from music_minion.domain.rating.elo import (
+    get_k_factor,
+    select_strategic_pair,
+    update_ratings,
+)
+from music_minion.ui.blessed.state import InternalCommand, UIState
+
 from .utils import parse_key
 
 
-def handle_comparison_key(key: Keystroke, state: UIState) -> tuple[UIState, InternalCommand | None]:
+def handle_comparison_key(
+    key: Keystroke, state: UIState
+) -> tuple[UIState, InternalCommand | None]:
     """
     Handle keyboard input during comparison mode.
 
@@ -38,9 +46,6 @@ def handle_comparison_key(key: Keystroke, state: UIState) -> tuple[UIState, Inte
     # Parse key event to get consistent event dictionary
     event = parse_key(key)
 
-    # Log key press for debugging
-    logger.debug(f"Comparison mode key: name={key.name}, event_type={event['type']}, char={event.get('char')}")
-
     # Arrow keys: Change highlighted track
     if event["type"] == "arrow_left":
         new_comparison = dataclasses.replace(comparison, highlighted="a")
@@ -57,12 +62,13 @@ def handle_comparison_key(key: Keystroke, state: UIState) -> tuple[UIState, Inte
         return handle_archive_track(state)
 
     # Space: Play highlighted track
-    elif key == ' ' or event["type"] == "char" and event["char"] == " ":
-        track = comparison.track_a if comparison.highlighted == "a" else comparison.track_b
+    elif key == " " or event["type"] == "char" and event["char"] == " ":
+        track = (
+            comparison.track_a if comparison.highlighted == "a" else comparison.track_b
+        )
         # Use InternalCommand to trigger playback
         return state, InternalCommand(
-            action="comparison_play_track",
-            data={"track": track}
+            action="comparison_play_track", data={"track": track}
         )
 
     # Enter: Choose highlighted track as winner
@@ -70,14 +76,18 @@ def handle_comparison_key(key: Keystroke, state: UIState) -> tuple[UIState, Inte
         return handle_comparison_choice(state, comparison.highlighted)
 
     # Esc or Q: Exit comparison mode
-    elif event["type"] == "escape" or (event["type"] == "char" and event["char"] and event["char"].lower() == "q"):
+    elif event["type"] == "escape" or (
+        event["type"] == "char" and event["char"] and event["char"].lower() == "q"
+    ):
         return exit_comparison_mode(state)
 
     # Key not handled by comparison mode - allow fallthrough to normal handling
     return None, None
 
 
-def handle_comparison_choice(state: UIState, winner_side: str) -> tuple[UIState, InternalCommand | None]:
+def handle_comparison_choice(
+    state: UIState, winner_side: str
+) -> tuple[UIState, InternalCommand | None]:
     """
     Record comparison, update ratings, load next pair or end session.
 
@@ -99,8 +109,8 @@ def handle_comparison_choice(state: UIState, winner_side: str) -> tuple[UIState,
         loser = comparison.track_a
 
     # Get current ratings
-    winner_rating_obj = get_or_create_rating(winner['id'])
-    loser_rating_obj = get_or_create_rating(loser['id'])
+    winner_rating_obj = get_or_create_rating(winner["id"])
+    loser_rating_obj = get_or_create_rating(loser["id"])
 
     # Calculate K-factors
     winner_k = get_k_factor(winner_rating_obj.comparison_count)
@@ -111,21 +121,27 @@ def handle_comparison_choice(state: UIState, winner_side: str) -> tuple[UIState,
 
     # Update ratings using Elo
     new_winner_rating, new_loser_rating = update_ratings(
-        winner_rating_obj.rating,
-        loser_rating_obj.rating,
-        k
+        winner_rating_obj.rating, loser_rating_obj.rating, k
     )
 
     # Record comparison in database
     record_comparison(
-        track_a_id=comparison.track_a['id'],
-        track_b_id=comparison.track_b['id'],
-        winner_id=winner['id'],
-        track_a_rating_before=winner_rating_obj.rating if winner_side == "a" else loser_rating_obj.rating,
-        track_b_rating_before=loser_rating_obj.rating if winner_side == "a" else winner_rating_obj.rating,
-        track_a_rating_after=new_winner_rating if winner_side == "a" else new_loser_rating,
-        track_b_rating_after=new_loser_rating if winner_side == "a" else new_winner_rating,
-        session_id=comparison.session_id
+        track_a_id=comparison.track_a["id"],
+        track_b_id=comparison.track_b["id"],
+        winner_id=winner["id"],
+        track_a_rating_before=winner_rating_obj.rating
+        if winner_side == "a"
+        else loser_rating_obj.rating,
+        track_b_rating_before=loser_rating_obj.rating
+        if winner_side == "a"
+        else winner_rating_obj.rating,
+        track_a_rating_after=new_winner_rating
+        if winner_side == "a"
+        else new_loser_rating,
+        track_b_rating_after=new_loser_rating
+        if winner_side == "a"
+        else new_winner_rating,
+        session_id=comparison.session_id,
     )
 
     # Increment comparison count
@@ -141,13 +157,13 @@ def handle_comparison_choice(state: UIState, winner_side: str) -> tuple[UIState,
     ratings_cache = comparison.ratings_cache or {}
 
     # Update ratings cache
-    ratings_cache[winner['id']] = {
-        'rating': new_winner_rating,
-        'comparison_count': winner_rating_obj.comparison_count + 1
+    ratings_cache[winner["id"]] = {
+        "rating": new_winner_rating,
+        "comparison_count": winner_rating_obj.comparison_count + 1,
     }
-    ratings_cache[loser['id']] = {
-        'rating': new_loser_rating,
-        'comparison_count': loser_rating_obj.comparison_count + 1
+    ratings_cache[loser["id"]] = {
+        "rating": new_loser_rating,
+        "comparison_count": loser_rating_obj.comparison_count + 1,
     }
 
     # Select next pair
@@ -165,7 +181,7 @@ def handle_comparison_choice(state: UIState, winner_side: str) -> tuple[UIState,
         track_b=track_b,
         highlighted="a",  # Reset to track A
         comparisons_done=new_comparisons_done,
-        ratings_cache=ratings_cache
+        ratings_cache=ratings_cache,
     )
 
     new_state = dataclasses.replace(state, comparison=new_comparison)
@@ -189,8 +205,14 @@ def end_comparison_session(state: UIState) -> tuple[UIState, InternalCommand | N
     rated_count, total_count = get_ratings_coverage()
 
     # Show session complete message
-    log(f"Session complete! {comparison.comparisons_done} comparisons made.", level="info")
-    log(f"Coverage: {rated_count}/{total_count} tracks rated (20+ comparisons)", level="info")
+    log(
+        f"Session complete! {comparison.comparisons_done} comparisons made.",
+        level="info",
+    )
+    log(
+        f"Coverage: {rated_count}/{total_count} tracks rated (20+ comparisons)",
+        level="info",
+    )
 
     # Clear comparison state
     new_comparison = dataclasses.replace(
@@ -200,7 +222,7 @@ def end_comparison_session(state: UIState) -> tuple[UIState, InternalCommand | N
         track_b=None,
         saved_player_state=None,
         filtered_tracks=[],
-        ratings_cache=None
+        ratings_cache=None,
     )
 
     new_state = dataclasses.replace(state, comparison=new_comparison)
@@ -220,7 +242,10 @@ def exit_comparison_mode(state: UIState) -> tuple[UIState, InternalCommand | Non
     comparison = state.comparison
 
     # Show exit message
-    log(f"Session ended. {comparison.comparisons_done}/{comparison.target_comparisons} comparisons completed.", level="info")
+    log(
+        f"Session ended. {comparison.comparisons_done}/{comparison.target_comparisons} comparisons completed.",
+        level="info",
+    )
 
     # Clear comparison state
     new_comparison = dataclasses.replace(
@@ -230,7 +255,7 @@ def exit_comparison_mode(state: UIState) -> tuple[UIState, InternalCommand | Non
         track_b=None,
         saved_player_state=None,
         filtered_tracks=[],
-        ratings_cache=None
+        ratings_cache=None,
     )
 
     new_state = dataclasses.replace(state, comparison=new_comparison)
