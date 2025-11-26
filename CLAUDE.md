@@ -47,10 +47,17 @@ Music Minion CLI: Contextual music curation with multi-source support (local, So
 - Track deduplication: TF-IDF cosine similarity matching
 
 **UI Component Organization**:
-- Keyboard handlers: `ui/blessed/events/keys/` (modular by mode: normal, wizard, comparison, etc.)
+- Keyboard handlers: `ui/blessed/events/keys/` (modular by mode: normal, wizard, comparison, playlist_builder, etc.)
 - Components: `ui/blessed/components/` (pure render functions)
-- Helpers: `ui/blessed/helpers/` (scrolling, terminal utilities)
+- Helpers: `ui/blessed/helpers/` (scrolling, terminal utilities, `write_at()`)
 - State selectors: `ui/blessed/state_selectors.py` (memoized state derivations)
+- Internal commands: `ui/blessed/events/commands/executor.py` (async command handlers)
+
+**UI Mode System**:
+- Mode detection via `detect_mode()` in `events/keyboard.py`
+- Priority order: comparison > wizard > builder > track_viewer > analytics > editor > normal
+- Each mode has: state fields in `UIState`, key handler, render component
+- State mutations via `dataclasses.replace()` (immutable updates)
 
 ## Code Requirements
 
@@ -138,8 +145,9 @@ except Exception:
 - loguru (centralized logging)
 - spotipy (Spotify API)
 
-**Database**: SQLite schema v17+ in `core/database.py`
+**Database**: SQLite schema v22 in `core/database.py`
 - Migrations: Idempotent with try/except for duplicate columns
+- Key tables: `tracks`, `playlists`, `playlist_tracks`, `playlist_builder_state`
 
 ## Documentation References
 
@@ -147,6 +155,21 @@ except Exception:
 - `docs/playlist-system-plan.md` - Implementation history
 - `docs/incomplete-items.md` - Future roadmap
 
+## Recent Features
+
+**Playlist Builder** (v22):
+- Bulk track selection for playlist building
+- Entry: Press `b` from track viewer on manual playlist
+- Sort by: title, artist, year, album, genre, bpm
+- Filter with text/numeric operators (contains, equals, >, <, etc.)
+- State persistence: scroll position, sort, filters saved per playlist
+- Files: `components/playlist_builder.py`, `events/keys/playlist_builder.py`
+
+**ELO Rating System**:
+- Track comparison mode for rating tracks
+- Rating history viewer
+- Comparison history viewer
+
 ---
 
-**Last Updated**: 2025-11-21
+**Last Updated**: 2025-11-25

@@ -79,7 +79,7 @@ def _render_header(term: Terminal, builder, y: int) -> int:
     filter_info = " | Filters: " + ", ".join(filter_parts) if filter_parts else ""
 
     info_line = f"   {sort_info}{filter_info}"
-    write_at(term, 0, y + 1, term.dim(info_line[:term.width - 1]))
+    write_at(term, 0, y + 1, term.dim + info_line[:term.width - 1] + term.normal)
 
     return y + 2
 
@@ -161,7 +161,7 @@ def _render_footer(term: Terminal, builder, y: int) -> int:
     help_text = "j/k nav  Space toggle  p play  s sort  f filter  d del filter  Esc exit"
 
     footer = f"   {position_text} {help_text}"
-    write_at(term, 0, y, term.dim(footer[:term.width - 1]))
+    write_at(term, 0, y, term.dim + footer[:term.width - 1] + term.normal)
 
     return y + 1
 
@@ -195,7 +195,7 @@ def _render_dropdown(term: Terminal, builder, y: int) -> None:
         # Text input mode
         input_text = builder.filter_value_input + "_"
         write_at(term, dropdown_x, y + 1, term.reverse(f" {input_text.ljust(dropdown_width - 1)}"))
-        write_at(term, dropdown_x, y + 2, term.dim(" Enter=confirm  Esc=cancel"))
+        write_at(term, dropdown_x, y + 2, term.dim + " Enter=confirm  Esc=cancel" + term.normal)
     else:
         # Option list mode
         for i, option in enumerate(options):
@@ -212,4 +212,4 @@ def _render_dropdown(term: Terminal, builder, y: int) -> None:
 
         # Help text below options
         help_y = y + 1 + len(options)
-        write_at(term, dropdown_x, help_y, term.dim(" j/k select  Enter=confirm  Esc=cancel"))
+        write_at(term, dropdown_x, help_y, term.dim + " j/k select  Enter=confirm  Esc=cancel" + term.normal)

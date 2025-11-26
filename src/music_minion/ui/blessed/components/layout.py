@@ -21,6 +21,8 @@ def calculate_layout(term: Terminal, state: UIState, dashboard_height: int) -> d
     overlay_height = 0
     if state.palette_visible or state.wizard_active:
         overlay_height = 22
+    elif state.builder.active:
+        overlay_height = 22
     elif state.track_viewer_visible:
         overlay_height = 22
     elif state.rating_history_visible:

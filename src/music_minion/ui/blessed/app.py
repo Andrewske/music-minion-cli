@@ -28,10 +28,10 @@ from .components import (
 from .components.comparison_history import render_comparison_history_viewer
 from .components.metadata_editor import render_metadata_editor
 from .components.rating_history import render_rating_history_viewer
-from .helpers import write_at
 from .components.track_viewer import render_track_viewer
 from .events.commands import execute_command
 from .events.keyboard import handle_key
+from .helpers import write_at
 from .state import PlaylistInfo, UIState, add_history_line, update_track_info
 
 # Frame interval constants for background updates
@@ -876,9 +876,6 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 current_state_hash is not None and current_state_hash != last_state_hash
             )
 
-            # DEBUG: Log redraw decision
-            logger.debug(f"Frame {frame_count}: needs_full_redraw={needs_full_redraw}, hash_changed={current_state_hash != last_state_hash if current_state_hash else 'N/A'}")
-
             if needs_full_redraw:
                 # Render dashboard first to check if height changed (lock for thread safety)
                 with ui_state_lock:
@@ -932,7 +929,10 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                         term, ui_state, layout["palette_y"], layout["palette_height"]
                     )
                 elif ui_state.builder.active:
-                    from music_minion.ui.blessed.components.playlist_builder import render_playlist_builder
+                    from music_minion.ui.blessed.components.playlist_builder import (
+                        render_playlist_builder,
+                    )
+
                     render_playlist_builder(
                         term, ui_state, layout["palette_y"], layout["palette_height"]
                     )
@@ -1085,8 +1085,6 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
             ):
                 needs_full_redraw = True
 
-            # DEBUG: Log input/palette state
-            logger.debug(f"Frame {frame_count}: input_changed={input_changed}, palette_state_changed={palette_state_changed}")
             if input_changed or palette_state_changed:
                 # Partial update - only input and palette changed
                 if layout and not needs_full_redraw:
@@ -1137,9 +1135,15 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                             layout["palette_height"],
                         )
                     elif ui_state.builder.active:
-                        from music_minion.ui.blessed.components.playlist_builder import render_playlist_builder
+                        from music_minion.ui.blessed.components.playlist_builder import (
+                            render_playlist_builder,
+                        )
+
                         render_playlist_builder(
-                            term, ui_state, layout["palette_y"], layout["palette_height"]
+                            term,
+                            ui_state,
+                            layout["palette_y"],
+                            layout["palette_height"],
                         )
                     elif ui_state.palette_visible:
                         render_palette(
@@ -1215,8 +1219,6 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
 
             else:
                 # Only check for position updates if we have a track and layout
-                # DEBUG: Log that we reached the else branch
-                logger.debug(f"Partial update branch: track={bool(ctx.player_state.current_track)}, layout={bool(layout)}, mapping={bool(dashboard_line_mapping)}")
                 if ctx.player_state.current_track and layout and dashboard_line_mapping:
                     # Use position directly from player state
                     # For Spotify: already interpolated by SpotifyPlayer (polled every frame)
@@ -1239,15 +1241,10 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                         abs(current_position - last_rendered_position)
                         >= POSITION_UPDATE_THRESHOLD
                     )
-                    # DEBUG: Log position comparison
-                    logger.debug(f"Position check: current={current_position:.2f}, last_rendered={last_rendered_position:.2f}, changed={position_changed}")
 
                     if position_changed:
                         # Partial update - only update time-sensitive dashboard elements
                         from .components.dashboard import render_dashboard_partial
-
-                        # DEBUG: Log partial render call
-                        logger.debug(f"Calling render_dashboard_partial at y={layout['dashboard_y']}")
 
                         # Use current position for smooth visual updates
                         display_state = ctx.player_state._replace(

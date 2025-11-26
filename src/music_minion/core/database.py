@@ -1699,6 +1699,30 @@ def get_all_tracks() -> List[Dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
 
 
+def filter_tracks_by_library(
+    tracks: List[Dict[str, Any]], library: str
+) -> List[Dict[str, Any]]:
+    """Filter tracks to those belonging to the specified library/provider.
+
+    Args:
+        tracks: List of track dictionaries
+        library: Provider name ('local', 'soundcloud', 'spotify', 'youtube', 'all')
+
+    Returns:
+        Filtered list of tracks
+    """
+    if library == "local":
+        return [t for t in tracks if t.get("local_path")]
+    elif library == "soundcloud":
+        return [t for t in tracks if t.get("soundcloud_id")]
+    elif library == "spotify":
+        return [t for t in tracks if t.get("spotify_id")]
+    elif library == "youtube":
+        return [t for t in tracks if t.get("youtube_id")]
+    else:  # "all" or unknown
+        return tracks
+
+
 def get_available_track_paths() -> List[str]:
     """Get file paths of tracks that are not archived."""
     with get_db_connection() as conn:

@@ -4,7 +4,6 @@ from datetime import datetime
 from typing import Optional
 
 from blessed import Terminal
-from loguru import logger
 
 from music_minion.domain.playback.player import PlayerState
 
@@ -117,14 +116,18 @@ def render_dashboard(
     # Track information
     elif player_state.current_track:
         if metadata:
-            track_lines = format_track_display(metadata, term, ui_state.current_track_has_soundcloud_like)
+            track_lines = format_track_display(
+                metadata, term, ui_state.current_track_has_soundcloud_like
+            )
             lines.extend(track_lines)
         else:
             # Track is playing but no metadata yet (not in DB or lookup failed)
             import os
 
             # Check if current_track is a URL (don't show OAuth tokens!)
-            if player_state.current_track.startswith('http://') or player_state.current_track.startswith('https://'):
+            if player_state.current_track.startswith(
+                "http://"
+            ) or player_state.current_track.startswith("https://"):
                 lines.append(term.bold_white(f"{ICONS['note']} Streaming track..."))
                 lines.append(term.white("  Loading metadata..."))
             else:
@@ -285,7 +288,9 @@ def get_progress_color(percentage: float, term: Terminal):
     return term.red
 
 
-def format_track_display(metadata: TrackMetadata, term: Terminal, has_soundcloud_like: bool = False) -> list[str]:
+def format_track_display(
+    metadata: TrackMetadata, term: Terminal, has_soundcloud_like: bool = False
+) -> list[str]:
     """Format track information for display."""
     lines = []
     # Add heart indicator if track is liked on SoundCloud
@@ -319,7 +324,9 @@ def format_track_display(metadata: TrackMetadata, term: Terminal, has_soundcloud
     return lines
 
 
-def calculate_progress_segments(position: float, duration: float, bar_width: int) -> tuple[int, int]:
+def calculate_progress_segments(
+    position: float, duration: float, bar_width: int
+) -> tuple[int, int]:
     """Calculate filled characters and partial block segments for progress bar.
 
     Args:
@@ -340,7 +347,9 @@ def calculate_progress_segments(position: float, duration: float, bar_width: int
     return full_chars, partial_fill
 
 
-def render_progress_blocks(full_chars: int, partial_fill: int, bar_width: int, term: Terminal) -> str:
+def render_progress_blocks(
+    full_chars: int, partial_fill: int, bar_width: int, term: Terminal
+) -> str:
     """Render colored progress bar blocks with sub-character precision.
 
     Args:
@@ -394,13 +403,17 @@ def create_progress_bar(position: float, duration: float, term: Terminal) -> str
         return term.white("─" * 40)
 
     bar_width = 40
-    full_chars, partial_fill = calculate_progress_segments(position, duration, bar_width)
+    full_chars, partial_fill = calculate_progress_segments(
+        position, duration, bar_width
+    )
     progress_bar = render_progress_blocks(full_chars, partial_fill, bar_width, term)
 
     # Add time displays
     current = format_time(position)
     total = format_time(duration)
-    return f"{progress_bar} {term.white(current)} {term.cyan('━━━━')} {term.white(total)}"
+    return (
+        f"{progress_bar} {term.white(current)} {term.cyan('━━━━')} {term.white(total)}"
+    )
 
 
 def format_bpm_line(bpm: int, term: Terminal) -> str:
@@ -543,7 +556,7 @@ def render_dashboard_partial(
         line_mapping: Dictionary with line offsets from render_dashboard
     """
     # DEBUG: Log entry
-    logger.debug(f"render_dashboard_partial: y_start={y_start}, mapping_keys={list(line_mapping.keys())}")
+
     metadata = ui_state.track_metadata
 
     # Update clock in header
@@ -597,8 +610,6 @@ def render_dashboard_partial(
         print(term.move_xy(0, header_y) + term.clear_eol + header, end="")
 
     # Update progress bar if we have a track with valid duration
-    # DEBUG: Log progress bar condition
-    logger.debug(f"Progress bar check: track={bool(player_state.current_track)}, duration={player_state.duration}, has_mapping={'progress_line' in line_mapping}")
     if (
         player_state.current_track
         and player_state.duration > 0
@@ -609,7 +620,6 @@ def render_dashboard_partial(
         )
         progress_y = y_start + line_mapping["progress_line"]
         # DEBUG: Log actual render
-        logger.debug(f"Rendering progress bar at y={progress_y}, position={player_state.current_position:.2f}")
         print(term.move_xy(0, progress_y) + term.clear_eol + progress, end="")
 
         # Update BPM line if metadata available
