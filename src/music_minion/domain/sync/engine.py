@@ -222,6 +222,95 @@ def detect_file_changes(config: Config) -> List[Dict[str, Any]]:
     return changed_tracks
 
 
+def sync_metadata_export(
+    track_ids: Optional[List[int]] = None, show_progress: bool = True
+) -> Dict[str, int]:
+    """Export database metadata to file metadata.
+
+    Writes title, artist, album, genre, year, bpm, key from database to files.
+
+    Args:
+        track_ids: Optional list of specific track IDs to export (None = all with local_path)
+        show_progress: Whether to print progress messages
+
+    Returns:
+        Dictionary with stats: {'success': count, 'failed': count, 'skipped': count}
+    """
+    from music_minion.domain.library.metadata import write_metadata_to_file
+
+    stats = {"success": 0, "failed": 0, "skipped": 0}
+
+    with get_db_connection() as conn:
+        # Get tracks to export
+        if track_ids:
+            placeholders = ",".join("?" * len(track_ids))
+            cursor = conn.execute(
+                f"""
+                SELECT id, local_path, title, artist, album, genre, year, bpm, key_signature
+                FROM tracks
+                WHERE id IN ({placeholders}) AND local_path IS NOT NULL
+            """,
+                track_ids,
+            )
+        else:
+            cursor = conn.execute(
+                """
+                SELECT id, local_path, title, artist, album, genre, year, bpm, key_signature
+                FROM tracks
+                WHERE local_path IS NOT NULL
+            """
+            )
+
+        tracks = [dict(row) for row in cursor.fetchall()]
+
+    if not tracks:
+        if show_progress:
+            print("No local tracks to export metadata for")
+        return stats
+
+    if show_progress:
+        print(f"Exporting metadata to {len(tracks)} file(s)...")
+
+    total_tracks = len(tracks)
+    progress_interval = max(1, total_tracks // 100)
+
+    for i, track in enumerate(tracks, 1):
+        local_path = track["local_path"]
+
+        # Check if file exists
+        if not local_path or not os.path.exists(local_path):
+            stats["skipped"] += 1
+            continue
+
+        # Write metadata to file
+        success = write_metadata_to_file(
+            local_path,
+            title=track.get("title"),
+            artist=track.get("artist"),
+            album=track.get("album"),
+            genre=track.get("genre"),
+            year=track.get("year"),
+            bpm=track.get("bpm"),
+            key=track.get("key_signature"),
+        )
+
+        if success:
+            stats["success"] += 1
+            if show_progress and i % progress_interval == 0:
+                percent = (i * 100) // total_tracks
+                print(f"  Exported {percent}% ({i}/{total_tracks})...")
+        else:
+            stats["failed"] += 1
+
+    if show_progress:
+        print(
+            f"\nMetadata export complete: {stats['success']} succeeded, "
+            f"{stats['failed']} failed, {stats['skipped']} skipped"
+        )
+
+    return stats
+
+
 def sync_export(
     config: Config, track_ids: Optional[List[int]] = None, show_progress: bool = True
 ) -> Dict[str, int]:
