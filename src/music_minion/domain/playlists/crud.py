@@ -3,6 +3,7 @@ Playlist management for Music Minion CLI
 Functional approach with explicit state passing
 """
 
+import json
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
@@ -834,3 +835,86 @@ def get_available_playlist_tracks(playlist_id: int) -> List[str]:
                 params,
             )
             return [row["local_path"] for row in cursor.fetchall()]
+
+
+# Playlist Builder State Functions
+
+
+def get_playlist_builder_state(playlist_id: int) -> Optional[Dict[str, Any]]:
+    """Get saved builder state for a playlist.
+
+    Args:
+        playlist_id: Playlist ID
+
+    Returns:
+        Dict with scroll_position, sort_field, sort_direction, active_filters (parsed JSON),
+        and last_accessed_at, or None if no state exists
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            "SELECT * FROM playlist_builder_state WHERE playlist_id = ?",
+            (playlist_id,),
+        )
+        row = cursor.fetchone()
+        if row:
+            result = dict(row)
+            # Parse JSON filters
+            result["active_filters"] = json.loads(result.get("active_filters", "[]"))
+            return result
+        return None
+
+
+def save_playlist_builder_state(
+    playlist_id: int,
+    scroll_position: int,
+    sort_field: str,
+    sort_direction: str,
+    active_filters: List[Dict[str, Any]],
+) -> None:
+    """Save or update builder state for a playlist (upsert).
+
+    Args:
+        playlist_id: Playlist ID
+        scroll_position: Current scroll position in the track list
+        sort_field: Field to sort by (e.g., 'artist', 'title', 'bpm')
+        sort_direction: Sort direction ('asc' or 'desc')
+        active_filters: List of active filter dicts
+    """
+    filters_json = json.dumps(active_filters)
+    with get_db_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO playlist_builder_state
+                (playlist_id, scroll_position, sort_field, sort_direction, active_filters, last_accessed_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(playlist_id) DO UPDATE SET
+                scroll_position = excluded.scroll_position,
+                sort_field = excluded.sort_field,
+                sort_direction = excluded.sort_direction,
+                active_filters = excluded.active_filters,
+                last_accessed_at = CURRENT_TIMESTAMP
+        """,
+            (playlist_id, scroll_position, sort_field, sort_direction, filters_json),
+        )
+        conn.commit()
+
+
+def delete_playlist_builder_state(playlist_id: int) -> bool:
+    """Delete builder state for a playlist.
+
+    Note: This is automatically cleaned up when a playlist is deleted due to
+    CASCADE constraint. This function is for manual cleanup if needed.
+
+    Args:
+        playlist_id: Playlist ID
+
+    Returns:
+        True if state was deleted, False if no state existed
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            "DELETE FROM playlist_builder_state WHERE playlist_id = ?",
+            (playlist_id,),
+        )
+        conn.commit()
+        return cursor.rowcount > 0

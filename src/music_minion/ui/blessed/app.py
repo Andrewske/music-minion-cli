@@ -721,6 +721,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         False,  # confirmation_active
         False,  # wizard_active
         0,  # wizard_selected
+        False,  # builder.active
         False,  # track_viewer_visible
         0,  # track_viewer_selected
         "main",  # track_viewer_mode
@@ -851,6 +852,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 ui_state.confirmation_active,
                 ui_state.wizard_active,
                 ui_state.wizard_selected,
+                ui_state.builder.active,
                 ui_state.track_viewer_visible,
                 ui_state.track_viewer_selected,
                 ui_state.track_viewer_mode,
@@ -913,7 +915,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
 
                 render_input(term, ui_state, layout["input_y"])
 
-                # Render palette, wizard, track viewer, or comparison (mutually exclusive)
+                # Render palette, wizard, builder, track viewer, or comparison (mutually exclusive)
                 if ui_state.comparison.active:
                     from music_minion.ui.blessed.components.comparison import (
                         render_comparison_overlay,
@@ -927,6 +929,11 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     )
                 elif ui_state.wizard_active:
                     render_smart_playlist_wizard(
+                        term, ui_state, layout["palette_y"], layout["palette_height"]
+                    )
+                elif ui_state.builder.active:
+                    from music_minion.ui.blessed.components.playlist_builder import render_playlist_builder
+                    render_playlist_builder(
                         term, ui_state, layout["palette_y"], layout["palette_height"]
                     )
                 elif ui_state.palette_visible:
@@ -979,6 +986,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     ui_state.confirmation_active,
                     ui_state.wizard_active,
                     ui_state.wizard_selected,
+                    ui_state.builder.active,
                     ui_state.track_viewer_visible,
                     ui_state.track_viewer_selected,
                     ui_state.track_viewer_mode,
@@ -1067,12 +1075,13 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
             if palette_state_changed and (
                 ui_state.palette_visible != last_palette_state[0]
                 or ui_state.wizard_active != last_palette_state[3]
-                or ui_state.track_viewer_visible != last_palette_state[5]
-                or ui_state.track_viewer_mode != last_palette_state[7]
-                or ui_state.analytics_viewer_visible != last_palette_state[8]
-                or ui_state.editor_visible != last_palette_state[10]
+                or ui_state.builder.active != last_palette_state[5]
+                or ui_state.track_viewer_visible != last_palette_state[6]
+                or ui_state.track_viewer_mode != last_palette_state[8]
+                or ui_state.analytics_viewer_visible != last_palette_state[9]
+                or ui_state.editor_visible != last_palette_state[11]
                 or ui_state.comparison.active
-                != last_palette_state[19]  # Check comparison state
+                != last_palette_state[20]  # Check comparison state
             ):
                 needs_full_redraw = True
 
@@ -1086,10 +1095,11 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     for i in range(3):
                         write_at(term, 0, input_y + i, "")
 
-                    # Clear palette/wizard/track viewer/analytics viewer/editor/comparison area if visible
+                    # Clear palette/wizard/builder/track viewer/analytics viewer/editor/comparison area if visible
                     if (
                         ui_state.palette_visible
                         or ui_state.wizard_active
+                        or ui_state.builder.active
                         or ui_state.track_viewer_visible
                         or ui_state.analytics_viewer_visible
                         or ui_state.editor_visible
@@ -1107,7 +1117,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     # Re-render
                     render_input(term, ui_state, layout["input_y"])
 
-                    # Render palette, wizard, track viewer, analytics viewer, or comparison (mutually exclusive)
+                    # Render palette, wizard, builder, track viewer, analytics viewer, or comparison (mutually exclusive)
                     if ui_state.comparison.active:
                         from music_minion.ui.blessed.components.comparison import (
                             render_comparison_overlay,
@@ -1125,6 +1135,11 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                             ui_state,
                             layout["palette_y"],
                             layout["palette_height"],
+                        )
+                    elif ui_state.builder.active:
+                        from music_minion.ui.blessed.components.playlist_builder import render_playlist_builder
+                        render_playlist_builder(
+                            term, ui_state, layout["palette_y"], layout["palette_height"]
                         )
                     elif ui_state.palette_visible:
                         render_palette(
@@ -1179,6 +1194,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                         ui_state.confirmation_active,
                         ui_state.wizard_active,
                         ui_state.wizard_selected,
+                        ui_state.builder.active,
                         ui_state.track_viewer_visible,
                         ui_state.track_viewer_selected,
                         ui_state.track_viewer_mode,

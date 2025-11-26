@@ -132,6 +132,15 @@ def handle_track_viewer_key(
                 return state, InternalCommand(
                     action="track_viewer_unlike", data={"track_id": track_id}
                 )
+            elif char == "b" and state.track_viewer_playlist_type == "manual":
+                # Enter playlist builder mode (only for manual playlists)
+                return hide_track_viewer(state), InternalCommand(
+                    action="enter_playlist_builder",
+                    data={
+                        "playlist_id": state.track_viewer_playlist_id,
+                        "playlist_name": state.track_viewer_playlist_name,
+                    },
+                )
             elif char == "d" and state.track_viewer_playlist_type == "manual":
                 # Remove from manual playlist (only in list mode)
                 if state.track_viewer_mode == "list":
@@ -172,7 +181,7 @@ def handle_track_viewer_key(
         if event["type"] == "char" and event["char"]:
             char = event["char"]
             # Skip shortcut keys
-            if char.lower() not in ["p", "d", "e", "a", "f", "q", "j", "k", "l", "u"]:
+            if char.lower() not in ["p", "d", "e", "a", "f", "q", "j", "k", "l", "u", "b"]:
                 from music_minion.ui.blessed.state_selectors import filter_search_tracks
 
                 new_query = state.track_viewer_filter_query + char

@@ -33,14 +33,16 @@ def detect_mode(state: UIState) -> str:
         state: Current UI state
 
     Returns:
-        Mode name: "comparison", "wizard", "track_viewer", "rating_history",
-                   "comparison_history", "analytics_viewer", "metadata_editor",
-                   or "normal"
+        Mode name: "comparison", "wizard", "playlist_builder", "track_viewer",
+                   "rating_history", "comparison_history", "analytics_viewer",
+                   "metadata_editor", or "normal"
     """
     if state.comparison.active:
         return "comparison"
     elif state.wizard_active:
         return "wizard"
+    elif state.builder.active:
+        return "playlist_builder"
     elif state.track_viewer_visible:
         return "track_viewer"
     elif state.rating_history_visible:
@@ -101,6 +103,9 @@ def handle_key(
     match mode:
         case "wizard":
             return handle_wizard_key(state, event)
+        case "playlist_builder":
+            from music_minion.ui.blessed.events.keys.playlist_builder import handle_playlist_builder_key
+            return handle_playlist_builder_key(state, event, palette_height)
         case "track_viewer":
             return handle_track_viewer_key(state, event, palette_height)
         case "rating_history":

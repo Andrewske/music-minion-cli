@@ -168,12 +168,12 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
                 else:
                     footer = "   ↑↓/j/k navigate  Enter details  p/l/u/e/a (play/like/unlike/edit/add)  q close"
             elif playlist_type == 'manual':
-                # Manual playlist: can remove tracks
+                # Manual playlist: can remove tracks and enter builder mode
                 if total_tracks > content_height:
                     current_position = min(selected_index + 1, total_tracks)
-                    footer = f"   [{current_position}/{total_tracks}] ↑↓/j/k nav  Enter  p/l/u/d/e/a  q close"
+                    footer = f"   [{current_position}/{total_tracks}] ↑↓/j/k nav  Enter  p/l/u/d/e/a/b  q close"
                 else:
-                    footer = "   ↑↓/j/k navigate  Enter details  p/l/u/d/e/a (play/like/unlike/del/edit/add)  q close"
+                    footer = "   ↑↓/j/k navigate  Enter details  p/l/u/d/e/a/b (play/like/unlike/del/edit/add/build)  q close"
             else:
                 # Smart playlist: read-only (no delete, but can edit filters)
                 if total_tracks > content_height:

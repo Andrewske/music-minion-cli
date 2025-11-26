@@ -71,6 +71,15 @@ class ScanProgress:
 
 
 @dataclass
+class BuilderFilter:
+    """A single filter rule for the playlist builder."""
+
+    field: str  # title, artist, year, album, genre, bpm
+    operator: str  # contains, equals, gt, lt, gte, lte, not_equals, starts_with, ends_with
+    value: str
+
+
+@dataclass
 class ComparisonState:
     """Immutable comparison session state."""
 
@@ -90,6 +99,39 @@ class ComparisonState:
     saved_player_state: Optional[Any] = None  # PlayerState saved before session
     filtered_tracks: list[dict[str, Any]] = field(default_factory=list)  # Tracks for session
     ratings_cache: Optional[dict[int, dict[str, Any]]] = None  # Cache of {track_id: {rating, comparison_count}}
+
+
+@dataclass
+class PlaylistBuilderState:
+    """State for the playlist builder mode."""
+
+    active: bool = False
+    target_playlist_id: Optional[int] = None
+    target_playlist_name: str = ""
+
+    # Track data
+    all_tracks: list[dict[str, Any]] = field(default_factory=list)
+    displayed_tracks: list[dict[str, Any]] = field(default_factory=list)
+    playlist_track_ids: set[int] = field(default_factory=set)
+
+    # Selection and scroll
+    selected_index: int = 0
+    scroll_offset: int = 0
+
+    # Sort/filter state
+    sort_field: str = "artist"
+    sort_direction: str = "asc"  # 'asc' or 'desc'
+    filters: list[BuilderFilter] = field(default_factory=list)
+
+    # Dropdown state machine: None -> 'sort' | 'filter_field' -> 'filter_operator' -> 'filter_value'
+    dropdown_mode: Optional[str] = None
+    dropdown_selected: int = 0
+    dropdown_options: list[str] = field(default_factory=list)
+
+    # Pending filter creation (multi-step)
+    pending_filter_field: Optional[str] = None
+    pending_filter_operator: Optional[str] = None
+    filter_value_input: str = ""
 
 
 @dataclass
@@ -251,6 +293,12 @@ class UIState:
     # ============================================================================
     # Comparison mode state (for Elo-style track comparisons)
     comparison: ComparisonState = field(default_factory=ComparisonState)
+
+    # ============================================================================
+    # PLAYLIST BUILDER MODE
+    # ============================================================================
+    # Playlist builder mode state (for building playlists with sort/filter)
+    builder: PlaylistBuilderState = field(default_factory=PlaylistBuilderState)
 
     # ============================================================================
     # RATING HISTORY VIEWER MODAL
@@ -1777,3 +1825,426 @@ def move_comparison_history_selection(
         comparison_history_selected=new_selected,
         comparison_history_scroll=new_scroll,
     )
+
+
+# ============================================================================
+# PLAYLIST BUILDER HELPERS
+# ============================================================================
+
+BUILDER_SORT_FIELDS = ["title", "artist", "year", "album", "genre", "bpm"]
+BUILDER_TEXT_FIELDS = {"title", "artist", "album", "genre"}
+BUILDER_NUMERIC_FIELDS = {"year", "bpm"}
+
+BUILDER_TEXT_OPERATORS = [
+    ("contains", "contains"),
+    ("equals", "equals"),
+    ("not_equals", "not equals"),
+    ("starts_with", "starts with"),
+    ("ends_with", "ends with"),
+]
+
+BUILDER_NUMERIC_OPERATORS = [
+    ("equals", "="),
+    ("gt", ">"),
+    ("lt", "<"),
+    ("gte", ">="),
+    ("lte", "<="),
+    ("not_equals", "!="),
+]
+
+
+def show_playlist_builder(
+    state: UIState,
+    playlist_id: int,
+    playlist_name: str,
+    all_tracks: list[dict],
+    playlist_track_ids: set[int],
+    saved_state: Optional[dict] = None,
+) -> UIState:
+    """Show playlist builder with tracks and optionally restore saved state."""
+    # Parse saved filters if present
+    filters = []
+    if saved_state and saved_state.get("active_filters"):
+        filters = [
+            BuilderFilter(f["field"], f["operator"], f["value"])
+            for f in saved_state["active_filters"]
+        ]
+
+    sort_field = saved_state.get("sort_field", "artist") if saved_state else "artist"
+    sort_direction = saved_state.get("sort_direction", "asc") if saved_state else "asc"
+    scroll_position = saved_state.get("scroll_position", 0) if saved_state else 0
+
+    # Apply sort and filter to get displayed tracks
+    displayed = _apply_builder_filters(all_tracks, filters)
+    displayed = _apply_builder_sort(displayed, sort_field, sort_direction)
+
+    # Clamp scroll position to valid range
+    scroll_position = min(scroll_position, max(0, len(displayed) - 1))
+
+    builder_state = PlaylistBuilderState(
+        active=True,
+        target_playlist_id=playlist_id,
+        target_playlist_name=playlist_name,
+        all_tracks=all_tracks,
+        displayed_tracks=displayed,
+        playlist_track_ids=playlist_track_ids,
+        selected_index=scroll_position,
+        scroll_offset=0,
+        sort_field=sort_field,
+        sort_direction=sort_direction,
+        filters=filters,
+    )
+
+    return replace(
+        state,
+        builder=builder_state,
+        # Close other modals
+        palette_visible=False,
+        track_viewer_visible=False,
+        wizard_active=False,
+        input_text="",
+        cursor_pos=0,
+    )
+
+
+def hide_playlist_builder(state: UIState) -> UIState:
+    """Hide playlist builder and reset state."""
+    return replace(
+        state,
+        builder=PlaylistBuilderState(),
+    )
+
+
+def move_builder_selection(state: UIState, delta: int, visible_items: int = 20) -> UIState:
+    """Move selection up/down with scroll adjustment."""
+    if not state.builder.displayed_tracks:
+        return state
+
+    total = len(state.builder.displayed_tracks)
+    new_selected = max(0, min(total - 1, state.builder.selected_index + delta))
+
+    # Adjust scroll to keep selection visible
+    new_scroll = state.builder.scroll_offset
+    if new_selected < new_scroll:
+        new_scroll = new_selected
+    elif new_selected >= new_scroll + visible_items:
+        new_scroll = new_selected - visible_items + 1
+
+    return replace(
+        state,
+        builder=replace(
+            state.builder,
+            selected_index=new_selected,
+            scroll_offset=new_scroll,
+        ),
+    )
+
+
+def toggle_builder_track(state: UIState, track_id: int) -> UIState:
+    """Toggle track in/out of playlist_track_ids set (UI state only, DB update separate)."""
+    new_ids = state.builder.playlist_track_ids.copy()
+    if track_id in new_ids:
+        new_ids.discard(track_id)
+    else:
+        new_ids.add(track_id)
+
+    return replace(
+        state,
+        builder=replace(state.builder, playlist_track_ids=new_ids),
+    )
+
+
+def show_builder_sort_dropdown(state: UIState) -> UIState:
+    """Open sort field dropdown."""
+    return replace(
+        state,
+        builder=replace(
+            state.builder,
+            dropdown_mode="sort",
+            dropdown_selected=BUILDER_SORT_FIELDS.index(state.builder.sort_field) if state.builder.sort_field in BUILDER_SORT_FIELDS else 0,
+            dropdown_options=BUILDER_SORT_FIELDS,
+        ),
+    )
+
+
+def show_builder_filter_dropdown(state: UIState) -> UIState:
+    """Open filter field selection dropdown (step 1)."""
+    return replace(
+        state,
+        builder=replace(
+            state.builder,
+            dropdown_mode="filter_field",
+            dropdown_selected=0,
+            dropdown_options=BUILDER_SORT_FIELDS,
+            pending_filter_field=None,
+            pending_filter_operator=None,
+            filter_value_input="",
+        ),
+    )
+
+
+def move_builder_dropdown_selection(state: UIState, delta: int) -> UIState:
+    """Move dropdown selection."""
+    if not state.builder.dropdown_options:
+        return state
+
+    total = len(state.builder.dropdown_options)
+    new_selected = (state.builder.dropdown_selected + delta) % total
+
+    return replace(
+        state,
+        builder=replace(state.builder, dropdown_selected=new_selected),
+    )
+
+
+def select_builder_sort_field(state: UIState) -> UIState:
+    """Select current sort field and toggle direction, close dropdown."""
+    field = state.builder.dropdown_options[state.builder.dropdown_selected]
+    # Toggle direction if same field, otherwise default to asc
+    direction = "desc" if field == state.builder.sort_field and state.builder.sort_direction == "asc" else "asc"
+
+    # Re-sort displayed tracks
+    displayed = _apply_builder_sort(state.builder.displayed_tracks, field, direction)
+
+    return replace(
+        state,
+        builder=replace(
+            state.builder,
+            sort_field=field,
+            sort_direction=direction,
+            displayed_tracks=displayed,
+            dropdown_mode=None,
+            dropdown_options=[],
+            selected_index=0,
+            scroll_offset=0,
+        ),
+    )
+
+
+def select_builder_filter_field(state: UIState) -> UIState:
+    """Select filter field, move to operator selection (step 2)."""
+    field = state.builder.dropdown_options[state.builder.dropdown_selected]
+
+    # Get operators based on field type
+    if field in BUILDER_NUMERIC_FIELDS:
+        operators = [op[1] for op in BUILDER_NUMERIC_OPERATORS]
+    else:
+        operators = [op[1] for op in BUILDER_TEXT_OPERATORS]
+
+    return replace(
+        state,
+        builder=replace(
+            state.builder,
+            dropdown_mode="filter_operator",
+            dropdown_selected=0,
+            dropdown_options=operators,
+            pending_filter_field=field,
+        ),
+    )
+
+
+def select_builder_filter_operator(state: UIState) -> UIState:
+    """Select filter operator, move to value input (step 3)."""
+    field = state.builder.pending_filter_field
+    display_op = state.builder.dropdown_options[state.builder.dropdown_selected]
+
+    # Map display back to operator key
+    if field in BUILDER_NUMERIC_FIELDS:
+        op_map = {op[1]: op[0] for op in BUILDER_NUMERIC_OPERATORS}
+    else:
+        op_map = {op[1]: op[0] for op in BUILDER_TEXT_OPERATORS}
+
+    operator = op_map.get(display_op, "contains")
+
+    return replace(
+        state,
+        builder=replace(
+            state.builder,
+            dropdown_mode="filter_value",
+            dropdown_options=[],
+            pending_filter_operator=operator,
+            filter_value_input="",
+        ),
+    )
+
+
+def update_builder_filter_value(state: UIState, char: str) -> UIState:
+    """Add character to filter value input."""
+    return replace(
+        state,
+        builder=replace(
+            state.builder,
+            filter_value_input=state.builder.filter_value_input + char,
+        ),
+    )
+
+
+def backspace_builder_filter_value(state: UIState) -> UIState:
+    """Remove last character from filter value input."""
+    return replace(
+        state,
+        builder=replace(
+            state.builder,
+            filter_value_input=state.builder.filter_value_input[:-1],
+        ),
+    )
+
+
+def confirm_builder_filter(state: UIState) -> UIState:
+    """Confirm filter creation and apply."""
+    if not state.builder.filter_value_input:
+        return cancel_builder_dropdown(state)
+
+    new_filter = BuilderFilter(
+        field=state.builder.pending_filter_field,
+        operator=state.builder.pending_filter_operator,
+        value=state.builder.filter_value_input,
+    )
+
+    new_filters = state.builder.filters + [new_filter]
+
+    # Re-apply filters and sort
+    displayed = _apply_builder_filters(state.builder.all_tracks, new_filters)
+    displayed = _apply_builder_sort(displayed, state.builder.sort_field, state.builder.sort_direction)
+
+    return replace(
+        state,
+        builder=replace(
+            state.builder,
+            filters=new_filters,
+            displayed_tracks=displayed,
+            dropdown_mode=None,
+            dropdown_options=[],
+            pending_filter_field=None,
+            pending_filter_operator=None,
+            filter_value_input="",
+            selected_index=0,
+            scroll_offset=0,
+        ),
+    )
+
+
+def remove_builder_filter(state: UIState, index: int = -1) -> UIState:
+    """Remove filter at index (default: last)."""
+    if not state.builder.filters:
+        return state
+
+    new_filters = state.builder.filters.copy()
+    if index == -1:
+        new_filters.pop()
+    else:
+        new_filters.pop(index)
+
+    # Re-apply filters and sort
+    displayed = _apply_builder_filters(state.builder.all_tracks, new_filters)
+    displayed = _apply_builder_sort(displayed, state.builder.sort_field, state.builder.sort_direction)
+
+    return replace(
+        state,
+        builder=replace(
+            state.builder,
+            filters=new_filters,
+            displayed_tracks=displayed,
+            selected_index=0,
+            scroll_offset=0,
+        ),
+    )
+
+
+def clear_builder_filters(state: UIState) -> UIState:
+    """Clear all filters."""
+    displayed = _apply_builder_sort(
+        state.builder.all_tracks.copy(),
+        state.builder.sort_field,
+        state.builder.sort_direction,
+    )
+
+    return replace(
+        state,
+        builder=replace(
+            state.builder,
+            filters=[],
+            displayed_tracks=displayed,
+            selected_index=0,
+            scroll_offset=0,
+        ),
+    )
+
+
+def cancel_builder_dropdown(state: UIState) -> UIState:
+    """Cancel dropdown and reset pending state."""
+    return replace(
+        state,
+        builder=replace(
+            state.builder,
+            dropdown_mode=None,
+            dropdown_selected=0,
+            dropdown_options=[],
+            pending_filter_field=None,
+            pending_filter_operator=None,
+            filter_value_input="",
+        ),
+    )
+
+
+def _apply_builder_filters(tracks: list[dict], filters: list[BuilderFilter]) -> list[dict]:
+    """Apply all filters (AND logic) to tracks."""
+    result = tracks
+    for f in filters:
+        result = [t for t in result if _matches_builder_filter(t, f)]
+    return result
+
+
+def _matches_builder_filter(track: dict, f: BuilderFilter) -> bool:
+    """Check if track matches a single filter."""
+    value = track.get(f.field)
+    if value is None:
+        return f.operator == "not_equals"
+
+    if f.field in BUILDER_NUMERIC_FIELDS:
+        try:
+            track_val = float(value)
+            filter_val = float(f.value)
+        except (ValueError, TypeError):
+            return False
+
+        ops = {
+            "equals": track_val == filter_val,
+            "not_equals": track_val != filter_val,
+            "gt": track_val > filter_val,
+            "lt": track_val < filter_val,
+            "gte": track_val >= filter_val,
+            "lte": track_val <= filter_val,
+        }
+        return ops.get(f.operator, False)
+
+    # Text field
+    track_str = str(value).lower()
+    filter_str = f.value.lower()
+
+    ops = {
+        "contains": filter_str in track_str,
+        "equals": track_str == filter_str,
+        "not_equals": track_str != filter_str,
+        "starts_with": track_str.startswith(filter_str),
+        "ends_with": track_str.endswith(filter_str),
+    }
+    return ops.get(f.operator, False)
+
+
+def _apply_builder_sort(tracks: list[dict], field: str, direction: str) -> list[dict]:
+    """Sort tracks by field."""
+    reverse = direction == "desc"
+
+    def sort_key(t):
+        val = t.get(field)
+        if val is None:
+            return (1, "")  # Nulls last
+        if field in BUILDER_NUMERIC_FIELDS:
+            try:
+                return (0, float(val))
+            except (ValueError, TypeError):
+                return (1, "")
+        return (0, str(val).lower())
+
+    return sorted(tracks, key=sort_key, reverse=reverse)

@@ -7,6 +7,7 @@ from .palette import render_palette
 from .wizard import render_smart_playlist_wizard, get_wizard_footer_text
 from .layout import calculate_layout
 from .analytics_viewer import render_analytics_viewer
+from .playlist_builder import render_playlist_builder
 
 __all__ = [
     "render_dashboard",
@@ -17,4 +18,5 @@ __all__ = [
     "get_wizard_footer_text",
     "calculate_layout",
     "render_analytics_viewer",
+    "render_playlist_builder",
 ]
