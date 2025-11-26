@@ -771,6 +771,9 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
             should_poll = is_spotify or should_poll_mpv
             if should_poll:
                 ctx, ui_state = poll_player_state(ctx, ui_state)
+                # Update position tracking after poll for interpolation
+                last_position = ctx.player_state.current_position
+                last_poll_time = time.time()
 
             # Poll scan state at configured interval for smoother progress updates
             should_poll_scan = frame_count % SCAN_POLL_INTERVAL == 0
@@ -850,7 +853,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 ui_state.wizard_selected,
                 ui_state.track_viewer_visible,
                 ui_state.track_viewer_selected,
-                ui_state.track_viewer_mode,  # <- MISSING! Must match last_palette_state
+                ui_state.track_viewer_mode,
                 ui_state.analytics_viewer_visible,
                 ui_state.analytics_viewer_scroll,
                 ui_state.editor_visible,
@@ -863,12 +866,16 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 ui_state.search_detail_scroll,
                 ui_state.search_detail_selection,
                 ui_state.comparison.active,
+                ui_state.comparison.highlighted,  # Must match last_palette_state tuple
             ) != last_palette_state
 
             # Determine if we need a full redraw
             needs_full_redraw = needs_full_redraw or (
                 current_state_hash is not None and current_state_hash != last_state_hash
             )
+
+            # DEBUG: Log redraw decision
+            logger.debug(f"Frame {frame_count}: needs_full_redraw={needs_full_redraw}, hash_changed={current_state_hash != last_state_hash if current_state_hash else 'N/A'}")
 
             if needs_full_redraw:
                 # Render dashboard first to check if height changed (lock for thread safety)
@@ -990,9 +997,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     ui_state.comparison.highlighted,  # Track highlighted track changes
                 )
 
-                # Update position tracking atomically after full redraw
-                last_position = ctx.player_state.current_position
-                last_poll_time = time.time()
+                # Update rendered position for partial update threshold
                 last_rendered_position = ctx.player_state.current_position
 
                 # Start background sync after first render (instant UI)
@@ -1071,6 +1076,8 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
             ):
                 needs_full_redraw = True
 
+            # DEBUG: Log input/palette state
+            logger.debug(f"Frame {frame_count}: input_changed={input_changed}, palette_state_changed={palette_state_changed}")
             if input_changed or palette_state_changed:
                 # Partial update - only input and palette changed
                 if layout and not needs_full_redraw:
@@ -1191,8 +1198,10 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     )
 
             else:
-                # Only check for position updates if playing and we have layout
-                if ctx.player_state.is_playing and layout and dashboard_line_mapping:
+                # Only check for position updates if we have a track and layout
+                # DEBUG: Log that we reached the else branch
+                logger.debug(f"Partial update branch: track={bool(ctx.player_state.current_track)}, layout={bool(layout)}, mapping={bool(dashboard_line_mapping)}")
+                if ctx.player_state.current_track and layout and dashboard_line_mapping:
                     # Use position directly from player state
                     # For Spotify: already interpolated by SpotifyPlayer (polled every frame)
                     # For MPV: interpolated here for smooth updates between polls
@@ -1214,10 +1223,15 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                         abs(current_position - last_rendered_position)
                         >= POSITION_UPDATE_THRESHOLD
                     )
+                    # DEBUG: Log position comparison
+                    logger.debug(f"Position check: current={current_position:.2f}, last_rendered={last_rendered_position:.2f}, changed={position_changed}")
 
                     if position_changed:
                         # Partial update - only update time-sensitive dashboard elements
                         from .components.dashboard import render_dashboard_partial
+
+                        # DEBUG: Log partial render call
+                        logger.debug(f"Calling render_dashboard_partial at y={layout['dashboard_y']}")
 
                         # Use current position for smooth visual updates
                         display_state = ctx.player_state._replace(

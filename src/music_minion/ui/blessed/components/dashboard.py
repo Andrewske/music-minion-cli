@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 from blessed import Terminal
+from loguru import logger
 
 from music_minion.domain.playback.player import PlayerState
 
@@ -541,6 +542,8 @@ def render_dashboard_partial(
         y_start: Starting y position of dashboard
         line_mapping: Dictionary with line offsets from render_dashboard
     """
+    # DEBUG: Log entry
+    logger.debug(f"render_dashboard_partial: y_start={y_start}, mapping_keys={list(line_mapping.keys())}")
     metadata = ui_state.track_metadata
 
     # Update clock in header
@@ -593,16 +596,20 @@ def render_dashboard_partial(
         header_y = y_start + line_mapping["header_line"]
         print(term.move_xy(0, header_y) + term.clear_eol + header, end="")
 
-    # Update progress bar if playing
+    # Update progress bar if we have a track with valid duration
+    # DEBUG: Log progress bar condition
+    logger.debug(f"Progress bar check: track={bool(player_state.current_track)}, duration={player_state.duration}, has_mapping={'progress_line' in line_mapping}")
     if (
-        player_state.is_playing
-        and player_state.current_track
+        player_state.current_track
+        and player_state.duration > 0
         and "progress_line" in line_mapping
     ):
         progress = create_progress_bar(
             player_state.current_position, player_state.duration, term
         )
         progress_y = y_start + line_mapping["progress_line"]
+        # DEBUG: Log actual render
+        logger.debug(f"Rendering progress bar at y={progress_y}, position={player_state.current_position:.2f}")
         print(term.move_xy(0, progress_y) + term.clear_eol + progress, end="")
 
         # Update BPM line if metadata available
