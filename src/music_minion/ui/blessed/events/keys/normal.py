@@ -255,10 +255,13 @@ def _handle_enter_palette_selection(
     selected = state.palette_items[state.palette_selected]
 
     if state.palette_mode == "playlist":
-        command = f"__SELECT_PLAYLIST__ {selected[1]}"
+        # Enter views playlist tracks
+        playlist_name = selected[1]
         state = hide_palette(state)
         state = set_input_text(state, "")
-        return state, command
+        return state, InternalCommand(
+            action="view_playlist_tracks", data={"playlist_name": playlist_name}
+        )
     elif state.palette_mode == "device":
         command = selected[2]
         state = hide_palette(state)
@@ -313,11 +316,11 @@ def _handle_backspace(
     return state, None
 
 
-def _handle_view_playlist(
+def _handle_spacebar_playlist_activate(
     state: UIState, event: dict
-) -> tuple[UIState, InternalCommand | None] | None:
-    """Handle 'v' key to view playlist tracks."""
-    if event["type"] != "char" or event["char"] != "v":
+) -> tuple[UIState, str | None] | None:
+    """Handle spacebar to activate playlist and start playing."""
+    if event["type"] != "char" or event["char"] != " ":
         return None
 
     if not (state.palette_visible and state.palette_mode == "playlist"):
@@ -325,10 +328,10 @@ def _handle_view_playlist(
 
     if state.palette_items and state.palette_selected < len(state.palette_items):
         playlist_name = state.palette_items[state.palette_selected][1]
+        command = f"__SELECT_PLAYLIST__ {playlist_name}"
         state = hide_palette(state)
-        return state, InternalCommand(
-            action="view_playlist_tracks", data={"playlist_name": playlist_name}
-        )
+        state = set_input_text(state, "")
+        return state, command
 
     return state, None
 
@@ -488,7 +491,7 @@ def handle_normal_mode_key(
     - Arrow navigation (palette or command history)
     - Enter (execute command or select palette item)
     - Backspace/Delete (input editing + filter updates)
-    - 'v' key (view playlist tracks)
+    - Space (activate playlist)
     - Seek controls (0-9, arrows, shift+arrows)
     - Regular characters (input + filtering)
 
@@ -545,8 +548,8 @@ def handle_normal_mode_key(
     if result is not None:
         return result
 
-    # View playlist ('v' key)
-    result = _handle_view_playlist(state, event)
+    # Spacebar activates playlist
+    result = _handle_spacebar_playlist_activate(state, event)
     if result is not None:
         return result
 

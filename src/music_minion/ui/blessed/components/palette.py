@@ -408,10 +408,10 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
                 total_items = len(filtered_commands)
                 if total_items > content_height:
                     current_position = min(selected_index + 1, total_items)
-                    footer = f"   [{current_position}/{total_items}] ↑↓ navigate  Enter activate  v view  Del delete  Esc cancel"
+                    footer = f"   [{current_position}/{total_items}] ↑↓ navigate  Space activate  Enter view  Del delete  Esc cancel"
                 else:
                     footer = (
-                        "   ↑↓ navigate  Enter activate  v view  Del delete  Esc cancel"
+                        "   ↑↓ navigate  Space activate  Enter view  Del delete  Esc cancel"
                     )
             elif state.palette_mode == "rankings":
                 # Rankings mode footer with play key help
