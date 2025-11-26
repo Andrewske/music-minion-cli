@@ -1760,19 +1760,6 @@ def db_track_to_library_track(db_track: Dict[str, Any]):
     # Ensure file_path is never None - use empty string for provider tracks without local files
     local_path = db_track.get("local_path") or ""
 
-    # Log when converting NULL path to empty string (helps debug provider track issues)
-    if not local_path and (
-        db_track.get("soundcloud_id")
-        or db_track.get("spotify_id")
-        or db_track.get("youtube_id")
-    ):
-        logger.debug(
-            f"Track {db_track.get('id')} has no local file path (provider track: "
-            f"sc={bool(db_track.get('soundcloud_id'))}, "
-            f"sp={bool(db_track.get('spotify_id'))}, "
-            f"yt={bool(db_track.get('youtube_id'))})"
-        )
-
     return library.Track(
         local_path=local_path,
         title=db_track.get("title"),
