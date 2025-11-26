@@ -14,7 +14,7 @@ from .config import get_data_dir
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 22
 
 
 def get_database_path() -> Path:
@@ -750,6 +750,26 @@ def migrate_database(conn, current_version: int) -> None:
         """)
 
         logger.info("Migration to schema version 21 complete")
+        conn.commit()
+
+    if current_version < 22:
+        # Migration from v21 to v22: Add playlist builder state table
+        logger.info("Migrating database to schema version 22 (playlist builder state)...")
+
+        # Create playlist_builder_state table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS playlist_builder_state (
+                playlist_id INTEGER PRIMARY KEY,
+                scroll_position INTEGER DEFAULT 0,
+                sort_field TEXT DEFAULT 'artist',
+                sort_direction TEXT DEFAULT 'asc',
+                active_filters TEXT DEFAULT '[]',
+                last_accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (playlist_id) REFERENCES playlists (id) ON DELETE CASCADE
+            )
+        """)
+
+        logger.info("Migration to schema version 22 complete")
         conn.commit()
 
 

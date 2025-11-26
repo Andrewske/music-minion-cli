@@ -330,6 +330,125 @@ def _handle_comparison_play_track_cmd(
     return ctx, ui_state, False
 
 
+def _handle_enter_playlist_builder_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Initialize and show playlist builder."""
+    from music_minion.domain.playlists.crud import (
+        get_playlist_tracks,
+        get_playlist_builder_state,
+    )
+    from music_minion.core.database import get_all_tracks
+    from music_minion.ui.blessed.state import show_playlist_builder
+
+    playlist_id = data.get("playlist_id")
+    playlist_name = data.get("playlist_name", "")
+
+    if playlist_id is None:
+        ui_state = add_history_line(ui_state, "❌ No playlist ID provided", "red")
+        return ctx, ui_state, False
+
+    # Load all tracks from current library
+    all_tracks = get_all_tracks(library=ui_state.active_library)
+
+    # Get track IDs already in playlist
+    playlist_tracks = get_playlist_tracks(playlist_id)
+    playlist_track_ids = {t["id"] for t in playlist_tracks}
+
+    # Load saved builder state if exists
+    saved_state = get_playlist_builder_state(playlist_id)
+
+    ui_state = show_playlist_builder(
+        ui_state,
+        playlist_id,
+        playlist_name,
+        all_tracks,
+        playlist_track_ids,
+        saved_state,
+    )
+
+    return ctx, ui_state, False
+
+
+def _handle_builder_toggle_track_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Add or remove track from playlist."""
+    from music_minion.domain.playlists.crud import (
+        add_track_to_playlist,
+        remove_track_from_playlist,
+    )
+    from music_minion.ui.blessed.state import set_feedback
+
+    playlist_id = data.get("playlist_id")
+    track_id = data.get("track_id")
+    adding = data.get("adding", True)
+
+    if playlist_id is None or track_id is None:
+        return ctx, ui_state, False
+
+    if adding:
+        success = add_track_to_playlist(playlist_id, track_id)
+        if success:
+            ui_state = set_feedback(ui_state, "Added to playlist")
+    else:
+        success = remove_track_from_playlist(playlist_id, track_id)
+        if success:
+            ui_state = set_feedback(ui_state, "Removed from playlist")
+
+    return ctx, ui_state, False
+
+
+def _handle_builder_play_track_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Play track from builder."""
+    from music_minion.core import database
+    from music_minion.commands.playback import play_track
+
+    track_id = data.get("track_id")
+    if track_id is None:
+        return ctx, ui_state, False
+
+    # Get track from database
+    db_track = database.get_track_by_id(track_id)
+    if not db_track:
+        ui_state = add_history_line(ui_state, f"❌ Track not found: {track_id}", "red")
+        return ctx, ui_state, False
+
+    # Convert to LibraryTrack and play
+    track_obj = database.db_track_to_library_track(db_track)
+    ctx, _ = play_track(ctx, track_obj, None)
+
+    return ctx, ui_state, False
+
+
+def _handle_builder_save_and_exit_cmd(
+    ctx: AppContext, ui_state: UIState, data: InternalHandlerData
+) -> InternalHandlerResult:
+    """Save builder state and exit."""
+    from music_minion.domain.playlists.crud import save_playlist_builder_state
+
+    playlist_id = data.get("playlist_id")
+    scroll_position = data.get("scroll_position", 0)
+    sort_field = data.get("sort_field", "artist")
+    sort_direction = data.get("sort_direction", "asc")
+    filters = data.get("filters", [])
+
+    if playlist_id is None:
+        return ctx, ui_state, False
+
+    save_playlist_builder_state(
+        playlist_id,
+        scroll_position,
+        sort_field,
+        sort_direction,
+        filters,
+    )
+
+    return ctx, ui_state, False
+
+
 # -----------------------------------------------------------------------------
 # Internal Command Dispatch Table
 # -----------------------------------------------------------------------------
@@ -362,6 +481,10 @@ INTERNAL_HANDLERS: dict[str, InternalHandler] = {
     "seek_percentage": _handle_seek_percentage_cmd,
     "seek_relative": _handle_seek_relative_cmd,
     "comparison_play_track": _handle_comparison_play_track_cmd,
+    "enter_playlist_builder": _handle_enter_playlist_builder_cmd,
+    "builder_toggle_track": _handle_builder_toggle_track_cmd,
+    "builder_play_track": _handle_builder_play_track_cmd,
+    "builder_save_and_exit": _handle_builder_save_and_exit_cmd,
 }
 
 
