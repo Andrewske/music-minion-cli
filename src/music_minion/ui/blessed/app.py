@@ -13,7 +13,7 @@ from loguru import logger
 from music_minion.commands import admin
 from music_minion.context import AppContext
 from music_minion.core import database
-from music_minion.core.output import clear_blessed_mode, set_blessed_mode
+from music_minion.core.output import clear_blessed_mode, set_blessed_mode, drain_pending_history_messages
 from music_minion.ipc import server as ipc_server
 
 from .components import (
@@ -758,6 +758,12 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         while not should_quit:
             # Check for file changes if hot-reload is enabled
             _check_and_reload_files()
+
+            # Drain any pending log() messages (from auto-advance, background events, etc.)
+            # This ensures messages appear even when not going through execute_command
+            for msg, color in drain_pending_history_messages():
+                ui_state = add_history_line(ui_state, msg, color)
+                needs_full_redraw = True
 
             # Detect track changes (immediate poll for instant metadata)
             current_track_file = ctx.player_state.current_track

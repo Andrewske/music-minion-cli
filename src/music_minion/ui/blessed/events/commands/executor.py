@@ -4,6 +4,7 @@ import io
 from dataclasses import replace
 from contextlib import redirect_stdout, redirect_stderr
 from music_minion.context import AppContext
+from music_minion.core.output import drain_pending_history_messages
 from music_minion.ui.blessed.state import (
     UIState,
     InternalCommand,
@@ -325,7 +326,12 @@ def _handle_comparison_play_track_cmd(
                 db_track = database.get_track_by_id(track_id)
                 if db_track:
                     track_obj = database.db_track_to_library_track(db_track)
+                    # play_track calls log() which adds to history via pending queue
                     ctx, _ = play_track(ctx, track_obj, None)
+
+    # Drain any log() messages from play_track
+    for msg, color in drain_pending_history_messages():
+        ui_state = add_history_line(ui_state, msg, color)
 
     return ctx, ui_state, False
 
@@ -686,6 +692,9 @@ def execute_command(
         from music_minion.router import handle_command
 
         ctx, should_continue = handle_command(ctx, command, args)
+        # Drain any log() messages that were queued during command execution
+        for msg, color in drain_pending_history_messages():
+            ui_state = add_history_line(ui_state, msg, color)
         return ctx, ui_state, should_continue
 
     # Special case: Save wizard playlist
@@ -775,11 +784,18 @@ def execute_command(
 
             ctx, should_continue = handle_command(ctx, command, args)
 
+            # Drain any log() messages that were queued during command execution
+            for msg, color in drain_pending_history_messages():
+                ui_state = add_history_line(ui_state, msg, color)
+
             if not should_continue:
                 # Command requested exit (quit/exit command)
                 return ctx, ui_state, True
 
     except Exception as e:
+        # Drain any messages logged before the exception
+        for msg, color in drain_pending_history_messages():
+            ui_state = add_history_line(ui_state, msg, color)
         # Add error to history
         ui_state = add_history_line(ui_state, f"❌ Error: {e}", "red")
         return ctx, ui_state, False

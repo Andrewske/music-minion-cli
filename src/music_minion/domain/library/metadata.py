@@ -70,18 +70,19 @@ def extract_track_metadata(local_path: str) -> Track:
             )
 
         # Extract common metadata
-        title = get_tag_value(audio_file, ["TIT2", "\xa9nam", "TITLE"])
-        artist = get_tag_value(audio_file, ["TPE1", "\xa9ART", "ARTIST"])
+        # ID3 (MP3), MP4, and Vorbis/Opus tags (lowercase)
+        title = get_tag_value(audio_file, ["TIT2", "\xa9nam", "TITLE", "title"])
+        artist = get_tag_value(audio_file, ["TPE1", "\xa9ART", "ARTIST", "artist"])
         remix_artist = get_tag_value(
-            audio_file, ["TPE4", "TPE2"]
-        )  # Remix artist (TPE4) or Album artist (TPE2)
-        album = get_tag_value(audio_file, ["TALB", "\xa9alb", "ALBUM"])
-        genre = get_tag_value(audio_file, ["TCON", "\xa9gen", "GENRE"])
+            audio_file, ["TPE4", "TPE2", "albumartist"]
+        )  # Remix artist (TPE4) or Album artist (TPE2/albumartist)
+        album = get_tag_value(audio_file, ["TALB", "\xa9alb", "ALBUM", "album"])
+        genre = get_tag_value(audio_file, ["TCON", "\xa9gen", "GENRE", "genre"])
 
-        # Extract DJ metadata
-        key = get_tag_value(audio_file, ["TKEY", "KEY", "INITIAL_KEY", "\xa9key"])
+        # Extract DJ metadata (ID3, MP4, Vorbis/Opus)
+        key = get_tag_value(audio_file, ["TKEY", "KEY", "INITIAL_KEY", "\xa9key", "key"])
         bpm_str = get_tag_value(
-            audio_file, ["TBPM", "BPM", "BEATS_PER_MINUTE", "\xa9bpm"]
+            audio_file, ["TBPM", "BPM", "BEATS_PER_MINUTE", "\xa9bpm", "bpm"]
         )
         bpm = None
         if bpm_str:
@@ -90,9 +91,9 @@ def extract_track_metadata(local_path: str) -> Track:
             except (ValueError, TypeError):
                 pass
 
-        # Extract year
+        # Extract year (ID3, MP4, Vorbis/Opus)
         year = None
-        year_str = get_tag_value(audio_file, ["TDRC", "\xa9day", "DATE", "YEAR"])
+        year_str = get_tag_value(audio_file, ["TDRC", "\xa9day", "DATE", "YEAR", "date", "year"])
         if year_str:
             try:
                 # Handle various year formats
