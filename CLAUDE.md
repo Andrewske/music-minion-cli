@@ -138,9 +138,10 @@ except Exception:
 - Primary: `music-minion`
 - Dev mode: `music-minion --dev` (hot-reload)
 - IPC: `music-minion-cli play|skip|love|...`
+- Locate opus: `music-minion locate-opus /path/to/folder [--apply]`
 
 **Key Dependencies**:
-- mutagen (MP3/M4A metadata)
+- mutagen (MP3/M4A/Opus metadata)
 - blessed (terminal UI)
 - loguru (centralized logging)
 - spotipy (Spotify API)
@@ -157,6 +158,18 @@ except Exception:
 
 ## Recent Features
 
+**Metadata Sync (v22+)**:
+- `write_metadata_to_file()` - writes title, artist, album, genre, year, bpm, key to files
+- `update_track_metadata()` - now writes to both database AND file
+- `sync` command exports DB metadata to files (DB is source of truth)
+- Supports MP3 (ID3), M4A (MP4), Opus (Vorbis comments)
+
+**Opus Migration** (v22+):
+- `locate-opus` CLI command for MP3→Opus migration
+- Tiered matching: filename exact → title exact → fuzzy (85% TF-IDF)
+- Preserves all history (ratings, ELO, playlists) via track_id
+- Workflow: download opus alongside mp3 → locate-opus --apply → sync → delete mp3
+
 **Playlist Builder** (v22):
 - Bulk track selection for playlist building
 - Entry: Press `b` from track viewer on manual playlist
@@ -172,4 +185,4 @@ except Exception:
 
 ---
 
-**Last Updated**: 2025-11-25
+**Last Updated**: 2025-11-26
