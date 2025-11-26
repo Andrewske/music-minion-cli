@@ -14,6 +14,12 @@ _blessed_mode_active = False
 _blessed_ui_callback: Optional[Callable[[Dict[str, Any]], None]] = None
 _blessed_mode_lock = threading.Lock()
 
+# Pending history messages queue (for executor to drain after handle_command)
+# This fixes race condition where log() updates main loop's ui_state via callback,
+# but executor returns its own ui_state that overwrites those updates.
+_pending_history_messages: list[tuple[str, str]] = []
+_pending_messages_lock = threading.Lock()
+
 
 def setup_loguru(log_file: Path, level: str = "INFO") -> None:
     """
@@ -62,6 +68,23 @@ def clear_blessed_mode() -> None:
         logger.debug("Blessed mode disabled - log() will print to stdout")
 
 
+def drain_pending_history_messages() -> list[tuple[str, str]]:
+    """
+    Get and clear all pending history messages.
+
+    Called by executor after handle_command to get any messages
+    that were logged during command execution.
+
+    Returns:
+        List of (message, color) tuples
+    """
+    global _pending_history_messages
+    with _pending_messages_lock:
+        messages = _pending_history_messages[:]
+        _pending_history_messages = []
+        return messages
+
+
 def log(message: str, level: str = "info") -> None:
     """
     Unified logging: writes to file AND prints for blessed UI.
@@ -88,7 +111,7 @@ def log(message: str, level: str = "info") -> None:
             # Blessed mode: Check silent_logging flag
             # Background threads with silent_logging=True should not pollute command history
             silent = getattr(threading.current_thread(), 'silent_logging', False)
-            if not silent and _blessed_ui_callback:
+            if not silent:
                 # Map log level to color
                 color_map = {
                     'debug': 'cyan',
@@ -97,11 +120,10 @@ def log(message: str, level: str = "info") -> None:
                     'error': 'red',
                 }
                 color = color_map.get(level, 'white')
-                try:
-                    _blessed_ui_callback({'history_messages': [(message, color)]})
-                except Exception as e:
-                    # Fallback: log callback failure but don't print (would corrupt UI)
-                    logger.error(f"UI callback failed: {e}")
+                # Add to pending queue instead of calling callback directly
+                # This fixes race condition where executor overwrites callback updates
+                with _pending_messages_lock:
+                    _pending_history_messages.append((message, color))
         else:
             # CLI mode: Check silent_logging flag
             silent = getattr(threading.current_thread(), 'silent_logging', False)

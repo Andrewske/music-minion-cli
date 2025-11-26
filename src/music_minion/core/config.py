@@ -17,7 +17,7 @@ class MusicConfig:
         default_factory=lambda: [str(Path.home() / "Music")]
     )
     supported_formats: List[str] = field(
-        default_factory=lambda: [".mp3", ".m4a", ".wav", ".flac"]
+        default_factory=lambda: [".mp3", ".m4a", ".wav", ".flac", ".opus", ".ogg"]
     )
     scan_recursive: bool = True
 
@@ -251,7 +251,7 @@ def create_default_config() -> str:
 library_paths = ["~/Music"]
 
 # Supported audio file formats
-supported_formats = [".mp3", ".m4a", ".wav", ".flac"]
+supported_formats = [".mp3", ".m4a", ".wav", ".flac", ".opus", ".ogg"]
 
 # Recursively scan subdirectories
 scan_recursive = true
