@@ -70,7 +70,7 @@ def handle_sync_full_command(ctx: AppContext) -> Tuple[AppContext, bool]:
 
 
 def _sync_local_incremental(ctx: AppContext) -> Tuple[AppContext, bool]:
-    """Incremental import: detect changed files and import metadata.
+    """Incremental sync: import from changed files + export DB metadata to files.
 
     Args:
         ctx: Application context
@@ -82,22 +82,26 @@ def _sync_local_incremental(ctx: AppContext) -> Tuple[AppContext, bool]:
 
     logger.info("Starting incremental local sync...")
 
-    # Detect files that changed since last sync
+    # Phase 1: Import metadata from changed files
     changed_tracks = sync.detect_file_changes(ctx.config)
 
-    if not changed_tracks:
-        log("✓ All files in sync", level="info")
-        return ctx, True
+    if changed_tracks:
+        log(
+            f"Found {len(changed_tracks)} changed files, importing metadata...",
+            level="info",
+        )
+        result = sync.sync_import(ctx.config, force_all=False, show_progress=True)
+        log(f"✓ Imported {result.get('added', 0)} tags from files", level="info")
+    else:
+        log("✓ No changed files to import from", level="info")
 
+    # Phase 2: Export DB metadata to files (ensures DB is source of truth)
+    log("Exporting database metadata to files...", level="info")
+    export_result = sync.sync_metadata_export(show_progress=True)
     log(
-        f"Found {len(changed_tracks)} changed files, importing metadata...",
+        f"✓ Exported metadata to {export_result.get('success', 0)} files",
         level="info",
     )
-
-    # Import metadata from changed files
-    result = sync.sync_import(ctx.config, force_all=False, show_progress=True)
-
-    log(f"✓ Imported {result.get('imported', 0)} tracks", level="info")
 
     # Reload tracks in context
     from music_minion import helpers
@@ -108,7 +112,7 @@ def _sync_local_incremental(ctx: AppContext) -> Tuple[AppContext, bool]:
 
 
 def _sync_local_full(ctx: AppContext) -> Tuple[AppContext, bool]:
-    """Full sync: scan filesystem for new files + import all.
+    """Full sync: scan filesystem for new files + import all + export DB metadata.
 
     Args:
         ctx: Application context
@@ -122,20 +126,26 @@ def _sync_local_full(ctx: AppContext) -> Tuple[AppContext, bool]:
 
     logger.info("Starting full local sync (filesystem scan)...")
 
+    # Phase 1: Scan filesystem for new/changed files
     log("Scanning ~/Music for new files...", level="info")
 
-    # Full filesystem scan with optimizations
     tracks = scanner.scan_music_library_optimized(ctx.config, show_progress=True)
 
-    if not tracks:
+    if tracks:
+        # Batch upsert into database
+        log(f"Processing {len(tracks)} tracks...", level="info")
+        added, updated = database.batch_upsert_tracks(tracks)
+        log(f"✓ Added {added} new tracks, updated {updated} existing tracks", level="info")
+    else:
         log("✓ No new files found", level="info")
-        return ctx, True
 
-    # Batch upsert into database
-    log(f"Processing {len(tracks)} tracks...", level="info")
-    added, updated = database.batch_upsert_tracks(tracks)
-
-    log(f"✓ Added {added} new tracks, updated {updated} existing tracks", level="info")
+    # Phase 2: Export DB metadata to files (ensures DB is source of truth)
+    log("Exporting database metadata to files...", level="info")
+    export_result = sync.sync_metadata_export(show_progress=True)
+    log(
+        f"✓ Exported metadata to {export_result.get('success', 0)} files",
+        level="info",
+    )
 
     # Reload tracks in context
     from music_minion import helpers

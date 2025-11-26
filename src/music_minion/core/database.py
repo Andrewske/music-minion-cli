@@ -2110,7 +2110,7 @@ def load_provider_state(provider: str) -> Optional[Dict[str, Any]]:
 
 
 def update_track_metadata(track_id: int, **fields) -> bool:
-    """Update track metadata fields.
+    """Update track metadata fields in database AND file.
 
     Args:
         track_id: Track ID to update
@@ -2182,6 +2182,14 @@ def update_track_metadata(track_id: int, **fields) -> bool:
     values = list(validated_fields.values()) + [track_id]
 
     with get_db_connection() as conn:
+        # Get local_path for file writing
+        cursor = conn.execute(
+            "SELECT local_path FROM tracks WHERE id = ?", (track_id,)
+        )
+        row = cursor.fetchone()
+        local_path = row["local_path"] if row else None
+
+        # Update database
         conn.execute(
             f"""
             UPDATE tracks
@@ -2191,6 +2199,31 @@ def update_track_metadata(track_id: int, **fields) -> bool:
             values,
         )
         conn.commit()
+
+    # Write to file if local_path exists
+    if local_path:
+        import os
+
+        if os.path.exists(local_path):
+            from music_minion.domain.library.metadata import write_metadata_to_file
+
+            # Map DB fields to file write function parameters
+            # Note: key_signature -> key, remix_artist is not written to file
+            file_fields = {
+                "title": validated_fields.get("title"),
+                "artist": validated_fields.get("artist"),
+                "album": validated_fields.get("album"),
+                "genre": validated_fields.get("genre"),
+                "year": validated_fields.get("year"),
+                "bpm": validated_fields.get("bpm"),
+                "key": validated_fields.get("key_signature"),
+            }
+
+            # Only pass non-None values that were actually updated
+            file_fields = {k: v for k, v in file_fields.items() if k in fields or (k == "key" and "key_signature" in fields)}
+
+            if file_fields:
+                write_metadata_to_file(local_path, **file_fields)
 
     return True
 

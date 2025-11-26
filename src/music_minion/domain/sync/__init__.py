@@ -15,6 +15,7 @@ from .engine import (
     detect_file_changes,
     sync_export,
     sync_import,
+    sync_metadata_export,
     get_sync_status,
     rescan_library,
 )
@@ -26,6 +27,7 @@ __all__ = [
     "detect_file_changes",
     "sync_export",
     "sync_import",
+    "sync_metadata_export",
     "get_sync_status",
     "rescan_library",
 ]

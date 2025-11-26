@@ -1,16 +1,21 @@
 """
 Music metadata extraction and track information utilities.
 
-Handles reading metadata from audio files using Mutagen,
+Handles reading and writing metadata from/to audio files using Mutagen,
 and provides utility functions for displaying track information.
 """
 
 import os
+import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from loguru import logger
 from mutagen import File as MutagenFile
-from mutagen.id3 import ID3NoHeaderError
+from mutagen.id3 import ID3, ID3NoHeaderError, TALB, TBPM, TCON, TDRC, TIT2, TKEY, TPE1
+from mutagen.mp4 import MP4
+from mutagen.oggopus import OggOpus
+from mutagen.oggvorbis import OggVorbis
 
 from .models import Track
 
@@ -18,12 +23,16 @@ from .models import Track
 def get_tag_value(audio_file: MutagenFile, tag_names: List[str]) -> Optional[str]:
     """Get tag value, trying multiple possible tag names."""
     for tag_name in tag_names:
-        value = audio_file.get(tag_name)
-        if value:
-            # Handle different formats
-            if isinstance(value, list) and value:
-                return str(value[0])
-            return str(value)
+        try:
+            value = audio_file.get(tag_name)
+            if value:
+                # Handle different formats
+                if isinstance(value, list) and value:
+                    return str(value[0])
+                return str(value)
+        except (KeyError, ValueError):
+            # Some formats (like Vorbis) raise ValueError for non-existent keys
+            continue
     return None
 
 
@@ -80,7 +89,7 @@ def extract_track_metadata(local_path: str) -> Track:
         genre = get_tag_value(audio_file, ["TCON", "\xa9gen", "GENRE", "genre"])
 
         # Extract DJ metadata (ID3, MP4, Vorbis/Opus)
-        key = get_tag_value(audio_file, ["TKEY", "KEY", "INITIAL_KEY", "\xa9key", "key"])
+        key = get_tag_value(audio_file, ["TKEY", "KEY", "INITIAL_KEY", "initialkey", "\xa9key", "key"])
         bpm_str = get_tag_value(
             audio_file, ["TBPM", "BPM", "BEATS_PER_MINUTE", "\xa9bpm", "bpm"]
         )
@@ -205,3 +214,167 @@ def format_size(bytes_size: int) -> str:
             return f"{bytes_size:.1f} {unit}"
         bytes_size /= 1024
     return f"{bytes_size:.1f} TB"
+
+
+def write_metadata_to_file(
+    local_path: str,
+    title: Optional[str] = None,
+    artist: Optional[str] = None,
+    album: Optional[str] = None,
+    genre: Optional[str] = None,
+    year: Optional[int] = None,
+    bpm: Optional[float] = None,
+    key: Optional[str] = None,
+) -> bool:
+    """Write metadata fields to audio file using atomic writes.
+
+    Supports MP3 (ID3), M4A (MP4), Opus, and OGG files.
+
+    Args:
+        local_path: Path to the audio file
+        title: Track title
+        artist: Track artist
+        album: Album name
+        genre: Genre
+        year: Release year
+        bpm: Beats per minute
+        key: Musical key (e.g., "Am", "C#m")
+
+    Returns:
+        True if successful, False otherwise
+    """
+    if not os.path.exists(local_path):
+        logger.warning(f"File not found: {local_path}")
+        return False
+
+    # Use atomic write: copy to temp, modify, replace
+    temp_path = local_path + ".tmp"
+
+    try:
+        # Copy original to temp
+        shutil.copy2(local_path, temp_path)
+
+        # Load temp file
+        audio = MutagenFile(temp_path)
+        if audio is None:
+            logger.warning(f"Could not open file: {local_path}")
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            return False
+
+        # Determine format and write tags
+        if isinstance(audio.tags, ID3) or hasattr(audio, "ID3"):
+            _write_id3_metadata(audio, title, artist, album, genre, year, bpm, key)
+        elif isinstance(audio, MP4):
+            _write_mp4_metadata(audio, title, artist, album, genre, year, bpm, key)
+        elif isinstance(audio, (OggOpus, OggVorbis)):
+            _write_vorbis_metadata(audio, title, artist, album, genre, year, bpm, key)
+        else:
+            logger.warning(f"Unsupported format for metadata writing: {local_path}")
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            return False
+
+        # Save changes
+        audio.save()
+
+        # Atomic replace
+        os.replace(temp_path, local_path)
+        return True
+
+    except Exception as e:
+        logger.exception(f"Error writing metadata to {local_path}: {e}")
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+        return False
+
+
+def _write_id3_metadata(
+    audio: MutagenFile,
+    title: Optional[str],
+    artist: Optional[str],
+    album: Optional[str],
+    genre: Optional[str],
+    year: Optional[int],
+    bpm: Optional[float],
+    key: Optional[str],
+) -> None:
+    """Write metadata to ID3 tags (MP3)."""
+    # Ensure tags exist
+    if audio.tags is None:
+        audio.add_tags()
+
+    tags = audio.tags
+
+    if title is not None:
+        tags["TIT2"] = TIT2(encoding=3, text=title)
+    if artist is not None:
+        tags["TPE1"] = TPE1(encoding=3, text=artist)
+    if album is not None:
+        tags["TALB"] = TALB(encoding=3, text=album)
+    if genre is not None:
+        tags["TCON"] = TCON(encoding=3, text=genre)
+    if year is not None:
+        tags["TDRC"] = TDRC(encoding=3, text=str(year))
+    if bpm is not None:
+        tags["TBPM"] = TBPM(encoding=3, text=str(int(bpm)))
+    if key is not None:
+        tags["TKEY"] = TKEY(encoding=3, text=key)
+
+
+def _write_mp4_metadata(
+    audio: MP4,
+    title: Optional[str],
+    artist: Optional[str],
+    album: Optional[str],
+    genre: Optional[str],
+    year: Optional[int],
+    bpm: Optional[float],
+    key: Optional[str],
+) -> None:
+    """Write metadata to MP4/M4A tags."""
+    if title is not None:
+        audio["\xa9nam"] = [title]
+    if artist is not None:
+        audio["\xa9ART"] = [artist]
+    if album is not None:
+        audio["\xa9alb"] = [album]
+    if genre is not None:
+        audio["\xa9gen"] = [genre]
+    if year is not None:
+        audio["\xa9day"] = [str(year)]
+    if bpm is not None:
+        audio["tmpo"] = [int(bpm)]
+    # Note: No standard key field for MP4, using custom field
+    if key is not None:
+        audio["----:com.apple.iTunes:INITIALKEY"] = key.encode("utf-8")
+
+
+def _write_vorbis_metadata(
+    audio: MutagenFile,
+    title: Optional[str],
+    artist: Optional[str],
+    album: Optional[str],
+    genre: Optional[str],
+    year: Optional[int],
+    bpm: Optional[float],
+    key: Optional[str],
+) -> None:
+    """Write metadata to Vorbis comments (Opus, OGG)."""
+    if title is not None:
+        audio["TITLE"] = title
+    if artist is not None:
+        audio["ARTIST"] = artist
+    if album is not None:
+        audio["ALBUM"] = album
+    if genre is not None:
+        audio["GENRE"] = genre
+    if year is not None:
+        audio["DATE"] = str(year)
+    if bpm is not None:
+        audio["BPM"] = str(int(bpm))
+    if key is not None:
+        audio["INITIALKEY"] = key
