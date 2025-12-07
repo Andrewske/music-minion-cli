@@ -541,8 +541,7 @@ def get_progress_info(state: PlayerState) -> tuple[float, float, float]:
 
 
 def is_track_finished(state: PlayerState) -> bool:
-    """
-    Check if the current track has finished playing.
+    """Check if the current track has finished playing.
 
     Args:
         state: Current player state
@@ -553,20 +552,29 @@ def is_track_finished(state: PlayerState) -> bool:
     if not is_mpv_running(state):
         return False
 
-    # Check MPV's eof-reached property (most reliable)
-    eof = get_mpv_property(state.socket_path, "eof-reached")
-    if eof is True:
-        return True
-
-    # Fallback: Check if position is at/near end of duration
-    # Use a 0.5 second threshold to catch tracks that are effectively done
     position = get_mpv_property(state.socket_path, "time-pos") or 0.0
     duration = get_mpv_property(state.socket_path, "duration") or 0.0
 
-    if duration > 0 and position >= duration - 0.5:
-        return True
+    # Primary check: position near end of duration
+    finished_by_position = duration > 0 and position >= duration - 0.5
 
-    return False
+    # Secondary check: eof-reached, but only when position is near end
+    eof = get_mpv_property(state.socket_path, "eof-reached")
+    finished_by_eof = eof is True and duration > 0 and position >= duration - 1.0
+
+    result = finished_by_position or finished_by_eof
+
+    logger.debug(
+        "is_track_finished: pos={:.3f}, dur={:.3f}, eof={}, by_pos={}, by_eof={}, result={}",
+        position,
+        duration,
+        eof,
+        finished_by_position,
+        finished_by_eof,
+        result,
+    )
+
+    return result
 
 
 def format_time(seconds: float) -> str:

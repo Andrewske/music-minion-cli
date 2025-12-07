@@ -658,6 +658,55 @@ CREATE TABLE playback_state (
 
 **Learning**: Database-enforced singleton is simpler than application-level state management. Persists across sessions automatically.
 
+### MPV Track Transition Race Condition
+
+**CRITICAL**: MPV's `eof-reached` property can stay True during track transitions, causing autoplay loops.
+
+**Problem**: When a track finishes and we issue `loadfile` for the next track:
+1. Old track finishes → `eof-reached=True`
+2. We call `loadfile` for new track
+3. New track loads (duration > 0)
+4. But `eof-reached` still True (not cleared yet)
+5. Next poll cycle: `is_track_finished()` returns True again
+6. Autoplay triggers again, interrupting the transition
+7. Infinite loop!
+
+**Wrong Pattern**:
+```python
+# BUG: Returns True immediately on eof-reached without position check
+def is_track_finished(state):
+    eof = get_mpv_property(state.socket_path, "eof-reached")
+    if eof is True:
+        return True  # FALSE POSITIVE during transition!
+    # Position check only used as fallback...
+```
+
+**Correct Pattern**:
+```python
+# ALWAYS validate position first
+def is_track_finished(state):
+    position = get_mpv_property(state.socket_path, "time-pos") or 0.0
+    duration = get_mpv_property(state.socket_path, "duration") or 0.0
+
+    # Primary check: Position at/near end
+    if duration > 0 and position >= duration - 0.5:
+        return True
+
+    # Secondary: eof-reached ONLY if position confirms it
+    eof = get_mpv_property(state.socket_path, "eof-reached")
+    if eof is True and duration > 0 and position >= duration - 1.0:
+        return True
+
+    return False
+```
+
+**Why This Matters**:
+- During transition, MPV reports: `eof-reached=True`, `position=0.0`, `duration=30.0` (new track)
+- Old logic: Returns True (triggers autoplay again)
+- New logic: Returns False (position=0.0 < 29.5, no loop)
+
+**Learning**: Never trust `eof-reached` alone. Always validate with position to prevent false positives during track transitions. This is especially critical for autoplay systems (comparison mode, playlist sequential playback, etc.).
+
 ### Dual Tracking Pattern
 **Pattern**: Store both stable ID and position
 ```python
