@@ -6,7 +6,7 @@ Handles: archive, like, love, note, unlike, rankings, rate
 
 import uuid
 from datetime import datetime
-from typing import List, Optional, Tuple, cast
+from typing import Optional
 
 from loguru import logger
 
@@ -21,7 +21,7 @@ from music_minion.domain.rating.database import (
 )
 
 
-def handle_archive_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+def handle_archive_command(ctx: AppContext) -> tuple[AppContext, bool]:
     """Handle archive command - mark current song to never play again.
 
     Args:
@@ -81,7 +81,7 @@ def handle_archive_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     return handle_skip_command(ctx)
 
 
-def handle_like_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+def handle_like_command(ctx: AppContext) -> tuple[AppContext, bool]:
     """Handle like command - rate current song as liked.
 
     Args:
@@ -186,7 +186,7 @@ def handle_like_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     return ctx, True
 
 
-def handle_love_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+def handle_love_command(ctx: AppContext) -> tuple[AppContext, bool]:
     """Handle love command - rate current song as loved.
 
     Args:
@@ -251,7 +251,7 @@ def handle_love_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     return ctx, True
 
 
-def handle_note_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
+def handle_note_command(ctx: AppContext, args: list[str]) -> tuple[AppContext, bool]:
     """Handle note command - add a note to the current song.
 
     Args:
@@ -323,7 +323,7 @@ def handle_note_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, b
     return ctx, True
 
 
-def handle_unlike_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+def handle_unlike_command(ctx: AppContext) -> tuple[AppContext, bool]:
     """Handle unlike command - remove SoundCloud like for current track.
 
     Only removes the SoundCloud like marker and syncs to SoundCloud.
@@ -433,7 +433,7 @@ def handle_unlike_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     return ctx, True
 
 
-def parse_rankings_args(args: List[str]) -> dict:
+def parse_rankings_args(args: list[str]) -> dict:
     """Parse /rankings command arguments.
 
     Args:
@@ -462,8 +462,8 @@ def parse_rankings_args(args: List[str]) -> dict:
 
 
 def handle_rankings_command(
-    ctx: AppContext, args: List[str]
-) -> Tuple[AppContext, bool]:
+    ctx: AppContext, args: list[str]
+) -> tuple[AppContext, bool]:
     """Display top-rated tracks in command palette.
 
     Args:
@@ -676,27 +676,31 @@ def _build_coverage_filter_sets(
     genre_filter: Optional[str],
     year_filter: Optional[int],
     playlist_id: Optional[int],
-) -> tuple[RatingCoverageFilters | None, RatingCoverageFilters | None]:
-    """Return (library_filters, filter_filters) for coverage queries."""
+) -> tuple[Optional[RatingCoverageFilters], Optional[RatingCoverageFilters]]:
+    """Return (library_filters, filter_filters) for coverage queries.
 
-    library_filters: RatingCoverageFilters = cast(RatingCoverageFilters, {})
+    library_filters: Only source_filter applied (library-wide scope)
+    filter_filters: All filters applied (active filter scope)
+
+    Returns None if no filters are active for that scope.
+    """
+    # Build library-level filters (source only)
+    library_filters: Optional[RatingCoverageFilters] = None
     if source_filter and source_filter != "all":
-        library_filters["source_filter"] = source_filter
+        library_filters = {"source_filter": source_filter}
 
-    filter_filters: RatingCoverageFilters = cast(
-        RatingCoverageFilters, dict(library_filters)
-    )
-    if genre_filter:
-        filter_filters["genre_filter"] = genre_filter
-    if year_filter:
-        filter_filters["year_filter"] = year_filter
-    if playlist_id:
-        filter_filters["playlist_id"] = playlist_id
+    # Build filter-level filters (all filters)
+    filter_filters: Optional[RatingCoverageFilters] = None
+    if library_filters or genre_filter or year_filter or playlist_id:
+        filter_filters = library_filters.copy() if library_filters else {}
+        if genre_filter:
+            filter_filters["genre_filter"] = genre_filter
+        if year_filter:
+            filter_filters["year_filter"] = year_filter
+        if playlist_id:
+            filter_filters["playlist_id"] = playlist_id
 
-    library_result = library_filters if library_filters else None
-    filter_result = filter_filters if filter_filters else None
-
-    return library_result, filter_result
+    return library_filters, filter_filters
 
 
 def _load_coverage_stats_for_session(
@@ -797,7 +801,7 @@ def parse_rate_args(args: list[str]) -> dict:
     return parsed
 
 
-def handle_rate_history_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+def handle_rate_history_command(ctx: AppContext) -> tuple[AppContext, bool]:
     """Show rating history viewer with recent ratings.
 
     Args:
@@ -871,7 +875,7 @@ def handle_rate_history_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     return ctx, True
 
 
-def handle_rate_comparisons_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+def handle_rate_comparisons_command(ctx: AppContext) -> tuple[AppContext, bool]:
     """Show comparison history viewer with recent Elo comparisons.
 
     Args:
@@ -951,8 +955,8 @@ def handle_rate_comparisons_command(ctx: AppContext) -> Tuple[AppContext, bool]:
 
 
 def handle_rate_command(
-    ctx: AppContext, cmd: str, args: List[str]
-) -> Tuple[AppContext, bool]:
+    ctx: AppContext, cmd: str, args: list[str]
+) -> tuple[AppContext, bool]:
     """
     Start a pairwise comparison rating session or show history.
 

@@ -4,12 +4,12 @@ Music library provider registry.
 Provides access to all available provider modules.
 """
 
-from typing import Dict, Any, List
+from typing import Any
 
 # Provider registry will be populated as providers are implemented
 # Each provider module exports functions matching the LibraryProvider protocol
 
-PROVIDERS: Dict[str, Any] = {}
+PROVIDERS: dict[str, Any] = {}
 
 
 def register_provider(name: str, provider_module: Any) -> None:
@@ -67,6 +67,6 @@ def provider_exists(name: str) -> bool:
 # Import and register providers as they are implemented
 from . import local, soundcloud, spotify
 
-register_provider('local', local)
-register_provider('soundcloud', soundcloud)
-register_provider('spotify', spotify)
+register_provider("local", local)
+register_provider("soundcloud", soundcloud)
+register_provider("spotify", spotify)

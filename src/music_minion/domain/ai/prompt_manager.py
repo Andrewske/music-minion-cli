@@ -8,7 +8,7 @@ Manages:
 """
 
 from pathlib import Path
-from typing import Optional, Dict, List
+from typing import Optional
 from datetime import datetime
 
 from music_minion.core.config import get_config_dir
@@ -91,7 +91,7 @@ def append_to_learnings_section(section: str, content: str) -> None:
         init_learnings_file()
 
     current_content = learnings_file.read_text()
-    lines = current_content.split('\n')
+    lines = current_content.split("\n")
 
     # Find the section
     section_header = f"## {section}"
@@ -114,15 +114,15 @@ def append_to_learnings_section(section: str, content: str) -> None:
 
         # Insert content before next section
         lines.insert(next_section_index, content)
-        current_content = '\n'.join(lines)
+        current_content = "\n".join(lines)
 
     # Update timestamp - find and replace the timestamp line
-    lines = current_content.split('\n')
+    lines = current_content.split("\n")
     for i, line in enumerate(lines):
-        if line.startswith('Last updated:'):
-            lines[i] = f'Last updated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'
+        if line.startswith("Last updated:"):
+            lines[i] = f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
             break
-    current_content = '\n'.join(lines)
+    current_content = "\n".join(lines)
 
     learnings_file.write_text(current_content)
 
@@ -143,7 +143,7 @@ def save_prompt_version(prompt: str, version_note: Optional[str] = None) -> str:
 
     # Add metadata header
     content = f"""# Prompt Version: {timestamp}
-# Note: {version_note or 'No note provided'}
+# Note: {version_note or "No note provided"}
 # Created: {datetime.now().isoformat()}
 
 {prompt}
@@ -169,8 +169,10 @@ def get_active_prompt() -> str:
     if active_file.exists():
         content = active_file.read_text()
         # Skip metadata lines starting with #
-        lines = [line for line in content.split('\n') if not line.strip().startswith('#')]
-        return '\n'.join(lines).strip()
+        lines = [
+            line for line in content.split("\n") if not line.strip().startswith("#")
+        ]
+        return "\n".join(lines).strip()
 
     # Return default if nothing exists
     return get_default_prompt()
@@ -190,7 +192,7 @@ def set_active_prompt(prompt: str, note: Optional[str] = None) -> None:
     active_file = get_active_prompt_file()
     content = f"""# Active Prompt
 # Last updated: {datetime.now().isoformat()}
-# Note: {note or 'Updated prompt'}
+# Note: {note or "Updated prompt"}
 
 {prompt}
 """
@@ -219,7 +221,7 @@ Example bad tags: good, nice, music, song, electronic, rock
 """
 
 
-def list_prompt_versions() -> List[Dict[str, str]]:
+def list_prompt_versions() -> list[dict[str, str]]:
     """List all prompt versions.
 
     Returns:
@@ -231,7 +233,7 @@ def list_prompt_versions() -> List[Dict[str, str]]:
     for file in sorted(prompts_dir.glob("v-*.txt"), reverse=True):
         # Parse metadata from file
         content = file.read_text()
-        lines = content.split('\n')
+        lines = content.split("\n")
 
         timestamp = ""
         note = ""
@@ -241,10 +243,6 @@ def list_prompt_versions() -> List[Dict[str, str]]:
             elif line.startswith("# Note:"):
                 note = line.split(":", 1)[1].strip()
 
-        versions.append({
-            'file': str(file),
-            'timestamp': timestamp,
-            'note': note
-        })
+        versions.append({"file": str(file), "timestamp": timestamp, "note": note})
 
     return versions

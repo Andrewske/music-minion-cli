@@ -7,38 +7,32 @@ This module handles filter rules for smart playlists, including:
 - Validating filter fields and operators
 """
 
-from typing import List, Dict, Any, Tuple, Optional
+from typing import Any, Optional
 from music_minion.core.database import get_db_connection
 
 
 # Valid filter fields (must match tracks table columns)
-VALID_FIELDS = {
-    'title', 'artist', 'album', 'genre', 'year', 'bpm', 'key'
-}
+VALID_FIELDS = {"title", "artist", "album", "genre", "year", "bpm", "key"}
 
 # Text operators for string fields
-TEXT_OPERATORS = {
-    'contains', 'starts_with', 'ends_with', 'equals', 'not_equals'
-}
+TEXT_OPERATORS = {"contains", "starts_with", "ends_with", "equals", "not_equals"}
 
 # Numeric operators for integer/float fields
-NUMERIC_OPERATORS = {
-    'equals', 'not_equals', 'gt', 'lt', 'gte', 'lte'
-}
+NUMERIC_OPERATORS = {"equals", "not_equals", "gt", "lt", "gte", "lte"}
 
 # Field type mapping
-NUMERIC_FIELDS = {'year', 'bpm'}
-TEXT_FIELDS = {'title', 'artist', 'album', 'genre', 'key'}
+NUMERIC_FIELDS = {"year", "bpm"}
+TEXT_FIELDS = {"title", "artist", "album", "genre", "key"}
 
 # Field name to column name mapping (for SQL safety)
 FIELD_TO_COLUMN = {
-    'title': 'title',
-    'artist': 'artist',
-    'album': 'album',
-    'genre': 'genre',
-    'year': 'year',
-    'bpm': 'bpm',
-    'key': 'key_signature'  # Note: database column is key_signature
+    "title": "title",
+    "artist": "artist",
+    "album": "album",
+    "genre": "genre",
+    "year": "year",
+    "bpm": "bpm",
+    "key": "key_signature",  # Note: database column is key_signature
 }
 
 
@@ -66,7 +60,7 @@ def validate_filter(field: str, operator: str, value: str) -> None:
             )
         # Validate that value is numeric
         try:
-            if field == 'bpm':
+            if field == "bpm":
                 float(value)  # BPM can be float (e.g., 128.5)
             else:
                 int(value)  # Year must be integer
@@ -84,11 +78,7 @@ def validate_filter(field: str, operator: str, value: str) -> None:
 
 
 def add_filter(
-    playlist_id: int,
-    field: str,
-    operator: str,
-    value: str,
-    conjunction: str = 'AND'
+    playlist_id: int, field: str, operator: str, value: str, conjunction: str = "AND"
 ) -> int:
     """Add a filter rule to a smart playlist.
 
@@ -108,21 +98,18 @@ def add_filter(
     # Validate filter
     validate_filter(field, operator, value)
 
-    if conjunction not in ('AND', 'OR'):
+    if conjunction not in ("AND", "OR"):
         raise ValueError(f"Conjunction must be 'AND' or 'OR', got: {conjunction}")
 
     # Verify playlist exists and is smart type
     with get_db_connection() as conn:
-        cursor = conn.execute(
-            "SELECT type FROM playlists WHERE id = ?",
-            (playlist_id,)
-        )
+        cursor = conn.execute("SELECT type FROM playlists WHERE id = ?", (playlist_id,))
         row = cursor.fetchone()
 
         if not row:
             raise ValueError(f"Playlist {playlist_id} not found")
 
-        if row['type'] != 'smart':
+        if row["type"] != "smart":
             raise ValueError(
                 f"Cannot add filters to manual playlist. "
                 f"Only smart playlists support filters."
@@ -134,7 +121,7 @@ def add_filter(
             INSERT INTO playlist_filters (playlist_id, field, operator, value, conjunction)
             VALUES (?, ?, ?, ?, ?)
             """,
-            (playlist_id, field, operator, value, conjunction)
+            (playlist_id, field, operator, value, conjunction),
         )
         conn.commit()
         return cursor.lastrowid
@@ -160,7 +147,7 @@ def update_filter(
     field: Optional[str] = None,
     operator: Optional[str] = None,
     value: Optional[str] = None,
-    conjunction: Optional[str] = None
+    conjunction: Optional[str] = None,
 ) -> bool:
     """Update an existing filter rule.
 
@@ -179,23 +166,27 @@ def update_filter(
     """
     # Get current filter
     with get_db_connection() as conn:
-        cursor = conn.execute("SELECT * FROM playlist_filters WHERE id = ?", (filter_id,))
+        cursor = conn.execute(
+            "SELECT * FROM playlist_filters WHERE id = ?", (filter_id,)
+        )
         row = cursor.fetchone()
 
         if not row:
             return False
 
         # Use current values if not provided
-        new_field = field if field is not None else row['field']
-        new_operator = operator if operator is not None else row['operator']
-        new_value = value if value is not None else row['value']
-        new_conjunction = conjunction if conjunction is not None else row['conjunction']
+        new_field = field if field is not None else row["field"]
+        new_operator = operator if operator is not None else row["operator"]
+        new_value = value if value is not None else row["value"]
+        new_conjunction = conjunction if conjunction is not None else row["conjunction"]
 
         # Validate new values
         validate_filter(new_field, new_operator, new_value)
 
-        if new_conjunction not in ('AND', 'OR'):
-            raise ValueError(f"Conjunction must be 'AND' or 'OR', got: {new_conjunction}")
+        if new_conjunction not in ("AND", "OR"):
+            raise ValueError(
+                f"Conjunction must be 'AND' or 'OR', got: {new_conjunction}"
+            )
 
         # Update filter
         cursor = conn.execute(
@@ -204,13 +195,13 @@ def update_filter(
             SET field = ?, operator = ?, value = ?, conjunction = ?
             WHERE id = ?
             """,
-            (new_field, new_operator, new_value, new_conjunction, filter_id)
+            (new_field, new_operator, new_value, new_conjunction, filter_id),
         )
         conn.commit()
         return True
 
 
-def get_playlist_filters(playlist_id: int) -> List[Dict[str, Any]]:
+def get_playlist_filters(playlist_id: int) -> list[dict[str, Any]]:
     """Get all filter rules for a playlist.
 
     Args:
@@ -227,12 +218,12 @@ def get_playlist_filters(playlist_id: int) -> List[Dict[str, Any]]:
             WHERE playlist_id = ?
             ORDER BY id
             """,
-            (playlist_id,)
+            (playlist_id,),
         )
         return [dict(row) for row in cursor.fetchall()]
 
 
-def build_filter_query(filters: List[Dict[str, Any]]) -> Tuple[str, List[str]]:
+def build_filter_query(filters: list[dict[str, Any]]) -> tuple[str, list[str]]:
     """Build SQL WHERE clause from filter rules.
 
     Args:
@@ -256,21 +247,21 @@ def build_filter_query(filters: List[Dict[str, Any]]) -> Tuple[str, List[str]]:
 
     # Map operators to SQL
     operator_map = {
-        'contains': 'LIKE',
-        'starts_with': 'LIKE',
-        'ends_with': 'LIKE',
-        'equals': '=',
-        'not_equals': '!=',
-        'gt': '>',
-        'lt': '<',
-        'gte': '>=',
-        'lte': '<='
+        "contains": "LIKE",
+        "starts_with": "LIKE",
+        "ends_with": "LIKE",
+        "equals": "=",
+        "not_equals": "!=",
+        "gt": ">",
+        "lt": "<",
+        "gte": ">=",
+        "lte": "<=",
     }
 
     for i, f in enumerate(filters):
-        field = f['field']
-        operator = f['operator']
-        value = f['value']
+        field = f["field"]
+        operator = f["operator"]
+        value = f["value"]
 
         # Map field name to actual column name (SQL injection prevention)
         column_name = FIELD_TO_COLUMN.get(field)
@@ -278,16 +269,16 @@ def build_filter_query(filters: List[Dict[str, Any]]) -> Tuple[str, List[str]]:
             # This should never happen if validation works correctly
             raise ValueError(f"Invalid field '{field}' - not in field mapping")
 
-        sql_op = operator_map.get(operator, '=')
+        sql_op = operator_map.get(operator, "=")
 
         # Handle LIKE operators with wildcards
-        if operator == 'contains':
+        if operator == "contains":
             where_parts.append(f"{column_name} {sql_op} ?")
             params.append(f"%{value}%")
-        elif operator == 'starts_with':
+        elif operator == "starts_with":
             where_parts.append(f"{column_name} {sql_op} ?")
             params.append(f"{value}%")
-        elif operator == 'ends_with':
+        elif operator == "ends_with":
             where_parts.append(f"{column_name} {sql_op} ?")
             params.append(f"%{value}")
         else:
@@ -298,14 +289,14 @@ def build_filter_query(filters: List[Dict[str, Any]]) -> Tuple[str, List[str]]:
     # Join with conjunctions (default to AND for first filter)
     where_clause_parts = [where_parts[0]]
     for i in range(1, len(where_parts)):
-        conjunction = filters[i - 1].get('conjunction', 'AND')
+        conjunction = filters[i - 1].get("conjunction", "AND")
         where_clause_parts.append(f" {conjunction} {where_parts[i]}")
 
-    where_clause = ''.join(where_clause_parts)
+    where_clause = "".join(where_clause_parts)
     return where_clause, params
 
 
-def evaluate_filters(playlist_id: int) -> List[Dict[str, Any]]:
+def evaluate_filters(playlist_id: int) -> list[dict[str, Any]]:
     """Evaluate smart playlist filters and return matching tracks.
 
     Args:

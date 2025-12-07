@@ -6,7 +6,7 @@ Shared functions for command parsing, validation, and utilities.
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from loguru import logger
 
@@ -30,7 +30,7 @@ def safe_print(ctx: AppContext, message: str, style: Optional[str] = None) -> No
         print(message)
 
 
-def parse_quoted_args(args: List[str]) -> List[str]:
+def parse_quoted_args(args: list[str]) -> list[str]:
     """
     Parse command arguments respecting quoted strings.
     Handles both single and double quotes.
@@ -83,7 +83,7 @@ def parse_quoted_args(args: List[str]) -> List[str]:
     return parsed
 
 
-def parse_command(user_input: str) -> tuple[str, List[str]]:
+def parse_command(user_input: str) -> tuple[str, list[str]]:
     """Parse user input into command and arguments."""
     parts = user_input.strip().split()
     if not parts:
@@ -109,7 +109,7 @@ def ensure_mpv_available() -> bool:
     return True
 
 
-def load_provider_states() -> Dict[str, Any]:
+def load_provider_states() -> dict[str, Any]:
     """Load all provider authentication states from database.
 
     Returns:

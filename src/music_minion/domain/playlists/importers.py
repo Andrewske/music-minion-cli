@@ -5,7 +5,7 @@ Supports importing M3U/M3U8 and Serato .crate playlists.
 
 import urllib.parse
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Optional
 
 from music_minion.core.database import get_db_connection
 
@@ -98,9 +98,9 @@ def resolve_relative_path(
 def _add_tracks_from_paths(
     playlist_id: int,
     playlist_local_path: Path,
-    track_paths: List[str],
+    track_paths: list[str],
     library_root: Path,
-) -> Tuple[int, int, List[str]]:
+) -> tuple[int, int, list[str]]:
     """
     Helper function to resolve track paths and add them to a playlist.
 
@@ -157,7 +157,7 @@ def import_m3u(
     playlist_name: str,
     library_root: Path,
     description: Optional[str] = None,
-) -> Tuple[int, int, int, List[str]]:
+) -> tuple[int, int, int, list[str]]:
     """
     Import an M3U/M3U8 playlist file.
 
@@ -230,7 +230,7 @@ def import_serato_crate(
     playlist_name: str,
     library_root: Path,
     description: Optional[str] = None,
-) -> Tuple[int, int, int, List[str]]:
+) -> tuple[int, int, int, list[str]]:
     """
     Import a Serato .crate playlist file.
 
@@ -310,7 +310,7 @@ def import_playlist(
     playlist_name: Optional[str] = None,
     library_root: Optional[Path] = None,
     description: Optional[str] = None,
-) -> Tuple[int, int, int, List[str]]:
+) -> tuple[int, int, int, list[str]]:
     """
     Import a playlist from a file, auto-detecting format.
 

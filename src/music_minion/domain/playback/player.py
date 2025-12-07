@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, NamedTuple, Optional, Tuple
+from typing import Any, NamedTuple, Optional
 
 from loguru import logger
 
@@ -150,7 +150,7 @@ def is_mpv_running(state: PlayerState) -> bool:
     return True
 
 
-def send_mpv_command(socket_path: Optional[str], command: Dict[str, Any]) -> bool:
+def send_mpv_command(socket_path: Optional[str], command: dict[str, Any]) -> bool:
     """Send JSON IPC command to MPV."""
     if not socket_path or not os.path.exists(socket_path):
         return False
@@ -217,7 +217,7 @@ def play_file(
     local_path: str,
     track_id: Optional[int] = None,
     playlist_id: Optional[int] = None,
-) -> Tuple[PlayerState, bool]:
+) -> tuple[PlayerState, bool]:
     """Play a specific audio file and return updated state.
 
     Args:
@@ -262,8 +262,10 @@ def play_file(
         if track_id is not None:
             try:
                 session_id = start_listen_session(track_id, playlist_id)
-            except Exception as e:
-                logger.warning(f"Failed to start listening session: {e}")
+            except Exception:
+                logger.exception(
+                    f"Failed to start listening session: track_id={track_id}, playlist_id={playlist_id}"
+                )
 
         # Update status to get actual playback state
         updated_state = update_player_status(
@@ -280,7 +282,7 @@ def play_file(
     return state, False
 
 
-def pause_playback(state: PlayerState) -> Tuple[PlayerState, bool]:
+def pause_playback(state: PlayerState) -> tuple[PlayerState, bool]:
     """Pause playback and return updated state."""
     if not is_mpv_running(state):
         return state, False
@@ -296,7 +298,7 @@ def pause_playback(state: PlayerState) -> Tuple[PlayerState, bool]:
     return state, False
 
 
-def resume_playback(state: PlayerState) -> Tuple[PlayerState, bool]:
+def resume_playback(state: PlayerState) -> tuple[PlayerState, bool]:
     """Resume playback and return updated state."""
     if not is_mpv_running(state):
         return state, False
@@ -312,7 +314,7 @@ def resume_playback(state: PlayerState) -> Tuple[PlayerState, bool]:
     return state, False
 
 
-def toggle_pause(state: PlayerState) -> Tuple[PlayerState, bool]:
+def toggle_pause(state: PlayerState) -> tuple[PlayerState, bool]:
     """Toggle pause/resume and return updated state."""
     if not is_mpv_running(state):
         return state, False
@@ -325,7 +327,7 @@ def toggle_pause(state: PlayerState) -> Tuple[PlayerState, bool]:
     return state, False
 
 
-def stop_playback(state: PlayerState) -> Tuple[PlayerState, bool]:
+def stop_playback(state: PlayerState) -> tuple[PlayerState, bool]:
     """Stop playback and return updated state."""
     if not is_mpv_running(state):
         return state, False
@@ -360,23 +362,15 @@ def tick_session(state: PlayerState) -> PlayerState:
     if state.current_session_id is not None and state.is_playing:
         try:
             tick_listen_session(state.current_session_id, state.is_playing)
-        except Exception as e:
-            logger.warning(f"Failed to tick listening session: {e}")
+        except Exception:
+            logger.exception(
+                f"Failed to tick listening session: session_id={state.current_session_id}"
+            )
 
     return state
 
-    success = send_mpv_command(state.socket_path, {"command": ["stop"]})
 
-    if success:
-        return (
-            state._replace(current_track=None, is_playing=False, playback_source=None),
-            True,
-        )
-
-    return state, False
-
-
-def seek_to_position(state: PlayerState, position: float) -> Tuple[PlayerState, bool]:
+def seek_to_position(state: PlayerState, position: float) -> tuple[PlayerState, bool]:
     """Seek to specific position in seconds and return updated state."""
     if not is_mpv_running(state):
         return state, False
@@ -394,7 +388,7 @@ def seek_to_position(state: PlayerState, position: float) -> Tuple[PlayerState, 
     return state, False
 
 
-def seek_relative(state: PlayerState, seconds: float) -> Tuple[PlayerState, bool]:
+def seek_relative(state: PlayerState, seconds: float) -> tuple[PlayerState, bool]:
     """Seek relative to current position and return updated state."""
     if not is_mpv_running(state):
         return state, False
@@ -412,7 +406,7 @@ def seek_relative(state: PlayerState, seconds: float) -> Tuple[PlayerState, bool
     return state, False
 
 
-def set_volume(state: PlayerState, volume: int) -> Tuple[PlayerState, bool]:
+def set_volume(state: PlayerState, volume: int) -> tuple[PlayerState, bool]:
     """Set volume (0-100) and return updated state."""
     if not is_mpv_running(state):
         return state, False
@@ -464,7 +458,7 @@ def update_player_position_only(state: PlayerState) -> PlayerState:
 
 def get_unified_player_status(
     state: PlayerState, spotify_player=None
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Get current player status for both MPV and Spotify players.
 
     Args:
@@ -503,7 +497,7 @@ def get_unified_player_status(
     return get_player_status(state)
 
 
-def get_player_status(state: PlayerState) -> Dict[str, Any]:
+def get_player_status(state: PlayerState) -> dict[str, Any]:
     """Get current player status without modifying state."""
     if not is_mpv_running(state):
         return {
@@ -530,7 +524,7 @@ def get_player_status(state: PlayerState) -> Dict[str, Any]:
     }
 
 
-def get_progress_info(state: PlayerState) -> Tuple[float, float, float]:
+def get_progress_info(state: PlayerState) -> tuple[float, float, float]:
     """Get position, duration, and progress percentage."""
     if not is_mpv_running(state):
         return 0.0, 0.0, 0.0

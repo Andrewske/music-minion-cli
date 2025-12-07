@@ -4,10 +4,8 @@ Argument and command parsing utilities.
 Cross-cutting utilities for parsing user input and command arguments.
 """
 
-from typing import List
 
-
-def parse_quoted_args(args: List[str]) -> List[str]:
+def parse_quoted_args(args: list[str]) -> list[str]:
     """
     Parse command arguments respecting quoted strings.
     Handles both single and double quotes.
@@ -42,7 +40,7 @@ def parse_quoted_args(args: List[str]) -> List[str]:
         # Check if this arg ends the current quote
         elif in_quote and arg and arg[-1] == quote_char:
             current.append(arg[:-1])
-            parsed.append(' '.join(current))
+            parsed.append(" ".join(current))
             current = []
             in_quote = False
             quote_char = None
@@ -55,12 +53,12 @@ def parse_quoted_args(args: List[str]) -> List[str]:
 
     # If we have unclosed quotes, join what we have
     if current:
-        parsed.append(' '.join(current))
+        parsed.append(" ".join(current))
 
     return parsed
 
 
-def parse_command(user_input: str) -> tuple[str, List[str]]:
+def parse_command(user_input: str) -> tuple[str, list[str]]:
     """
     Parse user input into command and arguments.
 
@@ -79,4 +77,4 @@ def parse_command(user_input: str) -> tuple[str, List[str]]:
     return command, args
 
 
-__all__ = ['parse_quoted_args', 'parse_command']
+__all__ = ["parse_quoted_args", "parse_command"]

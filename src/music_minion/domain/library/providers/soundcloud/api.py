@@ -6,7 +6,7 @@ Handles library sync, playlists, likes, and stream URLs.
 
 import json
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 import requests
 from loguru import logger
@@ -24,7 +24,7 @@ API_BASE_URL = "https://api.soundcloud.com"
 
 def _ensure_valid_token(
     state: ProviderState,
-) -> Tuple[ProviderState, Optional[Dict[str, Any]]]:
+) -> tuple[ProviderState, Optional[dict[str, Any]]]:
     """Ensure access token is valid, refreshing if expired.
 
     Handles token expiry check and automatic refresh. Returns None if
@@ -89,7 +89,7 @@ def _format_playlist_urn(playlist_id: str) -> str:
 
 def sync_library(
     state: ProviderState, incremental: bool = True
-) -> Tuple[ProviderState, TrackList]:
+) -> tuple[ProviderState, TrackList]:
     """Sync SoundCloud likes/playlists and like markers.
 
     Performs incremental sync by default - only fetches new likes since last sync.
@@ -147,6 +147,7 @@ def sync_library(
         # Authentication failures - mark state as unauthenticated
         if e.response.status_code in (401, 403):
             from dataclasses import replace
+
             state = replace(state, authenticated=False)
             return state, []
         else:
@@ -201,7 +202,7 @@ def sync_library(
 def search(
     state: ProviderState,
     query: str,
-) -> Tuple[ProviderState, TrackList]:
+) -> tuple[ProviderState, TrackList]:
     """Search SoundCloud tracks.
 
     Args:
@@ -279,7 +280,9 @@ def get_stream_url(state: ProviderState, provider_id: str) -> Optional[str]:
     return f"{API_BASE_URL}/tracks/{provider_id}/stream?oauth_token={access_token}"
 
 
-def get_playlists(state: ProviderState, full: bool = False) -> Tuple[ProviderState, List[Dict[str, Any]]]:
+def get_playlists(
+    state: ProviderState, full: bool = False
+) -> tuple[ProviderState, list[dict[str, Any]]]:
     """Get user's SoundCloud playlists metadata (optimized for incremental sync).
 
     Args:
@@ -327,7 +330,10 @@ def get_playlists(state: ProviderState, full: bool = False) -> Tuple[ProviderSta
             else:
                 collection = []
 
-            log(f"API response: type={type(data)}, has_collection={'collection' in data if isinstance(data, dict) else False}, collection_size={len(collection)}", level="debug")
+            log(
+                f"API response: type={type(data)}, has_collection={'collection' in data if isinstance(data, dict) else False}, collection_size={len(collection)}",
+                level="debug",
+            )
 
             # Process playlists
             for playlist in collection:
@@ -367,6 +373,7 @@ def get_playlists(state: ProviderState, full: bool = False) -> Tuple[ProviderSta
             )
             # Mark state as unauthenticated so caller can show proper message
             from dataclasses import replace
+
             state = replace(state, authenticated=False)
             return state, []
         else:
@@ -384,7 +391,7 @@ def get_playlists(state: ProviderState, full: bool = False) -> Tuple[ProviderSta
 
 def get_playlist_tracks(
     state: ProviderState, playlist_id: str
-) -> Tuple[ProviderState, TrackList, Optional[str]]:
+) -> tuple[ProviderState, TrackList, Optional[str]]:
     """Get tracks in a SoundCloud playlist.
 
     Args:
@@ -433,7 +440,7 @@ def get_playlist_tracks(
 
 def like_track(
     state: ProviderState, track_id: str
-) -> Tuple[ProviderState, bool, Optional[str]]:
+) -> tuple[ProviderState, bool, Optional[str]]:
     """Like a track on SoundCloud.
 
     Args:
@@ -483,7 +490,7 @@ def like_track(
 
 def unlike_track(
     state: ProviderState, track_id: str
-) -> Tuple[ProviderState, bool, Optional[str]]:
+) -> tuple[ProviderState, bool, Optional[str]]:
     """Unlike a track on SoundCloud.
 
     Args:
@@ -615,7 +622,7 @@ def _fetch_user_likes(
 
 def _fetch_user_likes_with_markers(
     access_token: str, existing_ids: Optional[set] = None, incremental: bool = True
-) -> Tuple[TrackList, set]:
+) -> tuple[TrackList, set]:
     """Fetch user's liked tracks from SoundCloud with all liked track IDs.
 
     Args:
@@ -722,7 +729,7 @@ def _fetch_user_likes_with_markers(
     return tracks, all_liked_ids
 
 
-def _normalize_soundcloud_track(track: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_soundcloud_track(track: dict[str, Any]) -> dict[str, Any]:
     """Normalize SoundCloud track data to standard metadata format."""
     metadata = {
         "title": track.get("title", "").strip(),
@@ -751,7 +758,7 @@ def _normalize_soundcloud_track(track: Dict[str, Any]) -> Dict[str, Any]:
 
 def add_track_to_playlist(
     state: ProviderState, playlist_id: str, track_id: str
-) -> Tuple[ProviderState, bool, Optional[str]]:
+) -> tuple[ProviderState, bool, Optional[str]]:
     """Add a track to a SoundCloud playlist.
 
     Strategy: SoundCloud uses PUT (full replacement), so we:
@@ -844,7 +851,7 @@ def add_track_to_playlist(
 
 def remove_track_from_playlist(
     state: ProviderState, playlist_id: str, track_id: str
-) -> Tuple[ProviderState, bool, Optional[str]]:
+) -> tuple[ProviderState, bool, Optional[str]]:
     """Remove a track from a SoundCloud playlist.
 
     Strategy:
@@ -941,7 +948,7 @@ def remove_track_from_playlist(
 
 def create_playlist(
     state: ProviderState, name: str, description: Optional[str] = None
-) -> Tuple[ProviderState, Optional[str], Optional[str]]:
+) -> tuple[ProviderState, Optional[str], Optional[str]]:
     """Create a new SoundCloud playlist.
 
     Args:

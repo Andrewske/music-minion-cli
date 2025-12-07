@@ -5,13 +5,17 @@ Handles: play, pause, resume, stop, skip, shuffle, status
 """
 
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Optional, Union, cast
 
 from music_minion.context import AppContext
 from music_minion.core import database
 from music_minion.core.output import log
 from music_minion.domain import library, playback, playlists
 from music_minion.domain.playback import resolver
+
+
+# Sentinel for force_playlist_id parameter to distinguish "not provided" from None
+_UNSET = object()
 
 
 def _get_track_source(track: library.Track) -> Optional[str]:
@@ -27,7 +31,7 @@ def _get_track_source(track: library.Track) -> Optional[str]:
     return None
 
 
-def get_available_tracks(ctx: AppContext) -> List[library.Track]:
+def get_available_tracks(ctx: AppContext) -> list[library.Track]:
     """Get available tracks (respects active library, playlist, and excludes archived)."""
     # Get active library for filtering
     active_library = database.get_active_provider()
@@ -103,8 +107,8 @@ def play_track(
     ctx: AppContext,
     track: library.Track,
     playlist_position: Optional[int] = None,
-    force_playlist_id: Optional[int | None] = ...,
-) -> Tuple[AppContext, bool]:
+    force_playlist_id: Union[Optional[int], object] = _UNSET,
+) -> tuple[AppContext, bool]:
     """
     Play a specific track.
 
@@ -112,7 +116,10 @@ def play_track(
         ctx: Application context
         track: Track to play
         playlist_position: Optional 0-based position in active playlist
-        force_playlist_id: Force playlist_id for session tracking (use None for comparison mode, ... for auto-detect)
+        force_playlist_id: Force playlist_id for session tracking.
+            - Omit (default): Auto-detect from active playlist
+            - None: Force no playlist context (e.g., comparison mode)
+            - int: Use specific playlist ID
 
     Returns:
         (updated_context, should_continue)
@@ -256,8 +263,8 @@ def play_track(
 
         # Get playlist ID for session tracking
         # Use force_playlist_id if explicitly provided, otherwise auto-detect active playlist
-        if force_playlist_id is not ...:
-            playlist_id = force_playlist_id
+        if force_playlist_id is not _UNSET:
+            playlist_id = cast(Optional[int], force_playlist_id)
         else:
             active_playlist = playlists.get_active_playlist()
             playlist_id = active_playlist["id"] if active_playlist else None
@@ -300,7 +307,7 @@ def play_track(
     return ctx, True
 
 
-def handle_play_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
+def handle_play_command(ctx: AppContext, args: list[str]) -> tuple[AppContext, bool]:
     """Handle play command - start playback or play specific track.
 
     Args:
@@ -389,7 +396,7 @@ def handle_play_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, b
     return ctx, True
 
 
-def handle_pause_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+def handle_pause_command(ctx: AppContext) -> tuple[AppContext, bool]:
     """Handle pause command.
 
     Args:
@@ -442,7 +449,7 @@ def handle_pause_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     return ctx, True
 
 
-def handle_resume_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+def handle_resume_command(ctx: AppContext) -> tuple[AppContext, bool]:
     """Handle resume command.
 
     Args:
@@ -496,8 +503,8 @@ def handle_resume_command(ctx: AppContext) -> Tuple[AppContext, bool]:
 
 
 def get_next_track(
-    ctx: AppContext, available_tracks: List[library.Track]
-) -> Optional[Tuple[library.Track, Optional[int]]]:
+    ctx: AppContext, available_tracks: list[library.Track]
+) -> Optional[tuple[library.Track, Optional[int]]]:
     """
     Get the next track to play based on shuffle mode and active playlist.
 
@@ -625,7 +632,7 @@ def get_next_track(
     return None
 
 
-def handle_skip_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+def handle_skip_command(ctx: AppContext) -> tuple[AppContext, bool]:
     """Handle skip command - play next track (sequential or random based on shuffle mode).
 
     Args:
@@ -668,7 +675,7 @@ def handle_skip_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         return ctx, True
 
 
-def handle_shuffle_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
+def handle_shuffle_command(ctx: AppContext, args: list[str]) -> tuple[AppContext, bool]:
     """Handle shuffle command - toggle or set shuffle mode.
 
     Args:
@@ -708,7 +715,7 @@ def handle_shuffle_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext
         return ctx, True
 
 
-def handle_stop_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+def handle_stop_command(ctx: AppContext) -> tuple[AppContext, bool]:
     """Handle stop command.
 
     Args:
@@ -763,7 +770,7 @@ def handle_stop_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     return ctx, True
 
 
-def handle_seek_percentage(ctx: AppContext, percentage: int) -> Tuple[AppContext, bool]:
+def handle_seek_percentage(ctx: AppContext, percentage: int) -> tuple[AppContext, bool]:
     """Seek to a percentage position in the current track (0-90%).
 
     Args:
@@ -836,7 +843,7 @@ def handle_seek_percentage(ctx: AppContext, percentage: int) -> Tuple[AppContext
     return ctx, True
 
 
-def handle_seek_relative(ctx: AppContext, seconds: float) -> Tuple[AppContext, bool]:
+def handle_seek_relative(ctx: AppContext, seconds: float) -> tuple[AppContext, bool]:
     """Seek relative to current position (+/- seconds).
 
     Args:
@@ -899,7 +906,7 @@ def handle_seek_relative(ctx: AppContext, seconds: float) -> Tuple[AppContext, b
     return ctx, True
 
 
-def handle_status_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+def handle_status_command(ctx: AppContext) -> tuple[AppContext, bool]:
     """Handle status command - show current player and track status.
 
     Args:
@@ -988,7 +995,7 @@ def handle_status_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     return ctx, True
 
 
-def handle_history_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
+def handle_history_command(ctx: AppContext, args: list[str]) -> tuple[AppContext, bool]:
     """Show playback history in track viewer.
 
     Args:

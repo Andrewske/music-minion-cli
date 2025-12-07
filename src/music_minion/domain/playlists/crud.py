@@ -4,7 +4,7 @@ Functional approach with explicit state passing
 """
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from loguru import logger
 
@@ -181,7 +181,7 @@ def rename_playlist(playlist_id: int, new_name: str) -> bool:
             raise
 
 
-def get_all_playlists(library: Optional[str] = None) -> List[Dict[str, Any]]:
+def get_all_playlists(library: Optional[str] = None) -> list[dict[str, Any]]:
     """
     Get all playlists with metadata for the active library.
 
@@ -219,7 +219,7 @@ def get_all_playlists(library: Optional[str] = None) -> List[Dict[str, Any]]:
 
 def get_playlists_sorted_by_recent(
     library: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Get all playlists sorted by recently played/added, filtered by library.
 
@@ -287,7 +287,7 @@ def get_playlists_sorted_by_recent(
 
 def get_playlist_by_name(
     name: str, library: Optional[str] = None
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """
     Get playlist by name, filtered by library.
 
@@ -314,7 +314,7 @@ def get_playlist_by_name(
         return dict(row) if row else None
 
 
-def get_playlist_by_id(playlist_id: int) -> Optional[Dict[str, Any]]:
+def get_playlist_by_id(playlist_id: int) -> Optional[dict[str, Any]]:
     """
     Get playlist by ID.
 
@@ -335,7 +335,7 @@ def get_playlist_by_id(playlist_id: int) -> Optional[Dict[str, Any]]:
         return dict(row) if row else None
 
 
-def get_playlist_tracks(playlist_id: int) -> List[Dict[str, Any]]:
+def get_playlist_tracks(playlist_id: int) -> list[dict[str, Any]]:
     """
     Get all tracks in a playlist.
     For manual playlists, returns tracks in order.
@@ -564,7 +564,9 @@ def remove_track_from_playlist(playlist_id: int, track_id: int) -> bool:
                 logger.error(f"Failed to remove track from SoundCloud: {error}")
                 return False
             # Success - sync function already updated database via post-sync
-            logger.info(f"Successfully removed track {track_id} from SoundCloud and database")
+            logger.info(
+                f"Successfully removed track {track_id} from SoundCloud and database"
+            )
             return True
 
     # Local-only playlist or local-only track: update database only
@@ -732,7 +734,7 @@ def set_active_playlist(playlist_id: int) -> bool:
         return True
 
 
-def get_active_playlist(library: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def get_active_playlist(library: Optional[str] = None) -> Optional[dict[str, Any]]:
     """
     Get the currently active playlist for the specified library.
 
@@ -782,7 +784,7 @@ def clear_active_playlist(library: Optional[str] = None) -> bool:
         return cursor.rowcount > 0
 
 
-def get_available_playlist_tracks(playlist_id: int) -> List[str]:
+def get_available_playlist_tracks(playlist_id: int) -> list[str]:
     """
     Get file paths of tracks in a playlist (for playback integration).
     Excludes archived tracks.
@@ -840,7 +842,7 @@ def get_available_playlist_tracks(playlist_id: int) -> List[str]:
 # Playlist Builder State Functions
 
 
-def get_playlist_builder_state(playlist_id: int) -> Optional[Dict[str, Any]]:
+def get_playlist_builder_state(playlist_id: int) -> Optional[dict[str, Any]]:
     """Get saved builder state for a playlist.
 
     Args:
@@ -869,7 +871,7 @@ def save_playlist_builder_state(
     scroll_position: int,
     sort_field: str,
     sort_direction: str,
-    active_filters: List[Dict[str, Any]],
+    active_filters: list[dict[str, Any]],
 ) -> None:
     """Save or update builder state for a playlist (upsert).
 

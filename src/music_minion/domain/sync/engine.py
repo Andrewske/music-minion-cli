@@ -7,7 +7,7 @@ Supports reading/writing tags to MP3 (ID3) and M4A files.
 
 import os
 import shutil
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from mutagen import File as MutagenFile
 from mutagen.id3 import COMM, ID3
@@ -38,7 +38,7 @@ def get_file_mtime(local_path: str) -> Optional[float]:
         return None
 
 
-def write_tags_to_file(local_path: str, tags: List[str], config: Config) -> bool:
+def write_tags_to_file(local_path: str, tags: list[str], config: Config) -> bool:
     """Write tags to file metadata COMMENT field using atomic writes.
 
     Args:
@@ -124,7 +124,7 @@ def write_tags_to_file(local_path: str, tags: List[str], config: Config) -> bool
         return False
 
 
-def read_tags_from_file(local_path: str, config: Config) -> List[str]:
+def read_tags_from_file(local_path: str, config: Config) -> list[str]:
     """Read tags from file metadata COMMENT field with deduplication.
 
     Args:
@@ -177,7 +177,7 @@ def read_tags_from_file(local_path: str, config: Config) -> List[str]:
         return []
 
 
-def detect_file_changes(config: Config) -> List[Dict[str, Any]]:
+def detect_file_changes(config: Config) -> list[dict[str, Any]]:
     """Detect files that have been modified since last sync using optimized SQL.
 
     Only checks files in database, then verifies against filesystem.
@@ -224,8 +224,8 @@ def detect_file_changes(config: Config) -> List[Dict[str, Any]]:
 
 
 def sync_metadata_export(
-    track_ids: Optional[List[int]] = None, show_progress: bool = True
-) -> Dict[str, int]:
+    track_ids: Optional[list[int]] = None, show_progress: bool = True
+) -> dict[str, int]:
     """Export database metadata to file metadata.
 
     Writes title, artist, album, genre, year, bpm, key from database to files.
@@ -344,8 +344,8 @@ def sync_metadata_export(
 
 
 def sync_export(
-    config: Config, track_ids: Optional[List[int]] = None, show_progress: bool = True
-) -> Dict[str, int]:
+    config: Config, track_ids: Optional[list[int]] = None, show_progress: bool = True
+) -> dict[str, int]:
     """Export database tags to file metadata with atomic writes.
 
     Writes all tags from database to file metadata COMMENT fields.
@@ -443,7 +443,7 @@ def sync_export(
 
 def sync_import(
     config: Config, force_all: bool = False, show_progress: bool = True
-) -> Dict[str, int]:
+) -> dict[str, int]:
     """Import tags from file metadata to database, preserving user/AI tags.
 
     Reads tags from file metadata and updates database. Only processes
@@ -565,7 +565,7 @@ def sync_import(
     return stats
 
 
-def get_sync_status(config: Config) -> Dict[str, Any]:
+def get_sync_status(config: Config) -> dict[str, Any]:
     """Get sync status information.
 
     Shows how many files need syncing, last sync time, etc.
@@ -612,7 +612,7 @@ def get_sync_status(config: Config) -> Dict[str, Any]:
 
 def rescan_library(
     config: Config, full_rescan: bool = False, show_progress: bool = True
-) -> Dict[str, int]:
+) -> dict[str, int]:
     """Rescan library for file changes and update metadata.
 
     Args:

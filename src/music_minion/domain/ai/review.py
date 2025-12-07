@@ -6,7 +6,7 @@ allowing users to provide feedback and improve the tagging system over time.
 """
 
 import json
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Optional, Any
 
 from music_minion.domain.library import Track, get_track_id_from_track
 from music_minion.core.database import get_track_tags
@@ -14,7 +14,7 @@ from .client import analyze_track_with_ai, AIError, get_api_key
 from .prompt_manager import get_learnings, append_to_learnings_section
 
 
-def get_or_generate_tags_with_reasoning(track: Track) -> Tuple[Dict[str, str], bool]:
+def get_or_generate_tags_with_reasoning(track: Track) -> tuple[dict[str, str], bool]:
     """Get existing tags with reasoning or generate new ones.
 
     Args:
@@ -30,18 +30,20 @@ def get_or_generate_tags_with_reasoning(track: Track) -> Tuple[Dict[str, str], b
 
     # Get existing AI tags
     existing_tags = get_track_tags(track_id, include_blacklisted=False)
-    ai_tags = [tag for tag in existing_tags if tag['source'] == 'ai']
+    ai_tags = [tag for tag in existing_tags if tag["source"] == "ai"]
 
     # If we have tags with reasoning, return them
-    if ai_tags and any(tag.get('reasoning') for tag in ai_tags):
+    if ai_tags and any(tag.get("reasoning") for tag in ai_tags):
         tags_with_reasoning = {
-            tag['tag_name']: tag.get('reasoning', 'No reasoning provided')
+            tag["tag_name"]: tag.get("reasoning", "No reasoning provided")
             for tag in ai_tags
         }
         return tags_with_reasoning, False
 
     # Otherwise, generate new tags
-    tags_list, _, reasoning = analyze_track_with_ai(track, 'review_mode', return_reasoning=True)
+    tags_list, _, reasoning = analyze_track_with_ai(
+        track, "review_mode", return_reasoning=True
+    )
 
     if not reasoning:
         # Fallback: create reasoning dict
@@ -50,7 +52,7 @@ def get_or_generate_tags_with_reasoning(track: Track) -> Tuple[Dict[str, str], b
     return reasoning, True
 
 
-def have_tag_conversation(track: Track, initial_tags: Dict[str, str]) -> Optional[str]:
+def have_tag_conversation(track: Track, initial_tags: dict[str, str]) -> Optional[str]:
     """Conduct a conversation about tags with the user.
 
     Args:
@@ -62,19 +64,21 @@ def have_tag_conversation(track: Track, initial_tags: Dict[str, str]) -> Optiona
     """
     from music_minion.core.database import get_track_notes
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("🎵 AI Tag Review - Conversation Mode")
-    print("="*60)
+    print("=" * 60)
     print("\nCurrent tags with AI reasoning:")
     print()
 
     for tag, reasoning in initial_tags.items():
-        print(f"  • {tag}: \"{reasoning}\"")
+        print(f'  • {tag}: "{reasoning}"')
 
-    print("\n" + "-"*60)
+    print("\n" + "-" * 60)
     print("Discuss these tags with AI. Type your feedback, or 'done' to finish.")
-    print("Example: \"This track is half-time, not energetic. Don't tag key, it's in metadata.\"")
-    print("-"*60)
+    print(
+        "Example: \"This track is half-time, not energetic. Don't tag key, it's in metadata.\""
+    )
+    print("-" * 60)
 
     conversation_lines = []
     conversation_lines.append(f"Track: {track.artist} - {track.title}")
@@ -84,16 +88,20 @@ def have_tag_conversation(track: Track, initial_tags: Dict[str, str]) -> Optiona
 
     # Build context for AI
     db_track = get_track_by_path(track.local_path)
-    track_notes = get_track_notes(db_track['id']) if db_track else []
-    notes_text = "\n".join([note['note_text'] for note in track_notes]) if track_notes else "None"
+    track_notes = get_track_notes(db_track["id"]) if db_track else []
+    notes_text = (
+        "\n".join([note["note_text"] for note in track_notes])
+        if track_notes
+        else "None"
+    )
 
     track_context = f"""Track Metadata:
 - Artist: {track.artist}
 - Title: {track.title}
-- Album: {track.album or 'Unknown'}
-- Genre: {track.genre or 'Unknown'}
-- BPM: {track.bpm or 'Unknown'}
-- Key: {track.key or 'Unknown'}
+- Album: {track.album or "Unknown"}
+- Genre: {track.genre or "Unknown"}
+- BPM: {track.bpm or "Unknown"}
+- Key: {track.key or "Unknown"}
 - User Notes: {notes_text}
 
 Current Tags:
@@ -109,7 +117,7 @@ Current Tags:
         if not user_input:
             continue
 
-        if user_input.lower() == 'done':
+        if user_input.lower() == "done":
             break
 
         # Add to conversation
@@ -123,6 +131,7 @@ Current Tags:
                 return None
 
             import openai
+
             client = openai.OpenAI(api_key=api_key)
 
             # Build conversation prompt
@@ -141,7 +150,7 @@ Please respond naturally to the user's feedback about the tags. If they suggest 
             response = client.responses.create(
                 model="gpt-4o-mini",
                 instructions="You are helping a user review and improve AI-generated music tags. Have a natural conversation about tag quality, understand their feedback, and suggest improvements based on their guidance and any learnings.",
-                input=conversation_prompt
+                input=conversation_prompt,
             )
 
             ai_response = response.output_text.strip()
@@ -156,8 +165,9 @@ Please respond naturally to the user's feedback about the tags. If they suggest 
     return "\n".join(conversation_lines)
 
 
-def extract_learnings_from_conversation(conversation: str, track: Track,
-                                        initial_tags: Dict[str, str]) -> Optional[str]:
+def extract_learnings_from_conversation(
+    conversation: str, track: Track, initial_tags: dict[str, str]
+) -> Optional[str]:
     """Extract structured learnings from a tag review conversation.
 
     Args:
@@ -174,6 +184,7 @@ def extract_learnings_from_conversation(conversation: str, track: Track,
             return None
 
         import openai
+
         client = openai.OpenAI(api_key=api_key)
 
         extraction_prompt = f"""Based on this tag review conversation, extract key learnings for improving future tagging.
@@ -202,15 +213,15 @@ Example:
         response = client.responses.create(
             model="gpt-4o-mini",
             instructions="Extract structured learnings from a music tag review conversation. Return only valid JSON with the specified structure.",
-            input=extraction_prompt
+            input=extraction_prompt,
         )
 
         learnings_json = response.output_text.strip()
 
         # Parse JSON
-        if '```json' in learnings_json:
-            json_start = learnings_json.find('{')
-            json_end = learnings_json.rfind('}') + 1
+        if "```json" in learnings_json:
+            json_start = learnings_json.find("{")
+            json_end = learnings_json.rfind("}") + 1
             learnings_json = learnings_json[json_start:json_end]
 
         learnings_data = json.loads(learnings_json)
@@ -218,8 +229,8 @@ Example:
         # Format as markdown sections
         summary_lines = []
 
-        if learnings_data.get('rules'):
-            for rule in learnings_data['rules']:
+        if learnings_data.get("rules"):
+            for rule in learnings_data["rules"]:
                 summary_lines.append(f"- {rule}")
 
         summary = "\n".join(summary_lines) if summary_lines else None
@@ -231,8 +242,9 @@ Example:
         return None
 
 
-def regenerate_tags_with_feedback(track: Track, conversation: str,
-                                  initial_tags: Dict[str, str]) -> Optional[Dict[str, str]]:
+def regenerate_tags_with_feedback(
+    track: Track, conversation: str, initial_tags: dict[str, str]
+) -> Optional[dict[str, str]]:
     """Regenerate tags based on conversation feedback.
 
     Args:
@@ -255,8 +267,12 @@ def regenerate_tags_with_feedback(track: Track, conversation: str,
 
         # Get track metadata
         db_track = get_track_by_path(track.local_path)
-        track_notes = get_track_notes(db_track['id']) if db_track else []
-        notes_text = "\n".join([note['note_text'] for note in track_notes]) if track_notes else "None"
+        track_notes = get_track_notes(db_track["id"]) if db_track else []
+        notes_text = (
+            "\n".join([note["note_text"] for note in track_notes])
+            if track_notes
+            else "None"
+        )
 
         learnings = get_learnings()
 
@@ -265,10 +281,10 @@ def regenerate_tags_with_feedback(track: Track, conversation: str,
 Track Info:
 - Artist: {track.artist}
 - Title: {track.title}
-- Album: {track.album or 'Unknown'}
-- Genre: {track.genre or 'Unknown'}
-- BPM: {track.bpm or 'Unknown'}
-- Key: {track.key or 'Unknown'}
+- Album: {track.album or "Unknown"}
+- Genre: {track.genre or "Unknown"}
+- BPM: {track.bpm or "Unknown"}
+- Key: {track.key or "Unknown"}
 - User Notes: {notes_text}
 
 Previous Tags (being improved):
@@ -294,15 +310,15 @@ Example format:
         response = client.responses.create(
             model="gpt-4o-mini",
             instructions="Generate improved music tags based on user feedback. Return only valid JSON with tag:reasoning pairs. Apply all learnings and feedback.",
-            input=regeneration_prompt
+            input=regeneration_prompt,
         )
 
         output_text = response.output_text.strip()
 
         # Parse JSON
-        if '```json' in output_text:
-            json_start = output_text.find('{')
-            json_end = output_text.rfind('}') + 1
+        if "```json" in output_text:
+            json_start = output_text.find("{")
+            json_end = output_text.rfind("}") + 1
             output_text = output_text[json_start:json_end]
 
         new_tags = json.loads(output_text)

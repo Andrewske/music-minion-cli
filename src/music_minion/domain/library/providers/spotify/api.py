@@ -5,7 +5,7 @@ Pure functions for library sync, playlists, playback control.
 All functions take ProviderState and return (ProviderState, result).
 """
 
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Optional
 
 import requests
 from loguru import logger
@@ -16,9 +16,9 @@ from music_minion.core.output import log
 from ...provider import ProviderState
 
 # Type aliases
-TrackMetadata = Dict[str, Any]
-TrackData = Tuple[str, TrackMetadata]
-TrackList = List[TrackData]
+TrackMetadata = dict[str, Any]
+TrackData = tuple[str, TrackMetadata]
+TrackList = list[TrackData]
 
 # Spotify API base URL
 API_BASE = "https://api.spotify.com/v1"
@@ -26,7 +26,7 @@ API_BASE = "https://api.spotify.com/v1"
 
 def _ensure_valid_token(
     state: ProviderState,
-) -> Tuple[ProviderState, Optional[Dict[str, Any]]]:
+) -> tuple[ProviderState, Optional[dict[str, Any]]]:
     """Ensure access token is valid, refreshing if expired.
 
     This helper is called by EVERY API function to handle token refresh
@@ -61,7 +61,7 @@ def _ensure_valid_token(
         return state.with_authenticated(False), None
 
 
-def _normalize_spotify_track(track: Dict[str, Any]) -> TrackMetadata:
+def _normalize_spotify_track(track: dict[str, Any]) -> TrackMetadata:
     """Convert Spotify API track response to standard metadata format."""
     return {
         "title": track.get("name", "").strip(),
@@ -86,7 +86,7 @@ def _normalize_spotify_track(track: Dict[str, Any]) -> TrackMetadata:
 
 def sync_library(
     state: ProviderState, incremental: bool = True
-) -> Tuple[ProviderState, TrackList]:
+) -> tuple[ProviderState, TrackList]:
     """Sync user's saved tracks from Spotify with optimized incremental sync.
 
     Optimization strategy:
@@ -111,7 +111,7 @@ def sync_library(
 
     try:
         # Load existing track IDs for incremental check
-        existing_ids: Set[str] = set()
+        existing_ids: set[str] = set()
         if incremental:
             with database.get_db_connection() as conn:
                 cursor = conn.execute(
@@ -177,8 +177,8 @@ def sync_library(
 
 
 def _fetch_saved_tracks_optimized(
-    token: str, existing_ids: Set[str], incremental: bool, state: ProviderState
-) -> Tuple[TrackList, Set[str], ProviderState]:
+    token: str, existing_ids: set[str], incremental: bool, state: ProviderState
+) -> tuple[TrackList, set[str], ProviderState]:
     """Fetch saved tracks with count check + timestamp-based early exit optimization.
 
     Optimization strategy:
@@ -195,7 +195,7 @@ def _fetch_saved_tracks_optimized(
     from datetime import datetime
 
     tracks = []
-    all_liked_ids: Set[str] = set()
+    all_liked_ids: set[str] = set()
     url = f"{API_BASE}/me/tracks"
     params = {"limit": 50}
     headers = {"Authorization": f"Bearer {token}"}
@@ -303,7 +303,7 @@ def _fetch_saved_tracks_optimized(
     return tracks, all_liked_ids, new_state
 
 
-def search(state: ProviderState, query: str) -> Tuple[ProviderState, TrackList]:
+def search(state: ProviderState, query: str) -> tuple[ProviderState, TrackList]:
     """Search for tracks on Spotify.
 
     Args:
@@ -347,7 +347,7 @@ def search(state: ProviderState, query: str) -> Tuple[ProviderState, TrackList]:
 
 def like_track(
     state: ProviderState, track_id: str
-) -> Tuple[ProviderState, bool, Optional[str]]:
+) -> tuple[ProviderState, bool, Optional[str]]:
     """Save track to user's Spotify library.
 
     Args:
@@ -382,7 +382,7 @@ def like_track(
 
 def unlike_track(
     state: ProviderState, track_id: str
-) -> Tuple[ProviderState, bool, Optional[str]]:
+) -> tuple[ProviderState, bool, Optional[str]]:
     """Remove track from user's Spotify library.
 
     Args:
@@ -431,7 +431,9 @@ def get_stream_url(state: ProviderState, spotify_id: str) -> Optional[str]:
 # ==================== PLAYLIST FUNCTIONS ====================
 
 
-def get_playlists(state: ProviderState, full: bool = False) -> Tuple[ProviderState, List[Dict[str, Any]]]:
+def get_playlists(
+    state: ProviderState, full: bool = False
+) -> tuple[ProviderState, list[dict[str, Any]]]:
     """Fetch user's playlists with snapshot_id change detection optimization.
 
     Optimization: Only fetches tracks for playlists with changed snapshot_id.
@@ -548,7 +550,7 @@ def get_playlists(state: ProviderState, full: bool = False) -> Tuple[ProviderSta
 
 def get_playlist_tracks(
     state: ProviderState, playlist_id: str
-) -> Tuple[ProviderState, TrackList, Optional[str]]:
+) -> tuple[ProviderState, TrackList, Optional[str]]:
     """Fetch tracks for specific playlist.
 
     Args:
@@ -598,7 +600,9 @@ def get_playlist_tracks(
             url = data.get("next")
             params = {}
 
-        logger.debug(f"Fetched {len(tracks)} tracks for playlist {playlist_id}, oldest track: {oldest_added_at}")
+        logger.debug(
+            f"Fetched {len(tracks)} tracks for playlist {playlist_id}, oldest track: {oldest_added_at}"
+        )
         return state, tracks, oldest_added_at
 
     except Exception:
@@ -608,7 +612,7 @@ def get_playlist_tracks(
 
 def create_playlist(
     state: ProviderState, name: str, description: str = ""
-) -> Tuple[ProviderState, Optional[str], Optional[str]]:
+) -> tuple[ProviderState, Optional[str], Optional[str]]:
     """Create new Spotify playlist.
 
     Args:
@@ -656,7 +660,7 @@ def create_playlist(
 
 def add_track_to_playlist(
     state: ProviderState, playlist_id: str, track_id: str
-) -> Tuple[ProviderState, bool, Optional[str]]:
+) -> tuple[ProviderState, bool, Optional[str]]:
     """Add track to Spotify playlist.
 
     Args:
@@ -698,7 +702,7 @@ def add_track_to_playlist(
 
 def remove_track_from_playlist(
     state: ProviderState, playlist_id: str, track_id: str
-) -> Tuple[ProviderState, bool, Optional[str]]:
+) -> tuple[ProviderState, bool, Optional[str]]:
     """Remove track from Spotify playlist.
 
     Args:
@@ -743,7 +747,7 @@ def remove_track_from_playlist(
 
 def _spotify_play(
     state: ProviderState, track_id: str, device_id: Optional[str]
-) -> Tuple[ProviderState, bool]:
+) -> tuple[ProviderState, bool]:
     """Internal: Start playback on device.
 
     Called by SpotifyPlayer class.
@@ -784,7 +788,7 @@ def _spotify_play(
         return state, False
 
 
-def _spotify_pause(state: ProviderState) -> Tuple[ProviderState, bool]:
+def _spotify_pause(state: ProviderState) -> tuple[ProviderState, bool]:
     """Internal: Pause playback."""
     state, token = _ensure_valid_token(state)
     if not token:
@@ -804,7 +808,7 @@ def _spotify_pause(state: ProviderState) -> Tuple[ProviderState, bool]:
         return state, False
 
 
-def _spotify_resume(state: ProviderState) -> Tuple[ProviderState, bool]:
+def _spotify_resume(state: ProviderState) -> tuple[ProviderState, bool]:
     """Internal: Resume playback."""
     state, token = _ensure_valid_token(state)
     if not token:
@@ -826,7 +830,7 @@ def _spotify_resume(state: ProviderState) -> Tuple[ProviderState, bool]:
 
 def _spotify_get_current_playback(
     state: ProviderState,
-) -> Tuple[ProviderState, Optional[Dict[str, Any]]]:
+) -> tuple[ProviderState, Optional[dict[str, Any]]]:
     """Internal: Get current playback state."""
     state, token = _ensure_valid_token(state)
     if not token:
@@ -847,7 +851,7 @@ def _spotify_get_current_playback(
         return state, None
 
 
-def _spotify_seek(state: ProviderState, position_ms: int) -> Tuple[ProviderState, bool]:
+def _spotify_seek(state: ProviderState, position_ms: int) -> tuple[ProviderState, bool]:
     """Internal: Seek to position."""
     state, token = _ensure_valid_token(state)
     if not token:
@@ -869,7 +873,7 @@ def _spotify_seek(state: ProviderState, position_ms: int) -> Tuple[ProviderState
 
 def _spotify_get_devices(
     state: ProviderState,
-) -> Tuple[ProviderState, List[Dict[str, Any]]]:
+) -> tuple[ProviderState, list[dict[str, Any]]]:
     """Internal: Get available Spotify devices."""
     state, token = _ensure_valid_token(state)
     if not token:

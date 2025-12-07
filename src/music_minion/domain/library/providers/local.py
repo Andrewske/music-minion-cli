@@ -5,7 +5,7 @@ Scans local music directories and provides access to files.
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from ..metadata import extract_track_metadata
 from ..provider import ProviderConfig, ProviderState, TrackList
@@ -28,7 +28,7 @@ def init_provider(config: ProviderConfig) -> ProviderState:
     )
 
 
-def authenticate(state: ProviderState) -> Tuple[ProviderState, bool]:
+def authenticate(state: ProviderState) -> tuple[ProviderState, bool]:
     """Authenticate with local filesystem.
 
     No-op for local provider - always authenticated.
@@ -42,7 +42,7 @@ def authenticate(state: ProviderState) -> Tuple[ProviderState, bool]:
     return state.with_authenticated(True), True
 
 
-def sync_library(state: ProviderState) -> Tuple[ProviderState, TrackList]:
+def sync_library(state: ProviderState) -> tuple[ProviderState, TrackList]:
     """Scan local music directories and return tracks.
 
     Args:
@@ -62,7 +62,7 @@ def sync_library(state: ProviderState) -> Tuple[ProviderState, TrackList]:
     return new_state, tracks
 
 
-def search(state: ProviderState, query: str) -> Tuple[ProviderState, TrackList]:
+def search(state: ProviderState, query: str) -> tuple[ProviderState, TrackList]:
     """Search local files by filename/metadata.
 
     Args:
@@ -96,7 +96,9 @@ def get_stream_url(state: ProviderState, provider_id: str) -> Optional[str]:
     return None
 
 
-def get_playlists(state: ProviderState, full: bool = False) -> Tuple[ProviderState, List[Dict[str, Any]]]:
+def get_playlists(
+    state: ProviderState, full: bool = False
+) -> tuple[ProviderState, list[dict[str, Any]]]:
     """Get playlists from local filesystem.
 
     Args:
@@ -115,7 +117,7 @@ def get_playlists(state: ProviderState, full: bool = False) -> Tuple[ProviderSta
 
 def get_playlist_tracks(
     state: ProviderState, playlist_id: str
-) -> Tuple[ProviderState, TrackList, Optional[str]]:
+) -> tuple[ProviderState, TrackList, Optional[str]]:
     """Get tracks in a local playlist.
 
     Args:
@@ -132,7 +134,7 @@ def get_playlist_tracks(
 
 
 def scan_local_library(
-    library_paths: List[str], supported_formats: List[str], recursive: bool = True
+    library_paths: list[str], supported_formats: list[str], recursive: bool = True
 ) -> TrackList:
     """Scan local music directories and return track data.
 

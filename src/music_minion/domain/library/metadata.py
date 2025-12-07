@@ -8,7 +8,7 @@ and provides utility functions for displaying track information.
 import os
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from loguru import logger
 from mutagen import File as MutagenFile
@@ -20,7 +20,7 @@ from mutagen.oggvorbis import OggVorbis
 from .models import Track
 
 
-def get_tag_value(audio_file: MutagenFile, tag_names: List[str]) -> Optional[str]:
+def get_tag_value(audio_file: MutagenFile, tag_names: list[str]) -> Optional[str]:
     """Get tag value, trying multiple possible tag names."""
     for tag_name in tag_names:
         try:
@@ -36,7 +36,7 @@ def get_tag_value(audio_file: MutagenFile, tag_names: List[str]) -> Optional[str
     return None
 
 
-def extract_metadata_from_filename(local_path: str) -> Dict[str, Any]:
+def extract_metadata_from_filename(local_path: str) -> dict[str, Any]:
     """Extract basic info from filename as fallback."""
     path = Path(local_path)
     title = path.stem
@@ -89,7 +89,9 @@ def extract_track_metadata(local_path: str) -> Track:
         genre = get_tag_value(audio_file, ["TCON", "\xa9gen", "GENRE", "genre"])
 
         # Extract DJ metadata (ID3, MP4, Vorbis/Opus)
-        key = get_tag_value(audio_file, ["TKEY", "KEY", "INITIAL_KEY", "initialkey", "\xa9key", "key"])
+        key = get_tag_value(
+            audio_file, ["TKEY", "KEY", "INITIAL_KEY", "initialkey", "\xa9key", "key"]
+        )
         bpm_str = get_tag_value(
             audio_file, ["TBPM", "BPM", "BEATS_PER_MINUTE", "\xa9bpm", "bpm"]
         )
@@ -102,7 +104,9 @@ def extract_track_metadata(local_path: str) -> Track:
 
         # Extract year (ID3, MP4, Vorbis/Opus)
         year = None
-        year_str = get_tag_value(audio_file, ["TDRC", "\xa9day", "DATE", "YEAR", "date", "year"])
+        year_str = get_tag_value(
+            audio_file, ["TDRC", "\xa9day", "DATE", "YEAR", "date", "year"]
+        )
         if year_str:
             try:
                 # Handle various year formats

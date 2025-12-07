@@ -4,14 +4,12 @@ Sync command handlers for Music Minion CLI.
 Context-aware sync that adapts to active library (local vs provider).
 """
 
-from typing import List, Tuple
-
 from music_minion.context import AppContext
 from music_minion.core.output import log
 from music_minion.domain import sync
 
 
-def handle_sync_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+def handle_sync_command(ctx: AppContext) -> tuple[AppContext, bool]:
     """Context-aware sync - behavior depends on active library.
 
     Local library: Incremental import (detect changed files)
@@ -40,7 +38,7 @@ def handle_sync_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         return _sync_provider(ctx, active_provider, full=False)
 
 
-def handle_sync_full_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+def handle_sync_full_command(ctx: AppContext) -> tuple[AppContext, bool]:
     """Full sync bypassing cache - behavior depends on active library.
 
     Local library: Full filesystem scan + import all
@@ -69,7 +67,7 @@ def handle_sync_full_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         return _sync_provider(ctx, active_provider, full=True)
 
 
-def _sync_local_incremental(ctx: AppContext) -> Tuple[AppContext, bool]:
+def _sync_local_incremental(ctx: AppContext) -> tuple[AppContext, bool]:
     """Incremental sync: import from changed files only.
 
     Export removed from auto-sync because:
@@ -110,7 +108,7 @@ def _sync_local_incremental(ctx: AppContext) -> Tuple[AppContext, bool]:
     return ctx, True
 
 
-def _sync_local_full(ctx: AppContext) -> Tuple[AppContext, bool]:
+def _sync_local_full(ctx: AppContext) -> tuple[AppContext, bool]:
     """Full sync: scan filesystem for new files + import all + export DB metadata.
 
     Args:
@@ -134,7 +132,10 @@ def _sync_local_full(ctx: AppContext) -> Tuple[AppContext, bool]:
         # Batch upsert into database
         log(f"Processing {len(tracks)} tracks...", level="info")
         added, updated = database.batch_upsert_tracks(tracks)
-        log(f"✓ Added {added} new tracks, updated {updated} existing tracks", level="info")
+        log(
+            f"✓ Added {added} new tracks, updated {updated} existing tracks",
+            level="info",
+        )
     else:
         log("✓ No new files found", level="info")
 
@@ -156,7 +157,7 @@ def _sync_local_full(ctx: AppContext) -> Tuple[AppContext, bool]:
 
 def _sync_provider(
     ctx: AppContext, provider_name: str, full: bool
-) -> Tuple[AppContext, bool]:
+) -> tuple[AppContext, bool]:
     """Sync provider likes and playlists, respecting provider config."""
     from loguru import logger
     from music_minion.commands import library

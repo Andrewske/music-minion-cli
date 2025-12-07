@@ -6,17 +6,17 @@ import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 
 @dataclass
 class MusicConfig:
     """Configuration for music library settings."""
 
-    library_paths: List[str] = field(
+    library_paths: list[str] = field(
         default_factory=lambda: [str(Path.home() / "Music")]
     )
-    supported_formats: List[str] = field(
+    supported_formats: list[str] = field(
         default_factory=lambda: [".mp3", ".m4a", ".wav", ".flac", ".opus", ".ogg"]
     )
     scan_recursive: bool = True
@@ -63,7 +63,7 @@ class PlaylistConfig:
     """Configuration for playlist export and sync."""
 
     auto_export: bool = True
-    export_formats: List[str] = field(default_factory=lambda: ["m3u8", "crate"])
+    export_formats: list[str] = field(default_factory=lambda: ["m3u8", "crate"])
     use_relative_paths: bool = True
 
     def validate(self) -> None:
