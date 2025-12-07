@@ -6,7 +6,7 @@ Handles: archive, like, love, note, unlike, rankings, rate
 
 import uuid
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, cast
 
 from loguru import logger
 
@@ -14,6 +14,11 @@ from music_minion.context import AppContext
 from music_minion.core import database
 from music_minion.core.output import log
 from music_minion.domain import library
+from music_minion.domain.rating.database import (
+    RatingCoverageFilters,
+    RatingCoverageStats,
+    get_ratings_coverage,
+)
 
 
 def handle_archive_command(ctx: AppContext) -> Tuple[AppContext, bool]:
@@ -588,6 +593,15 @@ def _load_comparison_data_background(
         # Select first pair using strategic pairing
         track_a, track_b = select_strategic_pair(tracks, ratings_cache)
 
+        (
+            library_stats,
+            filter_stats,
+            library_filters,
+            filter_filters,
+        ) = _load_coverage_stats_for_session(
+            source_filter, genre_filter, year_filter, playlist_id
+        )
+
         # Create loaded comparison state
         comparison = ComparisonState(
             active=True,
@@ -606,6 +620,10 @@ def _load_comparison_data_background(
             saved_player_state=saved_player_state,
             filtered_tracks=tracks,
             ratings_cache=ratings_cache,
+            coverage_library_stats=library_stats,
+            coverage_filter_stats=filter_stats,
+            coverage_library_filters=library_filters,
+            coverage_filter_filters=filter_filters,
         )
 
         # Update UI state from background thread
@@ -651,6 +669,61 @@ def _load_comparison_data_background(
                     "history_messages": [(f"❌ Failed to load tracks: {e}", "red")],
                 }
             )
+
+
+def _build_coverage_filter_sets(
+    source_filter: Optional[str],
+    genre_filter: Optional[str],
+    year_filter: Optional[int],
+    playlist_id: Optional[int],
+) -> tuple[RatingCoverageFilters | None, RatingCoverageFilters | None]:
+    """Return (library_filters, filter_filters) for coverage queries."""
+
+    library_filters: RatingCoverageFilters = cast(RatingCoverageFilters, {})
+    if source_filter and source_filter != "all":
+        library_filters["source_filter"] = source_filter
+
+    filter_filters: RatingCoverageFilters = cast(
+        RatingCoverageFilters, dict(library_filters)
+    )
+    if genre_filter:
+        filter_filters["genre_filter"] = genre_filter
+    if year_filter:
+        filter_filters["year_filter"] = year_filter
+    if playlist_id:
+        filter_filters["playlist_id"] = playlist_id
+
+    library_result = library_filters if library_filters else None
+    filter_result = filter_filters if filter_filters else None
+
+    return library_result, filter_result
+
+
+def _load_coverage_stats_for_session(
+    source_filter: Optional[str],
+    genre_filter: Optional[str],
+    year_filter: Optional[int],
+    playlist_id: Optional[int],
+) -> tuple[
+    RatingCoverageStats,
+    RatingCoverageStats | None,
+    RatingCoverageFilters | None,
+    RatingCoverageFilters | None,
+]:
+    """Compute coverage stats for the library and active filter scope."""
+
+    library_filters, filter_filters = _build_coverage_filter_sets(
+        source_filter, genre_filter, year_filter, playlist_id
+    )
+
+    library_stats = get_ratings_coverage(library_filters)
+    if filter_filters and filter_filters != library_filters:
+        filter_stats = get_ratings_coverage(filter_filters)
+    else:
+        filter_filters = None
+        filter_stats = None
+
+    return library_stats, filter_stats, library_filters, filter_filters
 
 
 def parse_rate_args(args: list[str]) -> dict:
@@ -819,7 +892,10 @@ def handle_rate_comparisons_command(ctx: AppContext) -> Tuple[AppContext, bool]:
 
     # Handle empty results
     if not comparisons:
-        log("No comparisons found. Run 'rate' to start comparing tracks.", level="warning")
+        log(
+            "No comparisons found. Run 'rate' to start comparing tracks.",
+            level="warning",
+        )
         return ctx, True
 
     # If in blessed UI mode with update callback, show in viewer
@@ -939,6 +1015,10 @@ def handle_rate_command(
         # Generate session ID
         session_id = str(uuid.uuid4())
 
+        library_filters, filter_filters = _build_coverage_filter_sets(
+            source_filter, genre_filter, year_filter, playlist_id
+        )
+
         # Create loading comparison state (shown immediately)
         loading_comparison = ComparisonState(
             active=True,
@@ -953,6 +1033,8 @@ def handle_rate_command(
             source_filter=source_filter,
             session_start=datetime.now(),
             saved_player_state=saved_state,
+            coverage_library_filters=library_filters,
+            coverage_filter_filters=filter_filters,
         )
 
         # Update UI immediately with loading state
@@ -1039,6 +1121,15 @@ def handle_rate_command(
         # Generate session ID
         session_id = str(uuid.uuid4())
 
+        (
+            library_stats,
+            filter_stats,
+            library_filters,
+            filter_filters,
+        ) = _load_coverage_stats_for_session(
+            source_filter, genre_filter, year_filter, playlist_id
+        )
+
         # Initialize comparison session
         comparison = ComparisonState(
             active=True,
@@ -1057,6 +1148,10 @@ def handle_rate_command(
             saved_player_state=None,
             filtered_tracks=tracks,
             ratings_cache=ratings_cache,
+            coverage_library_stats=library_stats,
+            coverage_filter_stats=filter_stats,
+            coverage_library_filters=library_filters,
+            coverage_filter_filters=filter_filters,
         )
 
         # Log session start

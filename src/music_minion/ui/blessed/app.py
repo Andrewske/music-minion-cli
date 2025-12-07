@@ -13,7 +13,11 @@ from loguru import logger
 from music_minion.commands import admin
 from music_minion.context import AppContext
 from music_minion.core import database
-from music_minion.core.output import clear_blessed_mode, set_blessed_mode, drain_pending_history_messages
+from music_minion.core.output import (
+    clear_blessed_mode,
+    set_blessed_mode,
+    drain_pending_history_messages,
+)
 from music_minion.ipc import server as ipc_server
 
 from .components import (
@@ -371,6 +375,7 @@ def poll_player_state(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, U
     from ...domain.playback import player
     from ...domain.playback import state as playback_state
     from ...domain.playlists import crud as playlists
+    from ...domain.playback.player import tick_session
 
     # Get player status (handle both MPV and Spotify)
     try:
@@ -576,6 +581,9 @@ def poll_player_state(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, U
     except Exception as e:
         # Unexpected errors - log for debugging
         logger.error(f"Unexpected error polling: {type(e).__name__}: {e}")
+
+    # Tick the listening session if playing
+    ctx = ctx.with_player_state(tick_session(ctx.player_state))
 
     return ctx, ui_state
 
@@ -881,8 +889,12 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 ui_state.search_detail_selection,
                 ui_state.comparison.active,
                 ui_state.comparison.highlighted,
-                ui_state.comparison.track_a.get('id') if ui_state.comparison.track_a else None,
-                ui_state.comparison.track_b.get('id') if ui_state.comparison.track_b else None,
+                ui_state.comparison.track_a.get("id")
+                if ui_state.comparison.track_a
+                else None,
+                ui_state.comparison.track_b.get("id")
+                if ui_state.comparison.track_b
+                else None,
             ) != last_palette_state
 
             # Determine if we need a full redraw
@@ -1019,8 +1031,12 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     ui_state.search_detail_selection,
                     ui_state.comparison.active,
                     ui_state.comparison.highlighted,
-                    ui_state.comparison.track_a.get('id') if ui_state.comparison.track_a else None,
-                    ui_state.comparison.track_b.get('id') if ui_state.comparison.track_b else None,
+                    ui_state.comparison.track_a.get("id")
+                    if ui_state.comparison.track_a
+                    else None,
+                    ui_state.comparison.track_b.get("id")
+                    if ui_state.comparison.track_b
+                    else None,
                 )
 
                 # Update rendered position for partial update threshold
@@ -1235,8 +1251,12 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                         ui_state.search_detail_selection,
                         ui_state.comparison.active,
                         ui_state.comparison.highlighted,
-                        ui_state.comparison.track_a.get('id') if ui_state.comparison.track_a else None,
-                        ui_state.comparison.track_b.get('id') if ui_state.comparison.track_b else None,
+                        ui_state.comparison.track_a.get("id")
+                        if ui_state.comparison.track_a
+                        else None,
+                        ui_state.comparison.track_b.get("id")
+                        if ui_state.comparison.track_b
+                        else None,
                     )
 
             else:

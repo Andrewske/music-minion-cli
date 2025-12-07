@@ -70,7 +70,14 @@ def handle_sync_full_command(ctx: AppContext) -> Tuple[AppContext, bool]:
 
 
 def _sync_local_incremental(ctx: AppContext) -> Tuple[AppContext, bool]:
-    """Incremental sync: import from changed files + export DB metadata to files.
+    """Incremental sync: import from changed files only.
+
+    Export removed from auto-sync because:
+    1. DB is source of truth (no need to export on every load)
+    2. update_track_metadata() already writes to files when user edits
+    3. Prevents circular mtime updates (export changes mtimes → triggers import)
+
+    Use manual 'sync full' command to force export when needed.
 
     Args:
         ctx: Application context
@@ -82,7 +89,7 @@ def _sync_local_incremental(ctx: AppContext) -> Tuple[AppContext, bool]:
 
     logger.info("Starting incremental local sync...")
 
-    # Phase 1: Import metadata from changed files
+    # Import metadata from changed files
     changed_tracks = sync.detect_file_changes(ctx.config)
 
     if changed_tracks:
@@ -94,14 +101,6 @@ def _sync_local_incremental(ctx: AppContext) -> Tuple[AppContext, bool]:
         log(f"✓ Imported {result.get('added', 0)} tags from files", level="info")
     else:
         log("✓ No changed files to import from", level="info")
-
-    # Phase 2: Export DB metadata to files (ensures DB is source of truth)
-    log("Exporting database metadata to files...", level="info")
-    export_result = sync.sync_metadata_export(show_progress=True)
-    log(
-        f"✓ Exported metadata to {export_result.get('success', 0)} files",
-        level="info",
-    )
 
     # Reload tracks in context
     from music_minion import helpers

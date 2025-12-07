@@ -18,6 +18,7 @@ from music_minion.core.database import (
     add_tags,
     get_db_connection,
     get_track_tags,
+    get_track_tags_batch,
     remove_tag,
 )
 
@@ -241,14 +242,22 @@ def sync_metadata_export(
     stats = {"success": 0, "failed": 0, "skipped": 0}
 
     with get_db_connection() as conn:
-        # Get tracks to export
+        # Get tracks to export - only those with metadata changes since last export
+        # Export if:
+        #   1. Never written to file (file_mtime IS NULL)
+        #   2. OR metadata updated after last file write (metadata_updated_at > file_mtime)
+        # Do NOT export if metadata never updated (NULL) but file already written
         if track_ids:
             placeholders = ",".join("?" * len(track_ids))
             cursor = conn.execute(
                 f"""
                 SELECT id, local_path, title, artist, album, genre, year, bpm, key_signature
                 FROM tracks
-                WHERE id IN ({placeholders}) AND local_path IS NOT NULL
+                WHERE id IN ({placeholders})
+                  AND local_path IS NOT NULL
+                  AND (file_mtime IS NULL
+                       OR (metadata_updated_at IS NOT NULL
+                           AND metadata_updated_at > file_mtime))
             """,
                 track_ids,
             )
@@ -258,6 +267,9 @@ def sync_metadata_export(
                 SELECT id, local_path, title, artist, album, genre, year, bpm, key_signature
                 FROM tracks
                 WHERE local_path IS NOT NULL
+                  AND (file_mtime IS NULL
+                       OR (metadata_updated_at IS NOT NULL
+                           AND metadata_updated_at > file_mtime))
             """
             )
 
@@ -265,7 +277,7 @@ def sync_metadata_export(
 
     if not tracks:
         if show_progress:
-            print("No local tracks to export metadata for")
+            print("No metadata changes to export")
         return stats
 
     if show_progress:
@@ -273,6 +285,9 @@ def sync_metadata_export(
 
     total_tracks = len(tracks)
     progress_interval = max(1, total_tracks // 100)
+
+    # Batch mtime updates
+    mtime_updates = []
 
     for i, track in enumerate(tracks, 1):
         local_path = track["local_path"]
@@ -295,12 +310,29 @@ def sync_metadata_export(
         )
 
         if success:
+            # Get mtime after write to update database
+            current_mtime = get_file_mtime(local_path)
+            mtime_updates.append((current_mtime, track["id"]))
+
             stats["success"] += 1
             if show_progress and i % progress_interval == 0:
                 percent = (i * 100) // total_tracks
                 print(f"  Exported {percent}% ({i}/{total_tracks})...")
         else:
             stats["failed"] += 1
+
+    # Batch update mtimes in database
+    if mtime_updates:
+        with get_db_connection() as conn:
+            conn.executemany(
+                """
+                UPDATE tracks
+                SET file_mtime = ?
+                WHERE id = ?
+            """,
+                mtime_updates,
+            )
+            conn.commit()
 
     if show_progress:
         print(
@@ -452,6 +484,10 @@ def sync_import(
     total_tracks = len(changed_tracks)
     progress_interval = max(1, total_tracks // 100)  # Show progress every 1%
 
+    # Batch load all tags for changed tracks (optimization: single query instead of N queries)
+    track_ids = [track["id"] for track in changed_tracks]
+    all_tags_batch = get_track_tags_batch(track_ids, include_blacklisted=False)
+
     # Batch database updates
     mtime_updates = []
 
@@ -469,8 +505,8 @@ def sync_import(
             file_tags = read_tags_from_file(local_path, config)
             file_tag_set = set(file_tags)
 
-            # Get current database tags with source information
-            db_tags = get_track_tags(track_id, include_blacklisted=False)
+            # Get current database tags from batch result
+            db_tags = all_tags_batch.get(track_id, [])
             db_tag_dict = {tag["tag_name"]: tag["source"] for tag in db_tags}
             db_tag_set = set(db_tag_dict.keys())
 

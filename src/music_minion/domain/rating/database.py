@@ -6,7 +6,7 @@ All operations use connection context managers and single transactions.
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TypedDict
 
 from loguru import logger
 
@@ -21,6 +21,26 @@ class EloRating:
     rating: float
     comparison_count: int
     last_compared: Optional[datetime]
+
+
+class RatingCoverageStats(TypedDict):
+    """Aggregated coverage metrics for Elo comparisons."""
+
+    tracks_with_comparisons: int
+    total_tracks: int
+    total_comparisons: int
+    coverage_percent: float
+    average_comparisons_per_track: float
+    average_comparisons_per_compared_track: float
+
+
+class RatingCoverageFilters(TypedDict, total=False):
+    """Filters applied when computing rating coverage."""
+
+    source_filter: str
+    genre_filter: str
+    year_filter: int
+    playlist_id: int
 
 
 def get_or_create_rating(track_id: int) -> EloRating:
@@ -76,7 +96,7 @@ def get_or_create_rating(track_id: int) -> EloRating:
                 comparison_count=0,
                 last_compared=None,
             )
-        except Exception as e:
+        except Exception:
             logger.exception(f"Failed to create rating for track_id={track_id}")
             raise
 
@@ -167,7 +187,7 @@ def record_comparison(
             # Single commit for all operations
             conn.commit()
 
-    except Exception as e:
+    except Exception:
         logger.exception(
             f"Failed to record comparison: A={track_a_id} B={track_b_id} winner={winner_id}"
         )
@@ -276,7 +296,7 @@ def get_filtered_tracks(
         )
         params.append(playlist_id)
 
-    if source_filter and source_filter != 'all':
+    if source_filter and source_filter != "all":
         where_clauses.append("t.source = ?")
         params.append(source_filter)
 
@@ -311,28 +331,86 @@ def get_filtered_tracks(
         return [dict(row) for row in cursor.fetchall()]
 
 
-def get_ratings_coverage() -> tuple[int, int]:
-    """Get rating coverage statistics.
+def _build_coverage_where_clause(
+    filters: RatingCoverageFilters | None,
+) -> tuple[str, list]:
+    """Construct WHERE clause and parameters for coverage queries."""
 
-    Returns:
-        Tuple of (tracks_with_20plus_comparisons, total_tracks)
-    """
-    with get_db_connection() as conn:
-        # Get total tracks
-        cursor = conn.execute("SELECT COUNT(*) as count FROM tracks")
-        total_tracks = cursor.fetchone()["count"]
+    if not filters:
+        return "", []
 
-        # Get tracks with 20+ comparisons
-        cursor = conn.execute(
-            """
-            SELECT COUNT(*) as count
-            FROM elo_ratings
-            WHERE comparison_count >= 20
-            """
+    where_clauses: list[str] = []
+    params: list = []
+
+    source_filter = filters.get("source_filter")
+    if source_filter and source_filter != "all":
+        where_clauses.append("t.source = ?")
+        params.append(source_filter)
+
+    genre_filter = filters.get("genre_filter")
+    if genre_filter:
+        where_clauses.append("t.genre LIKE ? COLLATE NOCASE")
+        params.append(f"%{genre_filter}%")
+
+    year_filter = filters.get("year_filter")
+    if year_filter:
+        where_clauses.append("t.year = ?")
+        params.append(year_filter)
+
+    playlist_id = filters.get("playlist_id")
+    if playlist_id:
+        where_clauses.append(
+            "t.id IN (SELECT track_id FROM playlist_tracks WHERE playlist_id = ?)"
         )
-        rated_tracks = cursor.fetchone()["count"]
+        params.append(playlist_id)
 
-        return (rated_tracks, total_tracks)
+    if not where_clauses:
+        return "", []
+
+    return "WHERE " + " AND ".join(where_clauses), params
+
+
+def get_ratings_coverage(
+    filters: RatingCoverageFilters | None = None,
+) -> RatingCoverageStats:
+    """Get rating coverage metrics for the requested filters."""
+
+    where_clause, params = _build_coverage_where_clause(filters)
+
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            f"""
+            SELECT
+                COUNT(t.id) as total_tracks,
+                SUM(CASE WHEN COALESCE(e.comparison_count, 0) > 0 THEN 1 ELSE 0 END)
+                    as compared_tracks,
+                COALESCE(SUM(e.comparison_count), 0) as total_comparisons
+            FROM tracks t
+            LEFT JOIN elo_ratings e ON t.id = e.track_id
+            {where_clause}
+            """,
+            params,
+        )
+        row = cursor.fetchone()
+
+    total_tracks = row["total_tracks"] or 0
+    compared_tracks = row["compared_tracks"] or 0
+    total_comparisons = row["total_comparisons"] or 0
+
+    coverage_percent = (compared_tracks / total_tracks * 100) if total_tracks else 0.0
+    average_per_track = total_comparisons / total_tracks if total_tracks else 0.0
+    average_per_compared = (
+        total_comparisons / compared_tracks if compared_tracks else 0.0
+    )
+
+    return RatingCoverageStats(
+        tracks_with_comparisons=compared_tracks,
+        total_tracks=total_tracks,
+        total_comparisons=total_comparisons,
+        coverage_percent=coverage_percent,
+        average_comparisons_per_track=average_per_track,
+        average_comparisons_per_compared_track=average_per_compared,
+    )
 
 
 def get_least_compared_tracks(

@@ -5,6 +5,7 @@ from typing import Any
 
 from blessed import Terminal
 
+from music_minion.domain.rating.database import RatingCoverageStats
 from music_minion.ui.blessed.helpers import write_at
 from music_minion.ui.blessed.state import ComparisonState
 
@@ -115,7 +116,9 @@ def render_comparison_overlay(
 
     # Footer help text
     if line_num < height:
-        footer = "   [←/→] Select  [Space] Play  [Enter] Choose  [A] Archive  [Esc] Exit"
+        footer = (
+            "   [←/→] Select  [Space] Play  [Enter] Choose  [A] Archive  [Esc] Exit"
+        )
         write_at(term, 0, y + line_num, term.white(footer))
         line_num += 1
 
@@ -439,11 +442,14 @@ def render_session_progress(
         filter_parts.append(str(comparison.year_filter))
 
     if filter_parts and line_num < height:
-        # Get track count from database (placeholder - would need actual query)
-        # For now, just show filter info
         filter_text = f"   Filter: {' • '.join(filter_parts)}"
         write_at(term, 0, y + line_num, term.white(filter_text))
         line_num += 1
+
+    coverage_lines = _render_coverage_lines(
+        term, comparison, y + line_num, height - line_num
+    )
+    line_num += coverage_lines
 
     # Blank line before footer
     if line_num < height:
@@ -470,6 +476,80 @@ def _get_rating_info(track: dict[str, Any] | None) -> dict[str, Any]:
         "rating": track.get("rating", 1500),
         "comparison_count": track.get("comparison_count", 0),
     }
+
+
+def _has_active_filters(comparison: ComparisonState) -> bool:
+    """Return True if session has additional playlist/genre/year filters."""
+
+    return any(
+        [
+            comparison.playlist_id is not None,
+            comparison.genre_filter,
+            comparison.year_filter,
+        ]
+    )
+
+
+def _format_library_label(comparison: ComparisonState) -> str:
+    source = comparison.source_filter or "all sources"
+    if source == "all":
+        source = "all sources"
+    return f"Library ({source})"
+
+
+def _format_filter_label(comparison: ComparisonState) -> str:
+    parts: list[str] = []
+    if comparison.playlist_id is not None:
+        parts.append(f"playlist={comparison.playlist_id}")
+    if comparison.genre_filter:
+        parts.append(f"genre={comparison.genre_filter}")
+    if comparison.year_filter:
+        parts.append(f"year={comparison.year_filter}")
+    if not parts:
+        return "Filters"
+    return f"Filters ({', '.join(parts)})"
+
+
+def _format_coverage_line(label: str, stats: RatingCoverageStats) -> str:
+    compared = stats.get("tracks_with_comparisons", 0)
+    total = stats.get("total_tracks", 0)
+    coverage_percent = stats.get("coverage_percent", 0.0)
+    avg_all = stats.get("average_comparisons_per_track", 0.0)
+    avg_compared = stats.get("average_comparisons_per_compared_track", 0.0)
+    return (
+        f"   {label}: {compared}/{total} ({coverage_percent:.1f}% coverage) "
+        f"avg {avg_all:.2f}/{avg_compared:.2f} comps"
+    )
+
+
+def _render_coverage_lines(
+    term: Terminal, comparison: ComparisonState, y: int, max_height: int
+) -> int:
+    """Render coverage metrics for library and active filters."""
+
+    if max_height <= 0:
+        return 0
+
+    lines = 0
+    if comparison.coverage_library_stats and lines < max_height:
+        text = _format_coverage_line(
+            _format_library_label(comparison), comparison.coverage_library_stats
+        )
+        write_at(term, 0, y + lines, term.white(text))
+        lines += 1
+
+    if (
+        comparison.coverage_filter_stats
+        and _has_active_filters(comparison)
+        and lines < max_height
+    ):
+        text = _format_coverage_line(
+            _format_filter_label(comparison), comparison.coverage_filter_stats
+        )
+        write_at(term, 0, y + lines, term.white(text))
+        lines += 1
+
+    return lines
 
 
 def _render_loading_skeleton(

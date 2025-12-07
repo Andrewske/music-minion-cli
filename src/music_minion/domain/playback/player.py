@@ -15,6 +15,7 @@ from typing import Any, Dict, NamedTuple, Optional, Tuple
 from loguru import logger
 
 from music_minion.core.config import Config
+from music_minion.core.database import start_listen_session, tick_listen_session
 
 
 class PlayerState(NamedTuple):
@@ -28,6 +29,7 @@ class PlayerState(NamedTuple):
     current_position: float = 0.0
     duration: float = 0.0
     playback_source: Optional[str] = None  # 'mpv' or 'spotify'
+    current_session_id: Optional[int] = None  # Active listening session ID
 
     def __getattr__(self, name: str) -> Any:
         """Provide helpful error for missing attributes, especially with_* methods."""
@@ -211,7 +213,10 @@ def get_mpv_property(socket_path: Optional[str], property_name: str) -> Any:
 
 
 def play_file(
-    state: PlayerState, local_path: str, track_id: Optional[int] = None
+    state: PlayerState,
+    local_path: str,
+    track_id: Optional[int] = None,
+    playlist_id: Optional[int] = None,
 ) -> Tuple[PlayerState, bool]:
     """Play a specific audio file and return updated state.
 
@@ -219,6 +224,7 @@ def play_file(
         state: Current player state
         local_path: Path or URL to play
         track_id: Optional database track ID for easier lookup
+        playlist_id: Optional playlist ID for session tracking
 
     Returns:
         Tuple of (updated_state, success)
@@ -251,6 +257,14 @@ def play_file(
             state.socket_path, {"command": ["set_property", "pause", False]}
         )
 
+        # Start new listening session if we have a track_id
+        session_id = None
+        if track_id is not None:
+            try:
+                session_id = start_listen_session(track_id, playlist_id)
+            except Exception as e:
+                logger.warning(f"Failed to start listening session: {e}")
+
         # Update status to get actual playback state
         updated_state = update_player_status(
             state._replace(
@@ -258,6 +272,7 @@ def play_file(
                 current_track_id=track_id,
                 is_playing=True,
                 playback_source="mpv",
+                current_session_id=session_id,
             )
         )
         return updated_state, True
@@ -275,6 +290,7 @@ def pause_playback(state: PlayerState) -> Tuple[PlayerState, bool]:
     )
 
     if success:
+        # Note: Session continues but won't be ticked while paused
         return state._replace(is_playing=False), True
 
     return state, False
@@ -290,6 +306,7 @@ def resume_playback(state: PlayerState) -> Tuple[PlayerState, bool]:
     )
 
     if success:
+        # Resume ticking the current session
         return state._replace(is_playing=True), True
 
     return state, False
@@ -309,17 +326,50 @@ def toggle_pause(state: PlayerState) -> Tuple[PlayerState, bool]:
 
 
 def stop_playback(state: PlayerState) -> Tuple[PlayerState, bool]:
-    """Stop current playback and return updated state."""
+    """Stop playback and return updated state."""
     if not is_mpv_running(state):
         return state, False
 
     success = send_mpv_command(state.socket_path, {"command": ["stop"]})
 
     if success:
+        # Session ends when playback stops
+        return state._replace(
+            current_track=None,
+            current_track_id=None,
+            is_playing=False,
+            current_position=0.0,
+            duration=0.0,
+            current_session_id=None,  # Clear session on stop
+        ), True
+
+    return state, False
+
+
+def tick_session(state: PlayerState) -> PlayerState:
+    """Tick the current listening session if playing.
+
+    Should be called every second during playback.
+
+    Args:
+        state: Current player state
+
+    Returns:
+        Updated state (unchanged, but session is ticked)
+    """
+    if state.current_session_id is not None and state.is_playing:
+        try:
+            tick_listen_session(state.current_session_id, state.is_playing)
+        except Exception as e:
+            logger.warning(f"Failed to tick listening session: {e}")
+
+    return state
+
+    success = send_mpv_command(state.socket_path, {"command": ["stop"]})
+
+    if success:
         return (
-            state._replace(
-                current_track=None, is_playing=False, playback_source=None
-            ),
+            state._replace(current_track=None, is_playing=False, playback_source=None),
             True,
         )
 
