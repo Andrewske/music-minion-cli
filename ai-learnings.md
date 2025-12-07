@@ -2176,3 +2176,37 @@ log(f"✅ Created playlist: {name}", level="info")
 ---
 
 **Last Updated**: 2025-11-21 after loguru migration
+
+## Recent Implementation Insights (2025-11-16 - 2025-10-05)
+
+### Track Search Implementation (2025-11-16)
+- **In-memory filtering wins**: < 5ms for 5000+ tracks vs 20-50ms database LIKE queries
+- **SQLite GROUP_CONCAT limitation**: Cannot use both DISTINCT and custom separator
+- **Pre-loading strategy**: 100ms initial load acceptable for instant subsequent filtering
+- **UI action protocol**: `ctx.with_ui_action()` is correct pattern for command → UI communication
+
+### Analytics UI Performance (2025-10-05)
+- **Pre-calculate before event loops**: Formatting 597 artists on every keystroke caused 100ms+ delays
+- **Solution**: Cache total line count in state, reduced keystroke latency from ~100ms to <1ms
+- **Pattern**: Never re-compute expensive operations in hot paths
+
+### Full-Screen Modal Viewers (2025-10-05)
+- **Problem**: Long analytics output in command history was unreadable (squished, can't scroll)
+- **Solution**: Dedicated full-screen viewer with keyboard navigation (j/k/q), scrolling, dynamic height
+- **Pattern**: For data exceeding ~10 lines, create modal viewer instead of command history output
+
+### ASCII Visualization Benefits (2025-10-05)
+- Combined ASCII bar charts with color coding for immediate visual recognition
+- Character-by-character coloring creates smooth gradients
+- Provides significant UX improvement with minimal code complexity
+
+### State Tracking Consistency Bug (2025-10-05)
+- **Critical**: State tracking tuples must be consistent across all code paths
+- Missing fields in comparison tuple prevented scroll detection (analytics viewer j/k)
+- Initial value, comparison, and all update sites must have matching tuple sizes
+- State can change, but UI won't redraw without proper change detection
+
+### Metadata Editor Modal (2025-10-05)
+- Modal visibility must be checked in `calculate_layout()` for proper height allocation
+- When `editor_visible=True` but layout doesn't allocate height, render functions early-return
+- Full redraw logic requires checking modal state changes before entering partial update blocks

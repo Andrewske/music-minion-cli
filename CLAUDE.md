@@ -140,6 +140,17 @@ except Exception:
 - IPC: `music-minion-cli play|skip|love|...`
 - Locate opus: `music-minion locate-opus /path/to/folder [--apply]`
 
+**Development Workflow**:
+- Environment setup: `uv sync --dev`, then `uv pip install -e .`
+- Run with hot-reload: `uv run music-minion --dev`
+- Test suite: `uv run pytest` (all) or `uv run pytest path/to/test.py::test_case` (single)
+- Code quality: `uv run ruff check src` and `uv run ruff format src`
+
+**Testing Procedures**:
+- Autoplay: Test shuffle mode, sequential mode with playlists, edge cases
+- Edge cases: No available tracks, single track playlists, MPV crashes
+- Performance validation: No UI flicker, < 0.5s gap between tracks
+
 **Key Dependencies**:
 - mutagen (MP3/M4A/Opus metadata)
 - blessed (terminal UI)
@@ -155,6 +166,15 @@ except Exception:
 - `ai-learnings.md` - Patterns, best practices, gotchas
 - `docs/playlist-system-plan.md` - Implementation history
 - `docs/incomplete-items.md` - Future roadmap
+
+**Future Roadmap - Major Features**:
+- Metadata enhancement system (conversational AI-driven cleanup)
+  - Pattern-based cleanup (promotional text removal, artist consolidation)
+  - AI prompt optimization that learns from user feedback
+  - External enrichment (SoundCloud integration, scraping framework)
+- Web UI for mobile control
+- Global hotkey support (daemon mode)
+- YouTube Music / Apple Music integration
 
 ## Recent Features
 
