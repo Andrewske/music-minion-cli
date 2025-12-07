@@ -257,6 +257,28 @@ def handle_stats_command(ctx: AppContext) -> Tuple[AppContext, bool]:
                 )
                 log(f"  {track_data['rating_count']} ratings: {track_info}")
 
+        # Add listening session analytics
+        try:
+            # Today's listening time
+            today_seconds = database.get_daily_listening_time()
+            if today_seconds > 0:
+                hours = int(today_seconds // 3600)
+                minutes = int((today_seconds % 3600) // 60)
+                log(f"\n🎵 Today's Listening: {hours}h {minutes}m")
+
+            # Top tracks by listening time (last 30 days)
+            top_tracks = database.get_top_tracks_by_time(days=30, limit=5)
+            if top_tracks:
+                log("\n🎶 Top Tracks by Listening Time (30 days):")
+                for track in top_tracks:
+                    hours = int(track["total_seconds"] // 3600)
+                    minutes = int((track["total_seconds"] % 3600) // 60)
+                    track_info = f"{track.get('artist', 'Unknown')} - {track.get('title', 'Unknown')}"
+                    log(f"  {hours}h {minutes}m: {track_info}")
+
+        except Exception as e:
+            log(f"⚠️ Could not load listening analytics: {e}", level="warning")
+
         return ctx, True
     except Exception as e:
         log(f"❌ Error getting statistics: {e}", level="error")

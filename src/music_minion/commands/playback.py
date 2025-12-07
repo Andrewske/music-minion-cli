@@ -100,7 +100,10 @@ def get_available_tracks(ctx: AppContext) -> List[library.Track]:
 
 
 def play_track(
-    ctx: AppContext, track: library.Track, playlist_position: Optional[int] = None
+    ctx: AppContext,
+    track: library.Track,
+    playlist_position: Optional[int] = None,
+    force_playlist_id: Optional[int | None] = ...,
 ) -> Tuple[AppContext, bool]:
     """
     Play a specific track.
@@ -109,6 +112,7 @@ def play_track(
         ctx: Application context
         track: Track to play
         playlist_position: Optional 0-based position in active playlist
+        force_playlist_id: Force playlist_id for session tracking (use None for comparison mode, ... for auto-detect)
 
     Returns:
         (updated_context, should_continue)
@@ -250,10 +254,18 @@ def play_track(
                 return ctx, True
             ctx = ctx.with_player_state(new_state)
 
+        # Get playlist ID for session tracking
+        # Use force_playlist_id if explicitly provided, otherwise auto-detect active playlist
+        if force_playlist_id is not ...:
+            playlist_id = force_playlist_id
+        else:
+            active_playlist = playlists.get_active_playlist()
+            playlist_id = active_playlist["id"] if active_playlist else None
+
         # Play the track (works for both local files and streaming URLs)
-        # Pass track_id so it's available in player state for add/remove commands
+        # Pass track_id and playlist_id for session tracking
         new_state, success = playback.play_file(
-            ctx.player_state, playback_uri, track_id
+            ctx.player_state, playback_uri, track_id, playlist_id
         )
         ctx = ctx.with_player_state(new_state)
 
@@ -265,10 +277,6 @@ def play_track(
         dj_info = library.get_dj_info(track)
         if dj_info != "No DJ metadata":
             log(f"   {dj_info}", level="info")
-
-        # Start playback session if track found in database
-        if track_id:
-            database.start_playback_session(track_id)
 
         # Track position if playing from active playlist
         active = playlists.get_active_playlist()
@@ -755,9 +763,7 @@ def handle_stop_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     return ctx, True
 
 
-def handle_seek_percentage(
-    ctx: AppContext, percentage: int
-) -> Tuple[AppContext, bool]:
+def handle_seek_percentage(ctx: AppContext, percentage: int) -> Tuple[AppContext, bool]:
     """Seek to a percentage position in the current track (0-90%).
 
     Args:
@@ -819,7 +825,9 @@ def handle_seek_percentage(
         target_position = (percentage / 100.0) * duration
 
         # Seek to absolute position
-        new_state, success = playback.seek_to_position(ctx.player_state, target_position)
+        new_state, success = playback.seek_to_position(
+            ctx.player_state, target_position
+        )
         ctx = ctx.with_player_state(new_state)
 
         if not success:

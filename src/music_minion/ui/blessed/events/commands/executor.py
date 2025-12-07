@@ -327,7 +327,8 @@ def _handle_comparison_play_track_cmd(
                 if db_track:
                     track_obj = database.db_track_to_library_track(db_track)
                     # play_track calls log() which adds to history via pending queue
-                    ctx, _ = play_track(ctx, track_obj, None)
+                    # Pass force_playlist_id=None to ensure comparison tracks don't get playlist association
+                    ctx, _ = play_track(ctx, track_obj, None, force_playlist_id=None)
 
     # Drain any log() messages from play_track
     for msg, color in drain_pending_history_messages():

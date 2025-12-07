@@ -6,6 +6,8 @@ from blessed.keyboard import Keystroke
 
 from music_minion.core.output import log
 from music_minion.domain.rating.database import (
+    RatingCoverageFilters,
+    RatingCoverageStats,
     get_or_create_rating,
     get_ratings_coverage,
     record_comparison,
@@ -15,14 +17,14 @@ from music_minion.domain.rating.elo import (
     select_strategic_pair,
     update_ratings,
 )
-from music_minion.ui.blessed.state import InternalCommand, UIState
+from music_minion.ui.blessed.state import ComparisonState, InternalCommand, UIState
 
 from .utils import parse_key
 
 
 def handle_comparison_key(
     key: Keystroke, state: UIState
-) -> tuple[UIState, InternalCommand | None]:
+) -> tuple[UIState | None, InternalCommand | None]:
     """
     Handle keyboard input during comparison mode.
 
@@ -166,6 +168,17 @@ def handle_comparison_choice(
         "comparison_count": loser_rating_obj.comparison_count + 1,
     }
 
+    coverage_library_stats = _update_cached_coverage_stats(
+        comparison.coverage_library_stats,
+        winner_rating_obj.comparison_count,
+        loser_rating_obj.comparison_count,
+    )
+    coverage_filter_stats = _update_cached_coverage_stats(
+        comparison.coverage_filter_stats,
+        winner_rating_obj.comparison_count,
+        loser_rating_obj.comparison_count,
+    )
+
     # Select next pair
     if not filtered_tracks or len(filtered_tracks) < 2:
         # Unexpected: no tracks to compare
@@ -182,6 +195,8 @@ def handle_comparison_choice(
         highlighted="a",  # Reset to track A
         comparisons_done=new_comparisons_done,
         ratings_cache=ratings_cache,
+        coverage_library_stats=coverage_library_stats,
+        coverage_filter_stats=coverage_filter_stats,
     )
 
     new_state = dataclasses.replace(state, comparison=new_comparison)
@@ -202,17 +217,25 @@ def end_comparison_session(state: UIState) -> tuple[UIState, InternalCommand | N
     comparison = state.comparison
 
     # Get coverage stats
-    rated_count, total_count = get_ratings_coverage()
+    library_stats = _ensure_coverage_stats(
+        comparison.coverage_library_stats, comparison.coverage_library_filters
+    )
+    filter_stats = (
+        _ensure_coverage_stats(
+            comparison.coverage_filter_stats, comparison.coverage_filter_filters
+        )
+        if _comparison_has_active_filters(comparison)
+        else None
+    )
 
     # Show session complete message
     log(
         f"Session complete! {comparison.comparisons_done} comparisons made.",
         level="info",
     )
-    log(
-        f"Coverage: {rated_count}/{total_count} tracks rated (20+ comparisons)",
-        level="info",
-    )
+    _log_coverage_summary(_library_scope_label(comparison), library_stats)
+    if filter_stats:
+        _log_coverage_summary(_filter_scope_label(comparison), filter_stats)
 
     # Clear comparison state
     new_comparison = dataclasses.replace(
@@ -223,10 +246,102 @@ def end_comparison_session(state: UIState) -> tuple[UIState, InternalCommand | N
         saved_player_state=None,
         filtered_tracks=[],
         ratings_cache=None,
+        coverage_library_stats=None,
+        coverage_filter_stats=None,
+        coverage_library_filters=None,
+        coverage_filter_filters=None,
     )
 
     new_state = dataclasses.replace(state, comparison=new_comparison)
     return new_state, None
+
+
+def _update_cached_coverage_stats(
+    stats: RatingCoverageStats | None,
+    winner_prev_count: int,
+    loser_prev_count: int,
+) -> RatingCoverageStats | None:
+    """Return updated coverage stats with cached increments applied."""
+
+    if not stats:
+        return None
+
+    compared_tracks = stats["tracks_with_comparisons"]
+    if winner_prev_count == 0:
+        compared_tracks += 1
+    if loser_prev_count == 0:
+        compared_tracks += 1
+
+    total_comparisons = stats["total_comparisons"] + 2
+    total_tracks = stats["total_tracks"]
+    coverage_percent = compared_tracks / total_tracks * 100 if total_tracks else 0.0
+    average_per_track = total_comparisons / total_tracks if total_tracks else 0.0
+    average_per_compared = (
+        total_comparisons / compared_tracks if compared_tracks else 0.0
+    )
+
+    return RatingCoverageStats(
+        tracks_with_comparisons=compared_tracks,
+        total_tracks=total_tracks,
+        total_comparisons=total_comparisons,
+        coverage_percent=coverage_percent,
+        average_comparisons_per_track=average_per_track,
+        average_comparisons_per_compared_track=average_per_compared,
+    )
+
+
+def _ensure_coverage_stats(
+    stats: RatingCoverageStats | None,
+    filters: RatingCoverageFilters | None,
+) -> RatingCoverageStats:
+    """Return cached stats if available, otherwise refresh from database."""
+
+    if stats:
+        return stats
+    return get_ratings_coverage(filters)
+
+
+def _comparison_has_active_filters(comparison: ComparisonState) -> bool:
+    return any(
+        [
+            comparison.playlist_id is not None,
+            comparison.genre_filter,
+            comparison.year_filter,
+        ]
+    )
+
+
+def _library_scope_label(comparison: ComparisonState) -> str:
+    source = comparison.source_filter or "all sources"
+    if source == "all":
+        source = "all sources"
+    return f"Library ({source})"
+
+
+def _filter_scope_label(comparison: ComparisonState) -> str:
+    parts: list[str] = []
+    if comparison.playlist_id is not None:
+        parts.append(f"playlist={comparison.playlist_id}")
+    if comparison.genre_filter:
+        parts.append(f"genre={comparison.genre_filter}")
+    if comparison.year_filter:
+        parts.append(f"year={comparison.year_filter}")
+    if not parts:
+        return "Filters"
+    return f"Filters ({', '.join(parts)})"
+
+
+def _log_coverage_summary(label: str, stats: RatingCoverageStats) -> None:
+    log(
+        f"{label}: {stats['tracks_with_comparisons']}/{stats['total_tracks']} "
+        f"({stats['coverage_percent']:.1f}% coverage)",
+        level="info",
+    )
+    log(
+        f"{label} averages: {stats['average_comparisons_per_track']:.2f} per track, "
+        f"{stats['average_comparisons_per_compared_track']:.2f} per compared track",
+        level="info",
+    )
 
 
 def exit_comparison_mode(state: UIState) -> tuple[UIState, InternalCommand | None]:
@@ -256,6 +371,10 @@ def exit_comparison_mode(state: UIState) -> tuple[UIState, InternalCommand | Non
         saved_player_state=None,
         filtered_tracks=[],
         ratings_cache=None,
+        coverage_library_stats=None,
+        coverage_filter_stats=None,
+        coverage_library_filters=None,
+        coverage_filter_filters=None,
     )
 
     new_state = dataclasses.replace(state, comparison=new_comparison)

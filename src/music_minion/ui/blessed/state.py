@@ -6,6 +6,10 @@ from datetime import datetime
 from time import time
 from typing import Any, Optional
 
+from music_minion.domain.rating.database import (
+    RatingCoverageFilters,
+    RatingCoverageStats,
+)
 from music_minion.ui.blessed.helpers.scrolling import (
     calculate_scroll_offset,
     move_selection,
@@ -75,7 +79,9 @@ class BuilderFilter:
     """A single filter rule for the playlist builder."""
 
     field: str  # title, artist, year, album, genre, bpm
-    operator: str  # contains, equals, gt, lt, gte, lte, not_equals, starts_with, ends_with
+    operator: (
+        str  # contains, equals, gt, lt, gte, lte, not_equals, starts_with, ends_with
+    )
     value: str
 
 
@@ -97,8 +103,16 @@ class ComparisonState:
     source_filter: Optional[str] = None  # 'local', 'spotify', 'soundcloud', etc.
     session_start: Optional[datetime] = None
     saved_player_state: Optional[Any] = None  # PlayerState saved before session
-    filtered_tracks: list[dict[str, Any]] = field(default_factory=list)  # Tracks for session
-    ratings_cache: Optional[dict[int, dict[str, Any]]] = None  # Cache of {track_id: {rating, comparison_count}}
+    filtered_tracks: list[dict[str, Any]] = field(
+        default_factory=list
+    )  # Tracks for session
+    ratings_cache: Optional[dict[int, dict[str, Any]]] = (
+        None  # Cache of {track_id: {rating, comparison_count}}
+    )
+    coverage_library_stats: Optional[RatingCoverageStats] = None
+    coverage_filter_stats: Optional[RatingCoverageStats] = None
+    coverage_library_filters: Optional[RatingCoverageFilters] = None
+    coverage_filter_filters: Optional[RatingCoverageFilters] = None
 
 
 @dataclass
@@ -305,7 +319,9 @@ class UIState:
     # ============================================================================
     # Rating history viewer state (for reviewing and deleting ratings)
     rating_history_visible: bool = False
-    rating_history_ratings: list[dict[str, Any]] = field(default_factory=list)  # All ratings
+    rating_history_ratings: list[dict[str, Any]] = field(
+        default_factory=list
+    )  # All ratings
     rating_history_selected: int = 0  # Selected rating index
     rating_history_scroll: int = 0  # Scroll offset
 
@@ -314,7 +330,9 @@ class UIState:
     # ============================================================================
     # Comparison history viewer state (for reviewing Elo comparison decisions)
     comparison_history_visible: bool = False
-    comparison_history_comparisons: list[dict[str, Any]] = field(default_factory=list)  # All comparisons
+    comparison_history_comparisons: list[dict[str, Any]] = field(
+        default_factory=list
+    )  # All comparisons
     comparison_history_selected: int = 0  # Selected comparison index
     comparison_history_scroll: int = 0  # Scroll offset
 
@@ -509,7 +527,9 @@ def show_device_palette(
 
 
 def show_rankings_palette(
-    state: UIState, items: list[tuple[str, str, str, str]], title: str = "Top Rated Tracks"
+    state: UIState,
+    items: list[tuple[str, str, str, str]],
+    title: str = "Top Rated Tracks",
 ) -> UIState:
     """Show rankings palette with top-rated tracks.
 
@@ -1620,9 +1640,7 @@ def scroll_search_detail(state: UIState, delta: int, max_scroll: int) -> UIState
     return replace(state, search_detail_scroll=new_scroll)
 
 
-def show_rating_history(
-    state: UIState, ratings: list[dict[str, Any]]
-) -> UIState:
+def show_rating_history(state: UIState, ratings: list[dict[str, Any]]) -> UIState:
     """
     Show rating history viewer with ratings.
 
@@ -1716,9 +1734,7 @@ def delete_rating_history_item(state: UIState, index: int) -> UIState:
     if not state.rating_history_ratings or index >= len(state.rating_history_ratings):
         return state
 
-    new_ratings = [
-        r for i, r in enumerate(state.rating_history_ratings) if i != index
-    ]
+    new_ratings = [r for i, r in enumerate(state.rating_history_ratings) if i != index]
 
     # Adjust selection if needed
     new_selected = state.rating_history_selected
@@ -1915,7 +1931,9 @@ def hide_playlist_builder(state: UIState) -> UIState:
     )
 
 
-def move_builder_selection(state: UIState, delta: int, visible_items: int = 20) -> UIState:
+def move_builder_selection(
+    state: UIState, delta: int, visible_items: int = 20
+) -> UIState:
     """Move selection up/down with scroll adjustment."""
     if not state.builder.displayed_tracks:
         return state
@@ -1961,7 +1979,9 @@ def show_builder_sort_dropdown(state: UIState) -> UIState:
         builder=replace(
             state.builder,
             dropdown_mode="sort",
-            dropdown_selected=BUILDER_SORT_FIELDS.index(state.builder.sort_field) if state.builder.sort_field in BUILDER_SORT_FIELDS else 0,
+            dropdown_selected=BUILDER_SORT_FIELDS.index(state.builder.sort_field)
+            if state.builder.sort_field in BUILDER_SORT_FIELDS
+            else 0,
             dropdown_options=BUILDER_SORT_FIELDS,
         ),
     )
@@ -2001,7 +2021,11 @@ def select_builder_sort_field(state: UIState) -> UIState:
     """Select current sort field and toggle direction, close dropdown."""
     field = state.builder.dropdown_options[state.builder.dropdown_selected]
     # Toggle direction if same field, otherwise default to asc
-    direction = "desc" if field == state.builder.sort_field and state.builder.sort_direction == "asc" else "asc"
+    direction = (
+        "desc"
+        if field == state.builder.sort_field and state.builder.sort_direction == "asc"
+        else "asc"
+    )
 
     # Re-sort displayed tracks
     displayed = _apply_builder_sort(state.builder.displayed_tracks, field, direction)
@@ -2105,7 +2129,9 @@ def confirm_builder_filter(state: UIState) -> UIState:
 
     # Re-apply filters and sort
     displayed = _apply_builder_filters(state.builder.all_tracks, new_filters)
-    displayed = _apply_builder_sort(displayed, state.builder.sort_field, state.builder.sort_direction)
+    displayed = _apply_builder_sort(
+        displayed, state.builder.sort_field, state.builder.sort_direction
+    )
 
     return replace(
         state,
@@ -2137,7 +2163,9 @@ def remove_builder_filter(state: UIState, index: int = -1) -> UIState:
 
     # Re-apply filters and sort
     displayed = _apply_builder_filters(state.builder.all_tracks, new_filters)
-    displayed = _apply_builder_sort(displayed, state.builder.sort_field, state.builder.sort_direction)
+    displayed = _apply_builder_sort(
+        displayed, state.builder.sort_field, state.builder.sort_direction
+    )
 
     return replace(
         state,
@@ -2187,7 +2215,9 @@ def cancel_builder_dropdown(state: UIState) -> UIState:
     )
 
 
-def _apply_builder_filters(tracks: list[dict], filters: list[BuilderFilter]) -> list[dict]:
+def _apply_builder_filters(
+    tracks: list[dict], filters: list[BuilderFilter]
+) -> list[dict]:
     """Apply all filters (AND logic) to tracks."""
     result = tracks
     for f in filters:

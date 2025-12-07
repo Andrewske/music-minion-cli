@@ -30,6 +30,7 @@ from .player import (
     get_progress_info,
     is_track_finished,
     format_time,
+    tick_session,
 )
 
 # State management
@@ -66,6 +67,7 @@ __all__ = [
     "get_progress_info",
     "is_track_finished",
     "format_time",
+    "tick_session",
     # State
     "get_shuffle_mode",
     "set_shuffle_mode",

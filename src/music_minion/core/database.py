@@ -14,7 +14,7 @@ from .config import get_data_dir
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 22
+SCHEMA_VERSION = 24
 
 
 def get_database_path() -> Path:
@@ -538,7 +538,9 @@ def migrate_database(conn, current_version: int) -> None:
 
         # Add provider_last_modified column
         try:
-            conn.execute("ALTER TABLE playlists ADD COLUMN provider_last_modified TIMESTAMP")
+            conn.execute(
+                "ALTER TABLE playlists ADD COLUMN provider_last_modified TIMESTAMP"
+            )
         except sqlite3.OperationalError as e:
             if "duplicate column name" not in str(e).lower():
                 raise
@@ -551,7 +553,9 @@ def migrate_database(conn, current_version: int) -> None:
 
         # Add provider_created_at column to track when playlists were created on the provider (e.g., SoundCloud)
         try:
-            conn.execute("ALTER TABLE playlists ADD COLUMN provider_created_at TIMESTAMP")
+            conn.execute(
+                "ALTER TABLE playlists ADD COLUMN provider_created_at TIMESTAMP"
+            )
         except sqlite3.OperationalError as e:
             if "duplicate column name" not in str(e).lower():
                 raise
@@ -600,7 +604,9 @@ def migrate_database(conn, current_version: int) -> None:
 
         # 1. Add library column to playlists table
         try:
-            conn.execute("ALTER TABLE playlists ADD COLUMN library TEXT DEFAULT 'local'")
+            conn.execute(
+                "ALTER TABLE playlists ADD COLUMN library TEXT DEFAULT 'local'"
+            )
         except sqlite3.OperationalError as e:
             if "duplicate column name" not in str(e).lower():
                 raise
@@ -641,7 +647,9 @@ def migrate_database(conn, current_version: int) -> None:
 
         # 4. Recreate active_playlist table to support per-library active playlists
         # First, save the existing active playlist data
-        cursor = conn.execute("SELECT playlist_id, last_played_track_id, last_played_position, last_played_at, activated_at FROM active_playlist WHERE id = 1")
+        cursor = conn.execute(
+            "SELECT playlist_id, last_played_track_id, last_played_position, last_played_at, activated_at FROM active_playlist WHERE id = 1"
+        )
         existing_data = cursor.fetchone()
 
         # Drop the old singleton table
@@ -662,16 +670,19 @@ def migrate_database(conn, current_version: int) -> None:
 
         # Restore existing active playlist data for 'local' library
         if existing_data and existing_data["playlist_id"]:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO active_playlist (library, playlist_id, last_played_track_id, last_played_position, last_played_at, activated_at)
                 VALUES ('local', ?, ?, ?, ?, ?)
-            """, (
-                existing_data["playlist_id"],
-                existing_data["last_played_track_id"],
-                existing_data["last_played_position"],
-                existing_data["last_played_at"],
-                existing_data["activated_at"]
-            ))
+            """,
+                (
+                    existing_data["playlist_id"],
+                    existing_data["last_played_track_id"],
+                    existing_data["last_played_position"],
+                    existing_data["last_played_at"],
+                    existing_data["activated_at"],
+                ),
+            )
 
         print("  ✓ Migration to v19 complete: Library-specific playlists added")
         conn.commit()
@@ -736,10 +747,18 @@ def migrate_database(conn, current_version: int) -> None:
         """)
 
         # Create indexes for performance
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_elo_rating ON elo_ratings(rating DESC)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_elo_comparison_count ON elo_ratings(comparison_count)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_comparison_session ON comparison_history(session_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_comparison_timestamp ON comparison_history(timestamp DESC)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_elo_rating ON elo_ratings(rating DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_elo_comparison_count ON elo_ratings(comparison_count)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_comparison_session ON comparison_history(session_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_comparison_timestamp ON comparison_history(timestamp DESC)"
+        )
 
         # Initialize ratings for all existing tracks
         conn.execute("""
@@ -754,7 +773,9 @@ def migrate_database(conn, current_version: int) -> None:
 
     if current_version < 22:
         # Migration from v21 to v22: Add playlist builder state table
-        logger.info("Migrating database to schema version 22 (playlist builder state)...")
+        logger.info(
+            "Migrating database to schema version 22 (playlist builder state)..."
+        )
 
         # Create playlist_builder_state table
         conn.execute("""
@@ -770,6 +791,51 @@ def migrate_database(conn, current_version: int) -> None:
         """)
 
         logger.info("Migration to schema version 22 complete")
+        conn.commit()
+
+    if current_version < 23:
+        # Migration from v22 to v23: Add metadata change tracking
+        logger.info(
+            "Migrating database to schema version 23 (metadata change tracking)..."
+        )
+
+        # Add metadata_updated_at column to tracks table
+        try:
+            conn.execute("ALTER TABLE tracks ADD COLUMN metadata_updated_at TIMESTAMP")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+        logger.info("Migration to schema version 23 complete")
+        conn.commit()
+
+    if current_version < 24:
+        # Migration from v23 to v24: Add playback session tracking table
+        logger.info(
+            "Migrating database to schema version 24 (playback session tracking)..."
+        )
+
+        # Create track_listen_sessions table for detailed listening analytics
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS track_listen_sessions (
+                session_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                track_id INTEGER NOT NULL,
+                started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                play_date DATE NOT NULL,
+                playlist_id INTEGER NULL,
+                seconds_played REAL NOT NULL DEFAULT 0,
+                FOREIGN KEY (track_id) REFERENCES tracks(id)
+            )
+        """)
+
+        # Create indexes for performance
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_track ON track_listen_sessions(track_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_date ON track_listen_sessions(play_date)"
+        )
+
+        logger.info("Migration to schema version 24 complete")
         conn.commit()
 
 
@@ -919,7 +985,9 @@ def init_database() -> None:
         cursor.close()  # Close cursor to release any locks before migration
 
         if current_version < SCHEMA_VERSION:
-            logger.info(f"Running database migrations from v{current_version} to v{SCHEMA_VERSION}")
+            logger.info(
+                f"Running database migrations from v{current_version} to v{SCHEMA_VERSION}"
+            )
             migrate_database(conn, current_version)
         else:
             logger.debug(f"Database schema is up to date (v{current_version})")
@@ -1083,7 +1151,14 @@ def batch_add_soundcloud_likes(track_ids: List[int]) -> int:
 
     # Prepare batch insert data
     markers = [
-        (track_id, "like", hour_of_day, day_of_week, "Synced from SoundCloud", "soundcloud")
+        (
+            track_id,
+            "like",
+            hour_of_day,
+            day_of_week,
+            "Synced from SoundCloud",
+            "soundcloud",
+        )
         for track_id in track_ids
     ]
 
@@ -1308,7 +1383,7 @@ def delete_rating_by_id(rating_id: int) -> bool:
 def get_recent_playback_sessions(
     limit: int = 50, source_filter: Optional[str] = None
 ) -> List[Dict[str, Any]]:
-    """Get recent playback sessions with track metadata.
+    """Get recent listening sessions with track metadata.
 
     Args:
         limit: Maximum number of sessions to return
@@ -1318,8 +1393,7 @@ def get_recent_playback_sessions(
     Returns:
         List of dicts with: id (track ID), session_id, track_id, title, artist, album,
                            genre, year, bpm, key_signature, local_path, soundcloud_id,
-                           spotify_id, youtube_id, started_at, ended_at, completed,
-                           skipped_at_percent
+                           spotify_id, youtube_id, started_at, seconds_played, playlist_id
     """
     with get_db_connection() as conn:
         # Build WHERE clause for source filtering
@@ -1335,15 +1409,15 @@ def get_recent_playback_sessions(
         cursor = conn.execute(
             f"""
             SELECT
-                t.id, ps.id as session_id, ps.track_id, ps.started_at, ps.ended_at,
-                ps.completed, ps.skipped_at_percent,
+                t.id, ls.session_id, ls.track_id, ls.started_at, ls.seconds_played,
+                ls.playlist_id,
                 t.title, t.artist, t.album, t.genre, t.year,
                 t.bpm, t.key_signature, t.local_path,
                 t.soundcloud_id, t.spotify_id, t.youtube_id
-            FROM playback_sessions ps
-            JOIN tracks t ON ps.track_id = t.id
+            FROM track_listen_sessions ls
+            JOIN tracks t ON ls.track_id = t.id
             {where_clause}
-            ORDER BY ps.started_at DESC
+            ORDER BY ls.started_at DESC
             LIMIT ?
         """,
             params,
@@ -1478,15 +1552,165 @@ def get_library_analytics() -> Dict[str, Any]:
 
 
 def cleanup_old_sessions() -> None:
-    """Clean up old uncompleted playback sessions."""
+    """Clean up old uncompleted playback sessions from legacy table."""
     with get_db_connection() as conn:
         # Remove sessions older than 24 hours that weren't properly ended
         conn.execute("""
-            DELETE FROM playback_sessions 
-            WHERE ended_at IS NULL 
+            DELETE FROM playback_sessions
+            WHERE ended_at IS NULL
             AND started_at < datetime('now', '-24 hours')
         """)
         conn.commit()
+
+
+# Playback session tracking functions (new implementation)
+
+
+def start_listen_session(track_id: int, playlist_id: Optional[int] = None) -> int:
+    """Start a new listening session and return session ID.
+
+    Args:
+        track_id: ID of the track being played
+        playlist_id: Optional ID of the playlist context
+
+    Returns:
+        Session ID for the new session
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO track_listen_sessions (track_id, play_date, playlist_id)
+            VALUES (?, DATE('now'), ?)
+        """,
+            (track_id, playlist_id),
+        )
+        conn.commit()
+        return cursor.lastrowid
+
+
+def tick_listen_session(session_id: int, is_playing: bool) -> None:
+    """Increment seconds_played for an active session if currently playing.
+
+    Args:
+        session_id: ID of the active session
+        is_playing: Whether playback is currently active
+    """
+    if is_playing:
+        with get_db_connection() as conn:
+            conn.execute(
+                """
+                UPDATE track_listen_sessions
+                SET seconds_played = seconds_played + 1
+                WHERE session_id = ?
+            """,
+                (session_id,),
+            )
+            conn.commit()
+
+
+def get_track_listen_stats(track_id: int) -> Dict[str, Any]:
+    """Get listening statistics for a track.
+
+    Args:
+        track_id: ID of the track
+
+    Returns:
+        Dict with play_count, total_seconds, effective_plays, last_played
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT
+                COUNT(*) as play_count,
+                SUM(s.seconds_played) as total_seconds,
+                SUM(s.seconds_played) / t.duration as effective_plays,
+                MAX(s.started_at) as last_played
+            FROM track_listen_sessions s
+            JOIN tracks t ON t.id = s.track_id
+            WHERE s.track_id = ?
+        """,
+            (track_id,),
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else {}
+
+
+def get_daily_listening_time(play_date: Optional[str] = None) -> float:
+    """Get total listening time for a specific date.
+
+    Args:
+        play_date: Date in YYYY-MM-DD format, defaults to today
+
+    Returns:
+        Total seconds listened
+    """
+    date_filter = play_date or "DATE('now')"
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT SUM(seconds_played) as total_seconds
+            FROM track_listen_sessions
+            WHERE play_date = ?
+        """,
+            (date_filter,),
+        )
+        row = cursor.fetchone()
+        return row["total_seconds"] or 0.0 if row else 0.0
+
+
+def get_top_tracks_by_time(days: int = 30, limit: int = 20) -> List[Dict[str, Any]]:
+    """Get top tracks by listening time in the last N days.
+
+    Args:
+        days: Number of days to look back
+        limit: Maximum number of tracks to return
+
+    Returns:
+        List of dicts with track_id and total_seconds
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT s.track_id, SUM(s.seconds_played) as total_seconds,
+                   t.title, t.artist, t.album
+            FROM track_listen_sessions s
+            JOIN tracks t ON t.id = s.track_id
+            WHERE s.play_date >= DATE('now', '-{} days')
+            GROUP BY s.track_id
+            ORDER BY total_seconds DESC
+            LIMIT ?
+        """.format(days),
+            (limit,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def get_playlist_listening_stats(playlist_id: int) -> Dict[str, Any]:
+    """Get listening statistics for a playlist.
+
+    Args:
+        playlist_id: ID of the playlist
+
+    Returns:
+        Dict with sessions, time, avg_session_length
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT COUNT(*) as sessions, SUM(seconds_played) as time
+            FROM track_listen_sessions
+            WHERE playlist_id = ?
+        """,
+            (playlist_id,),
+        )
+        row = cursor.fetchone()
+        if row:
+            stats = dict(row)
+            stats["avg_session_length"] = (
+                stats["time"] / stats["sessions"] if stats["sessions"] > 0 else 0
+            )
+            return stats
+        return {}
 
 
 def get_track_by_path(local_path: str) -> Optional[Dict[str, Any]]:
@@ -1516,7 +1740,9 @@ def get_track_by_id(track_id: int) -> Optional[Dict[str, Any]]:
         return dict(row) if row else None
 
 
-def get_track_by_provider_id(provider: str, provider_id: str) -> Optional[Dict[str, Any]]:
+def get_track_by_provider_id(
+    provider: str, provider_id: str
+) -> Optional[Dict[str, Any]]:
     """Get track information by provider ID.
 
     Args:
@@ -1527,9 +1753,9 @@ def get_track_by_provider_id(provider: str, provider_id: str) -> Optional[Dict[s
         Track dict or None if not found
     """
     column_map = {
-        'soundcloud': 'soundcloud_id',
-        'spotify': 'spotify_id',
-        'youtube': 'youtube_id'
+        "soundcloud": "soundcloud_id",
+        "spotify": "spotify_id",
+        "youtube": "youtube_id",
     }
 
     column = column_map.get(provider)
@@ -1877,6 +2103,46 @@ def get_track_tags(
         return [dict(row) for row in cursor.fetchall()]
 
 
+def get_track_tags_batch(
+    track_ids: List[int], include_blacklisted: bool = False
+) -> Dict[int, List[Dict[str, Any]]]:
+    """Get tags for multiple tracks in a single query.
+
+    Args:
+        track_ids: List of track IDs to fetch tags for
+        include_blacklisted: Include blacklisted tags in results
+
+    Returns:
+        Dictionary mapping track_id to list of tag dictionaries
+    """
+    from collections import defaultdict
+
+    if not track_ids:
+        return {}
+
+    result: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
+    blacklist_filter = "" if include_blacklisted else "AND blacklisted = FALSE"
+
+    with get_db_connection() as conn:
+        placeholders = ",".join("?" * len(track_ids))
+        cursor = conn.execute(
+            f"""
+            SELECT track_id, tag_name, source, confidence, created_at, blacklisted, reasoning
+            FROM tags
+            WHERE track_id IN ({placeholders}) {blacklist_filter}
+            ORDER BY track_id, created_at DESC
+        """,
+            track_ids,
+        )
+
+        for row in cursor.fetchall():
+            row_dict = dict(row)
+            track_id = row_dict.pop("track_id")
+            result[track_id].append(row_dict)
+
+    return dict(result)
+
+
 def blacklist_tag(track_id: int, tag_name: str) -> bool:
     """Blacklist a tag for a specific track. Returns True if tag was found and blacklisted."""
     with get_db_connection() as conn:
@@ -2183,17 +2449,15 @@ def update_track_metadata(track_id: int, **fields) -> bool:
 
     with get_db_connection() as conn:
         # Get local_path for file writing
-        cursor = conn.execute(
-            "SELECT local_path FROM tracks WHERE id = ?", (track_id,)
-        )
+        cursor = conn.execute("SELECT local_path FROM tracks WHERE id = ?", (track_id,))
         row = cursor.fetchone()
         local_path = row["local_path"] if row else None
 
-        # Update database
+        # Update database with metadata_updated_at timestamp
         conn.execute(
             f"""
             UPDATE tracks
-            SET {set_clause}
+            SET {set_clause}, metadata_updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         """,
             values,
@@ -2220,7 +2484,11 @@ def update_track_metadata(track_id: int, **fields) -> bool:
             }
 
             # Only pass non-None values that were actually updated
-            file_fields = {k: v for k, v in file_fields.items() if k in fields or (k == "key" and "key_signature" in fields)}
+            file_fields = {
+                k: v
+                for k, v in file_fields.items()
+                if k in fields or (k == "key" and "key_signature" in fields)
+            }
 
             if file_fields:
                 write_metadata_to_file(local_path, **file_fields)
