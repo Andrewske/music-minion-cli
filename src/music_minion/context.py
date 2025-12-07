@@ -6,7 +6,7 @@ mutable state accessed via import hacks.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any, Callable
+from typing import Optional, Any, Callable
 
 try:
     from rich.console import Console
@@ -38,19 +38,25 @@ class AppContext:
     config: Config
 
     # State
-    music_tracks: List[Track]
+    music_tracks: list[Track]
     player_state: PlayerState
 
     # UI
     console: Optional[Console] = None
-    provider_states: Dict[str, Any] = field(default_factory=dict)  # Provider auth states (SoundCloud, Spotify, etc.)
-    spotify_player: Optional[Any] = None  # SpotifyPlayer instance (reused across polls for caching)
-    ui_action: Optional[Dict[str, Any]] = field(default=None)
-    ui_mode: str = 'cli'  # 'cli' or 'blessed'
-    update_ui_state: Optional[Callable[[Dict[str, Any]], None]] = field(default=None)  # Thread-safe UIState updater
+    provider_states: dict[str, Any] = field(
+        default_factory=dict
+    )  # Provider auth states (SoundCloud, Spotify, etc.)
+    spotify_player: Optional[Any] = (
+        None  # SpotifyPlayer instance (reused across polls for caching)
+    )
+    ui_action: Optional[dict[str, Any]] = field(default=None)
+    ui_mode: str = "cli"  # 'cli' or 'blessed'
+    update_ui_state: Optional[Callable[[dict[str, Any]], None]] = field(
+        default=None
+    )  # Thread-safe UIState updater
 
     @classmethod
-    def create(cls, config: Config, console: Optional[Console] = None) -> 'AppContext':
+    def create(cls, config: Config, console: Optional[Console] = None) -> "AppContext":
         """Create initial application context.
 
         Args:
@@ -68,11 +74,11 @@ class AppContext:
             spotify_player=None,
             console=console,
             ui_action=None,
-            ui_mode='cli',
+            ui_mode="cli",
             update_ui_state=None,
         )
 
-    def with_tracks(self, tracks: List[Track]) -> 'AppContext':
+    def with_tracks(self, tracks: list[Track]) -> "AppContext":
         """Return new context with updated tracks.
 
         Args:
@@ -93,7 +99,7 @@ class AppContext:
             update_ui_state=self.update_ui_state,
         )
 
-    def with_player_state(self, state: PlayerState) -> 'AppContext':
+    def with_player_state(self, state: PlayerState) -> "AppContext":
         """Return new context with updated player state.
 
         Args:
@@ -114,7 +120,7 @@ class AppContext:
             update_ui_state=self.update_ui_state,
         )
 
-    def with_config(self, config: Config) -> 'AppContext':
+    def with_config(self, config: Config) -> "AppContext":
         """Return new context with updated configuration.
 
         Args:
@@ -135,7 +141,7 @@ class AppContext:
             update_ui_state=self.update_ui_state,
         )
 
-    def with_provider_states(self, provider_states: Dict[str, Any]) -> 'AppContext':
+    def with_provider_states(self, provider_states: dict[str, Any]) -> "AppContext":
         """Return new context with updated provider states.
 
         Args:
@@ -156,7 +162,7 @@ class AppContext:
             update_ui_state=self.update_ui_state,
         )
 
-    def with_ui_action(self, action: Optional[Dict[str, Any]]) -> 'AppContext':
+    def with_ui_action(self, action: Optional[dict[str, Any]]) -> "AppContext":
         """Return new context with UI action signal.
 
         Args:

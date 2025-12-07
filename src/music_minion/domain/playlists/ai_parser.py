@@ -6,12 +6,16 @@ structured filter rules for smart playlists.
 
 import json
 import time
-from typing import List, Dict, Any, Tuple, TypedDict
+from typing import Any, TypedDict
 
 from music_minion.domain.ai import get_api_key, AIError
 from .filters import (
-    VALID_FIELDS, TEXT_OPERATORS, NUMERIC_OPERATORS,
-    NUMERIC_FIELDS, TEXT_FIELDS, validate_filter
+    VALID_FIELDS,
+    TEXT_OPERATORS,
+    NUMERIC_OPERATORS,
+    NUMERIC_FIELDS,
+    TEXT_FIELDS,
+    validate_filter,
 )
 
 
@@ -23,25 +27,28 @@ DEFAULT_CONJUNCTION = CONJUNCTION_AND
 
 # Operator display mapping for prettier output
 OPERATOR_DISPLAY_MAP = {
-    'gte': '>=',
-    'lte': '<=',
-    'gt': '>',
-    'lt': '<',
-    'starts_with': 'starts with',
-    'ends_with': 'ends with',
-    'not_equals': '!=',
+    "gte": ">=",
+    "lte": "<=",
+    "gt": ">",
+    "lt": "<",
+    "starts_with": "starts with",
+    "ends_with": "ends with",
+    "not_equals": "!=",
 }
 
 
 class FilterDict(TypedDict):
     """Type definition for filter dictionary."""
+
     field: str
     operator: str
     value: str
     conjunction: str
 
 
-def parse_natural_language_to_filters(description: str) -> Tuple[List[FilterDict], Dict[str, Any]]:
+def parse_natural_language_to_filters(
+    description: str,
+) -> tuple[list[FilterDict], dict[str, Any]]:
     """Parse natural language description into structured filter rules using AI.
 
     Args:
@@ -104,9 +111,7 @@ Parse this into filter rules following the schema provided in the instructions."
     try:
         # Make API request using Responses API
         response = client.responses.create(
-            model="gpt-4o-mini",
-            instructions=instruction,
-            input=input_text
+            model="gpt-4o-mini", instructions=instruction, input=input_text
         )
 
         end_time = time.time()
@@ -131,19 +136,19 @@ Parse this into filter rules following the schema provided in the instructions."
         # Validate each filter has required keys
         for i, f in enumerate(filters):
             if not isinstance(f, dict):
-                raise AIError(f"Filter {i+1} is not a dictionary: {type(f)}")
+                raise AIError(f"Filter {i + 1} is not a dictionary: {type(f)}")
 
-            required_keys = {'field', 'operator', 'value', 'conjunction'}
+            required_keys = {"field", "operator", "value", "conjunction"}
             missing_keys = required_keys - set(f.keys())
             if missing_keys:
-                raise AIError(f"Filter {i+1} missing keys: {missing_keys}")
+                raise AIError(f"Filter {i + 1} missing keys: {missing_keys}")
 
         # Build request metadata
         request_metadata = {
-            'prompt_tokens': response.usage.input_tokens,
-            'completion_tokens': response.usage.output_tokens,
-            'response_time_ms': response_time_ms,
-            'success': True
+            "prompt_tokens": response.usage.input_tokens,
+            "completion_tokens": response.usage.output_tokens,
+            "response_time_ms": response_time_ms,
+            "success": True,
         }
 
         return filters, request_metadata
@@ -155,7 +160,7 @@ Parse this into filter rules following the schema provided in the instructions."
         raise AIError(f"Unexpected error: {str(e)}")
 
 
-def format_filters_for_preview(filters: List[FilterDict]) -> str:
+def format_filters_for_preview(filters: list[FilterDict]) -> str:
     """Format filter list as numbered display for preview.
 
     Args:
@@ -174,16 +179,16 @@ def format_filters_for_preview(filters: List[FilterDict]) -> str:
 
     lines = []
     for i, f in enumerate(filters, 1):
-        field = f['field']
-        operator = f['operator']
-        value = f['value']
-        conjunction = f.get('conjunction', DEFAULT_CONJUNCTION)
+        field = f["field"]
+        operator = f["operator"]
+        value = f["value"]
+        conjunction = f.get("conjunction", DEFAULT_CONJUNCTION)
 
         # Format operator for display using mapping
-        op_display = OPERATOR_DISPLAY_MAP.get(operator, operator.replace('_', ' '))
+        op_display = OPERATOR_DISPLAY_MAP.get(operator, operator.replace("_", " "))
 
         # Format the line
-        line = f"{i}. {field} {op_display} \"{value}\""
+        line = f'{i}. {field} {op_display} "{value}"'
 
         # Add conjunction indicator for filters after the first
         if i > 1:
@@ -194,7 +199,7 @@ def format_filters_for_preview(filters: List[FilterDict]) -> str:
     return "\n".join(lines)
 
 
-def edit_filters_interactive(filters: List[FilterDict]) -> List[FilterDict]:
+def edit_filters_interactive(filters: list[FilterDict]) -> list[FilterDict]:
     """Interactive editor for filter list.
 
     Allows user to:
@@ -218,17 +223,19 @@ def edit_filters_interactive(filters: List[FilterDict]) -> List[FilterDict]:
 
         command = input("\nCommand: ").strip().lower()
 
-        if command == 'done':
+        if command == "done":
             break
 
-        elif command == 'add':
+        elif command == "add":
             # Add new filter
             print("\nAdding new filter...")
             print("Available fields: " + ", ".join(sorted(VALID_FIELDS)))
 
             field = input("Field: ").strip().lower()
             if field not in VALID_FIELDS:
-                print(f"❌ Invalid field. Must be one of: {', '.join(sorted(VALID_FIELDS))}")
+                print(
+                    f"❌ Invalid field. Must be one of: {', '.join(sorted(VALID_FIELDS))}"
+                )
                 continue
 
             # Show valid operators
@@ -250,26 +257,32 @@ def edit_filters_interactive(filters: List[FilterDict]) -> List[FilterDict]:
                 continue
 
             # Ask for conjunction
-            conjunction = 'AND'
+            conjunction = "AND"
             if filters:
-                conj_input = input("Combine with previous filters using AND or OR? [AND]: ").strip().upper()
-                if conj_input in ('AND', 'OR'):
+                conj_input = (
+                    input("Combine with previous filters using AND or OR? [AND]: ")
+                    .strip()
+                    .upper()
+                )
+                if conj_input in ("AND", "OR"):
                     conjunction = conj_input
 
             # Validate the filter
             try:
                 validate_filter(field, operator, value)
-                filters.append({
-                    'field': field,
-                    'operator': operator,
-                    'value': value,
-                    'conjunction': conjunction
-                })
+                filters.append(
+                    {
+                        "field": field,
+                        "operator": operator,
+                        "value": value,
+                        "conjunction": conjunction,
+                    }
+                )
                 print(f"✅ Added filter: {field} {operator} '{value}'")
             except ValueError as e:
                 print(f"❌ Validation error: {e}")
 
-        elif command.startswith('edit '):
+        elif command.startswith("edit "):
             # Edit existing filter
             try:
                 index = int(command.split()[1]) - 1
@@ -281,14 +294,18 @@ def edit_filters_interactive(filters: List[FilterDict]) -> List[FilterDict]:
                 continue
 
             current = filters[index]
-            print(f"\nEditing filter {index + 1}: {current['field']} {current['operator']} \"{current['value']}\"")
+            print(
+                f'\nEditing filter {index + 1}: {current["field"]} {current["operator"]} "{current["value"]}"'
+            )
 
             # Edit field
             field_input = input(f"Field [{current['field']}]: ").strip().lower()
-            field = field_input if field_input else current['field']
+            field = field_input if field_input else current["field"]
 
             if field not in VALID_FIELDS:
-                print(f"❌ Invalid field. Must be one of: {', '.join(sorted(VALID_FIELDS))}")
+                print(
+                    f"❌ Invalid field. Must be one of: {', '.join(sorted(VALID_FIELDS))}"
+                )
                 continue
 
             # Show valid operators for the field
@@ -300,8 +317,10 @@ def edit_filters_interactive(filters: List[FilterDict]) -> List[FilterDict]:
                 valid_ops = TEXT_OPERATORS
 
             # Edit operator
-            operator_input = input(f"Operator [{current['operator']}]: ").strip().lower()
-            operator = operator_input if operator_input else current['operator']
+            operator_input = (
+                input(f"Operator [{current['operator']}]: ").strip().lower()
+            )
+            operator = operator_input if operator_input else current["operator"]
 
             if operator not in valid_ops:
                 print(f"❌ Invalid operator for {field}")
@@ -309,29 +328,29 @@ def edit_filters_interactive(filters: List[FilterDict]) -> List[FilterDict]:
 
             # Edit value
             value_input = input(f"Value [{current['value']}]: ").strip()
-            value = value_input if value_input else current['value']
+            value = value_input if value_input else current["value"]
 
             # Edit conjunction (only if not first filter)
-            conjunction = current.get('conjunction', 'AND')
+            conjunction = current.get("conjunction", "AND")
             if index > 0:
                 conj_input = input(f"Conjunction [{conjunction}]: ").strip().upper()
-                if conj_input in ('AND', 'OR'):
+                if conj_input in ("AND", "OR"):
                     conjunction = conj_input
 
             # Validate the updated filter
             try:
                 validate_filter(field, operator, value)
                 filters[index] = {
-                    'field': field,
-                    'operator': operator,
-                    'value': value,
-                    'conjunction': conjunction
+                    "field": field,
+                    "operator": operator,
+                    "value": value,
+                    "conjunction": conjunction,
                 }
                 print(f"✅ Updated filter {index + 1}")
             except ValueError as e:
                 print(f"❌ Validation error: {e}")
 
-        elif command.startswith('remove '):
+        elif command.startswith("remove "):
             # Remove filter
             try:
                 index = int(command.split()[1]) - 1
@@ -343,10 +362,14 @@ def edit_filters_interactive(filters: List[FilterDict]) -> List[FilterDict]:
                 continue
 
             removed = filters.pop(index)
-            print(f"✅ Removed filter: {removed['field']} {removed['operator']} \"{removed['value']}\"")
+            print(
+                f'✅ Removed filter: {removed["field"]} {removed["operator"]} "{removed["value"]}"'
+            )
 
             if not filters:
-                print("⚠️  No filters remaining. Type 'add' to add filters or 'done' to exit.")
+                print(
+                    "⚠️  No filters remaining. Type 'add' to add filters or 'done' to exit."
+                )
 
         else:
             print("❌ Unknown command. Use: edit <n>, remove <n>, add, or done")

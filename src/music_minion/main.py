@@ -6,7 +6,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 from loguru import logger
 
@@ -36,6 +36,7 @@ file_watcher_handler = None
 # Global console for Rich output
 try:
     from rich.console import Console
+
     console = Console()
 except ImportError:
     # Fallback if Rich is not available
@@ -51,7 +52,6 @@ def safe_print(message: str, style: str = None) -> None:
             console.print(message)
     else:
         print(message)
-
 
 
 def _auto_sync_background(cfg: config.Config) -> None:
@@ -86,7 +86,7 @@ def interactive_mode_with_dashboard() -> None:
             target=_auto_sync_background,
             args=(current_config,),
             daemon=True,
-            name="AutoSyncThread"
+            name="AutoSyncThread",
         )
         sync_thread.start()
 
@@ -156,13 +156,21 @@ def interactive_mode_with_dashboard() -> None:
 
             # Get track ID from database
             track_id = database.get_or_create_track(
-                track.local_path, track.title, track.artist, track.remix_artist,
-                track.album, track.genre, track.year, track.duration, track.key, track.bpm
+                track.local_path,
+                track.title,
+                track.artist,
+                track.remix_artist,
+                track.album,
+                track.genre,
+                track.year,
+                track.duration,
+                track.key,
+                track.bpm,
             )
 
             # Get tags
             tags_data = database.get_track_tags(track_id)
-            tags = [t['tag_name'] for t in tags_data if not t.get('blacklisted', False)]
+            tags = [t["tag_name"] for t in tags_data if not t.get("blacklisted", False)]
 
             # Get latest rating
             ratings = database.get_track_ratings(track_id)
@@ -170,15 +178,15 @@ def interactive_mode_with_dashboard() -> None:
             if ratings:
                 # Convert rating type to numeric score
                 rating_map = {"archive": 0, "skip": 25, "like": 60, "love": 85}
-                latest_rating = rating_map.get(ratings[0]['rating_type'], 50)
+                latest_rating = rating_map.get(ratings[0]["rating_type"], 50)
 
             # Get notes
             notes_data = database.get_track_notes(track_id)
-            latest_note = notes_data[0]['note'] if notes_data else ""
+            latest_note = notes_data[0]["note"] if notes_data else ""
 
             # Get play stats
             play_count = len(ratings)
-            last_played = ratings[0]['created_at'] if ratings else None
+            last_played = ratings[0]["created_at"] if ratings else None
 
             return {
                 "tags": tags,
@@ -217,9 +225,14 @@ def interactive_mode_with_dashboard() -> None:
                     last_terminal_size = current_size
 
                 # Check if track changed
-                track_changed = dashboard_state["last_track"] != current_player_state.current_track
+                track_changed = (
+                    dashboard_state["last_track"] != current_player_state.current_track
+                )
                 if track_changed:
-                    if dashboard_state["last_track"] and current_player_state.current_track:
+                    if (
+                        dashboard_state["last_track"]
+                        and current_player_state.current_track
+                    ):
                         # Get proper track info for previous track display
                         prev_track_info = get_current_track_metadata()
                         if prev_track_info:
@@ -229,7 +242,12 @@ def interactive_mode_with_dashboard() -> None:
                 # Determine if we should update
                 force_update = dashboard_state["should_update"]
                 time_based_update = (current_time - last_update_time) >= 1.0
-                should_update = force_update or track_changed or terminal_resized or time_based_update
+                should_update = (
+                    force_update
+                    or track_changed
+                    or terminal_resized
+                    or time_based_update
+                )
 
                 if should_update:
                     # Get metadata and database info
@@ -238,7 +256,12 @@ def interactive_mode_with_dashboard() -> None:
 
                     # Update the live dashboard
                     try:
-                        dashboard = ui.render_dashboard(current_player_state, track_metadata, db_info, console.size.width)
+                        dashboard = ui.render_dashboard(
+                            current_player_state,
+                            track_metadata,
+                            db_info,
+                            console.size.width,
+                        )
 
                         # Only update in interactive terminals with proper support
                         if console.is_terminal and not console.is_dumb_terminal:
@@ -269,6 +292,7 @@ def interactive_mode_with_dashboard() -> None:
 
                                 # Add full-width colorful separator
                                 from rich.text import Text
+
                                 separator_text = Text()
                                 for i in range(console.size.width):
                                     if i % 3 == 0:
@@ -297,7 +321,14 @@ def interactive_mode_with_dashboard() -> None:
                     last_update_time = current_time
 
                 # Update more frequently during playback
-                update_interval = 1.0 if (current_player_state.is_playing and current_player_state.current_track) else 3.0
+                update_interval = (
+                    1.0
+                    if (
+                        current_player_state.is_playing
+                        and current_player_state.current_track
+                    )
+                    else 3.0
+                )
                 time.sleep(update_interval)
 
             except Exception:
@@ -313,8 +344,12 @@ def interactive_mode_with_dashboard() -> None:
 
     # Show welcome message in command area
     console.print("[bold green]Welcome to Music Minion CLI![/bold green]")
-    console.print("Type 'help' for available commands, '/' for command palette, or 'quit' to exit.")
-    console.print("💡 [dim]Tip: Use Tab for autocomplete, type to search playlists and commands[/dim]")
+    console.print(
+        "Type 'help' for available commands, '/' for command palette, or 'quit' to exit."
+    )
+    console.print(
+        "💡 [dim]Tip: Use Tab for autocomplete, type to search playlists and commands[/dim]"
+    )
     console.print()
 
     # Start background dashboard updater
@@ -347,7 +382,7 @@ def interactive_mode_with_dashboard() -> None:
                     continue
 
                 # Strip leading / if present
-                if user_input.startswith('/'):
+                if user_input.startswith("/"):
                     user_input = user_input[1:]
 
                 command, args = parsers.parse_command(user_input)
@@ -373,7 +408,17 @@ def interactive_mode_with_dashboard() -> None:
                     break
 
                 # For state-changing commands, update dashboard immediately
-                state_changing_commands = ["play", "pause", "resume", "stop", "skip", "archive", "like", "love", "note"]
+                state_changing_commands = [
+                    "play",
+                    "pause",
+                    "resume",
+                    "stop",
+                    "skip",
+                    "archive",
+                    "like",
+                    "love",
+                    "note",
+                ]
                 if command in state_changing_commands:
                     # Trigger immediate dashboard update
                     dashboard_state["should_update"] = True
@@ -382,11 +427,18 @@ def interactive_mode_with_dashboard() -> None:
                     try:
                         # Update player state first
                         if current_player_state.process:
-                            current_player_state = playback.update_player_status(current_player_state)
+                            current_player_state = playback.update_player_status(
+                                current_player_state
+                            )
 
                         track_metadata = get_current_track_metadata()
                         db_info = get_current_track_db_info()
-                        dashboard = ui.render_dashboard(current_player_state, track_metadata, db_info, console.size.width)
+                        dashboard = ui.render_dashboard(
+                            current_player_state,
+                            track_metadata,
+                            db_info,
+                            console.size.width,
+                        )
 
                         # Show updated dashboard after state change
                         console.print("\n" + "─" * console.size.width)
@@ -396,14 +448,18 @@ def interactive_mode_with_dashboard() -> None:
 
                         # Also trigger the background updater to update the top dashboard
                         dashboard_state["should_update"] = True
-                        dashboard_state["last_track"] = current_player_state.current_track
+                        dashboard_state["last_track"] = (
+                            current_player_state.current_track
+                        )
 
                     except Exception as e:
                         # Silently handle errors
                         pass
 
             except KeyboardInterrupt:
-                console.print("\n[yellow]Use 'quit' or 'exit' to leave gracefully.[/yellow]")
+                console.print(
+                    "\n[yellow]Use 'quit' or 'exit' to leave gracefully.[/yellow]"
+                )
             except EOFError:
                 console.print("\n[green]Goodbye![/green]")
                 break
@@ -438,13 +494,14 @@ def interactive_mode_blessed() -> None:
             target=_auto_sync_background,
             args=(current_config,),
             daemon=True,
-            name="AutoSyncThread"
+            name="AutoSyncThread",
         )
         sync_thread.start()
 
     # Run blessed UI with AppContext
     try:
         from .ui.blessed import run_interactive_ui
+
         ctx = run_interactive_ui(ctx)
         # Sync updated context back to globals
         helpers.sync_context_to_globals(ctx)
@@ -466,14 +523,19 @@ def interactive_mode() -> None:
 
     # Initialize logging from config
     from music_minion.core.config import get_data_dir
-    log_file = Path(current_config.logging.log_file) if current_config.logging.log_file else (get_data_dir() / "music-minion.log")
+
+    log_file = (
+        Path(current_config.logging.log_file)
+        if current_config.logging.log_file
+        else (get_data_dir() / "music-minion.log")
+    )
     setup_loguru(log_file, level=current_config.logging.level)
 
     # Run database migrations on startup
     database.init_database()
 
     # Setup hot-reload if --dev flag was passed
-    dev_mode = os.environ.get('MUSIC_MINION_DEV_MODE') == '1'
+    dev_mode = os.environ.get("MUSIC_MINION_DEV_MODE") == "1"
 
     if dev_mode:
         try:
@@ -494,7 +556,9 @@ def interactive_mode() -> None:
             else:
                 safe_print("⚠️  Hot-reload setup failed", style="yellow")
         except ImportError:
-            safe_print("⚠️  watchdog not installed - hot-reload disabled", style="yellow")
+            safe_print(
+                "⚠️  watchdog not installed - hot-reload disabled", style="yellow"
+            )
             safe_print("   Install with: uv pip install watchdog", style="dim")
 
     # Auto-sync is now handled by blessed UI after first render (instant startup)
@@ -507,7 +571,9 @@ def interactive_mode() -> None:
             interactive_mode_blessed()
         except ImportError as e:
             # blessed not available, fall back to old dashboard
-            print(f"⚠️  blessed UI not available ({e}), falling back to legacy dashboard")
+            print(
+                f"⚠️  blessed UI not available ({e}), falling back to legacy dashboard"
+            )
             try:
                 interactive_mode_with_dashboard()
             except Exception:
@@ -517,11 +583,13 @@ def interactive_mode() -> None:
             # Clean up file watcher if enabled
             if file_watcher_observer:
                 from . import dev_reload
+
                 dev_reload.stop_file_watcher(file_watcher_observer)
         return
 
     # Fallback to simple mode with Rich Console for consistent styling
     from rich.console import Console
+
     console_instance = Console()
 
     # Create initial application context
@@ -544,12 +612,15 @@ def interactive_mode() -> None:
             if file_watcher_handler:
                 try:
                     from . import dev_reload
+
                     ready_files = file_watcher_handler.check_pending_changes()
                     for filepath in ready_files:
                         success = dev_reload.reload_module(filepath)
                         if success:
                             filename = Path(filepath).name
-                            console_instance.print(f"🔄 Reloaded: {filename}", style="cyan")
+                            console_instance.print(
+                                f"🔄 Reloaded: {filename}", style="cyan"
+                            )
                 except Exception:
                     pass  # Silently ignore reload errors
 
@@ -566,7 +637,9 @@ def interactive_mode() -> None:
                 current_config = ctx.config
 
             except KeyboardInterrupt:
-                console_instance.print("\n[yellow]Use 'quit' or 'exit' to leave gracefully.[/yellow]")
+                console_instance.print(
+                    "\n[yellow]Use 'quit' or 'exit' to leave gracefully.[/yellow]"
+                )
             except EOFError:
                 console_instance.print("\n[green]Goodbye![/green]")
                 break
@@ -574,11 +647,11 @@ def interactive_mode() -> None:
     except Exception as e:
         console_instance.print(f"[red]An unexpected error occurred: {e}[/red]")
         import sys
+
         sys.exit(1)
     finally:
         # Clean up file watcher if enabled
         if file_watcher_observer:
             from . import dev_reload
+
             dev_reload.stop_file_watcher(file_watcher_observer)
-
-

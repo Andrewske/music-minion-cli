@@ -6,11 +6,12 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from loguru import logger
 
 from .config import get_data_dir
+from ..domain.library.models import Track
 
 
 # Database schema version for migrations
@@ -1133,7 +1134,7 @@ def has_soundcloud_like(track_id: int) -> bool:
         return bool(cursor.fetchone()[0])
 
 
-def batch_add_soundcloud_likes(track_ids: List[int]) -> int:
+def batch_add_soundcloud_likes(track_ids: list[int]) -> int:
     """Bulk insert SoundCloud like markers for multiple tracks.
 
     Args:
@@ -1177,7 +1178,7 @@ def batch_add_soundcloud_likes(track_ids: List[int]) -> int:
     return inserted_count
 
 
-def batch_add_spotify_likes(track_ids: List[int]) -> int:
+def batch_add_spotify_likes(track_ids: list[int]) -> int:
     """Bulk insert Spotify like markers for multiple tracks.
 
     Args:
@@ -1260,7 +1261,7 @@ def end_playback_session(
         conn.commit()
 
 
-def get_track_ratings(track_id: int) -> List[Dict[str, Any]]:
+def get_track_ratings(track_id: int) -> list[dict[str, Any]]:
     """Get all ratings for a track."""
     with get_db_connection() as conn:
         cursor = conn.execute(
@@ -1275,7 +1276,7 @@ def get_track_ratings(track_id: int) -> List[Dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
 
 
-def get_track_notes(track_id: int) -> List[Dict[str, Any]]:
+def get_track_notes(track_id: int) -> list[dict[str, Any]]:
     """Get all notes for a track."""
     with get_db_connection() as conn:
         cursor = conn.execute(
@@ -1290,7 +1291,7 @@ def get_track_notes(track_id: int) -> List[Dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
 
 
-def get_recent_ratings(limit: int = 10) -> List[Dict[str, Any]]:
+def get_recent_ratings(limit: int = 10) -> list[dict[str, Any]]:
     """Get recent ratings across all tracks."""
     with get_db_connection() as conn:
         cursor = conn.execute(
@@ -1308,7 +1309,7 @@ def get_recent_ratings(limit: int = 10) -> List[Dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
 
 
-def get_rating_history(limit: int = 100) -> List[Dict[str, Any]]:
+def get_rating_history(limit: int = 100) -> list[dict[str, Any]]:
     """Get rating history with full track information for interactive review.
 
     Args:
@@ -1382,7 +1383,7 @@ def delete_rating_by_id(rating_id: int) -> bool:
 
 def get_recent_playback_sessions(
     limit: int = 50, source_filter: Optional[str] = None
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Get recent listening sessions with track metadata.
 
     Args:
@@ -1398,7 +1399,7 @@ def get_recent_playback_sessions(
     with get_db_connection() as conn:
         # Build WHERE clause for source filtering
         where_clause = ""
-        params: List[Any] = []
+        params: list[Any] = []
 
         if source_filter and source_filter != "all":
             where_clause = "WHERE t.source = ?"
@@ -1425,7 +1426,7 @@ def get_recent_playback_sessions(
         return [dict(row) for row in cursor.fetchall()]
 
 
-def get_archived_tracks() -> List[int]:
+def get_archived_tracks() -> list[int]:
     """Get list of track IDs that have been archived."""
     with get_db_connection() as conn:
         cursor = conn.execute("""
@@ -1436,7 +1437,7 @@ def get_archived_tracks() -> List[int]:
         return [row["track_id"] for row in cursor.fetchall()]
 
 
-def get_rating_patterns(track_id: int) -> Dict[str, Any]:
+def get_rating_patterns(track_id: int) -> dict[str, Any]:
     """Get rating patterns for a track (time-based preferences)."""
     with get_db_connection() as conn:
         # Get hourly preferences
@@ -1482,7 +1483,7 @@ def get_rating_patterns(track_id: int) -> Dict[str, Any]:
         return {"hourly": hourly_patterns, "daily": daily_patterns}
 
 
-def get_library_analytics() -> Dict[str, Any]:
+def get_library_analytics() -> dict[str, Any]:
     """Get analytics about the music library and ratings."""
     with get_db_connection() as conn:
         # Basic counts
@@ -1608,7 +1609,7 @@ def tick_listen_session(session_id: int, is_playing: bool) -> None:
             conn.commit()
 
 
-def get_track_listen_stats(track_id: int) -> Dict[str, Any]:
+def get_track_listen_stats(track_id: int) -> dict[str, Any]:
     """Get listening statistics for a track.
 
     Args:
@@ -1658,7 +1659,7 @@ def get_daily_listening_time(play_date: Optional[str] = None) -> float:
         return row["total_seconds"] or 0.0 if row else 0.0
 
 
-def get_top_tracks_by_time(days: int = 30, limit: int = 20) -> List[Dict[str, Any]]:
+def get_top_tracks_by_time(days: int = 30, limit: int = 20) -> list[dict[str, Any]]:
     """Get top tracks by listening time in the last N days.
 
     Args:
@@ -1685,7 +1686,7 @@ def get_top_tracks_by_time(days: int = 30, limit: int = 20) -> List[Dict[str, An
         return [dict(row) for row in cursor.fetchall()]
 
 
-def get_playlist_listening_stats(playlist_id: int) -> Dict[str, Any]:
+def get_playlist_listening_stats(playlist_id: int) -> dict[str, Any]:
     """Get listening statistics for a playlist.
 
     Args:
@@ -1713,7 +1714,28 @@ def get_playlist_listening_stats(playlist_id: int) -> Dict[str, Any]:
         return {}
 
 
-def get_track_by_path(local_path: str) -> Optional[Dict[str, Any]]:
+def get_playlist_listening_stats_grouped() -> list[dict[str, Any]]:
+    """Get listening statistics grouped by playlist.
+
+    Returns:
+        List of dicts with: playlist_id, sessions, total_seconds
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT
+                playlist_id,
+                COUNT(*) as sessions,
+                SUM(seconds_played) as total_seconds
+            FROM track_listen_sessions
+            WHERE playlist_id IS NOT NULL
+            GROUP BY playlist_id
+        """
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def get_track_by_path(local_path: str) -> Optional[dict[str, Any]]:
     """Get track information by file path."""
     with get_db_connection() as conn:
         cursor = conn.execute(
@@ -1727,7 +1749,7 @@ def get_track_by_path(local_path: str) -> Optional[Dict[str, Any]]:
         return dict(row) if row else None
 
 
-def get_track_by_id(track_id: int) -> Optional[Dict[str, Any]]:
+def get_track_by_id(track_id: int) -> Optional[dict[str, Any]]:
     """Get track information by ID."""
     with get_db_connection() as conn:
         cursor = conn.execute(
@@ -1742,7 +1764,7 @@ def get_track_by_id(track_id: int) -> Optional[Dict[str, Any]]:
 
 def get_track_by_provider_id(
     provider: str, provider_id: str
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """Get track information by provider ID.
 
     Args:
@@ -1773,7 +1795,7 @@ def get_track_by_provider_id(
         return dict(row) if row else None
 
 
-def get_track_path_to_id_map() -> Dict[str, int]:
+def get_track_path_to_id_map() -> dict[str, int]:
     """Get mapping of file_path to track_id for all tracks in database.
 
     This is optimized for bulk lookups to avoid N+1 query problems.
@@ -1791,7 +1813,7 @@ def get_track_path_to_id_map() -> Dict[str, int]:
         return result
 
 
-def batch_upsert_tracks(tracks: List[Any]) -> Tuple[int, int]:
+def batch_upsert_tracks(tracks: list[Any]) -> tuple[int, int]:
     """Batch insert or update tracks in database (optimized for large libraries).
 
     This function is 30-50x faster than individual get_or_create_track() calls
@@ -1801,7 +1823,7 @@ def batch_upsert_tracks(tracks: List[Any]) -> Tuple[int, int]:
         tracks: List of Track objects from domain.library.models
 
     Returns:
-        Tuple of (added_count, updated_count)
+        tuple of (added_count, updated_count)
     """
     if not tracks:
         return 0, 0
@@ -1900,7 +1922,7 @@ def update_ai_processed_note(note_id: int, ai_tags: str) -> None:
         conn.commit()
 
 
-def get_unprocessed_notes() -> List[Dict[str, Any]]:
+def get_unprocessed_notes() -> list[dict[str, Any]]:
     """Get notes that haven't been processed by AI yet."""
     with get_db_connection() as conn:
         cursor = conn.execute("""
@@ -1915,7 +1937,7 @@ def get_unprocessed_notes() -> List[Dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
 
 
-def get_all_tracks() -> List[Dict[str, Any]]:
+def get_all_tracks() -> list[dict[str, Any]]:
     """Get all tracks from the database."""
     with get_db_connection() as conn:
         cursor = conn.execute("""
@@ -1926,8 +1948,8 @@ def get_all_tracks() -> List[Dict[str, Any]]:
 
 
 def filter_tracks_by_library(
-    tracks: List[Dict[str, Any]], library: str
-) -> List[Dict[str, Any]]:
+    tracks: list[dict[str, Any]], library: str
+) -> list[dict[str, Any]]:
     """Filter tracks to those belonging to the specified library/provider.
 
     Args:
@@ -1949,7 +1971,7 @@ def filter_tracks_by_library(
         return tracks
 
 
-def get_available_track_paths() -> List[str]:
+def get_available_track_paths() -> list[str]:
     """Get file paths of tracks that are not archived."""
     with get_db_connection() as conn:
         cursor = conn.execute("""
@@ -1962,7 +1984,7 @@ def get_available_track_paths() -> List[str]:
         return [row["local_path"] for row in cursor.fetchall()]
 
 
-def get_available_tracks() -> List[Dict[str, Any]]:
+def get_available_tracks() -> list[dict[str, Any]]:
     """Get all tracks that are not archived."""
     with get_db_connection() as conn:
         cursor = conn.execute("""
@@ -1975,7 +1997,7 @@ def get_available_tracks() -> List[Dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
 
 
-def get_all_tracks_with_metadata() -> List[Dict[str, Any]]:
+def get_all_tracks_with_metadata() -> list[dict[str, Any]]:
     """Get all tracks with tags, notes, ratings, and play counts for search.
 
     Single optimized query with JOINs and aggregations for fast search pre-loading.
@@ -2021,8 +2043,8 @@ def get_all_tracks_with_metadata() -> List[Dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
 
 
-def db_track_to_library_track(db_track: Dict[str, Any]):
-    """Convert database track record to library.Track object."""
+def db_track_to_library_track(db_track: dict[str, Any]) -> Track:
+    """Convert database track record to Track object."""
     # Import here to avoid circular imports
     from ..domain import library
 
@@ -2056,10 +2078,10 @@ def db_track_to_library_track(db_track: Dict[str, Any]):
 
 def add_tags(
     track_id: int,
-    tags: List[str],
+    tags: list[str],
     source: str = "user",
     confidence: Optional[float] = None,
-    reasoning: Optional[Dict[str, str]] = None,
+    reasoning: Optional[dict[str, str]] = None,
 ) -> None:
     """Add multiple tags to a track.
 
@@ -2086,7 +2108,7 @@ def add_tags(
 
 def get_track_tags(
     track_id: int, include_blacklisted: bool = False
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Get all tags for a track."""
     blacklist_filter = "" if include_blacklisted else "AND blacklisted = FALSE"
 
@@ -2104,8 +2126,8 @@ def get_track_tags(
 
 
 def get_track_tags_batch(
-    track_ids: List[int], include_blacklisted: bool = False
-) -> Dict[int, List[Dict[str, Any]]]:
+    track_ids: list[int], include_blacklisted: bool = False
+) -> dict[int, list[dict[str, Any]]]:
     """Get tags for multiple tracks in a single query.
 
     Args:
@@ -2120,7 +2142,7 @@ def get_track_tags_batch(
     if not track_ids:
         return {}
 
-    result: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
+    result: dict[int, list[dict[str, Any]]] = defaultdict(list)
     blacklist_filter = "" if include_blacklisted else "AND blacklisted = FALSE"
 
     with get_db_connection() as conn:
@@ -2219,7 +2241,7 @@ def log_ai_request(
         return cursor.lastrowid
 
 
-def get_ai_usage_stats(days: Optional[int] = None) -> Dict[str, Any]:
+def get_ai_usage_stats(days: Optional[int] = None) -> dict[str, Any]:
     """Get AI usage statistics. If days is provided, filter to last N days."""
     date_filter = ""
     params = []
@@ -2298,7 +2320,7 @@ def get_ai_usage_stats(days: Optional[int] = None) -> Dict[str, Any]:
         return stats
 
 
-def get_tracks_needing_analysis() -> List[Dict[str, Any]]:
+def get_tracks_needing_analysis() -> list[dict[str, Any]]:
     """Get tracks that need AI analysis (have notes but no AI tags)."""
     with get_db_connection() as conn:
         cursor = conn.execute("""
@@ -2318,7 +2340,7 @@ def get_tracks_needing_analysis() -> List[Dict[str, Any]]:
 
 
 def save_provider_state(
-    provider: str, auth_data: Dict[str, Any], config: Dict[str, Any]
+    provider: str, auth_data: dict[str, Any], config: dict[str, Any]
 ) -> None:
     """Save provider authentication state to database.
 
@@ -2340,7 +2362,7 @@ def save_provider_state(
         conn.commit()
 
 
-def load_provider_state(provider: str) -> Optional[Dict[str, Any]]:
+def load_provider_state(provider: str) -> Optional[dict[str, Any]]:
     """Load provider authentication state from database.
 
     Args:

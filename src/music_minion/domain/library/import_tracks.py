@@ -5,14 +5,14 @@ Handles importing tracks from external providers (SoundCloud, Spotify, etc.)
 without deduplication - creates records with source=provider.
 """
 
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 from ...core import database
 
 
 def batch_insert_provider_tracks(
-    provider_tracks: List[Tuple[str, Dict[str, Any]]], provider: str
-) -> Dict[str, int]:
+    provider_tracks: list[tuple[str, dict[str, Any]]], provider: str
+) -> dict[str, int]:
     """Batch insert provider tracks without deduplication.
 
     Creates new track records with source=provider for all incoming tracks.
@@ -30,9 +30,11 @@ def batch_insert_provider_tracks(
         ValueError: If provider name is invalid
     """
     # Whitelist validation to prevent SQL injection
-    VALID_PROVIDERS = {'soundcloud', 'spotify', 'youtube'}
+    VALID_PROVIDERS = {"soundcloud", "spotify", "youtube"}
     if provider not in VALID_PROVIDERS:
-        raise ValueError(f"Invalid provider: {provider}. Must be one of: {VALID_PROVIDERS}")
+        raise ValueError(
+            f"Invalid provider: {provider}. Must be one of: {VALID_PROVIDERS}"
+        )
 
     if not provider_tracks:
         return {"created": 0, "skipped": 0, "total": 0}
@@ -86,14 +88,13 @@ def batch_insert_provider_tracks(
 
     # Build field list dynamically based on first record
     fields = list(to_insert[0].keys())
-    placeholders = ", ".join(["?" for _ in fields])  # Use positional placeholders for executemany
+    placeholders = ", ".join(
+        ["?" for _ in fields]
+    )  # Use positional placeholders for executemany
     fields_str = ", ".join(fields)
 
     # OPTIMIZATION: Convert dict records to tuples for executemany
-    insert_tuples = [
-        tuple(record[field] for field in fields)
-        for record in to_insert
-    ]
+    insert_tuples = [tuple(record[field] for field in fields) for record in to_insert]
 
     with database.get_db_connection() as conn:
         try:

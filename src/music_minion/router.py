@@ -4,8 +4,6 @@ Command routing for Music Minion CLI.
 Routes user commands to appropriate handler functions.
 """
 
-from typing import List, Tuple
-
 from loguru import logger
 
 from music_minion.context import AppContext
@@ -167,8 +165,8 @@ Examples:
 
 
 def handle_command(
-    ctx: AppContext, command: str, args: List[str]
-) -> Tuple[AppContext, bool]:
+    ctx: AppContext, command: str, args: list[str]
+) -> tuple[AppContext, bool]:
     """
     Handle a single command with explicit state passing.
 
@@ -377,9 +375,13 @@ def handle_command(
         if not args:
             return library.switch_active_library(ctx, "soundcloud")
         elif args[0] == "auth":
-            return library.handle_library_command(ctx, ["auth", "soundcloud"] + args[1:])
+            return library.handle_library_command(
+                ctx, ["auth", "soundcloud"] + args[1:]
+            )
         elif args[0] == "sync":
-            return library.handle_library_command(ctx, ["sync", "soundcloud"] + args[1:])
+            return library.handle_library_command(
+                ctx, ["sync", "soundcloud"] + args[1:]
+            )
         else:
             logger.warning(f"Unknown soundcloud subcommand: '{args[0]}'")
             log(

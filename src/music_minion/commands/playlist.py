@@ -9,7 +9,7 @@ import shlex
 import sys
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from music_minion import helpers
 from music_minion.context import AppContext
@@ -28,10 +28,10 @@ from music_minion.domain.playlists import importers as playlist_import
 # ============================================================================
 
 _conversion_state_lock = threading.Lock()
-_conversion_state: Optional[Dict[str, Any]] = None
+_conversion_state: Optional[dict[str, Any]] = None
 
 
-def get_conversion_state() -> Optional[Dict[str, Any]]:
+def get_conversion_state() -> Optional[dict[str, Any]]:
     """
     Get current playlist conversion state (thread-safe).
 
@@ -42,7 +42,7 @@ def get_conversion_state() -> Optional[Dict[str, Any]]:
         return _conversion_state.copy() if _conversion_state else None
 
 
-def _update_conversion_state(updates: Dict[str, Any]) -> None:
+def _update_conversion_state(updates: dict[str, Any]) -> None:
     """
     Update playlist conversion state (thread-safe, internal use only).
 
@@ -68,7 +68,7 @@ def _clear_conversion_state() -> None:
 # ============================================================================
 
 
-def handle_playlist_list_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+def handle_playlist_list_command(ctx: AppContext) -> tuple[AppContext, bool]:
     """
     Handle playlist command - signal UI to show playlist palette.
 
@@ -99,7 +99,7 @@ def handle_playlist_list_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     return ctx, True
 
 
-def smart_playlist_wizard(name: str, ctx: AppContext) -> Tuple[AppContext, bool]:
+def smart_playlist_wizard(name: str, ctx: AppContext) -> tuple[AppContext, bool]:
     """Interactive wizard for creating a smart playlist with filters.
 
     Args:
@@ -172,13 +172,13 @@ def smart_playlist_wizard(name: str, ctx: AppContext) -> Tuple[AppContext, bool]
         if field in playlist_filters.NUMERIC_FIELDS:
             log(
                 f"\nNumeric operators: {', '.join(sorted(playlist_filters.NUMERIC_OPERATORS))}",
-                level="info"
+                level="info",
             )
             valid_ops = playlist_filters.NUMERIC_OPERATORS
         else:
             log(
                 f"\nText operators: {', '.join(sorted(playlist_filters.TEXT_OPERATORS))}",
-                level="info"
+                level="info",
             )
             valid_ops = playlist_filters.TEXT_OPERATORS
 
@@ -287,7 +287,7 @@ def smart_playlist_wizard(name: str, ctx: AppContext) -> Tuple[AppContext, bool]
     return ctx, True
 
 
-def validate_filters_list(filters: List[playlist_ai.FilterDict]) -> List[str]:
+def validate_filters_list(filters: list[playlist_ai.FilterDict]) -> list[str]:
     """Validate all filters and return list of error messages.
 
     Args:
@@ -307,7 +307,7 @@ def validate_filters_list(filters: List[playlist_ai.FilterDict]) -> List[str]:
 
 def ai_smart_playlist_wizard(
     name: str, description: str, ctx: AppContext
-) -> Tuple[AppContext, bool]:
+) -> tuple[AppContext, bool]:
     """AI-powered wizard for creating a smart playlist from natural language.
 
     Args:
@@ -490,8 +490,8 @@ def ai_smart_playlist_wizard(
 
 
 def handle_playlist_new_command(
-    ctx: AppContext, args: List[str]
-) -> Tuple[AppContext, bool]:
+    ctx: AppContext, args: list[str]
+) -> tuple[AppContext, bool]:
     """Handle playlist new command - create a new playlists.
 
     Args:
@@ -588,8 +588,8 @@ def handle_playlist_new_command(
 
 
 def handle_playlist_delete_command(
-    ctx: AppContext, args: List[str]
-) -> Tuple[AppContext, bool]:
+    ctx: AppContext, args: list[str]
+) -> tuple[AppContext, bool]:
     """Handle playlist delete command - delete a playlists.
 
     Args:
@@ -634,8 +634,8 @@ def handle_playlist_delete_command(
 
 
 def handle_playlist_rename_command(
-    ctx: AppContext, args: List[str]
-) -> Tuple[AppContext, bool]:
+    ctx: AppContext, args: list[str]
+) -> tuple[AppContext, bool]:
     """Handle playlist rename command - rename a playlists."""
     if len(args) < 2:
         log("Error: Please specify old and new names", level="error")
@@ -673,8 +673,8 @@ def handle_playlist_rename_command(
 
 
 def handle_playlist_show_command(
-    ctx: AppContext, args: List[str]
-) -> Tuple[AppContext, bool]:
+    ctx: AppContext, args: list[str]
+) -> tuple[AppContext, bool]:
     """Handle playlist show command - signal UI to show track viewer."""
     if not args:
         log("Error: Please specify playlist name", level="error")
@@ -694,8 +694,8 @@ def handle_playlist_show_command(
 
 
 def handle_playlist_active_command(
-    ctx: AppContext, args: List[str]
-) -> Tuple[AppContext, bool]:
+    ctx: AppContext, args: list[str]
+) -> tuple[AppContext, bool]:
     """Handle playlist active command - set or clear active playlists."""
     # Detect blessed UI mode (stdout redirected) - do this early
     is_blessed_mode = not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty()
@@ -805,7 +805,8 @@ def handle_playlist_active_command(
                                 level="info",
                             )
                             log(
-                                f"   {len(available_tracks)} tracks available", level="info"
+                                f"   {len(available_tracks)} tracks available",
+                                level="info",
                             )
 
                         # Pick a random track from available
@@ -873,8 +874,8 @@ def handle_playlist_active_command(
 
 
 def handle_playlist_restart_command(
-    ctx: AppContext, args: List[str]
-) -> Tuple[AppContext, bool]:
+    ctx: AppContext, args: list[str]
+) -> tuple[AppContext, bool]:
     """
     Handle playlist restart command - restart active playlist from first track.
     Turns off shuffle mode if enabled and clears any saved position.
@@ -900,29 +901,27 @@ def handle_playlist_restart_command(
         log("🔁 Shuffle mode disabled", level="info")
 
     # Clear saved playlist position
-    playback.clear_playlist_position(active['id'])
+    playback.clear_playlist_position(active["id"])
 
     # Import playback commands for play_track
     from . import playback as playback_commands
 
     # Get playlist tracks
-    playlist_tracks = playlists.get_playlist_tracks(active['id'])
+    playlist_tracks = playlists.get_playlist_tracks(active["id"])
 
     if not playlist_tracks:
         log(f"⚠️  Playlist '{active['name']}' is empty", level="warning")
         return ctx, True
 
     # Get first track (position 0)
-    first_track_dict = playback.get_next_sequential_track(
-        playlist_tracks, None
-    )
+    first_track_dict = playback.get_next_sequential_track(playlist_tracks, None)
 
     if not first_track_dict:
         log("❌ Unable to find first track in playlist", level="error")
         return ctx, True
 
     # Find the Track object from music_tracks using database ID
-    first_track_id = first_track_dict.get('id')
+    first_track_id = first_track_dict.get("id")
     if not first_track_id:
         log("❌ First track has no database ID", level="error")
         return ctx, True
@@ -945,8 +944,8 @@ def handle_playlist_restart_command(
 
 
 def handle_playlist_import_command(
-    ctx: AppContext, args: List[str]
-) -> Tuple[AppContext, bool]:
+    ctx: AppContext, args: list[str]
+) -> tuple[AppContext, bool]:
     """Handle playlist import command - import playlist from file."""
     current_config = ctx.config
 
@@ -1029,8 +1028,8 @@ def handle_playlist_import_command(
 
 
 def handle_playlist_export_command(
-    ctx: AppContext, args: List[str]
-) -> Tuple[AppContext, bool]:
+    ctx: AppContext, args: list[str]
+) -> tuple[AppContext, bool]:
     """Handle playlist export command - export playlist to file."""
     current_config = ctx.config
 
@@ -1128,8 +1127,8 @@ def handle_playlist_export_command(
 
 
 def handle_playlist_analyze_command(
-    ctx: AppContext, args: List[str]
-) -> Tuple[AppContext, bool]:
+    ctx: AppContext, args: list[str]
+) -> tuple[AppContext, bool]:
     """
     Handle playlist analyze command - show comprehensive analytics.
 
@@ -1321,7 +1320,7 @@ def convert_playlist_background(
     spotify_playlist_id: str,
     spotify_name: str,
     soundcloud_name: str,
-) -> Tuple[AppContext, bool]:
+) -> tuple[AppContext, bool]:
     """
     Start playlist conversion in background thread.
 
@@ -1353,8 +1352,8 @@ def convert_playlist_background(
 
 
 def handle_playlist_convert_command(
-    ctx: AppContext, args: List[str]
-) -> Tuple[AppContext, bool]:
+    ctx: AppContext, args: list[str]
+) -> tuple[AppContext, bool]:
     """
     Handle playlist convert command - convert Spotify playlist to SoundCloud.
 
@@ -1371,9 +1370,14 @@ def handle_playlist_convert_command(
     from ..domain.playlists.conversion import convert_spotify_to_soundcloud
 
     if len(args) < 2:
-        log("Error: Please specify both Spotify and SoundCloud playlist names", level="error")
+        log(
+            "Error: Please specify both Spotify and SoundCloud playlist names",
+            level="error",
+        )
         log('Usage: playlist convert "Spotify Name" "SoundCloud Name"', level="info")
-        log('Example: playlist convert "Release Radar" "SC Release Radar"', level="info")
+        log(
+            'Example: playlist convert "Release Radar" "SC Release Radar"', level="info"
+        )
         return ctx, True
 
     # Parse quoted args
@@ -1388,7 +1392,7 @@ def handle_playlist_convert_command(
     soundcloud_name = parsed_args[1]
 
     # Find Spotify playlist
-    spotify_playlist = playlists.get_playlist_by_name(spotify_name, library='spotify')
+    spotify_playlist = playlists.get_playlist_by_name(spotify_name, library="spotify")
 
     if not spotify_playlist:
         log(f"❌ Spotify playlist '{spotify_name}' not found", level="error")

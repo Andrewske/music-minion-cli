@@ -4,7 +4,7 @@ import socket
 import json
 import os
 from pathlib import Path
-from typing import Tuple, List
+from typing import Optional
 
 
 def get_socket_path() -> Path:
@@ -15,15 +15,15 @@ def get_socket_path() -> Path:
         Path to Unix socket
     """
     # Use XDG_RUNTIME_DIR if available, otherwise fall back to ~/.local/share
-    runtime_dir = os.environ.get('XDG_RUNTIME_DIR')
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
     if runtime_dir:
-        return Path(runtime_dir) / 'music-minion' / 'control.sock'
+        return Path(runtime_dir) / "music-minion" / "control.sock"
     else:
-        data_dir = Path.home() / '.local' / 'share' / 'music-minion'
-        return data_dir / 'control.sock'
+        data_dir = Path.home() / ".local" / "share" / "music-minion"
+        return data_dir / "control.sock"
 
 
-def send_command(command: str, args: List[str] = None) -> Tuple[bool, str]:
+def send_command(command: str, args: Optional[list[str]] = None) -> tuple[bool, str]:
     """
     Send a command to the running Music Minion instance.
 
@@ -43,10 +43,7 @@ def send_command(command: str, args: List[str] = None) -> Tuple[bool, str]:
         return False, "Music Minion is not running"
 
     # Prepare command payload
-    payload = {
-        'command': command,
-        'args': args or []
-    }
+    payload = {"command": command, "args": args or []}
 
     try:
         # Connect to Unix socket
@@ -55,18 +52,18 @@ def send_command(command: str, args: List[str] = None) -> Tuple[bool, str]:
         sock.connect(str(socket_path))
 
         # Send command as JSON
-        message = json.dumps(payload) + '\n'
-        sock.sendall(message.encode('utf-8'))
+        message = json.dumps(payload) + "\n"
+        sock.sendall(message.encode("utf-8"))
 
         # Receive response
-        response_data = b''
+        response_data = b""
         while True:
             chunk = sock.recv(4096)
             if not chunk:
                 break
             response_data += chunk
             # Check if we have a complete JSON response (ends with newline)
-            if b'\n' in response_data:
+            if b"\n" in response_data:
                 break
 
         sock.close()
@@ -75,9 +72,9 @@ def send_command(command: str, args: List[str] = None) -> Tuple[bool, str]:
         if not response_data:
             return False, "No response from Music Minion"
 
-        response = json.loads(response_data.decode('utf-8').strip())
-        success = response.get('success', False)
-        message = response.get('message', 'No message')
+        response = json.loads(response_data.decode("utf-8").strip())
+        success = response.get("success", False)
+        message = response.get("message", "No message")
 
         return success, message
 

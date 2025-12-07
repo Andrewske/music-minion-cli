@@ -7,7 +7,7 @@ Used for migrating from MP3 to Opus format while preserving all track history
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 from loguru import logger
 
@@ -19,12 +19,12 @@ from .deduplication import normalize_string
 class LocateResult:
     """Result of locate-opus operation."""
 
-    updated: List[Dict]  # Successfully updated tracks
-    multiple_matches: List[Dict]  # Opus files with multiple potential matches
-    no_match: List[Dict]  # Opus files with no matches found
+    updated: list[dict]  # Successfully updated tracks
+    multiple_matches: list[dict]  # Opus files with multiple potential matches
+    no_match: list[dict]  # Opus files with no matches found
 
 
-def _get_folder_tracks(folder_path: Path) -> List[Dict]:
+def _get_folder_tracks(folder_path: Path) -> list[dict]:
     """Get all MP3 tracks in database whose album matches the folder name.
 
     Args:
@@ -49,7 +49,7 @@ def _get_folder_tracks(folder_path: Path) -> List[Dict]:
         return [dict(row) for row in cursor.fetchall()]
 
 
-def _match_tier1_filename(opus_stem: str, tracks: List[Dict]) -> List[Dict]:
+def _match_tier1_filename(opus_stem: str, tracks: list[dict]) -> list[dict]:
     """Tier 1: Exact filename stem match.
 
     Args:
@@ -74,7 +74,7 @@ def _match_tier1_filename(opus_stem: str, tracks: List[Dict]) -> List[Dict]:
     return matches
 
 
-def _match_tier2_title(opus_title: str, tracks: List[Dict]) -> List[Dict]:
+def _match_tier2_title(opus_title: str, tracks: list[dict]) -> list[dict]:
     """Tier 2: Exact title match (case-insensitive).
 
     Args:
@@ -95,7 +95,9 @@ def _match_tier2_title(opus_title: str, tracks: List[Dict]) -> List[Dict]:
     return matches
 
 
-def _match_tier3_fuzzy(opus_title: str, tracks: List[Dict], threshold: float = 0.85) -> List[Tuple[Dict, float]]:
+def _match_tier3_fuzzy(
+    opus_title: str, tracks: list[dict], threshold: float = 0.85
+) -> list[tuple[dict, float]]:
     """Tier 3: Fuzzy title match using normalized string comparison.
 
     Args:
@@ -152,7 +154,7 @@ def _match_tier3_fuzzy(opus_title: str, tracks: List[Dict], threshold: float = 0
         return []
 
 
-def _extract_opus_metadata(opus_path: Path) -> Dict:
+def _extract_opus_metadata(opus_path: Path) -> dict:
     """Extract metadata from opus file.
 
     Args:
@@ -174,14 +176,26 @@ def _extract_opus_metadata(opus_path: Path) -> Dict:
 
         if hasattr(audio, "tags") and audio.tags:
             # OggOpus uses uppercase tag names
-            title = audio.tags.get("TITLE", [None])[0] if "TITLE" in audio.tags else None
-            artist = audio.tags.get("ARTIST", [None])[0] if "ARTIST" in audio.tags else None
+            title = (
+                audio.tags.get("TITLE", [None])[0] if "TITLE" in audio.tags else None
+            )
+            artist = (
+                audio.tags.get("ARTIST", [None])[0] if "ARTIST" in audio.tags else None
+            )
 
             # Also try lowercase (some files use this)
             if not title:
-                title = audio.tags.get("title", [None])[0] if "title" in audio.tags else None
+                title = (
+                    audio.tags.get("title", [None])[0]
+                    if "title" in audio.tags
+                    else None
+                )
             if not artist:
-                artist = audio.tags.get("artist", [None])[0] if "artist" in audio.tags else None
+                artist = (
+                    audio.tags.get("artist", [None])[0]
+                    if "artist" in audio.tags
+                    else None
+                )
 
         return {
             "title": title or opus_path.stem,
@@ -260,7 +274,9 @@ def locate_opus_replacements(
 
     # Get MP3 tracks for this album
     mp3_tracks = _get_folder_tracks(folder)
-    logger.info(f"Found {len(mp3_tracks)} MP3 tracks in database for album '{folder.name}'")
+    logger.info(
+        f"Found {len(mp3_tracks)} MP3 tracks in database for album '{folder.name}'"
+    )
 
     if not mp3_tracks:
         # All opus files are "no match" since there are no MP3 tracks

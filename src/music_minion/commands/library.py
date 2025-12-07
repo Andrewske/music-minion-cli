@@ -5,7 +5,7 @@ Handles: library, library list, library active, library sync, library auth, libr
 """
 
 import threading
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Optional
 
 from music_minion.context import AppContext
 from music_minion.core import config, database
@@ -17,7 +17,7 @@ from music_minion.domain.library.provider import ProviderConfig, ProviderState
 
 # Global sync state (thread-safe)
 _sync_state_lock = threading.Lock()
-_sync_state: Optional[Dict[str, Any]] = None
+_sync_state: Optional[dict[str, Any]] = None
 
 
 def _save_provider_state_to_db(provider_name: str, state: ProviderState) -> None:
@@ -35,13 +35,13 @@ def _save_provider_state_to_db(provider_name: str, state: ProviderState) -> None
     database.save_provider_state(provider_name, auth_data, config_data)
 
 
-def get_sync_state() -> Optional[Dict[str, Any]]:
+def get_sync_state() -> Optional[dict[str, Any]]:
     """Get current sync state (thread-safe)."""
     with _sync_state_lock:
         return _sync_state.copy() if _sync_state else None
 
 
-def _update_sync_state(updates: Dict[str, Any]) -> None:
+def _update_sync_state(updates: dict[str, Any]) -> None:
     """Update sync state (thread-safe, internal use only)."""
     global _sync_state
     with _sync_state_lock:
@@ -124,7 +124,7 @@ def _threaded_sync_worker(ctx: AppContext, provider_name: str, full: bool) -> No
 
 def sync_library_background(
     ctx: AppContext, provider_name: str, full: bool = False
-) -> Tuple[AppContext, bool]:
+) -> tuple[AppContext, bool]:
     """Start library sync in background thread.
 
     Args:
@@ -223,7 +223,7 @@ def _threaded_playlist_sync_worker(
 
 def sync_playlists_background(
     ctx: AppContext, provider_name: str, full: bool = False
-) -> Tuple[AppContext, bool]:
+) -> tuple[AppContext, bool]:
     """Start playlist sync in background thread.
 
     Args:
@@ -248,7 +248,7 @@ def sync_playlists_background(
     return ctx, True
 
 
-def handle_library_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
+def handle_library_command(ctx: AppContext, args: list[str]) -> tuple[AppContext, bool]:
     """Handle library management commands.
 
     Commands:
@@ -358,7 +358,7 @@ def handle_library_command(ctx: AppContext, args: List[str]) -> Tuple[AppContext
         return ctx, True
 
 
-def handle_library_list(ctx: AppContext) -> Tuple[AppContext, bool]:
+def handle_library_list(ctx: AppContext) -> tuple[AppContext, bool]:
     """List all available libraries with track counts.
 
     Args:
@@ -429,7 +429,7 @@ def handle_library_list(ctx: AppContext) -> Tuple[AppContext, bool]:
     return ctx, True
 
 
-def show_active_library(ctx: AppContext) -> Tuple[AppContext, bool]:
+def show_active_library(ctx: AppContext) -> tuple[AppContext, bool]:
     """Show currently active library.
 
     Args:
@@ -447,7 +447,7 @@ def show_active_library(ctx: AppContext) -> Tuple[AppContext, bool]:
     return ctx, True
 
 
-def switch_active_library(ctx: AppContext, provider: str) -> Tuple[AppContext, bool]:
+def switch_active_library(ctx: AppContext, provider: str) -> tuple[AppContext, bool]:
     """Switch to a different library provider.
 
     Args:
@@ -520,7 +520,7 @@ def sync_library(
     provider_name: Optional[str] = None,
     full: bool = False,
     progress_callback: Optional[Callable[[str, dict], None]] = None,
-) -> Tuple[AppContext, bool]:
+) -> tuple[AppContext, bool]:
     """Sync library from provider.
 
     Args:
@@ -740,7 +740,7 @@ def sync_playlists(
     full: bool = False,
     progress_callback: Optional[Callable[[str, dict], None]] = None,
     silent: bool = False,
-) -> Tuple[AppContext, bool]:
+) -> tuple[AppContext, bool]:
     """Sync playlists from provider.
 
     Args:
@@ -810,11 +810,15 @@ def sync_playlists(
 
         # Get playlists from provider
         import time
+
         print_if_not_silent(f"📋 Fetching playlists from {provider_name}...")
         fetch_start = time.time()
         state, playlists = provider.get_playlists(state, full=full)
         fetch_time = time.time() - fetch_start
-        log(f"Fetched {len(playlists) if playlists else 0} playlists metadata in {fetch_time:.2f}s", level="debug")
+        log(
+            f"Fetched {len(playlists) if playlists else 0} playlists metadata in {fetch_time:.2f}s",
+            level="debug",
+        )
 
         if not playlists:
             # Check if this is due to authentication failure vs genuinely no playlists
@@ -920,7 +924,9 @@ def sync_playlists(
         )
 
         if not playlists_to_sync:
-            print_if_not_silent(f"\n⚠ No playlists need syncing ({skipped_count} unchanged)")
+            print_if_not_silent(
+                f"\n⚠ No playlists need syncing ({skipped_count} unchanged)"
+            )
             return ctx, True
 
         # ========================================================================
@@ -1311,7 +1317,7 @@ def sync_playlists(
     return ctx, True
 
 
-def handle_auth_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+def handle_auth_command(ctx: AppContext) -> tuple[AppContext, bool]:
     """Authenticate with the currently active library provider.
 
     Args:
@@ -1332,7 +1338,10 @@ def handle_auth_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         return ctx, True
 
     if active_provider == "all":
-        log("❌ Cannot authenticate 'all' - switch to a specific provider first", level="error")
+        log(
+            "❌ Cannot authenticate 'all' - switch to a specific provider first",
+            level="error",
+        )
         log("Available: soundcloud, spotify, youtube", level="info")
         return ctx, True
 
@@ -1342,7 +1351,7 @@ def handle_auth_command(ctx: AppContext) -> Tuple[AppContext, bool]:
 
 def authenticate_provider(
     ctx: AppContext, provider_name: str
-) -> Tuple[AppContext, bool]:
+) -> tuple[AppContext, bool]:
     """Authenticate with a provider.
 
     Args:
@@ -1408,7 +1417,7 @@ def authenticate_provider(
     return ctx, True
 
 
-def handle_device_commands(ctx: AppContext, args: List[str]) -> Tuple[AppContext, bool]:
+def handle_device_commands(ctx: AppContext, args: list[str]) -> tuple[AppContext, bool]:
     """Handle device management commands for Spotify.
 
     Args:
@@ -1433,7 +1442,7 @@ def handle_device_commands(ctx: AppContext, args: List[str]) -> Tuple[AppContext
         return ctx, True
 
 
-def list_spotify_devices(ctx: AppContext) -> Tuple[AppContext, bool]:
+def list_spotify_devices(ctx: AppContext) -> tuple[AppContext, bool]:
     """List available Spotify devices using command palette.
 
     Args:
@@ -1520,7 +1529,7 @@ def list_spotify_devices(ctx: AppContext) -> Tuple[AppContext, bool]:
 
 def set_spotify_device(
     ctx: AppContext, device_identifier: str
-) -> Tuple[AppContext, bool]:
+) -> tuple[AppContext, bool]:
     """Set preferred Spotify device.
 
     Args:
@@ -1595,7 +1604,7 @@ def set_spotify_device(
     return ctx, True
 
 
-def clear_spotify_device(ctx: AppContext) -> Tuple[AppContext, bool]:
+def clear_spotify_device(ctx: AppContext) -> tuple[AppContext, bool]:
     """Clear preferred Spotify device setting.
 
     Args:

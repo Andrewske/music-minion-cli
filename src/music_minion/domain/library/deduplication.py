@@ -7,7 +7,7 @@ using TF-IDF text search for fast, accurate matching.
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
@@ -53,10 +53,10 @@ def normalize_string(s: Optional[str]) -> str:
 
 
 def find_best_matches_tfidf(
-    sc_tracks: List[Tuple[str, Dict[str, Any]]],
-    local_tracks: List[Dict[str, Any]],
+    sc_tracks: list[tuple[str, dict[str, Any]]],
+    local_tracks: list[dict[str, Any]],
     min_score: float = 0.7,
-) -> List[Tuple[str, Optional[Dict[str, Any]], float]]:
+) -> list[tuple[str, Optional[dict[str, Any]], float]]:
     """Batch match SoundCloud tracks to local tracks using TF-IDF search.
 
     This is MUCH faster than brute-force comparison for large track libraries.
@@ -151,8 +151,8 @@ def find_best_matches_tfidf(
 
 
 def apply_manual_corrections(
-    matches: List[Dict[str, Any]], corrections_file: str
-) -> List[Dict[str, Any]]:
+    matches: list[dict[str, Any]], corrections_file: str
+) -> list[dict[str, Any]]:
     """Apply manual corrections from CSV file to matching results.
 
     Allows manual override of incorrect matches by looking up correct

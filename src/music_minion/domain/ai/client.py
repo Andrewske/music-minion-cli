@@ -5,7 +5,7 @@ AI integration for Music Minion CLI using OpenAI Responses API
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from music_minion.core.config import get_config_dir
 from music_minion.core.database import (
@@ -134,7 +134,7 @@ Example bad tags: good, nice, music, song, electronic, rock
 
 
 def build_analysis_input(
-    track: Track, notes: List[Dict[str, Any]], existing_tags: List[Dict[str, Any]]
+    track: Track, notes: list[dict[str, Any]], existing_tags: list[dict[str, Any]]
 ) -> str:
     """Build the input for AI analysis using Responses API format."""
     user_prompt = get_user_prompt()
@@ -194,7 +194,7 @@ Suggest 3-6 specific, discoverable tags that capture this track's unique qualiti
 
 def analyze_track_with_ai(
     track: Track, request_type: str = "auto_analysis", return_reasoning: bool = True
-) -> Tuple[List[str], Dict[str, Any], Optional[Dict[str, str]]]:
+) -> tuple[list[str], dict[str, Any], Optional[dict[str, str]]]:
     """
     Analyze a track with AI using the Responses API and return tags with reasoning.
 
@@ -379,7 +379,7 @@ Use lowercase for tag names. Be specific and reference actual track data."""
 
 def analyze_and_tag_track(
     track: Track, request_type: str = "auto_analysis", return_reasoning: bool = True
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Analyze a track and automatically add AI tags to the database.
 
@@ -433,7 +433,7 @@ def analyze_and_tag_track(
         return {"success": False, "error": str(e), "tags_added": [], "reasoning": None}
 
 
-def format_usage_stats(stats: Dict[str, Any], period_name: str = "Total") -> str:
+def format_usage_stats(stats: dict[str, Any], period_name: str = "Total") -> str:
     """Format AI usage statistics for display."""
     if stats["total_requests"] == 0:
         return f"📊 {period_name} AI Usage: No requests yet"
@@ -458,7 +458,7 @@ def format_usage_stats(stats: Dict[str, Any], period_name: str = "Total") -> str
     return "\n".join(lines)
 
 
-def test_ai_prompt_with_random_track() -> Dict[str, Any]:
+def test_ai_prompt_with_random_track() -> dict[str, Any]:
     """
     Test the AI prompt with a random track and return detailed results.
 
@@ -578,7 +578,7 @@ def test_ai_prompt_with_random_track() -> Dict[str, Any]:
         }
 
 
-def save_test_report(test_results: Dict[str, Any]) -> str:
+def save_test_report(test_results: dict[str, Any]) -> str:
     """Save AI test results to a report file and return the file path."""
     import time
 

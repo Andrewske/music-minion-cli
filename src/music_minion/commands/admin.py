@@ -9,7 +9,7 @@ import os
 import subprocess
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from music_minion.context import AppContext
 from music_minion.core import config, database
@@ -18,16 +18,16 @@ from music_minion.domain import library
 
 # Global scan state (thread-safe)
 _scan_state_lock = threading.Lock()
-_scan_state: Optional[Dict[str, Any]] = None
+_scan_state: Optional[dict[str, Any]] = None
 
 
-def get_scan_state() -> Optional[Dict[str, Any]]:
+def get_scan_state() -> Optional[dict[str, Any]]:
     """Get current scan state (thread-safe)."""
     with _scan_state_lock:
         return _scan_state.copy() if _scan_state else None
 
 
-def _update_scan_state(updates: Dict[str, Any]) -> None:
+def _update_scan_state(updates: dict[str, Any]) -> None:
     """Update scan state (thread-safe, internal use only)."""
     global _scan_state
     with _scan_state_lock:
@@ -162,7 +162,7 @@ def start_background_scan(ctx: AppContext) -> None:
     thread.start()
 
 
-def handle_init_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+def handle_init_command(ctx: AppContext) -> tuple[AppContext, bool]:
     """Handle init command - initialize Music Minion configuration.
 
     Args:
@@ -189,7 +189,7 @@ def handle_init_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     return ctx, True
 
 
-def handle_killall_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+def handle_killall_command(ctx: AppContext) -> tuple[AppContext, bool]:
     """Kill all MPV processes (emergency stop).
 
     Args:
@@ -221,7 +221,7 @@ def handle_killall_command(ctx: AppContext) -> Tuple[AppContext, bool]:
     return ctx, True
 
 
-def handle_stats_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+def handle_stats_command(ctx: AppContext) -> tuple[AppContext, bool]:
     """Handle stats command - show database statistics.
 
     Args:
@@ -285,7 +285,7 @@ def handle_stats_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         return ctx, True
 
 
-def handle_scan_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+def handle_scan_command(ctx: AppContext) -> tuple[AppContext, bool]:
     """Handle scan command - scan library and populate database.
 
     Args:
@@ -355,7 +355,7 @@ def handle_scan_command(ctx: AppContext) -> Tuple[AppContext, bool]:
         return ctx, False
 
 
-def handle_migrate_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+def handle_migrate_command(ctx: AppContext) -> tuple[AppContext, bool]:
     """Handle migrate command - run database migrations.
 
     Args:
@@ -371,8 +371,8 @@ def handle_migrate_command(ctx: AppContext) -> Tuple[AppContext, bool]:
 
 
 def handle_tag_remove_command(
-    ctx: AppContext, args: List[str]
-) -> Tuple[AppContext, bool]:
+    ctx: AppContext, args: list[str]
+) -> tuple[AppContext, bool]:
     """Handle tag remove command - blacklist a tag from current track.
 
     Args:
@@ -446,7 +446,7 @@ def handle_tag_remove_command(
     return ctx, True
 
 
-def handle_tag_list_command(ctx: AppContext) -> Tuple[AppContext, bool]:
+def handle_tag_list_command(ctx: AppContext) -> tuple[AppContext, bool]:
     """Handle tag list command - show all tags for current track.
 
     Args:

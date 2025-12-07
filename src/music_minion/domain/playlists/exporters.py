@@ -4,7 +4,7 @@ Supports exporting to M3U/M3U8 and Serato .crate formats.
 """
 
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Optional
 from datetime import datetime
 import sys
 
@@ -37,7 +37,7 @@ def export_m3u8(
     playlist_id: int,
     output_path: Path,
     library_root: Path,
-    use_relative_paths: bool = True
+    use_relative_paths: bool = True,
 ) -> int:
     """
     Export a playlist to M3U8 format (UTF-8 encoded M3U).
@@ -68,11 +68,11 @@ def export_m3u8(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Write M3U8 file
-    with open(output_path, 'w', encoding='utf-8') as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         # Write header
         f.write("#EXTM3U\n")
         f.write(f"# Playlist: {pl['name']}\n")
-        if pl.get('description'):
+        if pl.get("description"):
             f.write(f"# Description: {pl['description']}\n")
         f.write(f"# Exported: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"# Tracks: {len(tracks)}\n")
@@ -80,12 +80,12 @@ def export_m3u8(
 
         # Write tracks
         for track in tracks:
-            track_path = Path(track['local_path'])
+            track_path = Path(track["local_path"])
 
             # Write EXTINF line (metadata)
-            duration = int(track.get('duration', 0))
-            artist = track.get('artist', 'Unknown Artist')
-            title = track.get('title', track_path.stem)
+            duration = int(track.get("duration", 0))
+            artist = track.get("artist", "Unknown Artist")
+            title = track.get("title", track_path.stem)
             f.write(f"#EXTINF:{duration},{artist} - {title}\n")
 
             # Write file path
@@ -99,11 +99,7 @@ def export_m3u8(
     return len(tracks)
 
 
-def export_serato_crate(
-    playlist_id: int,
-    output_path: Path,
-    library_root: Path
-) -> int:
+def export_serato_crate(playlist_id: int, output_path: Path, library_root: Path) -> int:
     """
     Export a playlist to Serato .crate format.
 
@@ -141,11 +137,11 @@ def export_serato_crate(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Create Serato crate
-    crate = Crate(pl['name'])
+    crate = Crate(pl["name"])
 
     # Add tracks to crate
     for track in tracks:
-        track_path = Path(track['local_path'])
+        track_path = Path(track["local_path"])
         # Serato expects absolute paths
         crate.add_track(str(track_path.absolute()))
 
@@ -159,10 +155,10 @@ def export_serato_crate(
 def export_playlist(
     playlist_id: Optional[int] = None,
     playlist_name: Optional[str] = None,
-    format_type: str = 'm3u8',
+    format_type: str = "m3u8",
     output_path: Optional[Path] = None,
     library_root: Optional[Path] = None,
-    use_relative_paths: bool = True
+    use_relative_paths: bool = True,
 ) -> tuple[Path, int]:
     """
     Export a playlist to a file, with flexible format selection.
@@ -204,26 +200,26 @@ def export_playlist(
         playlists_dir = library_root / "playlists"
         playlists_dir.mkdir(parents=True, exist_ok=True)
 
-        if format_type == 'm3u8':
+        if format_type == "m3u8":
             output_path = playlists_dir / f"{pl['name']}.m3u8"
-        elif format_type == 'crate':
+        elif format_type == "crate":
             output_path = playlists_dir / f"{pl['name']}.crate"
         else:
-            raise ValueError(f"Unsupported format: {format_type}. Use 'm3u8' or 'crate'")
+            raise ValueError(
+                f"Unsupported format: {format_type}. Use 'm3u8' or 'crate'"
+            )
 
     # Export based on format
-    if format_type == 'm3u8':
+    if format_type == "m3u8":
         tracks_exported = export_m3u8(
-            playlist_id=pl['id'],
+            playlist_id=pl["id"],
             output_path=output_path,
             library_root=library_root,
-            use_relative_paths=use_relative_paths
+            use_relative_paths=use_relative_paths,
         )
-    elif format_type == 'crate':
+    elif format_type == "crate":
         tracks_exported = export_serato_crate(
-            playlist_id=pl['id'],
-            output_path=output_path,
-            library_root=library_root
+            playlist_id=pl["id"], output_path=output_path, library_root=library_root
         )
     else:
         raise ValueError(f"Unsupported format: {format_type}. Use 'm3u8' or 'crate'")
@@ -233,10 +229,10 @@ def export_playlist(
 
 def auto_export_playlist(
     playlist_id: int,
-    export_formats: List[str],
+    export_formats: list[str],
     library_root: Path,
-    use_relative_paths: bool = True
-) -> List[tuple[str, Path, int]]:
+    use_relative_paths: bool = True,
+) -> list[tuple[str, Path, int]]:
     """
     Auto-export a playlist to multiple formats.
 
@@ -259,7 +255,7 @@ def auto_export_playlist(
                 playlist_id=playlist_id,
                 format_type=format_type,
                 library_root=library_root,
-                use_relative_paths=use_relative_paths
+                use_relative_paths=use_relative_paths,
             )
             results.append((format_type, output_path, tracks_exported))
         except (ValueError, FileNotFoundError, ImportError, OSError) as e:
@@ -268,16 +264,17 @@ def auto_export_playlist(
             print(f"Auto-export failed for format {format_type}: {e}", file=sys.stderr)
         except Exception as e:
             # Unexpected errors - log for debugging
-            print(f"Unexpected error during auto-export ({format_type}): {e}", file=sys.stderr)
+            print(
+                f"Unexpected error during auto-export ({format_type}): {e}",
+                file=sys.stderr,
+            )
 
     return results
 
 
 def export_all_playlists(
-    export_formats: List[str],
-    library_root: Path,
-    use_relative_paths: bool = True
-) -> Dict[str, List[tuple[str, Path, int]]]:
+    export_formats: list[str], library_root: Path, use_relative_paths: bool = True
+) -> dict[str, list[tuple[str, Path, int]]]:
     """
     Export all playlists to specified formats.
 
@@ -296,12 +293,12 @@ def export_all_playlists(
 
     for pl in all_playlists:
         playlist_results = auto_export_playlist(
-            playlist_id=pl['id'],
+            playlist_id=pl["id"],
             export_formats=export_formats,
             library_root=library_root,
-            use_relative_paths=use_relative_paths
+            use_relative_paths=use_relative_paths,
         )
         if playlist_results:
-            results[pl['name']] = playlist_results
+            results[pl["name"]] = playlist_results
 
     return results

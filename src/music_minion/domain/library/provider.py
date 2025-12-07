@@ -8,7 +8,7 @@ Providers are implemented as modules with pure functions, not classes.
 This protocol just defines the contract that provider modules must follow.
 """
 
-from typing import Protocol, List, Tuple, Dict, Any, Optional
+from typing import Protocol, Any, Optional
 from dataclasses import dataclass, field
 import time
 
@@ -16,6 +16,7 @@ import time
 @dataclass
 class ProviderConfig:
     """Base configuration for a provider."""
+
     name: str  # Provider name: "local", "soundcloud", "spotify", etc.
     enabled: bool = True
     cache_duration_hours: int = 24  # How long to cache synced data
@@ -28,37 +29,38 @@ class ProviderState:
     Immutable state container passed to all provider functions.
     Functions return new ProviderState instead of mutating.
     """
+
     config: ProviderConfig
     authenticated: bool = False
     last_sync: Optional[float] = None  # Unix timestamp
-    cache: Dict[str, Any] = field(default_factory=dict)  # In-memory cache
+    cache: dict[str, Any] = field(default_factory=dict)  # In-memory cache
 
-    def with_authenticated(self, authenticated: bool) -> 'ProviderState':
+    def with_authenticated(self, authenticated: bool) -> "ProviderState":
         """Return new state with updated authentication status."""
         return ProviderState(
             config=self.config,
             authenticated=authenticated,
             last_sync=self.last_sync,
-            cache=self.cache
+            cache=self.cache,
         )
 
-    def with_cache(self, **updates) -> 'ProviderState':
+    def with_cache(self, **updates) -> "ProviderState":
         """Return new state with updated cache entries."""
         new_cache = {**self.cache, **updates}
         return ProviderState(
             config=self.config,
             authenticated=self.authenticated,
             last_sync=self.last_sync,
-            cache=new_cache
+            cache=new_cache,
         )
 
-    def with_sync_time(self, timestamp: Optional[float] = None) -> 'ProviderState':
+    def with_sync_time(self, timestamp: Optional[float] = None) -> "ProviderState":
         """Return new state with updated sync timestamp."""
         return ProviderState(
             config=self.config,
             authenticated=self.authenticated,
             last_sync=timestamp or time.time(),
-            cache=self.cache
+            cache=self.cache,
         )
 
     def needs_sync(self) -> bool:
@@ -83,11 +85,11 @@ class LibraryProvider(Protocol):
         def init_provider(config: ProviderConfig) -> ProviderState:
             return ProviderState(config=config)
 
-        def authenticate(state: ProviderState) -> Tuple[ProviderState, bool]:
+        def authenticate(state: ProviderState) -> tuple[ProviderState, bool]:
             # OAuth flow...
             return state.with_authenticated(True), True
 
-        def sync_library(state: ProviderState) -> Tuple[ProviderState, List[Tuple[str, Dict]]]:
+        def sync_library(state: ProviderState) -> tuple[ProviderState, list[tuple[str, dict]]]:
             # Fetch tracks from API...
             tracks = [("track_id_123", {"title": "Song", "artist": "Artist"})]
             return state.with_sync_time(), tracks
@@ -104,7 +106,7 @@ class LibraryProvider(Protocol):
         """
         ...
 
-    def authenticate(state: ProviderState) -> Tuple[ProviderState, bool]:
+    def authenticate(state: ProviderState) -> tuple[ProviderState, bool]:
         """Authenticate with the provider.
 
         For OAuth providers, this may trigger a browser flow.
@@ -118,7 +120,9 @@ class LibraryProvider(Protocol):
         """
         ...
 
-    def sync_library(state: ProviderState) -> Tuple[ProviderState, List[Tuple[str, Dict[str, Any]]]]:
+    def sync_library(
+        state: ProviderState,
+    ) -> tuple[ProviderState, list[tuple[str, dict[str, Any]]]]:
         """Sync library from provider and return track data.
 
         Returns list of (provider_id, metadata) tuples where:
@@ -140,7 +144,9 @@ class LibraryProvider(Protocol):
         """
         ...
 
-    def search(state: ProviderState, query: str) -> Tuple[ProviderState, List[Tuple[str, Dict[str, Any]]]]:
+    def search(
+        state: ProviderState, query: str
+    ) -> tuple[ProviderState, list[tuple[str, dict[str, Any]]]]:
         """Search for tracks in the provider's catalog.
 
         Args:
@@ -164,7 +170,9 @@ class LibraryProvider(Protocol):
         """
         ...
 
-    def get_playlists(state: ProviderState, full: bool = False) -> Tuple[ProviderState, List[Dict[str, Any]]]:
+    def get_playlists(
+        state: ProviderState, full: bool = False
+    ) -> tuple[ProviderState, list[dict[str, Any]]]:
         """Get user's playlists from provider.
 
         Args:
@@ -176,7 +184,9 @@ class LibraryProvider(Protocol):
         """
         ...
 
-    def get_playlist_tracks(state: ProviderState, playlist_id: str) -> Tuple[ProviderState, List[Tuple[str, Dict[str, Any]]], Optional[str]]:
+    def get_playlist_tracks(
+        state: ProviderState, playlist_id: str
+    ) -> tuple[ProviderState, list[tuple[str, dict[str, Any]]], Optional[str]]:
         """Get tracks in a specific playlist.
 
         Args:
@@ -191,14 +201,15 @@ class LibraryProvider(Protocol):
 
 
 # Type aliases for convenience
-TrackMetadata = Dict[str, Any]  # {title, artist, album, duration, ...}
-TrackData = Tuple[str, TrackMetadata]  # (provider_id, metadata)
-TrackList = List[TrackData]  # [(provider_id, metadata), ...]
+TrackMetadata = dict[str, Any]  # {title, artist, album, duration, ...}
+TrackData = tuple[str, TrackMetadata]  # (provider_id, metadata)
+TrackList = list[TrackData]  # [(provider_id, metadata), ...]
 
 
 # Helper functions for working with track metadata
 
-def normalize_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
+
+def normalize_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
     """Normalize track metadata to standard format.
 
     Ensures consistent field names and types across providers.
@@ -212,62 +223,64 @@ def normalize_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
     normalized = {}
 
     # Title (required)
-    if 'title' in metadata:
-        normalized['title'] = str(metadata['title']).strip()
+    if "title" in metadata:
+        normalized["title"] = str(metadata["title"]).strip()
 
     # Artist (required)
-    if 'artist' in metadata:
-        normalized['artist'] = str(metadata['artist']).strip()
-    elif 'user' in metadata and isinstance(metadata['user'], dict):
+    if "artist" in metadata:
+        normalized["artist"] = str(metadata["artist"]).strip()
+    elif "user" in metadata and isinstance(metadata["user"], dict):
         # SoundCloud format
-        normalized['artist'] = str(metadata['user'].get('username', '')).strip()
+        normalized["artist"] = str(metadata["user"].get("username", "")).strip()
 
     # Remix artist (optional)
-    if 'remix_artist' in metadata:
-        normalized['remix_artist'] = str(metadata['remix_artist']).strip()
+    if "remix_artist" in metadata:
+        normalized["remix_artist"] = str(metadata["remix_artist"]).strip()
 
     # Album (optional)
-    if 'album' in metadata:
-        normalized['album'] = str(metadata['album']).strip()
+    if "album" in metadata:
+        normalized["album"] = str(metadata["album"]).strip()
 
     # Genre (optional)
-    if 'genre' in metadata:
-        normalized['genre'] = str(metadata['genre']).strip()
+    if "genre" in metadata:
+        normalized["genre"] = str(metadata["genre"]).strip()
 
     # Year (optional)
-    if 'year' in metadata:
+    if "year" in metadata:
         try:
-            normalized['year'] = int(metadata['year'])
+            normalized["year"] = int(metadata["year"])
         except (ValueError, TypeError):
             pass
 
     # Duration in seconds (optional)
-    if 'duration' in metadata:
+    if "duration" in metadata:
         try:
             # Convert to float seconds
-            duration = float(metadata['duration'])
+            duration = float(metadata["duration"])
             # Some providers give milliseconds
             if duration > 10000:  # Likely milliseconds
                 duration = duration / 1000.0
-            normalized['duration'] = duration
+            normalized["duration"] = duration
         except (ValueError, TypeError):
             pass
 
     # BPM (optional)
-    if 'bpm' in metadata:
+    if "bpm" in metadata:
         try:
-            normalized['bpm'] = float(metadata['bpm'])
+            normalized["bpm"] = float(metadata["bpm"])
         except (ValueError, TypeError):
             pass
 
     # Key (optional)
-    if 'key' in metadata:
-        normalized['key'] = str(metadata['key']).strip()
+    if "key" in metadata:
+        normalized["key"] = str(metadata["key"]).strip()
 
     return normalized
 
 
-def metadata_to_track_dict(provider_id: str, metadata: Dict[str, Any], provider: str) -> Dict[str, Any]:
+def metadata_to_track_dict(
+    provider_id: str, metadata: dict[str, Any], provider: str
+) -> dict[str, Any]:
     """Convert provider metadata to database track dictionary.
 
     Args:
@@ -279,16 +292,16 @@ def metadata_to_track_dict(provider_id: str, metadata: Dict[str, Any], provider:
         Dictionary suitable for database insertion
     """
     track_dict = {
-        f'{provider}_id': provider_id,
-        'title': metadata.get('title'),
-        'artist': metadata.get('artist'),
-        'remix_artist': metadata.get('remix_artist'),
-        'album': metadata.get('album'),
-        'genre': metadata.get('genre'),
-        'year': metadata.get('year'),
-        'duration': metadata.get('duration'),
-        'bpm': metadata.get('bpm'),
-        'key_signature': metadata.get('key'),
+        f"{provider}_id": provider_id,
+        "title": metadata.get("title"),
+        "artist": metadata.get("artist"),
+        "remix_artist": metadata.get("remix_artist"),
+        "album": metadata.get("album"),
+        "genre": metadata.get("genre"),
+        "year": metadata.get("year"),
+        "duration": metadata.get("duration"),
+        "bpm": metadata.get("bpm"),
+        "key_signature": metadata.get("key"),
     }
 
     # Remove None values

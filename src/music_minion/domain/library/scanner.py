@@ -7,7 +7,7 @@ and generating library statistics.
 
 import random
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from music_minion.core.config import Config
 
@@ -15,14 +15,14 @@ from .metadata import extract_track_metadata, format_duration, format_size
 from .models import Track
 
 
-def is_supported_format(local_path: Path, supported_formats: List[str]) -> bool:
+def is_supported_format(local_path: Path, supported_formats: list[str]) -> bool:
     """Check if file format is supported."""
     return local_path.suffix.lower() in supported_formats
 
 
 def scan_directory(
     directory: Path, config: Config, progress_callback=None
-) -> List[Track]:
+) -> list[Track]:
     """Scan a directory for music files and extract metadata.
 
     Args:
@@ -71,7 +71,7 @@ def scan_directory(
 
 def scan_music_library(
     config: Config, show_progress: bool = True, progress_callback=None
-) -> List[Track]:
+) -> list[Track]:
     """Scan all configured library paths for music files.
 
     Args:
@@ -107,7 +107,7 @@ def scan_music_library(
 
 def scan_music_library_optimized(
     config: Config, show_progress: bool = True
-) -> List[Track]:
+) -> list[Track]:
     """Optimized library scan that skips unchanged files.
 
     First scan: Normal speed (must extract all metadata)
@@ -198,12 +198,12 @@ def scan_music_library_optimized(
     return all_tracks
 
 
-def get_random_track(tracks: List[Track]) -> Optional[Track]:
+def get_random_track(tracks: list[Track]) -> Optional[Track]:
     """Get a random track from the library."""
     return random.choice(tracks) if tracks else None
 
 
-def search_tracks(tracks: List[Track], query: str) -> List[Track]:
+def search_tracks(tracks: list[Track], query: str) -> list[Track]:
     """Search tracks by title, artist, album, or key."""
     query = query.lower()
     results = []
@@ -227,20 +227,20 @@ def search_tracks(tracks: List[Track], query: str) -> List[Track]:
     return results
 
 
-def get_tracks_by_key(tracks: List[Track], key: str) -> List[Track]:
+def get_tracks_by_key(tracks: list[Track], key: str) -> list[Track]:
     """Get all tracks in a specific key."""
     key = key.lower()
     return [track for track in tracks if track.key and key in track.key.lower()]
 
 
 def get_tracks_by_bpm_range(
-    tracks: List[Track], min_bpm: float, max_bpm: float
-) -> List[Track]:
+    tracks: list[Track], min_bpm: float, max_bpm: float
+) -> list[Track]:
     """Get tracks within a BPM range."""
     return [track for track in tracks if track.bpm and min_bpm <= track.bpm <= max_bpm]
 
 
-def get_tracks_by_artist(tracks: List[Track], artist: str) -> List[Track]:
+def get_tracks_by_artist(tracks: list[Track], artist: str) -> list[Track]:
     """Get all tracks by a specific artist."""
     artist = artist.lower()
     return [
@@ -248,13 +248,13 @@ def get_tracks_by_artist(tracks: List[Track], artist: str) -> List[Track]:
     ]
 
 
-def get_tracks_by_album(tracks: List[Track], album: str) -> List[Track]:
+def get_tracks_by_album(tracks: list[Track], album: str) -> list[Track]:
     """Get all tracks from a specific album."""
     album = album.lower()
     return [track for track in tracks if track.album and album in track.album.lower()]
 
 
-def get_library_stats(tracks: List[Track]) -> Dict[str, Any]:
+def get_library_stats(tracks: list[Track]) -> dict[str, Any]:
     """Get statistics about the music library."""
     if not tracks:
         return {
@@ -330,24 +330,24 @@ def get_track_id_from_track(track: Track) -> Optional[int]:
 
     # Check provider IDs first
     if track.soundcloud_id:
-        db_track = database.get_track_by_provider_id('soundcloud', track.soundcloud_id)
+        db_track = database.get_track_by_provider_id("soundcloud", track.soundcloud_id)
         if db_track:
-            return db_track['id']
+            return db_track["id"]
 
     if track.spotify_id:
-        db_track = database.get_track_by_provider_id('spotify', track.spotify_id)
+        db_track = database.get_track_by_provider_id("spotify", track.spotify_id)
         if db_track:
-            return db_track['id']
+            return db_track["id"]
 
     if track.youtube_id:
-        db_track = database.get_track_by_provider_id('youtube', track.youtube_id)
+        db_track = database.get_track_by_provider_id("youtube", track.youtube_id)
         if db_track:
-            return db_track['id']
+            return db_track["id"]
 
     # Fall back to local path for local files
     if track.local_path:
         db_track = database.get_track_by_path(track.local_path)
         if db_track:
-            return db_track['id']
+            return db_track["id"]
 
     return None

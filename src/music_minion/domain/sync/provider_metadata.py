@@ -9,7 +9,7 @@ This enables portability - provider IDs travel with the files across systems.
 
 import os
 import shutil
-from typing import Dict, List, Optional
+from typing import Optional
 
 from mutagen import File as MutagenFile
 from mutagen.id3 import ID3, TXXX
@@ -21,7 +21,7 @@ TAG_SPOTIFY_ID = "SPOTIFY_ID"
 TAG_YOUTUBE_ID = "YOUTUBE_ID"
 
 
-def read_provider_ids_from_file(local_path: str) -> Dict[str, Optional[str]]:
+def read_provider_ids_from_file(local_path: str) -> dict[str, Optional[str]]:
     """Read all provider IDs from file metadata.
 
     Args:
@@ -67,7 +67,7 @@ def read_provider_ids_from_file(local_path: str) -> Dict[str, Optional[str]]:
 
 
 def write_provider_ids_to_file(
-    local_path: str, provider_ids: Dict[str, Optional[str]]
+    local_path: str, provider_ids: dict[str, Optional[str]]
 ) -> bool:
     """Write provider IDs to file metadata.
 
@@ -232,7 +232,7 @@ def sync_provider_ids_from_file(local_path: str) -> Optional[int]:
     return track_id
 
 
-def batch_sync_to_files(track_ids: List[int], progress_callback=None) -> Dict[str, int]:
+def batch_sync_to_files(track_ids: list[int], progress_callback=None) -> dict[str, int]:
     """Batch sync provider IDs from database to files.
 
     Args:
@@ -274,8 +274,8 @@ def batch_sync_to_files(track_ids: List[int], progress_callback=None) -> Dict[st
 
 
 def batch_sync_from_files(
-    local_paths: List[str], progress_callback=None
-) -> Dict[str, int]:
+    local_paths: list[str], progress_callback=None
+) -> dict[str, int]:
     """Batch sync provider IDs from files to database.
 
     Args:
