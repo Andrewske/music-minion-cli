@@ -368,27 +368,85 @@ def _handle_comparison_autoplay(
 
     # Determine which track to play (opposite of the one that finished)
     current_id = ctx.player_state.current_track_id
-    next_id = track_b_id if current_id == track_a_id else track_a_id
+    position = ctx.player_state.current_position
+    duration = ctx.player_state.duration
+
+    logger.debug(
+        "Comparison autoplay check: active={}, current_id={}, track_a={}, track_b={}, pos={:.3f}, dur={:.3f}".format(
+            comp.active,
+            current_id,
+            track_a_id,
+            track_b_id,
+            position,
+            duration,
+        )
+    )
+
+    # Prevent retriggering if track just started (position < 2 seconds)
+    # This avoids rapid autoplay loops during MPV transitions
+    if position < 2.0:
+        return ctx, ui_state, track_changed
+
+    # Only handle autoplay if current track is actually one of the comparison tracks
+    if current_id == track_a_id:
+        next_id = track_b_id
+    elif current_id == track_b_id:
+        next_id = track_a_id
+    else:
+        # Current track is not a comparison track (MPV transition, different track, etc.)
+        # Don't trigger comparison autoplay
+        return ctx, ui_state, track_changed
 
     if not next_id:
         return ctx, ui_state, track_changed
+
+    # Debounce: avoid retriggering the same autoplay within a short window
+    last_id = getattr(comp, "last_autoplay_track_id", None)
+    last_time = getattr(comp, "last_autoplay_time", None)
+    if last_id == next_id and last_time is not None:
+        if time.time() - last_time < 2.0:
+            logger.debug(
+                "Comparison autoplay: skipping retrigger for track_id={} (cooldown active)".format(
+                    next_id
+                )
+            )
+            return ctx, ui_state, track_changed
 
     # Play the opposite track
     from ...core import database
     from ...commands.playback import play_track
     from ...core.output import drain_pending_history_messages
-    from .helpers import add_history_line
 
     db_track = database.get_track_by_id(next_id)
     if not db_track:
         return ctx, ui_state, track_changed
 
     track_obj = database.db_track_to_library_track(db_track)
+
+    # Prevent playing the same track if it's already playing/loading
+    # (Protects against rapid retriggering during MPV transition)
+    if ctx.player_state.current_track == track_obj.local_path:
+        return ctx, ui_state, track_changed
+
+    logger.info(
+        "Comparison autoplay: playing track_id=%s (path=%s)",
+        next_id,
+        track_obj.local_path,
+    )
+
     ctx, _ = play_track(ctx, track_obj, None, force_playlist_id=None)
 
     # Drain any log() messages from play_track
     for msg, color in drain_pending_history_messages():
         ui_state = add_history_line(ui_state, msg, color)
+
+    # Record autoplay metadata in comparison state for future debouncing
+    new_comparison = dataclasses.replace(
+        comp,
+        last_autoplay_track_id=next_id,
+        last_autoplay_time=time.time(),
+    )
+    ui_state = dataclasses.replace(ui_state, comparison=new_comparison)
 
     return ctx, ui_state, True
 
@@ -459,7 +517,9 @@ def poll_player_state(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, U
         track_changed = False
         if player.is_track_finished(ctx.player_state):
             # Try comparison mode autoplay first
-            ctx, ui_state, track_changed = _handle_comparison_autoplay(ctx, ui_state, track_changed)
+            ctx, ui_state, track_changed = _handle_comparison_autoplay(
+                ctx, ui_state, track_changed
+            )
 
             # If comparison didn't handle it, use global autoplay
             if not track_changed and ctx.music_tracks:

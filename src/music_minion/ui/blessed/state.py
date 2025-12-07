@@ -113,6 +113,8 @@ class ComparisonState:
     coverage_filter_stats: Optional[RatingCoverageStats] = None
     coverage_library_filters: Optional[RatingCoverageFilters] = None
     coverage_filter_filters: Optional[RatingCoverageFilters] = None
+    last_autoplay_track_id: Optional[int] = None
+    last_autoplay_time: Optional[float] = None
 
 
 @dataclass
