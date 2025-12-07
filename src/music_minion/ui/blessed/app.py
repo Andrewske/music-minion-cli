@@ -354,6 +354,45 @@ def poll_conversion_state(ui_state: UIState) -> UIState:
     return ui_state
 
 
+def _handle_comparison_autoplay(
+    ctx: AppContext, ui_state: UIState, track_changed: bool
+) -> tuple[AppContext, UIState, bool]:
+    """Handle autoplay in comparison mode by playing the other comparison track."""
+    comp = ui_state.comparison
+    if not comp.active or not comp.track_a or not comp.track_b:
+        return ctx, ui_state, track_changed
+
+    # Extract track IDs (handle both "track_id" and "id" keys)
+    track_a_id = comp.track_a.get("track_id") or comp.track_a.get("id")
+    track_b_id = comp.track_b.get("track_id") or comp.track_b.get("id")
+
+    # Determine which track to play (opposite of the one that finished)
+    current_id = ctx.player_state.current_track_id
+    next_id = track_b_id if current_id == track_a_id else track_a_id
+
+    if not next_id:
+        return ctx, ui_state, track_changed
+
+    # Play the opposite track
+    from ...core import database
+    from ...commands.playback import play_track
+    from ...core.output import drain_pending_history_messages
+    from .helpers import add_history_line
+
+    db_track = database.get_track_by_id(next_id)
+    if not db_track:
+        return ctx, ui_state, track_changed
+
+    track_obj = database.db_track_to_library_track(db_track)
+    ctx, _ = play_track(ctx, track_obj, None, force_playlist_id=None)
+
+    # Drain any log() messages from play_track
+    for msg, color in drain_pending_history_messages():
+        ui_state = add_history_line(ui_state, msg, color)
+
+    return ctx, ui_state, True
+
+
 def poll_player_state(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, UIState]:
     """
     Poll player state and update both AppContext and UI state.
@@ -418,40 +457,45 @@ def poll_player_state(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, U
 
         # Check if track has finished and auto-advance
         track_changed = False
-        if player.is_track_finished(ctx.player_state) and ctx.music_tracks:
-            # Get available tracks (excluding archived ones)
-            available_tracks = get_available_tracks(ctx)
+        if player.is_track_finished(ctx.player_state):
+            # Try comparison mode autoplay first
+            ctx, ui_state, track_changed = _handle_comparison_autoplay(ctx, ui_state, track_changed)
 
-            if available_tracks:
-                # Get next track based on shuffle mode and active playlist
-                result = get_next_track(ctx, available_tracks)
+            # If comparison didn't handle it, use global autoplay
+            if not track_changed and ctx.music_tracks:
+                # Get available tracks (excluding archived ones)
+                available_tracks = get_available_tracks(ctx)
 
-                if result:
-                    track, position = result
-                    # Play next track silently (no print in UI mode)
-                    ctx, _ = play_track(ctx, track, position)
-                    track_changed = True
+                if available_tracks:
+                    # Get next track based on shuffle mode and active playlist
+                    result = get_next_track(ctx, available_tracks)
 
-                    # Add autoplay notification to command history
-                    from ...domain import library
+                    if result:
+                        track, position = result
+                        # Play next track silently (no print in UI mode)
+                        ctx, _ = play_track(ctx, track, position)
+                        track_changed = True
 
-                    ui_state = add_history_line(
-                        ui_state,
-                        f"♪ Now playing: {library.get_display_name(track)}",
-                        "cyan",
-                    )
-                    if track.duration:
+                        # Add autoplay notification to command history
+                        from ...domain import library
+
                         ui_state = add_history_line(
                             ui_state,
-                            f"   Duration: {library.get_duration_str(track)}",
-                            "blue",
+                            f"♪ Now playing: {library.get_display_name(track)}",
+                            "cyan",
                         )
+                        if track.duration:
+                            ui_state = add_history_line(
+                                ui_state,
+                                f"   Duration: {library.get_duration_str(track)}",
+                                "blue",
+                            )
 
-                    dj_info = library.get_dj_info(track)
-                    if dj_info != "No DJ metadata":
-                        ui_state = add_history_line(
-                            ui_state, f"   {dj_info}", "magenta"
-                        )
+                        dj_info = library.get_dj_info(track)
+                        if dj_info != "No DJ metadata":
+                            ui_state = add_history_line(
+                                ui_state, f"   {dj_info}", "magenta"
+                            )
 
         # If track changed, re-query player status to get new track info
         if track_changed:

@@ -4,7 +4,7 @@ Music library provider registry.
 Provides access to all available provider modules.
 """
 
-from typing import Any
+from typing import Any, List
 
 # Provider registry will be populated as providers are implemented
 # Each provider module exports functions matching the LibraryProvider protocol
