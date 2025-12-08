@@ -250,6 +250,9 @@ def handle_command(
     elif command == "migrate":
         return admin.handle_migrate_command(ctx)
 
+    elif command == "check-track-integrity":
+        return admin.handle_check_track_integrity_command(ctx)
+
     elif command == "playlist":
         if not args:
             return playlist.handle_playlist_list_command(ctx)

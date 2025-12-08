@@ -6,6 +6,17 @@ from pydub import AudioSegment
 import numpy as np
 
 
+MAX_AUDIO_SIZE_MB = 100  # Prevent OOM
+
+
+class AudioTooLargeError(Exception):
+    """File exceeds size limit for waveform generation."""
+
+
+class FFmpegNotFoundError(Exception):
+    """ffmpeg not installed or not in PATH."""
+
+
 def get_waveform_cache_dir() -> Path:
     """Get the directory for waveform cache files."""
     cache_dir = Path.home() / ".local" / "share" / "music-minion" / "waveforms"
@@ -30,6 +41,26 @@ def generate_waveform(audio_path: str, track_id: int) -> dict:
     try:
         # Load audio file with pydub
         audio = AudioSegment.from_file(audio_path)
+    except FileNotFoundError as e:
+        if "ffmpeg" in str(e).lower():
+            raise FFmpegNotFoundError(
+                "ffmpeg not found. Install: apt install ffmpeg"
+            ) from e
+        raise
+    except Exception as e:
+        if "opus" in str(e).lower():
+            raise RuntimeError(
+                "Opus codec not supported. Ensure ffmpeg built with libopus."
+            ) from e
+        raise RuntimeError(f"Failed to decode audio: {type(e).__name__}") from e
+
+    try:
+        # Check file size before processing
+        file_size_mb = Path(audio_path).stat().st_size / (1024 * 1024)
+        if file_size_mb > MAX_AUDIO_SIZE_MB:
+            raise AudioTooLargeError(
+                f"File too large: {file_size_mb:.1f}MB > {MAX_AUDIO_SIZE_MB}MB"
+            )
 
         # Get raw audio data as numpy array
         samples = np.array(audio.get_array_of_samples())
@@ -38,13 +69,19 @@ def generate_waveform(audio_path: str, track_id: int) -> dict:
         target_peaks = 1000
         chunk_size = max(1, len(samples) // target_peaks)
 
-        # Extract min/max for each chunk
-        peaks = []
-        for i in range(0, len(samples), chunk_size):
-            chunk = samples[i : i + chunk_size]
-            if len(chunk) > 0:
-                peaks.append(int(chunk.min()))
-                peaks.append(int(chunk.max()))
+        # Vectorized min/max computation (10-100x faster than Python loop)
+        num_chunks = len(samples) // chunk_size
+        truncated = samples[: num_chunks * chunk_size]
+        chunks = truncated.reshape(num_chunks, chunk_size)
+
+        min_vals = chunks.min(axis=1)
+        max_vals = chunks.max(axis=1)
+
+        # Interleave min/max for WaveSurfer format
+        peaks = np.empty(num_chunks * 2, dtype=int)
+        peaks[0::2] = min_vals
+        peaks[1::2] = max_vals
+        peaks = peaks.tolist()
 
         # Create waveform JSON structure (WaveSurfer format)
         waveform_data = {

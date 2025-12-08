@@ -12,6 +12,15 @@ export async function getWaveformData(trackId: number): Promise<WaveformData> {
   return response.json();
 }
 
+export async function checkStreamAvailable(trackId: number): Promise<boolean> {
+  try {
+    const response = await fetch(`/api/tracks/${trackId}/stream`, { method: 'HEAD' });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function archiveTrack(trackId: number): Promise<void> {
   const response = await fetch(`/api/tracks/${trackId}/archive`, {
     method: 'POST',

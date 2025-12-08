@@ -528,3 +528,136 @@ def handle_tag_list_command(ctx: AppContext) -> tuple[AppContext, bool]:
         log(f"❌ Error getting tags: {e}", level="error")
 
     return ctx, True
+
+
+def validate_track_data_integrity() -> list[dict]:
+    """Check for tracks with invalid local_path values."""
+    issues = []
+
+    with database.get_db_connection() as conn:
+        cursor = conn.execute("""
+            SELECT id, title, artist, local_path, source
+            FROM tracks
+            WHERE local_path IS NULL
+               OR local_path = ''
+               OR (local_path IS NOT NULL AND local_path != '')
+        """)
+
+        for row in cursor:
+            track_id = row["id"]
+            local_path = row["local_path"]
+
+            if local_path is None:
+                issues.append(
+                    {
+                        "track_id": track_id,
+                        "issue": "NULL local_path",
+                        "title": row["title"],
+                        "artist": row["artist"],
+                    }
+                )
+            elif not isinstance(local_path, str) or not local_path.strip():
+                issues.append(
+                    {
+                        "track_id": track_id,
+                        "issue": "Empty local_path",
+                        "title": row["title"],
+                        "artist": row["artist"],
+                    }
+                )
+            else:
+                try:
+                    file_path = Path(local_path)
+                    if not file_path.exists():
+                        issues.append(
+                            {
+                                "track_id": track_id,
+                                "issue": "File not found",
+                                "path": str(file_path),
+                                "title": row["title"],
+                                "artist": row["artist"],
+                            }
+                        )
+                except (OSError, ValueError):
+                    issues.append(
+                        {
+                            "track_id": track_id,
+                            "issue": "Invalid path format",
+                            "path": local_path,
+                            "title": row["title"],
+                            "artist": row["artist"],
+                        }
+                    )
+
+    return issues
+
+
+def handle_check_track_integrity_command(ctx: AppContext) -> tuple[AppContext, bool]:
+    """Handle check-track-integrity command - validate track data integrity.
+
+    Args:
+        ctx: Application context
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    try:
+        issues = validate_track_data_integrity()
+
+        if not issues:
+            log("✅ All tracks have valid local_path values")
+            return ctx, True
+
+        log(f"⚠️  Found {len(issues)} tracks with data integrity issues:")
+
+        # Group by issue type
+        null_paths = [i for i in issues if i["issue"] == "NULL local_path"]
+        empty_paths = [i for i in issues if i["issue"] == "Empty local_path"]
+        missing_files = [i for i in issues if i["issue"] == "File not found"]
+        invalid_paths = [i for i in issues if i["issue"] == "Invalid path format"]
+
+        if null_paths:
+            log(f"  NULL local_path ({len(null_paths)} tracks):")
+            for issue in null_paths[:5]:  # Show first 5
+                log(
+                    f"    Track {issue['track_id']}: {issue['artist']} - {issue['title']}"
+                )
+            if len(null_paths) > 5:
+                log(f"    ... and {len(null_paths) - 5} more")
+
+        if empty_paths:
+            log(f"  Empty local_path ({len(empty_paths)} tracks):")
+            for issue in empty_paths[:5]:
+                log(
+                    f"    Track {issue['track_id']}: {issue['artist']} - {issue['title']}"
+                )
+            if len(empty_paths) > 5:
+                log(f"    ... and {len(empty_paths) - 5} more")
+
+        if invalid_paths:
+            log(f"  Invalid path format ({len(invalid_paths)} tracks):")
+            for issue in invalid_paths[:5]:
+                log(
+                    f"    Track {issue['track_id']}: {issue['path']} - {issue['artist']} - {issue['title']}"
+                )
+            if len(invalid_paths) > 5:
+                log(f"    ... and {len(invalid_paths) - 5} more")
+
+        if missing_files:
+            log(f"  Files not found ({len(missing_files)} tracks):")
+            for issue in missing_files[:5]:
+                log(
+                    f"    Track {issue['track_id']}: {issue['path']} - {issue['artist']} - {issue['title']}"
+                )
+            if len(missing_files) > 5:
+                log(f"    ... and {len(missing_files) - 5} more")
+
+        log("\n💡 To fix these issues:")
+        log("   - Run 'music-minion scan' to re-import missing tracks")
+        log("   - Check file permissions for 'Files not found' issues")
+        log("   - Review tracks with NULL local_path (may be streaming-only)")
+
+    except Exception as e:
+        log(f"❌ Error checking track integrity: {e}", level="error")
+
+    return ctx, True
