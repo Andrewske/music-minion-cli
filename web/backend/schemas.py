@@ -52,6 +52,12 @@ class RecordComparisonResponse(BaseModel):
 
 
 class WaveformData(BaseModel):
-    peaks: list[float]
-    duration: float
+    version: int = 2
+    channels: int
     sample_rate: int
+    samples_per_pixel: int
+    bits: int = 8
+    length: int
+    peaks: list[int]
+
+    model_config = {"frozen": True}  # Immutable

@@ -1,66 +1,64 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import FileResponse, JSONResponse
 from loguru import logger
 import mimetypes
 import json
 from pathlib import Path
+from typing import Optional
 from ..waveform import has_cached_waveform, generate_waveform, get_waveform_path
+from ..deps import get_db, get_config
+from music_minion.core.config import Config
 
 router = APIRouter()
 
+# Add at top of file
+AUDIO_MIME_TYPES: dict[str, str] = {
+    ".opus": "audio/opus",
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+}
+
+
+def get_track_path(track_id: int, db_conn) -> Optional[Path]:
+    """Pure function - query track path from database."""
+    cursor = db_conn.execute("SELECT local_path FROM tracks WHERE id = ?", (track_id,))
+    row = cursor.fetchone()
+    return Path(row["local_path"]) if row else None
+
+
+def get_mime_type(file_path: Path) -> str:
+    """Pure function - deterministic MIME type detection."""
+    mime = AUDIO_MIME_TYPES.get(file_path.suffix.lower())
+    if mime:
+        return mime
+    guessed, _ = mimetypes.guess_type(str(file_path))
+    return guessed or "application/octet-stream"
+
 
 @router.get("/tracks/{track_id}/stream")
-async def stream_audio(track_id: int):
-    """Stream audio file for a track."""
-    from music_minion.core.database import get_db_connection
+async def stream_audio(
+    track_id: int, db=Depends(get_db), config: Config = Depends(get_config)
+):
+    file_path = get_track_path(track_id, db)
+    if not file_path:
+        raise HTTPException(404, "Track not found")
 
-    try:
-        with get_db_connection() as db:
-            # Query track from database
-            cursor = db.execute(
-                "SELECT local_path FROM tracks WHERE id = ?", (track_id,)
-            )
-            row = cursor.fetchone()
+    # SECURITY: Validate path within library
+    from music_minion.core.path_security import validate_track_path
 
-            if row is None:
-                raise HTTPException(status_code=404, detail="Track not found")
+    validated = validate_track_path(file_path, config.music)
+    if not validated:
+        logger.warning(f"Blocked access outside library: {file_path}")
+        raise HTTPException(403, "Access denied")
 
-            file_path = Path(row["local_path"])
-
-            if not file_path.exists():
-                raise HTTPException(
-                    status_code=404, detail=f"Audio file not found: {file_path}"
-                )
-
-            # Detect MIME type
-            mime_type = None
-            if file_path.suffix.lower() == ".opus":
-                mime_type = "audio/opus"
-            elif file_path.suffix.lower() == ".mp3":
-                mime_type = "audio/mpeg"
-            elif file_path.suffix.lower() == ".m4a":
-                mime_type = "audio/mp4"
-            else:
-                mime_type, _ = mimetypes.guess_type(str(file_path))
-                if mime_type is None:
-                    mime_type = "application/octet-stream"
-
-            logger.info(f"Streaming track {track_id}: {file_path.name}")
-
-            return FileResponse(file_path, media_type=mime_type)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"Stream error for track {track_id}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+    logger.info(f"Streaming track {track_id}: {validated.name}")
+    return FileResponse(validated, media_type=get_mime_type(validated))
 
 
 @router.get("/tracks/{track_id}/waveform")
-async def get_waveform(track_id: int):
-    """Get pre-computed waveform data for a track."""
-    from music_minion.core.database import get_db_connection
-
+async def get_waveform(
+    track_id: int, db=Depends(get_db), config: Config = Depends(get_config)
+):
     try:
         if has_cached_waveform(track_id):
             # Use cached waveform
@@ -71,28 +69,24 @@ async def get_waveform(track_id: int):
                 logger.debug(f"Waveform cache hit for track {track_id}")
                 return JSONResponse(waveform_data)
             except json.JSONDecodeError:
-                # Corrupted cache, fall through to generation
+                # Corrupted cache, regenerate
                 pass
 
         # Generate new waveform
-        with get_db_connection() as db:
-            cursor = db.execute(
-                "SELECT local_path FROM tracks WHERE id = ?", (track_id,)
-            )
-            row = cursor.fetchone()
+        file_path = get_track_path(track_id, db)
+        if not file_path:
+            raise HTTPException(404, "Track not found")
 
-            if row is None:
-                raise HTTPException(status_code=404, detail="Track not found")
+        # SECURITY: Validate path within library
+        from music_minion.core.path_security import validate_track_path
 
-            file_path = row["local_path"]
-
-            if not Path(file_path).exists():
-                raise HTTPException(
-                    status_code=404, detail=f"Audio file not found: {file_path}"
-                )
+        validated = validate_track_path(file_path, config.music)
+        if not validated:
+            logger.warning(f"Blocked waveform access outside library: {file_path}")
+            raise HTTPException(403, "Access denied")
 
         logger.info(f"Generating waveform for track {track_id}")
-        waveform_data = generate_waveform(file_path, track_id)
+        waveform_data = generate_waveform(str(validated), track_id)
 
         return JSONResponse(waveform_data)
 
@@ -100,9 +94,7 @@ async def get_waveform(track_id: int):
         raise
     except Exception as e:
         logger.exception(f"Waveform error for track {track_id}")
-        raise HTTPException(
-            status_code=500, detail=f"Waveform generation failed: {str(e)}"
-        )
+        raise HTTPException(500, f"Waveform generation failed: {str(e)}")
 
 
 @router.post("/tracks/{track_id}/archive")

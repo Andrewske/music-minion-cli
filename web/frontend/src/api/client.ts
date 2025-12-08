@@ -24,9 +24,10 @@ async function apiRequest<T>(
     ...options,
   });
 
-  if (!response.ok) {
-    throw new ApiError(response.status, `API request failed: ${response.statusText}`);
-  }
+ if (!response.ok) {
+   const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+   throw new ApiError(response.status, errorData.detail || response.statusText);
+ }
 
   return response.json();
 }

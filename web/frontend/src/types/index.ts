@@ -48,7 +48,11 @@ export interface RecordComparisonResponse {
 }
 
 export interface WaveformData {
-  peaks: number[];
-  duration: number;
+  version: number;
+  channels: number;
   sample_rate: number;
+  samples_per_pixel: number;
+  bits: number;
+  length: number;
+  peaks: number[];
 }

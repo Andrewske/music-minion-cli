@@ -312,6 +312,7 @@ def get_filtered_tracks(
                 t.album,
                 t.genre,
                 t.year,
+                t.bpm,
                 t.local_path,
                 t.soundcloud_id,
                 t.spotify_id,
@@ -594,6 +595,6 @@ def batch_initialize_ratings(track_ids: list[int]) -> int:
 
             return inserted_count
 
-    except Exception as e:
+    except Exception:
         logger.exception(f"Failed to batch initialize {len(track_ids)} ratings")
         raise
