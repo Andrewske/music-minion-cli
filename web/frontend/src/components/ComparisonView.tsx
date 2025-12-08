@@ -1,7 +1,7 @@
 import { useComparisonStore } from '../stores/comparisonStore';
-import { useStartSession } from '../hooks/useComparison';
+import { useStartSession, useRecordComparison } from '../hooks/useComparison';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
-import { TrackCard } from './TrackCard';
+import { SwipeableTrack } from './SwipeableTrack';
 import { SessionProgress } from './SessionProgress';
 import { WaveformPlayer } from './WaveformPlayer';
 import { QuickSeekBar } from './QuickSeekBar';
@@ -9,6 +9,7 @@ import { QuickSeekBar } from './QuickSeekBar';
 export function ComparisonView() {
   const { currentPair, playingTrackId, comparisonsCompleted, targetComparisons, setPlaying } = useComparisonStore();
   const startSession = useStartSession();
+  const recordComparison = useRecordComparison();
   const { playTrack } = useAudioPlayer(playingTrackId);
 
   const handleStartSession = () => {
@@ -21,6 +22,24 @@ export function ComparisonView() {
     } else {
       playTrack(trackId);
     }
+  };
+
+  const handleSwipeRight = (trackId: number) => {
+    if (!currentPair) return;
+
+    // Swipe right means this track is preferred (winner)
+    recordComparison.mutate({
+      session_id: currentPair.session_id,
+      track_a_id: currentPair.track_a.id,
+      track_b_id: currentPair.track_b.id,
+      winner_id: trackId,
+    });
+  };
+
+  const handleSwipeLeft = (trackId: number) => {
+    // For now, swipe left archives the track
+    // TODO: Implement archive functionality
+    console.log('Archive track:', trackId);
   };
 
 
@@ -64,9 +83,11 @@ export function ComparisonView() {
 
       {/* Comparison cards */}
       <div className="flex flex-col p-4 space-y-4">
-        <TrackCard
+        <SwipeableTrack
           track={currentPair.track_a}
           isPlaying={playingTrackId === currentPair.track_a.id}
+          onSwipeRight={() => handleSwipeRight(currentPair.track_a.id)}
+          onSwipeLeft={() => handleSwipeLeft(currentPair.track_a.id)}
           onTap={() => handleTrackTap(currentPair.track_a.id)}
         />
 
@@ -74,9 +95,11 @@ export function ComparisonView() {
           <span className="text-gray-500 text-sm font-medium">VS</span>
         </div>
 
-        <TrackCard
+        <SwipeableTrack
           track={currentPair.track_b}
           isPlaying={playingTrackId === currentPair.track_b.id}
+          onSwipeRight={() => handleSwipeRight(currentPair.track_b.id)}
+          onSwipeLeft={() => handleSwipeLeft(currentPair.track_b.id)}
           onTap={() => handleTrackTap(currentPair.track_b.id)}
         />
       </div>
@@ -104,7 +127,7 @@ export function ComparisonView() {
       <div className="px-4 pb-4">
         <div className="bg-blue-50 rounded-lg p-4 text-center">
           <p className="text-sm text-blue-800">
-            Tap to play • Swipe right to choose winner • Swipe left to archive
+            Tap to play • Swipe right for 🏆 winner • Swipe left for 🗂️ archive
           </p>
         </div>
       </div>
