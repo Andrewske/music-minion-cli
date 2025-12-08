@@ -2203,48 +2203,54 @@ def update_filter_editor_value(state: UIState, value: str) -> UIState:
     )
 
 
-def save_filter_editor_changes(state: UIState) -> UIState:
-    """Save changes from filter editor and exit."""
-    builder = state.builder
+def _validate_filter_edit(builder: PlaylistBuilderState) -> bool:
+    """Validate that required fields are present for filter editing."""
+    return bool(builder.filter_editor_field and builder.filter_editor_operator)
 
-    # Validate that we have required fields for editing/adding
-    if not builder.filter_editor_field or not builder.filter_editor_operator:
-        return state  # Don't save invalid changes
+
+def _create_updated_filters(builder: PlaylistBuilderState) -> list[BuilderFilter]:
+    """Create updated filter list based on current editor state."""
+    # Validation ensures these are not None
+    assert builder.filter_editor_field is not None
+    assert builder.filter_editor_operator is not None
+
+    new_filter = BuilderFilter(
+        field=builder.filter_editor_field,
+        operator=builder.filter_editor_operator,
+        value=builder.filter_editor_value,
+    )
 
     if builder.filter_editor_selected == -1:
         # Adding new filter
-        new_filter = BuilderFilter(
-            field=builder.filter_editor_field,
-            operator=builder.filter_editor_operator,
-            value=builder.filter_editor_value,
-        )
-        new_filters = builder.filters + [new_filter]
+        return builder.filters + [new_filter]
     else:
         # Editing existing filter
         if builder.filter_editor_selected >= len(builder.filters):
-            return state  # Invalid index
+            return builder.filters  # Invalid index, return unchanged
 
-        new_filter = BuilderFilter(
-            field=builder.filter_editor_field,
-            operator=builder.filter_editor_operator,
-            value=builder.filter_editor_value,
-        )
-        new_filters = (
+        return (
             builder.filters[: builder.filter_editor_selected]
             + [new_filter]
             + builder.filters[builder.filter_editor_selected + 1 :]
         )
 
-    # Re-apply filters and sort
-    displayed = _apply_builder_filters(builder.all_tracks, new_filters)
-    displayed = _apply_builder_sort(
-        displayed, builder.sort_field, builder.sort_direction
-    )
 
+def _rebuild_displayed_tracks(
+    builder: PlaylistBuilderState, new_filters: list[BuilderFilter]
+) -> list[dict]:
+    """Rebuild displayed tracks with new filters and current sort."""
+    displayed = _apply_builder_filters(builder.all_tracks, new_filters)
+    return _apply_builder_sort(displayed, builder.sort_field, builder.sort_direction)
+
+
+def _exit_filter_editor_with_changes(
+    state: UIState, new_filters: list[BuilderFilter], displayed: list[dict]
+) -> UIState:
+    """Exit filter editor mode with updated filters and tracks."""
     return replace(
         state,
         builder=replace(
-            builder,
+            state.builder,
             filters=new_filters,
             displayed_tracks=displayed,
             filter_editor_mode=False,
@@ -2258,6 +2264,24 @@ def save_filter_editor_changes(state: UIState) -> UIState:
             scroll_offset=0,
         ),
     )
+
+
+def save_filter_editor_changes(state: UIState) -> UIState:
+    """Save changes from filter editor and exit."""
+    builder = state.builder
+
+    # Validate changes
+    if not _validate_filter_edit(builder):
+        return state  # Don't save invalid changes
+
+    # Create updated filters
+    new_filters = _create_updated_filters(builder)
+
+    # Rebuild displayed tracks
+    displayed = _rebuild_displayed_tracks(builder, new_filters)
+
+    # Exit editor with changes
+    return _exit_filter_editor_with_changes(state, new_filters, displayed)
 
 
 def delete_filter(state: UIState, filter_index: int) -> UIState:

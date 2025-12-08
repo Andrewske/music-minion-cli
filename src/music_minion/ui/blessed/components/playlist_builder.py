@@ -3,7 +3,7 @@
 from blessed import Terminal
 
 from ..helpers import write_at
-from ..state import UIState
+from ..state import PlaylistBuilderState, UIState
 
 
 def render_playlist_builder(
@@ -51,7 +51,7 @@ def render_playlist_builder(
     return height
 
 
-def _render_header(term: Terminal, builder, y: int) -> int:
+def _render_header(term: Terminal, builder: PlaylistBuilderState, y: int) -> int:
     """Render header with playlist name and sort/filter info."""
     # Title line
     title = f'   🔨 Building: "{builder.target_playlist_name}"'
@@ -93,9 +93,6 @@ def _render_track_list(term: Terminal, builder, y: int, height: int) -> int:
     selected = builder.selected_index
     scroll = builder.scroll_offset
     in_playlist = builder.playlist_track_ids
-
-    # Calculate visible range (for future use if needed)
-    # visible_end = min(scroll + height, len(tracks))
 
     for i, row_y in enumerate(range(y, y + height)):
         track_idx = scroll + i
@@ -236,7 +233,9 @@ def _render_filter_editor(term: Terminal, state: UIState, y: int, height: int) -
     return height
 
 
-def _render_filter_editor_header(term: Terminal, builder, y: int) -> int:
+def _render_filter_editor_header(
+    term: Terminal, builder: PlaylistBuilderState, y: int
+) -> int:
     """Render filter editor header."""
     title = f'   🎛️ Filter Editor: "{builder.target_playlist_name}"'
     write_at(term, 0, y, term.bold(title))
@@ -247,7 +246,9 @@ def _render_filter_editor_header(term: Terminal, builder, y: int) -> int:
     return y + 2
 
 
-def _render_filter_list(term: Terminal, builder, y: int, height: int) -> int:
+def _render_filter_list(
+    term: Terminal, builder: PlaylistBuilderState, y: int, height: int
+) -> int:
     """Render scrollable filter list."""
     filters = builder.filters
     selected = builder.filter_editor_selected
@@ -298,7 +299,9 @@ def _render_filter_list(term: Terminal, builder, y: int, height: int) -> int:
     return y + height
 
 
-def _render_filter_editor_footer(term: Terminal, builder, y: int) -> int:
+def _render_filter_editor_footer(
+    term: Terminal, builder: PlaylistBuilderState, y: int
+) -> int:
     """Render filter editor footer with position info."""
     total = len(builder.filters) + 1  # +1 for add option
     pos = builder.filter_editor_selected + 1 if total > 0 else 0
