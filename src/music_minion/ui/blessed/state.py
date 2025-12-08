@@ -14,6 +14,7 @@ from music_minion.ui.blessed.helpers.scrolling import (
     calculate_scroll_offset,
     move_selection,
 )
+from .helpers.filter_input import get_value_options
 
 # Maximum number of commands to keep in history
 MAX_COMMAND_HISTORY = 1000
@@ -161,6 +162,12 @@ class PlaylistBuilderState:
     filter_editor_operator_keys: list[str] = field(
         default_factory=list
     )  # Operator keys parallel to options (e.g., "lt" for "<")
+    filter_editor_value_options: list[str] = field(
+        default_factory=list
+    )  # Display options for value selection (empty = text input)
+    filter_editor_value_raw: list[str] = field(
+        default_factory=list
+    )  # Raw values parallel to display options
     filter_editor_is_adding_new: bool = (
         False  # True when adding new filter, False when editing
     )
@@ -2092,6 +2099,8 @@ def clear_builder_filters(state: UIState) -> UIState:
             displayed_tracks=displayed,
             selected_index=0,
             scroll_offset=0,
+            filter_editor_value_options=[],
+            filter_editor_value_raw=[],
         ),
     )
 
@@ -2125,6 +2134,8 @@ def toggle_filter_editor_mode(state: UIState) -> UIState:
                 filter_editor_value="",
                 filter_editor_step=0,
                 filter_editor_operator_keys=[],
+                filter_editor_value_options=[],
+                filter_editor_value_raw=[],
             ),
         )
     else:
@@ -2252,13 +2263,21 @@ def advance_filter_editor_step(state: UIState) -> UIState:
         selected_operator_key = builder.filter_editor_operator_keys[
             builder.filter_editor_selected
         ]
+
+        # Get value options for selection mode (or empty lists for text input)
+        display_options, raw_values = get_value_options(
+            builder.filter_editor_field, selected_operator_key
+        )
+
         return replace(
             state,
             builder=replace(
                 builder,
                 filter_editor_step=2,
                 filter_editor_operator=selected_operator_key,
-                filter_editor_options=[],
+                filter_editor_options=display_options,
+                filter_editor_value_options=display_options,
+                filter_editor_value_raw=raw_values,
                 filter_editor_operator_keys=[],
                 filter_editor_selected=0,
             ),

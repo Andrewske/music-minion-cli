@@ -2259,3 +2259,53 @@ log(f"✅ Created playlist: {name}", level="info")
 - Modal visibility must be checked in `calculate_layout()` for proper height allocation
 - When `editor_visible=True` but layout doesn't allocate height, render functions early-return
 - Full redraw logic requires checking modal state changes before entering partial update blocks
+
+### Shared Filter Input Helper Pattern (2025-12-08)
+
+**Pattern**: Shared helper functions for consistent filter value input across multiple UI components
+
+**Problem Solved**: Playlist Builder and Smart Playlist Wizard both needed genre selection for `genre + equals` filters, but had duplicated logic for text input vs list selection.
+
+**Solution**: Created `src/music_minion/ui/blessed/helpers/filter_input.py` with three shared functions:
+
+1. **`get_value_options(field, operator)`** - Returns `(display_options, raw_values)` tuple
+   - For `genre + equals`: Returns genres with counts like `["Dubstep (3048)", "Trap (1197)"]` and raw values `["Dubstep", "Trap"]`
+   - For other cases: Returns `([], [])` for text input mode
+
+2. **`render_filter_value_input()`** - Unified rendering for both list selection and text input
+   - Uses `render_selection_list()` for options, `write_at()` for text input
+   - Consistent styling and layout
+
+3. **`handle_filter_value_key()`** - Unified keyboard handling
+   - List mode: j/k and arrow navigation, Enter to select
+   - Text mode: Character input, backspace, Enter to save
+
+**Integration Pattern**:
+```python
+# In state.py - Add value option fields to component state
+@dataclass(frozen=True)
+class ComponentState:
+    # ... existing fields ...
+    value_options: list[str] = field(default_factory=list)
+    value_raw: list[str] = field(default_factory=list)
+
+# In component key handler - Use shared handler
+def handle_component_key(state, event):
+    if state.step == VALUE_STEP:
+        new_idx, new_value, should_save = handle_filter_value_key(
+            event, state.value_options, state.selected_idx, state.current_value
+        )
+        if should_save:
+            # Apply the selected/raw value
+            return apply_filter_value(state, state.value_raw[new_idx] if state.value_options else new_value)
+        return dataclasses.replace(state, selected_idx=new_idx, current_value=new_value)
+```
+
+**Benefits**:
+- ✅ Zero code duplication between Playlist Builder and Smart Playlist Wizard
+- ✅ Consistent UX for genre selection across both systems
+- ✅ Easy to extend for other field+operator combinations (e.g., artist selection)
+- ✅ Maintains backward compatibility for text input filters
+- ✅ Functional style with explicit state passing
+
+**Files**: `src/music_minion/ui/blessed/helpers/filter_input.py`

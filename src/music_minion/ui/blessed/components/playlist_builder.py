@@ -4,6 +4,7 @@ from blessed import Terminal
 
 from ..helpers import write_at
 from ..helpers.selection import render_selection_list
+from ..helpers.filter_input import render_filter_value_input
 from ..state import PlaylistBuilderState, UIState
 
 
@@ -278,20 +279,17 @@ def _render_filter_editing_steps(
         )
 
     elif step == 2:
-        # Show value input (inline text entry, similar to wizard)
-        line_num = 0
-
-        if line_num < height:
-            instruction = f"   Enter value for: {builder.filter_editor_field} {builder.filter_editor_operator}"
-            write_at(term, 0, y + line_num, term.white(instruction))
-            line_num += 1
-
-        if line_num < height:
-            value_line = f"   Value: {builder.filter_editor_value}_"
-            write_at(term, 0, y + line_num, term.cyan(value_line))
-            line_num += 1
-
-        return line_num
+        # Show value input using shared helper
+        return render_filter_value_input(
+            term,
+            builder.filter_editor_field,
+            builder.filter_editor_operator,
+            builder.filter_editor_value,
+            builder.filter_editor_value_options,
+            builder.filter_editor_selected,
+            y,
+            height,
+        )
 
     return 0
 
@@ -362,7 +360,7 @@ def _render_filter_editor_footer(
     pos = builder.filter_editor_selected + 1 if total > 0 else 0
 
     position_text = f"[{pos}/{total}]"
-    help_text = "j/k nav  Enter edit/add  d delete  a add  Esc save+exit"
+    help_text = "j/k nav  Enter edit/add  d delete  Esc save+exit"
 
     footer = f"   {position_text} {help_text}"
     write_at(term, 0, y, term.dim + footer[: term.width - 1] + term.normal)

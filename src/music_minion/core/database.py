@@ -2043,6 +2043,19 @@ def get_all_tracks_with_metadata() -> list[dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
 
 
+def get_unique_genres() -> list[tuple[str, int]]:
+    """Get all unique genres with counts, sorted by count desc."""
+    with get_db_connection() as conn:
+        cursor = conn.execute("""
+            SELECT genre, COUNT(*) as count
+            FROM tracks
+            WHERE genre IS NOT NULL AND genre != ''
+            GROUP BY genre
+            ORDER BY count DESC
+        """)
+        return [(row["genre"], row["count"]) for row in cursor.fetchall()]
+
+
 def db_track_to_library_track(db_track: dict[str, Any]) -> Track:
     """Convert database track record to Track object."""
     # Import here to avoid circular imports

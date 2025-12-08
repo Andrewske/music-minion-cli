@@ -1,98 +1,129 @@
-# Genre Selection Filter Implementation Plan
+# Genre Selection Filter with Shared Filter Editor
 
 ## Overview
 
-Enhance the playlist builder filter editor to show a selectable list of genres when filtering by `genre` with the `equals` operator, instead of requiring manual text input. This improves UX by letting users pick from their library's actual genres.
+1. Refactor filter editing to use shared components between Playlist Builder and Smart Playlist Wizard
+2. Add genre selection list when filtering by `genre` + `equals` operator
+3. Both systems benefit from the enhancement with no code duplication
 
-## Architecture Decisions
+## Current State
 
-- **Trigger condition**: Only show genre list for `genre` field + `equals` operator; other operators (contains, starts_with, etc.) keep text input for flexibility
-- **Genre loading**: Query database for unique genres with counts, sorted by frequency descending
-- **Display format**: Show genre name with count (e.g., "Electronic (145)") for context
-- **State storage**: Reuse existing `filter_editor_options` for display strings, add new `filter_editor_genre_values` for raw values
-- **Fallback**: If no genres exist in library, fall back to text input mode
+| System | Steps | Value Input | State Fields |
+|--------|-------|-------------|--------------|
+| Playlist Builder | 3 (field → op → value) | Text input | `filter_editor_*` in `PlaylistBuilderState` |
+| Smart Playlist Wizard | 5 (field → op → value → conjunction → preview) | Text input | `wizard_*` fields in `UIState` |
+
+Both use:
+- Same field/operator definitions
+- Same `render_selection_list()` helper
+- Similar key handling patterns (j/k, arrows, Enter)
+
+## Architecture Decision
+
+**Create shared filter field/operator/value selector functions** that both systems call, rather than a new module. This keeps changes minimal while eliminating duplication.
+
+Shared functions in `ui/blessed/helpers/filter_input.py`:
+- `get_field_options()` → list of field names
+- `get_operator_options(field)` → list of (key, display) tuples
+- `get_value_options(field, operator)` → list of values for list selection, or empty for text input
+- `render_filter_value_step()` → renders either list or text input
+- `handle_filter_value_key()` → handles navigation/selection for value step
 
 ## Implementation Tasks
 
 ### Phase 1: Database Layer
 
-- [ ] Add `get_unique_genres()` function to database module
+- [x] Add `get_unique_genres()` function
   - Files: `src/music_minion/core/database.py` (modify)
-  - Tests: Manual verification via REPL
-  - Acceptance: Returns list of `(genre, count)` tuples sorted by count descending, excludes NULL/empty genres
+  - Acceptance: Returns `list[tuple[str, int]]` sorted by count desc
 
-### Phase 2: State Layer
+### Phase 2: Shared Filter Input Helper
 
-- [ ] Add `filter_editor_genre_values` field to `PlaylistBuilderState` dataclass
-  - Files: `src/music_minion/ui/blessed/state.py` (modify, line ~166)
-  - Tests: N/A (dataclass field)
-  - Acceptance: New field with `list[str]` type and empty list default
+- [x] Create `src/music_minion/ui/blessed/helpers/filter_input.py`
+  - Files: `src/music_minion/ui/blessed/helpers/filter_input.py` (new)
+  - Functions:
+    ```python
+    def get_value_options(field: str, operator: str) -> tuple[list[str], list[str]]:
+        """Returns (display_options, raw_values). Empty lists = text input mode."""
+        if field == "genre" and operator == "equals":
+            genres = get_unique_genres()
+            return ([f"{g} ({c})" for g, c in genres], [g for g, _ in genres])
+        return ([], [])
 
-- [ ] Modify `advance_filter_editor_step()` to load genres when transitioning to step 2
+    def render_filter_value_input(
+        term, field, operator, current_value, options, selected_idx, y, height
+    ) -> int:
+        """Render value step - list selection or text input."""
+
+    def handle_filter_value_key(
+        event, options, selected_idx, current_value
+    ) -> tuple[int, str, bool]:
+        """Handle key for value step. Returns (new_idx, new_value, should_save)."""
+    ```
+  - Acceptance: Reusable by both wizard and builder
+
+### Phase 3: Playlist Builder Integration
+
+- [x] Add `filter_editor_value_options` and `filter_editor_value_raw` fields to `PlaylistBuilderState`
   - Files: `src/music_minion/ui/blessed/state.py` (modify)
-  - Tests: Manual test in UI
-  - Acceptance: When `field == "genre"` and `operator == "equals"`, populate `filter_editor_options` with formatted strings and `filter_editor_genre_values` with raw names
 
-- [ ] Reset `filter_editor_genre_values` in cleanup functions
+- [x] Modify `advance_filter_editor_step()` to call `get_value_options()`
   - Files: `src/music_minion/ui/blessed/state.py` (modify)
-  - Functions to update: `toggle_filter_editor_mode()`, `start_adding_filter()`, `start_editing_filter()`
-  - Acceptance: Field resets to empty list when exiting or starting new filter edit
+  - When transitioning to step 2, populate options if available
 
-### Phase 3: Key Handler Layer
+- [x] Update `_handle_filter_editing_key()` step 2 to use `handle_filter_value_key()`
+  - Files: `src/music_minion/ui/blessed/events/keys/playlist_builder.py` (modify)
 
-- [ ] Modify `_handle_filter_editing_key()` step 2 to support list navigation
-  - Files: `src/music_minion/ui/blessed/events/keys/playlist_builder.py` (modify, line ~247)
-  - Tests: Manual UI test
-  - Acceptance:
-    - When `filter_editor_options` is non-empty: j/k and arrow keys navigate list, Enter selects genre
-    - When `filter_editor_options` is empty: existing text input behavior preserved
-
-### Phase 4: Render Layer
-
-- [ ] Modify `_render_filter_editing_steps()` step 2 to show list or text input
+- [x] Update `_render_filter_editing_steps()` step 2 to use `render_filter_value_input()`
   - Files: `src/music_minion/ui/blessed/components/playlist_builder.py` (modify)
-  - Tests: Manual UI test
-  - Acceptance:
-    - When `filter_editor_options` is non-empty: render selection list with genres
-    - When empty: render text input field (existing behavior)
 
-## Acceptance Criteria
+### Phase 4: Smart Playlist Wizard Integration
 
-- [ ] Adding filter with `genre` field + `equals` operator shows genre selection list
-- [ ] Adding filter with `genre` field + `contains` operator shows text input (not list)
-- [ ] Genre list displays counts (e.g., "Rock (42)")
-- [ ] Navigation with j/k and arrow keys works in genre list
-- [ ] Enter key selects genre and saves filter
-- [ ] Filter correctly matches tracks after selection
-- [ ] Empty library (no genres) gracefully falls back to text input
-- [ ] Existing filters continue to work unchanged
+- [x] Update `handle_wizard_enter()` to call `get_value_options()` when entering value step
+  - Files: `src/music_minion/ui/blessed/events/keys/wizard.py` (modify)
+  - Store options in `wizard_options` when genre+equals
 
-## Files to Create/Modify
+- [x] Update `handle_wizard_key()` value step handling
+  - Files: `src/music_minion/ui/blessed/events/keys/wizard.py` (modify)
+  - When `wizard_options` is set, use list navigation instead of text input
+
+- [x] Update `_render_value_step()` to use `render_filter_value_input()`
+  - Files: `src/music_minion/ui/blessed/components/wizard.py` (modify)
+
+### Phase 5: Cleanup
+
+- [x] Reset value options in cleanup functions for both systems
+- [x] Update `__init__.py` to export new helper
+
+## Files Summary
 
 | File | Action | Description |
 |------|--------|-------------|
-| `src/music_minion/core/database.py` | Modify | Add `get_unique_genres()` function |
-| `src/music_minion/ui/blessed/state.py` | Modify | Add field, modify step transition, update reset functions |
-| `src/music_minion/ui/blessed/events/keys/playlist_builder.py` | Modify | Add list navigation for step 2 |
-| `src/music_minion/ui/blessed/components/playlist_builder.py` | Modify | Conditional list vs text rendering |
+| `src/music_minion/core/database.py` | Modify | Add `get_unique_genres()` |
+| `src/music_minion/ui/blessed/helpers/filter_input.py` | **New** | Shared filter value selection logic |
+| `src/music_minion/ui/blessed/helpers/__init__.py` | Modify | Export new module |
+| `src/music_minion/ui/blessed/state.py` | Modify | Add value option fields to builder state |
+| `src/music_minion/ui/blessed/events/keys/playlist_builder.py` | Modify | Use shared handler |
+| `src/music_minion/ui/blessed/components/playlist_builder.py` | Modify | Use shared renderer |
+| `src/music_minion/ui/blessed/events/keys/wizard.py` | Modify | Use shared handler, store options |
+| `src/music_minion/ui/blessed/components/wizard.py` | Modify | Use shared renderer |
 
-## Dependencies
+## Acceptance Criteria
 
-- Internal: `get_db_connection()` from database module
-- Internal: `render_selection_list()` from `ui/blessed/helpers/selection.py` (existing, no changes needed)
+- [x] Genre list appears for `genre` + `equals` in Playlist Builder
+- [x] Genre list appears for `genre` + `equals` in Smart Playlist Wizard
+- [x] Other operators still use text input
+- [x] j/k and arrow navigation works in genre list
+- [x] Enter selects genre and proceeds
+- [x] No code duplication between systems
 
 ## Code Snippets
 
-### get_unique_genres() implementation
+### get_unique_genres()
 
 ```python
 def get_unique_genres() -> list[tuple[str, int]]:
-    """Get all unique genres from tracks with counts.
-
-    Returns:
-        List of (genre, count) tuples, sorted by count descending.
-        Excludes NULL/empty genres.
-    """
+    """Get all unique genres with counts, sorted by count desc."""
     with get_db_connection() as conn:
         cursor = conn.execute("""
             SELECT genre, COUNT(*) as count
@@ -104,56 +135,63 @@ def get_unique_genres() -> list[tuple[str, int]]:
         return [(row["genre"], row["count"]) for row in cursor.fetchall()]
 ```
 
-### Step 2 key handling pattern
+### Shared value options function
 
 ```python
-elif step == 2:
-    options = state.builder.filter_editor_options
+def get_value_options(field: str, operator: str) -> tuple[list[str], list[str]]:
+    """Get display options and raw values for filter value step.
 
-    # Genre selection mode (list navigation)
+    Returns:
+        Tuple of (display_options, raw_values).
+        Empty lists indicate text input mode.
+    """
+    if field == "genre" and operator == "equals":
+        from music_minion.core.database import get_unique_genres
+        genres = get_unique_genres()
+        if genres:
+            return (
+                [f"{genre} ({count})" for genre, count in genres],
+                [genre for genre, _ in genres]
+            )
+    return ([], [])
+```
+
+### Shared key handler
+
+```python
+def handle_filter_value_key(
+    event: dict,
+    options: list[str],
+    selected_idx: int,
+    current_value: str
+) -> tuple[int, str, bool]:
+    """Handle keyboard input for filter value step.
+
+    Returns:
+        Tuple of (new_selected_idx, new_value, should_save).
+    """
+    event_type = event.get("type")
+    char = event.get("char", "")
+
+    # List selection mode
     if options:
         if event_type == "key" and char in ("j", "k"):
             delta = 1 if char == "j" else -1
-            new_idx = (state.builder.filter_editor_selected + delta) % len(options)
-            return replace(state, builder=replace(state.builder, filter_editor_selected=new_idx)), None
-
-        elif event_type in ("arrow_down", "arrow_up"):
+            return ((selected_idx + delta) % len(options), current_value, False)
+        if event_type in ("arrow_down", "arrow_up"):
             delta = 1 if event_type == "arrow_down" else -1
-            new_idx = (state.builder.filter_editor_selected + delta) % len(options)
-            return replace(state, builder=replace(state.builder, filter_editor_selected=new_idx)), None
+            return ((selected_idx + delta) % len(options), current_value, False)
+        if event_type == "enter":
+            return (selected_idx, current_value, True)  # Caller extracts raw value
 
-        elif event_type == "enter":
-            selected_genre = state.builder.filter_editor_genre_values[state.builder.filter_editor_selected]
-            updated_state = replace(state, builder=replace(state.builder, filter_editor_value=selected_genre))
-            return save_filter_editor_changes(updated_state), None
-
-    # Text input mode (original behavior)
+    # Text input mode
     else:
-        # ... existing text input code unchanged ...
-```
+        if event_type == "char" and char and char.isprintable():
+            return (selected_idx, current_value + char, False)
+        if event_type == "backspace":
+            return (selected_idx, current_value[:-1], False)
+        if event_type == "enter":
+            return (selected_idx, current_value, True)
 
-### Step transition genre loading
-
-```python
-# In advance_filter_editor_step(), elif step == 1 block:
-genre_options: list[str] = []
-genre_values: list[str] = []
-if builder.filter_editor_field == "genre" and selected_operator_key == "equals":
-    from music_minion.core.database import get_unique_genres
-    genres = get_unique_genres()
-    genre_options = [f"{genre} ({count})" for genre, count in genres]
-    genre_values = [genre for genre, _ in genres]
-
-return replace(
-    state,
-    builder=replace(
-        builder,
-        filter_editor_step=2,
-        filter_editor_operator=selected_operator_key,
-        filter_editor_options=genre_options,
-        filter_editor_genre_values=genre_values,
-        filter_editor_operator_keys=[],
-        filter_editor_selected=0,
-    ),
-)
+    return (selected_idx, current_value, False)
 ```
