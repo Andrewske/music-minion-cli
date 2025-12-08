@@ -3,6 +3,7 @@
 from blessed import Terminal
 
 from ..helpers import write_at
+from ..helpers.selection import render_selection_list
 from ..state import PlaylistBuilderState, UIState
 
 
@@ -215,7 +216,7 @@ def _render_filter_editor(term: Terminal, state: UIState, y: int, height: int) -
     builder = state.builder
 
     # Calculate layout
-    header_height = 2  # Title + help info
+    header_height = 1  # Title only
     footer_height = 1  # Help text
     list_height = height - header_height - footer_height
 
@@ -240,16 +241,70 @@ def _render_filter_editor_header(
     title = f'   🎛️ Filter Editor: "{builder.target_playlist_name}"'
     write_at(term, 0, y, term.bold(title))
 
-    help_text = "j/k nav  e edit  d delete  a add  Enter confirm/save  Esc cancel"
-    write_at(term, 0, y + 1, term.dim + help_text[: term.width - 1] + term.normal)
+    return y + 1
 
-    return y + 2
+
+def _render_filter_editing_steps(
+    term: Terminal, builder: PlaylistBuilderState, y: int, height: int
+) -> int:
+    """Render stepped editing interface with list selection."""
+    step = builder.filter_editor_step
+
+    if step == 0:
+        # Show field selection list
+        instruction = "Select field (j/k or ↑↓ arrows, Enter to confirm):"
+        return render_selection_list(
+            term,
+            builder.filter_editor_options,
+            builder.filter_editor_selected,
+            y,
+            height,
+            instruction=instruction,
+        )
+
+    elif step == 1:
+        # Show operator selection list
+        field = builder.filter_editor_field
+        instruction = (
+            f"Select operator for '{field}' (j/k or ↑↓ arrows, Enter to confirm):"
+        )
+        return render_selection_list(
+            term,
+            builder.filter_editor_options,
+            builder.filter_editor_selected,
+            y,
+            height,
+            instruction=instruction,
+        )
+
+    elif step == 2:
+        # Show value input (inline text entry, similar to wizard)
+        line_num = 0
+
+        if line_num < height:
+            instruction = f"   Enter value for: {builder.filter_editor_field} {builder.filter_editor_operator}"
+            write_at(term, 0, y + line_num, term.white(instruction))
+            line_num += 1
+
+        if line_num < height:
+            value_line = f"   Value: {builder.filter_editor_value}_"
+            write_at(term, 0, y + line_num, term.cyan(value_line))
+            line_num += 1
+
+        return line_num
+
+    return 0
 
 
 def _render_filter_list(
     term: Terminal, builder: PlaylistBuilderState, y: int, height: int
 ) -> int:
-    """Render scrollable filter list."""
+    """Render scrollable filter list or editing interface."""
+    # If editing, show stepped selection UI instead of filter list
+    if builder.filter_editor_editing:
+        return _render_filter_editing_steps(term, builder, y, height)
+
+    # Otherwise show normal filter list with filters + add option
     filters = builder.filters
     selected = builder.filter_editor_selected
 
@@ -302,12 +357,14 @@ def _render_filter_list(
 def _render_filter_editor_footer(
     term: Terminal, builder: PlaylistBuilderState, y: int
 ) -> int:
-    """Render filter editor footer with position info."""
+    """Render filter editor footer with position and help text."""
     total = len(builder.filters) + 1  # +1 for add option
     pos = builder.filter_editor_selected + 1 if total > 0 else 0
 
     position_text = f"[{pos}/{total}]"
-    footer = f"   {position_text}"
+    help_text = "j/k nav  e edit  d delete  a add  Enter confirm/save  Esc cancel"
+
+    footer = f"   {position_text} {help_text}"
     write_at(term, 0, y, term.dim + footer[: term.width - 1] + term.normal)
 
     return y + 1

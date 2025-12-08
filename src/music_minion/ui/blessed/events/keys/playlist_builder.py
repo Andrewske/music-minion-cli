@@ -13,9 +13,7 @@ from music_minion.ui.blessed.state import (
     move_filter_editor_selection,
     start_editing_filter,
     start_adding_filter,
-    update_filter_editor_field,
-    update_filter_editor_operator,
-    update_filter_editor_value,
+    advance_filter_editor_step,
     save_filter_editor_changes,
     delete_filter,
     remove_builder_filter,
@@ -23,10 +21,6 @@ from music_minion.ui.blessed.state import (
     cancel_builder_dropdown,
     hide_playlist_builder,
     toggle_builder_track,
-    BUILDER_SORT_FIELDS,
-    BUILDER_NUMERIC_FIELDS,
-    BUILDER_NUMERIC_OPERATORS,
-    BUILDER_TEXT_OPERATORS,
     replace,
 )
 
@@ -212,6 +206,7 @@ def _handle_filter_editing_key(
     """Handle keys when editing a filter field/operator/value."""
     event_type = event.get("type")
     char = event.get("char", "")
+    step = state.builder.filter_editor_step
 
     # Cancel editing
     if event_type == "escape":
@@ -223,77 +218,59 @@ def _handle_filter_editing_key(
                 filter_editor_field=None,
                 filter_editor_operator=None,
                 filter_editor_value="",
+                filter_editor_options=[],
+                filter_editor_selected=0,
             ),
         ), None
 
-    # Save editing
-    if event_type == "enter":
-        return replace(
-            state,
-            builder=replace(state.builder, filter_editor_editing=False),
-        ), None
-
-    # Handle stepped filter editing
-    step = state.builder.filter_editor_step
-
-    # Step 0: Select field with j/k navigation
-    if step == 0:
+    # Steps 0 & 1: List navigation with j/k or arrows
+    if step in (0, 1):
+        # j/k navigation
         if event_type == "key" and char in ("j", "k"):
-            fields = list(BUILDER_SORT_FIELDS)
-            current_idx = 0
-            if state.builder.filter_editor_field:
-                try:
-                    current_idx = fields.index(state.builder.filter_editor_field)
-                except ValueError:
-                    pass
-            if char == "j":
-                new_idx = (current_idx + 1) % len(fields)
-            else:  # char == "k"
-                new_idx = (current_idx - 1) % len(fields)
-            return update_filter_editor_field(state, fields[new_idx]), None
-        elif event_type == "enter":
-            # Confirm field and move to step 1
-            return replace(
-                state,
-                builder=replace(state.builder, filter_editor_step=1),
-            ), None
+            delta = 1 if char == "j" else -1
+            options = state.builder.filter_editor_options
+            if options:
+                new_idx = (state.builder.filter_editor_selected + delta) % len(options)
+                return replace(
+                    state,
+                    builder=replace(state.builder, filter_editor_selected=new_idx),
+                ), None
 
-    # Step 1: Select operator with j/k navigation
-    elif step == 1:
-        if event_type == "key" and char in ("j", "k"):
-            field = state.builder.filter_editor_field
-            if field in BUILDER_NUMERIC_FIELDS:
-                operators = [op[1] for op in BUILDER_NUMERIC_OPERATORS]
-            else:
-                operators = [op[1] for op in BUILDER_TEXT_OPERATORS]
-            current_idx = 0
-            if state.builder.filter_editor_operator:
-                try:
-                    current_idx = operators.index(state.builder.filter_editor_operator)
-                except ValueError:
-                    pass
-            if char == "j":
-                new_idx = (current_idx + 1) % len(operators)
-            else:  # char == "k"
-                new_idx = (current_idx - 1) % len(operators)
-            return update_filter_editor_operator(state, operators[new_idx]), None
-        elif event_type == "enter":
-            # Confirm operator and move to step 2
-            return replace(
-                state,
-                builder=replace(state.builder, filter_editor_step=2),
-            ), None
+        # Arrow key navigation
+        elif event_type in ("arrow_down", "arrow_up"):
+            delta = 1 if event_type == "arrow_down" else -1
+            options = state.builder.filter_editor_options
+            if options:
+                new_idx = (state.builder.filter_editor_selected + delta) % len(options)
+                return replace(
+                    state,
+                    builder=replace(state.builder, filter_editor_selected=new_idx),
+                ), None
 
-    # Step 2: Enter value
+        # Enter: Advance to next step
+        elif event_type == "enter":
+            return advance_filter_editor_step(state), None
+
+    # Step 2: Value input
     elif step == 2:
         if event_type == "char" and char and char.isprintable():
-            return update_filter_editor_value(
-                state, state.builder.filter_editor_value + char
+            return replace(
+                state,
+                builder=replace(
+                    state.builder,
+                    filter_editor_value=state.builder.filter_editor_value + char,
+                ),
             ), None
+
         elif event_type == "backspace" and state.builder.filter_editor_value:
-            return update_filter_editor_value(
-                state, state.builder.filter_editor_value[:-1]
+            return replace(
+                state,
+                builder=replace(
+                    state.builder,
+                    filter_editor_value=state.builder.filter_editor_value[:-1],
+                ),
             ), None
+
         elif event_type == "enter":
             # Save and exit editing
             return save_filter_editor_changes(state), None
