@@ -150,7 +150,9 @@ def _format_comparison_line(
 
     # Truncate track names to fit terminal width
     # Reserve space for: prefix(4) + icon(2) + " > "(3) + " • "(3) + time(8) + " • Session: "(12) + session(8) = 40
-    max_track_width = (term.width - 50) // 2  # Split remaining space between winner and loser
+    max_track_width = (
+        term.width - 50
+    ) // 2  # Split remaining space between winner and loser
     if len(winner_str) > max_track_width:
         winner_str = winner_str[: max_track_width - 3] + "..."
     if len(loser_str) > max_track_width:

@@ -35,7 +35,9 @@ def init_provider(config: ProviderConfig) -> ProviderState:
 
     if not token_data:
         logger.debug("No SoundCloud token found - not authenticated")
-        return ProviderState(config=config, authenticated=False, last_sync=None, cache={})
+        return ProviderState(
+            config=config, authenticated=False, last_sync=None, cache={}
+        )
 
     # Check if token is expired
     if auth.is_token_expired(token_data):
@@ -51,8 +53,12 @@ def init_provider(config: ProviderConfig) -> ProviderState:
                 cache={"token_data": refreshed_token},
             )
         else:
-            logger.warning("Token refresh failed - please re-authenticate with: library auth soundcloud")
-            return ProviderState(config=config, authenticated=False, last_sync=None, cache={})
+            logger.warning(
+                "Token refresh failed - please re-authenticate with: library auth soundcloud"
+            )
+            return ProviderState(
+                config=config, authenticated=False, last_sync=None, cache={}
+            )
 
     # Token is still valid
     logger.debug("SoundCloud token is valid")

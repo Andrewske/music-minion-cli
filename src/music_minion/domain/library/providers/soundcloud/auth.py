@@ -233,7 +233,10 @@ def authenticate(state: ProviderState) -> Tuple[ProviderState, bool]:
         _save_user_tokens(token_data)
 
         log("✓ Authentication successful!", level="info")
-        log(f"Access token expires: {expires_at.strftime('%Y-%m-%d %H:%M')}", level="info")
+        log(
+            f"Access token expires: {expires_at.strftime('%Y-%m-%d %H:%M')}",
+            level="info",
+        )
 
         # Update state
         new_state = state.with_authenticated(True)
@@ -247,7 +250,8 @@ def authenticate(state: ProviderState) -> Tuple[ProviderState, bool]:
             try:
                 error_data = e.response.json()
                 log(
-                    f"Error details: {error_data.get('error_description', error_data)}", level="error"
+                    f"Error details: {error_data.get('error_description', error_data)}",
+                    level="error",
                 )
             except Exception:
                 log(f"Response: {e.response.text}", level="error")
@@ -368,7 +372,11 @@ def refresh_token(token_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         except Exception:
             error_body = e.response.text if hasattr(e.response, "text") else ""
 
-        if e.response.status_code == 400 and isinstance(error_body, dict) and error_body.get("error") == "invalid_grant":
+        if (
+            e.response.status_code == 400
+            and isinstance(error_body, dict)
+            and error_body.get("error") == "invalid_grant"
+        ):
             # Specific handling for invalid_grant - refresh token expired/revoked
             logger.warning(
                 f"SoundCloud refresh token invalid or expired (HTTP 400: invalid_grant). "
@@ -376,7 +384,9 @@ def refresh_token(token_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             )
         else:
             # Other HTTP errors
-            logger.error(f"SoundCloud token refresh failed (HTTP {e.response.status_code}): {error_body}")
+            logger.error(
+                f"SoundCloud token refresh failed (HTTP {e.response.status_code}): {error_body}"
+            )
 
         return None
     except Exception as e:

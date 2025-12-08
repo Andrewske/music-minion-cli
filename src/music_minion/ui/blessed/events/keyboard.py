@@ -104,7 +104,10 @@ def handle_key(
         case "wizard":
             return handle_wizard_key(state, event)
         case "playlist_builder":
-            from music_minion.ui.blessed.events.keys.playlist_builder import handle_playlist_builder_key
+            from music_minion.ui.blessed.events.keys.playlist_builder import (
+                handle_playlist_builder_key,
+            )
+
             return handle_playlist_builder_key(state, event, palette_height)
         case "track_viewer":
             return handle_track_viewer_key(state, event, palette_height)

@@ -4,7 +4,9 @@ from blessed import Terminal
 from ..state import UIState
 
 
-def calculate_layout(term: Terminal, state: UIState, dashboard_height: int) -> dict[str, int]:
+def calculate_layout(
+    term: Terminal, state: UIState, dashboard_height: int
+) -> dict[str, int]:
     """
     Pure function: calculate y-positions for all regions.
 
@@ -40,15 +42,18 @@ def calculate_layout(term: Terminal, state: UIState, dashboard_height: int) -> d
         overlay_height = 22
 
     return {
-        'dashboard_y': 0,
-        'dashboard_height': dashboard_height,
-        'history_y': dashboard_height,
-        'history_height': term.height - dashboard_height - input_height - overlay_height,
-        'input_y': term.height - input_height - overlay_height,
-        'palette_y': term.height - overlay_height,
-        'palette_height': overlay_height,
-        'track_viewer_y': term.height - overlay_height,
-        'track_viewer_height': overlay_height,
-        'analytics_viewer_y': term.height - overlay_height,
-        'analytics_viewer_height': overlay_height,
+        "dashboard_y": 0,
+        "dashboard_height": dashboard_height,
+        "history_y": dashboard_height,
+        "history_height": term.height
+        - dashboard_height
+        - input_height
+        - overlay_height,
+        "input_y": term.height - input_height - overlay_height,
+        "palette_y": term.height - overlay_height,
+        "palette_height": overlay_height,
+        "track_viewer_y": term.height - overlay_height,
+        "track_viewer_height": overlay_height,
+        "analytics_viewer_y": term.height - overlay_height,
+        "analytics_viewer_height": overlay_height,
     }

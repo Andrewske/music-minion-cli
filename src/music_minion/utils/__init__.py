@@ -11,9 +11,9 @@ from .parsers import *
 
 __all__ = [
     # From autocomplete
-    'MusicMinionCompleter',
-    'PlaylistCompleter',
+    "MusicMinionCompleter",
+    "PlaylistCompleter",
     # From parsers
-    'parse_quoted_args',
-    'parse_command',
+    "parse_quoted_args",
+    "parse_command",
 ]

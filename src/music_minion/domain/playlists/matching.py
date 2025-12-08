@@ -120,9 +120,7 @@ def quick_filter_candidates(
     return [idx for idx, _ in sorted_scores[:top_n]]
 
 
-def batch_tfidf_similarity(
-    query_text: str, candidate_texts: list[str]
-) -> np.ndarray:
+def batch_tfidf_similarity(query_text: str, candidate_texts: list[str]) -> np.ndarray:
     """Compute TF-IDF cosine similarity for query vs all candidates.
 
     Optimization: Fits vectorizer ONCE instead of per-comparison.
@@ -164,9 +162,9 @@ def batch_fuzzy_similarity(query_text: str, candidate_texts: list[str]) -> np.nd
     if not candidate_texts:
         return np.array([])
 
-    scores = process.cdist(
-        [query_text], candidate_texts, scorer=fuzz.token_set_ratio
-    )[0]
+    scores = process.cdist([query_text], candidate_texts, scorer=fuzz.token_set_ratio)[
+        0
+    ]
     return scores / 100.0  # Normalize to 0.0-1.0
 
 
@@ -183,7 +181,9 @@ def batch_jaro_similarity(query_text: str, candidate_texts: list[str]) -> np.nda
     if not candidate_texts:
         return np.array([])
 
-    scores = [distance.JaroWinkler.similarity(query_text, cand) for cand in candidate_texts]
+    scores = [
+        distance.JaroWinkler.similarity(query_text, cand) for cand in candidate_texts
+    ]
     return np.array(scores)
 
 
@@ -299,11 +299,14 @@ def calculate_duration_score(
     elif is_edit:
         return 1.0 if diff <= 5 else (0.7 if diff <= 15 else 0.3)
     else:
-        return 1.0 if diff <= 1 else (0.7 if diff <= 3 else (0.4 if diff <= 10 else 0.0))
+        return (
+            1.0 if diff <= 1 else (0.7 if diff <= 3 else (0.4 if diff <= 10 else 0.0))
+        )
 
 
 def batch_score_candidates(
-    spotify_track: dict[str, Any], soundcloud_candidates: list[tuple[str, dict[str, Any]]]
+    spotify_track: dict[str, Any],
+    soundcloud_candidates: list[tuple[str, dict[str, Any]]],
 ) -> list[MatchCandidate]:
     """Score all SoundCloud candidates for a Spotify track using batch processing.
 
@@ -372,17 +375,25 @@ def batch_score_candidates(
 
     # Step 5: Build MatchCandidate objects with ensemble scoring
     results = []
-    for idx, (sc_id, meta, sc_title_norm, sc_artist_norm, sc_combined_norm) in enumerate(
-        top_candidates
-    ):
+    for idx, (
+        sc_id,
+        meta,
+        sc_title_norm,
+        sc_artist_norm,
+        sc_combined_norm,
+    ) in enumerate(top_candidates):
         # Individual metric scores
         title_tfidf = tfidf_scores[idx]
         artist_fuzzy = fuzzy_scores[idx]
         title_jaro = jaro_scores[idx]
 
         # Penalties
-        substring_penalty = calculate_substring_penalty(sp_combined_norm, sc_combined_norm)
-        token_penalty = calculate_token_subset_penalty(sp_combined_norm, sc_combined_norm)
+        substring_penalty = calculate_substring_penalty(
+            sp_combined_norm, sc_combined_norm
+        )
+        token_penalty = calculate_token_subset_penalty(
+            sp_combined_norm, sc_combined_norm
+        )
 
         # Ensemble title similarity
         title_sim = (

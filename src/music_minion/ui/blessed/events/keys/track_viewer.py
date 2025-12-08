@@ -173,7 +173,9 @@ def handle_track_viewer_key(
 
                 new_query = state.track_viewer_filter_query[:-1]
                 # Use memoized selector (convert list to tuple for cache comparison)
-                filtered = filter_search_tracks(new_query, tuple(state.track_viewer_tracks))
+                filtered = filter_search_tracks(
+                    new_query, tuple(state.track_viewer_tracks)
+                )
                 state = update_track_viewer_filter(state, new_query, filtered)
                 return state, None
 
@@ -181,12 +183,26 @@ def handle_track_viewer_key(
         if event["type"] == "char" and event["char"]:
             char = event["char"]
             # Skip shortcut keys
-            if char.lower() not in ["p", "d", "e", "a", "f", "q", "j", "k", "l", "u", "b"]:
+            if char.lower() not in [
+                "p",
+                "d",
+                "e",
+                "a",
+                "f",
+                "q",
+                "j",
+                "k",
+                "l",
+                "u",
+                "b",
+            ]:
                 from music_minion.ui.blessed.state_selectors import filter_search_tracks
 
                 new_query = state.track_viewer_filter_query + char
                 # Use memoized selector (convert list to tuple for cache comparison)
-                filtered = filter_search_tracks(new_query, tuple(state.track_viewer_tracks))
+                filtered = filter_search_tracks(
+                    new_query, tuple(state.track_viewer_tracks)
+                )
                 state = update_track_viewer_filter(state, new_query, filtered)
                 return state, None
 

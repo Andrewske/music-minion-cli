@@ -14,6 +14,7 @@ class Track(NamedTuple):
     The local_path field represents the local file path if available.
     Provider-specific IDs are stored in separate fields.
     """
+
     local_path: str  # Local file path
     title: Optional[str] = None
     artist: Optional[str] = None
@@ -30,8 +31,8 @@ class Track(NamedTuple):
 
     # Provider IDs (nullable - track may exist in multiple sources)
     soundcloud_id: Optional[str] = None  # SoundCloud track ID
-    spotify_id: Optional[str] = None     # Spotify track ID
-    youtube_id: Optional[str] = None     # YouTube video ID
+    spotify_id: Optional[str] = None  # Spotify track ID
+    youtube_id: Optional[str] = None  # YouTube video ID
 
     # Database ID (None for tracks not yet persisted to database)
     id: Optional[int] = None  # Database track ID

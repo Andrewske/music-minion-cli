@@ -237,16 +237,16 @@ def create_soundcloud_playlist(
     # Add tracks to playlist
     added_count = 0
     for track_id in matched_track_ids:
-        soundcloud_provider_state, success, add_error = soundcloud.add_track_to_playlist(
-            soundcloud_provider_state, playlist_id, track_id
+        soundcloud_provider_state, success, add_error = (
+            soundcloud.add_track_to_playlist(
+                soundcloud_provider_state, playlist_id, track_id
+            )
         )
 
         if success:
             added_count += 1
         else:
-            logger.warning(
-                f"Failed to add track {track_id} to playlist: {add_error}"
-            )
+            logger.warning(f"Failed to add track {track_id} to playlist: {add_error}")
 
         time.sleep(0.1)  # Rate limiting
 

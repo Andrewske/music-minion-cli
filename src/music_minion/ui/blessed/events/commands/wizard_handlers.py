@@ -10,7 +10,9 @@ from music_minion.ui.blessed.state import (
 )
 
 
-def handle_wizard_save(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, UIState]:
+def handle_wizard_save(
+    ctx: AppContext, ui_state: UIState
+) -> tuple[AppContext, UIState]:
     """
     Handle saving a smart playlist from wizard.
 
@@ -24,22 +26,26 @@ def handle_wizard_save(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, 
     from music_minion.domain import playlists
     from music_minion.domain.playlists import filters as playlist_filters
 
-    if not ui_state.wizard_active or ui_state.wizard_type != 'smart_playlist':
+    if not ui_state.wizard_active or ui_state.wizard_type != "smart_playlist":
         return ctx, ui_state
 
     wizard_data = ui_state.wizard_data
 
     # Get playlist name
-    playlist_name = wizard_data.get('name', '').strip()
+    playlist_name = wizard_data.get("name", "").strip()
     if not playlist_name:
-        ui_state = add_history_line(ui_state, "❌ Error: Playlist name is required", 'red')
+        ui_state = add_history_line(
+            ui_state, "❌ Error: Playlist name is required", "red"
+        )
         ui_state = cancel_wizard(ui_state)
         return ctx, ui_state
 
     # Get filters
-    filters = wizard_data.get('filters', [])
+    filters = wizard_data.get("filters", [])
     if not filters:
-        ui_state = add_history_line(ui_state, "❌ Error: At least one filter is required", 'red')
+        ui_state = add_history_line(
+            ui_state, "❌ Error: At least one filter is required", "red"
+        )
         ui_state = cancel_wizard(ui_state)
         return ctx, ui_state
 
@@ -48,27 +54,29 @@ def handle_wizard_save(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, 
         # Create the playlist first
         playlist_id = playlists.create_playlist(
             name=playlist_name,
-            playlist_type='smart',
-            description=wizard_data.get('description', '')
+            playlist_type="smart",
+            description=wizard_data.get("description", ""),
         )
 
         # Add each filter
         for filter_data in filters:
             playlist_filters.add_filter(
                 playlist_id=playlist_id,
-                field=filter_data['field'],
-                operator=filter_data['operator'],
-                value=filter_data['value'],
-                conjunction=filter_data.get('conjunction', 'AND')
+                field=filter_data["field"],
+                operator=filter_data["operator"],
+                value=filter_data["value"],
+                conjunction=filter_data.get("conjunction", "AND"),
             )
 
-        ui_state = add_history_line(ui_state, f"✅ Created smart playlist: {playlist_name}", 'green')
+        ui_state = add_history_line(
+            ui_state, f"✅ Created smart playlist: {playlist_name}", "green"
+        )
         ui_state = set_feedback(ui_state, f"✓ Created {playlist_name}", "✓")
 
     except ValueError as e:
-        ui_state = add_history_line(ui_state, f"❌ Error: {e}", 'red')
+        ui_state = add_history_line(ui_state, f"❌ Error: {e}", "red")
     except (KeyError, TypeError, OSError) as e:
-        ui_state = add_history_line(ui_state, f"❌ Error creating playlist: {e}", 'red')
+        ui_state = add_history_line(ui_state, f"❌ Error creating playlist: {e}", "red")
 
     # Close wizard
     ui_state = cancel_wizard(ui_state)

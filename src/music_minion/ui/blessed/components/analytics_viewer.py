@@ -10,7 +10,13 @@ ANALYTICS_VIEWER_HEADER_LINES = 2  # Title + help line
 ANALYTICS_VIEWER_FOOTER_LINES = 1
 
 
-def create_ascii_bar(value: int, max_value: int, width: int = 12, filled_char: str = '▓', empty_char: str = '░') -> str:
+def create_ascii_bar(
+    value: int,
+    max_value: int,
+    width: int = 12,
+    filled_char: str = "▓",
+    empty_char: str = "░",
+) -> str:
     """
     Create an ASCII progress bar.
 
@@ -45,7 +51,7 @@ def truncate_with_ellipsis(text: str, max_length: int) -> str:
     """
     if len(text) <= max_length:
         return text
-    return text[:max_length - 3] + '...'
+    return text[: max_length - 3] + "..."
 
 
 def format_analytics_lines(analytics: dict, term: Terminal) -> list[str]:
@@ -62,157 +68,196 @@ def format_analytics_lines(analytics: dict, term: Terminal) -> list[str]:
     lines = []
 
     # Header
-    header = f"📊 \"{analytics['playlist_name']}\" Analytics ({analytics['playlist_type']})"
+    header = (
+        f'📊 "{analytics["playlist_name"]}" Analytics ({analytics["playlist_type"]})'
+    )
     lines.append(term.bold_cyan(header))
     lines.append(term.cyan("═" * 70))
     lines.append("")
 
     # Basic Stats
-    if 'basic' in analytics:
-        basic = analytics['basic']
-        if basic['total_tracks'] > 0:
+    if "basic" in analytics:
+        basic = analytics["basic"]
+        if basic["total_tracks"] > 0:
             lines.append(term.bold_yellow("📈 BASIC STATS"))
-            total_secs = int(basic['total_duration'])
+            total_secs = int(basic["total_duration"])
             hours = total_secs // 3600
             minutes = (total_secs % 3600) // 60
             seconds = total_secs % 60
-            avg_secs = int(basic['avg_duration'])
+            avg_secs = int(basic["avg_duration"])
             avg_mins = avg_secs // 60
             avg_secs_rem = avg_secs % 60
 
-            lines.append(f"  Tracks: " + term.bold_white(str(basic['total_tracks'])))
-            lines.append(f"  Duration: " + term.bold_white(f"{hours}h {minutes}m {seconds}s") + f" (avg: {avg_mins}m {avg_secs_rem}s)")
-            if basic['year_min'] and basic['year_max']:
-                lines.append(f"  Year Range: " + term.bold_white(f"{basic['year_min']}-{basic['year_max']}"))
+            lines.append(f"  Tracks: " + term.bold_white(str(basic["total_tracks"])))
+            lines.append(
+                f"  Duration: "
+                + term.bold_white(f"{hours}h {minutes}m {seconds}s")
+                + f" (avg: {avg_mins}m {avg_secs_rem}s)"
+            )
+            if basic["year_min"] and basic["year_max"]:
+                lines.append(
+                    f"  Year Range: "
+                    + term.bold_white(f"{basic['year_min']}-{basic['year_max']}")
+                )
             lines.append("")
 
     # Artist Analysis with bar charts
-    if 'artists' in analytics:
-        artists = analytics['artists']
-        if artists['top_artists']:
+    if "artists" in analytics:
+        artists = analytics["artists"]
+        if artists["top_artists"]:
             lines.append(term.bold_yellow("🎤 TOP ARTISTS"))
-            top_artists = artists['top_artists'][:10]
-            max_count = max(a['track_count'] for a in top_artists) if top_artists else 0
+            top_artists = artists["top_artists"][:10]
+            max_count = max(a["track_count"] for a in top_artists) if top_artists else 0
 
             for artist_data in top_artists:
-                artist_name = truncate_with_ellipsis(artist_data['artist'], 20)
-                count = artist_data['track_count']
+                artist_name = truncate_with_ellipsis(artist_data["artist"], 20)
+                count = artist_data["track_count"]
                 bar = create_ascii_bar(count, max_count, width=12)
-                percentage = (count / basic['total_tracks'] * 100) if basic['total_tracks'] > 0 else 0
-                lines.append(f"  {artist_name:20s} {bar} " + term.bold_cyan(f"{count:3d}") + f" ({percentage:.1f}%)")
+                percentage = (
+                    (count / basic["total_tracks"] * 100)
+                    if basic["total_tracks"] > 0
+                    else 0
+                )
+                lines.append(
+                    f"  {artist_name:20s} {bar} "
+                    + term.bold_cyan(f"{count:3d}")
+                    + f" ({percentage:.1f}%)"
+                )
 
-            lines.append(term.white(f"  Total: {artists['total_unique_artists']} unique artists (avg: {artists['diversity_ratio']:.1f} tracks/artist)"))
+            lines.append(
+                term.white(
+                    f"  Total: {artists['total_unique_artists']} unique artists (avg: {artists['diversity_ratio']:.1f} tracks/artist)"
+                )
+            )
             lines.append("")
 
     # Genre Distribution
-    if 'genres' in analytics:
-        genres = analytics['genres']['genres']
+    if "genres" in analytics:
+        genres = analytics["genres"]["genres"]
         if genres:
             lines.append(term.bold_yellow("🎵 GENRE DISTRIBUTION"))
             top_genres = genres[:10]
-            max_count = max(g['count'] for g in top_genres) if top_genres else 0
+            max_count = max(g["count"] for g in top_genres) if top_genres else 0
 
             for genre_data in top_genres:
-                genre = truncate_with_ellipsis(genre_data['genre'], 20)
-                count = genre_data['count']
-                percentage = genre_data['percentage']
+                genre = truncate_with_ellipsis(genre_data["genre"], 20)
+                count = genre_data["count"]
+                percentage = genre_data["percentage"]
                 bar = create_ascii_bar(count, max_count, width=12)
-                lines.append(f"  {genre:20s} {bar} " + term.bold_magenta(f"{count:3d}") + f" ({percentage:.1f}%)")
+                lines.append(
+                    f"  {genre:20s} {bar} "
+                    + term.bold_magenta(f"{count:3d}")
+                    + f" ({percentage:.1f}%)"
+                )
 
             if len(genres) > 10:
                 lines.append(term.white(f"  ... and {len(genres) - 10} more"))
             lines.append("")
 
     # Tag Analysis
-    if 'tags' in analytics:
-        tags = analytics['tags']
-        if tags['top_ai_tags'] or tags['top_user_tags']:
+    if "tags" in analytics:
+        tags = analytics["tags"]
+        if tags["top_ai_tags"] or tags["top_user_tags"]:
             lines.append(term.bold_yellow("#️⃣ TOP TAGS"))
 
-            if tags['top_ai_tags']:
+            if tags["top_ai_tags"]:
                 lines.append("  AI Tags:")
-                for tag in tags['top_ai_tags'][:10]:
-                    avg_conf = tag.get('avg_confidence')
+                for tag in tags["top_ai_tags"][:10]:
+                    avg_conf = tag.get("avg_confidence")
                     if avg_conf is not None:
-                        lines.append(f"    • {tag['tag_name']} ({tag['count']}) - conf: {avg_conf:.2f}")
+                        lines.append(
+                            f"    • {tag['tag_name']} ({tag['count']}) - conf: {avg_conf:.2f}"
+                        )
                     else:
                         lines.append(f"    • {tag['tag_name']} ({tag['count']})")
 
-            if tags['top_user_tags']:
+            if tags["top_user_tags"]:
                 lines.append("  User Tags:")
-                for tag in tags['top_user_tags'][:10]:
+                for tag in tags["top_user_tags"][:10]:
                     lines.append(f"    • {tag['tag_name']} ({tag['count']})")
 
-            if tags['top_file_tags']:
+            if tags["top_file_tags"]:
                 lines.append("  File Tags:")
-                for tag in tags['top_file_tags'][:10]:
+                for tag in tags["top_file_tags"][:10]:
                     lines.append(f"    • {tag['tag_name']} ({tag['count']})")
             lines.append("")
 
     # BPM Analysis
-    if 'bpm' in analytics:
-        bpm = analytics['bpm']
-        if bpm['min'] is not None:
+    if "bpm" in analytics:
+        bpm = analytics["bpm"]
+        if bpm["min"] is not None:
             lines.append(term.bold_yellow("⚡ BPM ANALYSIS"))
-            lines.append(f"  Range: " + term.bold_white(f"{bpm['min']:.0f}-{bpm['max']:.0f} BPM") + f" (avg: {bpm['avg']:.0f}, median: {bpm['median']:.0f})")
+            lines.append(
+                f"  Range: "
+                + term.bold_white(f"{bpm['min']:.0f}-{bpm['max']:.0f} BPM")
+                + f" (avg: {bpm['avg']:.0f}, median: {bpm['median']:.0f})"
+            )
             lines.append("  Distribution:")
 
-            max_count = max(bpm['distribution'].values()) if bpm['distribution'] else 0
-            for range_name, count in bpm['distribution'].items():
+            max_count = max(bpm["distribution"].values()) if bpm["distribution"] else 0
+            for range_name, count in bpm["distribution"].items():
                 if count > 0:
                     bar = create_ascii_bar(count, max_count, width=15)
                     peak_marker = " ← Peak" if count == max_count else ""
                     style = term.bold_green if count == max_count else term.white
-                    lines.append(style(f"    {range_name:8s} │ {count:3d}  {bar}{peak_marker}"))
+                    lines.append(
+                        style(f"    {range_name:8s} │ {count:3d}  {bar}{peak_marker}")
+                    )
             lines.append("")
 
     # Key Distribution
-    if 'keys' in analytics:
-        keys = analytics['keys']
-        if keys['top_keys']:
+    if "keys" in analytics:
+        keys = analytics["keys"]
+        if keys["top_keys"]:
             lines.append(term.bold_yellow("🔑 KEY DISTRIBUTION"))
             lines.append(f"  Total: {keys['total_unique_keys']} unique keys")
             lines.append("  Most Common:")
-            for key_data in keys['top_keys'][:10]:
-                lines.append(f"    • {key_data['key_signature']}: {key_data['count']} tracks")
-            lines.append(f"  Harmonic pairs: {keys['harmonic_pairs_count']} compatible transitions")
+            for key_data in keys["top_keys"][:10]:
+                lines.append(
+                    f"    • {key_data['key_signature']}: {key_data['count']} tracks"
+                )
+            lines.append(
+                f"  Harmonic pairs: {keys['harmonic_pairs_count']} compatible transitions"
+            )
             lines.append("")
 
     # Year Distribution
-    if 'years' in analytics:
-        years = analytics['years']
+    if "years" in analytics:
+        years = analytics["years"]
         lines.append(term.bold_yellow("📅 YEAR DISTRIBUTION"))
         lines.append("  By Decade:")
-        for decade, count in years['decade_distribution'].items():
+        for decade, count in years["decade_distribution"].items():
             if count > 0:
                 lines.append(f"    {decade}: {count} tracks")
-        lines.append(f"  Recent (2020+): {years['recent_count']} tracks ({years['recent_percentage']:.1f}%)")
+        lines.append(
+            f"  Recent (2020+): {years['recent_count']} tracks ({years['recent_percentage']:.1f}%)"
+        )
         lines.append(f"  Classic (pre-2020): {years['classic_count']} tracks")
         lines.append("")
 
     # Rating Analysis
-    if 'ratings' in analytics:
-        ratings = analytics['ratings']
-        if ratings['rating_counts']:
+    if "ratings" in analytics:
+        ratings = analytics["ratings"]
+        if ratings["rating_counts"]:
             lines.append(term.bold_yellow("⭐ RATING ANALYSIS"))
-            for rating_type, count in ratings['rating_counts'].items():
+            for rating_type, count in ratings["rating_counts"].items():
                 lines.append(f"  {rating_type.capitalize()}: {count} tracks")
 
-            if ratings['most_loved_tracks']:
+            if ratings["most_loved_tracks"]:
                 lines.append("  Most Loved:")
-                for i, track in enumerate(ratings['most_loved_tracks'][:5], 1):
+                for i, track in enumerate(ratings["most_loved_tracks"][:5], 1):
                     lines.append(f"    {i}. {track['artist']} - {track['title']}")
             lines.append("")
 
     # Quality Metrics
-    if 'quality' in analytics:
-        quality = analytics['quality']
+    if "quality" in analytics:
+        quality = analytics["quality"]
         lines.append(term.bold_yellow("✅ QUALITY METRICS"))
 
         # Color-coded completeness score
-        completeness = quality['completeness_score']
+        completeness = quality["completeness_score"]
         filled_width = int(completeness / 100 * 20)
-        bar = '▓' * filled_width + '░' * (20 - filled_width)
+        bar = "▓" * filled_width + "░" * (20 - filled_width)
 
         if completeness >= 80:
             quality_color = term.bold_green
@@ -224,38 +269,44 @@ def format_analytics_lines(analytics: dict, term: Terminal) -> list[str]:
             quality_color = term.bold_red
             status_icon = "🔴"
 
-        lines.append(f"  Completeness: {bar} {quality_color(f'{completeness:.1f}%')} {status_icon}")
+        lines.append(
+            f"  Completeness: {bar} {quality_color(f'{completeness:.1f}%')} {status_icon}"
+        )
 
-        total = quality['total_tracks']
+        total = quality["total_tracks"]
         if total > 0:
             missing_fields = []
-            if quality['missing_bpm'] > 0:
-                pct = quality['missing_bpm'] / total * 100
-                missing_fields.append(('BPM', quality['missing_bpm'], pct))
-            if quality['missing_key'] > 0:
-                pct = quality['missing_key'] / total * 100
-                missing_fields.append(('Key', quality['missing_key'], pct))
-            if quality['missing_year'] > 0:
-                pct = quality['missing_year'] / total * 100
-                missing_fields.append(('Year', quality['missing_year'], pct))
-            if quality['missing_genre'] > 0:
-                pct = quality['missing_genre'] / total * 100
-                missing_fields.append(('Genre', quality['missing_genre'], pct))
-            if quality['without_tags'] > 0:
-                pct = quality['without_tags'] / total * 100
-                missing_fields.append(('Tags', quality['without_tags'], pct))
+            if quality["missing_bpm"] > 0:
+                pct = quality["missing_bpm"] / total * 100
+                missing_fields.append(("BPM", quality["missing_bpm"], pct))
+            if quality["missing_key"] > 0:
+                pct = quality["missing_key"] / total * 100
+                missing_fields.append(("Key", quality["missing_key"], pct))
+            if quality["missing_year"] > 0:
+                pct = quality["missing_year"] / total * 100
+                missing_fields.append(("Year", quality["missing_year"], pct))
+            if quality["missing_genre"] > 0:
+                pct = quality["missing_genre"] / total * 100
+                missing_fields.append(("Genre", quality["missing_genre"], pct))
+            if quality["without_tags"] > 0:
+                pct = quality["without_tags"] / total * 100
+                missing_fields.append(("Tags", quality["without_tags"], pct))
 
             if missing_fields:
                 lines.append(term.white("  Missing Metadata:"))
                 for field_name, count, pct in missing_fields:
-                    bar = create_ascii_bar(int(100 - pct), 100, width=10, filled_char='█', empty_char='─')
+                    bar = create_ascii_bar(
+                        int(100 - pct), 100, width=10, filled_char="█", empty_char="─"
+                    )
                     if pct > 20:
                         color = term.red
                     elif pct > 5:
                         color = term.yellow
                     else:
                         color = term.white
-                    lines.append(f"    {field_name:6s}: {bar} {color(f'{count} tracks ({pct:.1f}%)')}")
+                    lines.append(
+                        f"    {field_name:6s}: {bar} {color(f'{count} tracks ({pct:.1f}%)')}"
+                    )
         lines.append("")
 
     lines.append(term.white("─" * 70))
@@ -263,7 +314,9 @@ def format_analytics_lines(analytics: dict, term: Terminal) -> list[str]:
     return lines
 
 
-def render_analytics_viewer(term: Terminal, state: UIState, y: int, height: int) -> None:
+def render_analytics_viewer(
+    term: Terminal, state: UIState, y: int, height: int
+) -> None:
     """
     Render analytics viewer with scrolling support.
 
@@ -286,7 +339,7 @@ def render_analytics_viewer(term: Terminal, state: UIState, y: int, height: int)
     content_height = height - ANALYTICS_VIEWER_FOOTER_LINES
 
     # Calculate visible window
-    visible_lines = all_lines[scroll_offset:scroll_offset + content_height]
+    visible_lines = all_lines[scroll_offset : scroll_offset + content_height]
 
     # Render visible lines
     for i, line in enumerate(visible_lines):

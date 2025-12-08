@@ -48,7 +48,9 @@ def _handle_play_track_from_viewer_cmd(
     playlist_id = data.get("playlist_id")
     track_index = data.get("track_index")
     if playlist_id is not None and track_index is not None:
-        ctx, ui_state = handle_play_track_from_viewer(ctx, ui_state, playlist_id, track_index)
+        ctx, ui_state = handle_play_track_from_viewer(
+            ctx, ui_state, playlist_id, track_index
+        )
     return ctx, ui_state, False
 
 
@@ -59,7 +61,9 @@ def _handle_remove_track_from_playlist_cmd(
     track_id = data.get("track_id")
     playlist_name = data.get("playlist_name")
     if track_id is not None and playlist_name:
-        ctx, ui_state = handle_remove_track_from_playlist(ctx, ui_state, track_id, playlist_name)
+        ctx, ui_state = handle_remove_track_from_playlist(
+            ctx, ui_state, track_id, playlist_name
+        )
     return ctx, ui_state, False
 
 
@@ -467,7 +471,9 @@ def _handle_builder_save_and_exit_cmd(
 
 from typing import Callable
 
-InternalHandler = Callable[[AppContext, UIState, InternalHandlerData], InternalHandlerResult]
+InternalHandler = Callable[
+    [AppContext, UIState, InternalHandlerData], InternalHandlerResult
+]
 
 INTERNAL_HANDLERS: dict[str, InternalHandler] = {
     "play_track_from_viewer": _handle_play_track_from_viewer_cmd,
@@ -844,7 +850,9 @@ def _process_ui_action(
 
     action = ctx.ui_action
 
-    logger.info(f"🔧 _process_ui_action called: action={'None' if not action else action.get('type', 'unknown')}")
+    logger.info(
+        f"🔧 _process_ui_action called: action={'None' if not action else action.get('type', 'unknown')}"
+    )
 
     if not action:
         return ctx, ui_state
@@ -924,19 +932,24 @@ def _process_ui_action(
         ratings_cache = action.get("ratings_cache", {})
 
         log(f"🔍 DEBUG: Processing start_comparison action", level="info")
-        logger.info(f"Processing start_comparison action: comparison={comparison is not None}, filtered_tracks={len(filtered_tracks)}, active={comparison.active if comparison else 'N/A'}")
+        logger.info(
+            f"Processing start_comparison action: comparison={comparison is not None}, filtered_tracks={len(filtered_tracks)}, active={comparison.active if comparison else 'N/A'}"
+        )
 
         if comparison:
             # Update UI state with comparison data
             # The validation in update_ui_state_safe prevents background thread from overwriting this
             comparison_with_data = replace(
-                comparison,
-                filtered_tracks=filtered_tracks,
-                ratings_cache=ratings_cache
+                comparison, filtered_tracks=filtered_tracks, ratings_cache=ratings_cache
             )
             ui_state = replace(ui_state, comparison=comparison_with_data)
-            log(f"🔍 DEBUG: Updated UI state - comparison active={ui_state.comparison.active}", level="info")
-            logger.info(f"Updated ui_state.comparison: active={ui_state.comparison.active}, track_a={ui_state.comparison.track_a is not None}, track_b={ui_state.comparison.track_b is not None}")
+            log(
+                f"🔍 DEBUG: Updated UI state - comparison active={ui_state.comparison.active}",
+                level="info",
+            )
+            logger.info(
+                f"Updated ui_state.comparison: active={ui_state.comparison.active}, track_a={ui_state.comparison.track_a is not None}, track_b={ui_state.comparison.track_b is not None}"
+            )
 
     # Clear the ui_action after processing
     ctx = ctx.with_ui_action(None)

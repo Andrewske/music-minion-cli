@@ -221,7 +221,9 @@ def authenticate(state: ProviderState) -> Tuple[ProviderState, bool]:
     if auth_result["state"] != csrf_state:
         log("❌ CSRF state mismatch - possible security attack!", level="error")
         log("Please try authenticating again.", level="info")
-        logger.error(f"CSRF state mismatch: expected {csrf_state}, got {auth_result['state']}")
+        logger.error(
+            f"CSRF state mismatch: expected {csrf_state}, got {auth_result['state']}"
+        )
         return state, False
 
     # Exchange code for tokens
@@ -259,7 +261,10 @@ def authenticate(state: ProviderState) -> Tuple[ProviderState, bool]:
         logger.info(f"Spotify authentication successful, token expires: {expires_at}")
 
         log("✓ Authentication successful!", level="info")
-        log(f"Access token expires: {expires_at.strftime('%Y-%m-%d %H:%M')}", level="info")
+        log(
+            f"Access token expires: {expires_at.strftime('%Y-%m-%d %H:%M')}",
+            level="info",
+        )
 
         # Update state
         new_state = state.with_authenticated(True)
@@ -274,7 +279,8 @@ def authenticate(state: ProviderState) -> Tuple[ProviderState, bool]:
             try:
                 error_data = e.response.json()
                 log(
-                    f"Error details: {error_data.get('error_description', error_data)}", level="error"
+                    f"Error details: {error_data.get('error_description', error_data)}",
+                    level="error",
                 )
                 logger.error(f"Spotify API error: {error_data}")
             except Exception:

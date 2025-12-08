@@ -22,15 +22,15 @@ def get_socket_path() -> Path:
         Path to Unix socket
     """
     # Use XDG_RUNTIME_DIR if available, otherwise fall back to ~/.local/share
-    runtime_dir = os.environ.get('XDG_RUNTIME_DIR')
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
     if runtime_dir:
-        socket_dir = Path(runtime_dir) / 'music-minion'
+        socket_dir = Path(runtime_dir) / "music-minion"
     else:
-        socket_dir = Path.home() / '.local' / 'share' / 'music-minion'
+        socket_dir = Path.home() / ".local" / "share" / "music-minion"
 
     # Ensure directory exists
     socket_dir.mkdir(parents=True, exist_ok=True)
-    return socket_dir / 'control.sock'
+    return socket_dir / "control.sock"
 
 
 class IPCServer:
@@ -130,14 +130,14 @@ class IPCServer:
         """
         try:
             # Receive data
-            data = b''
+            data = b""
             while True:
                 chunk = client_socket.recv(4096)
                 if not chunk:
                     break
                 data += chunk
                 # Check for newline (end of JSON message)
-                if b'\n' in data:
+                if b"\n" in data:
                     break
 
             if not data:
@@ -145,24 +145,22 @@ class IPCServer:
                 return
 
             # Parse JSON command
-            payload = json.loads(data.decode('utf-8').strip())
-            command = payload.get('command', '')
-            args = payload.get('args', [])
+            payload = json.loads(data.decode("utf-8").strip())
+            command = payload.get("command", "")
+            args = payload.get("args", [])
 
             # Send immediate notification for composite actions
-            if command == 'composite' and args:
+            if command == "composite" and args:
                 action_name = args[0]
                 # Map action names to immediate notification messages
                 immediate_messages = {
-                    'like_and_add_dated': '👍 Liking and adding...',
-                    'add_not_quite': '🤔 Adding to Not Quite...',
-                    'add_not_interested_and_skip': '⏭️ Adding to Not Interested...',
+                    "like_and_add_dated": "👍 Liking and adding...",
+                    "add_not_quite": "🤔 Adding to Not Quite...",
+                    "add_not_interested_and_skip": "⏭️ Adding to Not Interested...",
                 }
                 if action_name in immediate_messages:
                     notifications.notify(
-                        'Music Minion',
-                        immediate_messages[action_name],
-                        urgency='low'
+                        "Music Minion", immediate_messages[action_name], urgency="low"
                     )
 
             # Put command in queue for main thread
@@ -174,40 +172,31 @@ class IPCServer:
                 response_id, success, message = self.response_queue.get(timeout=15.0)
                 if response_id == request_id:
                     # Send response
-                    response = {
-                        'success': success,
-                        'message': message
-                    }
-                    response_json = json.dumps(response) + '\n'
-                    client_socket.sendall(response_json.encode('utf-8'))
+                    response = {"success": success, "message": message}
+                    response_json = json.dumps(response) + "\n"
+                    client_socket.sendall(response_json.encode("utf-8"))
                 else:
                     # Mismatched response (shouldn't happen with sequential processing)
                     error_response = {
-                        'success': False,
-                        'message': 'Internal error: response mismatch'
+                        "success": False,
+                        "message": "Internal error: response mismatch",
                     }
-                    client_socket.sendall(json.dumps(error_response).encode('utf-8'))
+                    client_socket.sendall(json.dumps(error_response).encode("utf-8"))
             except queue.Empty:
                 # Timeout waiting for response
-                error_response = {
-                    'success': False,
-                    'message': 'Command timed out'
-                }
-                client_socket.sendall(json.dumps(error_response).encode('utf-8'))
+                error_response = {"success": False, "message": "Command timed out"}
+                client_socket.sendall(json.dumps(error_response).encode("utf-8"))
 
         except json.JSONDecodeError as e:
-            error_response = {
-                'success': False,
-                'message': f'Invalid JSON: {e}'
-            }
-            client_socket.sendall(json.dumps(error_response).encode('utf-8'))
+            error_response = {"success": False, "message": f"Invalid JSON: {e}"}
+            client_socket.sendall(json.dumps(error_response).encode("utf-8"))
         except Exception as e:
             error_response = {
-                'success': False,
-                'message': f'Error processing command: {e}'
+                "success": False,
+                "message": f"Error processing command: {e}",
             }
             try:
-                client_socket.sendall(json.dumps(error_response).encode('utf-8'))
+                client_socket.sendall(json.dumps(error_response).encode("utf-8"))
             except:
                 pass
         finally:
@@ -215,10 +204,7 @@ class IPCServer:
 
 
 def process_ipc_command(
-    ctx: AppContext,
-    command: str,
-    args: list,
-    add_to_history: Callable[[str], None]
+    ctx: AppContext, command: str, args: list, add_to_history: Callable[[str], None]
 ) -> Tuple[AppContext, bool, str]:
     """
     Process an IPC command and return updated context and response.
@@ -233,12 +219,12 @@ def process_ipc_command(
         (updated_context, success, message) tuple
     """
     # Format command for history
-    args_str = ' '.join(args) if args else ''
+    args_str = " ".join(args) if args else ""
     history_entry = f"[IPC] {command} {args_str}".strip()
 
     try:
         # Check if it's a composite action
-        if command == 'composite':
+        if command == "composite":
             if not args:
                 return ctx, False, "Composite action name required"
 
@@ -249,12 +235,24 @@ def process_ipc_command(
             add_to_history(f"{history_entry} → {message}")
 
             # Send notification if enabled
-            if ctx.config.notifications.enabled if hasattr(ctx.config, 'notifications') else True:
+            if (
+                ctx.config.notifications.enabled
+                if hasattr(ctx.config, "notifications")
+                else True
+            ):
                 if success:
-                    if ctx.config.notifications.show_success if hasattr(ctx.config.notifications, 'show_success') else True:
+                    if (
+                        ctx.config.notifications.show_success
+                        if hasattr(ctx.config.notifications, "show_success")
+                        else True
+                    ):
                         notifications.notify_success(message)
                 else:
-                    if ctx.config.notifications.show_errors if hasattr(ctx.config.notifications, 'show_errors') else True:
+                    if (
+                        ctx.config.notifications.show_errors
+                        if hasattr(ctx.config.notifications, "show_errors")
+                        else True
+                    ):
                         notifications.notify_error(message)
 
             return ctx, success, message
@@ -270,8 +268,16 @@ def process_ipc_command(
         add_to_history(f"{history_entry} → Success")
 
         # Send notification if enabled
-        if ctx.config.notifications.enabled if hasattr(ctx.config, 'notifications') else True:
-            if ctx.config.notifications.show_success if hasattr(ctx.config.notifications, 'show_success') else True:
+        if (
+            ctx.config.notifications.enabled
+            if hasattr(ctx.config, "notifications")
+            else True
+        ):
+            if (
+                ctx.config.notifications.show_success
+                if hasattr(ctx.config.notifications, "show_success")
+                else True
+            ):
                 notifications.notify_success(message)
 
         return ctx, True, message
@@ -283,8 +289,16 @@ def process_ipc_command(
         add_to_history(f"{history_entry} → {error_message}")
 
         # Send error notification if enabled
-        if ctx.config.notifications.enabled if hasattr(ctx.config, 'notifications') else True:
-            if ctx.config.notifications.show_errors if hasattr(ctx.config.notifications, 'show_errors') else True:
+        if (
+            ctx.config.notifications.enabled
+            if hasattr(ctx.config, "notifications")
+            else True
+        ):
+            if (
+                ctx.config.notifications.show_errors
+                if hasattr(ctx.config.notifications, "show_errors")
+                else True
+            ):
                 notifications.notify_error(error_message)
 
         return ctx, False, error_message

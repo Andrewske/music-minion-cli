@@ -13,7 +13,9 @@ from music_minion.core import database
 from music_minion.domain.playlists import crud as playlists
 
 
-def handle_search_play_track(ctx: AppContext, ui_state: UIState, track_id: int) -> tuple[AppContext, UIState]:
+def handle_search_play_track(
+    ctx: AppContext, ui_state: UIState, track_id: int
+) -> tuple[AppContext, UIState]:
     """
     Execute 'Play Track' action from search.
 
@@ -28,7 +30,7 @@ def handle_search_play_track(ctx: AppContext, ui_state: UIState, track_id: int) 
     # Get track from database
     track = database.get_track_by_id(track_id)
     if not track:
-        ui_state = add_history_line(ui_state, "❌ Track not found", 'red')
+        ui_state = add_history_line(ui_state, "❌ Track not found", "red")
         ui_state = hide_palette(ui_state)
         return ctx, ui_state
 
@@ -37,31 +39,38 @@ def handle_search_play_track(ctx: AppContext, ui_state: UIState, track_id: int) 
 
     # Start MPV if not running
     from music_minion.domain.playback.player import play_file, is_mpv_running, start_mpv
+
     if not is_mpv_running(ctx.player_state):
         new_state = start_mpv(ctx.config)
         if not new_state:
-            ui_state = add_history_line(ui_state, "❌ Failed to start music player", 'red')
+            ui_state = add_history_line(
+                ui_state, "❌ Failed to start music player", "red"
+            )
             return ctx, ui_state
         ctx = ctx.with_player_state(new_state)
 
     # Send play command to player
     try:
-        ctx.player_state, success = play_file(ctx.player_state, track['local_path'], track['id'])
+        ctx.player_state, success = play_file(
+            ctx.player_state, track["local_path"], track["id"]
+        )
         if success:
             ui_state = add_history_line(
                 ui_state,
                 f"▶ Playing: {track.get('artist', 'Unknown')} - {track.get('title', 'Unknown')}",
-                'green'
+                "green",
             )
         else:
-            ui_state = add_history_line(ui_state, f"❌ Failed to play track", 'red')
+            ui_state = add_history_line(ui_state, f"❌ Failed to play track", "red")
     except Exception as e:
-        ui_state = add_history_line(ui_state, f"❌ Error playing track: {e}", 'red')
+        ui_state = add_history_line(ui_state, f"❌ Error playing track: {e}", "red")
 
     return ctx, ui_state
 
 
-def handle_search_add_to_playlist(ctx: AppContext, ui_state: UIState, track_id: int) -> tuple[AppContext, UIState]:
+def handle_search_add_to_playlist(
+    ctx: AppContext, ui_state: UIState, track_id: int
+) -> tuple[AppContext, UIState]:
     """
     Execute 'Add to Playlist' action from search.
 
@@ -77,10 +86,14 @@ def handle_search_add_to_playlist(ctx: AppContext, ui_state: UIState, track_id: 
     """
     # Get all playlists
     all_playlists = playlists.get_playlists_sorted_by_recent()
-    manual_playlists = [p for p in all_playlists if p['type'] == 'manual']
+    manual_playlists = [p for p in all_playlists if p["type"] == "manual"]
 
     if not manual_playlists:
-        ui_state = add_history_line(ui_state, "❌ No manual playlists available. Create one first with 'playlist new manual <name>'", 'red')
+        ui_state = add_history_line(
+            ui_state,
+            "❌ No manual playlists available. Create one first with 'playlist new manual <name>'",
+            "red",
+        )
         ui_state = hide_palette(ui_state)
         return ctx, ui_state
 
@@ -90,8 +103,8 @@ def handle_search_add_to_playlist(ctx: AppContext, ui_state: UIState, track_id: 
     # Build playlist items for palette
     playlist_items = []
     for playlist in manual_playlists:
-        name = playlist['name']
-        track_count = playlist.get('track_count', 0)
+        name = playlist["name"]
+        track_count = playlist.get("track_count", 0)
         desc = f"{track_count} tracks"
         playlist_items.append(("Playlists", name, "📝", desc))
 
@@ -100,12 +113,14 @@ def handle_search_add_to_playlist(ctx: AppContext, ui_state: UIState, track_id: 
     ui_state = show_playlist_palette(ui_state, playlist_items)
 
     # Store track_id in confirmation data (reusing this field for context)
-    ui_state = replace(ui_state, confirmation_data={'pending_add_track_id': track_id})
+    ui_state = replace(ui_state, confirmation_data={"pending_add_track_id": track_id})
 
     return ctx, ui_state
 
 
-def handle_search_edit_metadata(ctx: AppContext, ui_state: UIState, track_id: int) -> tuple[AppContext, UIState]:
+def handle_search_edit_metadata(
+    ctx: AppContext, ui_state: UIState, track_id: int
+) -> tuple[AppContext, UIState]:
     """
     Execute 'Edit Metadata' action from search.
 
@@ -122,7 +137,7 @@ def handle_search_edit_metadata(ctx: AppContext, ui_state: UIState, track_id: in
     # Get track with full metadata
     track = database.get_track_by_id(track_id)
     if not track:
-        ui_state = add_history_line(ui_state, "❌ Track not found", 'red')
+        ui_state = add_history_line(ui_state, "❌ Track not found", "red")
         ui_state = hide_palette(ui_state)
         return ctx, ui_state
 
@@ -133,19 +148,19 @@ def handle_search_edit_metadata(ctx: AppContext, ui_state: UIState, track_id: in
 
     # Build editor data
     editor_data = {
-        'id': track_id,
-        'title': track.get('title', ''),
-        'artist': track.get('artist', ''),
-        'remix_artist': track.get('remix_artist', ''),
-        'album': track.get('album', ''),
-        'year': track.get('year', ''),
-        'genre': track.get('genre', ''),
-        'bpm': track.get('bpm', ''),
-        'key_signature': track.get('key_signature', ''),
-        'tags': tags,
-        'notes': notes,
-        'ratings': ratings,
-        'local_path': track['local_path']
+        "id": track_id,
+        "title": track.get("title", ""),
+        "artist": track.get("artist", ""),
+        "remix_artist": track.get("remix_artist", ""),
+        "album": track.get("album", ""),
+        "year": track.get("year", ""),
+        "genre": track.get("genre", ""),
+        "bpm": track.get("bpm", ""),
+        "key_signature": track.get("key_signature", ""),
+        "tags": tags,
+        "notes": notes,
+        "ratings": ratings,
+        "local_path": track["local_path"],
     }
 
     # Close search and open editor

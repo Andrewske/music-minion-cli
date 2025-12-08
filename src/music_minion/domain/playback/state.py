@@ -22,7 +22,7 @@ def get_shuffle_mode() -> bool:
         row = cursor.fetchone()
         # Default to True (shuffle) if not set
         # Convert to explicit bool (database stores as 0/1 integer)
-        return bool(row['shuffle_enabled']) if row else True
+        return bool(row["shuffle_enabled"]) if row else True
 
 
 def set_shuffle_mode(enabled: bool) -> None:
@@ -33,10 +33,13 @@ def set_shuffle_mode(enabled: bool) -> None:
         enabled: True for shuffle mode, False for sequential playback
     """
     with get_db_connection() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT OR REPLACE INTO playback_state (id, shuffle_enabled, updated_at)
             VALUES (1, ?, CURRENT_TIMESTAMP)
-        """, (enabled,))
+        """,
+            (enabled,),
+        )
         conn.commit()
 
 
@@ -50,13 +53,16 @@ def update_playlist_position(playlist_id: int, track_id: int, position: int) -> 
         position: Index position in the playlist (0-based)
     """
     with get_db_connection() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             UPDATE active_playlist
             SET last_played_track_id = ?,
                 last_played_position = ?,
                 last_played_at = CURRENT_TIMESTAMP
             WHERE playlist_id = ?
-        """, (track_id, position, playlist_id))
+        """,
+            (track_id, position, playlist_id),
+        )
         conn.commit()
 
 
@@ -71,15 +77,18 @@ def get_playlist_position(playlist_id: int) -> Optional[Tuple[int, int]]:
         Tuple of (track_id, position) if available, None otherwise
     """
     with get_db_connection() as conn:
-        cursor = conn.execute("""
+        cursor = conn.execute(
+            """
             SELECT last_played_track_id, last_played_position
             FROM active_playlist
             WHERE playlist_id = ?
-        """, (playlist_id,))
+        """,
+            (playlist_id,),
+        )
         row = cursor.fetchone()
 
-        if row and row['last_played_track_id'] is not None:
-            return (row['last_played_track_id'], row['last_played_position'])
+        if row and row["last_played_track_id"] is not None:
+            return (row["last_played_track_id"], row["last_played_position"])
         return None
 
 
@@ -91,18 +100,22 @@ def clear_playlist_position(playlist_id: int) -> None:
         playlist_id: ID of the playlist
     """
     with get_db_connection() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             UPDATE active_playlist
             SET last_played_track_id = NULL,
                 last_played_position = NULL,
                 last_played_at = NULL
             WHERE playlist_id = ?
-        """, (playlist_id,))
+        """,
+            (playlist_id,),
+        )
         conn.commit()
 
 
-def get_next_sequential_track(tracks: list[Dict[str, Any]],
-                              current_track_id: Optional[int]) -> Optional[Dict[str, Any]]:
+def get_next_sequential_track(
+    tracks: list[Dict[str, Any]], current_track_id: Optional[int]
+) -> Optional[Dict[str, Any]]:
     """
     Get the next track in sequential order from a list of tracks.
 
@@ -123,7 +136,7 @@ def get_next_sequential_track(tracks: list[Dict[str, Any]],
 
     # Find current track and return next one
     for i, track in enumerate(tracks):
-        if track['id'] == current_track_id:
+        if track["id"] == current_track_id:
             # Return next track if not at end
             if i + 1 < len(tracks):
                 return tracks[i + 1]
@@ -134,8 +147,9 @@ def get_next_sequential_track(tracks: list[Dict[str, Any]],
     return None
 
 
-def get_track_position_in_playlist(tracks: list[Dict[str, Any]],
-                                   track_id: int) -> Optional[int]:
+def get_track_position_in_playlist(
+    tracks: list[Dict[str, Any]], track_id: int
+) -> Optional[int]:
     """
     Get the position (0-based index) of a track in a playlist.
 
@@ -150,6 +164,6 @@ def get_track_position_in_playlist(tracks: list[Dict[str, Any]],
         0-based position of track, or None if not found
     """
     for i, track in enumerate(tracks):
-        if track['id'] == track_id:
+        if track["id"] == track_id:
             return i
     return None

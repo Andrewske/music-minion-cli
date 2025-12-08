@@ -33,19 +33,25 @@ def run_locate_opus(folder: str, apply: bool = False) -> int:
 
         # Print results
         if result.updated:
-            print(f"{'Would update' if dry_run else 'Updated'}: {len(result.updated)} tracks")
+            print(
+                f"{'Would update' if dry_run else 'Updated'}: {len(result.updated)} tracks"
+            )
             for item in result.updated:
                 tier = item.get("match_tier", "?")
                 reason = item.get("match_reason", "unknown")
                 score = item.get("match_score")
                 score_str = f" ({score:.0%})" if score else ""
                 print(f"  ✓ {item['opus_stem']}")
-                print(f"    → Track #{item['matched_track_id']}: {item.get('matched_title', 'Unknown')}")
+                print(
+                    f"    → Track #{item['matched_track_id']}: {item.get('matched_title', 'Unknown')}"
+                )
                 print(f"    Match: Tier {tier} ({reason}){score_str}")
             print()
 
         if result.multiple_matches:
-            print(f"Multiple matches (needs manual review): {len(result.multiple_matches)}")
+            print(
+                f"Multiple matches (needs manual review): {len(result.multiple_matches)}"
+            )
             for item in result.multiple_matches:
                 tier = item.get("match_tier", "?")
                 print(f"  ⚠ {item['opus_stem']}")
@@ -54,7 +60,9 @@ def run_locate_opus(folder: str, apply: bool = False) -> int:
                 for match in item.get("matches", [])[:3]:
                     score = match.get("score")
                     score_str = f" ({score:.0%})" if score else ""
-                    print(f"      - #{match['id']}: {match.get('title', 'Unknown')}{score_str}")
+                    print(
+                        f"      - #{match['id']}: {match.get('title', 'Unknown')}{score_str}"
+                    )
             print()
 
         if result.no_match:
@@ -66,7 +74,9 @@ def run_locate_opus(folder: str, apply: bool = False) -> int:
             print()
 
         # Summary
-        total = len(result.updated) + len(result.multiple_matches) + len(result.no_match)
+        total = (
+            len(result.updated) + len(result.multiple_matches) + len(result.no_match)
+        )
         print("=" * 50)
         print(f"Total opus files: {total}")
         print(f"  Matched:   {len(result.updated)}")
@@ -85,6 +95,7 @@ def run_locate_opus(folder: str, apply: bool = False) -> int:
     except Exception as e:
         print(f"Unexpected error: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         return 1
 
@@ -118,46 +129,44 @@ def main() -> None:
     # Create main parser
     parser = argparse.ArgumentParser(
         description="Music Minion - Contextual Music Curation",
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     # Add global options
     parser.add_argument(
-        '--dev',
-        action='store_true',
-        help='Enable hot-reload for development (requires watchdog)'
+        "--dev",
+        action="store_true",
+        help="Enable hot-reload for development (requires watchdog)",
     )
 
     # Create subparsers for IPC commands
-    subparsers = parser.add_subparsers(dest='subcommand', help='Available commands')
+    subparsers = parser.add_subparsers(dest="subcommand", help="Available commands")
 
     # IPC commands for playback
-    subparsers.add_parser('like', help='Like current track')
-    subparsers.add_parser('love', help='Love current track')
-    subparsers.add_parser('skip', help='Skip current track')
+    subparsers.add_parser("like", help="Like current track")
+    subparsers.add_parser("love", help="Love current track")
+    subparsers.add_parser("skip", help="Skip current track")
 
     # IPC commands for playlists
-    add_parser = subparsers.add_parser('add', help='Add current track to playlist')
-    add_parser.add_argument('playlist', nargs='+', help='Playlist name')
+    add_parser = subparsers.add_parser("add", help="Add current track to playlist")
+    add_parser.add_argument("playlist", nargs="+", help="Playlist name")
 
     # IPC composite actions (shortcuts)
-    subparsers.add_parser('la', help='Like and add to current month playlist (e.g., Nov 25)')
-    subparsers.add_parser('nq', help='Add to "Not Quite" playlist')
-    subparsers.add_parser('ni', help='Add to "Not Interested" playlist and skip')
+    subparsers.add_parser(
+        "la", help="Like and add to current month playlist (e.g., Nov 25)"
+    )
+    subparsers.add_parser("nq", help='Add to "Not Quite" playlist')
+    subparsers.add_parser("ni", help='Add to "Not Interested" playlist and skip')
 
     # Utility commands (run directly, not via IPC)
     locate_parser = subparsers.add_parser(
-        'locate-opus',
-        help='Find opus files to replace existing MP3 track records'
+        "locate-opus", help="Find opus files to replace existing MP3 track records"
     )
+    locate_parser.add_argument("folder", help="Folder containing opus files to match")
     locate_parser.add_argument(
-        'folder',
-        help='Folder containing opus files to match'
-    )
-    locate_parser.add_argument(
-        '--apply',
-        action='store_true',
-        help='Actually update database (default: dry run)'
+        "--apply",
+        action="store_true",
+        help="Actually update database (default: dry run)",
     )
 
     # Parse arguments
@@ -165,41 +174,42 @@ def main() -> None:
 
     # Handle IPC commands
     if args.subcommand:
-        if args.subcommand == 'like':
-            sys.exit(send_ipc_command('like', []))
+        if args.subcommand == "like":
+            sys.exit(send_ipc_command("like", []))
 
-        elif args.subcommand == 'love':
-            sys.exit(send_ipc_command('love', []))
+        elif args.subcommand == "love":
+            sys.exit(send_ipc_command("love", []))
 
-        elif args.subcommand == 'skip':
-            sys.exit(send_ipc_command('skip', []))
+        elif args.subcommand == "skip":
+            sys.exit(send_ipc_command("skip", []))
 
-        elif args.subcommand == 'add':
-            playlist_name = ' '.join(args.playlist)
-            sys.exit(send_ipc_command('add', [playlist_name]))
+        elif args.subcommand == "add":
+            playlist_name = " ".join(args.playlist)
+            sys.exit(send_ipc_command("add", [playlist_name]))
 
-        elif args.subcommand == 'la':
+        elif args.subcommand == "la":
             # Composite: like_and_add_dated
-            sys.exit(send_ipc_command('composite', ['like_and_add_dated']))
+            sys.exit(send_ipc_command("composite", ["like_and_add_dated"]))
 
-        elif args.subcommand == 'nq':
+        elif args.subcommand == "nq":
             # Composite: add_not_quite
-            sys.exit(send_ipc_command('composite', ['add_not_quite']))
+            sys.exit(send_ipc_command("composite", ["add_not_quite"]))
 
-        elif args.subcommand == 'ni':
+        elif args.subcommand == "ni":
             # Composite: add_not_interested_and_skip
-            sys.exit(send_ipc_command('composite', ['add_not_interested_and_skip']))
+            sys.exit(send_ipc_command("composite", ["add_not_interested_and_skip"]))
 
-        elif args.subcommand == 'locate-opus':
+        elif args.subcommand == "locate-opus":
             # Run locate-opus utility directly
             sys.exit(run_locate_opus(args.folder, apply=args.apply))
 
     # No subcommand - start interactive mode
     if args.dev:
-        os.environ['MUSIC_MINION_DEV_MODE'] = '1'
+        os.environ["MUSIC_MINION_DEV_MODE"] = "1"
 
     # Delegate to main interactive mode
     from .main import interactive_mode
+
     interactive_mode()
 
 
