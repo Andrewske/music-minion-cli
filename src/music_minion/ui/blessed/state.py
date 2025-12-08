@@ -152,6 +152,9 @@ class PlaylistBuilderState:
     filter_editor_operator: Optional[str] = None
     filter_editor_value: str = ""
     filter_editor_step: int = 0  # 0=select field, 1=select operator, 2=enter value
+    filter_editor_options: list[str] = field(
+        default_factory=list
+    )  # Available options for current step
 
 
 @dataclass
@@ -2144,40 +2147,104 @@ def move_filter_editor_selection(state: UIState, delta: int) -> UIState:
     )
 
 
-def start_editing_filter(state: UIState, filter_index: int) -> UIState:
-    """Start editing a filter at the given index."""
-    if filter_index < 0 or filter_index >= len(state.builder.filters):
+def start_editing_filter(state: UIState, filter_idx: int) -> UIState:
+    """Start editing existing filter with list-based selection."""
+    builder = state.builder
+    if filter_idx >= len(builder.filters):
         return state
 
-    filter_to_edit = state.builder.filters[filter_index]
+    selected_filter = builder.filters[filter_idx]
+    field_options = sorted(list(BUILDER_SORT_FIELDS))
+
+    # Find index of current field in options list
+    selected_field_idx = 0
+    if selected_filter.field in field_options:
+        selected_field_idx = field_options.index(selected_filter.field)
+
     return replace(
         state,
         builder=replace(
-            state.builder,
+            builder,
             filter_editor_editing=True,
-            filter_editor_selected=filter_index,
-            filter_editor_field=filter_to_edit.field,
-            filter_editor_operator=filter_to_edit.operator,
-            filter_editor_value=filter_to_edit.value,
             filter_editor_step=0,
+            filter_editor_field=selected_filter.field,
+            filter_editor_operator=selected_filter.operator,
+            filter_editor_value=selected_filter.value,
+            filter_editor_options=field_options,
+            filter_editor_selected=selected_field_idx,  # Position at current field
         ),
     )
 
 
 def start_adding_filter(state: UIState) -> UIState:
-    """Start adding a new filter."""
+    """Start adding new filter with list-based selection."""
+    field_options = sorted(list(BUILDER_SORT_FIELDS))
+
     return replace(
         state,
         builder=replace(
             state.builder,
             filter_editor_editing=True,
-            filter_editor_selected=-1,  # Special value for adding
-            filter_editor_field=BUILDER_SORT_FIELDS[0],  # Start with first field
+            filter_editor_step=0,
+            filter_editor_field=None,
             filter_editor_operator=None,
             filter_editor_value="",
-            filter_editor_step=0,
+            filter_editor_options=field_options,
+            filter_editor_selected=0,
         ),
     )
+
+
+def advance_filter_editor_step(state: UIState) -> UIState:
+    """Advance to next step and set appropriate options."""
+    builder = state.builder
+    step = builder.filter_editor_step
+
+    if step == 0:
+        # Moving from field to operator - set operator options based on field type
+        selected_field = builder.filter_editor_options[builder.filter_editor_selected]
+
+        if selected_field in BUILDER_NUMERIC_FIELDS:
+            operator_options = [op[1] for op in BUILDER_NUMERIC_OPERATORS]
+        else:
+            operator_options = [op[1] for op in BUILDER_TEXT_OPERATORS]
+
+        # Find current operator index (if editing existing filter)
+        selected_op_idx = 0
+        if (
+            builder.filter_editor_operator
+            and builder.filter_editor_operator in operator_options
+        ):
+            selected_op_idx = operator_options.index(builder.filter_editor_operator)
+
+        return replace(
+            state,
+            builder=replace(
+                builder,
+                filter_editor_step=1,
+                filter_editor_field=selected_field,
+                filter_editor_options=operator_options,
+                filter_editor_selected=selected_op_idx,
+            ),
+        )
+
+    elif step == 1:
+        # Moving from operator to value - clear options
+        selected_operator = builder.filter_editor_options[
+            builder.filter_editor_selected
+        ]
+        return replace(
+            state,
+            builder=replace(
+                builder,
+                filter_editor_step=2,
+                filter_editor_operator=selected_operator,
+                filter_editor_options=[],
+                filter_editor_selected=0,
+            ),
+        )
+
+    return state
 
 
 def update_filter_editor_field(state: UIState, field: str) -> UIState:
