@@ -18,7 +18,7 @@ export function useStartSession() {
 }
 
 export function useRecordComparison() {
-  const { incrementCompleted } = useComparisonStore();
+  const { incrementCompleted, setCurrentPair } = useComparisonStore();
 
   return useMutation({
     mutationFn: (request: RecordComparisonRequest) => recordComparison(request),
@@ -28,7 +28,7 @@ export function useRecordComparison() {
 
         // If there's a next pair, update the store
         if (response.next_pair) {
-          // TODO: Update current pair in store
+          setCurrentPair(response.next_pair);
         }
       }
     },
