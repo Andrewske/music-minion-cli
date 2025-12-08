@@ -2155,6 +2155,7 @@ def start_editing_filter(state: UIState, filter_index: int) -> UIState:
         builder=replace(
             state.builder,
             filter_editor_editing=True,
+            filter_editor_selected=filter_index,
             filter_editor_field=filter_to_edit.field,
             filter_editor_operator=filter_to_edit.operator,
             filter_editor_value=filter_to_edit.value,
@@ -2171,7 +2172,7 @@ def start_adding_filter(state: UIState) -> UIState:
             state.builder,
             filter_editor_editing=True,
             filter_editor_selected=-1,  # Special value for adding
-            filter_editor_field=None,
+            filter_editor_field=BUILDER_SORT_FIELDS[0],  # Start with first field
             filter_editor_operator=None,
             filter_editor_value="",
             filter_editor_step=0,
