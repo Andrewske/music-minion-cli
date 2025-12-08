@@ -148,6 +148,9 @@ class PlaylistBuilderState:
     filter_editor_mode: bool = False  # True when editing filters inline
     filter_editor_selected: int = 0  # Selected filter index (-1 for "add new")
     filter_editor_editing: bool = False  # True when editing a specific filter
+    filter_editor_target_index: Optional[int] = (
+        None  # Index of filter being edited (None when adding new)
+    )
     filter_editor_field: Optional[str] = None
     filter_editor_operator: Optional[str] = None
     filter_editor_value: str = ""
@@ -155,6 +158,9 @@ class PlaylistBuilderState:
     filter_editor_options: list[str] = field(
         default_factory=list
     )  # Available options for current step
+    filter_editor_operator_keys: list[str] = field(
+        default_factory=list
+    )  # Operator keys parallel to options (e.g., "lt" for "<")
     filter_editor_is_adding_new: bool = (
         False  # True when adding new filter, False when editing
     )
@@ -2118,6 +2124,7 @@ def toggle_filter_editor_mode(state: UIState) -> UIState:
                 filter_editor_operator=None,
                 filter_editor_value="",
                 filter_editor_step=0,
+                filter_editor_operator_keys=[],
             ),
         )
     else:
@@ -2133,6 +2140,7 @@ def toggle_filter_editor_mode(state: UIState) -> UIState:
                 filter_editor_operator=None,
                 filter_editor_value="",
                 filter_editor_step=0,
+                filter_editor_operator_keys=[],
             ),
         )
 
@@ -2170,6 +2178,7 @@ def start_editing_filter(state: UIState, filter_idx: int) -> UIState:
             builder,
             filter_editor_editing=True,
             filter_editor_step=0,
+            filter_editor_target_index=filter_idx,  # Track which filter we're editing
             filter_editor_field=selected_filter.field,
             filter_editor_operator=selected_filter.operator,
             filter_editor_value=selected_filter.value,
@@ -2190,6 +2199,7 @@ def start_adding_filter(state: UIState) -> UIState:
             state.builder,
             filter_editor_editing=True,
             filter_editor_step=0,
+            filter_editor_target_index=None,  # None when adding new filter
             filter_editor_field=None,
             filter_editor_operator=None,
             filter_editor_value="",
@@ -2211,16 +2221,19 @@ def advance_filter_editor_step(state: UIState) -> UIState:
 
         if selected_field in BUILDER_NUMERIC_FIELDS:
             operator_options = [op[1] for op in BUILDER_NUMERIC_OPERATORS]
+            operator_keys = [op[0] for op in BUILDER_NUMERIC_OPERATORS]
         else:
             operator_options = [op[1] for op in BUILDER_TEXT_OPERATORS]
+            operator_keys = [op[0] for op in BUILDER_TEXT_OPERATORS]
 
         # Find current operator index (if editing existing filter)
         selected_op_idx = 0
-        if (
-            builder.filter_editor_operator
-            and builder.filter_editor_operator in operator_options
-        ):
-            selected_op_idx = operator_options.index(builder.filter_editor_operator)
+        if builder.filter_editor_operator:
+            try:
+                # Look up by key, not display value
+                selected_op_idx = operator_keys.index(builder.filter_editor_operator)
+            except ValueError:
+                selected_op_idx = 0  # Key not found, default to first option
 
         return replace(
             state,
@@ -2229,13 +2242,14 @@ def advance_filter_editor_step(state: UIState) -> UIState:
                 filter_editor_step=1,
                 filter_editor_field=selected_field,
                 filter_editor_options=operator_options,
+                filter_editor_operator_keys=operator_keys,
                 filter_editor_selected=selected_op_idx,
             ),
         )
 
     elif step == 1:
-        # Moving from operator to value - clear options
-        selected_operator = builder.filter_editor_options[
+        # Moving from operator to value - save operator key, not display value
+        selected_operator_key = builder.filter_editor_operator_keys[
             builder.filter_editor_selected
         ]
         return replace(
@@ -2243,8 +2257,9 @@ def advance_filter_editor_step(state: UIState) -> UIState:
             builder=replace(
                 builder,
                 filter_editor_step=2,
-                filter_editor_operator=selected_operator,
+                filter_editor_operator=selected_operator_key,
                 filter_editor_options=[],
+                filter_editor_operator_keys=[],
                 filter_editor_selected=0,
             ),
         )
@@ -2298,13 +2313,14 @@ def _create_updated_filters(builder: PlaylistBuilderState) -> list[BuilderFilter
         return builder.filters + [new_filter]
     else:
         # Editing existing filter
-        if builder.filter_editor_selected >= len(builder.filters):
+        target_idx = builder.filter_editor_target_index
+        if target_idx is None or target_idx >= len(builder.filters):
             return builder.filters  # Invalid index, return unchanged
 
         return (
-            builder.filters[: builder.filter_editor_selected]
+            builder.filters[:target_idx]
             + [new_filter]
-            + builder.filters[builder.filter_editor_selected + 1 :]
+            + builder.filters[target_idx + 1 :]
         )
 
 
@@ -2329,10 +2345,12 @@ def _exit_filter_editor_with_changes(
             filter_editor_mode=False,
             filter_editor_selected=0,
             filter_editor_editing=False,
+            filter_editor_target_index=None,
             filter_editor_field=None,
             filter_editor_operator=None,
             filter_editor_value="",
             filter_editor_step=0,
+            filter_editor_operator_keys=[],
             selected_index=0,
             scroll_offset=0,
         ),

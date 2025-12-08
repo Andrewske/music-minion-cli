@@ -208,20 +208,12 @@ def _handle_filter_editing_key(
     char = event.get("char", "")
     step = state.builder.filter_editor_step
 
-    # Cancel editing
+    # Esc: save-and-exit if we have a valid edit; otherwise leave without saving
     if event_type == "escape":
-        return replace(
-            state,
-            builder=replace(
-                state.builder,
-                filter_editor_editing=False,
-                filter_editor_field=None,
-                filter_editor_operator=None,
-                filter_editor_value="",
-                filter_editor_options=[],
-                filter_editor_selected=0,
-            ),
-        ), None
+        builder = state.builder
+        if builder.filter_editor_field and builder.filter_editor_operator:
+            return save_filter_editor_changes(state), None
+        return toggle_filter_editor_mode(state), None
 
     # Steps 0 & 1: List navigation with j/k or arrows
     if step in (0, 1):
