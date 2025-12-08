@@ -4,6 +4,7 @@ from blessed import Terminal
 
 from ..helpers import write_at
 from music_minion.ui.blessed.helpers.selection import render_selection_list
+from music_minion.ui.blessed.helpers.filter_input import render_filter_value_input
 from ..state import UIState
 
 
@@ -161,29 +162,21 @@ def _render_value_step(term: Terminal, state: UIState, y: int, height: int) -> i
     Returns:
         Number of lines rendered
     """
-    if height <= 0:
-        return 0
-
     wizard_data = state.wizard_data
     field = wizard_data.get("current_field", "")
     operator = wizard_data.get("current_operator", "")
+    current_value = state.input_text
 
-    line_num = 0
-
-    # Instructions
-    if line_num < height:
-        instruction = f"   Enter value for: {field} {operator}"
-        write_at(term, 0, y + line_num, term.white(instruction))
-        line_num += 1
-
-    # Show current input
-    if line_num < height:
-        current_value = state.input_text
-        value_line = f"   Value: {current_value}_"
-        write_at(term, 0, y + line_num, term.cyan(value_line))
-        line_num += 1
-
-    return line_num
+    return render_filter_value_input(
+        term,
+        field,
+        operator,
+        current_value,
+        state.wizard_options,
+        state.wizard_selected,
+        y,
+        height,
+    )
 
 
 def _render_conjunction_step(
@@ -293,9 +286,9 @@ def get_wizard_footer_text(state: UIState) -> str:
     # Steps with arrow key selection
     if step in ["field", "operator", "conjunction"]:
         return "   ↑↓ to select  •  Enter to choose  •  Esc to cancel"
-    # Value step with text input
+    # Value step with text input or list selection
     elif step == "value":
-        return "   Type value and press Enter  •  Esc to cancel"
+        return "   ↑↓ to select or type value  •  Enter to confirm  •  Esc to cancel"
     # Preview step
     elif step == "preview":
         return "   Enter to save  •  A to add another filter  •  Esc to cancel"

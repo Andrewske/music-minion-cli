@@ -11,6 +11,7 @@ from music_minion.ui.blessed.state import (
     append_input_char,
     delete_input_char,
 )
+from music_minion.ui.blessed.helpers.filter_input import get_value_options
 from music_minion.domain.playlists import filters as playlist_filters
 from music_minion.domain.playlists import crud as playlists
 
@@ -37,7 +38,6 @@ def handle_wizard_key(state: UIState, event: dict) -> tuple[UIState | None, str 
         Tuple of (updated state or None if not handled, command to execute or None)
         Special commands: '__SAVE_WIZARD_PLAYLIST__' triggers save
     """
-    wizard_data = state.wizard_data
     current_step = state.wizard_step
 
     # Escape always cancels wizard
@@ -130,17 +130,41 @@ def handle_wizard_enter(state: UIState) -> UIState:
             selected_operator = state.wizard_options[state.wizard_selected]
             # Don't mutate - pass update dict directly
             state = update_wizard_data(state, {"current_operator": selected_operator})
-            # Value step has no options (free text input)
-            state = update_wizard_step(state, "value", options=None)
+
+            # Check if value step should have options (e.g., genre selection)
+            field = state.wizard_data.get("current_field", "")
+            display_options, raw_values = get_value_options(field, selected_operator)
+            if display_options:
+                # Use list selection for value step
+                state = update_wizard_step(state, "value", options=display_options)
+            else:
+                # Value step has no options (free text input)
+                state = update_wizard_step(state, "value", options=None)
         return state
 
     elif current_step == "value":
-        # Value step: typed input (no options)
-        user_input = state.input_text.strip()
-        if user_input:
-            # Don't mutate - pass update dict directly
-            state = update_wizard_data(state, {"current_value": user_input})
+        # Value step: typed input or list selection
+        if state.wizard_options:
+            # List selection mode - use selected option
+            if state.wizard_selected < len(state.wizard_options):
+                selected_value = state.wizard_options[state.wizard_selected]
+                # For genre selection, we need to map display option back to raw value
+                field = state.wizard_data.get("current_field", "")
+                operator = state.wizard_data.get("current_operator", "")
+                _, raw_values = get_value_options(field, operator)
+                if raw_values and state.wizard_selected < len(raw_values):
+                    selected_value = raw_values[state.wizard_selected]
 
+                state = update_wizard_data(state, {"current_value": selected_value})
+        else:
+            # Text input mode
+            user_input = state.input_text.strip()
+            if user_input:
+                # Don't mutate - pass update dict directly
+                state = update_wizard_data(state, {"current_value": user_input})
+
+        # Check if we have a value set
+        if state.wizard_data.get("current_value"):
             # Check if we have filters already (need conjunction) or go to preview
             filters = state.wizard_data.get("filters", [])
             if filters:

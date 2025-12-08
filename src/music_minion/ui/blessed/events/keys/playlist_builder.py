@@ -23,6 +23,7 @@ from music_minion.ui.blessed.state import (
     toggle_builder_track,
     replace,
 )
+from music_minion.ui.blessed.helpers.filter_input import handle_filter_value_key
 
 
 def handle_playlist_builder_key(
@@ -170,12 +171,14 @@ def _handle_filter_editor_key(
     if event_type == "arrow_up" or char == "k":
         return move_filter_editor_selection(state, -1), None
 
-    # Edit selected filter
-    if char == "e":
+    # Enter: edit selected filter or add if on "[+] Add new filter"
+    if event_type == "enter":
         selected = builder.filter_editor_selected
         if selected >= 0 and selected < len(builder.filters):
             return start_editing_filter(state, selected), None
-        return state, None
+        else:
+            # On "[+] Add new filter" option
+            return start_adding_filter(state), None
 
     # Delete selected filter
     if char == "d":
@@ -183,14 +186,6 @@ def _handle_filter_editor_key(
         if selected >= 0 and selected < len(builder.filters):
             return delete_filter(state, selected), None
         return state, None
-
-    # Add new filter
-    if char == "a":
-        return start_adding_filter(state), None
-
-    # Save and exit
-    if event_type == "enter":
-        return save_filter_editor_changes(state), None
 
     # Cancel and exit
     if event_type == "escape":
@@ -245,27 +240,26 @@ def _handle_filter_editing_key(
 
     # Step 2: Value input
     elif step == 2:
-        if event_type == "char" and char and char.isprintable():
-            return replace(
-                state,
-                builder=replace(
-                    state.builder,
-                    filter_editor_value=state.builder.filter_editor_value + char,
-                ),
-            ), None
+        new_idx, new_value, should_save = handle_filter_value_key(
+            event,
+            state.builder.filter_editor_value_options,
+            state.builder.filter_editor_selected,
+            state.builder.filter_editor_value,
+        )
 
-        elif event_type == "backspace" and state.builder.filter_editor_value:
-            return replace(
-                state,
-                builder=replace(
-                    state.builder,
-                    filter_editor_value=state.builder.filter_editor_value[:-1],
-                ),
-            ), None
-
-        elif event_type == "enter":
+        if should_save:
             # Save and exit editing
             return save_filter_editor_changes(state), None
+        else:
+            # Update value and selection
+            return replace(
+                state,
+                builder=replace(
+                    state.builder,
+                    filter_editor_selected=new_idx,
+                    filter_editor_value=new_value,
+                ),
+            ), None
 
     return state, None
 
