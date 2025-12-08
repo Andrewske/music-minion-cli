@@ -95,7 +95,7 @@ def test_filter_editor():
         state.builder.filter_editor_step == 0, "Started at step 0 (field selection)"
     )
     assert_test(
-        state.builder.filter_editor_field == "title", "Started with first field (title)"
+        state.builder.filter_editor_field is None, "Started with no field selected"
     )
 
     # Test 2: Field cycling
@@ -151,7 +151,8 @@ def test_filter_editor():
     state = start_editing_filter(state, 0)
     assert_test(state.builder.filter_editor_editing is True, "Edit mode activated")
     assert_test(
-        state.builder.filter_editor_selected == 0, "Correct filter selected for editing"
+        state.builder.filter_editor_target_index == 0,
+        "Correct filter targeted for editing",
     )
     assert_test(state.builder.filter_editor_field == "artist", "Existing field loaded")
     assert_test(

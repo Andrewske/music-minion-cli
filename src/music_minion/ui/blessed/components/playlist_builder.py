@@ -362,7 +362,7 @@ def _render_filter_editor_footer(
     pos = builder.filter_editor_selected + 1 if total > 0 else 0
 
     position_text = f"[{pos}/{total}]"
-    help_text = "j/k nav  e edit  d delete  a add  Enter confirm/save  Esc cancel"
+    help_text = "j/k nav  Enter edit/add  d delete  a add  Esc save+exit"
 
     footer = f"   {position_text} {help_text}"
     write_at(term, 0, y, term.dim + footer[: term.width - 1] + term.normal)
