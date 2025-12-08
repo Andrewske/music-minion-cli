@@ -139,6 +139,8 @@ except Exception:
 - Dev mode: `music-minion --dev` (hot-reload)
 - IPC: `music-minion-cli play|skip|love|...`
 - Locate opus: `music-minion locate-opus /path/to/folder [--apply]`
+- Web UI backend: `uv run uvicorn web.backend.main:app --reload`
+- Web UI frontend: `cd web/frontend && npm install && npm run dev`
 
 **Development Workflow**:
 - Environment setup: `uv sync --dev`, then `uv pip install -e .`
@@ -156,27 +158,88 @@ except Exception:
 - blessed (terminal UI)
 - loguru (centralized logging)
 - spotipy (Spotify API)
+- fastapi (web API backend)
+- uvicorn (ASGI server)
+- pydub (audio waveform generation)
+- react + typescript (web UI frontend)
+- wavesurfer.js (waveform visualization)
+- zustand (React state management)
+- @tanstack/react-query (API data fetching)
 
 **Database**: SQLite schema v22 in `core/database.py`
 - Migrations: Idempotent with try/except for duplicate columns
 - Key tables: `tracks`, `playlists`, `playlist_tracks`, `playlist_builder_state`
+
+## Web UI Architecture
+
+**Backend (FastAPI)**:
+- RESTful API at `/api/*` endpoints
+- Dependency injection for database connections (`web/backend/deps.py`)
+- Pydantic schemas for request/response validation (`web/backend/schemas.py`)
+- Routers: `comparisons.py` (ELO sessions), `tracks.py` (audio streaming)
+- Waveform generation: pydub for audio analysis, cached as JSON peaks
+- Audio streaming: direct file serving with proper Content-Type headers
+- Testing: pytest with test coverage for schemas and endpoints
+
+**Frontend (React + TypeScript)**:
+- Vite build system with hot module replacement
+- Component architecture:
+  - `ComparisonView.tsx` - Main comparison interface
+  - `TrackCard.tsx` - Track metadata display
+  - `WaveformPlayer.tsx` - Audio visualization with wavesurfer.js
+  - `SwipeableTrack.tsx` - Touch gesture wrapper
+  - `SessionProgress.tsx` - Progress indicator
+  - `ErrorState.tsx` / `SessionComplete.tsx` - State screens
+- Hooks:
+  - `useComparison.ts` - Comparison session logic
+  - `useWavesurfer.ts` - Waveform initialization and control
+  - `useAudioPlayer.ts` - Audio playback state
+  - `useSwipeGesture.ts` - Touch gesture detection (@use-gesture/react)
+- State: Zustand store for session and track state
+- API Layer: Centralized fetch wrapper with error handling
+- Styling: Tailwind CSS with custom utility classes
 
 ## Documentation References
 
 - `ai-learnings.md` - Patterns, best practices, gotchas
 - `docs/playlist-system-plan.md` - Implementation history
 - `docs/incomplete-items.md` - Future roadmap
+- `docs/opencode-mobile-web-ui-plan.md` - Web UI implementation details
 
 **Future Roadmap - Major Features**:
 - Metadata enhancement system (conversational AI-driven cleanup)
   - Pattern-based cleanup (promotional text removal, artist consolidation)
   - AI prompt optimization that learns from user feedback
   - External enrichment (SoundCloud integration, scraping framework)
-- Web UI for mobile control
+- Expanded web UI features (playlist management, track search)
 - Global hotkey support (daemon mode)
 - YouTube Music / Apple Music integration
 
 ## Recent Features
+
+**Mobile Web UI** (v23 - 2025-12-08):
+- Progressive web app for mobile ELO comparisons
+- Real-time waveform visualization with wavesurfer.js
+- Touch-optimized swipe gestures (left/right to choose winner)
+- Quick seek bar for audio preview (tap anywhere to jump)
+- Session progress tracking with remaining comparisons count
+- Responsive design with Tailwind CSS
+- Tech stack: FastAPI backend, React + TypeScript frontend, Zustand state management
+- Key endpoints:
+  - `POST /api/comparisons/session` - Start new comparison session
+  - `GET /api/comparisons/next-pair` - Fetch next track pair
+  - `POST /api/comparisons/record` - Record comparison result
+  - `GET /api/tracks/{id}/stream` - Stream audio file
+  - `GET /api/tracks/{id}/waveform` - Get waveform visualization data
+  - `POST /api/tracks/{id}/archive` - Archive track
+- Files: `web/backend/`, `web/frontend/src/`
+
+**Filter Editor UX Improvements** (v22+):
+- List-based selection for field/operator/value (no more manual typing)
+- Auto-save on Escape in filter editor
+- Shared filter input helper between playlist builder and wizard
+- Better state tracking for add vs edit operations
+- Files: `ui/blessed/helpers/filter_input.py`, `ui/blessed/state.py`
 
 **Metadata Sync (v22+)**:
 - `write_metadata_to_file()` - writes title, artist, album, genre, year, bpm, key to files
@@ -205,4 +268,4 @@ except Exception:
 
 ---
 
-**Last Updated**: 2025-11-26
+**Last Updated**: 2025-12-08
