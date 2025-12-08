@@ -22,6 +22,10 @@ dependencies = [
     "scikit-learn>=1.3.0", # TF-IDF vectorization for fast track matching
     "rapidfuzz>=3.0.0", # Fast fuzzy string matching for track similarity
     "loguru>=0.7.0", # Unified logging with dual output (console + file)
+    "fastapi>=0.109.0", # Web API backend
+    "uvicorn[standard]>=0.27.0", # ASGI server
+    "python-multipart>=0.0.6", # Form data parsing
+    "pydub>=0.25.1", # Audio waveform generation
 ]
 
 [project.optional-dependencies]
@@ -29,11 +33,6 @@ dev = [
     "pytest>=7.0.0",
     "ruff>=0.1.0",
     "watchdog>=3.0.0",  # File system event monitoring for hot-reload
-]
-web = [
-    "fastapi>=0.109.0",
-    "uvicorn[standard]>=0.27.0",
-    "python-multipart>=0.0.6",
 ]
 
 [project.scripts]

@@ -1,10 +1,9 @@
 """Waveform generation and caching for audio visualization."""
 
-import os
 import json
-import subprocess
 from pathlib import Path
-from typing import Optional
+from pydub import AudioSegment
+import numpy as np
 
 
 def get_waveform_cache_dir() -> Path:
@@ -25,34 +24,44 @@ def has_cached_waveform(track_id: int) -> bool:
 
 
 def generate_waveform(audio_path: str, track_id: int) -> dict:
-    """Generate waveform data using audiowaveform CLI and cache it."""
+    """Generate waveform data using pydub and cache it."""
     cache_path = get_waveform_path(track_id)
 
-    # Run audiowaveform CLI
-    cmd = [
-        "audiowaveform",
-        "-i",
-        audio_path,
-        "-o",
-        str(cache_path),
-        "--pixels-per-second",
-        "50",
-        "-b",
-        "8",
-    ]
-
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        # Load audio file with pydub
+        audio = AudioSegment.from_file(audio_path)
 
-        # Read the generated JSON
-        with open(cache_path, "r") as f:
-            waveform_data = json.load(f)
+        # Get raw audio data as numpy array
+        samples = np.array(audio.get_array_of_samples())
+
+        # Downsample to ~1000 peaks for web display
+        target_peaks = 1000
+        chunk_size = max(1, len(samples) // target_peaks)
+
+        # Extract min/max for each chunk
+        peaks = []
+        for i in range(0, len(samples), chunk_size):
+            chunk = samples[i : i + chunk_size]
+            if len(chunk) > 0:
+                peaks.append(int(chunk.min()))
+                peaks.append(int(chunk.max()))
+
+        # Create waveform JSON structure (WaveSurfer format)
+        waveform_data = {
+            "version": 2,
+            "channels": audio.channels,
+            "sample_rate": audio.frame_rate,
+            "samples_per_pixel": chunk_size,
+            "bits": 8,
+            "length": len(samples),
+            "peaks": peaks,
+        }
+
+        # Cache to disk
+        with open(cache_path, "w") as f:
+            json.dump(waveform_data, f)
 
         return waveform_data
 
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Failed to generate waveform: {e.stderr}")
-    except FileNotFoundError:
-        raise RuntimeError("audiowaveform CLI not found. Please install it first.")
-    except json.JSONDecodeError:
-        raise RuntimeError("Failed to parse waveform JSON output")
+    except Exception as e:
+        raise RuntimeError(f"Failed to generate waveform: {str(e)}")
