@@ -1,0 +1,57 @@
+from pydantic import BaseModel
+from typing import Optional
+
+
+class TrackInfo(BaseModel):
+    id: int
+    title: str
+    artist: str
+    album: Optional[str] = None
+    year: Optional[int] = None
+    bpm: Optional[int] = None
+    genre: Optional[str] = None
+    rating: float
+    comparison_count: int
+    duration: Optional[float] = None
+    has_waveform: bool
+
+
+class ComparisonPair(BaseModel):
+    track_a: TrackInfo
+    track_b: TrackInfo
+    session_id: str
+
+
+class StartSessionRequest(BaseModel):
+    target_comparisons: int = 15
+    source_filter: Optional[str] = None
+    genre_filter: Optional[str] = None
+    year_filter: Optional[str] = None
+    playlist_id: Optional[int] = None
+
+
+class StartSessionResponse(BaseModel):
+    session_id: str
+    total_tracks: int
+    pair: ComparisonPair
+
+
+class RecordComparisonRequest(BaseModel):
+    session_id: str
+    track_a_id: int
+    track_b_id: int
+    winner_id: int
+
+
+class RecordComparisonResponse(BaseModel):
+    success: bool
+    comparisons_done: int
+    target_comparisons: int
+    session_complete: bool
+    next_pair: Optional[ComparisonPair] = None
+
+
+class WaveformData(BaseModel):
+    peaks: list[float]
+    duration: float
+    sample_rate: int
