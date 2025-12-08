@@ -233,10 +233,12 @@ def _handle_filter_editing_key(
             builder=replace(state.builder, filter_editor_editing=False),
         ), None
 
-    # Handle input based on what we're editing
-    if event_type == "char" and char and char.isprintable():
-        if state.builder.filter_editor_field is None:
-            # Editing field - cycle through available fields
+    # Handle stepped filter editing
+    step = state.builder.filter_editor_step
+
+    # Step 0: Select field with j/k navigation
+    if step == 0:
+        if event_type == "key" and char in ("j", "k"):
             fields = list(BUILDER_SORT_FIELDS)
             current_idx = 0
             if state.builder.filter_editor_field:
@@ -244,10 +246,21 @@ def _handle_filter_editing_key(
                     current_idx = fields.index(state.builder.filter_editor_field)
                 except ValueError:
                     pass
-            new_idx = (current_idx + 1) % len(fields)
+            if char == "j":
+                new_idx = (current_idx + 1) % len(fields)
+            else:  # char == "k"
+                new_idx = (current_idx - 1) % len(fields)
             return update_filter_editor_field(state, fields[new_idx]), None
-        elif state.builder.filter_editor_operator is None:
-            # Editing operator - cycle through available operators
+        elif event_type == "enter":
+            # Confirm field and move to step 1
+            return replace(
+                state,
+                builder=replace(state.builder, filter_editor_step=1),
+            ), None
+
+    # Step 1: Select operator with j/k navigation
+    elif step == 1:
+        if event_type == "key" and char in ("j", "k"):
             field = state.builder.filter_editor_field
             if field in BUILDER_NUMERIC_FIELDS:
                 operators = [op[1] for op in BUILDER_NUMERIC_OPERATORS]
@@ -259,19 +272,31 @@ def _handle_filter_editing_key(
                     current_idx = operators.index(state.builder.filter_editor_operator)
                 except ValueError:
                     pass
-            new_idx = (current_idx + 1) % len(operators)
+            if char == "j":
+                new_idx = (current_idx + 1) % len(operators)
+            else:  # char == "k"
+                new_idx = (current_idx - 1) % len(operators)
             return update_filter_editor_operator(state, operators[new_idx]), None
-        else:
-            # Editing value
+        elif event_type == "enter":
+            # Confirm operator and move to step 2
+            return replace(
+                state,
+                builder=replace(state.builder, filter_editor_step=2),
+            ), None
+
+    # Step 2: Enter value
+    elif step == 2:
+        if event_type == "char" and char and char.isprintable():
             return update_filter_editor_value(
                 state, state.builder.filter_editor_value + char
             ), None
-
-    # Backspace for value editing
-    if event_type == "backspace" and state.builder.filter_editor_value:
-        return update_filter_editor_value(
-            state, state.builder.filter_editor_value[:-1]
-        ), None
+        elif event_type == "backspace" and state.builder.filter_editor_value:
+            return update_filter_editor_value(
+                state, state.builder.filter_editor_value[:-1]
+            ), None
+        elif event_type == "enter":
+            # Save and exit editing
+            return save_filter_editor_changes(state), None
 
     return state, None
 

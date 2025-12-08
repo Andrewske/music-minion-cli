@@ -144,11 +144,6 @@ class PlaylistBuilderState:
     dropdown_selected: int = 0
     dropdown_options: list[str] = field(default_factory=list)
 
-    # Pending filter creation (multi-step)
-    pending_filter_field: Optional[str] = None
-    pending_filter_operator: Optional[str] = None
-    filter_value_input: str = ""
-
     # Inline filter editor state
     filter_editor_mode: bool = False  # True when editing filters inline
     filter_editor_selected: int = 0  # Selected filter index (-1 for "add new")
@@ -156,6 +151,7 @@ class PlaylistBuilderState:
     filter_editor_field: Optional[str] = None
     filter_editor_operator: Optional[str] = None
     filter_editor_value: str = ""
+    filter_editor_step: int = 0  # 0=select field, 1=select operator, 2=enter value
 
 
 @dataclass
@@ -2039,118 +2035,6 @@ def select_builder_sort_field(state: UIState) -> UIState:
     )
 
 
-def select_builder_filter_field(state: UIState) -> UIState:
-    """Select filter field, move to operator selection (step 2)."""
-    field = state.builder.dropdown_options[state.builder.dropdown_selected]
-
-    # Get operators based on field type
-    if field in BUILDER_NUMERIC_FIELDS:
-        operators = [op[1] for op in BUILDER_NUMERIC_OPERATORS]
-    else:
-        operators = [op[1] for op in BUILDER_TEXT_OPERATORS]
-
-    return replace(
-        state,
-        builder=replace(
-            state.builder,
-            dropdown_mode="filter_operator",
-            dropdown_selected=0,
-            dropdown_options=operators,
-            pending_filter_field=field,
-        ),
-    )
-
-
-def select_builder_filter_operator(state: UIState) -> UIState:
-    """Select filter operator, move to value input (step 3)."""
-    field = state.builder.pending_filter_field
-    display_op = state.builder.dropdown_options[state.builder.dropdown_selected]
-
-    # Map display back to operator key
-    if field in BUILDER_NUMERIC_FIELDS:
-        op_map = {op[1]: op[0] for op in BUILDER_NUMERIC_OPERATORS}
-    else:
-        op_map = {op[1]: op[0] for op in BUILDER_TEXT_OPERATORS}
-
-    operator = op_map.get(display_op, "contains")
-
-    return replace(
-        state,
-        builder=replace(
-            state.builder,
-            dropdown_mode="filter_value",
-            dropdown_options=[],
-            pending_filter_operator=operator,
-            filter_value_input="",
-        ),
-    )
-
-
-def update_builder_filter_value(state: UIState, char: str) -> UIState:
-    """Add character to filter value input."""
-    return replace(
-        state,
-        builder=replace(
-            state.builder,
-            filter_value_input=state.builder.filter_value_input + char,
-        ),
-    )
-
-
-def backspace_builder_filter_value(state: UIState) -> UIState:
-    """Remove last character from filter value input."""
-    return replace(
-        state,
-        builder=replace(
-            state.builder,
-            filter_value_input=state.builder.filter_value_input[:-1],
-        ),
-    )
-
-
-def confirm_builder_filter(state: UIState) -> UIState:
-    """Confirm filter creation and apply."""
-    if not state.builder.filter_value_input:
-        return cancel_builder_dropdown(state)
-
-    # Ensure required fields are set
-    if (
-        not state.builder.pending_filter_field
-        or not state.builder.pending_filter_operator
-    ):
-        return cancel_builder_dropdown(state)
-
-    new_filter = BuilderFilter(
-        field=state.builder.pending_filter_field,  # type: ignore
-        operator=state.builder.pending_filter_operator,  # type: ignore
-        value=state.builder.filter_value_input,
-    )
-
-    new_filters = state.builder.filters + [new_filter]
-
-    # Re-apply filters and sort
-    displayed = _apply_builder_filters(state.builder.all_tracks, new_filters)
-    displayed = _apply_builder_sort(
-        displayed, state.builder.sort_field, state.builder.sort_direction
-    )
-
-    return replace(
-        state,
-        builder=replace(
-            state.builder,
-            filters=new_filters,
-            displayed_tracks=displayed,
-            dropdown_mode=None,
-            dropdown_options=[],
-            pending_filter_field=None,
-            pending_filter_operator=None,
-            filter_value_input="",
-            selected_index=0,
-            scroll_offset=0,
-        ),
-    )
-
-
 def remove_builder_filter(state: UIState, index: int = -1) -> UIState:
     """Remove filter at index (default: last)."""
     if not state.builder.filters:
@@ -2209,9 +2093,6 @@ def cancel_builder_dropdown(state: UIState) -> UIState:
             dropdown_mode=None,
             dropdown_selected=0,
             dropdown_options=[],
-            pending_filter_field=None,
-            pending_filter_operator=None,
-            filter_value_input="",
         ),
     )
 
@@ -2230,6 +2111,7 @@ def toggle_filter_editor_mode(state: UIState) -> UIState:
                 filter_editor_field=None,
                 filter_editor_operator=None,
                 filter_editor_value="",
+                filter_editor_step=0,
             ),
         )
     else:
@@ -2244,6 +2126,7 @@ def toggle_filter_editor_mode(state: UIState) -> UIState:
                 filter_editor_field=None,
                 filter_editor_operator=None,
                 filter_editor_value="",
+                filter_editor_step=0,
             ),
         )
 
@@ -2275,6 +2158,7 @@ def start_editing_filter(state: UIState, filter_index: int) -> UIState:
             filter_editor_field=filter_to_edit.field,
             filter_editor_operator=filter_to_edit.operator,
             filter_editor_value=filter_to_edit.value,
+            filter_editor_step=0,
         ),
     )
 
@@ -2290,6 +2174,7 @@ def start_adding_filter(state: UIState) -> UIState:
             filter_editor_field=None,
             filter_editor_operator=None,
             filter_editor_value="",
+            filter_editor_step=0,
         ),
     )
 
@@ -2368,6 +2253,7 @@ def save_filter_editor_changes(state: UIState) -> UIState:
             filter_editor_field=None,
             filter_editor_operator=None,
             filter_editor_value="",
+            filter_editor_step=0,
             selected_index=0,
             scroll_offset=0,
         ),

@@ -241,7 +241,7 @@ def _render_filter_editor_header(term: Terminal, builder, y: int) -> int:
     title = f'   🎛️ Filter Editor: "{builder.target_playlist_name}"'
     write_at(term, 0, y, term.bold(title))
 
-    help_text = "j/k nav  e edit  d delete  a add  Enter save  Esc cancel"
+    help_text = "j/k nav  e edit  d delete  a add  Enter confirm/save  Esc cancel"
     write_at(term, 0, y + 1, term.dim + help_text[: term.width - 1] + term.normal)
 
     return y + 2
@@ -281,13 +281,14 @@ def _render_filter_list(term: Terminal, builder, y: int, height: int) -> int:
         # Apply highlighting
         if is_selected:
             if builder.filter_editor_editing and i == selected:
-                # Show editing cursor
-                if builder.filter_editor_field is None:
-                    item_text += " [selecting field...]"
-                elif builder.filter_editor_operator is None:
-                    item_text += f" [field: {builder.filter_editor_field}, selecting operator...]"
-                else:
-                    item_text += f' [field: {builder.filter_editor_field}, op: {builder.filter_editor_operator}, value: "{builder.filter_editor_value}_"]'
+                # Show editing cursor with step indicators
+                step = builder.filter_editor_step
+                if step == 0:
+                    item_text += f" [1/3 Field: {builder.filter_editor_field or 'title'} ← j/k to select, Enter to confirm]"
+                elif step == 1:
+                    item_text += f" [2/3 Field: {builder.filter_editor_field}, Operator: {builder.filter_editor_operator or 'contains'} ← j/k to select, Enter to confirm]"
+                elif step == 2:
+                    item_text += f' [3/3 Field: {builder.filter_editor_field}, Op: {builder.filter_editor_operator}, Value: "{builder.filter_editor_value}_" ← type value, Enter to save]'
             item_text = term.black_on_cyan(item_text.ljust(term.width))
         else:
             item_text = item_text.ljust(term.width)
