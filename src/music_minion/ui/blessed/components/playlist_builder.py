@@ -25,6 +25,9 @@ def render_playlist_builder(
     """
     builder = state.builder
 
+    if builder.filter_editor_mode:
+        return _render_filter_editor(term, state, y, height)
+
     # Calculate layout
     header_height = 2  # Title + sort/filter info
     footer_height = 1  # Help text
@@ -51,7 +54,7 @@ def render_playlist_builder(
 def _render_header(term: Terminal, builder, y: int) -> int:
     """Render header with playlist name and sort/filter info."""
     # Title line
-    title = f"   🔨 Building: \"{builder.target_playlist_name}\""
+    title = f'   🔨 Building: "{builder.target_playlist_name}"'
     write_at(term, 0, y, term.bold(title))
 
     # Sort/filter info line
@@ -79,7 +82,7 @@ def _render_header(term: Terminal, builder, y: int) -> int:
     filter_info = " | Filters: " + ", ".join(filter_parts) if filter_parts else ""
 
     info_line = f"   {sort_info}{filter_info}"
-    write_at(term, 0, y + 1, term.dim + info_line[:term.width - 1] + term.normal)
+    write_at(term, 0, y + 1, term.dim + info_line[: term.width - 1] + term.normal)
 
     return y + 2
 
@@ -91,8 +94,8 @@ def _render_track_list(term: Terminal, builder, y: int, height: int) -> int:
     scroll = builder.scroll_offset
     in_playlist = builder.playlist_track_ids
 
-    # Calculate visible range
-    visible_end = min(scroll + height, len(tracks))
+    # Calculate visible range (for future use if needed)
+    # visible_end = min(scroll + height, len(tracks))
 
     for i, row_y in enumerate(range(y, y + height)):
         track_idx = scroll + i
@@ -134,7 +137,7 @@ def _render_track_list(term: Terminal, builder, y: int, height: int) -> int:
 
         # Truncate main text
         if len(main_text) > main_width:
-            main_text = main_text[:main_width - 1] + "…"
+            main_text = main_text[: main_width - 1] + "…"
         else:
             main_text = main_text.ljust(main_width)
 
@@ -158,16 +161,18 @@ def _render_footer(term: Terminal, builder, y: int) -> int:
     pos = builder.selected_index + 1 if total > 0 else 0
 
     position_text = f"[{pos}/{total}]"
-    help_text = "j/k nav  Space toggle  p play  s sort  f filter  d del filter  Esc exit"
+    help_text = (
+        "j/k nav  Space toggle  p play  s sort  f edit filters  d del filter  Esc exit"
+    )
 
     footer = f"   {position_text} {help_text}"
-    write_at(term, 0, y, term.dim + footer[:term.width - 1] + term.normal)
+    write_at(term, 0, y, term.dim + footer[: term.width - 1] + term.normal)
 
     return y + 1
 
 
 def _render_dropdown(term: Terminal, builder, y: int) -> None:
-    """Render dropdown overlay for sort/filter selection."""
+    """Render dropdown overlay for sort selection."""
     mode = builder.dropdown_mode
     options = builder.dropdown_options
     selected = builder.dropdown_selected
@@ -175,12 +180,6 @@ def _render_dropdown(term: Terminal, builder, y: int) -> None:
     # Dropdown title
     if mode == "sort":
         title = "Sort by:"
-    elif mode == "filter_field":
-        title = "Filter by:"
-    elif mode == "filter_operator":
-        title = f"{builder.pending_filter_field}:"
-    elif mode == "filter_value":
-        title = f"{builder.pending_filter_field} {builder.pending_filter_operator}:"
     else:
         return
 
@@ -191,25 +190,120 @@ def _render_dropdown(term: Terminal, builder, y: int) -> None:
     # Render dropdown box
     write_at(term, dropdown_x, y, term.reverse(f" {title.ljust(dropdown_width - 1)}"))
 
-    if mode == "filter_value":
-        # Text input mode
-        input_text = builder.filter_value_input + "_"
-        write_at(term, dropdown_x, y + 1, term.reverse(f" {input_text.ljust(dropdown_width - 1)}"))
-        write_at(term, dropdown_x, y + 2, term.dim + " Enter=confirm  Esc=cancel" + term.normal)
-    else:
-        # Option list mode
-        for i, option in enumerate(options):
-            option_y = y + 1 + i
-            prefix = ">" if i == selected else " "
-            display = f"{prefix} {option}"
+    # Option list mode
+    for i, option in enumerate(options):
+        option_y = y + 1 + i
+        prefix = ">" if i == selected else " "
+        display = f"{prefix} {option}"
 
-            if i == selected:
-                display = term.black_on_white(display.ljust(dropdown_width))
-            else:
-                display = term.reverse(display.ljust(dropdown_width))
+        if i == selected:
+            display = term.black_on_white(display.ljust(dropdown_width))
+        else:
+            display = term.reverse(display.ljust(dropdown_width))
 
-            write_at(term, dropdown_x, option_y, display, clear=False)
+        write_at(term, dropdown_x, option_y, display, clear=False)
 
-        # Help text below options
-        help_y = y + 1 + len(options)
-        write_at(term, dropdown_x, help_y, term.dim + " j/k select  Enter=confirm  Esc=cancel" + term.normal)
+    # Help text below options
+    help_y = y + 1 + len(options)
+    write_at(
+        term,
+        dropdown_x,
+        help_y,
+        term.dim + " j/k select  Enter=confirm  Esc=cancel" + term.normal,
+    )
+
+
+def _render_filter_editor(term: Terminal, state: UIState, y: int, height: int) -> int:
+    """Render the inline filter editor."""
+    builder = state.builder
+
+    # Calculate layout
+    header_height = 2  # Title + help info
+    footer_height = 1  # Help text
+    list_height = height - header_height - footer_height
+
+    current_y = y
+
+    # Render header
+    current_y = _render_filter_editor_header(term, builder, current_y)
+
+    # Render filter list
+    current_y = _render_filter_list(term, builder, current_y, list_height)
+
+    # Render footer
+    current_y = _render_filter_editor_footer(term, builder, current_y)
+
+    return height
+
+
+def _render_filter_editor_header(term: Terminal, builder, y: int) -> int:
+    """Render filter editor header."""
+    title = f'   🎛️ Filter Editor: "{builder.target_playlist_name}"'
+    write_at(term, 0, y, term.bold(title))
+
+    help_text = "j/k nav  e edit  d delete  a add  Enter save  Esc cancel"
+    write_at(term, 0, y + 1, term.dim + help_text[: term.width - 1] + term.normal)
+
+    return y + 2
+
+
+def _render_filter_list(term: Terminal, builder, y: int, height: int) -> int:
+    """Render scrollable filter list."""
+    filters = builder.filters
+    selected = builder.filter_editor_selected
+
+    # Add "add new" option
+    display_items = []
+    for i, f in enumerate(filters):
+        op_display = {
+            "contains": "~",
+            "equals": "=",
+            "not_equals": "!=",
+            "starts_with": "^",
+            "ends_with": "$",
+            "gt": ">",
+            "lt": "<",
+            "gte": ">=",
+            "lte": "<=",
+        }.get(f.operator, f.operator)
+        display_items.append(f'{i + 1}. {f.field} {op_display} "{f.value}"')
+    display_items.append("[+] Add new filter")
+
+    for i, row_y in enumerate(range(y, y + height)):
+        if i >= len(display_items):
+            # Clear empty rows
+            write_at(term, 0, row_y, "")
+            continue
+
+        item_text = display_items[i]
+        is_selected = i == selected
+
+        # Apply highlighting
+        if is_selected:
+            if builder.filter_editor_editing and i == selected:
+                # Show editing cursor
+                if builder.filter_editor_field is None:
+                    item_text += " [selecting field...]"
+                elif builder.filter_editor_operator is None:
+                    item_text += f" [field: {builder.filter_editor_field}, selecting operator...]"
+                else:
+                    item_text += f' [field: {builder.filter_editor_field}, op: {builder.filter_editor_operator}, value: "{builder.filter_editor_value}_"]'
+            item_text = term.black_on_cyan(item_text.ljust(term.width))
+        else:
+            item_text = item_text.ljust(term.width)
+
+        write_at(term, 0, row_y, item_text, clear=False)
+
+    return y + height
+
+
+def _render_filter_editor_footer(term: Terminal, builder, y: int) -> int:
+    """Render filter editor footer with position info."""
+    total = len(builder.filters) + 1  # +1 for add option
+    pos = builder.filter_editor_selected + 1 if total > 0 else 0
+
+    position_text = f"[{pos}/{total}]"
+    footer = f"   {position_text}"
+    write_at(term, 0, y, term.dim + footer[: term.width - 1] + term.normal)
+
+    return y + 1

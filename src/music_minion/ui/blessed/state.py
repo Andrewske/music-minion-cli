@@ -149,6 +149,14 @@ class PlaylistBuilderState:
     pending_filter_operator: Optional[str] = None
     filter_value_input: str = ""
 
+    # Inline filter editor state
+    filter_editor_mode: bool = False  # True when editing filters inline
+    filter_editor_selected: int = 0  # Selected filter index (-1 for "add new")
+    filter_editor_editing: bool = False  # True when editing a specific filter
+    filter_editor_field: Optional[str] = None
+    filter_editor_operator: Optional[str] = None
+    filter_editor_value: str = ""
+
 
 @dataclass
 class UIState:
@@ -1989,22 +1997,6 @@ def show_builder_sort_dropdown(state: UIState) -> UIState:
     )
 
 
-def show_builder_filter_dropdown(state: UIState) -> UIState:
-    """Open filter field selection dropdown (step 1)."""
-    return replace(
-        state,
-        builder=replace(
-            state.builder,
-            dropdown_mode="filter_field",
-            dropdown_selected=0,
-            dropdown_options=BUILDER_SORT_FIELDS,
-            pending_filter_field=None,
-            pending_filter_operator=None,
-            filter_value_input="",
-        ),
-    )
-
-
 def move_builder_dropdown_selection(state: UIState, delta: int) -> UIState:
     """Move dropdown selection."""
     if not state.builder.dropdown_options:
@@ -2121,9 +2113,16 @@ def confirm_builder_filter(state: UIState) -> UIState:
     if not state.builder.filter_value_input:
         return cancel_builder_dropdown(state)
 
+    # Ensure required fields are set
+    if (
+        not state.builder.pending_filter_field
+        or not state.builder.pending_filter_operator
+    ):
+        return cancel_builder_dropdown(state)
+
     new_filter = BuilderFilter(
-        field=state.builder.pending_filter_field,
-        operator=state.builder.pending_filter_operator,
+        field=state.builder.pending_filter_field,  # type: ignore
+        operator=state.builder.pending_filter_operator,  # type: ignore
         value=state.builder.filter_value_input,
     )
 
@@ -2213,6 +2212,191 @@ def cancel_builder_dropdown(state: UIState) -> UIState:
             pending_filter_field=None,
             pending_filter_operator=None,
             filter_value_input="",
+        ),
+    )
+
+
+def toggle_filter_editor_mode(state: UIState) -> UIState:
+    """Toggle inline filter editor mode."""
+    if state.builder.filter_editor_mode:
+        # Exit filter editor
+        return replace(
+            state,
+            builder=replace(
+                state.builder,
+                filter_editor_mode=False,
+                filter_editor_selected=0,
+                filter_editor_editing=False,
+                filter_editor_field=None,
+                filter_editor_operator=None,
+                filter_editor_value="",
+            ),
+        )
+    else:
+        # Enter filter editor
+        return replace(
+            state,
+            builder=replace(
+                state.builder,
+                filter_editor_mode=True,
+                filter_editor_selected=0,
+                filter_editor_editing=False,
+                filter_editor_field=None,
+                filter_editor_operator=None,
+                filter_editor_value="",
+            ),
+        )
+
+
+def move_filter_editor_selection(state: UIState, delta: int) -> UIState:
+    """Move selection in filter editor."""
+    max_items = len(state.builder.filters) + 1  # +1 for "add new" option
+    if max_items == 0:
+        return state
+
+    new_selected = (state.builder.filter_editor_selected + delta) % max_items
+    return replace(
+        state,
+        builder=replace(state.builder, filter_editor_selected=new_selected),
+    )
+
+
+def start_editing_filter(state: UIState, filter_index: int) -> UIState:
+    """Start editing a filter at the given index."""
+    if filter_index < 0 or filter_index >= len(state.builder.filters):
+        return state
+
+    filter_to_edit = state.builder.filters[filter_index]
+    return replace(
+        state,
+        builder=replace(
+            state.builder,
+            filter_editor_editing=True,
+            filter_editor_field=filter_to_edit.field,
+            filter_editor_operator=filter_to_edit.operator,
+            filter_editor_value=filter_to_edit.value,
+        ),
+    )
+
+
+def start_adding_filter(state: UIState) -> UIState:
+    """Start adding a new filter."""
+    return replace(
+        state,
+        builder=replace(
+            state.builder,
+            filter_editor_editing=True,
+            filter_editor_selected=-1,  # Special value for adding
+            filter_editor_field=None,
+            filter_editor_operator=None,
+            filter_editor_value="",
+        ),
+    )
+
+
+def update_filter_editor_field(state: UIState, field: str) -> UIState:
+    """Update the field being edited in filter editor."""
+    return replace(
+        state,
+        builder=replace(state.builder, filter_editor_field=field),
+    )
+
+
+def update_filter_editor_operator(state: UIState, operator: str) -> UIState:
+    """Update the operator being edited in filter editor."""
+    return replace(
+        state,
+        builder=replace(state.builder, filter_editor_operator=operator),
+    )
+
+
+def update_filter_editor_value(state: UIState, value: str) -> UIState:
+    """Update the value being edited in filter editor."""
+    return replace(
+        state,
+        builder=replace(state.builder, filter_editor_value=value),
+    )
+
+
+def save_filter_editor_changes(state: UIState) -> UIState:
+    """Save changes from filter editor and exit."""
+    builder = state.builder
+
+    # Validate that we have required fields for editing/adding
+    if not builder.filter_editor_field or not builder.filter_editor_operator:
+        return state  # Don't save invalid changes
+
+    if builder.filter_editor_selected == -1:
+        # Adding new filter
+        new_filter = BuilderFilter(
+            field=builder.filter_editor_field,
+            operator=builder.filter_editor_operator,
+            value=builder.filter_editor_value,
+        )
+        new_filters = builder.filters + [new_filter]
+    else:
+        # Editing existing filter
+        if builder.filter_editor_selected >= len(builder.filters):
+            return state  # Invalid index
+
+        new_filter = BuilderFilter(
+            field=builder.filter_editor_field,
+            operator=builder.filter_editor_operator,
+            value=builder.filter_editor_value,
+        )
+        new_filters = (
+            builder.filters[: builder.filter_editor_selected]
+            + [new_filter]
+            + builder.filters[builder.filter_editor_selected + 1 :]
+        )
+
+    # Re-apply filters and sort
+    displayed = _apply_builder_filters(builder.all_tracks, new_filters)
+    displayed = _apply_builder_sort(
+        displayed, builder.sort_field, builder.sort_direction
+    )
+
+    return replace(
+        state,
+        builder=replace(
+            builder,
+            filters=new_filters,
+            displayed_tracks=displayed,
+            filter_editor_mode=False,
+            filter_editor_selected=0,
+            filter_editor_editing=False,
+            filter_editor_field=None,
+            filter_editor_operator=None,
+            filter_editor_value="",
+            selected_index=0,
+            scroll_offset=0,
+        ),
+    )
+
+
+def delete_filter(state: UIState, filter_index: int) -> UIState:
+    """Delete a filter at the given index."""
+    if filter_index < 0 or filter_index >= len(state.builder.filters):
+        return state
+
+    new_filters = (
+        state.builder.filters[:filter_index] + state.builder.filters[filter_index + 1 :]
+    )
+
+    # Re-apply filters and sort
+    displayed = _apply_builder_filters(state.builder.all_tracks, new_filters)
+    displayed = _apply_builder_sort(
+        displayed, state.builder.sort_field, state.builder.sort_direction
+    )
+
+    return replace(
+        state,
+        builder=replace(
+            state.builder,
+            filters=new_filters,
+            displayed_tracks=displayed,
+            selected_index=0,
+            scroll_offset=0,
         ),
     )
 

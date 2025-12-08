@@ -7,19 +7,27 @@ from music_minion.ui.blessed.state import (
     InternalCommand,
     move_builder_selection,
     show_builder_sort_dropdown,
-    show_builder_filter_dropdown,
     move_builder_dropdown_selection,
     select_builder_sort_field,
-    select_builder_filter_field,
-    select_builder_filter_operator,
-    update_builder_filter_value,
-    backspace_builder_filter_value,
-    confirm_builder_filter,
+    toggle_filter_editor_mode,
+    move_filter_editor_selection,
+    start_editing_filter,
+    start_adding_filter,
+    update_filter_editor_field,
+    update_filter_editor_operator,
+    update_filter_editor_value,
+    save_filter_editor_changes,
+    delete_filter,
     remove_builder_filter,
     clear_builder_filters,
     cancel_builder_dropdown,
     hide_playlist_builder,
     toggle_builder_track,
+    BUILDER_SORT_FIELDS,
+    BUILDER_NUMERIC_FIELDS,
+    BUILDER_NUMERIC_OPERATORS,
+    BUILDER_TEXT_OPERATORS,
+    replace,
 )
 
 
@@ -39,12 +47,8 @@ def handle_playlist_builder_key(
     # Delegate to dropdown handlers if dropdown is open
     if builder.dropdown_mode == "sort":
         return _handle_sort_dropdown_key(state, event)
-    elif builder.dropdown_mode == "filter_field":
-        return _handle_filter_field_key(state, event)
-    elif builder.dropdown_mode == "filter_operator":
-        return _handle_filter_operator_key(state, event)
-    elif builder.dropdown_mode == "filter_value":
-        return _handle_filter_value_key(state, event)
+    elif builder.filter_editor_mode:
+        return _handle_filter_editor_key(state, event)
 
     # Main builder mode
     return _handle_main_builder_key(state, event, viewer_height)
@@ -91,15 +95,17 @@ def _handle_main_builder_key(
     # Numeric keys 0-9: Jump to percentage of track
     if event_type == "char" and char and char.isdigit():
         percentage = int(char) * 10
-        return state, InternalCommand(action="seek_percentage", data={"percentage": percentage})
+        return state, InternalCommand(
+            action="seek_percentage", data={"percentage": percentage}
+        )
 
     # Sort dropdown
     if char == "s":
         return show_builder_sort_dropdown(state), None
 
-    # Filter dropdown
+    # Toggle filter editor
     if char == "f":
-        return show_builder_filter_dropdown(state), None
+        return toggle_filter_editor_mode(state), None
 
     # Remove last filter
     if char == "d":
@@ -151,72 +157,121 @@ def _handle_sort_dropdown_key(
     return state, None
 
 
-def _handle_filter_field_key(
+def _handle_filter_editor_key(
     state: UIState,
     event: dict,
 ) -> tuple[Optional[UIState], Optional[Union[str, InternalCommand]]]:
-    """Handle keys in filter field selection dropdown."""
+    """Handle keys in filter editor mode."""
+    builder = state.builder
     event_type = event.get("type")
     char = event.get("char", "")
 
+    if builder.filter_editor_editing:
+        return _handle_filter_editing_key(state, event)
+
+    # Navigation
     if event_type == "arrow_down" or char == "j":
-        return move_builder_dropdown_selection(state, 1), None
+        return move_filter_editor_selection(state, 1), None
 
     if event_type == "arrow_up" or char == "k":
-        return move_builder_dropdown_selection(state, -1), None
+        return move_filter_editor_selection(state, -1), None
 
+    # Edit selected filter
+    if char == "e":
+        selected = builder.filter_editor_selected
+        if selected >= 0 and selected < len(builder.filters):
+            return start_editing_filter(state, selected), None
+        return state, None
+
+    # Delete selected filter
+    if char == "d":
+        selected = builder.filter_editor_selected
+        if selected >= 0 and selected < len(builder.filters):
+            return delete_filter(state, selected), None
+        return state, None
+
+    # Add new filter
+    if char == "a":
+        return start_adding_filter(state), None
+
+    # Save and exit
     if event_type == "enter":
-        return select_builder_filter_field(state), None
+        return save_filter_editor_changes(state), None
 
+    # Cancel and exit
     if event_type == "escape":
-        return cancel_builder_dropdown(state), None
+        return toggle_filter_editor_mode(state), None
 
     return state, None
 
 
-def _handle_filter_operator_key(
+def _handle_filter_editing_key(
     state: UIState,
     event: dict,
 ) -> tuple[Optional[UIState], Optional[Union[str, InternalCommand]]]:
-    """Handle keys in filter operator selection dropdown."""
+    """Handle keys when editing a filter field/operator/value."""
     event_type = event.get("type")
     char = event.get("char", "")
 
-    if event_type == "arrow_down" or char == "j":
-        return move_builder_dropdown_selection(state, 1), None
-
-    if event_type == "arrow_up" or char == "k":
-        return move_builder_dropdown_selection(state, -1), None
-
-    if event_type == "enter":
-        return select_builder_filter_operator(state), None
-
+    # Cancel editing
     if event_type == "escape":
-        return cancel_builder_dropdown(state), None
+        return replace(
+            state,
+            builder=replace(
+                state.builder,
+                filter_editor_editing=False,
+                filter_editor_field=None,
+                filter_editor_operator=None,
+                filter_editor_value="",
+            ),
+        ), None
 
-    return state, None
-
-
-def _handle_filter_value_key(
-    state: UIState,
-    event: dict,
-) -> tuple[Optional[UIState], Optional[Union[str, InternalCommand]]]:
-    """Handle keys in filter value text input."""
-    event_type = event.get("type")
-    char = event.get("char", "")
-
+    # Save editing
     if event_type == "enter":
-        return confirm_builder_filter(state), None
+        return replace(
+            state,
+            builder=replace(state.builder, filter_editor_editing=False),
+        ), None
 
-    if event_type == "escape":
-        return cancel_builder_dropdown(state), None
-
-    if event_type == "backspace":
-        return backspace_builder_filter_value(state), None
-
-    # Regular character input
+    # Handle input based on what we're editing
     if event_type == "char" and char and char.isprintable():
-        return update_builder_filter_value(state, char), None
+        if state.builder.filter_editor_field is None:
+            # Editing field - cycle through available fields
+            fields = list(BUILDER_SORT_FIELDS)
+            current_idx = 0
+            if state.builder.filter_editor_field:
+                try:
+                    current_idx = fields.index(state.builder.filter_editor_field)
+                except ValueError:
+                    pass
+            new_idx = (current_idx + 1) % len(fields)
+            return update_filter_editor_field(state, fields[new_idx]), None
+        elif state.builder.filter_editor_operator is None:
+            # Editing operator - cycle through available operators
+            field = state.builder.filter_editor_field
+            if field in BUILDER_NUMERIC_FIELDS:
+                operators = [op[1] for op in BUILDER_NUMERIC_OPERATORS]
+            else:
+                operators = [op[1] for op in BUILDER_TEXT_OPERATORS]
+            current_idx = 0
+            if state.builder.filter_editor_operator:
+                try:
+                    current_idx = operators.index(state.builder.filter_editor_operator)
+                except ValueError:
+                    pass
+            new_idx = (current_idx + 1) % len(operators)
+            return update_filter_editor_operator(state, operators[new_idx]), None
+        else:
+            # Editing value
+            return update_filter_editor_value(
+                state, state.builder.filter_editor_value + char
+            ), None
+
+    # Backspace for value editing
+    if event_type == "backspace" and state.builder.filter_editor_value:
+        return update_filter_editor_value(
+            state, state.builder.filter_editor_value[:-1]
+        ), None
 
     return state, None
 
