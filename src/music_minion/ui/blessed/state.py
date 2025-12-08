@@ -155,6 +155,9 @@ class PlaylistBuilderState:
     filter_editor_options: list[str] = field(
         default_factory=list
     )  # Available options for current step
+    filter_editor_is_adding_new: bool = (
+        False  # True when adding new filter, False when editing
+    )
 
 
 @dataclass
@@ -2172,6 +2175,7 @@ def start_editing_filter(state: UIState, filter_idx: int) -> UIState:
             filter_editor_value=selected_filter.value,
             filter_editor_options=field_options,
             filter_editor_selected=selected_field_idx,  # Position at current field
+            filter_editor_is_adding_new=False,
         ),
     )
 
@@ -2190,7 +2194,8 @@ def start_adding_filter(state: UIState) -> UIState:
             filter_editor_operator=None,
             filter_editor_value="",
             filter_editor_options=field_options,
-            filter_editor_selected=0,
+            filter_editor_selected=-1,
+            filter_editor_is_adding_new=True,
         ),
     )
 
@@ -2288,7 +2293,7 @@ def _create_updated_filters(builder: PlaylistBuilderState) -> list[BuilderFilter
         value=builder.filter_editor_value,
     )
 
-    if builder.filter_editor_selected == -1:
+    if builder.filter_editor_is_adding_new:
         # Adding new filter
         return builder.filters + [new_filter]
     else:
