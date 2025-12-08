@@ -5,12 +5,19 @@ import { SwipeableTrack } from './SwipeableTrack';
 import { SessionProgress } from './SessionProgress';
 import { WaveformPlayer } from './WaveformPlayer';
 import { QuickSeekBar } from './QuickSeekBar';
+import { TrackCardSkeleton } from './TrackCardSkeleton';
+import { WaveformSkeleton } from './WaveformSkeleton';
+import { ErrorState } from './ErrorState';
+import { SessionComplete } from './SessionComplete';
 
 export function ComparisonView() {
   const { currentPair, playingTrackId, comparisonsCompleted, targetComparisons, setPlaying } = useComparisonStore();
   const startSession = useStartSession();
   const recordComparison = useRecordComparison();
   const { playTrack } = useAudioPlayer(playingTrackId);
+
+  // Check if session is complete
+  const isSessionComplete = comparisonsCompleted >= targetComparisons;
 
   const handleStartSession = () => {
     startSession.mutate({});
@@ -44,6 +51,25 @@ export function ComparisonView() {
 
 
 
+  if (startSession.isError) {
+    return (
+      <ErrorState
+        title="Failed to Start Session"
+        message="Unable to load tracks for comparison. Please check your music library."
+        onRetry={handleStartSession}
+      />
+    );
+  }
+
+  if (isSessionComplete) {
+    return (
+      <SessionComplete
+        completed={comparisonsCompleted}
+        onStartNew={handleStartSession}
+      />
+    );
+  }
+
   if (!currentPair) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -61,11 +87,6 @@ export function ComparisonView() {
           >
             {startSession.isPending ? 'Starting...' : 'Start Comparison Session'}
           </button>
-          {startSession.isError && (
-            <p className="text-red-600 mt-2">
-              Failed to start session. Please try again.
-            </p>
-          )}
         </div>
       </div>
     );
@@ -83,36 +104,48 @@ export function ComparisonView() {
 
       {/* Comparison cards */}
       <div className="flex flex-col p-4 space-y-4">
-        <SwipeableTrack
-          track={currentPair.track_a}
-          isPlaying={playingTrackId === currentPair.track_a.id}
-          onSwipeRight={() => handleSwipeRight(currentPair.track_a.id)}
-          onSwipeLeft={() => handleSwipeLeft(currentPair.track_a.id)}
-          onTap={() => handleTrackTap(currentPair.track_a.id)}
-        />
+        {recordComparison.isPending ? (
+          <TrackCardSkeleton />
+        ) : (
+          <SwipeableTrack
+            track={currentPair.track_a}
+            isPlaying={playingTrackId === currentPair.track_a.id}
+            onSwipeRight={() => handleSwipeRight(currentPair.track_a.id)}
+            onSwipeLeft={() => handleSwipeLeft(currentPair.track_a.id)}
+            onTap={() => handleTrackTap(currentPair.track_a.id)}
+          />
+        )}
 
         <div className="text-center py-2">
           <span className="text-gray-500 text-sm font-medium">VS</span>
         </div>
 
-        <SwipeableTrack
-          track={currentPair.track_b}
-          isPlaying={playingTrackId === currentPair.track_b.id}
-          onSwipeRight={() => handleSwipeRight(currentPair.track_b.id)}
-          onSwipeLeft={() => handleSwipeLeft(currentPair.track_b.id)}
-          onTap={() => handleTrackTap(currentPair.track_b.id)}
-        />
+        {recordComparison.isPending ? (
+          <TrackCardSkeleton />
+        ) : (
+          <SwipeableTrack
+            track={currentPair.track_b}
+            isPlaying={playingTrackId === currentPair.track_b.id}
+            onSwipeRight={() => handleSwipeRight(currentPair.track_b.id)}
+            onSwipeLeft={() => handleSwipeLeft(currentPair.track_b.id)}
+            onTap={() => handleTrackTap(currentPair.track_b.id)}
+          />
+        )}
       </div>
 
       {/* Audio player */}
       {playingTrackId && (
         <div className="px-4 pb-4">
-          <WaveformPlayer
-            trackId={playingTrackId}
-            onSeek={() => {
-              // Handle seek if needed
-            }}
-          />
+          {recordComparison.isPending ? (
+            <WaveformSkeleton />
+          ) : (
+            <WaveformPlayer
+              trackId={playingTrackId}
+              onSeek={() => {
+                // Handle seek if needed
+              }}
+            />
+          )}
 
           <QuickSeekBar
             onSeek={() => {
