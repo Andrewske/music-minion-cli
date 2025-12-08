@@ -7,6 +7,7 @@ authors = [
     { name = "Kevin", email = "andrewskevin92@gmail.com" }
 ]
 requires-python = ">=3.12"
+packages = ["src/music_minion", "web"]
 dependencies = [
     "mutagen>=1.47.0", # MP3/M4A metadata handling
     "openai>=1.0.0", # AI integration (optional)
@@ -29,6 +30,11 @@ dev = [
     "ruff>=0.1.0",
     "watchdog>=3.0.0",  # File system event monitoring for hot-reload
 ]
+web = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "python-multipart>=0.0.6",
+]
 
 [project.scripts]
 music-minion = "music_minion.cli:main"
@@ -42,3 +48,6 @@ dev = [
     "pytest>=8.4.2",
     "ruff>=0.13.0",
 ]
+
+[tool.uv]
+include = ["src", "web"]
