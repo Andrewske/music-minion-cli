@@ -1,18 +1,26 @@
 import { useComparisonStore } from '../stores/comparisonStore';
 import { useStartSession } from '../hooks/useComparison';
+import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import { TrackCard } from './TrackCard';
 import { SessionProgress } from './SessionProgress';
+import { WaveformPlayer } from './WaveformPlayer';
+import { QuickSeekBar } from './QuickSeekBar';
 
 export function ComparisonView() {
   const { currentPair, playingTrackId, comparisonsCompleted, targetComparisons, setPlaying } = useComparisonStore();
   const startSession = useStartSession();
+  const { playTrack } = useAudioPlayer(playingTrackId);
 
   const handleStartSession = () => {
     startSession.mutate({});
   };
 
   const handleTrackTap = (trackId: number) => {
-    setPlaying(trackId === playingTrackId ? null : trackId);
+    if (trackId === playingTrackId) {
+      setPlaying(null);
+    } else {
+      playTrack(trackId);
+    }
   };
 
 
@@ -72,6 +80,25 @@ export function ComparisonView() {
           onTap={() => handleTrackTap(currentPair.track_b.id)}
         />
       </div>
+
+      {/* Audio player */}
+      {playingTrackId && (
+        <div className="px-4 pb-4">
+          <WaveformPlayer
+            trackId={playingTrackId}
+            onSeek={() => {
+              // Handle seek if needed
+            }}
+          />
+
+          <QuickSeekBar
+            onSeek={() => {
+              // TODO: Implement seek functionality
+            }}
+            currentPercent={0} // TODO: Get current progress
+          />
+        </div>
+      )}
 
       {/* Instructions */}
       <div className="px-4 pb-4">

@@ -14,6 +14,7 @@ interface ComparisonActions {
   setPlaying: (trackId: number | null) => void;
   incrementCompleted: () => void;
   reset: () => void;
+  setCurrentPair: (pair: ComparisonPair) => void;
 }
 
 type ComparisonStore = ComparisonState & ComparisonActions;
@@ -50,5 +51,9 @@ export const useComparisonStore = create<ComparisonStore>((set, get) => ({
 
   reset: () => {
     set(initialState);
+  },
+
+  setCurrentPair: (pair: ComparisonPair) => {
+    set({ currentPair: pair });
   },
 }));
