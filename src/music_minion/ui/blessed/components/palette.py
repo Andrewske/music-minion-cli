@@ -326,7 +326,9 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
 
                     if is_selected:
                         # Selected item: highlighted background
-                        item_line = term.black_on_cyan(f"  {rank} {icon} {artist_title}")
+                        item_line = term.black_on_cyan(
+                            f"  {rank} {icon} {artist_title}"
+                        )
                         write_at(term, 0, y + line_num, item_line)
                         line_num += 1
 
@@ -410,9 +412,7 @@ def render_palette(term: Terminal, state: UIState, y: int, height: int) -> None:
                     current_position = min(selected_index + 1, total_items)
                     footer = f"   [{current_position}/{total_items}] ↑↓ navigate  Space activate  Enter view  Del delete  Esc cancel"
                 else:
-                    footer = (
-                        "   ↑↓ navigate  Space activate  Enter view  Del delete  Esc cancel"
-                    )
+                    footer = "   ↑↓ navigate  Space activate  Enter view  Del delete  Esc cancel"
             elif state.palette_mode == "rankings":
                 # Rankings mode footer with play key help
                 total_items = len(filtered_commands)

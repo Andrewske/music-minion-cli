@@ -37,13 +37,13 @@ def render_history(term: Terminal, state: UIState, y_start: int, height: int) ->
 
     # Color mapping
     color_map = {
-        'white': term.white,
-        'green': term.green,
-        'red': term.red,
-        'cyan': term.cyan,
-        'yellow': term.yellow,
-        'blue': term.blue,
-        'magenta': term.magenta,
+        "white": term.white,
+        "green": term.green,
+        "red": term.red,
+        "cyan": term.cyan,
+        "yellow": term.yellow,
+        "blue": term.blue,
+        "magenta": term.magenta,
     }
 
     # Render each line

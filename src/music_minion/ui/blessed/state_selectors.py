@@ -8,7 +8,7 @@ from typing import Callable, TypeVar, Generic, Any
 from functools import wraps
 from loguru import logger
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class MemoizedSelector(Generic[T]):
@@ -78,14 +78,16 @@ def filter_search_tracks(query: str, tracks: tuple[dict, ...]) -> list[dict]:
 
     for track in tracks:
         # Concatenate searchable fields (title, artist, album, genre, tags, notes)
-        searchable = ' '.join([
-            track.get('title', '') or '',
-            track.get('artist', '') or '',
-            track.get('album', '') or '',
-            track.get('genre', '') or '',
-            track.get('tags', '') or '',
-            track.get('notes', '') or ''
-        ]).lower()
+        searchable = " ".join(
+            [
+                track.get("title", "") or "",
+                track.get("artist", "") or "",
+                track.get("album", "") or "",
+                track.get("genre", "") or "",
+                track.get("tags", "") or "",
+                track.get("notes", "") or "",
+            ]
+        ).lower()
 
         if query_lower in searchable:
             matches.append(track)
@@ -97,7 +99,7 @@ def filter_search_tracks(query: str, tracks: tuple[dict, ...]) -> list[dict]:
 @MemoizedSelector
 def select_strategic_pair_memoized(
     tracks_tuple: tuple[tuple[int, dict], ...],
-    ratings_cache_tuple: tuple[tuple[int, tuple], ...]
+    ratings_cache_tuple: tuple[tuple[int, tuple], ...],
 ) -> tuple[dict, dict]:
     """Select two tracks for comparison using strategic pairing algorithm.
 
@@ -127,7 +129,7 @@ def select_strategic_pair_memoized(
     # Convert back to working data structures
     tracks = [track_dict for _, track_dict in tracks_tuple]
     ratings_cache = {
-        track_id: {'rating': rating, 'comparison_count': comp_count}
+        track_id: {"rating": rating, "comparison_count": comp_count}
         for track_id, (rating, comp_count) in ratings_cache_tuple
     }
 
@@ -135,18 +137,35 @@ def select_strategic_pair_memoized(
         raise ValueError("Need at least 2 tracks for comparison")
 
     # Bootstrap: pair tracks with <10 comparisons
-    bootstrap = [t for t in tracks if ratings_cache.get(t['id'], {}).get('comparison_count', 0) < 10]
+    bootstrap = [
+        t
+        for t in tracks
+        if ratings_cache.get(t["id"], {}).get("comparison_count", 0) < 10
+    ]
     if len(bootstrap) >= 2:
         return tuple(random.sample(bootstrap, 2))
 
     # Under-compared: pair tracks with <20 comparisons with similar-rated opponents
-    under_compared = [t for t in tracks if ratings_cache.get(t['id'], {}).get('comparison_count', 0) < 20]
+    under_compared = [
+        t
+        for t in tracks
+        if ratings_cache.get(t["id"], {}).get("comparison_count", 0) < 20
+    ]
     if under_compared:
         track_a = random.choice(under_compared)
-        rating_a = ratings_cache.get(track_a['id'], {}).get('rating', 1500.0)
-        similar = [t for t in tracks if t['id'] != track_a['id'] and
-                   abs(ratings_cache.get(t['id'], {}).get('rating', 1500.0) - rating_a) <= 200]
-        track_b = random.choice(similar) if similar else random.choice([t for t in tracks if t['id'] != track_a['id']])
+        rating_a = ratings_cache.get(track_a["id"], {}).get("rating", 1500.0)
+        similar = [
+            t
+            for t in tracks
+            if t["id"] != track_a["id"]
+            and abs(ratings_cache.get(t["id"], {}).get("rating", 1500.0) - rating_a)
+            <= 200
+        ]
+        track_b = (
+            random.choice(similar)
+            if similar
+            else random.choice([t for t in tracks if t["id"] != track_a["id"]])
+        )
         return (track_a, track_b)
 
     # Random fallback

@@ -40,7 +40,9 @@ def _update_palette_filter(state: UIState) -> UIState:
 
     if state.palette_mode == "search":
         # Filter tracks in search mode (use memoized selector)
-        filtered = filter_search_tracks(state.input_text, tuple(state.search_all_tracks))
+        filtered = filter_search_tracks(
+            state.input_text, tuple(state.search_all_tracks)
+        )
         return update_search_query(state, state.input_text, filtered)
     elif state.palette_mode == "playlist":
         # Filter playlists by name
@@ -49,7 +51,11 @@ def _update_palette_filter(state: UIState) -> UIState:
         return update_palette_filter(state, state.input_text, filtered)
     else:
         # Filter commands (remove "/" prefix)
-        query = state.input_text[1:] if state.input_text.startswith("/") else state.input_text
+        query = (
+            state.input_text[1:]
+            if state.input_text.startswith("/")
+            else state.input_text
+        )
         filtered = filter_commands(query, COMMAND_DEFINITIONS)
         return update_palette_filter(state, query, filtered)
 
@@ -163,9 +169,7 @@ def _autofill_command(state: UIState) -> UIState:
     return state
 
 
-def _handle_arrow_up(
-    state: UIState, visible_items: int
-) -> tuple[UIState, None]:
+def _handle_arrow_up(state: UIState, visible_items: int) -> tuple[UIState, None]:
     """Handle arrow up navigation."""
     if state.palette_visible:
         if state.palette_mode == "search":
@@ -182,9 +186,7 @@ def _handle_arrow_up(
         return navigate_history_up(state), None
 
 
-def _handle_arrow_down(
-    state: UIState, visible_items: int
-) -> tuple[UIState, None]:
+def _handle_arrow_down(state: UIState, visible_items: int) -> tuple[UIState, None]:
     """Handle arrow down navigation."""
     if state.palette_visible:
         if state.palette_mode == "search":
@@ -271,7 +273,9 @@ def _handle_enter_palette_selection(
         # Rankings items: (rank, artist_title, icon, rating_info, track_id)
         track_id = selected[4]
         state = hide_palette(state)
-        return state, InternalCommand(action="track_viewer_play", data={"track_id": track_id})
+        return state, InternalCommand(
+            action="track_viewer_play", data={"track_id": track_id}
+        )
     else:
         command = selected[1]
         state = hide_palette(state)
@@ -303,9 +307,7 @@ def _handle_enter(
     return state, None
 
 
-def _handle_backspace(
-    state: UIState, event: dict
-) -> tuple[UIState, None] | None:
+def _handle_backspace(state: UIState, event: dict) -> tuple[UIState, None] | None:
     """Handle backspace key (delete character and update filter)."""
     if event["type"] != "backspace":
         return None
@@ -357,9 +359,7 @@ def _handle_play_ranking(
     return state, None
 
 
-def _handle_delete_key(
-    state: UIState, event: dict
-) -> tuple[UIState, None] | None:
+def _handle_delete_key(state: UIState, event: dict) -> tuple[UIState, None] | None:
     """Handle delete key (delete playlist or backspace)."""
     if event["type"] != "delete":
         return None
@@ -368,7 +368,9 @@ def _handle_delete_key(
     if state.palette_visible and state.palette_mode == "playlist":
         if state.palette_items and state.palette_selected < len(state.palette_items):
             playlist_name = state.palette_items[state.palette_selected][1]
-            state = show_confirmation(state, "delete_playlist", {"playlist_name": playlist_name})
+            state = show_confirmation(
+                state, "delete_playlist", {"playlist_name": playlist_name}
+            )
         return state, None
     else:
         # Normal delete (backspace)
@@ -388,7 +390,9 @@ def _handle_seek_controls(
     # Numeric keys 0-9: Jump to percentage
     if event["type"] == "char" and event["char"] and event["char"].isdigit():
         percentage = int(event["char"]) * 10
-        return state, InternalCommand(action="seek_percentage", data={"percentage": percentage})
+        return state, InternalCommand(
+            action="seek_percentage", data={"percentage": percentage}
+        )
 
     # Map event types to seek commands
     seek_map = {
@@ -424,11 +428,17 @@ def _handle_search_shortcuts(
     if track_id is None:
         return None
 
-    action_map = {"p": "search_play_track", "a": "search_add_to_playlist", "e": "search_edit_metadata"}
+    action_map = {
+        "p": "search_play_track",
+        "a": "search_add_to_playlist",
+        "e": "search_edit_metadata",
+    }
     action = action_map.get(char.lower())
 
     if action:
-        return hide_palette(state), InternalCommand(action=action, data={"track_id": track_id})
+        return hide_palette(state), InternalCommand(
+            action=action, data={"track_id": track_id}
+        )
 
     return None
 

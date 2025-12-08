@@ -52,14 +52,18 @@ def handle_rating_history_key(
         if state.rating_history_ratings and state.rating_history_selected < len(
             state.rating_history_ratings
         ):
-            selected_rating = state.rating_history_ratings[state.rating_history_selected]
+            selected_rating = state.rating_history_ratings[
+                state.rating_history_selected
+            ]
             rating_id = selected_rating.get("rating_id")
 
             if rating_id:
                 # Delete from database and update state
                 if database.delete_rating_by_id(rating_id):
                     # Remove from UI list
-                    state = delete_rating_history_item(state, state.rating_history_selected)
+                    state = delete_rating_history_item(
+                        state, state.rating_history_selected
+                    )
 
                     # Return command to log success
                     return state, InternalCommand(

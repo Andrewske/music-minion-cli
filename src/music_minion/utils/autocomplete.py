@@ -41,47 +41,42 @@ class MusicMinionCompleter(Completer):
     # Format: 'command': ('icon', 'description')
     COMMANDS = {
         # Playback commands
-        'play': ('▶', 'Start playing music'),
-        'pause': ('⏸', 'Pause current track'),
-        'resume': ('▸', 'Resume playback'),
-        'stop': ('■', 'Stop playback'),
-        'skip': ('⏭', 'Skip to next track'),
-        'shuffle': ('🔀', 'Toggle shuffle mode'),
-
+        "play": ("▶", "Start playing music"),
+        "pause": ("⏸", "Pause current track"),
+        "resume": ("▸", "Resume playback"),
+        "stop": ("■", "Stop playback"),
+        "skip": ("⏭", "Skip to next track"),
+        "shuffle": ("🔀", "Toggle shuffle mode"),
         # Rating commands
-        'love': ('❤️', 'Love current track'),
-        'like': ('👍', 'Like current track'),
-        'archive': ('📦', 'Archive track (remove from rotation)'),
-        'note': ('📝', 'Add note to current track'),
-
+        "love": ("❤️", "Love current track"),
+        "like": ("👍", "Like current track"),
+        "archive": ("📦", "Archive track (remove from rotation)"),
+        "note": ("📝", "Add note to current track"),
         # Playlist commands
-        'playlist': ('📋', 'Browse and select playlists'),
-        'add': ('➕', 'Add current track to playlist'),
-        'remove': ('➖', 'Remove current track from playlist'),
-
+        "playlist": ("📋", "Browse and select playlists"),
+        "add": ("➕", "Add current track to playlist"),
+        "remove": ("➖", "Remove current track from playlist"),
         # Library commands
-        'scan': ('🔍', 'Scan library for new tracks'),
-        'stats': ('📊', 'Show library statistics'),
-
+        "scan": ("🔍", "Scan library for new tracks"),
+        "stats": ("📊", "Show library statistics"),
         # AI commands
-        'ai': ('🤖', 'AI-powered features'),
-
+        "ai": ("🤖", "AI-powered features"),
         # Sync commands
-        'sync': ('🔄', 'Sync metadata with files'),
-
+        "sync": ("🔄", "Sync metadata with files"),
         # Tag commands
-        'tag': ('🏷️', 'Manage track tags'),
-
+        "tag": ("🏷️", "Manage track tags"),
         # System commands
-        'help': ('❓', 'Show help'),
-        'quit': ('👋', 'Exit Music Minion'),
-        'exit': ('👋', 'Exit Music Minion'),
+        "help": ("❓", "Show help"),
+        "quit": ("👋", "Exit Music Minion"),
+        "exit": ("👋", "Exit Music Minion"),
     }
 
-    def get_completions(self, document: Document, complete_event) -> Iterable[Completion]:
+    def get_completions(
+        self, document: Document, complete_event
+    ) -> Iterable[Completion]:
         """Generate command completions with descriptions."""
         # Get the word being typed (strip any leading /)
-        text = document.text_before_cursor.lstrip('/')
+        text = document.text_before_cursor.lstrip("/")
         word = text.lower()
 
         # Collect matching completions
@@ -98,7 +93,7 @@ class MusicMinionCompleter(Completer):
                 command,
                 start_position=-len(text),
                 display=command,
-                display_meta=f"{icon}\t{description}"
+                display_meta=f"{icon}\t{description}",
             )
 
 
@@ -115,18 +110,20 @@ class CommandPaletteCompleter(Completer):
     """
 
     CATEGORIES = {
-        '🎵 Playback': ['play', 'pause', 'resume', 'stop', 'skip', 'shuffle'],
-        '❤️  Rating': ['love', 'like', 'archive', 'note'],
-        '📋 Playlists': ['playlist', 'add', 'remove'],
-        '🔍 Library': ['scan', 'stats', 'sync'],
-        '🤖 AI': ['ai'],
-        '🏷️  Tags': ['tag'],
-        '⚙️  System': ['help', 'quit', 'exit'],
+        "🎵 Playback": ["play", "pause", "resume", "stop", "skip", "shuffle"],
+        "❤️  Rating": ["love", "like", "archive", "note"],
+        "📋 Playlists": ["playlist", "add", "remove"],
+        "🔍 Library": ["scan", "stats", "sync"],
+        "🤖 AI": ["ai"],
+        "🏷️  Tags": ["tag"],
+        "⚙️  System": ["help", "quit", "exit"],
     }
 
-    def get_completions(self, document: Document, complete_event) -> Iterable[Completion]:
+    def get_completions(
+        self, document: Document, complete_event
+    ) -> Iterable[Completion]:
         """Generate categorized command completions."""
-        text = document.text.lstrip('/')
+        text = document.text.lstrip("/")
         word = text.lower()
 
         # Show all commands organized by category
@@ -134,12 +131,14 @@ class CommandPaletteCompleter(Completer):
         for category, commands in self.CATEGORIES.items():
             for command in commands:
                 if not word or command.startswith(word):
-                    icon, description = MusicMinionCompleter.COMMANDS.get(command, ('', ''))
+                    icon, description = MusicMinionCompleter.COMMANDS.get(
+                        command, ("", "")
+                    )
                     yield Completion(
                         command,
                         start_position=-len(word),
                         display=f"/{command}",
-                        display_meta=f"{icon}\t{description}"
+                        display_meta=f"{icon}\t{description}",
                     )
 
 
@@ -156,41 +155,45 @@ class PlaylistCompleter(Completer):
     - Fuzzy matching: Match partial words (e.g., "nye" matches "NYE 2025")
     """
 
-    def get_completions(self, document: Document, complete_event) -> Iterable[Completion]:
+    def get_completions(
+        self, document: Document, complete_event
+    ) -> Iterable[Completion]:
         """Generate playlist completions with metadata."""
         word = document.get_word_before_cursor().lower()
 
         try:
             # Get active library from database
             with database.get_db_connection() as conn:
-                cursor = conn.execute("SELECT provider FROM active_library WHERE id = 1")
+                cursor = conn.execute(
+                    "SELECT provider FROM active_library WHERE id = 1"
+                )
                 row = cursor.fetchone()
-                active_library = row['provider'] if row else 'local'
+                active_library = row["provider"] if row else "local"
 
             # Fetch playlists sorted by recently played (filtered by active library)
-            playlists = playlist_module.get_playlists_sorted_by_recent(library=active_library)
+            playlists = playlist_module.get_playlists_sorted_by_recent(
+                library=active_library
+            )
 
             for pl in playlists:
-                name = pl['name']
+                name = pl["name"]
                 # Simple fuzzy matching: match if word is in playlist name
                 if not word or word in name.lower():
                     # Format metadata
-                    type_emoji = "📝" if pl['type'] == 'manual' else "🤖"
+                    type_emoji = "📝" if pl["type"] == "manual" else "🤖"
                     track_info = f"{pl['track_count']} tracks"
 
                     # Show last played info if available
                     meta = f"{type_emoji} {pl['type']} | {track_info}"
-                    if pl['last_played_at']:
+                    if pl["last_played_at"]:
                         from datetime import datetime
-                        played_dt = datetime.fromisoformat(pl['last_played_at'])
+
+                        played_dt = datetime.fromisoformat(pl["last_played_at"])
                         time_ago = _format_time_ago(played_dt)
                         meta += f" | played {time_ago}"
 
                     yield Completion(
-                        name,
-                        start_position=-len(word),
-                        display=name,
-                        display_meta=meta
+                        name, start_position=-len(word), display=name, display_meta=meta
                     )
         except Exception as e:
             # Graceful degradation - don't break autocomplete
@@ -198,7 +201,7 @@ class PlaylistCompleter(Completer):
                 f"Error loading playlists: {e}",
                 start_position=-len(word),
                 display="[Error]",
-                display_meta="Could not load playlists"
+                display_meta="Could not load playlists",
             )
 
 

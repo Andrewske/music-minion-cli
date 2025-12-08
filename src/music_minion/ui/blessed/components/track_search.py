@@ -28,14 +28,16 @@ def filter_tracks(query: str, all_tracks: list[dict[str, Any]]) -> list[dict[str
 
     for track in all_tracks:
         # Concatenate searchable fields
-        searchable = ' '.join([
-            track.get('title', '') or '',
-            track.get('artist', '') or '',
-            track.get('album', '') or '',
-            track.get('genre', '') or '',
-            track.get('tags', '') or '',
-            track.get('notes', '') or ''
-        ]).lower()
+        searchable = " ".join(
+            [
+                track.get("title", "") or "",
+                track.get("artist", "") or "",
+                track.get("album", "") or "",
+                track.get("genre", "") or "",
+                track.get("tags", "") or "",
+                track.get("notes", "") or "",
+            ]
+        ).lower()
 
         if query_lower in searchable:
             matches.append(track)

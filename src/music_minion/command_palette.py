@@ -126,16 +126,16 @@ def show_command_palette() -> Optional[str]:
             char = sys.stdin.read(1)
 
             # Handle special keys
-            if char == '\x1b':  # ESC or arrow key
+            if char == "\x1b":  # ESC or arrow key
                 # Check if it's an arrow key sequence
                 next_chars = sys.stdin.read(2)
 
-                if next_chars == '[A':  # Up arrow
+                if next_chars == "[A":  # Up arrow
                     filtered = get_filtered_commands()
                     if filtered:
                         selected_index = max(0, selected_index - 1)
                         draw_results()  # Only redraw results
-                elif next_chars == '[B':  # Down arrow
+                elif next_chars == "[B":  # Down arrow
                     filtered = get_filtered_commands()
                     if filtered:
                         selected_index = min(len(filtered) - 1, selected_index + 1)
@@ -144,20 +144,20 @@ def show_command_palette() -> Optional[str]:
                     # Plain ESC - cancel, cleanup done in finally
                     return None
 
-            elif char == '\r' or char == '\n':  # Enter
+            elif char == "\r" or char == "\n":  # Enter
                 filtered = get_filtered_commands()
                 if filtered and selected_index < len(filtered):
                     return filtered[selected_index][0]
                 return None
 
-            elif char == '\x7f':  # Backspace
+            elif char == "\x7f":  # Backspace
                 if query:
                     query = query[:-1]
                     selected_index = 0
                     redraw_input_line()
                     draw_results()
 
-            elif char == '\x03':  # Ctrl+C
+            elif char == "\x03":  # Ctrl+C
                 raise KeyboardInterrupt
 
             elif char.isprintable():

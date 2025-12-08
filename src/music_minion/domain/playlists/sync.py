@@ -76,6 +76,7 @@ def get_playlist_last_synced(playlist_id: int) -> float:
             if isinstance(value, str):
                 # ISO format - convert to Unix timestamp
                 from datetime import datetime
+
                 try:
                     dt = datetime.fromisoformat(value)
                     return dt.timestamp()

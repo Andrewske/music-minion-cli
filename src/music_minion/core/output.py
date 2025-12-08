@@ -45,7 +45,9 @@ def setup_loguru(log_file: Path, level: str = "INFO") -> None:
     logger.info(f"Loguru initialized: {log_file} (level={level})")
 
 
-def set_blessed_mode(ui_callback: Optional[Callable[[Dict[str, Any]], None]] = None) -> None:
+def set_blessed_mode(
+    ui_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+) -> None:
     """
     Enable blessed mode - suppresses stdout printing, routes through UI callback.
 
@@ -110,22 +112,22 @@ def log(message: str, level: str = "info") -> None:
         if _blessed_mode_active:
             # Blessed mode: Check silent_logging flag
             # Background threads with silent_logging=True should not pollute command history
-            silent = getattr(threading.current_thread(), 'silent_logging', False)
+            silent = getattr(threading.current_thread(), "silent_logging", False)
             if not silent:
                 # Map log level to color
                 color_map = {
-                    'debug': 'cyan',
-                    'info': 'white',
-                    'warning': 'yellow',
-                    'error': 'red',
+                    "debug": "cyan",
+                    "info": "white",
+                    "warning": "yellow",
+                    "error": "red",
                 }
-                color = color_map.get(level, 'white')
+                color = color_map.get(level, "white")
                 # Add to pending queue instead of calling callback directly
                 # This fixes race condition where executor overwrites callback updates
                 with _pending_messages_lock:
                     _pending_history_messages.append((message, color))
         else:
             # CLI mode: Check silent_logging flag
-            silent = getattr(threading.current_thread(), 'silent_logging', False)
+            silent = getattr(threading.current_thread(), "silent_logging", False)
             if not silent:
                 print(message)

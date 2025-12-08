@@ -138,7 +138,9 @@ class SpotifyPlayer:
         from music_minion.domain.library.providers.spotify import api
 
         position_ms = int(position * 1000)
-        self.provider_state, success = api._spotify_seek(self.provider_state, position_ms)
+        self.provider_state, success = api._spotify_seek(
+            self.provider_state, position_ms
+        )
         if success:
             self.cached_position = position
             self.last_actual_position = position

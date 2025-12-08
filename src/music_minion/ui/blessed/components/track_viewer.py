@@ -43,7 +43,7 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
 
     # Header - different based on mode
     if line_num < height:
-        if viewer_mode == 'detail':
+        if viewer_mode == "detail":
             header_text = f"   🎵 Track Details"
         else:
             header_text = f"   📋 Playlist: {playlist_name}"
@@ -51,17 +51,21 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
         line_num += 1
 
     # Metadata line - type, track count, and filter indicator (only in list mode)
-    if viewer_mode == 'list' and line_num < height:
+    if viewer_mode == "list" and line_num < height:
         # Select icon based on playlist type
-        if playlist_type == 'history':
+        if playlist_type == "history":
             type_icon = "🕐"
-        elif playlist_type == 'smart':
+        elif playlist_type == "smart":
             type_icon = "🧠"
         else:
             type_icon = "📝"
 
         # Add read-only indicator for history
-        type_display = f"{playlist_type.capitalize()} (Read-Only)" if playlist_type == 'history' else playlist_type.capitalize()
+        type_display = (
+            f"{playlist_type.capitalize()} (Read-Only)"
+            if playlist_type == "history"
+            else playlist_type.capitalize()
+        )
 
         if filter_query:
             # Show filtered count and total
@@ -73,14 +77,25 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
         line_num += 1
 
     # Render based on mode
-    if viewer_mode == 'detail' and filtered_tracks and selected_index < len(filtered_tracks):
+    if (
+        viewer_mode == "detail"
+        and filtered_tracks
+        and selected_index < len(filtered_tracks)
+    ):
         # Detail mode: show track details and action menu
         selected_track = filtered_tracks[selected_index]
         line_num = _render_track_detail_and_actions(
-            term, state, selected_track, playlist_type,
-            y, line_num, height, TRACK_VIEWER_FOOTER_LINES, content_height
+            term,
+            state,
+            selected_track,
+            playlist_type,
+            y,
+            line_num,
+            height,
+            TRACK_VIEWER_FOOTER_LINES,
+            content_height,
         )
-    elif viewer_mode == 'list':
+    elif viewer_mode == "list":
         # List mode: show track list (filtered)
         if not filtered_tracks:
             if line_num < height:
@@ -95,17 +110,21 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
             liked_track_ids = set()
             try:
                 from music_minion.core import database
-                track_ids = [t.get('id') for t in filtered_tracks if t.get('id')]
+
+                track_ids = [t.get("id") for t in filtered_tracks if t.get("id")]
                 if track_ids:
                     with database.get_db_connection() as conn:
-                        placeholders = ','.join('?' * len(track_ids))
-                        cursor = conn.execute(f"""
+                        placeholders = ",".join("?" * len(track_ids))
+                        cursor = conn.execute(
+                            f"""
                             SELECT DISTINCT track_id
                             FROM ratings
                             WHERE track_id IN ({placeholders})
                             AND rating_type = 'like'
-                        """, track_ids)
-                        liked_track_ids = {row['track_id'] for row in cursor.fetchall()}
+                        """,
+                            track_ids,
+                        )
+                        liked_track_ids = {row["track_id"] for row in cursor.fetchall()}
             except Exception:
                 pass  # Ignore errors, don't break UI
 
@@ -125,9 +144,9 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
 
                 # Format track info
                 position = track_index + 1
-                artist = track.get('artist', 'Unknown')
-                title = track.get('title', 'Unknown')
-                track_id = track.get('id')
+                artist = track.get("artist", "Unknown")
+                title = track.get("title", "Unknown")
+                track_id = track.get("id")
 
                 is_selected = track_index == selected_index
                 is_liked = track_id in liked_track_ids
@@ -154,20 +173,20 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
 
     # Footer help text - different based on mode
     if line_num < height:
-        if viewer_mode == 'detail':
+        if viewer_mode == "detail":
             # Detail mode: show action navigation help
             footer = "   ↑↓ navigate  Enter select  p/l/u/e/a shortcuts  Esc back"
         else:
             # List mode: show track navigation help
             total_tracks = len(filtered_tracks)  # Show filtered count for navigation
-            if playlist_type == 'history':
+            if playlist_type == "history":
                 # History: read-only (no delete, no filters)
                 if total_tracks > content_height:
                     current_position = min(selected_index + 1, total_tracks)
                     footer = f"   [{current_position}/{total_tracks}] ↑↓/j/k nav  Enter  p/l/u/e/a  q close"
                 else:
                     footer = "   ↑↓/j/k navigate  Enter details  p/l/u/e/a (play/like/unlike/edit/add)  q close"
-            elif playlist_type == 'manual':
+            elif playlist_type == "manual":
                 # Manual playlist: can remove tracks and enter builder mode
                 if total_tracks > content_height:
                     current_position = min(selected_index + 1, total_tracks)
@@ -195,7 +214,7 @@ def _render_track_detail_and_actions(
     line_num: int,
     height: int,
     footer_lines: int,
-    content_height: int
+    content_height: int,
 ) -> int:
     """
     Render track details and action menu.
@@ -215,40 +234,41 @@ def _render_track_detail_and_actions(
         Updated line_num
     """
     # Check if track is liked
-    track_id = track.get('id')
+    track_id = track.get("id")
     is_liked = False
     if track_id:
         from music_minion.core import database
+
         try:
             ratings = database.get_track_ratings(track_id)
             # Check if there's any 'like' rating with source='user' or 'soundcloud'
-            is_liked = any(r.get('rating_type') == 'like' for r in ratings)
+            is_liked = any(r.get("rating_type") == "like" for r in ratings)
         except Exception:
             pass  # Ignore errors, don't break UI
 
     # Track metadata fields to display
     fields = [
-        ('Title', track.get('title', 'Unknown')),
-        ('Artist', track.get('artist', 'Unknown')),
-        ('Album', track.get('album', '')),
-        ('Genre', track.get('genre', '')),
-        ('Year', str(track.get('year', '')) if track.get('year') else ''),
-        ('BPM', str(track.get('bpm', '')) if track.get('bpm') else ''),
-        ('Key', track.get('key_signature', '')),
+        ("Title", track.get("title", "Unknown")),
+        ("Artist", track.get("artist", "Unknown")),
+        ("Album", track.get("album", "")),
+        ("Genre", track.get("genre", "")),
+        ("Year", str(track.get("year", "")) if track.get("year") else ""),
+        ("BPM", str(track.get("bpm", "")) if track.get("bpm") else ""),
+        ("Key", track.get("key_signature", "")),
     ]
 
     # Add like status
     if is_liked:
-        fields.append(('Liked', '♥ Yes'))
+        fields.append(("Liked", "♥ Yes"))
 
     # Add tags and notes if present (database returns comma-separated strings)
-    tags = track.get('tags', '')  # String, not list
+    tags = track.get("tags", "")  # String, not list
     if tags:
-        fields.append(('Tags', tags))
+        fields.append(("Tags", tags))
 
-    notes = track.get('notes', '')  # String, not list
+    notes = track.get("notes", "")  # String, not list
     if notes:
-        fields.append(('Notes', notes))
+        fields.append(("Notes", notes))
 
     # Render metadata fields
     for field_name, field_value in fields:
@@ -273,24 +293,24 @@ def _render_track_detail_and_actions(
         line_num += 1
 
     # Define actions based on playlist type
-    if playlist_type == 'manual':
+    if playlist_type == "manual":
         actions = [
-            ('p', 'Play Track'),
-            ('l', 'Like Track'),
-            ('u', 'Unlike Track'),
-            ('d', 'Remove from Playlist'),
-            ('e', 'Edit Metadata'),
-            ('a', 'Add to Another Playlist'),
-            ('', 'Cancel')
+            ("p", "Play Track"),
+            ("l", "Like Track"),
+            ("u", "Unlike Track"),
+            ("d", "Remove from Playlist"),
+            ("e", "Edit Metadata"),
+            ("a", "Add to Another Playlist"),
+            ("", "Cancel"),
         ]
     else:  # smart playlist or history - read-only (no delete)
         actions = [
-            ('p', 'Play Track'),
-            ('l', 'Like Track'),
-            ('u', 'Unlike Track'),
-            ('e', 'Edit Metadata'),
-            ('a', 'Add to Another Playlist'),
-            ('', 'Cancel')
+            ("p", "Play Track"),
+            ("l", "Like Track"),
+            ("u", "Unlike Track"),
+            ("e", "Edit Metadata"),
+            ("a", "Add to Another Playlist"),
+            ("", "Cancel"),
         ]
 
     # Render each action with selection highlighting

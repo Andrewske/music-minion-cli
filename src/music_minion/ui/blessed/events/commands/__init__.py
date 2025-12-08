@@ -6,4 +6,4 @@ different command types (playlists, track viewer, wizard).
 
 from .executor import execute_command, parse_command_line
 
-__all__ = ['execute_command', 'parse_command_line']
+__all__ = ["execute_command", "parse_command_line"]

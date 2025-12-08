@@ -26,13 +26,13 @@ def count_pending_changes(editor_changes: dict) -> int:
     count = 0
 
     # Count basic metadata changes (single dict)
-    if 'basic' in editor_changes:
+    if "basic" in editor_changes:
         # Count each changed field
-        count += len(editor_changes['basic'])
+        count += len(editor_changes["basic"])
 
     # Count list-based changes (deletions, additions, updates)
     for change_type, changes in editor_changes.items():
-        if change_type != 'basic' and isinstance(changes, list):
+        if change_type != "basic" and isinstance(changes, list):
             count += len(changes)
 
     return count
@@ -51,13 +51,13 @@ def render_metadata_editor(term: Terminal, state: UIState, y: int, height: int) 
     if not state.editor_visible or height <= 0:
         return
 
-    if state.editor_mode == 'main':
+    if state.editor_mode == "main":
         render_main_editor(term, state, y, height)
-    elif state.editor_mode == 'list_editor':
+    elif state.editor_mode == "list_editor":
         render_list_editor(term, state, y, height)
-    elif state.editor_mode == 'editing_field':
+    elif state.editor_mode == "editing_field":
         render_field_editor(term, state, y, height)
-    elif state.editor_mode == 'adding_item':
+    elif state.editor_mode == "adding_item":
         render_add_item_editor(term, state, y, height)
     else:
         # Fallback for unknown modes
@@ -88,8 +88,8 @@ def render_main_editor(term: Terminal, state: UIState, y: int, height: int) -> N
 
     # Header - Track title
     if line_num < height:
-        artist = track_data.get('artist', 'Unknown')
-        title = track_data.get('title', 'Unknown')
+        artist = track_data.get("artist", "Unknown")
+        title = track_data.get("title", "Unknown")
         header_text = f"   🔧 Metadata: {artist} - {title}"
         write_at(term, 0, y + line_num, term.bold_cyan(header_text))
         line_num += 1
@@ -167,8 +167,8 @@ def render_list_editor(term: Terminal, state: UIState, y: int, height: int) -> N
         height: Available height for editor
     """
     editor_data = state.editor_data
-    field_type = editor_data.get('editing_field', 'unknown')
-    items = editor_data.get('items', [])
+    field_type = editor_data.get("editing_field", "unknown")
+    items = editor_data.get("items", [])
     selected_index = state.editor_selected
 
     # Bounds check: ensure selection is valid (defensive programming)
@@ -252,19 +252,19 @@ def render_field_editor(term: Terminal, state: UIState, y: int, height: int) -> 
         height: Available height for editor
     """
     editor_data = state.editor_data
-    field_name = editor_data.get('editing_field_name', 'unknown')
+    field_name = editor_data.get("editing_field_name", "unknown")
     input_text = state.editor_input
 
     # Field labels for display
     field_labels = {
-        'title': 'Title',
-        'artist': 'Artist',
-        'remix_artist': 'Remix Artist',
-        'album': 'Album',
-        'year': 'Year',
-        'bpm': 'BPM',
-        'key': 'Key Signature',
-        'genre': 'Genre'
+        "title": "Title",
+        "artist": "Artist",
+        "remix_artist": "Remix Artist",
+        "album": "Album",
+        "year": "Year",
+        "bpm": "BPM",
+        "key": "Key Signature",
+        "genre": "Genre",
     }
     field_label = field_labels.get(field_name, field_name.capitalize())
 
@@ -311,14 +311,11 @@ def render_add_item_editor(term: Terminal, state: UIState, y: int, height: int) 
         height: Available height for editor
     """
     editor_data = state.editor_data
-    item_type = editor_data.get('adding_item_type', 'unknown')
+    item_type = editor_data.get("adding_item_type", "unknown")
     input_text = state.editor_input
 
     # Item type labels for display
-    type_labels = {
-        'notes': 'Note',
-        'tags': 'Tag'
-    }
+    type_labels = {"notes": "Note", "tags": "Tag"}
     type_label = type_labels.get(item_type, item_type.capitalize())
 
     line_num = 0
@@ -366,19 +363,19 @@ def _build_field_list(track_data: dict) -> list[tuple[str, any, bool]]:
     fields = []
 
     # Basic single-value fields
-    fields.append(("Title", track_data.get('title'), False))
-    fields.append(("Artist", track_data.get('artist'), False))
-    fields.append(("Remix Artist", track_data.get('remix_artist'), False))
-    fields.append(("Album", track_data.get('album'), False))
-    fields.append(("Year", track_data.get('year'), False))
-    fields.append(("BPM", track_data.get('bpm'), False))
-    fields.append(("Key", track_data.get('key'), False))
-    fields.append(("Genre", track_data.get('genre'), False))
+    fields.append(("Title", track_data.get("title"), False))
+    fields.append(("Artist", track_data.get("artist"), False))
+    fields.append(("Remix Artist", track_data.get("remix_artist"), False))
+    fields.append(("Album", track_data.get("album"), False))
+    fields.append(("Year", track_data.get("year"), False))
+    fields.append(("BPM", track_data.get("bpm"), False))
+    fields.append(("Key", track_data.get("key"), False))
+    fields.append(("Genre", track_data.get("genre"), False))
 
     # Multi-value fields (show count)
-    fields.append(("Ratings", track_data.get('ratings', []), True))
-    fields.append(("Notes", track_data.get('notes', []), True))
-    fields.append(("Tags", track_data.get('tags', []), True))
+    fields.append(("Ratings", track_data.get("ratings", []), True))
+    fields.append(("Notes", track_data.get("notes", []), True))
+    fields.append(("Tags", track_data.get("tags", []), True))
 
     return fields
 
@@ -394,21 +391,21 @@ def _format_list_item(field_type: str, item: dict) -> str:
     Returns:
         Formatted string for display
     """
-    if field_type == 'ratings':
-        rating_type = item.get('rating_type', 'unknown')
-        timestamp = item.get('timestamp', '')[:16]  # Truncate timestamp
+    if field_type == "ratings":
+        rating_type = item.get("rating_type", "unknown")
+        timestamp = item.get("timestamp", "")[:16]  # Truncate timestamp
         return f"{rating_type:<10} {timestamp}"
 
-    elif field_type == 'notes':
-        note_text = item.get('note_text', '')
-        timestamp = item.get('timestamp', '')[:16]
+    elif field_type == "notes":
+        note_text = item.get("note_text", "")
+        timestamp = item.get("timestamp", "")[:16]
         # Truncate note text if too long
         note_preview = note_text[:40] + "..." if len(note_text) > 40 else note_text
         return f"{timestamp} {note_preview}"
 
-    elif field_type == 'tags':
-        tag_name = item.get('tag_name', '')
-        source = item.get('source', 'user')
+    elif field_type == "tags":
+        tag_name = item.get("tag_name", "")
+        source = item.get("source", "user")
         return f"{tag_name:<20} [{source}]"
 
     else:

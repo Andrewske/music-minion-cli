@@ -31,9 +31,7 @@ def expected_score(rating_a: float, rating_b: float) -> float:
 
 
 def update_ratings(
-    winner_rating: float,
-    loser_rating: float,
-    k_factor: float
+    winner_rating: float, loser_rating: float, k_factor: float
 ) -> tuple[float, float]:
     """
     Update Elo ratings after a comparison.
@@ -82,8 +80,7 @@ def get_k_factor(comparison_count: int) -> float:
 
 
 def select_strategic_pair(
-    tracks: list[dict],
-    ratings_cache: dict[int, dict]
+    tracks: list[dict], ratings_cache: dict[int, dict]
 ) -> tuple[dict, dict]:
     """
     Select two tracks for comparison using strategic pairing algorithm.
@@ -107,18 +104,35 @@ def select_strategic_pair(
         raise ValueError("Need at least 2 tracks for comparison")
 
     # Bootstrap: pair tracks with <10 comparisons
-    bootstrap = [t for t in tracks if ratings_cache.get(t['id'], {}).get('comparison_count', 0) < 10]
+    bootstrap = [
+        t
+        for t in tracks
+        if ratings_cache.get(t["id"], {}).get("comparison_count", 0) < 10
+    ]
     if len(bootstrap) >= 2:
         return tuple(random.sample(bootstrap, 2))
 
     # Under-compared: pair tracks with <20 comparisons with similar-rated opponents
-    under_compared = [t for t in tracks if ratings_cache.get(t['id'], {}).get('comparison_count', 0) < 20]
+    under_compared = [
+        t
+        for t in tracks
+        if ratings_cache.get(t["id"], {}).get("comparison_count", 0) < 20
+    ]
     if under_compared:
         track_a = random.choice(under_compared)
-        rating_a = ratings_cache.get(track_a['id'], {}).get('rating', 1500.0)
-        similar = [t for t in tracks if t['id'] != track_a['id'] and
-                   abs(ratings_cache.get(t['id'], {}).get('rating', 1500.0) - rating_a) <= 200]
-        track_b = random.choice(similar) if similar else random.choice([t for t in tracks if t['id'] != track_a['id']])
+        rating_a = ratings_cache.get(track_a["id"], {}).get("rating", 1500.0)
+        similar = [
+            t
+            for t in tracks
+            if t["id"] != track_a["id"]
+            and abs(ratings_cache.get(t["id"], {}).get("rating", 1500.0) - rating_a)
+            <= 200
+        ]
+        track_b = (
+            random.choice(similar)
+            if similar
+            else random.choice([t for t in tracks if t["id"] != track_a["id"]])
+        )
         return (track_a, track_b)
 
     # Random fallback
