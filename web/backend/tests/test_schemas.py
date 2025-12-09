@@ -16,6 +16,8 @@ def test_track_info_schema():
         genre="Electronic",
         rating=1500.0,
         comparison_count=5,
+        wins=3,
+        losses=2,
         duration=180.5,
         has_waveform=True,
     )
@@ -23,6 +25,8 @@ def test_track_info_schema():
     assert track.id == 1
     assert track.title == "Test Track"
     assert track.rating == 1500.0
+    assert track.wins == 3
+    assert track.losses == 2
 
 
 def test_comparison_pair_schema():
@@ -33,6 +37,8 @@ def test_comparison_pair_schema():
         artist="Artist A",
         rating=1500.0,
         comparison_count=0,
+        wins=0,
+        losses=0,
         has_waveform=False,
     )
 
@@ -42,6 +48,8 @@ def test_comparison_pair_schema():
         artist="Artist B",
         rating=1500.0,
         comparison_count=0,
+        wins=0,
+        losses=0,
         has_waveform=False,
     )
 

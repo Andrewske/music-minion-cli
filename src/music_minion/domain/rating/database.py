@@ -20,6 +20,7 @@ class EloRating:
     track_id: int
     rating: float
     comparison_count: int
+    wins: int
     last_compared: Optional[datetime]
 
 
@@ -59,7 +60,7 @@ def get_or_create_rating(track_id: int) -> EloRating:
         # Try to get existing rating
         cursor = conn.execute(
             """
-            SELECT track_id, rating, comparison_count, last_compared
+            SELECT track_id, rating, comparison_count, wins, last_compared
             FROM elo_ratings
             WHERE track_id = ?
             """,
@@ -72,6 +73,7 @@ def get_or_create_rating(track_id: int) -> EloRating:
                 track_id=row["track_id"],
                 rating=row["rating"],
                 comparison_count=row["comparison_count"],
+                wins=row["wins"] or 0,
                 last_compared=(
                     datetime.fromisoformat(row["last_compared"])
                     if row["last_compared"]
@@ -83,8 +85,8 @@ def get_or_create_rating(track_id: int) -> EloRating:
         try:
             conn.execute(
                 """
-                INSERT INTO elo_ratings (track_id, rating, comparison_count)
-                VALUES (?, 1500.0, 0)
+                INSERT INTO elo_ratings (track_id, rating, comparison_count, wins)
+                VALUES (?, 1500.0, 0, 0)
                 """,
                 (track_id,),
             )
@@ -94,6 +96,7 @@ def get_or_create_rating(track_id: int) -> EloRating:
                 track_id=track_id,
                 rating=1500.0,
                 comparison_count=0,
+                wins=0,
                 last_compared=None,
             )
         except Exception:
@@ -159,29 +162,37 @@ def record_comparison(
             )
 
             # Update track A rating
+            # Only increment wins if track A is the winner
+            track_a_win_increment = 1 if winner_id == track_a_id else 0
+
             conn.execute(
                 """
                 UPDATE elo_ratings
                 SET rating = ?,
                     comparison_count = comparison_count + 1,
+                    wins = wins + ?,
                     last_compared = CURRENT_TIMESTAMP,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE track_id = ?
                 """,
-                (track_a_rating_after, track_a_id),
+                (track_a_rating_after, track_a_win_increment, track_a_id),
             )
 
             # Update track B rating
+            # Only increment wins if track B is the winner
+            track_b_win_increment = 1 if winner_id == track_b_id else 0
+
             conn.execute(
                 """
                 UPDATE elo_ratings
                 SET rating = ?,
                     comparison_count = comparison_count + 1,
+                    wins = wins + ?,
                     last_compared = CURRENT_TIMESTAMP,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE track_id = ?
                 """,
-                (track_b_rating_after, track_b_id),
+                (track_b_rating_after, track_b_win_increment, track_b_id),
             )
 
             # Single commit for all operations
@@ -210,7 +221,7 @@ def get_leaderboard(
 
     Returns:
         List of dicts with: track_id, title, artist, album, genre, year,
-                           rating, comparison_count, last_compared
+                           rating, comparison_count, wins, last_compared
     """
     where_clauses = ["e.comparison_count >= ?"]
     params: list = [min_comparisons]
@@ -244,6 +255,7 @@ def get_leaderboard(
                 t.duration,
                 e.rating,
                 e.comparison_count,
+                COALESCE(e.wins, 0) as wins,
                 e.last_compared
             FROM elo_ratings e
             JOIN tracks t ON e.track_id = t.id
@@ -277,7 +289,7 @@ def get_filtered_tracks(
     Returns:
         List of dicts with: id, title, artist, album, genre, year,
                            local_path, soundcloud_id, spotify_id, youtube_id,
-                           source, duration, rating, comparison_count
+                           source, duration, rating, comparison_count, wins
     """
     where_clauses = []
     params: list = []
@@ -301,9 +313,7 @@ def get_filtered_tracks(
         params.append(source_filter)
 
     # Filter out tracks without valid local paths (NULL, empty, or whitespace-only)
-    where_clauses.append(
-        "t.local_path IS NOT NULL AND TRIM(t.local_path) != ''"
-    )
+    where_clauses.append("t.local_path IS NOT NULL AND TRIM(t.local_path) != ''")
 
     where_clause = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
@@ -325,7 +335,8 @@ def get_filtered_tracks(
                 t.source,
                 t.duration,
                 COALESCE(e.rating, 1500.0) as rating,
-                COALESCE(e.comparison_count, 0) as comparison_count
+                COALESCE(e.comparison_count, 0) as comparison_count,
+                COALESCE(e.wins, 0) as wins
             FROM tracks t
             LEFT JOIN elo_ratings e ON t.id = e.track_id
             {where_clause}
@@ -437,7 +448,7 @@ def get_least_compared_tracks(
         playlist_id: Optional playlist ID to limit to
 
     Returns:
-        List of dicts with: track_id, title, artist, comparison_count, rating
+        List of dicts with: track_id, title, artist, comparison_count, wins, rating
     """
     where_clauses = []
     params: list = []
@@ -467,6 +478,7 @@ def get_least_compared_tracks(
                 t.title,
                 t.artist,
                 COALESCE(e.comparison_count, 0) as comparison_count,
+                COALESCE(e.wins, 0) as wins,
                 COALESCE(e.rating, 1500.0) as rating
             FROM tracks t
             LEFT JOIN elo_ratings e ON t.id = e.track_id
@@ -582,16 +594,16 @@ def batch_initialize_ratings(track_ids: list[int]) -> int:
     if not track_ids:
         return 0
 
-    # Prepare batch data (all start at 1500.0 with 0 comparisons)
-    ratings = [(track_id, 1500.0, 0) for track_id in track_ids]
+    # Prepare batch data (all start at 1500.0 with 0 comparisons and 0 wins)
+    ratings = [(track_id, 1500.0, 0, 0) for track_id in track_ids]
 
     try:
         with get_db_connection() as conn:
             # Use INSERT OR IGNORE to skip tracks that already have ratings
             conn.executemany(
                 """
-                INSERT OR IGNORE INTO elo_ratings (track_id, rating, comparison_count)
-                VALUES (?, ?, ?)
+                INSERT OR IGNORE INTO elo_ratings (track_id, rating, comparison_count, wins)
+                VALUES (?, ?, ?, ?)
                 """,
                 ratings,
             )

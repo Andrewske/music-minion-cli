@@ -12,6 +12,8 @@ class TrackInfo(BaseModel):
     genre: Optional[str] = None
     rating: float
     comparison_count: int
+    wins: int
+    losses: int
     duration: Optional[float] = None
     has_waveform: bool
 
