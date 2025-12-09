@@ -1,13 +1,10 @@
 import type { WaveformData } from '../types';
 
 export function getStreamUrl(trackId: number): string {
-  const url = `/api/tracks/${trackId}/stream`;
-  console.log('Stream URL:', url);
-  return url;
+  return `/api/tracks/${trackId}/stream`;
 }
 
 export async function getWaveformData(trackId: number): Promise<WaveformData> {
-  console.log('Fetching waveform for track:', trackId);
   const response = await fetch(`/api/tracks/${trackId}/waveform`);
   if (!response.ok) {
     throw new Error(`Failed to fetch waveform: ${response.statusText}`);

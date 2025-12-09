@@ -23,7 +23,12 @@ def get_track_path(track_id: int, db_conn) -> Optional[Path]:
     """Pure function - query track path from database."""
     cursor = db_conn.execute("SELECT local_path FROM tracks WHERE id = ?", (track_id,))
     row = cursor.fetchone()
-    return Path(row["local_path"]) if row else None
+
+    # Handle NULL, empty string, and whitespace-only paths
+    if not row or not row["local_path"] or not row["local_path"].strip():
+        return None
+
+    return Path(row["local_path"])
 
 
 def get_mime_type(file_path: Path) -> str:
@@ -100,6 +105,18 @@ async def get_waveform(
 @router.post("/tracks/{track_id}/archive")
 async def archive_track(track_id: int):
     """Archive a track from comparisons."""
-    # TODO: Update track rating to 'archive' in database
-    # For now, return a placeholder error
-    raise HTTPException(status_code=501, detail="Track archiving not yet implemented")
+    try:
+        # Import the database function for adding ratings
+        from music_minion.core.database import add_rating
+
+        # Archive the track by adding an 'archive' rating
+        add_rating(track_id, "archive", "Archived from web UI comparison")
+
+        logger.info(f"Track {track_id} archived successfully")
+        return {"success": True, "message": "Track archived successfully"}
+
+    except Exception as e:
+        logger.exception(f"Failed to archive track {track_id}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to archive track: {str(e)}"
+        )

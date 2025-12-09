@@ -300,6 +300,11 @@ def get_filtered_tracks(
         where_clauses.append("t.source = ?")
         params.append(source_filter)
 
+    # Filter out tracks without valid local paths (NULL, empty, or whitespace-only)
+    where_clauses.append(
+        "t.local_path IS NOT NULL AND TRIM(t.local_path) != ''"
+    )
+
     where_clause = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
     with get_db_connection() as conn:

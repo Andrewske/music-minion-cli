@@ -1,11 +1,9 @@
-from contextlib import contextmanager
-from typing import Generator
+from typing import AsyncGenerator
 from music_minion.core.database import get_db_connection
 from music_minion.core.config import load_config, Config
 
 
-@contextmanager
-def get_db() -> Generator:
+async def get_db() -> AsyncGenerator:
     """FastAPI dependency for database connections."""
     with get_db_connection() as conn:
         yield conn

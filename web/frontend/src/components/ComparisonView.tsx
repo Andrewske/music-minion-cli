@@ -10,6 +10,8 @@ import { TrackCardSkeleton } from './TrackCardSkeleton';
 import { WaveformSkeleton } from './WaveformSkeleton';
 import { ErrorState } from './ErrorState';
 import { SessionComplete } from './SessionComplete';
+import { TrackActions } from './TrackActions';
+import { ErrorBoundary } from './ErrorBoundary';
 
 export function ComparisonView() {
   const { currentPair, playingTrackId, comparisonsCompleted, targetComparisons } = useComparisonStore();
@@ -110,32 +112,23 @@ export function ComparisonView() {
           {isLoading ? (
             <TrackCardSkeleton />
           ) : (
-            <div className="relative group">
-              <SwipeableTrack
-                track={currentPair.track_a}
-                isPlaying={playingTrackId === currentPair.track_a.id}
-                onSwipeRight={() => handleSwipeRight(currentPair.track_a.id)}
-                onSwipeLeft={() => handleSwipeLeft(currentPair.track_a.id)}
-                onTap={() => handleTrackTap(currentPair.track_a.id)}
-              />
-              {/* Desktop Actions Overlay (visible on hover or always on desktop) */}
-              <div className="hidden lg:flex justify-between mt-4 gap-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                 <button
-                  onClick={() => handleSwipeLeft(currentPair.track_a.id)}
-                  disabled={isLoading}
-                  className="flex-1 bg-slate-800 text-rose-400 py-3 rounded-xl font-semibold hover:bg-slate-700 hover:text-rose-300 transition-colors border border-slate-700"
-                >
-                  Archive
-                </button>
-                <button
-                  onClick={() => handleSwipeRight(currentPair.track_a.id)}
-                  disabled={isLoading}
-                  className="flex-1 bg-emerald-600 text-white py-3 rounded-xl font-bold hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-900/50"
-                >
-                  Winner
-                </button>
+            <ErrorBoundary>
+              <div className="relative group">
+                <SwipeableTrack
+                  track={currentPair.track_a}
+                  isPlaying={playingTrackId === currentPair.track_a.id}
+                  onSwipeRight={() => handleSwipeRight(currentPair.track_a.id)}
+                  onSwipeLeft={() => handleSwipeLeft(currentPair.track_a.id)}
+                  onTap={() => handleTrackTap(currentPair.track_a.id)}
+                />
+                <TrackActions
+                  trackId={currentPair.track_a.id}
+                  onArchive={handleSwipeLeft}
+                  onWinner={handleSwipeRight}
+                  isLoading={isLoading}
+                />
               </div>
-            </div>
+            </ErrorBoundary>
           )}
         </div>
 
@@ -151,31 +144,23 @@ export function ComparisonView() {
           {isLoading ? (
             <TrackCardSkeleton />
           ) : (
-            <div className="relative group">
-              <SwipeableTrack
-                track={currentPair.track_b}
-                isPlaying={playingTrackId === currentPair.track_b.id}
-                onSwipeRight={() => handleSwipeRight(currentPair.track_b.id)}
-                onSwipeLeft={() => handleSwipeLeft(currentPair.track_b.id)}
-                onTap={() => handleTrackTap(currentPair.track_b.id)}
-              />
-               <div className="hidden lg:flex justify-between mt-4 gap-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                 <button
-                  onClick={() => handleSwipeLeft(currentPair.track_b.id)}
-                  disabled={isLoading}
-                  className="flex-1 bg-slate-800 text-rose-400 py-3 rounded-xl font-semibold hover:bg-slate-700 hover:text-rose-300 transition-colors border border-slate-700"
-                >
-                  Archive
-                </button>
-                <button
-                  onClick={() => handleSwipeRight(currentPair.track_b.id)}
-                  disabled={isLoading}
-                  className="flex-1 bg-emerald-600 text-white py-3 rounded-xl font-bold hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-900/50"
-                >
-                  Winner
-                </button>
+            <ErrorBoundary>
+              <div className="relative group">
+                <SwipeableTrack
+                  track={currentPair.track_b}
+                  isPlaying={playingTrackId === currentPair.track_b.id}
+                  onSwipeRight={() => handleSwipeRight(currentPair.track_b.id)}
+                  onSwipeLeft={() => handleSwipeLeft(currentPair.track_b.id)}
+                  onTap={() => handleTrackTap(currentPair.track_b.id)}
+                />
+                <TrackActions
+                  trackId={currentPair.track_b.id}
+                  onArchive={handleSwipeLeft}
+                  onWinner={handleSwipeRight}
+                  isLoading={isLoading}
+                />
               </div>
-            </div>
+            </ErrorBoundary>
           )}
         </div>
       </div>

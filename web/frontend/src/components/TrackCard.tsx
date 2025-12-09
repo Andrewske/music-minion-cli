@@ -1,13 +1,12 @@
-import { TrackInfo } from '../types';
+import type { TrackInfo } from '../types';
 
 interface TrackCardProps {
   track: TrackInfo;
   isPlaying: boolean;
-  onTap: () => void;
   className?: string;
 }
 
-export function TrackCard({ track, isPlaying, onTap, className = '' }: TrackCardProps) {
+export function TrackCard({ track, isPlaying, className = '' }: TrackCardProps) {
   const formatRating = (rating: number, comparisonCount: number) => {
     if (comparisonCount >= 10) {
       return (
@@ -25,7 +24,6 @@ export function TrackCard({ track, isPlaying, onTap, className = '' }: TrackCard
 
   return (
     <div
-      onClick={onTap}
       className={`
         relative overflow-hidden rounded-2xl
         bg-slate-900 border border-slate-800

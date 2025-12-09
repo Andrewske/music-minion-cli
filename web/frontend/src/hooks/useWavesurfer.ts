@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import { getWaveformData, getStreamUrl } from '../api/tracks';
+import { formatError } from '../utils/formatError';
 
 interface UseWavesurferOptions {
   trackId: number;
@@ -24,21 +25,6 @@ function createWavesurferConfig(container: HTMLDivElement) {
   };
 }
 
-function formatError(error: unknown): string {
-  const msg = error instanceof Error ? error.message : String(error);
-
-  if (msg.includes('waveform')) {
-    return 'Failed to load waveform. Playing audio only.';
-  }
-  if (msg.includes('network') || msg.includes('fetch')) {
-    return 'Network error. Check connection and retry.';
-  }
-  if (msg.includes('decode')) {
-    return 'Audio format not supported by browser.';
-  }
-  return `Failed to load audio: ${msg}`;
-}
-
 export function useWavesurfer({ trackId, onReady, onSeek, isActive = false }: UseWavesurferOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
@@ -56,7 +42,7 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false }: Us
     onSeek?.(progress);
   }, [onSeek]);
 
-  const initWavesurfer = useCallback(async (abortSignal: AbortSignal) => {
+  const initWavesurfer = useCallback(async (abortSignal: AbortSignal, shouldAutoplay: boolean) => {
     if (!containerRef.current) return;
 
     try {
@@ -75,9 +61,8 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false }: Us
       let waveformData = null;
       try {
         waveformData = await getWaveformData(trackId);
-      } catch (waveformError) {
-        // Log but don't fail - graceful degradation
-        console.warn('Waveform unavailable, using basic playback:', waveformError);
+      } catch {
+        // Graceful degradation to basic playback without visualization
       }
 
       // Check if aborted after waveform fetch
@@ -98,18 +83,15 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false }: Us
       wavesurfer.on('ready', () => {
         handleReady(wavesurfer.getDuration());
 
-        // Autoplay if this track is active
-        if (isActive) {
-          try {
-            wavesurfer.play();
-          } catch (err) {
-            console.warn('Autoplay blocked:', err);
-          }
+        // Autoplay if requested
+        if (shouldAutoplay) {
+          wavesurfer.play().catch(() => {
+            // Autoplay blocked by browser - user must interact first
+          });
         }
       });
 
       wavesurfer.on('error', (error) => {
-        console.error('WaveSurfer error:', error);
         setError(formatError(error));
       });
 
@@ -139,7 +121,6 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false }: Us
       if (abortSignal.aborted) return;
 
       // Audio loading failed - show error to user
-      console.error('Failed to load audio:', error);
       setError(formatError(error));
     }
   }, [trackId, handleReady, handleSeek]);
@@ -150,11 +131,9 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false }: Us
     // AbortController to cancel async operations on cleanup
     const abortController = new AbortController();
 
-    console.log('[useWavesurfer] Effect triggered for track:', trackId, 'existing instance:', !!wavesurferRef.current);
-    initWavesurfer(abortController.signal);
+    initWavesurfer(abortController.signal, isActive);
 
     return () => {
-      console.log('[useWavesurfer] Cleanup for track:', trackId);
       // Abort any in-flight async operations
       abortController.abort();
 
@@ -163,7 +142,7 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false }: Us
         wavesurferRef.current = null;
       }
     };
-  }, [trackId, initWavesurfer]);
+  }, [trackId, isActive, initWavesurfer]);
 
   // Watch for isActive changes to pause/play accordingly
   const prevIsActive = useRef(isActive);
@@ -174,11 +153,9 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false }: Us
     if (isActive && !prevIsActive.current) {
       // Became active - seek to start and play
       wavesurferRef.current.seekTo(0);
-      try {
-        wavesurferRef.current.play();
-      } catch (err) {
-        console.warn('Play failed:', err);
-      }
+      wavesurferRef.current.play().catch(() => {
+        // Play failed - likely browser autoplay policy
+      });
     } else if (!isActive && prevIsActive.current) {
       // Became inactive - pause
       if (wavesurferRef.current.isPlaying()) {
@@ -210,8 +187,8 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false }: Us
     setError(null);
     // Re-trigger initialization with new AbortController
     const abortController = new AbortController();
-    initWavesurfer(abortController.signal);
-  }, [initWavesurfer]);
+    initWavesurfer(abortController.signal, isActive);
+  }, [initWavesurfer, isActive]);
 
   return {
     containerRef,
