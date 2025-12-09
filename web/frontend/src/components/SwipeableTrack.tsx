@@ -25,17 +25,23 @@ export function SwipeableTrack({
   });
 
   return (
-    <div className="relative">
-      {/* Swipe indicators */}
-      <div className="absolute inset-y-0 left-0 flex items-center justify-start pl-4 pointer-events-none">
-        <div className={`text-2xl transition-opacity duration-200 ${isDragging ? 'opacity-100' : 'opacity-0'}`}>
-          🗂️
+    <div className="relative w-full">
+      {/* Swipe indicators (Behind the card) */}
+      <div className="absolute inset-0 flex items-center justify-between px-8 pointer-events-none">
+        {/* Archive Indicator (Left) */}
+        <div className={`flex flex-col items-center justify-center transition-all duration-200 ${isDragging ? 'opacity-100 scale-100' : 'opacity-0 scale-75'}`}>
+          <div className="w-16 h-16 rounded-full bg-rose-500/20 flex items-center justify-center border-2 border-rose-500 shadow-[0_0_20px_rgba(244,63,94,0.3)]">
+            <span className="text-3xl">🗂️</span>
+          </div>
+          <span className="text-rose-500 font-bold mt-2 uppercase tracking-wider text-sm">Archive</span>
         </div>
-      </div>
 
-      <div className="absolute inset-y-0 right-0 flex items-center justify-end pr-4 pointer-events-none">
-        <div className={`text-2xl transition-opacity duration-200 ${isDragging ? 'opacity-100' : 'opacity-0'}`}>
-          🏆
+        {/* Winner Indicator (Right) */}
+        <div className={`flex flex-col items-center justify-center transition-all duration-200 ${isDragging ? 'opacity-100 scale-100' : 'opacity-0 scale-75'}`}>
+          <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center border-2 border-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.3)]">
+            <span className="text-3xl">🏆</span>
+          </div>
+          <span className="text-emerald-500 font-bold mt-2 uppercase tracking-wider text-sm">Winner</span>
         </div>
       </div>
 
@@ -47,7 +53,7 @@ export function SwipeableTrack({
           rotate: style.rotate,
           touchAction: style.touchAction,
         }}
-        className={`transition-shadow duration-200 ${isDragging ? 'shadow-2xl' : ''}`}
+        className={`relative z-10 transition-shadow duration-200 ${isDragging ? 'shadow-2xl shadow-black/50 cursor-grabbing' : 'cursor-grab'}`}
       >
         <TrackCard
           track={track}

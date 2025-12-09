@@ -6,14 +6,19 @@ interface UseWavesurferOptions {
   trackId: number;
   onReady?: (duration: number) => void;
   onSeek?: (progress: number) => void;
+  isActive?: boolean;
 }
 
 function createWavesurferConfig(container: HTMLDivElement) {
   return {
     container,
-    waveColor: '#3b82f6',
-    progressColor: '#1d4ed8',
-    height: 80,
+    waveColor: '#475569', // slate-600
+    progressColor: '#10b981', // emerald-500
+    cursorColor: '#10b981', // emerald-500
+    barWidth: 2,
+    barGap: 1,
+    barRadius: 2,
+    height: 64,
     normalize: true,
     backend: 'MediaElement' as const,
   };
@@ -34,7 +39,7 @@ function formatError(error: unknown): string {
   return `Failed to load audio: ${msg}`;
 }
 
-export function useWavesurfer({ trackId, onReady, onSeek }: UseWavesurferOptions) {
+export function useWavesurfer({ trackId, onReady, onSeek, isActive = false }: UseWavesurferOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -51,11 +56,20 @@ export function useWavesurfer({ trackId, onReady, onSeek }: UseWavesurferOptions
     onSeek?.(progress);
   }, [onSeek]);
 
-  const initWavesurfer = useCallback(async () => {
+  const initWavesurfer = useCallback(async (abortSignal: AbortSignal) => {
     if (!containerRef.current) return;
 
     try {
       setError(null);
+
+      // Defensive cleanup: destroy existing instance before creating new one
+      if (wavesurferRef.current) {
+        wavesurferRef.current.destroy();
+        wavesurferRef.current = null;
+      }
+
+      // Check if aborted before async operations
+      if (abortSignal.aborted) return;
 
       // Try to load waveform first
       let waveformData = null;
@@ -65,6 +79,9 @@ export function useWavesurfer({ trackId, onReady, onSeek }: UseWavesurferOptions
         // Log but don't fail - graceful degradation
         console.warn('Waveform unavailable, using basic playback:', waveformError);
       }
+
+      // Check if aborted after waveform fetch
+      if (abortSignal.aborted) return;
 
       // Create WaveSurfer instance
       const wavesurfer = WaveSurfer.create(createWavesurferConfig(containerRef.current));
@@ -80,6 +97,15 @@ export function useWavesurfer({ trackId, onReady, onSeek }: UseWavesurferOptions
       // Set up event listeners
       wavesurfer.on('ready', () => {
         handleReady(wavesurfer.getDuration());
+
+        // Autoplay if this track is active
+        if (isActive) {
+          try {
+            wavesurfer.play();
+          } catch (err) {
+            console.warn('Autoplay blocked:', err);
+          }
+        }
       });
 
       wavesurfer.on('error', (error) => {
@@ -101,8 +127,17 @@ export function useWavesurfer({ trackId, onReady, onSeek }: UseWavesurferOptions
         handleSeek(progress);
       });
 
+      // Final abort check before committing the instance
+      if (abortSignal.aborted) {
+        wavesurfer.destroy();
+        return;
+      }
+
       wavesurferRef.current = wavesurfer;
     } catch (error) {
+      // Don't set error if operation was aborted
+      if (abortSignal.aborted) return;
+
       // Audio loading failed - show error to user
       console.error('Failed to load audio:', error);
       setError(formatError(error));
@@ -112,15 +147,47 @@ export function useWavesurfer({ trackId, onReady, onSeek }: UseWavesurferOptions
   useEffect(() => {
     if (!containerRef.current || !trackId) return;
 
-    initWavesurfer();
+    // AbortController to cancel async operations on cleanup
+    const abortController = new AbortController();
+
+    console.log('[useWavesurfer] Effect triggered for track:', trackId, 'existing instance:', !!wavesurferRef.current);
+    initWavesurfer(abortController.signal);
 
     return () => {
+      console.log('[useWavesurfer] Cleanup for track:', trackId);
+      // Abort any in-flight async operations
+      abortController.abort();
+
       if (wavesurferRef.current) {
         wavesurferRef.current.destroy();
         wavesurferRef.current = null;
       }
     };
   }, [trackId, initWavesurfer]);
+
+  // Watch for isActive changes to pause/play accordingly
+  const prevIsActive = useRef(isActive);
+
+  useEffect(() => {
+    if (!wavesurferRef.current) return;
+
+    if (isActive && !prevIsActive.current) {
+      // Became active - seek to start and play
+      wavesurferRef.current.seekTo(0);
+      try {
+        wavesurferRef.current.play();
+      } catch (err) {
+        console.warn('Play failed:', err);
+      }
+    } else if (!isActive && prevIsActive.current) {
+      // Became inactive - pause
+      if (wavesurferRef.current.isPlaying()) {
+        wavesurferRef.current.pause();
+      }
+    }
+
+    prevIsActive.current = isActive;
+  }, [isActive]);
 
   const togglePlayPause = () => {
     if (wavesurferRef.current) {
@@ -141,8 +208,9 @@ export function useWavesurfer({ trackId, onReady, onSeek }: UseWavesurferOptions
       wavesurferRef.current = null;
     }
     setError(null);
-    // Re-trigger initialization
-    initWavesurfer();
+    // Re-trigger initialization with new AbortController
+    const abortController = new AbortController();
+    initWavesurfer(abortController.signal);
   }, [initWavesurfer]);
 
   return {
