@@ -527,7 +527,6 @@ def handle_rankings_command(
 def _load_comparison_data_background(
     ctx: AppContext,
     session_id: str,
-    count: int,
     source_filter: str,
     genre_filter: Optional[str],
     year_filter: Optional[int],
@@ -539,7 +538,6 @@ def _load_comparison_data_background(
     Args:
         ctx: Application context
         session_id: Comparison session ID
-        count: Target number of comparisons
         source_filter: Source filter ('local', 'spotify', etc.)
         genre_filter: Optional genre filter
         year_filter: Optional year filter
@@ -611,7 +609,6 @@ def _load_comparison_data_background(
             highlighted="a",
             session_id=session_id,
             comparisons_done=0,
-            target_comparisons=count,
             playlist_id=playlist_id,
             genre_filter=genre_filter,
             year_filter=year_filter,
@@ -738,18 +735,17 @@ def parse_rate_args(args: list[str]) -> dict:
         args: List of command line arguments
 
     Returns:
-        Dict with 'count', 'playlist', 'genre', 'year', 'source' keys
+        Dict with 'playlist', 'genre', 'year', 'source' keys
 
     Examples:
         >>> parse_rate_args([])
-        {'count': 15, 'playlist': None, 'genre': None, 'year': None, 'source': None}
-        >>> parse_rate_args(['--count=30', '--genre=dubstep'])
-        {'count': 30, 'playlist': None, 'genre': 'dubstep', 'year': None, 'source': None}
+        {'playlist': None, 'genre': None, 'year': None, 'source': None}
+        >>> parse_rate_args(['--genre=dubstep'])
+        {'playlist': None, 'genre': 'dubstep', 'year': None, 'source': None}
         >>> parse_rate_args(['--source=spotify'])
-        {'count': 15, 'playlist': None, 'genre': None, 'year': None, 'source': 'spotify'}
+        {'playlist': None, 'genre': None, 'year': None, 'source': 'spotify'}
     """
     parsed = {
-        "count": 15,  # Default count
         "playlist": None,
         "genre": None,
         "year": None,
@@ -763,14 +759,7 @@ def parse_rate_args(args: list[str]) -> dict:
         key, value = arg.split("=", 1)
         key = key.lstrip("-")  # Remove -- prefix
 
-        if key == "count":
-            try:
-                parsed["count"] = int(value)
-            except ValueError:
-                logger.warning(f"Invalid count value: {value}, using default 15")
-                parsed["count"] = 15
-
-        elif key == "playlist":
+        if key == "playlist":
             try:
                 parsed["playlist"] = int(value)
             except ValueError:
@@ -961,10 +950,9 @@ def handle_rate_command(
     Start a pairwise comparison rating session or show history.
 
     Command usage:
-        /rate                              # 15 comparisons, active library tracks
+        /rate                              # Start comparison session (continuous until you exit)
         /rate history                      # Show like/love/archive rating history
         /rate comparisons                  # Show Elo comparison history
-        /rate --count=30                   # 30 comparisons
         /rate --source=local               # Only local tracks
         /rate --source=spotify             # Only Spotify tracks
         /rate --source=all                 # All tracks regardless of source
@@ -996,7 +984,6 @@ def handle_rate_command(
 
     # Parse arguments
     parsed = parse_rate_args(args)
-    count = parsed["count"]
     playlist_id = parsed["playlist"]
     genre_filter = parsed["genre"]
     year_filter = parsed["year"]
@@ -1007,7 +994,7 @@ def handle_rate_command(
         source_filter = get_active_provider()
 
     logger.info(
-        f"Starting rating session: count={count}, playlist={playlist_id}, "
+        f"Starting rating session: playlist={playlist_id}, "
         f"genre={genre_filter}, year={year_filter}, source={source_filter}"
     )
 
@@ -1030,7 +1017,6 @@ def handle_rate_command(
             highlighted="a",
             session_id=session_id,
             comparisons_done=0,
-            target_comparisons=count,
             playlist_id=playlist_id,
             genre_filter=genre_filter,
             year_filter=year_filter,
@@ -1055,7 +1041,6 @@ def handle_rate_command(
             args=(
                 ctx,
                 session_id,
-                count,
                 source_filter,
                 genre_filter,
                 year_filter,
@@ -1143,7 +1128,6 @@ def handle_rate_command(
             highlighted="a",
             session_id=session_id,
             comparisons_done=0,
-            target_comparisons=count,
             playlist_id=playlist_id,
             genre_filter=genre_filter,
             year_filter=year_filter,

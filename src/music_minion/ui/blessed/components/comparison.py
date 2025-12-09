@@ -428,7 +428,7 @@ def render_session_progress(
 
     # Session progress
     if line_num < height:
-        progress_text = f"   Session: {comparison.comparisons_done}/{comparison.target_comparisons} comparisons"
+        progress_text = f"   Session: {comparison.comparisons_done} comparisons | Press Q to exit"
         write_at(term, 0, y + line_num, term.cyan(progress_text))
         line_num += 1
 
@@ -641,7 +641,7 @@ def _render_loading_skeleton(
 
     # Session progress
     if line_num < height:
-        progress_text = f"   Session: 0/{comparison.target_comparisons} comparisons"
+        progress_text = f"   Session: 0 comparisons | Loading..."
         write_at(term, 0, y + line_num, term.cyan(progress_text))
         line_num += 1
 

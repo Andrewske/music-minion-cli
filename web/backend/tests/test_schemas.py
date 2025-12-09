@@ -65,9 +65,8 @@ def test_comparison_pair_schema():
 def test_start_session_request_schema():
     """Test StartSessionRequest Pydantic model."""
     request = StartSessionRequest(
-        target_comparisons=20, genre_filter="Electronic", year_filter="2023"
+        genre_filter="Electronic", year_filter="2023"
     )
 
-    assert request.target_comparisons == 20
     assert request.genre_filter == "Electronic"
     assert request.year_filter == "2023"

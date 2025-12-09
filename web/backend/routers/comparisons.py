@@ -211,14 +211,12 @@ async def record_comparison_result(
             session_id=request.session_id,
         )
 
-        # For now, always return next pair - TODO: implement session completion logic
+        # Get next pair (session continues until user closes browser/navigates away)
         next_pair = await get_next_comparison_pair(request.session_id)
 
         return RecordComparisonResponse(
             success=True,
-            comparisons_done=1,  # TODO: track per session
-            target_comparisons=15,  # TODO: get from session
-            session_complete=False,  # TODO: implement completion logic
+            comparisons_done=1,  # Single comparison recorded
             next_pair=next_pair,
         )
 

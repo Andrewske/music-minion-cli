@@ -21,7 +21,6 @@ export interface ComparisonPair {
 }
 
 export interface StartSessionRequest {
-  target_comparisons?: number;
   source_filter?: string;
   genre_filter?: string;
   year_filter?: string;
@@ -44,8 +43,6 @@ export interface RecordComparisonRequest {
 export interface RecordComparisonResponse {
   success: boolean;
   comparisons_done: number;
-  target_comparisons: number;
-  session_complete: boolean;
   next_pair?: ComparisonPair;
 }
 

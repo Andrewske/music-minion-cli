@@ -25,7 +25,6 @@ class ComparisonPair(BaseModel):
 
 
 class StartSessionRequest(BaseModel):
-    target_comparisons: int = 15
     source_filter: Optional[str] = None
     genre_filter: Optional[str] = None
     year_filter: Optional[str] = None
@@ -48,8 +47,6 @@ class RecordComparisonRequest(BaseModel):
 class RecordComparisonResponse(BaseModel):
     success: bool
     comparisons_done: int
-    target_comparisons: int
-    session_complete: bool
     next_pair: Optional[ComparisonPair] = None
 
 

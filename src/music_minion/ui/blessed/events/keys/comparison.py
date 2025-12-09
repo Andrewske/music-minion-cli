@@ -149,10 +149,6 @@ def handle_comparison_choice(
     # Increment comparison count
     new_comparisons_done = comparison.comparisons_done + 1
 
-    # Check if session complete
-    if new_comparisons_done >= comparison.target_comparisons:
-        return end_comparison_session(state)
-
     # Load next pair
     # Get filtered tracks from comparison state (stored by command handler)
     filtered_tracks = comparison.filtered_tracks
@@ -358,7 +354,7 @@ def exit_comparison_mode(state: UIState) -> tuple[UIState, InternalCommand | Non
 
     # Show exit message
     log(
-        f"Session ended. {comparison.comparisons_done}/{comparison.target_comparisons} comparisons completed.",
+        f"Session ended. {comparison.comparisons_done} comparisons completed.",
         level="info",
     )
 
