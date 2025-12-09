@@ -15,7 +15,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 24
+SCHEMA_VERSION = 25
 
 
 def get_database_path() -> Path:
@@ -837,6 +837,30 @@ def migrate_database(conn, current_version: int) -> None:
         )
 
         logger.info("Migration to schema version 24 complete")
+        conn.commit()
+
+    if current_version < 25:
+        # Migration from v24 to v25: Add wins tracking to elo_ratings
+        logger.info("Migrating database to schema version 25 (Elo wins tracking)...")
+
+        # Add wins column
+        try:
+            conn.execute("ALTER TABLE elo_ratings ADD COLUMN wins INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+        # Backfill wins from comparison_history
+        logger.info("Backfilling wins from comparison history...")
+        conn.execute("""
+            UPDATE elo_ratings
+            SET wins = (
+                SELECT COUNT(*)
+                FROM comparison_history
+                WHERE winner_id = elo_ratings.track_id
+            )
+        """)
+
+        logger.info("Migration to schema version 25 complete")
         conn.commit()
 
 

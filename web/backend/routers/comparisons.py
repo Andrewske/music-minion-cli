@@ -32,7 +32,9 @@ async def start_comparison_session(
         # Get filtered tracks based on request parameters
         tracks = get_filtered_tracks(
             genre=request.genre_filter,
-            year=request.year_filter,
+            year=int(request.year_filter)
+            if request.year_filter and request.year_filter.isdigit()
+            else None,
             playlist_id=request.playlist_id,
             source_filter=request.source_filter,
         )
@@ -69,6 +71,8 @@ async def start_comparison_session(
                 "genre": track_a["genre"],
                 "rating": track_a["rating"],
                 "comparison_count": track_a["comparison_count"],
+                "wins": track_a.get("wins", 0),
+                "losses": track_a["comparison_count"] - track_a.get("wins", 0),
                 "duration": track_a["duration"],
                 "has_waveform": False,  # TODO: implement waveform check
             },
@@ -82,6 +86,8 @@ async def start_comparison_session(
                 "genre": track_b["genre"],
                 "rating": track_b["rating"],
                 "comparison_count": track_b["comparison_count"],
+                "wins": track_b.get("wins", 0),
+                "losses": track_b["comparison_count"] - track_b.get("wins", 0),
                 "duration": track_b["duration"],
                 "has_waveform": False,  # TODO: implement waveform check
             },
@@ -131,6 +137,8 @@ async def get_next_comparison_pair(session_id: str) -> ComparisonPair:
             "genre": track_a["genre"],
             "rating": track_a["rating"],
             "comparison_count": track_a["comparison_count"],
+            "wins": track_a.get("wins", 0),
+            "losses": track_a["comparison_count"] - track_a.get("wins", 0),
             "duration": track_a["duration"],
             "has_waveform": False,
         },
@@ -144,42 +152,9 @@ async def get_next_comparison_pair(session_id: str) -> ComparisonPair:
             "genre": track_b["genre"],
             "rating": track_b["rating"],
             "comparison_count": track_b["comparison_count"],
+            "wins": track_b.get("wins", 0),
+            "losses": track_b["comparison_count"] - track_b.get("wins", 0),
             "duration": track_b["duration"],
-            "has_waveform": False,
-        },
-        session_id=session_id,
-    )
-
-    pair = select_strategic_pair(tracks)
-
-    track_a = tracks[pair.track_a_index]
-    track_b = tracks[pair.track_b_index]
-
-    return ComparisonPair(
-        track_a={
-            "id": track_a.id,
-            "title": track_a.title,
-            "artist": track_a.artist,
-            "album": track_a.album,
-            "year": track_a.year,
-            "bpm": track_a.bpm,
-            "genre": track_a.genre,
-            "rating": track_a.rating,
-            "comparison_count": track_a.comparison_count,
-            "duration": track_a.duration,
-            "has_waveform": False,
-        },
-        track_b={
-            "id": track_b.id,
-            "title": track_b.title,
-            "artist": track_b.artist,
-            "album": track_b.album,
-            "year": track_b.year,
-            "bpm": track_b.bpm,
-            "genre": track_b.genre,
-            "rating": track_b.rating,
-            "comparison_count": track_b.comparison_count,
-            "duration": track_b.duration,
             "has_waveform": False,
         },
         session_id=session_id,

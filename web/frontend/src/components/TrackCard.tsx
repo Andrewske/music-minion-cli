@@ -7,18 +7,37 @@ interface TrackCardProps {
 }
 
 export function TrackCard({ track, isPlaying, className = '' }: TrackCardProps) {
-  const formatRating = (rating: number, comparisonCount: number) => {
-    if (comparisonCount >= 10) {
-      return (
-        <span className="flex items-center gap-1 text-yellow-400">
-          ⭐ {rating.toFixed(0)}
-        </span>
-      );
-    }
+  const renderRatingBadge = (rating: number, wins: number, losses: number, comparisonCount: number) => {
+    const isBootstrap = comparisonCount < 10;
+    
     return (
-      <span className="flex items-center gap-1 text-amber-500/80">
-        ⚠️ {comparisonCount}
-      </span>
+      <div className={`
+        flex items-center gap-2 px-3 py-1.5 rounded-full text-sm border backdrop-blur-sm shadow-sm
+        transition-colors duration-300
+        ${isBootstrap 
+          ? 'bg-slate-900/50 border-slate-800 text-slate-400' 
+          : 'bg-amber-950/20 border-amber-500/20 text-amber-400'}
+      `}>
+        {/* Icon & Score */}
+        <div className="flex items-center gap-1.5">
+          <span className={isBootstrap ? 'opacity-70' : ''}>
+            {isBootstrap ? '🎵' : '⭐'}
+          </span>
+          <span className="font-bold tabular-nums tracking-tight">
+            {rating.toFixed(0)}
+          </span>
+        </div>
+
+        {/* Divider */}
+        <div className={`w-px h-3 ${isBootstrap ? 'bg-slate-700' : 'bg-amber-500/20'}`} />
+
+        {/* Win/Loss Record */}
+        <div className="flex items-center gap-1 text-xs font-medium tabular-nums">
+           <span className="text-emerald-500">{wins}</span>
+           <span className={`${isBootstrap ? 'text-slate-600' : 'text-amber-500/40'}`}>/</span>
+           <span className="text-rose-500">{losses}</span>
+        </div>
+      </div>
     );
   };
 
@@ -79,9 +98,7 @@ export function TrackCard({ track, isPlaying, className = '' }: TrackCardProps) 
 
         {/* Stats / Badges */}
         <div className="mt-auto pt-4 border-t border-slate-800 w-full flex justify-center">
-          <div className="bg-slate-950/50 px-3 py-1 rounded-full text-sm font-medium border border-slate-800">
-            {formatRating(track.rating, track.comparison_count)}
-          </div>
+          {renderRatingBadge(track.rating, track.wins, track.losses, track.comparison_count)}
         </div>
       </div>
     </div>

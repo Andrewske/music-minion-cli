@@ -8,6 +8,8 @@ export interface TrackInfo {
   genre?: string;
   rating: number;
   comparison_count: number;
+  wins: number;
+  losses: number;
   duration?: number;
   has_waveform: boolean;
 }
