@@ -32,6 +32,7 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false }: Us
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const lastPositionRef = useRef<number>(0); // Store last playback position
 
   const handleReady = useCallback((duration: number) => {
     setDuration(duration);
@@ -95,19 +96,23 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false }: Us
         setError(formatError(error));
       });
 
-      wavesurfer.on('play', () => setIsPlaying(true));
-      wavesurfer.on('pause', () => setIsPlaying(false));
-      wavesurfer.on('finish', () => setIsPlaying(false));
+       wavesurfer.on('play', () => setIsPlaying(true));
+       wavesurfer.on('pause', () => setIsPlaying(false));
+       wavesurfer.on('finish', () => setIsPlaying(false));
 
-      wavesurfer.on('audioprocess', () => {
-        setCurrentTime(wavesurfer.getCurrentTime());
-      });
+       wavesurfer.on('audioprocess', () => {
+         const time = wavesurfer.getCurrentTime();
+         setCurrentTime(time);
+         lastPositionRef.current = time; // Update resume position during playback
+       });
 
-      wavesurfer.on('interaction', () => {
-        setCurrentTime(wavesurfer.getCurrentTime());
-        const progress = wavesurfer.getCurrentTime() / wavesurfer.getDuration();
-        handleSeek(progress);
-      });
+       wavesurfer.on('interaction', () => {
+         const time = wavesurfer.getCurrentTime();
+         setCurrentTime(time);
+         lastPositionRef.current = time; // Update resume position on user interaction
+         const progress = time / wavesurfer.getDuration();
+         handleSeek(progress);
+       });
 
       // Final abort check before committing the instance
       if (abortSignal.aborted) {
@@ -128,6 +133,9 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false }: Us
   useEffect(() => {
     if (!containerRef.current || !trackId) return;
 
+    // Reset resume position when track changes
+    lastPositionRef.current = 0;
+
     // AbortController to cancel async operations on cleanup
     const abortController = new AbortController();
 
@@ -142,7 +150,7 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false }: Us
         wavesurferRef.current = null;
       }
     };
-  }, [trackId, isActive, initWavesurfer]);
+  }, [trackId, initWavesurfer]);
 
   // Watch for isActive changes to pause/play accordingly
   const prevIsActive = useRef(isActive);
@@ -151,20 +159,23 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false }: Us
     if (!wavesurferRef.current) return;
 
     if (isActive && !prevIsActive.current) {
-      // Became active - seek to start and play
-      wavesurferRef.current.seekTo(0);
+      // Became active - resume from last position and play
+      if (duration > 0 && lastPositionRef.current > 0) {
+        wavesurferRef.current.seekTo(lastPositionRef.current / duration);
+      }
       wavesurferRef.current.play().catch(() => {
         // Play failed - likely browser autoplay policy
       });
     } else if (!isActive && prevIsActive.current) {
-      // Became inactive - pause
+      // Became inactive - pause and store current position
       if (wavesurferRef.current.isPlaying()) {
         wavesurferRef.current.pause();
       }
+      lastPositionRef.current = wavesurferRef.current.getCurrentTime();
     }
 
     prevIsActive.current = isActive;
-  }, [isActive]);
+  }, [isActive, duration]);
 
   const togglePlayPause = () => {
     if (wavesurferRef.current) {
