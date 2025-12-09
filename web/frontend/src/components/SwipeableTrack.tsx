@@ -58,7 +58,6 @@ export function SwipeableTrack({
         <TrackCard
           track={track}
           isPlaying={isPlaying}
-          onTap={() => {}} // Handled by gesture hook
         />
       </animated.div>
     </div>

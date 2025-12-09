@@ -33,6 +33,36 @@ class TestGetTrackPath:
         result = get_track_path(999, mock_db)
         assert result is None
 
+    def test_get_track_path_null_path(self):
+        """Test returns None for NULL local_path."""
+        mock_db = Mock()
+        mock_cursor = Mock()
+        mock_cursor.fetchone.return_value = {"local_path": None}
+        mock_db.execute.return_value = mock_cursor
+
+        result = get_track_path(1, mock_db)
+        assert result is None
+
+    def test_get_track_path_empty_string(self):
+        """Test returns None for empty string local_path."""
+        mock_db = Mock()
+        mock_cursor = Mock()
+        mock_cursor.fetchone.return_value = {"local_path": ""}
+        mock_db.execute.return_value = mock_cursor
+
+        result = get_track_path(1, mock_db)
+        assert result is None
+
+    def test_get_track_path_whitespace_only(self):
+        """Test returns None for whitespace-only local_path."""
+        mock_db = Mock()
+        mock_cursor = Mock()
+        mock_cursor.fetchone.return_value = {"local_path": "   "}
+        mock_db.execute.return_value = mock_cursor
+
+        result = get_track_path(1, mock_db)
+        assert result is None
+
 
 class TestGetMimeType:
     """Test get_mime_type helper function."""

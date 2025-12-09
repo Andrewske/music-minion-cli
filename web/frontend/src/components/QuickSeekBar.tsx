@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 
 interface QuickSeekBarProps {
   onSeek: (percent: number) => void;
@@ -8,23 +8,6 @@ interface QuickSeekBarProps {
 
 export function QuickSeekBar({ onSeek, currentPercent, className = '' }: QuickSeekBarProps) {
   const barRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleKeyPress = (event: KeyboardEvent) => {
-      // Only trigger if no input is focused
-      if (['INPUT', 'TEXTAREA'].includes((event.target as HTMLElement).tagName)) return;
-      
-      const num = parseInt(event.key);
-      if (num >= 0 && num <= 9) {
-        // 0 = 0%, 1-9 = 10-90%
-        const percent = num === 0 ? 0 : num * 10;
-        onSeek(percent);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [onSeek]);
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!barRef.current) return;

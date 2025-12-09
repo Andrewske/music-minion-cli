@@ -8,6 +8,11 @@ interface UseSwipeGestureOptions {
   onTap: () => void;
 }
 
+// Swipe gesture thresholds
+const SWIPE_DISTANCE_THRESHOLD = 100; // px - minimum drag distance to register swipe
+const SWIPE_VELOCITY_THRESHOLD = 2.0; // px/ms - minimum velocity for quick flicks
+const ROTATION_FACTOR = 0.1; // degrees per pixel - visual rotation during drag
+
 export function useSwipeGesture({ onSwipeRight, onSwipeLeft, onTap }: UseSwipeGestureOptions) {
   const [isDragging, setIsDragging] = useState(false);
 
@@ -18,24 +23,18 @@ export function useSwipeGesture({ onSwipeRight, onSwipeLeft, onTap }: UseSwipeGe
   }));
 
   const bind = useDrag(
-    ({ active, movement: [mx], direction: [xDir], velocity: [vx], tap }) => {
+    ({ active, movement: [mx], velocity: [vx], tap }) => {
       setIsDragging(active);
 
       if (tap) {
-        console.log('Tap detected, calling onTap callback');
         onTap();
         return;
       }
 
       if (!active) {
-        // Determine if this was a swipe
-        const triggerDistance = 100;
-        const triggerVelocity = 2.0;
-
         // Accept swipes that meet EITHER distance OR velocity threshold
         // This supports both mobile (fast flicks) and desktop (slow drags)
-        if (Math.abs(mx) > triggerDistance || Math.abs(vx) > triggerVelocity) {
-          console.log(`Swipe registered: distance=${Math.abs(mx).toFixed(0)}px, velocity=${Math.abs(vx).toFixed(2)}, xDir=${xDir.toFixed(2)}, mx=${mx.toFixed(2)}`);
+        if (Math.abs(mx) > SWIPE_DISTANCE_THRESHOLD || Math.abs(vx) > SWIPE_VELOCITY_THRESHOLD) {
           if (mx > 0) {
             onSwipeRight();
           } else {
@@ -47,7 +46,7 @@ export function useSwipeGesture({ onSwipeRight, onSwipeLeft, onTap }: UseSwipeGe
         api.start({ x: 0, rotate: 0 });
       } else {
         // Update drag position with rotation
-        const rotate = mx * 0.1;
+        const rotate = mx * ROTATION_FACTOR;
         api.start({ x: mx, rotate });
       }
     },
