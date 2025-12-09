@@ -19,13 +19,16 @@ export function useStartSession() {
 }
 
 export function useRecordComparison() {
-  const { incrementCompleted, setCurrentPair } = useComparisonStore();
+  const { incrementCompleted, setCurrentPair, setPlaying } = useComparisonStore();
 
   return useMutation({
     mutationFn: (request: RecordComparisonRequest) => recordComparison(request),
     onSuccess: (response) => {
       if (response.success) {
         incrementCompleted();
+
+        // Clear playback state when loading new pair
+        setPlaying(null);
 
         // If there's a next pair, update the store
         if (response.next_pair) {

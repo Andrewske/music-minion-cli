@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useComparisonStore } from '../stores/comparisonStore';
 import { useStartSession, useRecordComparison, useArchiveTrack } from '../hooks/useComparison';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
@@ -18,7 +19,17 @@ export function ComparisonView() {
   const startSession = useStartSession();
   const recordComparison = useRecordComparison();
   const archiveTrack = useArchiveTrack();
-  const { playTrack } = useAudioPlayer(playingTrackId);
+  const { playTrack, pauseTrack } = useAudioPlayer(playingTrackId);
+
+  // Track the active waveform track (persists when paused)
+  const [waveformTrackId, setWaveformTrackId] = useState<number | null>(null);
+
+  // Update waveform track ONLY when a new track starts playing
+  useEffect(() => {
+    if (playingTrackId !== null) {
+      setWaveformTrackId(playingTrackId);
+    }
+  }, [playingTrackId]);
 
   // Check if session is complete
   const isSessionComplete = comparisonsCompleted >= targetComparisons;
@@ -28,7 +39,13 @@ export function ComparisonView() {
   };
 
   const handleTrackTap = (trackId: number) => {
-    playTrack(trackId);
+    if (playingTrackId === trackId) {
+      // If this track is already playing, pause it
+      pauseTrack();
+    } else {
+      // Otherwise, play this track
+      playTrack(trackId);
+    }
   };
 
   const handleSwipeRight = (trackId: number) => {
@@ -173,29 +190,30 @@ export function ComparisonView() {
       </div>
 
       {/* Persistent Player Bar */}
-      {(currentPair.track_a.id === playingTrackId || currentPair.track_b.id === playingTrackId) && (
+      {currentPair && waveformTrackId && (
         <div className="fixed bottom-0 inset-x-0 bg-slate-900/90 backdrop-blur-xl border-t border-slate-800 p-4 pb-8 lg:pb-4 z-50">
           <div className="max-w-3xl mx-auto flex flex-col gap-2">
             <div className="flex items-center justify-between text-xs text-slate-400 px-1">
-              <span className="font-mono">NOW PLAYING</span>
+              <span className="font-mono">{playingTrackId ? 'NOW PLAYING' : 'PAUSED'}</span>
               <span className="truncate max-w-[200px] text-slate-200">
-                {playingTrackId === currentPair.track_a.id 
+                {waveformTrackId === currentPair.track_a.id
                   ? `${currentPair.track_a.artist} - ${currentPair.track_a.title}`
                   : `${currentPair.track_b.artist} - ${currentPair.track_b.title}`
                 }
               </span>
             </div>
-            
+
             {/* Waveform */}
             <div className="h-16 w-full bg-slate-950/50 rounded-lg overflow-hidden relative border border-slate-800">
               {isLoading ? (
                 <WaveformSkeleton />
               ) : (
-                 <WaveformPlayer
-                  trackId={playingTrackId}
-                  onSeek={handleWaveformSeek}
-                  isActive={true}
-                />
+                  <WaveformPlayer
+                   trackId={waveformTrackId}
+                   onSeek={handleWaveformSeek}
+                   isActive={playingTrackId === waveformTrackId}
+                   onTogglePlayPause={() => handleTrackTap(waveformTrackId)}
+                 />
               )}
             </div>
             
