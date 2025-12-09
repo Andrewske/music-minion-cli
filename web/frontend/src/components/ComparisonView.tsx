@@ -10,12 +10,11 @@ import { QuickSeekBar } from './QuickSeekBar';
 import { TrackCardSkeleton } from './TrackCardSkeleton';
 import { WaveformSkeleton } from './WaveformSkeleton';
 import { ErrorState } from './ErrorState';
-import { SessionComplete } from './SessionComplete';
 import { TrackActions } from './TrackActions';
 import { ErrorBoundary } from './ErrorBoundary';
 
 export function ComparisonView() {
-  const { currentPair, playingTrackId, comparisonsCompleted, targetComparisons } = useComparisonStore();
+  const { currentPair, playingTrackId, comparisonsCompleted } = useComparisonStore();
   const startSession = useStartSession();
   const recordComparison = useRecordComparison();
   const archiveTrack = useArchiveTrack();
@@ -30,9 +29,6 @@ export function ComparisonView() {
       setWaveformTrackId(playingTrackId);
     }
   }, [playingTrackId]);
-
-  // Check if session is complete
-  const isSessionComplete = comparisonsCompleted >= targetComparisons;
 
   const handleStartSession = () => {
     startSession.mutate({});
@@ -76,15 +72,6 @@ export function ComparisonView() {
     );
   }
 
-  if (isSessionComplete) {
-    return (
-      <SessionComplete
-        completed={comparisonsCompleted}
-        onStartNew={handleStartSession}
-      />
-    );
-  }
-
   if (!currentPair) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
@@ -116,7 +103,6 @@ export function ComparisonView() {
         <div className="max-w-7xl mx-auto px-4 py-3">
           <SessionProgress
             completed={comparisonsCompleted}
-            target={targetComparisons}
           />
         </div>
       </div>

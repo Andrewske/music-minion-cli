@@ -97,7 +97,6 @@ class ComparisonState:
     highlighted: str = "a"  # "a" or "b" - which track is selected
     session_id: str = ""
     comparisons_done: int = 0
-    target_comparisons: int = 15
     playlist_id: Optional[int] = None
     genre_filter: Optional[str] = None
     year_filter: Optional[int] = None

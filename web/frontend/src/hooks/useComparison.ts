@@ -11,7 +11,7 @@ export function useStartSession() {
   return useMutation({
     mutationFn: (request: StartSessionRequest) => startSession(request),
     onSuccess: (response) => {
-      setSession(response.session_id, response.pair, 15); // TODO: Use response target
+      setSession(response.session_id, response.pair);
       // Invalidate any cached comparison data
       queryClient.invalidateQueries({ queryKey: ['comparisons'] });
     },
