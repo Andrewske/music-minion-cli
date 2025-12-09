@@ -1,5 +1,6 @@
+import { useCallback } from 'react';
 import { useComparisonStore } from '../stores/comparisonStore';
-import { useStartSession, useRecordComparison } from '../hooks/useComparison';
+import { useStartSession, useRecordComparison, useArchiveTrack } from '../hooks/useComparison';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import { SwipeableTrack } from './SwipeableTrack';
 import { SessionProgress } from './SessionProgress';
@@ -11,9 +12,10 @@ import { ErrorState } from './ErrorState';
 import { SessionComplete } from './SessionComplete';
 
 export function ComparisonView() {
-  const { currentPair, playingTrackId, comparisonsCompleted, targetComparisons, setPlaying } = useComparisonStore();
+  const { currentPair, playingTrackId, comparisonsCompleted, targetComparisons } = useComparisonStore();
   const startSession = useStartSession();
   const recordComparison = useRecordComparison();
+  const archiveTrack = useArchiveTrack();
   const { playTrack } = useAudioPlayer(playingTrackId);
 
   // Check if session is complete
@@ -24,17 +26,11 @@ export function ComparisonView() {
   };
 
   const handleTrackTap = (trackId: number) => {
-    if (trackId === playingTrackId) {
-      setPlaying(null);
-    } else {
-      playTrack(trackId);
-    }
+    playTrack(trackId);
   };
 
   const handleSwipeRight = (trackId: number) => {
     if (!currentPair) return;
-
-    // Swipe right means this track is preferred (winner)
     recordComparison.mutate({
       session_id: currentPair.session_id,
       track_a_id: currentPair.track_a.id,
@@ -44,12 +40,12 @@ export function ComparisonView() {
   };
 
   const handleSwipeLeft = (trackId: number) => {
-    // For now, swipe left archives the track
-    // TODO: Implement archive functionality
-    console.log('Archive track:', trackId);
+    archiveTrack.mutate(trackId);
   };
 
-
+  const handleWaveformSeek = useCallback(() => {
+    // Handle seek if needed
+  }, []);
 
   if (startSession.isError) {
     return (
@@ -72,98 +68,164 @@ export function ComparisonView() {
 
   if (!currentPair) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+        <div className="text-center max-w-md">
+          <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-indigo-500 mb-4">
             Music Minion
           </h1>
-          <p className="text-gray-600 mb-6">
-            Rate your music collection by comparing tracks
+          <p className="text-slate-400 mb-8 text-lg">
+            Curate your library with precision.
           </p>
           <button
             onClick={handleStartSession}
             disabled={startSession.isPending}
-            className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
+            className="w-full bg-indigo-600 text-white px-6 py-4 rounded-xl font-bold text-lg hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-indigo-900/50"
           >
-            {startSession.isPending ? 'Starting...' : 'Start Comparison Session'}
+            {startSession.isPending ? 'Starting...' : 'Start Session'}
           </button>
         </div>
       </div>
     );
   }
 
+  const isLoading = recordComparison.isPending || archiveTrack.isPending;
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header with progress */}
-      <div className="bg-white shadow-sm">
-        <SessionProgress
-          completed={comparisonsCompleted}
-          target={targetComparisons}
-        />
+    <div className="min-h-screen bg-slate-950 flex flex-col text-slate-100 overflow-x-hidden">
+      {/* Header */}
+      <div className="bg-slate-900/50 backdrop-blur-md border-b border-slate-800 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 py-3">
+          <SessionProgress
+            completed={comparisonsCompleted}
+            target={targetComparisons}
+          />
+        </div>
       </div>
 
-      {/* Comparison cards */}
-      <div className="flex flex-col p-4 space-y-4">
-        {recordComparison.isPending ? (
-          <TrackCardSkeleton />
-        ) : (
-          <SwipeableTrack
-            track={currentPair.track_a}
-            isPlaying={playingTrackId === currentPair.track_a.id}
-            onSwipeRight={() => handleSwipeRight(currentPair.track_a.id)}
-            onSwipeLeft={() => handleSwipeLeft(currentPair.track_a.id)}
-            onTap={() => handleTrackTap(currentPair.track_a.id)}
-          />
-        )}
-
-        <div className="text-center py-2">
-          <span className="text-gray-500 text-sm font-medium">VS</span>
+      {/* Main Comparison Area */}
+      <div className="flex-1 max-w-7xl mx-auto w-full p-4 flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-12 relative">
+        
+        {/* Track A */}
+        <div className="w-full lg:max-w-md flex flex-col gap-4">
+          {isLoading ? (
+            <TrackCardSkeleton />
+          ) : (
+            <div className="relative group">
+              <SwipeableTrack
+                track={currentPair.track_a}
+                isPlaying={playingTrackId === currentPair.track_a.id}
+                onSwipeRight={() => handleSwipeRight(currentPair.track_a.id)}
+                onSwipeLeft={() => handleSwipeLeft(currentPair.track_a.id)}
+                onTap={() => handleTrackTap(currentPair.track_a.id)}
+              />
+              {/* Desktop Actions Overlay (visible on hover or always on desktop) */}
+              <div className="hidden lg:flex justify-between mt-4 gap-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                 <button
+                  onClick={() => handleSwipeLeft(currentPair.track_a.id)}
+                  disabled={isLoading}
+                  className="flex-1 bg-slate-800 text-rose-400 py-3 rounded-xl font-semibold hover:bg-slate-700 hover:text-rose-300 transition-colors border border-slate-700"
+                >
+                  Archive
+                </button>
+                <button
+                  onClick={() => handleSwipeRight(currentPair.track_a.id)}
+                  disabled={isLoading}
+                  className="flex-1 bg-emerald-600 text-white py-3 rounded-xl font-bold hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-900/50"
+                >
+                  Winner
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
-        {recordComparison.isPending ? (
-          <TrackCardSkeleton />
-        ) : (
-          <SwipeableTrack
-            track={currentPair.track_b}
-            isPlaying={playingTrackId === currentPair.track_b.id}
-            onSwipeRight={() => handleSwipeRight(currentPair.track_b.id)}
-            onSwipeLeft={() => handleSwipeLeft(currentPair.track_b.id)}
-            onTap={() => handleTrackTap(currentPair.track_b.id)}
-          />
-        )}
+        {/* VS Badge */}
+        <div className="flex flex-col items-center justify-center z-10 shrink-0">
+          <div className="w-12 h-12 lg:w-16 lg:h-16 rounded-full bg-slate-900 border-2 border-slate-700 flex items-center justify-center shadow-xl shadow-black/50">
+            <span className="text-slate-500 font-black text-sm lg:text-lg tracking-widest italic">VS</span>
+          </div>
+        </div>
+
+        {/* Track B */}
+        <div className="w-full lg:max-w-md flex flex-col gap-4">
+          {isLoading ? (
+            <TrackCardSkeleton />
+          ) : (
+            <div className="relative group">
+              <SwipeableTrack
+                track={currentPair.track_b}
+                isPlaying={playingTrackId === currentPair.track_b.id}
+                onSwipeRight={() => handleSwipeRight(currentPair.track_b.id)}
+                onSwipeLeft={() => handleSwipeLeft(currentPair.track_b.id)}
+                onTap={() => handleTrackTap(currentPair.track_b.id)}
+              />
+               <div className="hidden lg:flex justify-between mt-4 gap-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                 <button
+                  onClick={() => handleSwipeLeft(currentPair.track_b.id)}
+                  disabled={isLoading}
+                  className="flex-1 bg-slate-800 text-rose-400 py-3 rounded-xl font-semibold hover:bg-slate-700 hover:text-rose-300 transition-colors border border-slate-700"
+                >
+                  Archive
+                </button>
+                <button
+                  onClick={() => handleSwipeRight(currentPair.track_b.id)}
+                  disabled={isLoading}
+                  className="flex-1 bg-emerald-600 text-white py-3 rounded-xl font-bold hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-900/50"
+                >
+                  Winner
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Audio player */}
-      {playingTrackId && (
-        <div className="px-4 pb-4">
-          {recordComparison.isPending ? (
-            <WaveformSkeleton />
-          ) : (
-            <WaveformPlayer
-              trackId={playingTrackId}
-              onSeek={() => {
-                // Handle seek if needed
-              }}
-            />
-          )}
+      {/* Mobile Action Hints (Fixed Bottom) */}
+      <div className="lg:hidden p-4 text-center">
+        <p className="text-slate-500 text-sm font-medium animate-pulse">
+          Swipe Card Right to Win • Left to Archive
+        </p>
+      </div>
 
-          <QuickSeekBar
-            onSeek={() => {
-              // TODO: Implement seek functionality
-            }}
-            currentPercent={0} // TODO: Get current progress
-          />
+      {/* Persistent Player Bar */}
+      {(currentPair.track_a.id === playingTrackId || currentPair.track_b.id === playingTrackId) && (
+        <div className="fixed bottom-0 inset-x-0 bg-slate-900/90 backdrop-blur-xl border-t border-slate-800 p-4 pb-8 lg:pb-4 z-50">
+          <div className="max-w-3xl mx-auto flex flex-col gap-2">
+            <div className="flex items-center justify-between text-xs text-slate-400 px-1">
+              <span className="font-mono">NOW PLAYING</span>
+              <span className="truncate max-w-[200px] text-slate-200">
+                {playingTrackId === currentPair.track_a.id 
+                  ? `${currentPair.track_a.artist} - ${currentPair.track_a.title}`
+                  : `${currentPair.track_b.artist} - ${currentPair.track_b.title}`
+                }
+              </span>
+            </div>
+            
+            {/* Waveform */}
+            <div className="h-16 w-full bg-slate-950/50 rounded-lg overflow-hidden relative border border-slate-800">
+              {isLoading ? (
+                <WaveformSkeleton />
+              ) : (
+                 <WaveformPlayer
+                  trackId={playingTrackId}
+                  onSeek={handleWaveformSeek}
+                  isActive={true}
+                />
+              )}
+            </div>
+            
+            {/* Simple Seek Bar as backup/control */}
+             <QuickSeekBar
+                onSeek={() => {}} // Hook up real seek later
+                currentPercent={0} 
+                className="h-1 bg-slate-800 rounded-full overflow-hidden"
+              />
+          </div>
         </div>
       )}
-
-      {/* Instructions */}
-      <div className="px-4 pb-4">
-        <div className="bg-blue-50 rounded-lg p-4 text-center">
-          <p className="text-sm text-blue-800">
-            Tap to play • Swipe right for 🏆 winner • Swipe left for 🗂️ archive
-          </p>
-        </div>
-      </div>
+      
+      {/* Spacer for bottom player */}
+      <div className="h-32 lg:h-24" />
     </div>
   );
 }

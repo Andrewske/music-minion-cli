@@ -6,15 +6,15 @@ interface ErrorStateProps {
 
 export function ErrorState({ title = "Something went wrong", message, onRetry }: ErrorStateProps) {
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="text-center max-w-md">
-        <div className="text-6xl mb-4">😵</div>
-        <h2 className="text-xl font-semibold text-gray-900 mb-2">{title}</h2>
-        <p className="text-gray-600 mb-6">{message}</p>
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+      <div className="text-center max-w-md p-8 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl">
+        <div className="text-6xl mb-6">😵</div>
+        <h2 className="text-2xl font-bold text-slate-100 mb-2">{title}</h2>
+        <p className="text-slate-400 mb-8">{message}</p>
         {onRetry && (
           <button
             onClick={onRetry}
-            className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 touch-manipulation"
+            className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-900/50"
           >
             Try Again
           </button>

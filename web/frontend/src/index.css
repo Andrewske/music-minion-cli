@@ -30,11 +30,14 @@ body {
 /* Mobile viewport and safe areas */
 html {
   height: 100%;
+  background-color: #020617; /* slate-950 */
 }
 
 body {
   min-height: 100vh;
   min-height: -webkit-fill-available;
+  background-color: #020617; /* slate-950 */
+  color: #f1f5f9; /* slate-100 */
 }
 
 /* iOS Safari specific fixes */

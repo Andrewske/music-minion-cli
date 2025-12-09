@@ -3,12 +3,14 @@ import { useWavesurfer } from '../hooks/useWavesurfer';
 interface WaveformPlayerProps {
   trackId: number;
   onSeek?: (progress: number) => void;
+  isActive?: boolean;
 }
 
-export function WaveformPlayer({ trackId, onSeek }: WaveformPlayerProps) {
+export function WaveformPlayer({ trackId, onSeek, isActive = false }: WaveformPlayerProps) {
   const { containerRef, isPlaying, currentTime, duration, error, retryLoad, togglePlayPause } = useWavesurfer({
     trackId,
     onSeek,
+    isActive,
   });
 
   const formatTime = (time: number) => {
@@ -18,14 +20,14 @@ export function WaveformPlayer({ trackId, onSeek }: WaveformPlayerProps) {
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-4">
+    <div className="relative w-full h-full flex flex-col justify-center group">
       {/* Error UI */}
       {error && (
-        <div role="alert" aria-live="polite" className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-          <p className="text-red-800 text-sm mb-2">{error}</p>
+        <div role="alert" aria-live="polite" className="absolute inset-0 z-20 bg-rose-950/90 flex flex-col items-center justify-center p-4">
+          <p className="text-rose-200 text-xs mb-2 text-center">{error}</p>
           <button
             onClick={retryLoad}
-            className="text-red-600 underline text-sm hover:text-red-800 focus:ring-2 focus:ring-red-500"
+            className="text-rose-400 underline text-xs hover:text-rose-300"
           >
             Retry
           </button>
@@ -33,34 +35,23 @@ export function WaveformPlayer({ trackId, onSeek }: WaveformPlayerProps) {
       )}
 
       {/* Waveform visualization */}
-      <div className="mb-4">
-        {error ? (
-          <div className="h-20 bg-gray-100 rounded flex items-center justify-center">
-            <div className="text-gray-400 text-sm">
-              Waveform unavailable
-            </div>
-          </div>
-        ) : (
-          <div ref={containerRef} />
-        )}
+      <div className={`w-full h-full ${error ? 'opacity-0' : 'opacity-100'} transition-opacity`}>
+        <div ref={containerRef} className="w-full h-full" />
       </div>
 
-      {/* Controls */}
-      <div className="flex items-center justify-between">
+      {/* Hover Controls Overlay */}
+      <div className="absolute inset-0 z-10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20 backdrop-blur-[1px]">
         <button
           onClick={togglePlayPause}
-          aria-label={isPlaying ? 'Pause' : 'Play'}
-          className="w-12 h-12 bg-blue-600 text-white rounded-full flex items-center justify-center hover:bg-blue-700 touch-manipulation disabled:opacity-50 focus:ring-2 focus:ring-blue-500"
-          disabled={!!error}
+          className="w-12 h-12 bg-emerald-500 text-white rounded-full flex items-center justify-center hover:bg-emerald-400 shadow-lg scale-90 hover:scale-100 transition-all"
         >
-          <span aria-hidden="true">{isPlaying ? '⏸️' : '▶️'}</span>
+          {isPlaying ? '⏸️' : '▶️'}
         </button>
+      </div>
 
-        <div className="flex-1 mx-4">
-          <div className="text-sm text-gray-600 text-center">
-            {formatTime(currentTime)} / {formatTime(duration)}
-          </div>
-        </div>
+      {/* Time Display (Bottom Right) */}
+      <div className="absolute bottom-1 right-2 text-[10px] font-mono text-emerald-400/80 bg-slate-900/80 px-1 rounded pointer-events-none">
+        {formatTime(currentTime)} / {formatTime(duration)}
       </div>
     </div>
   );
