@@ -1,7 +1,8 @@
 import { useCallback } from 'react';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useComparisonStore } from '../stores/comparisonStore';
 import { useStartSession, useRecordComparison, useArchiveTrack } from '../hooks/useComparison';
+import type { TrackInfo } from '../types';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import { SwipeableTrack } from './SwipeableTrack';
 import { SessionProgress } from './SessionProgress';
@@ -14,33 +15,33 @@ import { TrackActions } from './TrackActions';
 import { ErrorBoundary } from './ErrorBoundary';
 
 export function ComparisonView() {
-  const { currentPair, playingTrackId, comparisonsCompleted } = useComparisonStore();
+  const { currentPair, playingTrack, comparisonsCompleted } = useComparisonStore();
   const startSession = useStartSession();
   const recordComparison = useRecordComparison();
   const archiveTrack = useArchiveTrack();
-  const { playTrack, pauseTrack } = useAudioPlayer(playingTrackId);
+  const { playTrack, pauseTrack } = useAudioPlayer(playingTrack);
 
   // Track the active waveform track (persists when paused)
-  const [waveformTrackId, setWaveformTrackId] = useState<number | null>(null);
+  const [waveformTrack, setWaveformTrack] = useState<TrackInfo | null>(null);
 
   // Update waveform track ONLY when a new track starts playing
   useEffect(() => {
-    if (playingTrackId !== null) {
-      setWaveformTrackId(playingTrackId);
+    if (playingTrack !== null) {
+      setWaveformTrack(playingTrack);
     }
-  }, [playingTrackId]);
+  }, [playingTrack]);
 
   const handleStartSession = () => {
     startSession.mutate({});
   };
 
-  const handleTrackTap = (trackId: number) => {
-    if (playingTrackId === trackId) {
+  const handleTrackTap = (track: TrackInfo) => {
+    if (playingTrack?.id === track.id) {
       // If this track is already playing, pause it
       pauseTrack();
     } else {
       // Otherwise, play this track
-      playTrack(trackId);
+      playTrack(track);
     }
   };
 
@@ -119,10 +120,10 @@ export function ComparisonView() {
               <div className="relative group">
                 <SwipeableTrack
                   track={currentPair.track_a}
-                  isPlaying={playingTrackId === currentPair.track_a.id}
+                  isPlaying={playingTrack?.id === currentPair.track_a.id}
                   onSwipeRight={() => handleSwipeRight(currentPair.track_a.id)}
                   onSwipeLeft={() => handleSwipeLeft(currentPair.track_a.id)}
-                  onTap={() => handleTrackTap(currentPair.track_a.id)}
+                  onTap={() => handleTrackTap(currentPair.track_a)}
                 />
                 <TrackActions
                   trackId={currentPair.track_a.id}
@@ -151,10 +152,10 @@ export function ComparisonView() {
               <div className="relative group">
                 <SwipeableTrack
                   track={currentPair.track_b}
-                  isPlaying={playingTrackId === currentPair.track_b.id}
+                  isPlaying={playingTrack?.id === currentPair.track_b.id}
                   onSwipeRight={() => handleSwipeRight(currentPair.track_b.id)}
                   onSwipeLeft={() => handleSwipeLeft(currentPair.track_b.id)}
-                  onTap={() => handleTrackTap(currentPair.track_b.id)}
+                  onTap={() => handleTrackTap(currentPair.track_b)}
                 />
                 <TrackActions
                   trackId={currentPair.track_b.id}
@@ -176,32 +177,33 @@ export function ComparisonView() {
       </div>
 
       {/* Persistent Player Bar */}
-      {currentPair && waveformTrackId && (
+      {currentPair && (
         <div className="fixed bottom-0 inset-x-0 bg-slate-900/90 backdrop-blur-xl border-t border-slate-800 p-4 pb-8 lg:pb-4 z-50">
           <div className="max-w-3xl mx-auto flex flex-col gap-2">
-            <div className="flex items-center justify-between text-xs text-slate-400 px-1">
-              <span className="font-mono">{playingTrackId ? 'NOW PLAYING' : 'PAUSED'}</span>
-              <span className="truncate max-w-[200px] text-slate-200">
-                {waveformTrackId === currentPair.track_a.id
-                  ? `${currentPair.track_a.artist} - ${currentPair.track_a.title}`
-                  : `${currentPair.track_b.artist} - ${currentPair.track_b.title}`
-                }
-              </span>
-            </div>
+             <div className="flex items-center justify-between text-xs text-slate-400 px-1">
+               <span className="font-mono">{playingTrack ? 'NOW PLAYING' : 'PAUSED'}</span>
+               <span className="truncate max-w-[200px] text-slate-200">
+                 {playingTrack ? `${playingTrack.artist} - ${playingTrack.title}` : ''}
+               </span>
+             </div>
 
-            {/* Waveform */}
-            <div className="h-16 w-full bg-slate-950/50 rounded-lg overflow-hidden relative border border-slate-800">
-              {isLoading ? (
-                <WaveformSkeleton />
-              ) : (
-                  <WaveformPlayer
-                   trackId={waveformTrackId}
-                   onSeek={handleWaveformSeek}
-                   isActive={playingTrackId === waveformTrackId}
-                   onTogglePlayPause={() => handleTrackTap(waveformTrackId)}
-                 />
-              )}
-            </div>
+             {/* Waveform */}
+             <div className="h-16 w-full bg-slate-950/50 rounded-lg overflow-hidden relative border border-slate-800">
+               {isLoading ? (
+                 <WaveformSkeleton />
+               ) : waveformTrack ? (
+                   <WaveformPlayer
+                    trackId={waveformTrack.id}
+                    onSeek={handleWaveformSeek}
+                    isActive={playingTrack?.id === waveformTrack.id}
+                    onTogglePlayPause={() => handleTrackTap(waveformTrack)}
+                  />
+               ) : (
+                 <div className="flex items-center justify-center h-full text-slate-500">
+                   No track selected
+                 </div>
+               )}
+             </div>
             
             {/* Simple Seek Bar as backup/control */}
              <QuickSeekBar
