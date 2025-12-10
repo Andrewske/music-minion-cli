@@ -4,16 +4,19 @@ import type { ComparisonPair, TrackInfo } from '../types';
 interface ComparisonState {
   sessionId: string | null;
   currentPair: ComparisonPair | null;
+  prefetchedPair: ComparisonPair | null;
   playingTrack: TrackInfo | null;
   comparisonsCompleted: number;
+  priorityPathPrefix: string | null;
 }
 
 interface ComparisonActions {
-  setSession: (sessionId: string, pair: ComparisonPair) => void;
+  setSession: (sessionId: string, pair: ComparisonPair, prefetched?: ComparisonPair, priorityPathPrefix?: string) => void;
   setPlaying: (track: TrackInfo | null) => void;
   incrementCompleted: () => void;
   reset: () => void;
-  setCurrentPair: (pair: ComparisonPair) => void;
+  setCurrentPair: (pair: ComparisonPair, prefetched?: ComparisonPair) => void;
+  advanceToNextPair: (nextPair: ComparisonPair, prefetched?: ComparisonPair) => void;
 }
 
 type ComparisonStore = ComparisonState & ComparisonActions;
@@ -21,19 +24,23 @@ type ComparisonStore = ComparisonState & ComparisonActions;
 const initialState: ComparisonState = {
   sessionId: null,
   currentPair: null,
+  prefetchedPair: null,
   playingTrack: null,
   comparisonsCompleted: 0,
+  priorityPathPrefix: null,
 };
 
 export const useComparisonStore = create<ComparisonStore>((set, get) => ({
   ...initialState,
 
-  setSession: (sessionId, pair) => {
+  setSession: (sessionId, pair, prefetched, priorityPathPrefix) => {
     set({
       sessionId,
       currentPair: pair,
+      prefetchedPair: prefetched ?? null,
       comparisonsCompleted: 0,
       playingTrack: null,
+      priorityPathPrefix: priorityPathPrefix ?? null,
     });
   },
 
@@ -50,7 +57,19 @@ export const useComparisonStore = create<ComparisonStore>((set, get) => ({
     set(initialState);
   },
 
-  setCurrentPair: (pair: ComparisonPair) => {
-    set({ currentPair: pair });
+  setCurrentPair: (pair: ComparisonPair, prefetched?: ComparisonPair) => {
+    set({
+      currentPair: pair,
+      prefetchedPair: prefetched ?? null,
+    });
+  },
+
+  advanceToNextPair: (nextPair: ComparisonPair, prefetched?: ComparisonPair) => {
+    // Optimistically advance - no loading state needed
+    set({
+      currentPair: nextPair,
+      prefetchedPair: prefetched ?? null,
+      playingTrack: null, // Reset playing when switching pairs
+    });
   },
 }));

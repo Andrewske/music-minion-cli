@@ -120,3 +120,33 @@ async def archive_track(track_id: int):
         raise HTTPException(
             status_code=500, detail=f"Failed to archive track: {str(e)}"
         )
+
+
+@router.get("/folders")
+async def list_folders(config: Config = Depends(get_config)):
+    """List subfolders of the first music library path."""
+    try:
+        if not config.music.library_paths:
+            return {"root": "", "folders": []}
+
+        music_root = Path(config.music.library_paths[0])
+        if not music_root.exists():
+            return {"root": str(music_root), "folders": []}
+
+        all_folders = [d.name for d in music_root.iterdir() if d.is_dir()]
+        # Sort: years (numeric) first descending, then alpha folders
+        year_folders = sorted(
+            [f for f in all_folders if f.isdigit()],
+            reverse=True,
+        )
+        other_folders = sorted([f for f in all_folders if not f.isdigit()])
+        folders = year_folders + other_folders
+
+        return {
+            "root": str(music_root),
+            "folders": folders,
+        }
+
+    except Exception as e:
+        logger.exception("Failed to list folders")
+        raise HTTPException(status_code=500, detail=str(e))

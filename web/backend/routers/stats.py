@@ -34,30 +34,39 @@ def _calculate_avg_comparisons_per_day(days: int = 7) -> float:
 
 
 def _estimate_coverage_time(
-    coverage: float, avg_per_day: float, target: int = 5
+    total_tracks: int,
+    total_comparisons: int,
+    avg_per_day: float,
+    target: int = 5,
 ) -> Optional[float]:
     """Estimate days until all tracks have target+ comparisons.
 
     Args:
-        coverage: Current coverage percentage (0-100)
+        total_tracks: Total number of tracks in library
+        total_comparisons: Total comparisons made so far
         avg_per_day: Average comparisons per day
         target: Target minimum comparisons per track
 
     Returns:
-        Estimated days to reach target coverage, or None if already reached
+        Estimated days to reach target coverage, or None if cannot estimate
     """
-    if coverage >= 100.0:
-        return 0.0
-
     if avg_per_day <= 0:
         return None  # Cannot estimate if no comparisons happening
 
-    # Rough estimation: assume we need to compare tracks that don't have enough comparisons
-    # This is a simplification - in reality it's more complex
-    remaining_coverage_percent = 100.0 - coverage
-    # Estimate based on current comparison rate
-    # This is approximate since comparison rate may not be linear
-    days_needed = (remaining_coverage_percent / 100.0) * (target / avg_per_day)
+    # Each comparison rates 2 tracks, so:
+    # - Total track-comparisons needed = total_tracks * target
+    # - Current track-comparisons = total_comparisons * 2
+    # - Each day's comparisons add avg_per_day * 2 track-comparisons
+    total_track_comparisons_needed = total_tracks * target
+    current_track_comparisons = total_comparisons * 2
+    remaining = total_track_comparisons_needed - current_track_comparisons
+
+    if remaining <= 0:
+        return 0.0
+
+    # Comparisons per day * 2 = track-comparisons per day
+    track_comparisons_per_day = avg_per_day * 2
+    days_needed = remaining / track_comparisons_per_day
 
     return max(0.0, days_needed)
 
@@ -110,8 +119,8 @@ def _get_genre_stats(limit: int = 10) -> list[GenreStat]:
 async def get_stats(db=Depends(get_db)):
     """Get comprehensive statistics for the music library."""
     try:
-        # Get coverage statistics
-        coverage = get_ratings_coverage()
+        # Get coverage statistics (local tracks only - comparisons are local-only)
+        coverage = get_ratings_coverage(filters={"source_filter": "local"})
 
         # Get leaderboard (top 20 tracks with 5+ comparisons)
         leaderboard_data = get_leaderboard(limit=20, min_comparisons=5)
@@ -133,7 +142,10 @@ async def get_stats(db=Depends(get_db)):
 
         # Estimate time to full coverage (all tracks with 5+ comparisons)
         estimated_days = _estimate_coverage_time(
-            coverage["coverage_percent"], avg_comparisons_per_day, target=5
+            total_tracks=coverage["total_tracks"],
+            total_comparisons=coverage["total_comparisons"],
+            avg_per_day=avg_comparisons_per_day,
+            target=5,
         )
 
         # Get genre statistics

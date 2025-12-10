@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { startSession, recordComparison } from '../api/comparisons';
-import { archiveTrack } from '../api/tracks';
+import { archiveTrack, prefetchWaveform } from '../api/tracks';
 import { useComparisonStore } from '../stores/comparisonStore';
 import type { StartSessionRequest, RecordComparisonRequest } from '../types';
 
@@ -10,16 +10,29 @@ export function useStartSession() {
 
   return useMutation({
     mutationFn: (request: StartSessionRequest) => startSession(request),
-    onSuccess: (response) => {
-      setSession(response.session_id, response.pair);
-      // Invalidate any cached comparison data
+    onSuccess: (response, request) => {
+      setSession(
+        response.session_id,
+        response.pair,
+        response.prefetched_pair,
+        request.priority_path_prefix
+      );
+
+      // Prefetch waveforms for current and prefetched pairs
+      prefetchWaveform(response.pair.track_a.id);
+      prefetchWaveform(response.pair.track_b.id);
+      if (response.prefetched_pair) {
+        prefetchWaveform(response.prefetched_pair.track_a.id);
+        prefetchWaveform(response.prefetched_pair.track_b.id);
+      }
+
       queryClient.invalidateQueries({ queryKey: ['comparisons'] });
     },
   });
 }
 
 export function useRecordComparison() {
-  const { incrementCompleted, setCurrentPair } = useComparisonStore();
+  const { incrementCompleted, advanceToNextPair } = useComparisonStore();
 
   return useMutation({
     mutationFn: (request: RecordComparisonRequest) => recordComparison(request),
@@ -27,9 +40,15 @@ export function useRecordComparison() {
       if (response.success) {
         incrementCompleted();
 
-        // If there's a next pair, update the store
+        // Immediately advance to next pair (no loading state)
         if (response.next_pair) {
-          setCurrentPair(response.next_pair);
+          advanceToNextPair(response.next_pair, response.prefetched_pair);
+
+          // Prefetch waveforms for the prefetched pair (next pair's waveforms already loaded)
+          if (response.prefetched_pair) {
+            prefetchWaveform(response.prefetched_pair.track_a.id);
+            prefetchWaveform(response.prefetched_pair.track_b.id);
+          }
         }
       }
     },

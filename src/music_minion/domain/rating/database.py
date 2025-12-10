@@ -274,6 +274,7 @@ def get_filtered_tracks(
     year: Optional[int] = None,
     playlist_id: Optional[int] = None,
     source_filter: Optional[str] = None,
+    path_prefix: Optional[str] = None,
 ) -> list[dict]:
     """Get tracks matching filters for comparison selection.
 
@@ -285,6 +286,7 @@ def get_filtered_tracks(
         playlist_id: Optional playlist ID to limit to playlist tracks
         source_filter: Optional source filter ('local', 'spotify', 'soundcloud', 'youtube', 'all')
                       If 'all' or None, includes tracks from all sources
+        path_prefix: Optional path prefix filter (e.g., "/music/2025")
 
     Returns:
         List of dicts with: id, title, artist, album, genre, year,
@@ -311,6 +313,10 @@ def get_filtered_tracks(
     if source_filter and source_filter != "all":
         where_clauses.append("t.source = ?")
         params.append(source_filter)
+
+    if path_prefix:
+        where_clauses.append("t.local_path LIKE ?")
+        params.append(f"{path_prefix}%")
 
     # Filter out tracks without valid local paths (NULL, empty, or whitespace-only)
     where_clauses.append("t.local_path IS NOT NULL AND TRIM(t.local_path) != ''")
