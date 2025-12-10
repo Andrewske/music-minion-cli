@@ -1,0 +1,162 @@
+from fastapi import APIRouter, Depends
+from loguru import logger
+from typing import Optional
+from ..deps import get_db
+from music_minion.domain.rating.database import get_ratings_coverage, get_leaderboard
+from ..schemas import StatsResponse, GenreStat, LeaderboardEntry
+
+router = APIRouter()
+
+
+def _calculate_avg_comparisons_per_day(days: int = 7) -> float:
+    """Calculate average comparisons per day over the last N days.
+
+    Args:
+        days: Number of days to look back
+
+    Returns:
+        Average comparisons per day
+    """
+    from music_minion.core.database import get_db_connection
+
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT COUNT(*) as comparison_count
+            FROM comparison_history
+            WHERE timestamp >= datetime('now', '-{} days')
+            """.format(days)
+        )
+        row = cursor.fetchone()
+        total_comparisons = row["comparison_count"] if row else 0
+
+    return total_comparisons / days if days > 0 else 0.0
+
+
+def _estimate_coverage_time(
+    coverage: float, avg_per_day: float, target: int = 5
+) -> Optional[float]:
+    """Estimate days until all tracks have target+ comparisons.
+
+    Args:
+        coverage: Current coverage percentage (0-100)
+        avg_per_day: Average comparisons per day
+        target: Target minimum comparisons per track
+
+    Returns:
+        Estimated days to reach target coverage, or None if already reached
+    """
+    if coverage >= 100.0:
+        return 0.0
+
+    if avg_per_day <= 0:
+        return None  # Cannot estimate if no comparisons happening
+
+    # Rough estimation: assume we need to compare tracks that don't have enough comparisons
+    # This is a simplification - in reality it's more complex
+    remaining_coverage_percent = 100.0 - coverage
+    # Estimate based on current comparison rate
+    # This is approximate since comparison rate may not be linear
+    days_needed = (remaining_coverage_percent / 100.0) * (target / avg_per_day)
+
+    return max(0.0, days_needed)
+
+
+def _get_genre_stats(limit: int = 10) -> list[GenreStat]:
+    """Get genre statistics with average ratings.
+
+    Args:
+        limit: Maximum number of genres to return
+
+    Returns:
+        List of GenreStat objects for genres with 3+ tracks
+    """
+    from music_minion.core.database import get_db_connection
+
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT
+                t.genre,
+                COUNT(t.id) as track_count,
+                AVG(COALESCE(e.rating, 1500.0)) as average_rating,
+                SUM(COALESCE(e.comparison_count, 0)) as total_comparisons
+            FROM tracks t
+            LEFT JOIN elo_ratings e ON t.id = e.track_id
+            WHERE t.genre IS NOT NULL AND TRIM(t.genre) != ''
+            GROUP BY t.genre
+            HAVING COUNT(t.id) >= 3
+            ORDER BY average_rating DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+
+        results = []
+        for row in cursor.fetchall():
+            results.append(
+                GenreStat(
+                    genre=row["genre"],
+                    track_count=row["track_count"],
+                    average_rating=round(float(row["average_rating"]), 2),
+                    total_comparisons=row["total_comparisons"],
+                )
+            )
+
+        return results
+
+
+@router.get("/stats", response_model=StatsResponse)
+async def get_stats(db=Depends(get_db)):
+    """Get comprehensive statistics for the music library."""
+    try:
+        # Get coverage statistics
+        coverage = get_ratings_coverage()
+
+        # Get leaderboard (top 20 tracks with 5+ comparisons)
+        leaderboard_data = get_leaderboard(limit=20, min_comparisons=5)
+        leaderboard = [
+            LeaderboardEntry(
+                track_id=row["id"],
+                title=row["title"],
+                artist=row["artist"],
+                rating=round(float(row["rating"]), 2),
+                comparison_count=row["comparison_count"],
+                wins=row["wins"] or 0,
+                losses=row["comparison_count"] - (row["wins"] or 0),
+            )
+            for row in leaderboard_data
+        ]
+
+        # Calculate average comparisons per day (last 7 days)
+        avg_comparisons_per_day = _calculate_avg_comparisons_per_day(days=7)
+
+        # Estimate time to full coverage (all tracks with 5+ comparisons)
+        estimated_days = _estimate_coverage_time(
+            coverage["coverage_percent"], avg_comparisons_per_day, target=5
+        )
+
+        # Get genre statistics
+        genre_stats = _get_genre_stats(limit=10)
+
+        response = StatsResponse(
+            total_comparisons=coverage["total_comparisons"],
+            compared_tracks=coverage["tracks_with_comparisons"],
+            total_tracks=coverage["total_tracks"],
+            coverage_percent=round(coverage["coverage_percent"], 2),
+            average_comparisons_per_day=round(avg_comparisons_per_day, 2),
+            estimated_days_to_coverage=round(estimated_days, 1)
+            if estimated_days is not None
+            else None,
+            top_genres=genre_stats,
+            leaderboard=leaderboard,
+        )
+
+        logger.info(
+            f"Stats requested: {coverage['total_tracks']} tracks, {coverage['coverage_percent']:.1f}% coverage"
+        )
+        return response
+
+    except Exception as e:
+        logger.exception("Failed to get stats")
+        raise
