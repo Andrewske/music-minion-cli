@@ -9,7 +9,6 @@ import { SessionProgress } from './SessionProgress';
 import { WaveformPlayer } from './WaveformPlayer';
 import { QuickSeekBar } from './QuickSeekBar';
 import { TrackCardSkeleton } from './TrackCardSkeleton';
-import { WaveformSkeleton } from './WaveformSkeleton';
 import { ErrorState } from './ErrorState';
 import { TrackActions } from './TrackActions';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -187,17 +186,15 @@ export function ComparisonView() {
                </span>
              </div>
 
-             {/* Waveform */}
+             {/* Waveform - never unmount during loading to preserve playback */}
              <div className="h-16 w-full bg-slate-950/50 rounded-lg overflow-hidden relative border border-slate-800">
-               {isLoading ? (
-                 <WaveformSkeleton />
-               ) : waveformTrack ? (
-                   <WaveformPlayer
-                    trackId={waveformTrack.id}
-                    onSeek={handleWaveformSeek}
-                    isActive={playingTrack?.id === waveformTrack.id}
-                    onTogglePlayPause={() => handleTrackTap(waveformTrack)}
-                  />
+               {waveformTrack ? (
+                 <WaveformPlayer
+                   trackId={waveformTrack.id}
+                   onSeek={handleWaveformSeek}
+                   isActive={playingTrack?.id === waveformTrack.id}
+                   onTogglePlayPause={() => handleTrackTap(waveformTrack)}
+                 />
                ) : (
                  <div className="flex items-center justify-center h-full text-slate-500">
                    No track selected
