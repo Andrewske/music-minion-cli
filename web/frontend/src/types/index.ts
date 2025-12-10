@@ -55,3 +55,31 @@ export interface WaveformData {
   length: number;
   peaks: number[];
 }
+
+export interface GenreStat {
+  genre: string;
+  track_count: number;
+  average_rating: number;
+  total_comparisons: number;
+}
+
+export interface LeaderboardEntry {
+  track_id: number;
+  title: string;
+  artist: string;
+  rating: number;
+  comparison_count: number;
+  wins: number;
+  losses: number;
+}
+
+export interface StatsResponse {
+  total_comparisons: number;
+  compared_tracks: number;
+  total_tracks: number;
+  coverage_percent: number;
+  average_comparisons_per_day: number;
+  estimated_days_to_coverage: number | null;
+  top_genres: GenreStat[];
+  leaderboard: LeaderboardEntry[];
+}

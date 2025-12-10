@@ -21,10 +21,11 @@ app.add_middleware(
 )
 
 # Include routers
-from web.backend.routers import comparisons, tracks
+from web.backend.routers import comparisons, tracks, stats
 
 app.include_router(comparisons.router, prefix="/api", tags=["comparisons"])
 app.include_router(tracks.router, prefix="/api", tags=["tracks"])
+app.include_router(stats.router, prefix="/api", tags=["stats"])
 
 
 @app.get("/health")

@@ -1778,7 +1778,226 @@ def ai_review_event_loop(term: Terminal, ctx: AppContext, track_id: int):
 
 ---
 
-**Last Updated**: 2025-11-16 after track search implementation
+**Last Updated**: 2025-12-10 after web stats feature implementation
+
+## Web Stats Feature Implementation (2025-12-10)
+
+### Single Endpoint Returning Comprehensive Stats Data
+
+**Pattern**: Consolidate all statistics into one API endpoint that returns complete data structure
+
+**Implementation**:
+```python
+@router.get("/stats", response_model=StatsResponse)
+async def get_stats(db=Depends(get_db)):
+    # Single endpoint returns:
+    # - Coverage statistics (total_comparisons, coverage_percent)
+    # - Leaderboard (top rated tracks)
+    # - Genre statistics (average ratings by genre)
+    # - Activity metrics (comparisons per day)
+    # - Time estimates (days to full coverage)
+
+    response = StatsResponse(
+        total_comparisons=coverage["total_comparisons"],
+        compared_tracks=coverage["tracks_with_comparisons"],
+        total_tracks=coverage["total_tracks"],
+        coverage_percent=round(coverage["coverage_percent"], 2),
+        average_comparisons_per_day=round(avg_comparisons_per_day, 2),
+        estimated_days_to_coverage=round(estimated_days, 1) if estimated_days else None,
+        top_genres=genre_stats,
+        leaderboard=leaderboard,
+    )
+```
+
+**Benefits**:
+- ✅ Single HTTP request for all stats (faster loading)
+- ✅ Consistent data structure (no partial failures)
+- ✅ Easier frontend caching and state management
+- ✅ Reduced API complexity (one endpoint vs multiple)
+
+**Learning**: For dashboard-style views, consolidate related data into single endpoints. Users expect stats pages to load completely, not incrementally.
+
+### Reusing Existing Domain Functions in Web APIs
+
+**Pattern**: Import and reuse domain layer functions directly in web API handlers
+
+**Implementation**:
+```python
+from music_minion.domain.rating.database import get_ratings_coverage, get_leaderboard
+
+@router.get("/stats", response_model=StatsResponse)
+async def get_stats(db=Depends(get_db)):
+    # Reuse existing domain functions
+    coverage = get_ratings_coverage()  # From rating domain
+    leaderboard_data = get_leaderboard(limit=20, min_comparisons=5)  # From rating domain
+
+    # Add web-specific calculations
+    avg_comparisons_per_day = _calculate_avg_comparisons_per_day(days=7)
+    estimated_days = _estimate_coverage_time(coverage["coverage_percent"], avg_comparisons_per_day)
+```
+
+**Benefits**:
+- ✅ No code duplication between CLI and web interfaces
+- ✅ Consistent business logic across all interfaces
+- ✅ Domain functions remain pure and testable
+- ✅ Web layer focuses on HTTP concerns (serialization, error handling)
+
+**Learning**: Web APIs should be thin wrappers around domain functions. Don't reimplement business logic - reuse existing domain code.
+
+### React Query Configuration for Live-Updating Stats
+
+**Pattern**: Configure React Query for automatic background updates with appropriate stale times
+
+**Implementation**:
+```typescript
+export function useStats() {
+  return useQuery({
+    queryKey: ['stats'],
+    queryFn: getStats,
+    staleTime: 30 * 1000,        // Consider data fresh for 30 seconds
+    refetchInterval: 60 * 1000,  // Refetch every minute in background
+  });
+}
+```
+
+**Key Configurations**:
+- `staleTime: 30 * 1000` - Data stays "fresh" for 30 seconds, preventing unnecessary refetches
+- `refetchInterval: 60 * 1000` - Background updates every minute when tab is visible
+- No manual refresh needed - automatic live updates
+
+**Benefits**:
+- ✅ Real-time updates without user interaction
+- ✅ Efficient caching prevents redundant requests
+- ✅ Background updates don't interrupt user workflow
+- ✅ Automatic pause when tab not visible (React Query built-in)
+
+**Learning**: For dashboard/stats views, combine `staleTime` (cache duration) with `refetchInterval` (background updates) for optimal UX. Stats change slowly but users want current data.
+
+### Tab Navigation Patterns in React Apps
+
+**Pattern**: Simple state-based tab switching with conditional rendering
+
+**Implementation**:
+```typescript
+function App() {
+  const [currentView, setCurrentView] = useState<'compare' | 'stats'>('compare');
+
+  return (
+    <div className="min-h-screen bg-slate-950">
+      {/* Sticky Navigation Header */}
+      <nav className="sticky top-0 z-50 bg-slate-900 border-b border-slate-800">
+        <div className="flex space-x-1">
+          <button
+            onClick={() => setCurrentView('compare')}
+            className={`px-6 py-4 text-sm font-medium transition-colors ${
+              currentView === 'compare'
+                ? 'text-slate-100 border-b-2 border-blue-500'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Compare
+          </button>
+          <button
+            onClick={() => setCurrentView('stats')}
+            className={`px-6 py-4 text-sm font-medium transition-colors ${
+              currentView === 'stats'
+                ? 'text-slate-100 border-b-2 border-blue-500'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Stats
+          </button>
+        </div>
+      </nav>
+
+      {/* Main Content */}
+      {currentView === 'compare' ? <ComparisonView /> : <StatsView />}
+    </div>
+  );
+}
+```
+
+**Key Elements**:
+- Type-safe state with union type (`'compare' | 'stats'`)
+- Sticky navigation header (`sticky top-0`)
+- Visual active state with bottom border
+- Conditional rendering for content
+- Smooth transitions with `transition-colors`
+
+**Benefits**:
+- ✅ Simple and reliable (no routing complexity)
+- ✅ Fast navigation (no page loads)
+- ✅ Preserves scroll position per tab
+- ✅ Easy to extend with more tabs
+
+**Learning**: For simple multi-view apps, state-based tab switching beats client-side routing. Use sticky headers for persistent navigation.
+
+### Pure CSS Chart Implementations
+
+**Pattern**: CSS-only horizontal bar charts with gradients and dynamic widths
+
+**Implementation**:
+```typescript
+export function GenreChart({ genres, className = '' }: GenreChartProps) {
+  // Find max rating for scaling
+  const maxRating = Math.max(...genres.map(g => g.average_rating));
+
+  return (
+    <div className="space-y-3">
+      {genres.map((genre, index) => {
+        const percentage = (genre.average_rating / maxRating) * 100;
+        const isTopGenre = index < 3;
+
+        return (
+          <div key={genre.genre} className="flex items-center gap-3">
+            {/* Progress bar with CSS gradients */}
+            <div className="relative h-6 bg-slate-800 rounded-full overflow-hidden flex-1">
+              <div
+                className={`
+                  absolute inset-y-0 left-0 rounded-full transition-all duration-500 ease-out
+                  ${isTopGenre
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-400'  // Gold for top 3
+                    : 'bg-gradient-to-r from-slate-600 to-slate-500'  // Gray for others
+                  }
+                `}
+                style={{ width: `${percentage}%` }}  // Dynamic width
+              />
+
+              {/* Value overlay with conditional text color */}
+              <div className="absolute inset-0 flex items-center justify-end px-3">
+                <span className={`
+                  text-sm font-bold tabular-nums
+                  ${percentage > 30 ? 'text-slate-900' : 'text-slate-200'}
+                `}>
+                  {genre.average_rating.toFixed(0)}
+                </span>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+```
+
+**Key Techniques**:
+- **Dynamic Width**: `style={{ width: `${percentage}%` }}` for responsive bars
+- **CSS Gradients**: `bg-gradient-to-r from-amber-500 to-amber-400` for visual appeal
+- **Conditional Styling**: Different colors for top performers
+- **Text Overlay**: Absolute positioning with conditional text color based on background
+- **Smooth Animation**: `transition-all duration-500 ease-out` for loading animation
+
+**Benefits**:
+- ✅ No JavaScript chart libraries needed
+- ✅ Lightweight and fast
+- ✅ Fully responsive and accessible
+- ✅ Easy to customize with Tailwind classes
+- ✅ Smooth animations without performance cost
+
+**Learning**: CSS can create impressive charts without JavaScript libraries. Combine dynamic inline styles with Tailwind classes for flexible, performant visualizations.
+
+---
 
 ## Track Search Implementation (2025-11-16)
 
