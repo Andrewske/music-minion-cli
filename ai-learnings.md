@@ -2309,3 +2309,38 @@ def handle_component_key(state, event):
 - ✅ Functional style with explicit state passing
 
 **Files**: `src/music_minion/ui/blessed/helpers/filter_input.py`
+
+## Web UI Patterns
+
+### Persistent Audio Playback Across Comparisons (2025-12-09)
+
+**Problem**: Audio playback was stopping whenever users submitted comparisons, requiring them to restart playback for each new track pair.
+
+**Solution**: Leverage existing persistent WaveformPlayer architecture by:
+1. Store full `Track` object instead of just `trackId` in comparison store
+2. Remove automatic `setPlaying(null)` call from comparison submission
+3. Update player bar to display `playingTrack?.artist` and `playingTrack?.title` directly
+
+**Key Implementation Details**:
+- **Store Enhancement**: Changed `playingTrackId: number | null` → `playingTrack: TrackInfo | null`
+- **Persistent Player**: WaveformPlayer component already lives outside TrackCard components, doesn't unmount on comparison changes
+- **State Stability**: `waveformTrackId` only updates when `playingTrackId` changes to non-null, keeping player stable
+- **Display Logic**: Player bar now uses `playingTrack` directly instead of deriving from `currentPair`
+
+**Benefits**:
+- ✅ Audio continues seamlessly across comparison submissions
+- ✅ Only explicit user actions (track clicks, pause) change playback
+- ✅ Player bar shows correct track info even when playing track not in current pair
+- ✅ No audio glitches or interruptions during transitions
+- ✅ Maintains existing WaveSurfer instance stability
+
+**Files**: `web/frontend/src/stores/comparisonStore.ts`, `web/frontend/src/hooks/useComparison.ts`, `web/frontend/src/hooks/useAudioPlayer.ts`, `web/frontend/src/components/ComparisonView.tsx`
+
+**Testing Verified**:
+- Same track continues playing when it appears in next pair
+- Track continues playing even when NOT in next pair (with correct display)
+- Explicit track switching works cleanly
+- Pause state persists across comparisons
+- No audio starts when no playback was active
+- Rapid comparisons don't interrupt playback
+- Archiving different tracks doesn't affect playback

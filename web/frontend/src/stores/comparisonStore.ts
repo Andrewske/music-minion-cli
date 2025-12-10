@@ -1,16 +1,16 @@
 import { create } from 'zustand';
-import type { ComparisonPair } from '../types';
+import type { ComparisonPair, TrackInfo } from '../types';
 
 interface ComparisonState {
   sessionId: string | null;
   currentPair: ComparisonPair | null;
-  playingTrackId: number | null;
+  playingTrack: TrackInfo | null;
   comparisonsCompleted: number;
 }
 
 interface ComparisonActions {
   setSession: (sessionId: string, pair: ComparisonPair) => void;
-  setPlaying: (trackId: number | null) => void;
+  setPlaying: (track: TrackInfo | null) => void;
   incrementCompleted: () => void;
   reset: () => void;
   setCurrentPair: (pair: ComparisonPair) => void;
@@ -21,7 +21,7 @@ type ComparisonStore = ComparisonState & ComparisonActions;
 const initialState: ComparisonState = {
   sessionId: null,
   currentPair: null,
-  playingTrackId: null,
+  playingTrack: null,
   comparisonsCompleted: 0,
 };
 
@@ -33,12 +33,12 @@ export const useComparisonStore = create<ComparisonStore>((set, get) => ({
       sessionId,
       currentPair: pair,
       comparisonsCompleted: 0,
-      playingTrackId: null,
+      playingTrack: null,
     });
   },
 
-  setPlaying: (trackId) => {
-    set({ playingTrackId: trackId });
+  setPlaying: (track) => {
+    set({ playingTrack: track });
   },
 
   incrementCompleted: () => {
