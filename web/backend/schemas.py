@@ -29,12 +29,14 @@ class StartSessionRequest(BaseModel):
     genre_filter: Optional[str] = None
     year_filter: Optional[str] = None
     playlist_id: Optional[int] = None
+    priority_path_prefix: Optional[str] = None  # e.g., "/music/2025" to prioritize
 
 
 class StartSessionResponse(BaseModel):
     session_id: str
     total_tracks: int
     pair: ComparisonPair
+    prefetched_pair: Optional[ComparisonPair] = None  # Next pair pre-calculated
 
 
 class RecordComparisonRequest(BaseModel):
@@ -42,12 +44,14 @@ class RecordComparisonRequest(BaseModel):
     track_a_id: int
     track_b_id: int
     winner_id: int
+    priority_path_prefix: Optional[str] = None  # Continue weighted pairing
 
 
 class RecordComparisonResponse(BaseModel):
     success: bool
     comparisons_done: int
     next_pair: Optional[ComparisonPair] = None
+    prefetched_pair: Optional[ComparisonPair] = None  # Pair after next, pre-calculated
 
 
 class WaveformData(BaseModel):

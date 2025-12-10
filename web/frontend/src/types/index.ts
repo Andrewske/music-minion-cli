@@ -25,12 +25,14 @@ export interface StartSessionRequest {
   genre_filter?: string;
   year_filter?: string;
   playlist_id?: number;
+  priority_path_prefix?: string;
 }
 
 export interface StartSessionResponse {
   session_id: string;
   total_tracks: number;
   pair: ComparisonPair;
+  prefetched_pair?: ComparisonPair;
 }
 
 export interface RecordComparisonRequest {
@@ -38,12 +40,14 @@ export interface RecordComparisonRequest {
   track_a_id: number;
   track_b_id: number;
   winner_id: number;
+  priority_path_prefix?: string;
 }
 
 export interface RecordComparisonResponse {
   success: boolean;
   comparisons_done: number;
   next_pair?: ComparisonPair;
+  prefetched_pair?: ComparisonPair;
 }
 
 export interface WaveformData {
@@ -82,4 +86,9 @@ export interface StatsResponse {
   estimated_days_to_coverage: number | null;
   top_genres: GenreStat[];
   leaderboard: LeaderboardEntry[];
+}
+
+export interface FoldersResponse {
+  root: string;
+  folders: string[];
 }

@@ -137,3 +137,65 @@ def select_strategic_pair(
 
     # Random fallback
     return tuple(random.sample(tracks, 2))
+
+
+def select_weighted_pair(
+    all_tracks: list[dict],
+    priority_tracks: list[dict],
+    ratings_cache: dict[int, dict],
+    target_comparisons: int = 5,
+) -> tuple[dict, dict]:
+    """
+    Select pair with one track from priority set, one from full library.
+
+    Track A is always from priority_tracks (preferring under-compared).
+    Track B is from all_tracks (for cross-library ELO calibration).
+
+    Args:
+        all_tracks: Full list of tracks (including priority tracks)
+        priority_tracks: Subset of tracks to prioritize
+        ratings_cache: Dict mapping track_id -> {'rating': float, 'comparison_count': int}
+        target_comparisons: Target comparisons per track (default 5)
+
+    Returns:
+        (track_a, track_b) tuple
+
+    Raises:
+        ValueError: If not enough tracks
+    """
+    if len(all_tracks) < 2:
+        raise ValueError("Need at least 2 tracks for comparison")
+
+    # Filter priority tracks that haven't hit target coverage yet
+    under_target = [
+        t
+        for t in priority_tracks
+        if ratings_cache.get(t["id"], {}).get("comparison_count", 0) < target_comparisons
+    ]
+
+    # If all priority tracks have full coverage, fall back to standard pairing
+    if not under_target:
+        return select_strategic_pair(all_tracks, ratings_cache)
+
+    # Track A: from priority tracks, prefer least compared
+    under_target.sort(
+        key=lambda t: ratings_cache.get(t["id"], {}).get("comparison_count", 0)
+    )
+    # Pick from bottom 20% (least compared) with some randomness
+    pool_size = max(1, len(under_target) // 5)
+    track_a = random.choice(under_target[:pool_size])
+
+    # Track B: from all tracks, prefer similar rating for ELO accuracy
+    rating_a = ratings_cache.get(track_a["id"], {}).get("rating", 1500.0)
+    candidates = [t for t in all_tracks if t["id"] != track_a["id"]]
+
+    # Try to find similar-rated opponent (±200 points)
+    similar = [
+        t
+        for t in candidates
+        if abs(ratings_cache.get(t["id"], {}).get("rating", 1500.0) - rating_a) <= 200
+    ]
+
+    track_b = random.choice(similar) if similar else random.choice(candidates)
+
+    return (track_a, track_b)

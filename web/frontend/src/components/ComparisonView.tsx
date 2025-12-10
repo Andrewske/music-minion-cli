@@ -2,23 +2,34 @@ import { useCallback } from 'react';
 import { useState, useEffect } from 'react';
 import { useComparisonStore } from '../stores/comparisonStore';
 import { useStartSession, useRecordComparison, useArchiveTrack } from '../hooks/useComparison';
-import type { TrackInfo } from '../types';
+import type { TrackInfo, FoldersResponse } from '../types';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import { SwipeableTrack } from './SwipeableTrack';
 import { SessionProgress } from './SessionProgress';
 import { WaveformPlayer } from './WaveformPlayer';
 import { QuickSeekBar } from './QuickSeekBar';
-import { TrackCardSkeleton } from './TrackCardSkeleton';
 import { ErrorState } from './ErrorState';
 import { TrackActions } from './TrackActions';
 import { ErrorBoundary } from './ErrorBoundary';
+import { getFolders } from '../api/tracks';
 
 export function ComparisonView() {
-  const { currentPair, playingTrack, comparisonsCompleted } = useComparisonStore();
+  const { currentPair, playingTrack, comparisonsCompleted, priorityPathPrefix } = useComparisonStore();
   const startSession = useStartSession();
   const recordComparison = useRecordComparison();
   const archiveTrack = useArchiveTrack();
   const { playTrack, pauseTrack } = useAudioPlayer(playingTrack);
+
+  // Folder selection state
+  const [foldersData, setFoldersData] = useState<FoldersResponse | null>(null);
+  const [selectedFolder, setSelectedFolder] = useState<string>('');
+
+  // Fetch folders on mount
+  useEffect(() => {
+    getFolders()
+      .then(setFoldersData)
+      .catch((err) => console.error('Failed to load folders:', err));
+  }, []);
 
   // Track the active waveform track (persists when paused)
   const [waveformTrack, setWaveformTrack] = useState<TrackInfo | null>(null);
@@ -31,7 +42,12 @@ export function ComparisonView() {
   }, [playingTrack]);
 
   const handleStartSession = () => {
-    startSession.mutate({});
+    const priorityPath = selectedFolder && foldersData
+      ? `${foldersData.root}/${selectedFolder}`
+      : undefined;
+    startSession.mutate({
+      priority_path_prefix: priorityPath,
+    });
   };
 
   const handleTrackTap = (track: TrackInfo) => {
@@ -51,6 +67,7 @@ export function ComparisonView() {
       track_a_id: currentPair.track_a.id,
       track_b_id: currentPair.track_b.id,
       winner_id: trackId,
+      priority_path_prefix: priorityPathPrefix ?? undefined,
     });
   };
 
@@ -75,13 +92,40 @@ export function ComparisonView() {
   if (!currentPair) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="text-center max-w-md">
+        <div className="text-center max-w-md w-full">
           <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-indigo-500 mb-4">
             Music Minion
           </h1>
           <p className="text-slate-400 mb-8 text-lg">
             Curate your library with precision.
           </p>
+
+          {/* Priority folder selector */}
+          {foldersData && foldersData.folders.length > 0 && (
+            <div className="mb-6">
+              <label className="block text-slate-400 text-sm mb-2 text-left">
+                Priority Folder (optional)
+              </label>
+              <select
+                value={selectedFolder}
+                onChange={(e) => setSelectedFolder(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 text-slate-100 px-4 py-3 rounded-lg focus:outline-none focus:border-indigo-500 transition-colors"
+              >
+                <option value="">All folders (no priority)</option>
+                {foldersData.folders.map((folder) => (
+                  <option key={folder} value={folder}>
+                    {folder}
+                  </option>
+                ))}
+              </select>
+              {selectedFolder && (
+                <p className="text-emerald-400 text-xs mt-2 text-left font-mono">
+                  Tracks from {selectedFolder} will appear in every comparison
+                </p>
+              )}
+            </div>
+          )}
+
           <button
             onClick={handleStartSession}
             disabled={startSession.isPending}
@@ -94,7 +138,10 @@ export function ComparisonView() {
     );
   }
 
-  const isLoading = recordComparison.isPending || archiveTrack.isPending;
+  // Only show loading for archive (which removes track from library)
+  // Recording comparison uses optimistic UI - no loading state
+  const isArchiving = archiveTrack.isPending;
+  const isSubmitting = recordComparison.isPending;
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col text-slate-100 overflow-x-hidden">
@@ -104,35 +151,36 @@ export function ComparisonView() {
           <SessionProgress
             completed={comparisonsCompleted}
           />
+          {priorityPathPrefix && (
+            <div className="mt-2 text-xs text-emerald-400 font-mono truncate">
+              Prioritizing: {priorityPathPrefix}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Main Comparison Area */}
       <div className="flex-1 max-w-7xl mx-auto w-full p-4 flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-12 relative">
-        
+
         {/* Track A */}
         <div className="w-full lg:max-w-md flex flex-col gap-4">
-          {isLoading ? (
-            <TrackCardSkeleton />
-          ) : (
-            <ErrorBoundary>
-              <div className="relative group">
-                <SwipeableTrack
-                  track={currentPair.track_a}
-                  isPlaying={playingTrack?.id === currentPair.track_a.id}
-                  onSwipeRight={() => handleSwipeRight(currentPair.track_a.id)}
-                  onSwipeLeft={() => handleSwipeLeft(currentPair.track_a.id)}
-                  onTap={() => handleTrackTap(currentPair.track_a)}
-                />
-                <TrackActions
-                  trackId={currentPair.track_a.id}
-                  onArchive={handleSwipeLeft}
-                  onWinner={handleSwipeRight}
-                  isLoading={isLoading}
-                />
-              </div>
-            </ErrorBoundary>
-          )}
+          <ErrorBoundary>
+            <div className={`relative group transition-opacity duration-150 ${isSubmitting ? 'opacity-70' : ''}`}>
+              <SwipeableTrack
+                track={currentPair.track_a}
+                isPlaying={playingTrack?.id === currentPair.track_a.id}
+                onSwipeRight={() => handleSwipeRight(currentPair.track_a.id)}
+                onSwipeLeft={() => handleSwipeLeft(currentPair.track_a.id)}
+                onTap={() => handleTrackTap(currentPair.track_a)}
+              />
+              <TrackActions
+                trackId={currentPair.track_a.id}
+                onArchive={handleSwipeLeft}
+                onWinner={handleSwipeRight}
+                isLoading={isArchiving || isSubmitting}
+              />
+            </div>
+          </ErrorBoundary>
         </div>
 
         {/* VS Badge */}
@@ -144,27 +192,23 @@ export function ComparisonView() {
 
         {/* Track B */}
         <div className="w-full lg:max-w-md flex flex-col gap-4">
-          {isLoading ? (
-            <TrackCardSkeleton />
-          ) : (
-            <ErrorBoundary>
-              <div className="relative group">
-                <SwipeableTrack
-                  track={currentPair.track_b}
-                  isPlaying={playingTrack?.id === currentPair.track_b.id}
-                  onSwipeRight={() => handleSwipeRight(currentPair.track_b.id)}
-                  onSwipeLeft={() => handleSwipeLeft(currentPair.track_b.id)}
-                  onTap={() => handleTrackTap(currentPair.track_b)}
-                />
-                <TrackActions
-                  trackId={currentPair.track_b.id}
-                  onArchive={handleSwipeLeft}
-                  onWinner={handleSwipeRight}
-                  isLoading={isLoading}
-                />
-              </div>
-            </ErrorBoundary>
-          )}
+          <ErrorBoundary>
+            <div className={`relative group transition-opacity duration-150 ${isSubmitting ? 'opacity-70' : ''}`}>
+              <SwipeableTrack
+                track={currentPair.track_b}
+                isPlaying={playingTrack?.id === currentPair.track_b.id}
+                onSwipeRight={() => handleSwipeRight(currentPair.track_b.id)}
+                onSwipeLeft={() => handleSwipeLeft(currentPair.track_b.id)}
+                onTap={() => handleTrackTap(currentPair.track_b)}
+              />
+              <TrackActions
+                trackId={currentPair.track_b.id}
+                onArchive={handleSwipeLeft}
+                onWinner={handleSwipeRight}
+                isLoading={isArchiving || isSubmitting}
+              />
+            </div>
+          </ErrorBoundary>
         </div>
       </div>
 
