@@ -12,7 +12,7 @@ Replace the top navigation bar with a stats button that opens a modal overlay. T
 ## Implementation Tasks
 
 ### Phase 1: Create Stats Modal Component
-- [ ] Create `StatsModal.tsx` component
+- [x] Create `StatsModal.tsx` component
   - Files: `web/frontend/src/components/StatsModal.tsx` (new)
   - Implementation:
     - Full-screen overlay with semi-transparent backdrop (`bg-black/50`)
@@ -25,7 +25,7 @@ Replace the top navigation bar with a stats button that opens a modal overlay. T
   - Acceptance: Modal renders stats content, closes on X/Escape/backdrop click
 
 ### Phase 2: Simplify App.tsx
-- [ ] Remove navigation bar and view switching
+- [x] Remove navigation bar and view switching
   - Files: `web/frontend/src/App.tsx` (modify)
   - Changes:
     - Remove `useState` for `currentView`
@@ -35,7 +35,7 @@ Replace the top navigation bar with a stats button that opens a modal overlay. T
   - Acceptance: App renders ComparisonView without nav bar
 
 ### Phase 3: Add Stats Button to ComparisonView
-- [ ] Add stats button and modal integration
+- [x] Add stats button and modal integration
   - Files: `web/frontend/src/components/ComparisonView.tsx` (modify)
   - Changes:
     - Add `useState` for `isStatsOpen`
@@ -45,19 +45,19 @@ Replace the top navigation bar with a stats button that opens a modal overlay. T
   - Acceptance: Button opens modal, modal can be closed, audio continues playing
 
 ### Phase 4: Cleanup (Optional)
-- [ ] Consider removing or keeping `StatsView.tsx`
+- [x] Consider removing or keeping `StatsView.tsx`
   - Files: `web/frontend/src/components/StatsView.tsx` (evaluate)
   - Decision: Keep if standalone view might be useful later, or delete if modal fully replaces it
   - Acceptance: No dead code if deleted
 
 ## Acceptance Criteria
-- [ ] Stats button visible in ComparisonView header
-- [ ] Clicking stats button opens modal with full stats
-- [ ] Modal closes on: X button, Escape key, backdrop click
-- [ ] Audio playback continues while stats modal is open
-- [ ] No TypeScript errors
-- [ ] Modal is scrollable on mobile devices
-- [ ] Responsive design maintained
+- [x] Stats button visible in ComparisonView header
+- [x] Clicking stats button opens modal with full stats
+- [x] Modal closes on: X button, Escape key, backdrop click
+- [x] Audio playback continues while stats modal is open
+- [x] No TypeScript errors
+- [x] Modal is scrollable on mobile devices
+- [x] Responsive design maintained
 
 ## Files to Create/Modify
 

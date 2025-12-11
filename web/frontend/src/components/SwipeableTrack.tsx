@@ -9,6 +9,9 @@ interface SwipeableTrackProps {
   onSwipeRight: () => void; // Mark as winner
   onSwipeLeft: () => void;  // Archive track
   onTap: () => void;        // Play track
+  onArchive?: () => void;
+  onWinner?: () => void;
+  isLoading?: boolean;
 }
 
 export function SwipeableTrack({
@@ -16,12 +19,14 @@ export function SwipeableTrack({
   isPlaying,
   onSwipeRight,
   onSwipeLeft,
-  onTap
+  onTap,
+  onArchive,
+  onWinner,
+  isLoading
 }: SwipeableTrackProps) {
   const { bind, style, isDragging } = useSwipeGesture({
     onSwipeRight,
     onSwipeLeft,
-    onTap,
   });
 
   return (
@@ -58,6 +63,10 @@ export function SwipeableTrack({
         <TrackCard
           track={track}
           isPlaying={isPlaying}
+          onArchive={onArchive}
+          onWinner={onWinner}
+          onClick={onTap}
+          isLoading={isLoading}
         />
       </animated.div>
     </div>

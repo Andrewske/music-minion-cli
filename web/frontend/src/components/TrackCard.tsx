@@ -1,12 +1,16 @@
 import type { TrackInfo } from '../types';
 
 interface TrackCardProps {
+  onClick?: () => void;
   track: TrackInfo;
   isPlaying: boolean;
   className?: string;
+  onArchive?: () => void;
+  onWinner?: () => void;
+  isLoading?: boolean;
 }
 
-export function TrackCard({ track, isPlaying, className = '' }: TrackCardProps) {
+export function TrackCard({ track, isPlaying, className = '', onArchive, onWinner, onClick, isLoading }: TrackCardProps) {
   const renderRatingBadge = (rating: number, wins: number, losses: number, comparisonCount: number) => {
     const isBootstrap = comparisonCount < 10;
     
@@ -49,8 +53,8 @@ export function TrackCard({ track, isPlaying, className = '' }: TrackCardProps) 
         transition-all duration-300
         hover:border-slate-700 hover:bg-slate-800/80
         active:scale-[0.98]
-        cursor-pointer
         group
+        flex flex-col
         ${isPlaying ? 'ring-2 ring-emerald-500/50 shadow-lg shadow-emerald-900/20' : 'shadow-md shadow-black/40'}
         ${className}
       `}
@@ -60,47 +64,55 @@ export function TrackCard({ track, isPlaying, className = '' }: TrackCardProps) 
         <div className="absolute inset-0 bg-gradient-to-t from-emerald-500/5 to-transparent pointer-events-none" />
       )}
 
-      <div className="p-6 flex flex-col items-center justify-center text-center h-full relative z-10">
-        
-        {/* Play Icon / Indicator */}
-        <div className={`
-          mb-4 w-12 h-12 rounded-full flex items-center justify-center
-          transition-colors duration-300
-          ${isPlaying ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500 group-hover:bg-slate-700 group-hover:text-slate-300'}
-        `}>
-          {isPlaying ? (
-            <div className="flex gap-1 h-4 items-end">
-              <div className="w-1 bg-current animate-[bounce_1s_infinite] rounded-full" />
-              <div className="w-1 bg-current animate-[bounce_1.2s_infinite] rounded-full" style={{ animationDelay: '0.1s' }} />
-              <div className="w-1 bg-current animate-[bounce_0.8s_infinite] rounded-full" style={{ animationDelay: '0.2s' }} />
+      {/* Clickable content area */}
+      <div 
+        onClick={onClick}
+        className="cursor-pointer flex flex-col"
+      >
+        <div className="p-4 flex flex-col items-center justify-center text-center relative z-10">
+          <div className="flex-1 pt-2">
+            {/* Title & Artist */}
+            <h3 className="font-bold text-xl text-slate-100 leading-tight mb-2 line-clamp-2">
+              {track.title}
+            </h3>
+            <p className="text-lg text-emerald-400 font-medium mb-2 line-clamp-1">
+              {track.artist}
+            </p>
+
+            {/* Metadata Grid */}
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm text-slate-400 mb-2">
+              <span className="min-h-[1rem]">{track.year ?? '----'}</span>
+              <span className="min-h-[1rem]">{track.bpm ? `${track.bpm} BPM` : '--- BPM'}</span>
+              <span className="col-span-2 min-h-[1rem]">{track.genre ?? 'Unknown genre'}</span>
             </div>
-          ) : (
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 ml-0.5">
-              <path fillRule="evenodd" d="M4.5 5.653c0-1.426 1.529-2.33 2.779-1.643l11.54 6.348c1.295.712 1.295 2.573 0 3.285L7.28 19.991c-1.25.687-2.779-.217-2.779-1.643V5.653z" clipRule="evenodd" />
-            </svg>
-          )}
-        </div>
+          </div>
 
-        {/* Title & Artist */}
-        <h3 className="font-bold text-xl text-slate-100 leading-tight mb-2 line-clamp-2">
-          {track.title}
-        </h3>
-        <p className="text-lg text-emerald-400 font-medium mb-4 line-clamp-1">
-          {track.artist}
-        </p>
-
-        {/* Metadata Grid */}
-        <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm text-slate-400 mb-4">
-          {track.year && <span>{track.year}</span>}
-          {track.bpm && <span>{track.bpm} BPM</span>}
-          {track.genre && <span className="col-span-2">{track.genre}</span>}
-        </div>
-
-        {/* Stats / Badges */}
-        <div className="mt-auto pt-4 border-t border-slate-800 w-full flex justify-center">
-          {renderRatingBadge(track.rating, track.wins, track.losses, track.comparison_count)}
+          {/* Stats / Badges */}
+          <div className="pt-4 border-t border-slate-800 w-full flex justify-center">
+            {renderRatingBadge(track.rating, track.wins, track.losses, track.comparison_count)}
+          </div>
         </div>
       </div>
+
+      {/* Action Buttons - separate from clickable area */}
+      {(onArchive && onWinner) && (
+        <div className="hidden lg:flex border-t border-slate-800">
+          <button
+            onClick={(e) => { e.stopPropagation(); onArchive(); }}
+            disabled={isLoading}
+            className="flex-1 py-2 text-sm font-medium text-rose-400/70 hover:text-rose-400 hover:bg-rose-500/10 transition-colors border-r border-slate-800 disabled:opacity-50"
+          >
+            🗂️ Archive
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onWinner(); }}
+            disabled={isLoading}
+            className="flex-1 py-2 text-sm font-medium text-emerald-400/70 hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-50"
+          >
+            🏆 Winner
+          </button>
+        </div>
+      )}
     </div>
   );
 }

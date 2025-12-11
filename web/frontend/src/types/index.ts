@@ -84,6 +84,9 @@ export interface StatsResponse {
   coverage_percent: number;
   average_comparisons_per_day: number;
   estimated_days_to_coverage: number | null;
+  prioritized_tracks?: number | null;
+  prioritized_coverage_percent?: number | null;
+  prioritized_estimated_days?: number | null;
   top_genres: GenreStat[];
   leaderboard: LeaderboardEntry[];
 }

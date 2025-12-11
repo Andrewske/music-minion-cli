@@ -123,15 +123,35 @@ async def archive_track(track_id: int):
 
 
 @router.get("/folders")
-async def list_folders(config: Config = Depends(get_config)):
-    """List subfolders of the first music library path."""
+async def list_folders(
+    parent: Optional[str] = None, config: Config = Depends(get_config)
+):
+    """List subfolders of the library root or specified parent path."""
     try:
         if not config.music.library_paths:
             return {"root": "", "folders": []}
 
-        music_root = Path(config.music.library_paths[0])
-        if not music_root.exists():
-            return {"root": str(music_root), "folders": []}
+        # Determine the root path to list from
+        if parent:
+            # SECURITY: Validate parent path is within library boundaries
+            from music_minion.core.path_security import is_path_within_library
+
+            parent_path = Path(parent)
+            if not is_path_within_library(parent_path, config.music.library_paths):
+                logger.warning(
+                    f"Blocked access to folder outside library: {parent_path}"
+                )
+                raise HTTPException(403, "Access denied")
+
+            if not parent_path.exists() or not parent_path.is_dir():
+                raise HTTPException(404, "Parent folder not found")
+
+            music_root = parent_path
+        else:
+            # Use first library path as root
+            music_root = Path(config.music.library_paths[0])
+            if not music_root.exists():
+                return {"root": str(music_root), "folders": []}
 
         all_folders = [d.name for d in music_root.iterdir() if d.is_dir()]
         # Sort: years (numeric) first descending, then alpha folders
@@ -147,6 +167,8 @@ async def list_folders(config: Config = Depends(get_config)):
             "folders": folders,
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("Failed to list folders")
         raise HTTPException(status_code=500, detail=str(e))

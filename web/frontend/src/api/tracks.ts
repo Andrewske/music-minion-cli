@@ -69,8 +69,9 @@ export async function archiveTrack(trackId: number): Promise<void> {
   }
 }
 
-export async function getFolders(): Promise<FoldersResponse> {
-  const response = await fetch('/api/folders');
+export async function getFolders(parent?: string): Promise<FoldersResponse> {
+  const url = parent ? `/api/folders?parent=${encodeURIComponent(parent)}` : '/api/folders';
+  const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Failed to fetch folders: ${response.statusText}`);
   }
