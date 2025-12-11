@@ -2,7 +2,11 @@ from fastapi import APIRouter, Depends
 from loguru import logger
 from typing import Optional
 from ..deps import get_db
-from music_minion.domain.rating.database import get_ratings_coverage, get_leaderboard
+from music_minion.domain.rating.database import (
+    get_ratings_coverage,
+    get_prioritized_coverage,
+    get_leaderboard,
+)
 from ..schemas import StatsResponse, GenreStat, LeaderboardEntry
 
 router = APIRouter()
@@ -71,6 +75,34 @@ def _estimate_coverage_time(
     return max(0.0, days_needed)
 
 
+def _detect_priority_path_prefix() -> Optional[str]:
+    """Detect the most common path prefix that might be prioritized.
+
+    Returns the path prefix with the most tracks, or None if no clear priority.
+    """
+    from music_minion.core.database import get_db_connection
+
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT
+                CASE
+                    WHEN local_path LIKE '/music/%' THEN substr(local_path, 1, instr(substr(local_path, 8), '/') + 6)
+                    ELSE NULL
+                END as path_prefix,
+                COUNT(*) as track_count
+            FROM tracks
+            WHERE local_path IS NOT NULL AND TRIM(local_path) != ''
+            GROUP BY path_prefix
+            HAVING track_count >= 10  -- Only consider prefixes with significant tracks
+            ORDER BY track_count DESC
+            LIMIT 1
+            """
+        )
+        row = cursor.fetchone()
+        return row["path_prefix"] if row else None
+
+
 def _get_genre_stats(limit: int = 10) -> list[GenreStat]:
     """Get genre statistics with average ratings.
 
@@ -122,6 +154,24 @@ async def get_stats(db=Depends(get_db)):
         # Get coverage statistics (local tracks only - comparisons are local-only)
         coverage = get_ratings_coverage(filters={"source_filter": "local"})
 
+        # Detect priority path prefix
+        priority_path_prefix = _detect_priority_path_prefix()
+
+        # Get prioritized coverage if we have a priority path
+        prioritized_coverage = None
+        prioritized_estimated_days = None
+        if priority_path_prefix:
+            prioritized_coverage = get_prioritized_coverage(
+                priority_path_prefix, filters={"source_filter": "local"}
+            )
+            # Estimate time for prioritized tracks
+            prioritized_estimated_days = _estimate_coverage_time(
+                total_tracks=prioritized_coverage["total_tracks"],
+                total_comparisons=prioritized_coverage["total_comparisons"],
+                avg_per_day=_calculate_avg_comparisons_per_day(days=7),
+                target=5,
+            )
+
         # Get leaderboard (top 20 tracks with 5+ comparisons)
         leaderboard_data = get_leaderboard(limit=20, min_comparisons=5)
         leaderboard = [
@@ -160,12 +210,28 @@ async def get_stats(db=Depends(get_db)):
             estimated_days_to_coverage=round(estimated_days, 1)
             if estimated_days is not None
             else None,
+            prioritized_tracks=prioritized_coverage["total_tracks"]
+            if prioritized_coverage
+            else None,
+            prioritized_coverage_percent=round(
+                prioritized_coverage["coverage_percent"], 2
+            )
+            if prioritized_coverage
+            else None,
+            prioritized_estimated_days=round(prioritized_estimated_days, 1)
+            if prioritized_estimated_days is not None
+            else None,
             top_genres=genre_stats,
             leaderboard=leaderboard,
         )
 
         logger.info(
             f"Stats requested: {coverage['total_tracks']} tracks, {coverage['coverage_percent']:.1f}% coverage"
+            + (
+                f", prioritized: {prioritized_coverage['total_tracks']} tracks, {prioritized_coverage['coverage_percent']:.1f}%"
+                if prioritized_coverage
+                else ""
+            )
         )
         return response
 

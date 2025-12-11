@@ -5,7 +5,6 @@ import { useState } from 'react';
 interface UseSwipeGestureOptions {
   onSwipeRight: () => void;
   onSwipeLeft: () => void;
-  onTap: () => void;
 }
 
 // Swipe gesture thresholds
@@ -13,7 +12,7 @@ const SWIPE_DISTANCE_THRESHOLD = 100; // px - minimum drag distance to register 
 const SWIPE_VELOCITY_THRESHOLD = 2.0; // px/ms - minimum velocity for quick flicks
 const ROTATION_FACTOR = 0.1; // degrees per pixel - visual rotation during drag
 
-export function useSwipeGesture({ onSwipeRight, onSwipeLeft, onTap }: UseSwipeGestureOptions) {
+export function useSwipeGesture({ onSwipeRight, onSwipeLeft }: UseSwipeGestureOptions) {
   const [isDragging, setIsDragging] = useState(false);
 
   const [{ x, rotate }, api] = useSpring(() => ({
@@ -23,13 +22,8 @@ export function useSwipeGesture({ onSwipeRight, onSwipeLeft, onTap }: UseSwipeGe
   }));
 
   const bind = useDrag(
-    ({ active, movement: [mx], velocity: [vx], tap }) => {
+    ({ active, movement: [mx], velocity: [vx] }) => {
       setIsDragging(active);
-
-      if (tap) {
-        onTap();
-        return;
-      }
 
       if (!active) {
         // Accept swipes that meet EITHER distance OR velocity threshold
@@ -54,8 +48,7 @@ export function useSwipeGesture({ onSwipeRight, onSwipeLeft, onTap }: UseSwipeGe
       axis: 'x',
       bounds: { left: -200, right: 200 },
       rubberband: true,
-      filterTaps: true,
-      tapsThreshold: 10,
+      filterTaps: false, // Don't filter taps since we handle clicks in TrackCard
     }
   );
 

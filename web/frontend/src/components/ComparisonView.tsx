@@ -7,22 +7,35 @@ import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import { SwipeableTrack } from './SwipeableTrack';
 import { SessionProgress } from './SessionProgress';
 import { WaveformPlayer } from './WaveformPlayer';
-import { QuickSeekBar } from './QuickSeekBar';
+
 import { ErrorState } from './ErrorState';
-import { TrackActions } from './TrackActions';
 import { ErrorBoundary } from './ErrorBoundary';
+import { StatsModal } from './StatsModal';
 import { getFolders } from '../api/tracks';
 
 export function ComparisonView() {
-  const { currentPair, playingTrack, comparisonsCompleted, priorityPathPrefix } = useComparisonStore();
+  const { currentPair, playingTrack, comparisonsCompleted, priorityPathPrefix, setPriorityPath } = useComparisonStore();
   const startSession = useStartSession();
   const recordComparison = useRecordComparison();
   const archiveTrack = useArchiveTrack();
   const { playTrack, pauseTrack } = useAudioPlayer(playingTrack);
 
+  // Handle priority folder change during active session
+  const handlePriorityChange = (newPriorityPath: string | null) => {
+    if (!currentPair) return;
+
+    // Update priority path in store without restarting session
+    setPriorityPath(newPriorityPath);
+  };
+
   // Folder selection state
   const [foldersData, setFoldersData] = useState<FoldersResponse | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<string>('');
+
+
+
+  // Stats modal state
+  const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
 
   // Fetch folders on mount
   useEffect(() => {
@@ -30,6 +43,8 @@ export function ComparisonView() {
       .then(setFoldersData)
       .catch((err) => console.error('Failed to load folders:', err));
   }, []);
+
+
 
   // Track the active waveform track (persists when paused)
   const [waveformTrack, setWaveformTrack] = useState<TrackInfo | null>(null);
@@ -147,15 +162,22 @@ export function ComparisonView() {
     <div className="min-h-screen bg-slate-950 flex flex-col text-slate-100 overflow-x-hidden">
       {/* Header */}
       <div className="bg-slate-900/50 backdrop-blur-md border-b border-slate-800 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 py-3">
-          <SessionProgress
-            completed={comparisonsCompleted}
-          />
-          {priorityPathPrefix && (
-            <div className="mt-2 text-xs text-emerald-400 font-mono truncate">
-              Prioritizing: {priorityPathPrefix}
-            </div>
-          )}
+        <div className="max-w-7xl mx-auto px-4 py-2">
+          <div className="flex items-center justify-between">
+              <SessionProgress
+                completed={comparisonsCompleted}
+                priorityPath={priorityPathPrefix ?? undefined}
+                onPriorityChange={handlePriorityChange}
+              />
+             <div className="flex items-center gap-2">
+               <button
+                 onClick={() => setIsStatsModalOpen(true)}
+                 className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-slate-100 rounded-lg transition-colors text-xs font-medium"
+               >
+                 Stats
+               </button>
+             </div>
+          </div>
         </div>
       </div>
 
@@ -163,7 +185,7 @@ export function ComparisonView() {
       <div className="flex-1 max-w-7xl mx-auto w-full p-4 flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-12 relative">
 
         {/* Track A */}
-        <div className="w-full lg:max-w-md flex flex-col gap-4">
+        <div className="w-full lg:max-w-md">
           <ErrorBoundary>
             <div className={`relative group transition-opacity duration-150 ${isSubmitting ? 'opacity-70' : ''}`}>
               <SwipeableTrack
@@ -172,11 +194,8 @@ export function ComparisonView() {
                 onSwipeRight={() => handleSwipeRight(currentPair.track_a.id)}
                 onSwipeLeft={() => handleSwipeLeft(currentPair.track_a.id)}
                 onTap={() => handleTrackTap(currentPair.track_a)}
-              />
-              <TrackActions
-                trackId={currentPair.track_a.id}
-                onArchive={handleSwipeLeft}
-                onWinner={handleSwipeRight}
+                onArchive={() => handleSwipeLeft(currentPair.track_a.id)}
+                onWinner={() => handleSwipeRight(currentPair.track_a.id)}
                 isLoading={isArchiving || isSubmitting}
               />
             </div>
@@ -191,7 +210,7 @@ export function ComparisonView() {
         </div>
 
         {/* Track B */}
-        <div className="w-full lg:max-w-md flex flex-col gap-4">
+        <div className="w-full lg:max-w-md">
           <ErrorBoundary>
             <div className={`relative group transition-opacity duration-150 ${isSubmitting ? 'opacity-70' : ''}`}>
               <SwipeableTrack
@@ -200,11 +219,8 @@ export function ComparisonView() {
                 onSwipeRight={() => handleSwipeRight(currentPair.track_b.id)}
                 onSwipeLeft={() => handleSwipeLeft(currentPair.track_b.id)}
                 onTap={() => handleTrackTap(currentPair.track_b)}
-              />
-              <TrackActions
-                trackId={currentPair.track_b.id}
-                onArchive={handleSwipeLeft}
-                onWinner={handleSwipeRight}
+                onArchive={() => handleSwipeLeft(currentPair.track_b.id)}
+                onWinner={() => handleSwipeRight(currentPair.track_b.id)}
                 isLoading={isArchiving || isSubmitting}
               />
             </div>
@@ -212,17 +228,16 @@ export function ComparisonView() {
         </div>
       </div>
 
-      {/* Mobile Action Hints (Fixed Bottom) */}
-      <div className="lg:hidden p-4 text-center">
-        <p className="text-slate-500 text-sm font-medium animate-pulse">
-          Swipe Card Right to Win • Left to Archive
-        </p>
-      </div>
+
+
+
+
+
 
       {/* Persistent Player Bar */}
       {currentPair && (
-        <div className="fixed bottom-0 inset-x-0 bg-slate-900/90 backdrop-blur-xl border-t border-slate-800 p-4 pb-8 lg:pb-4 z-50">
-          <div className="max-w-3xl mx-auto flex flex-col gap-2">
+        <div className="fixed bottom-0 inset-x-0 bg-slate-900/90 backdrop-blur-xl border-t border-slate-800 p-3 pb-6 lg:pb-3 z-50">
+          <div className="max-w-3xl mx-auto flex flex-col gap-1">
              <div className="flex items-center justify-between text-xs text-slate-400 px-1">
                <span className="font-mono">{playingTrack ? 'NOW PLAYING' : 'PAUSED'}</span>
                <span className="truncate max-w-[200px] text-slate-200">
@@ -245,19 +260,19 @@ export function ComparisonView() {
                  </div>
                )}
              </div>
-            
-            {/* Simple Seek Bar as backup/control */}
-             <QuickSeekBar
-                onSeek={() => {}} // Hook up real seek later
-                currentPercent={0} 
-                className="h-1 bg-slate-800 rounded-full overflow-hidden"
-              />
+
           </div>
         </div>
       )}
       
       {/* Spacer for bottom player */}
-      <div className="h-32 lg:h-24" />
+      <div className="h-24 lg:h-20" />
+
+      {/* Stats Modal */}
+      <StatsModal
+        isOpen={isStatsModalOpen}
+        onClose={() => setIsStatsModalOpen(false)}
+      />
     </div>
   );
 }

@@ -393,6 +393,57 @@ def _build_coverage_where_clause(
     return "WHERE " + " AND ".join(where_clauses), params
 
 
+def get_prioritized_coverage(
+    priority_path_prefix: str,
+    filters: RatingCoverageFilters | None = None,
+) -> RatingCoverageStats:
+    """Get rating coverage metrics for prioritized tracks (matching path prefix)."""
+
+    where_clause, params = _build_coverage_where_clause(filters)
+
+    # Add priority path filter
+    if where_clause:
+        where_clause += " AND t.local_path LIKE ?"
+    else:
+        where_clause = "WHERE t.local_path LIKE ?"
+    params.append(f"{priority_path_prefix}%")
+
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            f"""
+            SELECT
+                COUNT(t.id) as total_tracks,
+                SUM(CASE WHEN COALESCE(e.comparison_count, 0) > 0 THEN 1 ELSE 0 END)
+                    as compared_tracks,
+                COALESCE(SUM(e.comparison_count), 0) as total_comparisons
+            FROM tracks t
+            LEFT JOIN elo_ratings e ON t.id = e.track_id
+            {where_clause}
+            """,
+            params,
+        )
+        row = cursor.fetchone()
+
+    total_tracks = row["total_tracks"] or 0
+    compared_tracks = row["compared_tracks"] or 0
+    total_comparisons = row["total_comparisons"] or 0
+
+    coverage_percent = (compared_tracks / total_tracks * 100) if total_tracks else 0.0
+    average_per_track = total_comparisons / total_tracks if total_tracks else 0.0
+    average_per_compared = (
+        total_comparisons / compared_tracks if compared_tracks else 0.0
+    )
+
+    return RatingCoverageStats(
+        tracks_with_comparisons=compared_tracks,
+        total_tracks=total_tracks,
+        total_comparisons=total_comparisons,
+        coverage_percent=coverage_percent,
+        average_comparisons_per_track=average_per_track,
+        average_comparisons_per_compared_track=average_per_compared,
+    )
+
+
 def get_ratings_coverage(
     filters: RatingCoverageFilters | None = None,
 ) -> RatingCoverageStats:

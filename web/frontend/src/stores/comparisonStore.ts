@@ -17,6 +17,7 @@ interface ComparisonActions {
   reset: () => void;
   setCurrentPair: (pair: ComparisonPair, prefetched?: ComparisonPair) => void;
   advanceToNextPair: (nextPair: ComparisonPair, prefetched?: ComparisonPair) => void;
+  setPriorityPath: (priorityPathPrefix: string | null) => void;
 }
 
 type ComparisonStore = ComparisonState & ComparisonActions;
@@ -71,5 +72,9 @@ export const useComparisonStore = create<ComparisonStore>((set, get) => ({
       prefetchedPair: prefetched ?? null,
       playingTrack: null, // Reset playing when switching pairs
     });
+  },
+
+  setPriorityPath: (priorityPathPrefix: string | null) => {
+    set({ priorityPathPrefix });
   },
 }));

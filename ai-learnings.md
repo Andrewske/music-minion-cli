@@ -2563,3 +2563,94 @@ def handle_component_key(state, event):
 - No audio starts when no playback was active
 - Rapid comparisons don't interrupt playback
 - Archiving different tracks doesn't affect playback
+
+### Modal Overlays for Non-Disruptive UI Features (2025-12-10)
+
+**Problem**: Users needed to view statistics but switching views would interrupt audio playback in the comparison interface.
+
+**Solution**: Implement modal overlays that render over the main interface without unmounting audio components.
+
+**Key Implementation Details**:
+- **Modal Architecture**: Full-screen overlay with backdrop blur, positioned with high z-index
+- **Close Patterns**: X button, Escape key, backdrop click - all standard modal UX
+- **Content Reuse**: Modal imports existing components rather than duplicating code
+- **Audio Continuity**: Modal doesn't interfere with persistent audio playback components
+- **Responsive Design**: Max-width containers with scrollable content, mobile-friendly
+
+**Benefits**:
+- ✅ Audio playback continues uninterrupted while viewing stats
+- ✅ No view switching or navigation complexity
+- ✅ Reuses existing component logic and styling
+- ✅ Consistent modal UX patterns across the app
+- ✅ Mobile-responsive with proper scrolling
+
+**Files**: `web/frontend/src/components/StatsModal.tsx`, `web/frontend/src/components/ComparisonView.tsx`
+
+**Testing Verified**:
+- Modal opens/closes without affecting audio playback
+- All close methods work (X, Escape, backdrop)
+- Stats data loads correctly in modal context
+- Mobile scrolling works properly
+- No TypeScript or runtime errors
+
+
+## Web UI Compact Comparison Implementation (2025-12-11)
+
+### Space Optimization Techniques
+- **Integrated Action Buttons**: Moved Archive/Winner buttons from separate TrackActions component into TrackCard bottom row, saving ~64px vertical space
+- **Equal Height Cards**: Always render metadata fields with placeholders ("----", "--- BPM", "Unknown genre") to ensure consistent card heights regardless of missing data
+- **Compact Header**: Combined session progress and priority path into single line format: "{folderName} +{count}"
+- **Streamlined Player Bar**: Removed redundant QuickSeekBar component (waveform click-to-seek already exists), reduced padding/gaps
+- **Responsive Design**: Action buttons hidden on mobile (lg:flex), swipe gestures preserved
+
+### Implementation Patterns
+- **Pass-through Props**: SwipeableTrack component forwards action props to TrackCard without modification
+- **Conditional Rendering**: Action buttons only show when both onArchive and onWinner callbacks provided
+- **Event Handling**: Button clicks use e.stopPropagation() to prevent card click conflicts
+- **Loading States**: Buttons disabled during async operations (isArchiving || isSubmitting)
+
+### Space Savings Achieved
+| Component | Before | After | Saved |
+|-----------|--------|-------|-------|
+| Header | ~50px | ~32px | 18px |
+| TrackActions | ~64px | 0px | 64px |
+| Mobile hints | ~56px | 0px | 56px |
+| Player bar | ~120px | ~100px | 20px |
+| Bottom spacer | ~96px | ~80px | 16px |
+| **Total** | ~386px | ~212px | **~174px** |
+
+### Target Viewports
+- Desktop tiled 1/4: 1720×720 (now fits without scrolling)
+- Desktop tiled 1/6: 1147×720 or 1720×480
+- Mobile Pixel 9: 412×892 (swipe gestures preserved)
+
+### Files Modified
+- SessionProgress.tsx: Compact single line with priorityPath
+- TrackCard.tsx: Integrated buttons, equal heights, reduced spacing  
+- SwipeableTrack.tsx: Pass-through action props
+- ComparisonView.tsx: Wired everything together, removed unused components
+- Deleted: TrackActions.tsx, QuickSeekBar.tsx
+
+### Testing
+- All component tests pass (8/8)
+- TypeScript compilation succeeds
+- Build completes without errors
+- Acceptance criteria met: 720px height viewport support, equal card heights, integrated buttons work
+
+### Play Button Removal (2025-12-11)
+- **Removed play button** from TrackCard component to further streamline the compact UI
+- **Preserved playing state indicators**: Ring effect and background glow still show when track is playing
+- **Maintained equal heights**: Added pt-2 padding to balance vertical spacing
+- **Reduced visual clutter**: Cards now focus on track metadata and comparison actions
+- **Space savings**: Additional ~40px saved per card (play button + margin)
+
+## UI Interaction Patterns
+
+### Click Area Separation in Cards
+When cards have both content click areas (for play/pause) and button click areas (for actions), separate them explicitly:
+- Wrap content in clickable div with onClick handler
+- Keep buttons outside the clickable area with stopPropagation
+- Remove tap handling from gesture libraries to avoid conflicts
+- Use cursor-pointer only on intended clickable areas
+
+**Example**: TrackCard component separates play/pause clicks (content area) from winner/archive button clicks (button area) to prevent accidental play/pause when trying to record comparisons.
