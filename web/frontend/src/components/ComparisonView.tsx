@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { useState, useEffect } from 'react';
 import { useComparisonStore } from '../stores/comparisonStore';
 import { useStartSession, useRecordComparison, useArchiveTrack } from '../hooks/useComparison';
@@ -47,14 +47,14 @@ export function ComparisonView() {
   }, []);
 
   // Track the active waveform track (persists when paused)
-  const [waveformTrack, setWaveformTrack] = useState<TrackInfo | null>(null);
+  const waveformTrackRef = useRef<TrackInfo | null>(null);
 
-  // Update waveform track ONLY when a new track starts playing
-  useEffect(() => {
-    if (playingTrack !== null) {
-      setWaveformTrack(playingTrack); // eslint-disable-line react-hooks/set-state-in-effect
-    }
-  }, [playingTrack]);
+  // Update ref synchronously during render when a track starts playing
+  if (playingTrack !== null) {
+    waveformTrackRef.current = playingTrack;
+  }
+
+  const waveformTrack = waveformTrackRef.current;
 
   const handleStartSession = () => {
     const priorityPath = selectedFolder && foldersData
