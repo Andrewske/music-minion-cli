@@ -8,6 +8,7 @@ interface ComparisonState {
   playingTrack: TrackInfo | null;
   comparisonsCompleted: number;
   priorityPathPrefix: string | null;
+  isComparisonMode: boolean;
 }
 
 interface ComparisonActions {
@@ -29,6 +30,7 @@ const initialState: ComparisonState = {
   playingTrack: null,
   comparisonsCompleted: 0,
   priorityPathPrefix: null,
+  isComparisonMode: false,
 };
 
 export const useComparisonStore = create<ComparisonStore>((set, get) => ({
@@ -42,6 +44,7 @@ export const useComparisonStore = create<ComparisonStore>((set, get) => ({
       comparisonsCompleted: 0,
       playingTrack: null,
       priorityPathPrefix: priorityPathPrefix ?? null,
+      isComparisonMode: true,
     });
   },
 
@@ -71,6 +74,7 @@ export const useComparisonStore = create<ComparisonStore>((set, get) => ({
       currentPair: nextPair,
       prefetchedPair: prefetched ?? null,
       playingTrack: null, // Reset playing when switching pairs
+      isComparisonMode: true, // Keep comparison mode active
     });
   },
 
