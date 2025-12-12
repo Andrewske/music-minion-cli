@@ -94,10 +94,6 @@ export function ComparisonView() {
     archiveTrack.mutate(trackId);
   };
 
-  const handleWaveformSeek = useCallback(() => {
-    // Handle seek if needed
-  }, []);
-
   /**
    * Handles automatic track switching in comparison mode when one track finishes playing.
    * This creates a seamless looping experience where users can continuously compare
@@ -267,7 +263,6 @@ export function ComparisonView() {
                {waveformTrack ? (
                   <WaveformPlayer
                     trackId={waveformTrack.id}
-                    onSeek={handleWaveformSeek}
                     isActive={playingTrack?.id === waveformTrack.id}
                     onTogglePlayPause={() => handleTrackTap(waveformTrack)}
                     onFinish={handleTrackFinish}
