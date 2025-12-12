@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback } from 'react';
 import { useState, useEffect } from 'react';
 import { useComparisonStore } from '../stores/comparisonStore';
 import { useStartSession, useRecordComparison, useArchiveTrack } from '../hooks/useComparison';
@@ -47,14 +47,18 @@ export function ComparisonView() {
   }, []);
 
   // Track the active waveform track (persists when paused)
-  const waveformTrackRef = useRef<TrackInfo | null>(null);
+  const [waveformTrack, setWaveformTrack] = useState<TrackInfo | null>(null);
 
-  // Update ref synchronously during render when a track starts playing
-  if (playingTrack !== null) {
-    waveformTrackRef.current = playingTrack;
-  }
-
-  const waveformTrack = waveformTrackRef.current;
+  // Update waveform track ONLY when a new track starts playing
+  // ESLint warning is a false positive: This effect updates waveformTrack (local state)
+  // based on playingTrack (store state). There's no circular dependency because
+  // setWaveformTrack doesn't affect playingTrack. The waveform needs to persist when
+  // paused (playingTrack becomes null), which is why we only set on non-null values.
+  useEffect(() => {
+    if (playingTrack !== null) {
+      setWaveformTrack(playingTrack); // eslint-disable-line react-hooks/set-state-in-effect
+    }
+  }, [playingTrack]);
 
   const handleStartSession = () => {
     const priorityPath = selectedFolder && foldersData

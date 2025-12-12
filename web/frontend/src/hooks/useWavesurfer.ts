@@ -159,6 +159,10 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false, onFi
     // AbortController to cancel async operations on cleanup
     const abortController = new AbortController();
 
+    // ESLint warning is a false positive: initWavesurfer performs async initialization
+    // that sets state (error, isPlaying, currentTime) as side effects. This is safe
+    // because it only runs when trackId changes, not in response to state changes.
+    // isActive changes are handled separately by the effect below (lines 179-199).
     // eslint-disable-next-line react-hooks/set-state-in-effect
     initWavesurfer(abortController.signal, isActive);
 
@@ -171,7 +175,7 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false, onFi
         wavesurferRef.current = null;
       }
     };
-  }, [trackId, initWavesurfer, isActive]);
+  }, [trackId, initWavesurfer]); // isActive handled by separate effect (lines 179-199)
 
   // Watch for isActive changes to pause/play accordingly
   const prevIsActive = useRef(isActive);
