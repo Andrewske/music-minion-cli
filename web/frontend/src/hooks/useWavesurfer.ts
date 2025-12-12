@@ -163,7 +163,6 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false, onFi
     // that sets state (error, isPlaying, currentTime) as side effects. This is safe
     // because it only runs when trackId changes, not in response to state changes.
     // isActive changes are handled separately by the effect below (lines 179-199).
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     initWavesurfer(abortController.signal, isActive);
 
     return () => {
@@ -175,7 +174,8 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false, onFi
         wavesurferRef.current = null;
       }
     };
-  }, [trackId, initWavesurfer]); // isActive handled by separate effect (lines 179-199)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trackId, initWavesurfer]); // isActive handled by separate effect (lines 183-203)
 
   // Watch for isActive changes to pause/play accordingly
   const prevIsActive = useRef(isActive);
