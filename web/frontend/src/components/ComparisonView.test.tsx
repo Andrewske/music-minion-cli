@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { ComparisonView } from './ComparisonView';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -32,12 +32,15 @@ import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import { getFolders } from '../api/tracks';
 import { WaveformPlayer } from './WaveformPlayer';
 
+// Create type-safe mocks
+type MockComparisonStore = ReturnType<typeof useComparisonStore>;
+
 describe('ComparisonView', () => {
-  const mockUseComparisonStore = useComparisonStore as any;
-  const mockUseStartSession = useStartSession as any;
-  const mockUseRecordComparison = useRecordComparison as any;
-  const mockUseArchiveTrack = useArchiveTrack as any;
-  const mockUseAudioPlayer = useAudioPlayer as any;
+  const mockUseComparisonStore = useComparisonStore as unknown as Mock<[], MockComparisonStore>;
+  const mockUseStartSession = useStartSession as unknown as Mock;
+  const mockUseRecordComparison = useRecordComparison as unknown as Mock;
+  const mockUseArchiveTrack = useArchiveTrack as unknown as Mock;
+  const mockUseAudioPlayer = useAudioPlayer as unknown as Mock;
 
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -110,7 +113,7 @@ describe('ComparisonView', () => {
       pauseTrack: vi.fn(),
     });
 
-    (getFolders as any).mockResolvedValue({
+    vi.mocked(getFolders).mockResolvedValue({
       root: '/music',
       folders: ['rock', 'jazz', 'electronic'],
     });

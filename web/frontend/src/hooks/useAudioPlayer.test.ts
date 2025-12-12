@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useAudioPlayer } from './useAudioPlayer';
 
@@ -9,9 +9,12 @@ vi.mock('../stores/comparisonStore', () => ({
 
 import { useComparisonStore } from '../stores/comparisonStore';
 
+// Create type-safe mock
+type MockComparisonStore = ReturnType<typeof useComparisonStore>;
+
 describe('useAudioPlayer', () => {
   const mockSetPlaying = vi.fn();
-  const mockUseComparisonStore = useComparisonStore as any;
+  const mockUseComparisonStore = useComparisonStore as unknown as Mock<[], MockComparisonStore>;
 
   const mockTrackA = {
     id: 1,
