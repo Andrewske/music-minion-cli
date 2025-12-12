@@ -4,6 +4,7 @@ import { useComparisonStore } from '../stores/comparisonStore';
 import { useStartSession, useRecordComparison, useArchiveTrack } from '../hooks/useComparison';
 import type { TrackInfo, FoldersResponse } from '../types';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
+import { useIPCWebSocket } from '../hooks/useIPCWebSocket';
 import { SwipeableTrack } from './SwipeableTrack';
 import { SessionProgress } from './SessionProgress';
 import { WaveformPlayer } from './WaveformPlayer';
@@ -20,6 +21,9 @@ export function ComparisonView() {
   const archiveTrack = useArchiveTrack();
   const { playTrack, pauseTrack } = useAudioPlayer(playingTrack);
 
+  // Connect to IPC WebSocket for remote control
+  useIPCWebSocket();
+
   // Handle priority folder change during active session
   const handlePriorityChange = (newPriorityPath: string | null) => {
     if (!currentPair) return;
@@ -32,8 +36,6 @@ export function ComparisonView() {
   const [foldersData, setFoldersData] = useState<FoldersResponse | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<string>('');
 
-
-
   // Stats modal state
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
 
@@ -43,8 +45,6 @@ export function ComparisonView() {
       .then(setFoldersData)
       .catch((err) => console.error('Failed to load folders:', err));
   }, []);
-
-
 
   // Track the active waveform track (persists when paused)
   const [waveformTrack, setWaveformTrack] = useState<TrackInfo | null>(null);
@@ -168,6 +168,7 @@ export function ComparisonView() {
                 completed={comparisonsCompleted}
                 priorityPath={priorityPathPrefix ?? undefined}
                 onPriorityChange={handlePriorityChange}
+                folders={foldersData ?? undefined}
               />
              <div className="flex items-center gap-2">
                <button
@@ -227,12 +228,6 @@ export function ComparisonView() {
           </ErrorBoundary>
         </div>
       </div>
-
-
-
-
-
-
 
       {/* Persistent Player Bar */}
       {currentPair && (

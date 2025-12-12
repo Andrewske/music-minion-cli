@@ -5,13 +5,17 @@ import json
 import os
 import threading
 import queue
+import asyncio
 from pathlib import Path
-from typing import Optional, Callable, Tuple, Dict, Any
+from typing import Optional, Callable, Tuple, Any, Set
 
 from loguru import logger
 
 from music_minion.context import AppContext
 from music_minion import router, actions, notifications
+
+# WebSocket support (optional)
+WEBSOCKETS_AVAILABLE = False
 
 
 def get_socket_path() -> Path:
@@ -34,10 +38,11 @@ def get_socket_path() -> Path:
 
 
 class IPCServer:
-    """Unix socket server for IPC commands.
+    """Unix socket server for IPC commands with WebSocket support for web control.
 
     Runs in a background thread and processes commands from external clients.
     Uses a queue to communicate with the main thread for thread-safe context updates.
+    Also provides WebSocket server for web frontend control connections.
     """
 
     def __init__(self, command_queue: queue.Queue, response_queue: queue.Queue):
@@ -55,8 +60,19 @@ class IPCServer:
         self.running = False
         self.thread: Optional[threading.Thread] = None
 
+        # WebSocket support for web frontend connections
+        self.websocket_server = None
+        self.websocket_thread: Optional[threading.Thread] = None
+        self.web_clients: Set[Any] = set()  # Connected web client WebSocket objects
+        self.web_command_sync_queue: queue.Queue = (
+            queue.Queue()
+        )  # Thread-safe queue for main thread
+        self.web_broadcast_queue: queue.Queue = (
+            queue.Queue()
+        )  # Thread-safe queue for broadcasts to web clients
+
     def start(self) -> None:
-        """Start the IPC server in a background thread."""
+        """Start the IPC server and WebSocket server in background threads."""
         if self.running:
             return
 
@@ -71,6 +87,12 @@ class IPCServer:
         self.thread = threading.Thread(target=self._run_server, daemon=True)
         self.thread.start()
 
+        # Start WebSocket server for web frontend connections
+        self.websocket_thread = threading.Thread(
+            target=self._run_websocket_server, daemon=True
+        )
+        self.websocket_thread.start()
+
     def stop(self) -> None:
         """Stop the IPC server and cleanup."""
         self.running = False
@@ -79,12 +101,14 @@ class IPCServer:
         if self.server_socket:
             try:
                 self.server_socket.close()
-            except:
+            except Exception:
                 pass
 
-        # Wait for thread to finish
+        # Wait for threads to finish
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=2.0)
+        if self.websocket_thread and self.websocket_thread.is_alive():
+            self.websocket_thread.join(timeout=2.0)
 
         # Remove socket file
         if self.socket_path.exists():
@@ -115,11 +139,125 @@ class IPCServer:
                     if self.running:  # Only log if we're still supposed to be running
                         logger.error(f"Error accepting connection: {e}")
 
-        except Exception as e:
+        except Exception:
             logger.exception("IPC server error")
         finally:
             if self.server_socket:
                 self.server_socket.close()
+
+    def _run_websocket_server(self) -> None:
+        """Run the WebSocket server for web frontend connections."""
+        try:
+            import websockets  # type: ignore[import]
+        except ImportError:
+            logger.warning("websockets package not available, web control disabled")
+            return
+
+        async def websocket_handler(websocket, path=None):
+            """Handle WebSocket connections from web frontends."""
+            self.web_clients.add(websocket)
+
+            try:
+                # Send initial connection confirmation
+                await websocket.send(json.dumps({"type": "connected"}))
+
+                async for message in websocket:
+                    try:
+                        data = json.loads(message)
+                        if data.get("type") == "command":
+                            # Web client sent a command - add to web command queue
+                            self.web_command_sync_queue.put(data)
+                        elif data.get("type") == "ping":
+                            # Respond to ping
+                            await websocket.send(json.dumps({"type": "pong"}))
+                    except json.JSONDecodeError:
+                        logger.warning(f"Invalid JSON from web client: {message}")
+            except websockets.exceptions.ConnectionClosed:
+                pass
+            finally:
+                self.web_clients.discard(websocket)
+
+        async def run_server():
+            # Start WebSocket server on localhost:8765
+            server = await websockets.serve(websocket_handler, "localhost", 8765)
+            logger.info("WebSocket server started on ws://localhost:8765")
+
+            # Keep server running and process broadcast queue
+            while self.running:
+                # Process any pending broadcasts
+                try:
+                    while not self.web_broadcast_queue.empty():
+                        message = self.web_broadcast_queue.get_nowait()
+                        # Broadcast to all connected clients
+                        for websocket in self.web_clients.copy():
+                            try:
+                                await websocket.send(json.dumps(message))
+                            except Exception as e:
+                                logger.warning(f"Failed to send to web client: {e}")
+                                self.web_clients.discard(websocket)
+                except Exception as e:
+                    logger.warning(f"Error processing broadcast queue: {e}")
+
+                await asyncio.sleep(0.1)  # Poll frequently for responsive broadcasts
+
+            server.close()
+            await server.wait_closed()
+
+        try:
+            asyncio.run(run_server())
+        except Exception:
+            logger.exception("WebSocket server error")
+
+    def broadcast_to_web_clients(self, message: dict) -> None:
+        """Broadcast a message to all connected web clients."""
+        # Put message in queue for WebSocket thread to process
+        self.web_broadcast_queue.put(message)
+
+    def get_pending_web_commands(self) -> list:
+        """
+        Get all pending web commands from the queue.
+
+        Returns:
+            List of command data dictionaries
+        """
+        commands = []
+        try:
+            while not self.web_command_sync_queue.empty():
+                commands.append(self.web_command_sync_queue.get_nowait())
+        except Exception:
+            pass
+        return commands
+
+    def get_web_commands(self) -> list:
+        """
+        Get all pending web commands from the queue.
+
+        Returns:
+            List of (command_data, ) tuples for compatibility with main thread processing
+        """
+        commands = []
+        try:
+            # Try to get commands without blocking (since this is called from sync context)
+            while True:
+                # For asyncio.Queue, we need to check if there's an event loop
+                try:
+                    import asyncio
+
+                    loop = asyncio.get_running_loop()
+                    # If we have a running loop, we can await
+                    if loop.is_running():
+                        # This is tricky - we can't await from sync context
+                        # Let's use a different approach: store commands in a thread-safe list
+                        break
+                except RuntimeError:
+                    # No event loop running, can't await
+                    break
+
+                # Fallback: if we can't access the asyncio queue safely, return empty
+                break
+        except Exception:
+            pass
+        return commands
 
     def _handle_client(self, client_socket: socket.socket) -> None:
         """
@@ -197,14 +335,18 @@ class IPCServer:
             }
             try:
                 client_socket.sendall(json.dumps(error_response).encode("utf-8"))
-            except:
+            except Exception:
                 pass
         finally:
             client_socket.close()
 
 
 def process_ipc_command(
-    ctx: AppContext, command: str, args: list, add_to_history: Callable[[str], None]
+    ctx: AppContext,
+    command: str,
+    args: list,
+    add_to_history: Callable[[str], None],
+    ipc_server: Optional["IPCServer"] = None,
 ) -> Tuple[AppContext, bool, str]:
     """
     Process an IPC command and return updated context and response.
@@ -223,6 +365,30 @@ def process_ipc_command(
     history_entry = f"[IPC] {command} {args_str}".strip()
 
     try:
+        # Check if it's a web control command
+        if command.startswith("web-"):
+            # Web control commands - broadcast to web clients
+            web_command = command[4:]  # Remove "web-" prefix
+            message = {"type": "command", "command": web_command, "args": args or []}
+            if ipc_server:
+                ipc_server.broadcast_to_web_clients(message)
+
+            # Add to history
+            add_to_history(f"{history_entry} → Sent to web")
+
+            return ctx, True, f"Sent {web_command} command to web interface"
+
+        # Check if web clients are connected and also broadcast regular commands to web
+        web_commands = {
+            "like",
+            "love",
+            "skip",
+        }  # Commands that make sense to route to web
+        if ipc_server and ipc_server.web_clients and command in web_commands:
+            # Web clients are connected, also broadcast command to web interface
+            message = {"type": "command", "command": command, "args": args or []}
+            ipc_server.broadcast_to_web_clients(message)
+
         # Check if it's a composite action
         if command == "composite":
             if not args:

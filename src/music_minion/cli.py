@@ -147,6 +147,13 @@ def main() -> None:
     subparsers.add_parser("love", help="Love current track")
     subparsers.add_parser("skip", help="Skip current track")
 
+    # IPC commands for web interface control
+    subparsers.add_parser("web-playpause", help="Toggle play/pause in web interface")
+    subparsers.add_parser(
+        "web-winner", help="Select current track A as winner in web interface"
+    )
+    subparsers.add_parser("web-archive", help="Archive current track in web interface")
+
     # IPC commands for playlists
     add_parser = subparsers.add_parser("add", help="Add current track to playlist")
     add_parser.add_argument("playlist", nargs="+", help="Playlist name")
@@ -182,6 +189,15 @@ def main() -> None:
 
         elif args.subcommand == "skip":
             sys.exit(send_ipc_command("skip", []))
+
+        elif args.subcommand == "web-playpause":
+            sys.exit(send_ipc_command("web-playpause", []))
+
+        elif args.subcommand == "web-winner":
+            sys.exit(send_ipc_command("web-winner", []))
+
+        elif args.subcommand == "web-archive":
+            sys.exit(send_ipc_command("web-archive", []))
 
         elif args.subcommand == "add":
             playlist_name = " ".join(args.playlist)
