@@ -9,7 +9,7 @@ export function useIPCWebSocket() {
 
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
   const connectRef = useRef<() => void>();
 
   const handleCommand = useCallback((command: string, args: string[]) => {
