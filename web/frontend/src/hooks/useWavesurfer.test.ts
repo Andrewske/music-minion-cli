@@ -20,9 +20,11 @@ import { getWaveformData, getStreamUrl } from '../api/tracks';
 
 describe('useWavesurfer', () => {
   let mockWaveSurfer: any;
+  let capturedHandlers: Record<string, any>;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    capturedHandlers = {};
 
     mockWaveSurfer = {
       load: vi.fn(),
@@ -34,7 +36,9 @@ describe('useWavesurfer', () => {
       getDuration: vi.fn(() => 180),
       getCurrentTime: vi.fn(() => 0),
       isPlaying: vi.fn(() => false),
-      on: vi.fn(),
+      on: vi.fn((event: string, handler: any) => {
+        capturedHandlers[event] = handler;
+      }),
       off: vi.fn(),
     };
 
@@ -80,5 +84,81 @@ describe('useWavesurfer', () => {
 
     // The test passes if the hook can be rendered with onFinish without errors
     expect(onFinish).not.toHaveBeenCalled(); // Should not be called during setup
+  });
+
+  it('calls onFinish when audio playback completes', async () => {
+    const onFinish = vi.fn();
+
+    const { result, rerender } = renderHook(
+      ({ trackId }) =>
+        useWavesurfer({
+          trackId,
+          onFinish,
+          isActive: true,
+        }),
+      { initialProps: { trackId: 1 } }
+    );
+
+    // Set up container and trigger initialization
+    const container = document.createElement('div');
+    (result.current.containerRef as any).current = container;
+    rerender({ trackId: 2 });
+
+    // Wait for initialization
+    await vi.waitFor(() => {
+      expect(capturedHandlers.finish).toBeDefined();
+    });
+
+    // Simulate wavesurfer finish event
+    capturedHandlers.finish();
+
+    // Verify onFinish was called
+    expect(onFinish).toHaveBeenCalledTimes(1);
+  });
+
+  it('debounces rapid finish events with 2 second cooldown', async () => {
+    const onFinish = vi.fn();
+
+    const { result, rerender } = renderHook(
+      ({ trackId }) =>
+        useWavesurfer({
+          trackId,
+          onFinish,
+          isActive: true,
+        }),
+      { initialProps: { trackId: 1 } }
+    );
+
+    // Set up container and trigger initialization
+    const container = document.createElement('div');
+    (result.current.containerRef as any).current = container;
+    rerender({ trackId: 2 });
+
+    // Wait for initialization
+    await vi.waitFor(() => {
+      expect(capturedHandlers.finish).toBeDefined();
+    });
+
+    vi.useFakeTimers();
+
+    // First finish event - should trigger
+    capturedHandlers.finish();
+    expect(onFinish).toHaveBeenCalledTimes(1);
+
+    // Second finish event immediately after - should be debounced
+    capturedHandlers.finish();
+    expect(onFinish).toHaveBeenCalledTimes(1); // Still 1
+
+    // Advance time by 1 second - still within debounce window
+    vi.advanceTimersByTime(1000);
+    capturedHandlers.finish();
+    expect(onFinish).toHaveBeenCalledTimes(1); // Still 1
+
+    // Advance time by another 1.5 seconds (total 2.5s) - outside debounce window
+    vi.advanceTimersByTime(1500);
+    capturedHandlers.finish();
+    expect(onFinish).toHaveBeenCalledTimes(2); // Now 2
+
+    vi.useRealTimers();
   });
 });
