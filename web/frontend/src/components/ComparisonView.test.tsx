@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { ComparisonView } from './ComparisonView';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
