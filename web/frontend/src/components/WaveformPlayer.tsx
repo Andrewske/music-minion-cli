@@ -5,13 +5,15 @@ interface WaveformPlayerProps {
   onSeek?: (progress: number) => void;
   isActive?: boolean;
   onTogglePlayPause?: () => void;
+  onFinish?: () => void;
 }
 
-export function WaveformPlayer({ trackId, onSeek, isActive = false, onTogglePlayPause }: WaveformPlayerProps) {
+export function WaveformPlayer({ trackId, onSeek, isActive = false, onTogglePlayPause, onFinish }: WaveformPlayerProps) {
   const { containerRef, isPlaying, currentTime, duration, error, retryLoad, togglePlayPause } = useWavesurfer({
     trackId,
     onSeek,
     isActive,
+    onFinish,
   });
 
   const formatTime = (time: number) => {

@@ -8,6 +8,7 @@ interface UseWavesurferOptions {
   onReady?: (duration: number) => void;
   onSeek?: (progress: number) => void;
   isActive?: boolean;
+  onFinish?: () => void;
 }
 
 function createWavesurferConfig(container: HTMLDivElement) {
@@ -25,7 +26,7 @@ function createWavesurferConfig(container: HTMLDivElement) {
   };
 }
 
-export function useWavesurfer({ trackId, onReady, onSeek, isActive = false }: UseWavesurferOptions) {
+export function useWavesurfer({ trackId, onReady, onSeek, isActive = false, onFinish }: UseWavesurferOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -33,6 +34,7 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false }: Us
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const lastPositionRef = useRef<number>(0); // Store last playback position
+  const lastFinishTimeRef = useRef<number>(0); // Debounce rapid finish triggers
 
   const handleReady = useCallback((duration: number) => {
     setDuration(duration);
@@ -42,6 +44,17 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false }: Us
   const handleSeek = useCallback((progress: number) => {
     onSeek?.(progress);
   }, [onSeek]);
+
+  const handleFinish = useCallback(() => {
+    // Debounce rapid finish triggers with 2 second cooldown
+    const now = Date.now();
+    if (now - lastFinishTimeRef.current < 2000) {
+      return;
+    }
+    lastFinishTimeRef.current = now;
+    setIsPlaying(false);
+    onFinish?.();
+  }, [onFinish]);
 
   const initWavesurfer = useCallback(async (abortSignal: AbortSignal, shouldAutoplay: boolean) => {
     if (!containerRef.current) return;
@@ -98,7 +111,7 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false }: Us
 
        wavesurfer.on('play', () => setIsPlaying(true));
        wavesurfer.on('pause', () => setIsPlaying(false));
-       wavesurfer.on('finish', () => setIsPlaying(false));
+        wavesurfer.on('finish', handleFinish);
 
        wavesurfer.on('audioprocess', () => {
          const time = wavesurfer.getCurrentTime();
@@ -128,7 +141,7 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false }: Us
       // Audio loading failed - show error to user
       setError(formatError(error));
     }
-  }, [trackId, handleReady, handleSeek]);
+  }, [trackId, handleReady, handleSeek, handleFinish]);
 
   useEffect(() => {
     if (!containerRef.current || !trackId) return;
