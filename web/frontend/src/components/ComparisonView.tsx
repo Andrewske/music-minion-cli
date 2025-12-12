@@ -19,7 +19,7 @@ export function ComparisonView() {
   const startSession = useStartSession();
   const recordComparison = useRecordComparison();
   const archiveTrack = useArchiveTrack();
-  const { playTrack, pauseTrack } = useAudioPlayer(playingTrack, isComparisonMode);
+  const { playTrack, pauseTrack } = useAudioPlayer(playingTrack, true);
 
   // Connect to IPC WebSocket for remote control
   useIPCWebSocket();
