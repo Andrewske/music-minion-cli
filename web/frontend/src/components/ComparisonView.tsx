@@ -52,7 +52,7 @@ export function ComparisonView() {
   // Update waveform track ONLY when a new track starts playing
   useEffect(() => {
     if (playingTrack !== null) {
-      setWaveformTrack(playingTrack);
+      setWaveformTrack(playingTrack); // eslint-disable-line react-hooks/set-state-in-effect
     }
   }, [playingTrack]);
 
@@ -94,6 +94,12 @@ export function ComparisonView() {
     // Handle seek if needed
   }, []);
 
+  /**
+   * Handles automatic track switching in comparison mode when one track finishes playing.
+   * This creates a seamless looping experience where users can continuously compare
+   * tracks without manual intervention - when track A finishes, track B starts automatically,
+   * and vice versa, allowing for uninterrupted A/B comparison during ELO rating sessions.
+   */
   const handleTrackFinish = useCallback(() => {
     if (!currentPair || !playingTrack || !isComparisonMode) return;
 

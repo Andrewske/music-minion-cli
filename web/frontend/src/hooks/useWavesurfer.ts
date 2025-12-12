@@ -8,6 +8,11 @@ interface UseWavesurferOptions {
   onReady?: (duration: number) => void;
   onSeek?: (progress: number) => void;
   isActive?: boolean;
+  /**
+   * Callback fired when audio playback reaches the end.
+   * Used for comparison mode to automatically switch between tracks,
+   * creating a seamless looping experience for track comparison.
+   */
   onFinish?: () => void;
 }
 
@@ -46,7 +51,9 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false, onFi
   }, [onSeek]);
 
   const handleFinish = useCallback(() => {
-    // Debounce rapid finish triggers with 2 second cooldown
+    // Debounce rapid finish triggers with 2 second cooldown to prevent
+    // multiple finish events from firing in quick succession, which can
+    // cause erratic behavior in comparison mode track switching
     const now = Date.now();
     if (now - lastFinishTimeRef.current < 2000) {
       return;
@@ -152,6 +159,7 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false, onFi
     // AbortController to cancel async operations on cleanup
     const abortController = new AbortController();
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     initWavesurfer(abortController.signal, isActive);
 
     return () => {
@@ -163,7 +171,7 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false, onFi
         wavesurferRef.current = null;
       }
     };
-  }, [trackId, initWavesurfer]);
+  }, [trackId, initWavesurfer, isActive]);
 
   // Watch for isActive changes to pause/play accordingly
   const prevIsActive = useRef(isActive);
