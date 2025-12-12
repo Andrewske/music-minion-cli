@@ -15,11 +15,11 @@ import { StatsModal } from './StatsModal';
 import { getFolders } from '../api/tracks';
 
 export function ComparisonView() {
-  const { currentPair, playingTrack, comparisonsCompleted, priorityPathPrefix, setPriorityPath } = useComparisonStore();
+  const { currentPair, playingTrack, comparisonsCompleted, priorityPathPrefix, setPriorityPath, isComparisonMode } = useComparisonStore();
   const startSession = useStartSession();
   const recordComparison = useRecordComparison();
   const archiveTrack = useArchiveTrack();
-  const { playTrack, pauseTrack } = useAudioPlayer(playingTrack);
+  const { playTrack, pauseTrack } = useAudioPlayer(playingTrack, isComparisonMode);
 
   // Connect to IPC WebSocket for remote control
   useIPCWebSocket();
@@ -93,6 +93,18 @@ export function ComparisonView() {
   const handleWaveformSeek = useCallback(() => {
     // Handle seek if needed
   }, []);
+
+  const handleTrackFinish = useCallback(() => {
+    if (!currentPair || !playingTrack || !isComparisonMode) return;
+
+    // Determine which track just finished and play the other one
+    const otherTrack = playingTrack.id === currentPair.track_a.id
+      ? currentPair.track_b
+      : currentPair.track_a;
+
+    // Automatically play the other track
+    playTrack(otherTrack);
+  }, [currentPair, playingTrack, isComparisonMode, playTrack]);
 
   if (startSession.isError) {
     return (
@@ -243,12 +255,13 @@ export function ComparisonView() {
              {/* Waveform - never unmount during loading to preserve playback */}
              <div className="h-16 w-full bg-slate-950/50 rounded-lg overflow-hidden relative border border-slate-800">
                {waveformTrack ? (
-                 <WaveformPlayer
-                   trackId={waveformTrack.id}
-                   onSeek={handleWaveformSeek}
-                   isActive={playingTrack?.id === waveformTrack.id}
-                   onTogglePlayPause={() => handleTrackTap(waveformTrack)}
-                 />
+                  <WaveformPlayer
+                    trackId={waveformTrack.id}
+                    onSeek={handleWaveformSeek}
+                    isActive={playingTrack?.id === waveformTrack.id}
+                    onTogglePlayPause={() => handleTrackTap(waveformTrack)}
+                    onFinish={handleTrackFinish}
+                  />
                ) : (
                  <div className="flex items-center justify-center h-full text-slate-500">
                    No track selected
