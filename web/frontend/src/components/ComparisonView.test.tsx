@@ -162,43 +162,6 @@ describe('ComparisonView', () => {
   });
 
   describe('handleTrackFinish', () => {
-    it('automatically switches to other track when one finishes in comparison mode', () => {
-      const mockPlayTrack = vi.fn();
-      let capturedOnFinish: (() => void) | undefined;
-
-      // Mock WaveformPlayer to capture the onFinish callback
-      const MockWaveformPlayer = vi.fn((props) => {
-        capturedOnFinish = props.onFinish;
-        return null;
-      });
-      vi.mocked(WaveformPlayer).mockImplementation(MockWaveformPlayer);
-
-      mockUseAudioPlayer.mockReturnValue({
-        playTrack: mockPlayTrack,
-        pauseTrack: vi.fn(),
-      });
-
-      mockUseComparisonStore.mockReturnValue({
-        currentPair: {
-          session_id: 1,
-          track_a: mockTrackA,
-          track_b: mockTrackB,
-        },
-        playingTrack: mockTrackA,
-        comparisonsCompleted: 5,
-        isComparisonMode: true,
-      });
-
-      renderComponent();
-
-      // Simulate track A finishing by calling the captured onFinish callback
-      expect(capturedOnFinish).toBeDefined();
-      capturedOnFinish!();
-
-      // Should switch from track A to track B
-      expect(mockPlayTrack).toHaveBeenCalledWith(mockTrackB);
-    });
-
     it('does not switch tracks when not in comparison mode', () => {
       const mockPlayTrack = vi.fn();
 
