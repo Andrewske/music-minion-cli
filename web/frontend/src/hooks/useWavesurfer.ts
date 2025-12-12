@@ -41,16 +41,16 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false, onFi
   const lastPositionRef = useRef<number>(0); // Store last playback position
   const lastFinishTimeRef = useRef<number>(0); // Debounce rapid finish triggers
 
-  const handleReady = useCallback((duration: number) => {
+  const handleReady = useCallback((duration: number): void => {
     setDuration(duration);
     onReady?.(duration);
   }, [onReady]);
 
-  const handleSeek = useCallback((progress: number) => {
+  const handleSeek = useCallback((progress: number): void => {
     onSeek?.(progress);
   }, [onSeek]);
 
-  const handleFinish = useCallback(() => {
+  const handleFinish = useCallback((): void => {
     // Debounce rapid finish triggers with 2 second cooldown to prevent
     // multiple finish events from firing in quick succession, which can
     // cause erratic behavior in comparison mode track switching
@@ -202,19 +202,19 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false, onFi
     prevIsActive.current = isActive;
   }, [isActive, duration]);
 
-  const togglePlayPause = () => {
+  const togglePlayPause = (): void => {
     if (wavesurferRef.current) {
       wavesurferRef.current.playPause();
     }
   };
 
-  const seekToPercent = (percent: number) => {
+  const seekToPercent = (percent: number): void => {
     if (wavesurferRef.current) {
       wavesurferRef.current.seekTo(percent / 100);
     }
   };
 
-  const retryLoad = useCallback(() => {
+  const retryLoad = useCallback((): void => {
     // FIX: Destroy old instance BEFORE creating new one
     if (wavesurferRef.current) {
       wavesurferRef.current.destroy();
