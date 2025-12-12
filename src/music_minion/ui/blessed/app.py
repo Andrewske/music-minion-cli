@@ -15,10 +15,11 @@ from music_minion.context import AppContext
 from music_minion.core import database
 from music_minion.core.output import (
     clear_blessed_mode,
-    set_blessed_mode,
     drain_pending_history_messages,
+    set_blessed_mode,
 )
 from music_minion.ipc import server as ipc_server
+from music_minion.ipc.server import process_ipc_command
 
 from .components import (
     calculate_layout,
@@ -413,8 +414,8 @@ def _handle_comparison_autoplay(
             return ctx, ui_state, track_changed
 
     # Play the opposite track
-    from ...core import database
     from ...commands.playback import play_track
+    from ...core import database
     from ...core.output import drain_pending_history_messages
 
     db_track = database.get_track_by_id(next_id)
@@ -471,8 +472,8 @@ def poll_player_state(ctx: AppContext, ui_state: UIState) -> tuple[AppContext, U
     from ...core import database
     from ...domain.playback import player
     from ...domain.playback import state as playback_state
-    from ...domain.playlists import crud as playlists
     from ...domain.playback.player import tick_session
+    from ...domain.playlists import crud as playlists
 
     # Get player status (handle both MPV and Spotify)
     try:
@@ -925,8 +926,8 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                         ui_state = add_history_line(ui_state, text, "cyan")
 
                     # Process command
-                    ctx, success, message = ipc_server.process_ipc_command(
-                        ctx, command, args, add_to_history
+                    ctx, success, message = process_ipc_command(
+                        ctx, command, args, add_to_history, ipc_srv
                     )
 
                     # Send response back to IPC server
@@ -939,6 +940,33 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
             except Exception as e:
                 # Log IPC errors but don't crash UI
                 ui_state = add_history_line(ui_state, f"⚠ IPC error: {e}", "yellow")
+
+            # Process web commands from web frontend
+            if ipc_srv:
+                try:
+                    web_commands = ipc_srv.get_pending_web_commands()
+                    for command_data in web_commands:
+                        command = command_data.get("command", "")
+                        args = command_data.get("args", [])
+
+                        # Helper to add to history
+                        def add_to_history(text):
+                            nonlocal ui_state
+                            # Use magenta color for web commands to distinguish them
+                            ui_state = add_history_line(ui_state, text, "magenta")
+
+                        # Process command (web commands don't need responses)
+                        ctx, success, message = process_ipc_command(
+                            ctx, command, args, add_to_history, ipc_srv
+                        )
+
+                        # Force full redraw after web command
+                        needs_full_redraw = True
+                except Exception as e:
+                    # Log web command errors but don't crash UI
+                    ui_state = add_history_line(
+                        ui_state, f"⚠ Web command error: {e}", "yellow"
+                    )
 
             # Check if state changed (only redraw if needed)
             # Only compute hash when we polled or when other state changes might have occurred
