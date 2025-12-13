@@ -428,7 +428,9 @@ def render_session_progress(
 
     # Session progress
     if line_num < height:
-        progress_text = f"   Session: {comparison.comparisons_done} comparisons | Press Q to exit"
+        progress_text = (
+            f"   Session: {comparison.comparisons_done} comparisons | Press Q to exit"
+        )
         write_at(term, 0, y + line_num, term.cyan(progress_text))
         line_num += 1
 
