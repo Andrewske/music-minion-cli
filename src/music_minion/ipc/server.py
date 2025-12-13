@@ -157,9 +157,9 @@ class IPCServer:
             import logging as std_logging
 
             # Suppress benign handshake/connection error logs
-            # Set to CRITICAL to suppress EOFError from browser refresh/HMR/tab close
+            # Set to ERROR to suppress DEBUG/INFO noise while preserving real error visibility
             websockets_logger = std_logging.getLogger("websockets")
-            websockets_logger.setLevel(std_logging.CRITICAL)
+            websockets_logger.setLevel(std_logging.ERROR)
 
             # CRITICAL: Suppress asyncio logger to prevent stderr output in blessed UI
             # Why suppression is safe:
