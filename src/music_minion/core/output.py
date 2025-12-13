@@ -3,7 +3,6 @@ Unified output system using Loguru.
 Replaces print() statements and stdlib logging with dual output (console + file).
 """
 
-import sys
 import threading
 from pathlib import Path
 from typing import Optional, Callable, Any, Dict
@@ -92,6 +91,13 @@ def log(message: str, level: str = "info") -> None:
     Unified logging: writes to file AND prints for blessed UI.
 
     Use this instead of print() for user-facing messages that should also be logged.
+
+    Thread Safety:
+        Background threads can set `threading.current_thread().silent_logging = True`
+        to suppress stdout output during blessed UI mode. This is a custom attribute
+        used for coordination between threads and the terminal UI.
+
+        Examples: See commands/library.py, commands/rating.py, ipc/server.py
 
     Routing logic:
     - Blessed mode + silent_logging=False: Route through UI callback (visible in command history)
