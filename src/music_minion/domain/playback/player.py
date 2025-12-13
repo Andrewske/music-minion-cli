@@ -17,6 +17,12 @@ from loguru import logger
 from music_minion.core.config import Config
 from music_minion.core.database import start_listen_session, tick_listen_session
 
+# Minimum valid duration (seconds) - durations below this indicate metadata errors
+MIN_VALID_DURATION = 10.0
+
+# Minimum playback time before allowing "track finished" (seconds)
+MIN_PLAYBACK_TIME = 3.0
+
 
 class PlayerState(NamedTuple):
     """Immutable player state."""
@@ -30,6 +36,7 @@ class PlayerState(NamedTuple):
     duration: float = 0.0
     playback_source: Optional[str] = None  # 'mpv' or 'spotify'
     current_session_id: Optional[int] = None  # Active listening session ID
+    playback_started_at: Optional[float] = None  # NEW: Unix timestamp
 
     def __getattr__(self, name: str) -> Any:
         """Provide helpful error for missing attributes, especially with_* methods."""
@@ -237,20 +244,43 @@ def play_file(
     )
 
     if success:
-        # Poll for file load completion instead of blind sleep (faster startup)
+        # Wait for file metadata with stability checks
         import time
 
-        max_wait = 0.5
+        max_wait = 2.0  # Increased from 0.5s for network streams
         poll_interval = 0.05
         elapsed = 0.0
+        duration_loaded = False
+        last_duration = None
+        stable_reads = 0
+        required_stable_reads = 2
+
+        logger.debug(f"Loading file metadata for: {local_path}")
 
         while elapsed < max_wait:
-            # Check if file is loaded by querying duration
             duration = get_mpv_property(state.socket_path, "duration")
+
             if duration and duration > 0:
-                break
+                if last_duration is not None and abs(duration - last_duration) < 0.1:
+                    stable_reads += 1
+                    if stable_reads >= required_stable_reads:
+                        logger.info(
+                            f"Metadata loaded: duration={duration:.2f}s, elapsed={elapsed:.3f}s"
+                        )
+                        duration_loaded = True
+                        break
+                else:
+                    stable_reads = 0
+
+                last_duration = duration
+
             time.sleep(poll_interval)
             elapsed += poll_interval
+
+        if not duration_loaded:
+            logger.warning(
+                f"Metadata load incomplete after {max_wait}s: duration={last_duration}"
+            )
 
         # Explicitly unpause to ensure playback starts
         send_mpv_command(
@@ -268,6 +298,8 @@ def play_file(
                 )
 
         # Update status to get actual playback state
+        import time as time_module
+
         updated_state = update_player_status(
             state._replace(
                 current_track=local_path,
@@ -275,6 +307,7 @@ def play_file(
                 is_playing=True,
                 playback_source="mpv",
                 current_session_id=session_id,
+                playback_started_at=time_module.time(),  # NEW
             )
         )
         return updated_state, True
@@ -343,6 +376,7 @@ def stop_playback(state: PlayerState) -> tuple[PlayerState, bool]:
             current_position=0.0,
             duration=0.0,
             current_session_id=None,  # Clear session on stop
+            playback_started_at=None,  # NEW
         ), True
 
     return state, False
@@ -541,34 +575,59 @@ def get_progress_info(state: PlayerState) -> tuple[float, float, float]:
 
 
 def is_track_finished(state: PlayerState) -> bool:
-    """Check if the current track has finished playing.
+    """Check if track finished with multiple validation layers.
 
-    Args:
-        state: Current player state
-
-    Returns:
-        True if track has ended, False otherwise
+    Safeguards:
+    1. Minimum playback time (prevents incomplete metadata issues)
+    2. Duration sanity check (detects corrupted/incomplete metadata)
+    3. Position-based completion check
+    4. EOF flag validation (with position confirmation)
     """
     if not is_mpv_running(state):
         return False
 
     position = get_mpv_property(state.socket_path, "time-pos") or 0.0
     duration = get_mpv_property(state.socket_path, "duration") or 0.0
+    eof = get_mpv_property(state.socket_path, "eof-reached")
 
-    # Primary check: position near end of duration
+    # SAFEGUARD 1: Minimum playback time
+    import time
+
+    playback_elapsed = 0.0
+    if state.playback_started_at is not None:
+        playback_elapsed = time.time() - state.playback_started_at
+        if playback_elapsed < MIN_PLAYBACK_TIME:
+            logger.debug(
+                f"is_track_finished: Too early (elapsed={playback_elapsed:.2f}s)"
+            )
+            return False
+
+    # SAFEGUARD 2: Duration sanity check
+    duration_is_suspicious = 0 < duration < MIN_VALID_DURATION
+    if duration_is_suspicious:
+        logger.warning(
+            f"is_track_finished: Suspicious duration={duration:.2f}s, "
+            f"ignoring position-based checks"
+        )
+        # Only trust eof when position is very close
+        if eof is True and position >= duration - 0.1:
+            return True
+        return False
+
+    # SAFEGUARD 3: Position-based check (primary)
     finished_by_position = duration > 0 and position >= duration - 0.5
 
-    # Secondary check: eof-reached, but only when position is near end
-    eof = get_mpv_property(state.socket_path, "eof-reached")
+    # SAFEGUARD 4: EOF flag check (secondary)
     finished_by_eof = eof is True and duration > 0 and position >= duration - 1.0
 
     result = finished_by_position or finished_by_eof
 
     logger.debug(
-        "is_track_finished: pos={:.3f}, dur={:.3f}, eof={}, by_pos={}, by_eof={}, result={}",
+        "is_track_finished: pos={:.2f}, dur={:.2f}, elapsed={:.2f}s, suspicious={}, by_pos={}, by_eof={}, result={}",
         position,
         duration,
-        eof,
+        playback_elapsed,
+        duration_is_suspicious,
         finished_by_position,
         finished_by_eof,
         result,
