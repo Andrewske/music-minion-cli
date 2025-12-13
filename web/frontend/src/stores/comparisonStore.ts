@@ -73,7 +73,7 @@ export const useComparisonStore = create<ComparisonStore>((set, get) => ({
     set({
       currentPair: nextPair,
       prefetchedPair: prefetched ?? null,
-      playingTrack: null, // Reset playing when switching pairs
+      playingTrack: nextPair.track_a, // Start playing the first track of the new pair
       isComparisonMode: true, // Keep comparison mode active
     });
   },
