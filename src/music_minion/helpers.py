@@ -441,3 +441,42 @@ def create_context_from_globals() -> AppContext:
     from .core.config import Config
 
     return AppContext.create(Config(), Console())
+
+
+def cleanup_web_processes_safe(web_processes: tuple | None) -> None:
+    """Safely stop web processes with isolated error handling.
+
+    Args:
+        web_processes: Tuple of (uvicorn_proc, vite_proc) or None
+    """
+    if not web_processes:
+        return
+
+    try:
+        from . import web_launcher
+        from .core.console import safe_print
+
+        safe_print("\n🛑 Stopping web services...", style="yellow")
+        web_launcher.stop_web_processes(*web_processes)
+        logger.debug("Web processes stopped successfully")
+    except Exception as e:
+        # Log for debugging but don't raise - cleanup must complete
+        logger.debug(f"Web process cleanup error (non-critical): {e}")
+
+
+def cleanup_file_watcher_safe(observer) -> None:
+    """Safely stop file watcher with isolated error handling.
+
+    Args:
+        observer: Watchdog Observer instance or None
+    """
+    if not observer:
+        return
+
+    try:
+        from . import dev_reload
+
+        dev_reload.stop_file_watcher(observer)
+        logger.debug("File watcher stopped successfully")
+    except Exception as e:
+        logger.debug(f"File watcher cleanup error (non-critical): {e}")
