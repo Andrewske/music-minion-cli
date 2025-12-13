@@ -14,26 +14,35 @@ The `type: ignore` is actually **correct and intentional** - this pattern is use
 - `commands/rating.py:116`
 - `ipc/server.py:150`
 
-Add documentation to `safe_print()` function in `core/output.py` to clarify this is an intentional pattern for thread coordination.
+Add documentation to `log()` function in `core/output.py` to clarify this is an intentional pattern for thread coordination.
 
 ### Changes to output.py
 
-Add to `safe_print()` docstring (after line 115):
+Add Thread Safety section to `log()` function docstring:
 
 ```python
-def safe_print(message: str = "", style: Optional[str] = None) -> None:
-    """Print message with optional style (bypasses blessed UI, respects silent_logging).
+def log(message: str, level: str = "info") -> None:
+    """
+    Unified logging: writes to file AND prints for blessed UI.
+
+    Use this instead of print() for user-facing messages that should also be logged.
 
     Thread Safety:
         Background threads can set `threading.current_thread().silent_logging = True`
         to suppress stdout output during blessed UI mode. This is a custom attribute
         used for coordination between threads and the terminal UI.
 
-        Examples: See commands/library.py:71, commands/rating.py:116, ipc/server.py:150
+        Examples: See commands/library.py, commands/rating.py, ipc/server.py
+
+    Routing logic:
+    - Blessed mode + silent_logging=False: Route through UI callback (visible in command history)
+    - Blessed mode + silent_logging=True: Log to file only (background threads)
+    - CLI mode + silent_logging=True: Suppress output (background threads)
+    - CLI mode + silent_logging=False: Print to stdout
 
     Args:
-        message: Text to print to stdout
-        style: Optional style name from STYLES dict (e.g., 'red', 'green', 'yellow')
+        message: User-facing message (can include emojis, colors, formatting)
+        level: Log level (debug, info, warning, error)
     """
 ```
 
@@ -42,11 +51,11 @@ This documents the intentional design pattern rather than trying to "fix" someth
 
 ## Acceptance Criteria
 
-- [ ] Docstring updated in `src/music_minion/core/output.py`
-- [ ] Documentation mentions thread safety and custom attribute
-- [ ] References to example usage locations included
-- [ ] `ruff check src` passes with no new type errors
-- [ ] No functional changes - documentation only
+- [x] Docstring updated in `src/music_minion/core/output.py`
+- [x] Documentation mentions thread safety and custom attribute
+- [x] References to example usage locations included
+- [x] `ruff check src` passes with no new type errors
+- [x] No functional changes - documentation only
 
 ## Dependencies
 None - documentation-only change
@@ -55,7 +64,7 @@ None - documentation-only change
 
 ```bash
 # Verify docstring added
-rg -A10 "def safe_print" src/music_minion/core/output.py
+rg -A15 "def log" src/music_minion/core/output.py
 
 # Verify no new type errors
 uv run ruff check src/music_minion/core/output.py
