@@ -9,6 +9,9 @@ import shutil
 import socket
 import subprocess
 from pathlib import Path
+from typing import Optional
+
+from .core.config import WebConfig
 
 
 # Project root detection (where pyproject.toml exists)
@@ -37,16 +40,18 @@ def is_port_available(port: int) -> bool:
             return False
 
 
-def check_web_prerequisites() -> tuple[bool, str]:
+def check_web_prerequisites(config: Optional["WebConfig"] = None) -> tuple[bool, str]:
     """
     Validate that all required dependencies and resources are available.
 
     Checks:
     - npm is installed
     - uvicorn is available in uv environment
-    - Port 8000 is available (FastAPI backend)
-    - Port 5173 is available (Vite frontend)
+    - Config ports are available (FastAPI backend and Vite frontend)
     - Frontend directory exists
+
+    Args:
+        config: Optional WebConfig with custom port settings
 
     Returns:
         (True, "") if all checks pass
@@ -69,12 +74,16 @@ def check_web_prerequisites() -> tuple[bool, str]:
     except (subprocess.SubprocessError, FileNotFoundError):
         return False, "uv not found. Install uv first."
 
-    # Check port availability
-    if not is_port_available(8000):
-        return False, "Port 8000 already in use (FastAPI backend)"
+    # Get port values from config or defaults
+    backend_port = config.backend_port if config else 8000
+    frontend_port = config.frontend_port if config else 5173
 
-    if not is_port_available(5173):
-        return False, "Port 5173 already in use (Vite frontend)"
+    # Check port availability
+    if not is_port_available(backend_port):
+        return False, f"Port {backend_port} already in use (FastAPI backend)"
+
+    if not is_port_available(frontend_port):
+        return False, f"Port {frontend_port} already in use (Vite frontend)"
 
     # Check frontend directory exists
     frontend_dir = PROJECT_ROOT / "web" / "frontend"
@@ -84,28 +93,38 @@ def check_web_prerequisites() -> tuple[bool, str]:
     return True, ""
 
 
-def start_uvicorn_process() -> subprocess.Popen:
+def start_uvicorn_process(config: Optional[WebConfig] = None) -> subprocess.Popen:
     """
     Start the FastAPI backend server.
 
-    Command: uv run uvicorn web.backend.main:app --host 0.0.0.0 --port 8000 --reload
+    Command: uv run uvicorn web.backend.main:app --host <host> --port <port> [--reload]
+
+    Args:
+        config: Optional WebConfig with custom host, port, and reload settings
 
     Returns:
         subprocess.Popen instance for the uvicorn process
     """
+    host = config.backend_host if config else "0.0.0.0"
+    port = config.backend_port if config else 8000
+    reload_flag = "--reload" if (config.auto_reload if config else True) else ""
+
+    command = [
+        "uv",
+        "run",
+        "uvicorn",
+        "web.backend.main:app",
+        "--host",
+        host,
+        "--port",
+        str(port),
+    ]
+    if reload_flag:
+        command.append(reload_flag)
+
     with UVICORN_LOG.open("w") as log_file:
         return subprocess.Popen(
-            [
-                "uv",
-                "run",
-                "uvicorn",
-                "web.backend.main:app",
-                "--host",
-                "0.0.0.0",
-                "--port",
-                "8000",
-                "--reload",
-            ],
+            command,
             cwd=PROJECT_ROOT,
             stdout=log_file,
             stderr=subprocess.STDOUT,
@@ -113,19 +132,24 @@ def start_uvicorn_process() -> subprocess.Popen:
         )
 
 
-def start_vite_process() -> subprocess.Popen:
+def start_vite_process(config: Optional[WebConfig] = None) -> subprocess.Popen:
     """
     Start the Vite frontend dev server.
 
-    Command: npm run dev -- --host
+    Command: npm run dev -- --host --port <port>
+
+    Args:
+        config: Optional WebConfig with custom port setting
 
     Returns:
         subprocess.Popen instance for the vite process
     """
+    port = config.frontend_port if config else 5173
+
     frontend_dir = PROJECT_ROOT / "web" / "frontend"
     with VITE_LOG.open("w") as log_file:
         return subprocess.Popen(
-            ["npm", "run", "dev", "--", "--host"],
+            ["npm", "run", "dev", "--", "--host", "--port", str(port)],
             cwd=frontend_dir,
             stdout=log_file,
             stderr=subprocess.STDOUT,
@@ -133,15 +157,20 @@ def start_vite_process() -> subprocess.Popen:
         )
 
 
-def start_web_processes() -> tuple[subprocess.Popen, subprocess.Popen]:
+def start_web_processes(
+    config: Optional[WebConfig] = None,
+) -> tuple[subprocess.Popen, subprocess.Popen]:
     """
     Convenience function to start both web processes.
+
+    Args:
+        config: Optional WebConfig with custom settings
 
     Returns:
         (uvicorn_proc, vite_proc) tuple of subprocess.Popen instances
     """
-    uvicorn_proc = start_uvicorn_process()
-    vite_proc = start_vite_process()
+    uvicorn_proc = start_uvicorn_process(config)
+    vite_proc = start_vite_process(config)
     return uvicorn_proc, vite_proc
 
 
