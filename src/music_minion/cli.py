@@ -138,6 +138,11 @@ def main() -> None:
         action="store_true",
         help="Enable hot-reload for development (requires watchdog)",
     )
+    parser.add_argument(
+        "--web",
+        action="store_true",
+        help="Enable web UI (starts backend + frontend dev servers)",
+    )
 
     # Create subparsers for IPC commands
     subparsers = parser.add_subparsers(dest="subcommand", help="Available commands")
@@ -222,6 +227,8 @@ def main() -> None:
     # No subcommand - start interactive mode
     if args.dev:
         os.environ["MUSIC_MINION_DEV_MODE"] = "1"
+    if args.web:
+        os.environ["MUSIC_MINION_WEB_MODE"] = "1"
 
     # Delegate to main interactive mode
     from .main import interactive_mode
