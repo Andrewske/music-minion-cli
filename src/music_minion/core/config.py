@@ -150,6 +150,16 @@ class NotificationsConfig:
 
 
 @dataclass
+class WebConfig:
+    """Configuration for web UI mode."""
+
+    backend_host: str = "0.0.0.0"
+    backend_port: int = 8000
+    frontend_port: int = 5173
+    auto_reload: bool = True  # For uvicorn --reload flag
+
+
+@dataclass
 class HotkeysConfig:
     """Configuration for hotkey shortcuts."""
 
@@ -173,6 +183,7 @@ class Config:
     spotify: SpotifyConfig = field(default_factory=SpotifyConfig)
     ipc: IPCConfig = field(default_factory=IPCConfig)
     notifications: NotificationsConfig = field(default_factory=NotificationsConfig)
+    web: WebConfig = field(default_factory=WebConfig)
     hotkeys: HotkeysConfig = field(default_factory=HotkeysConfig)
 
 
@@ -395,6 +406,19 @@ not_quite_playlist = "Not Quite"
 
 # Playlist name for "Not Interested" workflow
 not_interested_playlist = "Not Interested"
+
+[web]
+# Backend server host (0.0.0.0 for all interfaces, 127.0.0.1 for localhost only)
+backend_host = "0.0.0.0"
+
+# Backend server port
+backend_port = 8000
+
+# Frontend dev server port
+frontend_port = 5173
+
+# Enable auto-reload for backend during development
+auto_reload = true
 """.strip()
 
 
@@ -609,6 +633,15 @@ def load_config() -> Config:
         if spotify_client_secret:
             config.spotify.client_secret = spotify_client_secret
 
+        if "web" in toml_data:
+            web_data = toml_data["web"]
+            config.web = WebConfig(
+                backend_host=web_data.get("backend_host", config.web.backend_host),
+                backend_port=web_data.get("backend_port", config.web.backend_port),
+                frontend_port=web_data.get("frontend_port", config.web.frontend_port),
+                auto_reload=web_data.get("auto_reload", config.web.auto_reload),
+            )
+
         return config
 
     except Exception as e:
@@ -720,6 +753,15 @@ sync_playlists = {config.spotify.sync_playlists!r}"""
             toml_content += f'\nclient_id = "{config.spotify.client_id}"'
         if config.spotify.client_secret:
             toml_content += f'\nclient_secret = "{config.spotify.client_secret}"'
+
+        toml_content += f"""
+
+[web]
+backend_host = "{config.web.backend_host}"
+backend_port = {config.web.backend_port}
+frontend_port = {config.web.frontend_port}
+auto_reload = {config.web.auto_reload!r}
+"""
 
         toml_content += "\n"
 

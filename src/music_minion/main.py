@@ -541,20 +541,26 @@ def interactive_mode() -> None:
     if web_mode:
         from . import web_launcher
 
-        # Pre-flight checks
-        success, error = web_launcher.check_web_prerequisites()
+        # Pre-flight checks with config
+        success, error = web_launcher.check_web_prerequisites(current_config.web)
         if not success:
             safe_print(f"❌ Cannot start web mode: {error}", style="red")
             sys.exit(1)
 
-        # Start web processes
+        # Start web processes with config
         safe_print("🌐 Starting web services...", style="cyan")
-        uvicorn_proc, vite_proc = web_launcher.start_web_processes()
+        uvicorn_proc, vite_proc = web_launcher.start_web_processes(current_config.web)
         web_processes = (uvicorn_proc, vite_proc)
 
-        # Print access URLs
-        safe_print("   Backend:  http://0.0.0.0:8000", style="green")
-        safe_print("   Frontend: http://localhost:5173", style="green")
+        # Print access URLs with actual config values
+        safe_print(
+            f"   Backend:  http://{current_config.web.backend_host}:{current_config.web.backend_port}",
+            style="green",
+        )
+        safe_print(
+            f"   Frontend: http://localhost:{current_config.web.frontend_port}",
+            style="green",
+        )
         safe_print("   Logs: /tmp/music-minion-{uvicorn,vite}.log", style="dim")
 
     # Setup hot-reload if --dev flag was passed
