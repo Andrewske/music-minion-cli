@@ -1,20 +1,127 @@
-# AGENTS
-1. Env setup: run `uv sync --dev`, then `uv pip install -e .` for editable CLI.
-2. Always execute Python via `uv run`; no direct python invocations.
-3. Primary command: `uv run music-minion --dev` for hot-reload UI and blessed checks.
-4. Run full tests with `uv run pytest`; single test via `uv run pytest path/to/test.py::test_case`.
-5. Lint with `uv run ruff check src`; format using `uv run ruff format src`.
-6. Imports must be absolute (e.g., `from music_minion.core import database`); only relative inside __init__.
-7. Enforce functional style: pure functions, explicit AppContext passing, ≤20 lines and ≤3 nesting levels.
-8. Use dataclasses/NamedTuple only for shared structure; avoid classes elsewhere.
-9. Type every parameter and return; forbid implicit Any, unknown, or non-null assertions.
-10. Naming: snake_case modules, camelCase vars/functions, PascalCase dataclasses/enums.
-11. Treat state as immutable; prefer dataclasses.replace/new dicts over in-place mutation.
-12. User-facing logs go through `music_minion.core.output.log`; background threads use `loguru.logger`; never print.
-13. Errors must add context (provider, playlist, file) and call `logger.exception` inside except blocks.
-14. Database code uses `with get_db_connection() as conn:`, batches via executemany, single commit per batch.
-15. Provider modules implement pure protocols (`authenticate`, `sync_library`, `get_stream_url`) with immutable ProviderState.
-16. Rendering obeys blessed three-tier redraw (full on track/resize, input for typing, partial for clocks).
-17. File metadata writes must be atomic: copy to temp, edit via Mutagen, then `os.replace`.
-18. Never delete data without checking `source`; only remove records owned by this tool.
-19. Save new patterns to `ai-learnings.md`, note gaps in README/CLAUDE, and there are no Cursor/Copilot rule files.
+# AGENTS.md
+
+Music Minion CLI: Music curation (local/SoundCloud/Spotify). Personal project - breaking changes OK, delete unused code immediately.
+
+## Architecture
+
+**Functional over Classes (CRITICAL)**:
+- Prefer functions with explicit state passing over classes
+- Classes only for: NamedTuple, dataclass, framework requirements (with justification)
+- State via `AppContext` dataclass, never global variables
+- Pure functions: `(AppContext, str, list) -> (AppContext, bool)`
+
+**blessed UI Rendering**:
+- Three tiers: Full (track/resize/init), Input (typing/filtering), Partial (clock/progress only)
+- Immutable state: All updates via `dataclasses.replace()`, never mutation
+- **Always use `write_at()` for positioned output** (clears line by default, prevents overlap)
+
+**Multi-Source Providers**:
+- Pure functions only: `authenticate()`, `sync_library()`, `get_stream_url()`
+- Immutable `ProviderState` dataclass
+- No global variables or class instance state
+- Track deduplication: TF-IDF cosine similarity
+
+**UI Organization**:
+- Keyboard handlers: `ui/blessed/events/keys/{mode}.py`
+- Components: `ui/blessed/components/` (pure render functions)
+- Helpers: `ui/blessed/helpers/` (scrolling, `write_at()`)
+- State selectors: `ui/blessed/state_selectors.py` (memoized)
+- Mode priority: comparison > wizard > builder > track_viewer > analytics > editor > normal
+
+## Critical Patterns
+
+**Logging (CRITICAL)**:
+```python
+# Background operations
+from loguru import logger
+logger.info("msg")
+logger.exception("error")  # Auto stack traces
+
+# User-facing (dual: file + UI)
+from music_minion.core.output import log
+log("✅ Success", level="info")
+
+# Background threads
+threading.current_thread().silent_logging = True
+```
+**NEVER use print()** - breaks blessed UI, logs lost on restart
+
+**Message Queue** (blessed race condition fix):
+```python
+# core/output.py - Queue messages
+_pending_history_messages: list[tuple[str, str]] = []
+def log(msg, level):
+    logger.log(level, msg)
+    if _blessed_mode_active:
+        _pending_history_messages.append((msg, color))
+
+# executor.py - Drain after command
+ctx, result = handle_command(ctx, cmd, args)
+for msg, color in drain_pending_history_messages():
+    ui_state = add_history_line(ui_state, msg, color)
+```
+
+**Data Loss Prevention**:
+- Track ownership: `source='user'|'ai'|'file'|'soundcloud'|'spotify'`
+- NEVER remove data without checking ownership
+- Only remove data you own (e.g., only `source='file'` during import)
+
+**Atomic File Operations** (Mutagen):
+```python
+temp_path = file_path + '.tmp'
+try:
+    shutil.copy2(file_path, temp_path)
+    audio = MutagenFile(temp_path)
+    audio.save()
+    os.replace(temp_path, file_path)  # Atomic
+except Exception:
+    if os.path.exists(temp_path): os.remove(temp_path)
+    raise
+```
+
+**Database**:
+- Batch: `executemany()` (30% faster)
+- Single transaction: Commit once after all updates
+- Always: `with get_db_connection() as conn:`
+
+**Error Handling**:
+- `logger.exception()` in except blocks (auto stack traces)
+- NEVER bare except - catch specific exceptions
+- Background threads: Must wrap try/except (exceptions don't propagate)
+
+**Progress Reporting**:
+- Scale: `max(1, total // 100)` for 1% intervals
+- Use callbacks for thread-safe UI updates
+
+**Change Detection**:
+- mtime: Float timestamps (sub-second precision)
+- Get mtime AFTER write to capture own changes
+
+## Commands
+
+**Always use `uv run` for Python**
+
+- Primary: `music-minion`
+- Dev mode: `music-minion --dev` (hot-reload)
+- IPC: `music-minion-cli play|skip|love|...`
+- Opus migration: `music-minion locate-opus /path [--apply]`
+- Web backend: `uv run uvicorn web.backend.main:app --reload`
+- Web frontend: `cd web/frontend && npm run dev`
+- Tests: `uv run pytest` or `uv run pytest path/to/test.py::test_case`
+- Lint: `uv run ruff check src` / `uv run ruff format src`
+
+**Hot-Reload** (install: `uv pip install watchdog`):
+- **Reloadable**: Command handlers, domain logic, UI components, utilities
+- **Not reloadable**: main.py, context.py, dataclasses, database schema
+- **State preserved**: MPV, track, library, database, config
+- ~8s saved per iteration
+
+## Gotchas
+
+**Database**: SQLite v22 in `core/database.py`
+
+**Syncthing** (Linux ↔ Windows):
+- Purpose: Sync library + playlists between Music Minion (Linux) and Serato (Windows)
+- Syncs: Audio files + metadata (COMMENT field), M3U8/crate playlists
+- Settings: Send & Receive, Simple versioning (5-10), Watch enabled
+- Reference: `docs/reference/syncthing-setup.md`

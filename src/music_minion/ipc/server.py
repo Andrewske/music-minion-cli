@@ -149,6 +149,12 @@ class IPCServer:
         """Run the WebSocket server for web frontend connections."""
         try:
             import websockets  # type: ignore[import]
+            import logging as std_logging
+
+            # Suppress benign handshake error logs from websockets library
+            # These occur during browser refresh, Vite HMR, navigation, etc.
+            websockets_logger = std_logging.getLogger("websockets")
+            websockets_logger.setLevel(std_logging.ERROR)
         except ImportError:
             logger.warning("websockets package not available, web control disabled")
             return
@@ -172,8 +178,19 @@ class IPCServer:
                             await websocket.send(json.dumps({"type": "pong"}))
                     except json.JSONDecodeError:
                         logger.warning(f"Invalid JSON from web client: {message}")
-            except websockets.exceptions.ConnectionClosed:
-                pass
+            except websockets.ConnectionClosed:
+                pass  # Normal closure
+            except websockets.InvalidHandshake:
+                pass  # Handshake failed - benign (HMR, refresh, etc.)
+            except OSError as e:
+                if "Connection reset" in str(e) or "Broken pipe" in str(e):
+                    pass  # Benign network error
+                else:
+                    logger.warning(f"WebSocket OSError: {e}")
+            except asyncio.CancelledError:
+                raise  # Re-raise for proper cleanup
+            except Exception as e:
+                logger.warning(f"WebSocket handler error: {e}")
             finally:
                 self.web_clients.discard(websocket)
 
