@@ -147,14 +147,33 @@ class IPCServer:
 
     def _run_websocket_server(self) -> None:
         """Run the WebSocket server for web frontend connections."""
+        import threading
+
+        # Mark thread as silent to prevent loguru output in blessed UI
+        threading.current_thread().silent_logging = True  # type: ignore
+
         try:
             import websockets  # type: ignore[import]
             import logging as std_logging
 
-            # Suppress benign handshake error logs from websockets library
-            # These occur during browser refresh, Vite HMR, navigation, etc.
+            # Suppress benign handshake/connection error logs
+            # Set to CRITICAL to suppress EOFError from browser refresh/HMR/tab close
             websockets_logger = std_logging.getLogger("websockets")
-            websockets_logger.setLevel(std_logging.ERROR)
+            websockets_logger.setLevel(std_logging.CRITICAL)
+
+            # CRITICAL: Suppress asyncio logger to prevent stderr output in blessed UI
+            # Why suppression is safe:
+            # 1. Real errors are caught/logged in websocket_handler (lines 181-193)
+            # 2. asyncio logger just complains about exceptions we've already handled
+            # 3. Prevents duplicate logging (asyncio stack trace + our logger.warning())
+            # 4. Benign events (refresh, HMR, tab close) are normal lifecycle, not errors
+            asyncio_logger = std_logging.getLogger("asyncio")
+            asyncio_logger.setLevel(std_logging.CRITICAL)
+
+            # Defense in depth: Add NullHandler to prevent lastResort stderr fallback
+            if not asyncio_logger.handlers:
+                asyncio_logger.addHandler(std_logging.NullHandler())
+
         except ImportError:
             logger.warning("websockets package not available, web control disabled")
             return

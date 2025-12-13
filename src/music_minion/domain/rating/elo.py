@@ -170,7 +170,8 @@ def select_weighted_pair(
     under_target = [
         t
         for t in priority_tracks
-        if ratings_cache.get(t["id"], {}).get("comparison_count", 0) < target_comparisons
+        if ratings_cache.get(t["id"], {}).get("comparison_count", 0)
+        < target_comparisons
     ]
 
     # If all priority tracks have full coverage, fall back to standard pairing

@@ -125,10 +125,10 @@ def stop_mpv(state: PlayerState) -> None:
     """Stop MPV process and cleanup."""
     if state.process:
         try:
-            send_mpv_command(state.socket_path, {"command": ["quit"]})
-            state.process.wait(timeout=2)
-        except (subprocess.TimeoutExpired, OSError):
             state.process.kill()
+            state.process.wait(timeout=2.0)
+        except Exception:
+            pass
 
     if state.socket_path and os.path.exists(state.socket_path):
         try:
@@ -298,7 +298,6 @@ def play_file(
                 )
 
         # Update status to get actual playback state
-        import time as time_module
 
         updated_state = update_player_status(
             state._replace(
@@ -307,7 +306,7 @@ def play_file(
                 is_playing=True,
                 playback_source="mpv",
                 current_session_id=session_id,
-                playback_started_at=time_module.time(),  # NEW
+                playback_started_at=time.time(),  # NEW
             )
         )
         return updated_state, True
@@ -591,8 +590,6 @@ def is_track_finished(state: PlayerState) -> bool:
     eof = get_mpv_property(state.socket_path, "eof-reached")
 
     # SAFEGUARD 1: Minimum playback time
-    import time
-
     playback_elapsed = 0.0
     if state.playback_started_at is not None:
         playback_elapsed = time.time() - state.playback_started_at

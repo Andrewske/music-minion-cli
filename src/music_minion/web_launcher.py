@@ -34,6 +34,9 @@ def is_port_available(port: int) -> bool:
     """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         try:
+            # Set socket options to avoid issues
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.settimeout(1.0)  # Add timeout to avoid hanging
             s.bind(("0.0.0.0", port))
             return True
         except OSError:
@@ -178,13 +181,7 @@ def stop_web_processes(
     uvicorn_proc: subprocess.Popen, vite_proc: subprocess.Popen
 ) -> None:
     """
-    Gracefully stop both web processes.
-
-    Shutdown sequence:
-    1. Send SIGTERM to each subprocess
-    2. Wait 5 seconds for graceful shutdown
-    3. Force kill if timeout exceeded
-    4. Ignore errors from already-terminated processes
+    Immediately stop both web processes.
 
     Args:
         uvicorn_proc: FastAPI backend process
@@ -192,23 +189,11 @@ def stop_web_processes(
     """
     processes = [uvicorn_proc, vite_proc]
 
-    # Send terminate signal to both processes
+    # Kill processes immediately
     for proc in processes:
         try:
-            proc.terminate()
-        except ProcessLookupError:
-            # Process already terminated
+            proc.kill()
+            proc.wait(timeout=2.0)
+        except Exception:
+            # Process already terminated or couldn't be killed
             pass
-
-    # Wait for graceful shutdown
-    for proc in processes:
-        try:
-            proc.wait(timeout=5.0)
-        except subprocess.TimeoutExpired:
-            # Force kill if still running
-            try:
-                proc.kill()
-                proc.wait(timeout=2.0)
-            except (ProcessLookupError, subprocess.TimeoutExpired):
-                # Process already terminated or couldn't be killed
-                pass

@@ -22,6 +22,12 @@ asyncio event loop exception
   → blessed terminal (bypasses UI)
 ```
 
+**Why suppression is safe:**
+- Real errors are already caught and logged in `websocket_handler` exception blocks (lines 181-193)
+- asyncio logger errors are just event loop complaining about exceptions we've already handled
+- Suppressing prevents duplicate logging: asyncio stack trace + our logger.warning()
+- Benign lifecycle events (refresh, HMR, tab close) shouldn't pollute UI or logs
+
 ## Implementation Details
 
 ### Step 1: Suppress asyncio logger and add silent_logging
@@ -43,12 +49,16 @@ def _run_websocket_server(self) -> None:
         websockets_logger = std_logging.getLogger("websockets")
         websockets_logger.setLevel(std_logging.ERROR)
 
-        # CRITICAL: Suppress asyncio logger to prevent errors in blessed UI
-        # asyncio event loop logs to asyncio logger → root → lastResort → stderr
+        # CRITICAL: Suppress asyncio logger to prevent stderr output in blessed UI
+        # Why suppression is safe:
+        # 1. Real errors are caught/logged in websocket_handler (lines 181-193)
+        # 2. asyncio logger just complains about exceptions we've already handled
+        # 3. Prevents duplicate logging (asyncio stack trace + our logger.warning())
+        # 4. Benign events (refresh, HMR, tab close) are normal lifecycle, not errors
         asyncio_logger = std_logging.getLogger("asyncio")
         asyncio_logger.setLevel(std_logging.CRITICAL)
 
-        # Defense in depth: Add NullHandler to prevent lastResort fallback
+        # Defense in depth: Add NullHandler to prevent lastResort stderr fallback
         if not asyncio_logger.handlers:
             asyncio_logger.addHandler(std_logging.NullHandler())
 
@@ -59,9 +69,10 @@ def _run_websocket_server(self) -> None:
 
 **Rationale:**
 - **Line +3-4:** Add `silent_logging = True` following codebase pattern (used in `commands/library.py`, `commands/rating.py`)
-- **Line +18-19:** Set asyncio logger to CRITICAL level to suppress WARNING/ERROR messages
+- **Line +18-19:** Set asyncio logger to CRITICAL level to suppress WARNING/ERROR messages from event loop
 - **Line +21-23:** Add NullHandler as defense-in-depth to ensure Python's lastResort handler is never invoked
-- **Comments:** Explain WHY this is needed (prevents stderr bypass of blessed UI)
+- **Comments:** Document WHY suppression is safe (real errors already caught in exception handlers)
+- **Logging standard:** Real WebSocket errors still logged via `logger.warning()` in exception handlers (server.py:189,193)
 
 ## Acceptance Criteria
 
@@ -76,15 +87,36 @@ def _run_websocket_server(self) -> None:
 8. ✓ Blessed UI remains responsive and clean
 
 ### Logging Verification
-Verify errors still logged to file for debugging:
+Verify real errors still logged to file via exception handlers:
+
+**Test 1: Server startup logged**
 ```bash
-tail ~/.local/share/music-minion/logs/music-minion.log | grep "WebSocket server started"
+tail -20 ~/.local/share/music-minion/logs/music-minion.log | grep "WebSocket server started"
+```
+Expected: `WebSocket server started on ws://localhost:8765`
+
+**Test 2: Real errors still logged (not suppressed)**
+Simulate a real error by breaking the WebSocket connection abnormally:
+1. Start `music-minion --web`
+2. Open browser DevTools → Network tab
+3. Connect to web frontend
+4. Forcibly terminate the connection (close tab mid-request or kill browser process)
+5. Check log file:
+```bash
+tail -50 ~/.local/share/music-minion/logs/music-minion.log | grep -i "websocket"
 ```
 
 Expected:
-- Server startup logged: "WebSocket server started on ws://localhost:8765"
-- File logging unaffected by stderr suppression
-- WebSocket errors (if any) still in log file, just not in terminal
+- Benign errors (handshake, refresh, HMR): NOT logged (suppressed by asyncio logger config)
+- Real errors (OSError, unexpected exceptions): LOGGED via `logger.warning()` in exception handlers
+- Example: `WebSocket OSError: [Errno 104] Connection reset by peer` (if applicable)
+
+**Test 3: Exception handler logging intact**
+Verify exception handlers at server.py:181-193 are still functioning:
+```bash
+# Should see logger.warning() calls for real errors, not asyncio stack traces
+grep -A2 "WebSocket.*error" ~/.local/share/music-minion/logs/music-minion.log
+```
 
 ### Visual Test
 **Before fix:** Stack traces with lines like:
@@ -97,12 +129,31 @@ EOFError: stream ends after 0 bytes, before end of line
 
 **After fix:** Clean blessed UI with no stack traces
 
+## Logging Standard Compliance
+
+This implementation follows the Music Minion logging standard:
+
+**Background threads (WebSocket server):**
+- ✅ `silent_logging = True` prevents loguru output in blessed UI
+- ✅ `logger.warning()` in exception handlers logs real errors to file
+
+**Suppression strategy:**
+- ✅ asyncio logger suppressed to prevent duplicate logging
+- ✅ Real errors still logged via exception handlers (not lost)
+- ✅ Benign lifecycle events (refresh, HMR, close) neither in UI nor logs
+- ✅ Dual output pattern: User sees clean UI, devs see actionable errors in log file
+
+**Why this isn't a logging standard violation:**
+- asyncio logger errors are just event loop complaining about exceptions we've already handled
+- Exception handlers (server.py:181-193) provide better context than asyncio stack traces
+- No data loss: Real errors logged via `logger.warning()`, benign events suppressed
+
 ## Dependencies
 None - This is an independent fix for the logging system.
 
 ## Related Files (No Changes)
 - `src/music_minion/core/output.py` - Logging system reference (silent_logging pattern)
-- `src/music_minion/ui/blessed/events/commands/executor.py` - Reference for redirect_stderr pattern
+- `src/music_minion/ipc/server.py:181-193` - Exception handlers that log real WebSocket errors
 - `src/music_minion/commands/library.py` - Example of silent_logging usage (line 71, 157)
 
 ## Rollback Plan

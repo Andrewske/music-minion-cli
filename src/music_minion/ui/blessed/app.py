@@ -1478,8 +1478,20 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         # Re-raise to let outer handlers know we're exiting
         raise
 
-    # Cleanup: Stop IPC server
+    # Cleanup: Notify browser to stop playback before shutdown
     if ipc_srv:
+        try:
+            # Send shutdown message to all connected web clients
+            # This pauses browser audio players before backend shutdown
+            ipc_srv.broadcast_to_web_clients({
+                "type": "shutdown",
+                "message": "Backend shutting down - pausing playback"
+            })
+            # Brief delay to ensure message is sent before server stops
+            time.sleep(0.1)
+        except Exception:
+            pass  # Silently ignore errors - server may already be stopped
+
         try:
             ipc_srv.stop()
         except Exception:
