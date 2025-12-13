@@ -21,6 +21,10 @@ from music_minion.domain import playlists
 from music_minion.domain import sync
 from music_minion import command_palette
 from music_minion import router
+from music_minion.helpers import (
+    cleanup_web_processes_safe,
+    cleanup_file_watcher_safe,
+)
 from music_minion import helpers
 from music_minion.utils import parsers
 
@@ -514,14 +518,7 @@ def interactive_mode_blessed(web_processes: tuple | None = None) -> None:
             pass  # Ensure MPV errors don't prevent web process cleanup
 
         # Stop web processes if running (isolated error handling)
-        if web_processes:
-            try:
-                from . import web_launcher
-
-                safe_print("\n🛑 Stopping web services...", style="yellow")
-                web_launcher.stop_web_processes(*web_processes)
-            except Exception:
-                pass  # Ensure cleanup always attempts to stop processes
+        cleanup_web_processes_safe(web_processes)
 
 
 def interactive_mode() -> None:
@@ -636,23 +633,10 @@ def interactive_mode() -> None:
                 )
             finally:
                 # Stop web processes if running (isolated error handling)
-                if web_processes:
-                    try:
-                        from . import web_launcher
-
-                        safe_print("\n🛑 Stopping web services...", style="yellow")
-                        web_launcher.stop_web_processes(*web_processes)
-                    except Exception:
-                        pass  # Ensure cleanup always runs
+                cleanup_web_processes_safe(web_processes)
 
                 # Clean up file watcher if enabled (isolated error handling)
-                if file_watcher_observer:
-                    try:
-                        from . import dev_reload
-
-                        dev_reload.stop_file_watcher(file_watcher_observer)
-                    except Exception:
-                        pass  # Ensure cleanup always runs
+                cleanup_file_watcher_safe(file_watcher_observer)
             return
 
         # Fallback to simple mode with Rich Console for consistent styling
@@ -717,36 +701,17 @@ def interactive_mode() -> None:
             sys.exit(1)
         finally:
             # Clean up file watcher if enabled (isolated error handling)
-            if file_watcher_observer:
-                try:
-                    from . import dev_reload
-
-                    dev_reload.stop_file_watcher(file_watcher_observer)
-                except Exception:
-                    pass  # Ensure cleanup always runs
+            cleanup_file_watcher_safe(file_watcher_observer)
 
     except KeyboardInterrupt:
         # Handle CTRL-C gracefully
         safe_print("\n[yellow]Interrupted by user. Cleaning up...[/yellow]")
     finally:
         # Stop web processes if running (isolated error handling for guaranteed cleanup)
-        if web_processes:
-            try:
-                from . import web_launcher
-
-                safe_print("\n🛑 Stopping web services...", style="yellow")
-                web_launcher.stop_web_processes(*web_processes)
-            except Exception:
-                pass  # Ensure cleanup always runs
+        cleanup_web_processes_safe(web_processes)
 
         # Clean up file watcher if enabled (isolated error handling)
-        if file_watcher_observer:
-            try:
-                from . import dev_reload
-
-                dev_reload.stop_file_watcher(file_watcher_observer)
-            except Exception:
-                pass  # Ensure cleanup always runs
+        cleanup_file_watcher_safe(file_watcher_observer)
         return
 
     # Fallback to simple mode with Rich Console for consistent styling
@@ -811,20 +776,7 @@ def interactive_mode() -> None:
         sys.exit(1)
     finally:
         # Stop web processes if running (isolated error handling for guaranteed cleanup)
-        if web_processes:
-            try:
-                from . import web_launcher
-
-                safe_print("\n🛑 Stopping web services...", style="yellow")
-                web_launcher.stop_web_processes(*web_processes)
-            except Exception:
-                pass  # Ensure cleanup always runs
+        cleanup_web_processes_safe(web_processes)
 
         # Clean up file watcher if enabled (isolated error handling)
-        if file_watcher_observer:
-            try:
-                from . import dev_reload
-
-                dev_reload.stop_file_watcher(file_watcher_observer)
-            except Exception:
-                pass  # Ensure cleanup always runs
+        cleanup_file_watcher_safe(file_watcher_observer)
