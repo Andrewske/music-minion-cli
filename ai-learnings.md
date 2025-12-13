@@ -161,6 +161,43 @@ def render_dashboard_partial(term, player_state, ui_state, y_start):
 
 ## Code Patterns & Conventions
 
+### Logging Patterns
+
+**Message Queue for blessed UI Race Conditions**:
+```python
+# Problem: Commands calling log() overwrite UIState during execution
+# Solution: Queue messages, drain after command completes
+
+# core/output.py
+_pending_history_messages: list[tuple[str, str]] = []
+_pending_messages_lock = threading.Lock()
+
+def log(message: str, level: str = "info"):
+    logger.log(level, message)  # Always log to file
+    if _blessed_mode_active:
+        with _pending_messages_lock:
+            _pending_history_messages.append((message, color))
+
+# ui/blessed/events/commands/executor.py
+ctx, result = handle_command(ctx, cmd, args)
+for msg, color in drain_pending_history_messages():
+    ui_state = add_history_line(ui_state, msg, color)
+```
+
+**Background Thread Silent Logging**:
+```python
+def _background_worker():
+    threading.current_thread().silent_logging = True  # Suppress UI output
+    try:
+        logger.info("Working...")  # Goes to file only
+    except Exception:
+        logger.exception("Failed")  # Stack trace to file
+    finally:
+        threading.current_thread().silent_logging = False  # ALWAYS reset
+```
+
+**Learning**: Always cleanup silent_logging in finally block. Exceptions in background threads don't propagate - must catch and log explicitly.
+
 ### Database Operations
 
 **Pattern**: Always use context managers for database connections
@@ -1519,6 +1556,18 @@ def main():
 
 **Learning**: Function-scoped variables in main loop survive module reloads. Global variables in reloaded modules get reset.
 
+### Module Reload Limitations
+
+**Can't Reload**:
+- Class definitions for existing instances (e.g., PlayerState, Track, AppContext)
+- Database schema changes (migrations run on startup)
+- Changes to main.py or cli.py (entry points)
+- Global state in reloaded modules (gets reset)
+
+**Workaround**: For dataclass changes, restart app. For global state, use function-scoped state in main loop.
+
+**Learning**: Hot-reload works best for pure functions. State should live in main.py function scope, not module globals.
+
 ## Advanced UI Component Patterns
 
 ### Track Viewer Navigation
@@ -2654,3 +2703,21 @@ When cards have both content click areas (for play/pause) and button click areas
 - Use cursor-pointer only on intended clickable areas
 
 **Example**: TrackCard component separates play/pause clicks (content area) from winner/archive button clicks (button area) to prevent accidental play/pause when trying to record comparisons.
+
+## Known Limitations & Future Work
+
+**Smart Playlist Limitations**:
+- No filter editing UI (must delete and recreate)
+- Limited conjunction logic (can't do `(A OR B) AND C`)
+- No regex or advanced text matching
+- No date/time filters (no created_at/played_at tracking yet)
+
+**Sync System Limitations**:
+- No real-time file watching (manual sync or startup-only)
+- No conflict resolution UI (last-write-wins)
+- No progress for large exports (5000+ tracks)
+
+**Deferred Features**:
+- Playlist reordering UI (needs TUI/web interface)
+- Streaming service integration (Spotify, Apple Music)
+- Collaborative playlists (needs cloud sync or P2P)
