@@ -127,8 +127,10 @@ def stop_mpv(state: PlayerState) -> None:
         try:
             state.process.kill()
             state.process.wait(timeout=2.0)
-        except Exception:
-            pass
+        except (OSError, subprocess.TimeoutExpired):
+            pass  # Process already terminated or couldn't be killed
+        except Exception as e:
+            logger.warning(f"Unexpected error during MPV cleanup: {e}")
 
     if state.socket_path and os.path.exists(state.socket_path):
         try:
