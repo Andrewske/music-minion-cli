@@ -614,10 +614,13 @@ def interactive_mode() -> None:
             try:
                 # Use blessed UI (new implementation)
                 interactive_mode_blessed(web_processes)
-            except ImportError as e:
+            except ImportError:
                 # blessed not available, fall back to old dashboard
+                logger.exception(
+                    "blessed UI not available, falling back to legacy dashboard"
+                )
                 safe_print(
-                    f"⚠️  blessed UI not available ({e}), falling back to legacy dashboard",
+                    "⚠️  blessed UI not available, falling back to legacy dashboard",
                     style="yellow",
                 )
                 try:
@@ -625,10 +628,11 @@ def interactive_mode() -> None:
                 except Exception:
                     # Fall back to simple mode
                     pass
-            except Exception as e:
+            except Exception:
                 # Blessed UI failed for other reasons, fall back to simple mode
+                logger.exception("Blessed UI failed, falling back to simple mode")
                 safe_print(
-                    f"⚠️  Blessed UI failed ({e}), falling back to simple mode",
+                    "⚠️  Blessed UI failed, falling back to simple mode",
                     style="yellow",
                 )
             finally:
