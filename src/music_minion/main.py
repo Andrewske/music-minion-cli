@@ -534,6 +534,29 @@ def interactive_mode() -> None:
     # Run database migrations on startup
     database.init_database()
 
+    # Check if web mode enabled
+    web_mode = os.environ.get("MUSIC_MINION_WEB_MODE") == "1"
+    web_processes = None
+
+    if web_mode:
+        from . import web_launcher
+
+        # Pre-flight checks
+        success, error = web_launcher.check_web_prerequisites()
+        if not success:
+            safe_print(f"❌ Cannot start web mode: {error}", style="red")
+            sys.exit(1)
+
+        # Start web processes
+        safe_print("🌐 Starting web services...", style="cyan")
+        uvicorn_proc, vite_proc = web_launcher.start_web_processes()
+        web_processes = (uvicorn_proc, vite_proc)
+
+        # Print access URLs
+        safe_print("   Backend:  http://0.0.0.0:8000", style="green")
+        safe_print("   Frontend: http://localhost:5173", style="green")
+        safe_print("   Logs: /tmp/music-minion-{uvicorn,vite}.log", style="dim")
+
     # Setup hot-reload if --dev flag was passed
     dev_mode = os.environ.get("MUSIC_MINION_DEV_MODE") == "1"
 
@@ -580,6 +603,13 @@ def interactive_mode() -> None:
                 # Fall back to simple mode
                 pass
         finally:
+            # Stop web processes if running
+            if web_processes:
+                from . import web_launcher
+
+                safe_print("\n🛑 Stopping web services...", style="yellow")
+                web_launcher.stop_web_processes(*web_processes)
+
             # Clean up file watcher if enabled
             if file_watcher_observer:
                 from . import dev_reload
