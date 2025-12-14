@@ -521,21 +521,188 @@ def interactive_mode_blessed(web_processes: tuple | None = None) -> None:
         cleanup_web_processes_safe(web_processes)
 
 
-def interactive_mode() -> None:
-    """Run the interactive command loop.
+def setup_web_mode(current_config) -> tuple | None:
+    """Setup web mode processes if enabled."""
+    import os
+    from . import web_launcher
 
-    TODO: Refactor interactive_mode() into smaller functions
-    Suggested: setup_web_mode(), setup_dev_mode(), run_blessed_ui_mode(), run_simple_mode()
-    See: CLAUDE.md guideline (functions ≤20 lines)
-    """
+    # Check if web mode enabled
+    web_mode = os.environ.get("MUSIC_MINION_WEB_MODE") == "1"
+
+    if not web_mode:
+        return None
+
+    # Pre-flight checks with config
+    success, error = web_launcher.check_web_prerequisites(current_config.web)
+    if not success:
+        safe_print(f"❌ Cannot start web mode: {error}", style="red")
+        return None
+
+    # Start web processes with config
+    safe_print("🌐 Starting web services...", style="cyan")
+
+    uvicorn_proc, vite_proc = web_launcher.start_web_processes(current_config.web)
+    web_processes = (uvicorn_proc, vite_proc)
+
+    # Print access URLs with actual config values
+    safe_print(
+        f"   Backend:  http://{current_config.web.backend_host}:{current_config.web.backend_port}",
+        style="green",
+    )
+    safe_print(
+        f"   Frontend: http://localhost:{current_config.web.frontend_port}",
+        style="green",
+    )
+    safe_print("   Logs: /tmp/music-minion-{uvicorn,vite}.log", style="dim")
+
+    return web_processes
+
+
+def setup_dev_mode() -> tuple | None:
+    """Setup hot-reload file watcher if dev mode enabled."""
+    import os
+
+    # Setup hot-reload if --dev flag was passed
+    dev_mode = os.environ.get("MUSIC_MINION_DEV_MODE") == "1"
+
+    if not dev_mode:
+        return None
+
+    try:
+        from . import dev_reload
+
+        def on_file_change(filepath: str) -> None:
+            """Callback for file changes - reload the module."""
+            success = dev_reload.reload_module(filepath)
+            if success:
+                filename = Path(filepath).name
+                safe_print(f"🔄 Reloaded: {filename}", style="cyan")
+
+        observer_result = dev_reload.setup_file_watcher(on_file_change)
+
+        if observer_result:
+            file_watcher_observer, file_watcher_handler = observer_result
+            safe_print("🔥 Hot-reload enabled", style="green bold")
+            return (file_watcher_observer, file_watcher_handler)
+        else:
+            safe_print("⚠️  Hot-reload setup failed", style="yellow")
+            return None
+    except ImportError:
+        safe_print("⚠️  watchdog not installed - hot-reload disabled", style="yellow")
+        safe_print("   Install with: uv pip install watchdog", style="dim")
+        return None
+
+
+def run_blessed_ui_mode(web_processes: tuple | None) -> None:
+    """Run blessed UI mode with fallbacks."""
+    from .helpers import cleanup_web_processes_safe
+
+    try:
+        # Use blessed UI (new implementation)
+        interactive_mode_blessed(web_processes)
+    except ImportError:
+        # blessed not available, fall back to old dashboard
+        logger.exception("blessed UI not available, falling back to legacy dashboard")
+        safe_print(
+            "⚠️  blessed UI not available, falling back to legacy dashboard",
+            style="yellow",
+        )
+        try:
+            interactive_mode_with_dashboard()
+        except Exception:
+            # Fall back to simple mode
+            pass
+    except Exception:
+        # Blessed UI failed for other reasons, fall back to simple mode
+        logger.exception("Blessed UI failed, falling back to simple mode")
+        safe_print(
+            "⚠️  Blessed UI failed, falling back to simple mode",
+            style="yellow",
+        )
+    finally:
+        # Stop web processes if running (isolated error handling)
+        cleanup_web_processes_safe(web_processes)
+
+
+def run_simple_mode(
+    current_config, music_tracks, file_watcher_handler, file_watcher_observer
+) -> None:
+    """Run simple mode with Rich console interactive loop."""
+    from rich.console import Console
+    from music_minion.context import AppContext
+    from .helpers import cleanup_file_watcher_safe
+
+    console_instance = Console()
+
+    # Create initial application context
+    ctx = AppContext.create(current_config, console_instance)
+
+    # Load music library into context
+    ctx = ctx.with_tracks(music_tracks)
+
+    console_instance.print("[bold green]Welcome to Music Minion CLI![/bold green]")
+    console_instance.print("Type 'help' for available commands, or 'quit' to exit.")
+    console_instance.print()
+
+    try:
+        should_continue = True
+        while should_continue:
+            # Check for track completion periodically (context-based)
+            ctx = helpers.check_and_handle_track_completion(ctx)
+
+            # Process pending file changes if in dev mode
+            if file_watcher_handler:
+                try:
+                    from . import dev_reload
+
+                    ready_files = file_watcher_handler.check_pending_changes()
+                    for filepath in ready_files:
+                        success = dev_reload.reload_module(filepath)
+                        if success:
+                            filename = Path(filepath).name
+                            console_instance.print(
+                                f"🔄 Reloaded: {filename}", style="cyan"
+                            )
+                except Exception:
+                    pass  # Silently ignore reload errors
+
+            try:
+                user_input = input("music-minion> ").strip()
+                command, args = parsers.parse_command(user_input)
+
+                # Execute command with context
+                ctx, should_continue = router.handle_command(ctx, command, args)
+
+                # Sync global state from context for backward compatibility with dashboard modes
+                current_player_state = ctx.player_state
+                music_tracks = ctx.music_tracks
+                current_config = ctx.config
+
+            except KeyboardInterrupt:
+                console_instance.print(
+                    "\n[yellow]Use 'quit' or 'exit' to leave gracefully.[/yellow]"
+                )
+            except EOFError:
+                console_instance.print("\n[green]Goodbye![/green]")
+                break
+
+    except Exception as e:
+        console_instance.print(f"[red]An unexpected error occurred: {e}[/red]")
+        sys.exit(1)
+    finally:
+        # Clean up file watcher if enabled (isolated error handling)
+        cleanup_file_watcher_safe(file_watcher_observer)
+
+
+def interactive_mode() -> None:
+    """Run the interactive command loop."""
     global current_config, current_player_state, music_tracks
     global file_watcher_observer, file_watcher_handler
-    import os
-    from .context import AppContext
 
     # Initialize variables for cleanup
     web_processes = None
     file_watcher_observer = None
+    file_watcher_handler = None
 
     try:
         # Always load config from file
@@ -554,163 +721,23 @@ def interactive_mode() -> None:
         # Run database migrations on startup
         database.init_database()
 
-        # Check if web mode enabled
-        web_mode = os.environ.get("MUSIC_MINION_WEB_MODE") == "1"
+        # Setup web mode
+        web_processes = setup_web_mode(current_config)
 
-        if web_mode:
-            from . import web_launcher
-
-            # Pre-flight checks with config
-            success, error = web_launcher.check_web_prerequisites(current_config.web)
-            if not success:
-                safe_print(f"❌ Cannot start web mode: {error}", style="red")
-                return
-
-            # Start web processes with config
-            safe_print("🌐 Starting web services...", style="cyan")
-            uvicorn_proc, vite_proc = web_launcher.start_web_processes(
-                current_config.web
-            )
-            web_processes = (uvicorn_proc, vite_proc)
-
-            # Print access URLs with actual config values
-            safe_print(
-                f"   Backend:  http://{current_config.web.backend_host}:{current_config.web.backend_port}",
-                style="green",
-            )
-            safe_print(
-                f"   Frontend: http://localhost:{current_config.web.frontend_port}",
-                style="green",
-            )
-            safe_print("   Logs: /tmp/music-minion-{uvicorn,vite}.log", style="dim")
-
-        # Setup hot-reload if --dev flag was passed
-        dev_mode = os.environ.get("MUSIC_MINION_DEV_MODE") == "1"
-
-        if dev_mode:
-            try:
-                from . import dev_reload
-
-                def on_file_change(filepath: str) -> None:
-                    """Callback for file changes - reload the module."""
-                    success = dev_reload.reload_module(filepath)
-                    if success:
-                        filename = Path(filepath).name
-                        safe_print(f"🔄 Reloaded: {filename}", style="cyan")
-
-                observer_result = dev_reload.setup_file_watcher(on_file_change)
-
-                if observer_result:
-                    file_watcher_observer, file_watcher_handler = observer_result
-                    safe_print("🔥 Hot-reload enabled", style="green bold")
-                else:
-                    safe_print("⚠️  Hot-reload setup failed", style="yellow")
-            except ImportError:
-                safe_print(
-                    "⚠️  watchdog not installed - hot-reload disabled", style="yellow"
-                )
-                safe_print("   Install with: uv pip install watchdog", style="dim")
-
-        # Auto-sync is now handled by blessed UI after first render (instant startup)
-        # The blessed UI starts context-aware background sync after displaying the dashboard
+        # Setup dev mode
+        dev_result = setup_dev_mode()
+        if dev_result:
+            file_watcher_observer, file_watcher_handler = dev_result
 
         # Check if dashboard is enabled
         if current_config.ui.enable_dashboard:
-            try:
-                # Use blessed UI (new implementation)
-                interactive_mode_blessed(web_processes)
-            except ImportError:
-                # blessed not available, fall back to old dashboard
-                logger.exception(
-                    "blessed UI not available, falling back to legacy dashboard"
-                )
-                safe_print(
-                    "⚠️  blessed UI not available, falling back to legacy dashboard",
-                    style="yellow",
-                )
-                try:
-                    interactive_mode_with_dashboard()
-                except Exception:
-                    # Fall back to simple mode
-                    pass
-            except Exception:
-                # Blessed UI failed for other reasons, fall back to simple mode
-                logger.exception("Blessed UI failed, falling back to simple mode")
-                safe_print(
-                    "⚠️  Blessed UI failed, falling back to simple mode",
-                    style="yellow",
-                )
-            finally:
-                # Stop web processes if running (isolated error handling)
-                cleanup_web_processes_safe(web_processes)
-
-                # Clean up file watcher if enabled (isolated error handling)
-                cleanup_file_watcher_safe(file_watcher_observer)
+            run_blessed_ui_mode(web_processes)
             return
 
-        # Fallback to simple mode with Rich Console for consistent styling
-        from rich.console import Console
-
-        console_instance = Console()
-
-        # Create initial application context
-        ctx = AppContext.create(current_config, console_instance)
-
-        # Load music library into context
-        ctx = ctx.with_tracks(music_tracks)
-
-        console_instance.print("[bold green]Welcome to Music Minion CLI![/bold green]")
-        console_instance.print("Type 'help' for available commands, or 'quit' to exit.")
-        console_instance.print()
-
-        try:
-            should_continue = True
-            while should_continue:
-                # Check for track completion periodically (context-based)
-                ctx = helpers.check_and_handle_track_completion(ctx)
-
-                # Process pending file changes if in dev mode
-                if file_watcher_handler:
-                    try:
-                        from . import dev_reload
-
-                        ready_files = file_watcher_handler.check_pending_changes()
-                        for filepath in ready_files:
-                            success = dev_reload.reload_module(filepath)
-                            if success:
-                                filename = Path(filepath).name
-                                console_instance.print(
-                                    f"🔄 Reloaded: {filename}", style="cyan"
-                                )
-                    except Exception:
-                        pass  # Silently ignore reload errors
-
-                try:
-                    user_input = input("music-minion> ").strip()
-                    command, args = parsers.parse_command(user_input)
-
-                    # Execute command with context
-                    ctx, should_continue = router.handle_command(ctx, command, args)
-
-                    # Sync global state from context for backward compatibility with dashboard modes
-                    current_player_state = ctx.player_state
-                    music_tracks = ctx.music_tracks
-                    current_config = ctx.config
-
-                except KeyboardInterrupt:
-                    console_instance.print(
-                        "\n[yellow]Use 'quit' or 'exit' to leave gracefully.[/yellow]"
-                    )
-                except EOFError:
-                    console_instance.print("\n[green]Goodbye![/green]")
-                    break
-
-        except Exception as e:
-            console_instance.print(f"[red]An unexpected error occurred: {e}[/red]")
-            sys.exit(1)
-        finally:
-            # Clean up file watcher if enabled (isolated error handling)
-            cleanup_file_watcher_safe(file_watcher_observer)
+        # Fallback to simple mode
+        run_simple_mode(
+            current_config, music_tracks, file_watcher_handler, file_watcher_observer
+        )
 
     except KeyboardInterrupt:
         # Handle CTRL-C gracefully
