@@ -263,7 +263,7 @@ export function ComparisonView() {
                 {currentTrack ? (
                    <WaveformPlayer
                      track={currentTrack}
-                     isPlaying={isPlaying && currentTrack?.id === currentTrack.id}
+                     isPlaying={isPlaying}
                      onTogglePlayPause={() => handleTrackTap(currentTrack)}
                      onFinish={handleTrackFinish}
                    />
