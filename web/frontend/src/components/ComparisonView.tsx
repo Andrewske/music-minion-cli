@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useComparisonStore } from '../stores/comparisonStore';
 import { useStartSession, useRecordComparison, useArchiveTrack } from '../hooks/useComparison';
 import type { TrackInfo, FoldersResponse } from '../types';
@@ -48,6 +48,12 @@ export function ComparisonView() {
 
   // Track the active waveform track (persists when paused)
   const [waveformTrack, setWaveformTrack] = useState<TrackInfo | null>(null);
+
+  // Ref for playingTrack to avoid dependency in handleTrackFinish
+  const playingTrackRef = useRef(playingTrack);
+  useEffect(() => {
+    playingTrackRef.current = playingTrack;
+  }, [playingTrack]);
 
   // Update waveform track ONLY when a new track starts playing
   // ESLint warning is a false positive: This effect updates waveformTrack (local state)
@@ -101,16 +107,16 @@ export function ComparisonView() {
    * and vice versa, allowing for uninterrupted A/B comparison during ELO rating sessions.
    */
   const handleTrackFinish = useCallback(() => {
-    if (!currentPair || !playingTrack || !isComparisonMode) return;
+    if (!currentPair || !playingTrackRef.current || !isComparisonMode) return;
 
     // Determine which track just finished and play the other one
-    const otherTrack = playingTrack.id === currentPair.track_a.id
+    const otherTrack = playingTrackRef.current.id === currentPair.track_a.id
       ? currentPair.track_b
       : currentPair.track_a;
 
     // Automatically play the other track
     playTrack(otherTrack);
-  }, [currentPair, playingTrack, isComparisonMode, playTrack]);
+  }, [currentPair, isComparisonMode, playTrack]); // playingTrack removed from deps
 
   if (startSession.isError) {
     return (
