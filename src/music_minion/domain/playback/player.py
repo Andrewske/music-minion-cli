@@ -36,7 +36,7 @@ class PlayerState(NamedTuple):
     duration: float = 0.0
     playback_source: Optional[str] = None  # 'mpv' or 'spotify'
     current_session_id: Optional[int] = None  # Active listening session ID
-    playback_started_at: Optional[float] = None  # NEW: Unix timestamp
+    playback_started_at: Optional[float] = None
 
     def __getattr__(self, name: str) -> Any:
         """Provide helpful error for missing attributes, especially with_* methods."""
@@ -308,7 +308,7 @@ def play_file(
                 is_playing=True,
                 playback_source="mpv",
                 current_session_id=session_id,
-                playback_started_at=time.time(),  # NEW
+                playback_started_at=time.time(),
             )
         )
         return updated_state, True
@@ -377,7 +377,7 @@ def stop_playback(state: PlayerState) -> tuple[PlayerState, bool]:
             current_position=0.0,
             duration=0.0,
             current_session_id=None,  # Clear session on stop
-            playback_started_at=None,  # NEW
+            playback_started_at=None,
         ), True
 
     return state, False

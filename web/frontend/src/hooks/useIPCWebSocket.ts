@@ -149,10 +149,17 @@ export function useIPCWebSocket() {
       };
 
       ws.onerror = () => {
-        // WebSocket connection failed - this is expected if backend isn't running
-        // Silently ignore - reconnection logic will handle it
+        // WebSocket connection failed - expected if backend isn't ready yet
+        //
+        // NOTE: Browser will log "WebSocket connection to 'ws://localhost:8765/' failed"
+        // to the console during startup race condition. This CANNOT be suppressed via
+        // JavaScript - it's normal browser behavior. The reconnection logic below
+        // handles it automatically with exponential backoff.
+        //
+        // Reconnection logic will handle it automatically
       };
-    } catch (error) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    } catch (_) {
       // WebSocket construction failed - silently ignore
       // This is expected if backend isn't running yet
     }

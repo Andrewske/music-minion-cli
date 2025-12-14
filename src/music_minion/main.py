@@ -522,7 +522,12 @@ def interactive_mode_blessed(web_processes: tuple | None = None) -> None:
 
 
 def interactive_mode() -> None:
-    """Run the interactive command loop."""
+    """Run the interactive command loop.
+
+    TODO: Refactor interactive_mode() into smaller functions
+    Suggested: setup_web_mode(), setup_dev_mode(), run_blessed_ui_mode(), run_simple_mode()
+    See: CLAUDE.md guideline (functions ≤20 lines)
+    """
     global current_config, current_player_state, music_tracks
     global file_watcher_observer, file_watcher_handler
     import os
