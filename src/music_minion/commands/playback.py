@@ -995,6 +995,30 @@ def handle_status_command(ctx: AppContext) -> tuple[AppContext, bool]:
     return ctx, True
 
 
+def handle_seek_pos_command(ctx: AppContext) -> tuple[AppContext, bool]:
+    """Seek forward 10 seconds in current track.
+
+    Args:
+        ctx: Application context
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    return handle_seek_relative(ctx, 10.0)
+
+
+def handle_seek_neg_command(ctx: AppContext) -> tuple[AppContext, bool]:
+    """Seek backward 10 seconds in current track.
+
+    Args:
+        ctx: Application context
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    return handle_seek_relative(ctx, -10.0)
+
+
 def handle_history_command(ctx: AppContext, args: list[str]) -> tuple[AppContext, bool]:
     """Show playback history in track viewer.
 

@@ -160,6 +160,12 @@ def main() -> None:
     subparsers.add_parser("web-archive", help="Archive current track in web interface")
     subparsers.add_parser("web-play1", help="Play first track in web interface")
     subparsers.add_parser("web-play2", help="Play second track in web interface")
+    subparsers.add_parser(
+        "web-seek-pos", help="Seek forward 10 seconds in web interface"
+    )
+    subparsers.add_parser(
+        "web-seek-neg", help="Seek backward 10 seconds in web interface"
+    )
 
     # IPC commands for playlists
     add_parser = subparsers.add_parser("add", help="Add current track to playlist")
@@ -211,6 +217,12 @@ def main() -> None:
 
         elif args.subcommand == "web-play2":
             sys.exit(send_ipc_command("web-play2", []))
+
+        elif args.subcommand == "web-seek-pos":
+            sys.exit(send_ipc_command("web-seek-pos", []))
+
+        elif args.subcommand == "web-seek-neg":
+            sys.exit(send_ipc_command("web-seek-neg", []))
 
         elif args.subcommand == "add":
             playlist_name = " ".join(args.playlist)

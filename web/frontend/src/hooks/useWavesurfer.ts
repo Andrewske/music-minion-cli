@@ -5,15 +5,14 @@ import { formatError } from '../utils/formatError';
 
 interface UseWavesurferOptions {
   trackId: number;
+  audioUrl?: string;
+  isPlaying: boolean;  // Explicit control instead of isActive
+  onFinish?: () => void;
   onReady?: (duration: number) => void;
   onSeek?: (progress: number) => void;
-  isActive?: boolean;
-  /**
-   * Callback fired when audio playback reaches the end.
-   * Used for comparison mode to automatically switch between tracks,
-   * creating a seamless looping experience for track comparison.
-   */
-  onFinish?: () => void;
+  onTimeUpdate?: (currentTime: number) => void;
+  startPosition?: number;
+  endPosition?: number;
 }
 
 function createWavesurferConfig(container: HTMLDivElement) {
@@ -31,16 +30,15 @@ function createWavesurferConfig(container: HTMLDivElement) {
   };
 }
 
-export function useWavesurfer({ trackId, onReady, onSeek, isActive = false, onFinish }: UseWavesurferOptions) {
+export function useWavesurfer({ trackId, audioUrl, isPlaying, onFinish, onReady, onSeek, onTimeUpdate, startPosition, endPosition }: UseWavesurferOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const lastPositionRef = useRef<number>(0); // Store last playback position
   const lastFinishTimeRef = useRef<number>(0); // Debounce rapid finish triggers
-  const prevTrackIdRef = useRef<number | null>(null);
+  const prevTrackIdRef = useRef<number>(trackId);
 
   const handleReady = useCallback((duration: number): void => {
     setDuration(duration);
@@ -60,11 +58,10 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false, onFi
       return;
     }
     lastFinishTimeRef.current = now;
-    setIsPlaying(false);
     onFinish?.();
   }, [onFinish]);
 
-  const initWavesurfer = useCallback(async (abortSignal: AbortSignal, shouldAutoplay: boolean) => {
+  const initWavesurfer = useCallback(async (abortSignal: AbortSignal) => {
     if (!containerRef.current) return;
 
     try {
@@ -104,12 +101,8 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false, onFi
       // Set up event listeners
       wavesurfer.on('ready', () => {
         handleReady(wavesurfer.getDuration());
-
-        // Autoplay if requested
-        if (shouldAutoplay) {
-          wavesurfer.play().catch(() => {
-            // Autoplay blocked by browser - user must interact first
-          });
+        if (isPlaying) {
+          wavesurfer.play().catch(() => {});
         }
       });
 
@@ -117,9 +110,7 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false, onFi
         setError(formatError(error));
       });
 
-        wavesurfer.on('play', () => setIsPlaying(true));
         wavesurfer.on('pause', () => {
-          setIsPlaying(false);
           lastPositionRef.current = wavesurfer.getCurrentTime(); // Store position on pause
         });
         wavesurfer.on('finish', handleFinish);
@@ -170,8 +161,8 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false, onFi
     // ESLint warning is a false positive: initWavesurfer performs async initialization
     // that sets state (error, isPlaying, currentTime) as side effects. This is safe
     // because it only runs when trackId changes, not in response to state changes.
-    // isActive changes are handled separately by the effect below (lines 179-199).
-    initWavesurfer(abortController.signal, isActive);
+    // isPlaying changes are handled separately by the effect below
+    initWavesurfer(abortController.signal);
 
     return () => {
       // Abort any in-flight async operations
@@ -183,32 +174,29 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false, onFi
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trackId, initWavesurfer]); // isActive handled by separate effect (lines 183-203)
+  }, [trackId, isPlaying, initWavesurfer]); // isPlaying handled by separate effect
 
-  // Watch for isActive changes to pause/play accordingly
-  const prevIsActive = useRef(isActive);
+  // Keep Track Change Detection
+  useEffect(() => {
+    const trackChanged = prevTrackIdRef.current !== trackId;
+    if (trackChanged) {
+      lastPositionRef.current = 0;  // Reset position for new track
+      prevTrackIdRef.current = trackId;
+    }
+  }, [trackId]);
 
+  // Effect responds to isPlaying changes
   useEffect(() => {
     if (!wavesurferRef.current) return;
 
-    if (isActive && !prevIsActive.current) {
-      // Became active - resume from last position and play
-      if (duration > 0) {
-        wavesurferRef.current.seekTo(lastPositionRef.current / duration);
-      }
-      wavesurferRef.current.play().catch(() => {
-        // Play failed - likely browser autoplay policy
+    if (isPlaying && !wavesurferRef.current.isPlaying()) {
+      wavesurferRef.current.play().catch((err) => {
+        console.warn('Play failed:', err);
       });
-    } else if (!isActive && prevIsActive.current) {
-      // Became inactive - pause and store current position
-      if (wavesurferRef.current.isPlaying()) {
-        wavesurferRef.current.pause();
-      }
-      lastPositionRef.current = wavesurferRef.current.getCurrentTime();
+    } else if (!isPlaying && wavesurferRef.current.isPlaying()) {
+      wavesurferRef.current.pause();
     }
-
-    prevIsActive.current = isActive;
-  }, [isActive, duration]);
+  }, [isPlaying]);
 
   const togglePlayPause = (): void => {
     if (wavesurferRef.current) {
@@ -216,11 +204,20 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false, onFi
     }
   };
 
-  const seekToPercent = (percent: number): void => {
+  const seekToPercent = useCallback((percent: number): void => {
     if (wavesurferRef.current) {
       wavesurferRef.current.seekTo(percent / 100);
     }
-  };
+  }, []);
+
+  const seekRelative = useCallback((seconds: number): void => {
+    if (wavesurferRef.current) {
+      const currentTime = wavesurferRef.current.getCurrentTime();
+      const duration = wavesurferRef.current.getDuration();
+      const newTime = Math.max(0, Math.min(duration, currentTime + seconds));
+      wavesurferRef.current.seekTo(newTime / duration);
+    }
+  }, []);
 
   const retryLoad = useCallback((): void => {
     // FIX: Destroy old instance BEFORE creating new one
@@ -231,17 +228,40 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false, onFi
     setError(null);
     // Re-trigger initialization with new AbortController
     const abortController = new AbortController();
-    initWavesurfer(abortController.signal, isActive);
-  }, [initWavesurfer, isActive]);
+    initWavesurfer(abortController.signal);
+  }, [initWavesurfer, isPlaying]);
+
+  // Listen for seek commands from IPC
+  useEffect(() => {
+    const handleSeekPos = () => {
+      if (wavesurferRef.current && isPlaying) {
+        seekRelative(10);
+      }
+    };
+
+    const handleSeekNeg = () => {
+      if (wavesurferRef.current && isPlaying) {
+        seekRelative(-10);
+      }
+    };
+
+    window.addEventListener('music-minion-seek-pos', handleSeekPos);
+    window.addEventListener('music-minion-seek-neg', handleSeekNeg);
+
+    return () => {
+      window.removeEventListener('music-minion-seek-pos', handleSeekPos);
+      window.removeEventListener('music-minion-seek-neg', handleSeekNeg);
+    };
+  }, [isPlaying, seekRelative]);
 
   return {
     containerRef,
-    isPlaying,
     currentTime,
     duration,
     error,
     retryLoad,
     seekToPercent,
+    seekRelative,
     togglePlayPause,
   };
 }

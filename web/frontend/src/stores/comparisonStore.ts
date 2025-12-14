@@ -5,7 +5,8 @@ interface ComparisonState {
   sessionId: string | null;
   currentPair: ComparisonPair | null;
   prefetchedPair: ComparisonPair | null;
-  playingTrack: TrackInfo | null;
+  currentTrack: TrackInfo | null;  // Which track is loaded/selected
+  isPlaying: boolean;              // Is audio currently playing
   comparisonsCompleted: number;
   priorityPathPrefix: string | null;
   isComparisonMode: boolean;
@@ -13,7 +14,10 @@ interface ComparisonState {
 
 interface ComparisonActions {
   setSession: (sessionId: string, pair: ComparisonPair, prefetched?: ComparisonPair, priorityPathPrefix?: string) => void;
-  setPlaying: (track: TrackInfo | null) => void;
+  setCurrentTrack: (track: TrackInfo | null) => void;
+  setIsPlaying: (playing: boolean) => void;
+  togglePlaying: () => void;
+  selectAndPlay: (track: TrackInfo) => void;
   incrementCompleted: () => void;
   reset: () => void;
   setCurrentPair: (pair: ComparisonPair, prefetched?: ComparisonPair) => void;
@@ -27,7 +31,8 @@ const initialState: ComparisonState = {
   sessionId: null,
   currentPair: null,
   prefetchedPair: null,
-  playingTrack: null,
+  currentTrack: null,
+  isPlaying: false,
   comparisonsCompleted: 0,
   priorityPathPrefix: null,
   isComparisonMode: false,
@@ -41,15 +46,34 @@ export const useComparisonStore = create<ComparisonStore>((set, get) => ({
       sessionId,
       currentPair: pair,
       prefetchedPair: prefetched ?? null,
+      currentTrack: pair.track_a,  // Load track A
+      isPlaying: false,            // But don't play yet
       comparisonsCompleted: 0,
-      playingTrack: null,
       priorityPathPrefix: priorityPathPrefix ?? null,
       isComparisonMode: true,
     });
   },
 
-  setPlaying: (track) => {
-    set({ playingTrack: track });
+  togglePlaying: () => {
+    const { isPlaying, currentTrack, currentPair } = get();
+    if (!currentTrack && currentPair) {
+      // No track loaded, load track A and play
+      set({ currentTrack: currentPair.track_a, isPlaying: true });
+    } else {
+      set({ isPlaying: !isPlaying });
+    }
+  },
+
+  selectAndPlay: (track) => {
+    set({ currentTrack: track, isPlaying: true });
+  },
+
+  setCurrentTrack: (track) => {
+    set({ currentTrack: track });
+  },
+
+  setIsPlaying: (playing) => {
+    set({ isPlaying: playing });
   },
 
   incrementCompleted: () => {
@@ -73,7 +97,8 @@ export const useComparisonStore = create<ComparisonStore>((set, get) => ({
     set({
       currentPair: nextPair,
       prefetchedPair: prefetched ?? null,
-      playingTrack: nextPair.track_a, // Start playing the first track of the new pair
+      currentTrack: nextPair.track_a,  // Load track A
+      isPlaying: false,                // Wait for user action
       isComparisonMode: true, // Keep comparison mode active
     });
   },
