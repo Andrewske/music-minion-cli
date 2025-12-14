@@ -1,18 +1,17 @@
 import { useWavesurfer } from '../hooks/useWavesurfer';
+import type { TrackInfo } from '../types';
 
 interface WaveformPlayerProps {
-  trackId: number;
-  onSeek?: (progress: number) => void;
-  isActive?: boolean;
+  track: TrackInfo;
+  isPlaying: boolean;
   onTogglePlayPause?: () => void;
   onFinish?: () => void;
 }
 
-export function WaveformPlayer({ trackId, onSeek, isActive = false, onTogglePlayPause, onFinish }: WaveformPlayerProps) {
-  const { containerRef, isPlaying, currentTime, duration, error, retryLoad, togglePlayPause } = useWavesurfer({
-    trackId,
-    onSeek,
-    isActive,
+export function WaveformPlayer({ track, isPlaying, onTogglePlayPause, onFinish }: WaveformPlayerProps) {
+  const { containerRef, currentTime, duration, error, retryLoad, togglePlayPause } = useWavesurfer({
+    trackId: track.id,
+    isPlaying,
     onFinish,
   });
 

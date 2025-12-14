@@ -17,43 +17,21 @@ export function useIPCWebSocket() {
 
   const handleCommand = useCallback((command: string, args: string[]) => {
     // Read FRESH state when command is received (avoids stale closure)
-    const { currentPair, playingTrack, setPlaying } = useComparisonStore.getState();
+    const { currentPair, togglePlaying, selectAndPlay } = useComparisonStore.getState();
 
     console.log('Received IPC command:', command, args);
 
     switch (command) {
       case 'playpause':
-        if (playingTrack) {
-          setPlaying(null);  // Pause
-        } else if (currentPair) {
-          setPlaying(currentPair.track_a);  // Play track A
-        } else {
-          console.log('Play/pause command received but no active comparison');
-        }
+        togglePlaying();  // Simple toggle, remembers current track
         break;
 
       case 'play1':
-        if (!currentPair) {
-          console.log('Play1 command received but no active comparison');
-          break;
-        }
-        if (playingTrack?.id === currentPair.track_a.id) {
-          setPlaying(null);  // Pause if track A is playing
-        } else {
-          setPlaying(currentPair.track_a);  // Play track A
-        }
+        if (currentPair) selectAndPlay(currentPair.track_a);
         break;
 
       case 'play2':
-        if (!currentPair) {
-          console.log('Play2 command received but no active comparison');
-          break;
-        }
-        if (playingTrack?.id === currentPair.track_b.id) {
-          setPlaying(null);  // Pause if track B is playing
-        } else {
-          setPlaying(currentPair.track_b);  // Play track B
-        }
+        if (currentPair) selectAndPlay(currentPair.track_b);
         break;
 
       case 'winner':
@@ -70,16 +48,26 @@ export function useIPCWebSocket() {
         }
         break;
 
-      case 'archive':
-        if (currentPair) {
-          archiveTrack.mutate(currentPair.track_a.id);
-        } else {
-          console.log('Archive command received but no active comparison');
-        }
-        break;
+       case 'archive':
+         if (currentPair) {
+           archiveTrack.mutate(currentPair.track_a.id);
+         } else {
+           console.log('Archive command received but no active comparison');
+         }
+         break;
 
-      default:
-        console.log('Unknown IPC command:', command);
+       case 'seek-pos':
+         // Dispatch custom event for seek forward
+         window.dispatchEvent(new CustomEvent('music-minion-seek-pos'));
+         break;
+
+       case 'seek-neg':
+         // Dispatch custom event for seek backward
+         window.dispatchEvent(new CustomEvent('music-minion-seek-neg'));
+         break;
+
+       default:
+         console.log('Unknown IPC command:', command);
     }
   }, [recordComparison, archiveTrack]);
 
@@ -109,8 +97,8 @@ export function useIPCWebSocket() {
           } else if (data.type === 'shutdown') {
             // Backend is shutting down - pause all playback immediately
             console.log('Backend shutdown detected - pausing and reloading page');
-            const { setPlaying } = useComparisonStore.getState();
-            setPlaying(null);  // Pause playback
+            const { setIsPlaying } = useComparisonStore.getState();
+            setIsPlaying(false);  // Pause playback
 
             // Reload page after brief delay to clear all state and stop any lingering audio
             setTimeout(() => {
@@ -129,8 +117,8 @@ export function useIPCWebSocket() {
         // Only pause playback if we were previously connected
         // This prevents pausing when initial connection fails
         if (wasConnectedRef.current) {
-          const { setPlaying } = useComparisonStore.getState();
-          setPlaying(null);
+          const { setIsPlaying } = useComparisonStore.getState();
+          setIsPlaying(false);
         }
 
         // Exponential backoff reconnection with max attempts

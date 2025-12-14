@@ -579,12 +579,17 @@ def is_track_finished(state: PlayerState) -> bool:
     """Check if track finished with multiple validation layers.
 
     Safeguards:
+    0. Don't consider paused tracks as finished
     1. Minimum playback time (prevents incomplete metadata issues)
     2. Duration sanity check (detects corrupted/incomplete metadata)
     3. Position-based completion check
     4. EOF flag validation (with position confirmation)
     """
     if not is_mpv_running(state):
+        return False
+
+    # Don't consider paused tracks as finished
+    if not state.is_playing:
         return False
 
     position = get_mpv_property(state.socket_path, "time-pos") or 0.0

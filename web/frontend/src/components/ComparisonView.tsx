@@ -15,11 +15,21 @@ import { StatsModal } from './StatsModal';
 import { getFolders } from '../api/tracks';
 
 export function ComparisonView() {
-  const { currentPair, playingTrack, comparisonsCompleted, priorityPathPrefix, setPriorityPath, isComparisonMode } = useComparisonStore();
+  const {
+    currentTrack,
+    isPlaying,
+    currentPair,
+    comparisonsCompleted,
+    priorityPathPrefix,
+    setPriorityPath,
+    selectAndPlay,
+    setIsPlaying,
+    isComparisonMode
+  } = useComparisonStore();
   const startSession = useStartSession();
   const recordComparison = useRecordComparison();
   const archiveTrack = useArchiveTrack();
-  const { playTrack, pauseTrack } = useAudioPlayer(playingTrack, true);
+  const { playTrack } = useAudioPlayer(currentTrack);
 
   // Connect to IPC WebSocket for remote control
   useIPCWebSocket();
@@ -46,25 +56,11 @@ export function ComparisonView() {
       .catch((err) => console.error('Failed to load folders:', err));
   }, []);
 
-  // Track the active waveform track (persists when paused)
-  const [waveformTrack, setWaveformTrack] = useState<TrackInfo | null>(null);
-
-  // Ref for playingTrack to avoid dependency in handleTrackFinish
-  const playingTrackRef = useRef(playingTrack);
+  // Ref for currentTrack to avoid dependency in handleTrackFinish
+  const currentTrackRef = useRef(currentTrack);
   useEffect(() => {
-    playingTrackRef.current = playingTrack;
-  }, [playingTrack]);
-
-  // Update waveform track ONLY when a new track starts playing
-  // ESLint warning is a false positive: This effect updates waveformTrack (local state)
-  // based on playingTrack (store state). There's no circular dependency because
-  // setWaveformTrack doesn't affect playingTrack. The waveform needs to persist when
-  // paused (playingTrack becomes null), which is why we only set on non-null values.
-  useEffect(() => {
-    if (playingTrack !== null) {
-      setWaveformTrack(playingTrack); // eslint-disable-line react-hooks/set-state-in-effect
-    }
-  }, [playingTrack]);
+    currentTrackRef.current = currentTrack;
+  }, [currentTrack]);
 
   const handleStartSession = () => {
     const priorityPath = selectedFolder && foldersData
@@ -76,12 +72,10 @@ export function ComparisonView() {
   };
 
   const handleTrackTap = (track: TrackInfo) => {
-    if (playingTrack?.id === track.id) {
-      // If this track is already playing, pause it
-      pauseTrack();
+    if (currentTrack?.id === track.id) {
+      setIsPlaying(!isPlaying);  // Toggle play/pause for same track
     } else {
-      // Otherwise, play this track
-      playTrack(track);
+      selectAndPlay(track);       // Switch track and play
     }
   };
 
@@ -107,16 +101,16 @@ export function ComparisonView() {
    * and vice versa, allowing for uninterrupted A/B comparison during ELO rating sessions.
    */
   const handleTrackFinish = useCallback(() => {
-    if (!currentPair || !playingTrackRef.current || !isComparisonMode) return;
+    if (!currentPair || !currentTrackRef.current || !isComparisonMode) return;
 
     // Determine which track just finished and play the other one
-    const otherTrack = playingTrackRef.current.id === currentPair.track_a.id
+    const otherTrack = currentTrackRef.current.id === currentPair.track_a.id
       ? currentPair.track_b
       : currentPair.track_a;
 
     // Automatically play the other track
     playTrack(otherTrack);
-  }, [currentPair, isComparisonMode, playTrack]); // playingTrack removed from deps
+  }, [currentPair, isComparisonMode, playTrack]); // currentTrack removed from deps
 
   if (startSession.isError) {
     return (
@@ -213,16 +207,16 @@ export function ComparisonView() {
         <div className="w-full lg:max-w-md">
           <ErrorBoundary>
             <div className={`relative group transition-opacity duration-150 ${isSubmitting ? 'opacity-70' : ''}`}>
-              <SwipeableTrack
-                track={currentPair.track_a}
-                isPlaying={playingTrack?.id === currentPair.track_a.id}
-                onSwipeRight={() => handleSwipeRight(currentPair.track_a.id)}
-                onSwipeLeft={() => handleSwipeLeft(currentPair.track_a.id)}
-                onTap={() => handleTrackTap(currentPair.track_a)}
-                onArchive={() => handleSwipeLeft(currentPair.track_a.id)}
-                onWinner={() => handleSwipeRight(currentPair.track_a.id)}
-                isLoading={isArchiving || isSubmitting}
-              />
+               <SwipeableTrack
+                 track={currentPair.track_a}
+                 isPlaying={isPlaying && currentTrack?.id === currentPair.track_a.id}
+                 onSwipeRight={() => handleSwipeRight(currentPair.track_a.id)}
+                 onSwipeLeft={() => handleSwipeLeft(currentPair.track_a.id)}
+                 onTap={() => handleTrackTap(currentPair.track_a)}
+                 onArchive={() => handleSwipeLeft(currentPair.track_a.id)}
+                 onWinner={() => handleSwipeRight(currentPair.track_a.id)}
+                 isLoading={isArchiving || isSubmitting}
+               />
             </div>
           </ErrorBoundary>
         </div>
@@ -238,16 +232,16 @@ export function ComparisonView() {
         <div className="w-full lg:max-w-md">
           <ErrorBoundary>
             <div className={`relative group transition-opacity duration-150 ${isSubmitting ? 'opacity-70' : ''}`}>
-              <SwipeableTrack
-                track={currentPair.track_b}
-                isPlaying={playingTrack?.id === currentPair.track_b.id}
-                onSwipeRight={() => handleSwipeRight(currentPair.track_b.id)}
-                onSwipeLeft={() => handleSwipeLeft(currentPair.track_b.id)}
-                onTap={() => handleTrackTap(currentPair.track_b)}
-                onArchive={() => handleSwipeLeft(currentPair.track_b.id)}
-                onWinner={() => handleSwipeRight(currentPair.track_b.id)}
-                isLoading={isArchiving || isSubmitting}
-              />
+               <SwipeableTrack
+                 track={currentPair.track_b}
+                 isPlaying={isPlaying && currentTrack?.id === currentPair.track_b.id}
+                 onSwipeRight={() => handleSwipeRight(currentPair.track_b.id)}
+                 onSwipeLeft={() => handleSwipeLeft(currentPair.track_b.id)}
+                 onTap={() => handleTrackTap(currentPair.track_b)}
+                 onArchive={() => handleSwipeLeft(currentPair.track_b.id)}
+                 onWinner={() => handleSwipeRight(currentPair.track_b.id)}
+                 isLoading={isArchiving || isSubmitting}
+               />
             </div>
           </ErrorBoundary>
         </div>
@@ -257,28 +251,28 @@ export function ComparisonView() {
       {currentPair && (
         <div className="fixed bottom-0 inset-x-0 bg-slate-900/90 backdrop-blur-xl border-t border-slate-800 p-3 pb-6 lg:pb-3 z-50">
           <div className="max-w-3xl mx-auto flex flex-col gap-1">
-             <div className="flex items-center justify-between text-xs text-slate-400 px-1">
-               <span className="font-mono">{playingTrack ? 'NOW PLAYING' : 'PAUSED'}</span>
-               <span className="truncate max-w-[200px] text-slate-200">
-                 {playingTrack ? `${playingTrack.artist} - ${playingTrack.title}` : ''}
-               </span>
-             </div>
+              <div className="flex items-center justify-between text-xs text-slate-400 px-1">
+                <span className="font-mono">{isPlaying ? 'NOW PLAYING' : 'PAUSED'}</span>
+                <span className="truncate max-w-[200px] text-slate-200">
+                  {currentTrack ? `${currentTrack.artist} - ${currentTrack.title}` : ''}
+                </span>
+              </div>
 
-             {/* Waveform - never unmount during loading to preserve playback */}
-             <div className="h-16 w-full bg-slate-950/50 rounded-lg overflow-hidden relative border border-slate-800">
-               {waveformTrack ? (
-                  <WaveformPlayer
-                    trackId={waveformTrack.id}
-                    isActive={playingTrack?.id === waveformTrack.id}
-                    onTogglePlayPause={() => handleTrackTap(waveformTrack)}
-                    onFinish={handleTrackFinish}
-                  />
-               ) : (
-                 <div className="flex items-center justify-center h-full text-slate-500">
-                   No track selected
-                 </div>
-               )}
-             </div>
+              {/* Waveform - never unmount during loading to preserve playback */}
+              <div className="h-16 w-full bg-slate-950/50 rounded-lg overflow-hidden relative border border-slate-800">
+                {currentTrack ? (
+                   <WaveformPlayer
+                     track={currentTrack}
+                     isPlaying={isPlaying && currentTrack?.id === currentTrack.id}
+                     onTogglePlayPause={() => handleTrackTap(currentTrack)}
+                     onFinish={handleTrackFinish}
+                   />
+                ) : (
+                  <div className="flex items-center justify-center h-full text-slate-500">
+                    No track selected
+                  </div>
+                )}
+              </div>
 
           </div>
         </div>

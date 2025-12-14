@@ -7,9 +7,8 @@ Routes user commands to appropriate handler functions.
 from loguru import logger
 
 from music_minion.context import AppContext
-from music_minion.core import config
-from music_minion.core import database
 from music_minion.core.output import log
+from music_minion.ipc.server import process_ipc_command
 from music_minion.domain import playback as playback_domain
 from music_minion import actions
 
@@ -210,6 +209,12 @@ def handle_command(
 
     elif command == "stop":
         return playback.handle_stop_command(ctx)
+
+    elif command == "seek-pos":
+        return playback.handle_seek_pos_command(ctx)
+
+    elif command == "seek-neg":
+        return playback.handle_seek_neg_command(ctx)
 
     elif command == "killall":
         return admin.handle_killall_command(ctx)
@@ -441,6 +446,14 @@ def handle_command(
     elif command == "":
         # Empty command, do nothing
         return ctx, True
+
+    elif command.startswith("web-"):
+        # Web control commands - broadcast to web clients via IPC
+        # Use process_ipc_command with None ipc_server (will still log and return success)
+        ctx, success, message = process_ipc_command(
+            ctx, command, args, lambda msg: log(msg), None
+        )
+        return ctx, success
 
     else:
         logger.warning(f"Unknown command: '{command}'")
