@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useComparisonStore } from '../stores/comparisonStore';
 import type { TrackInfo } from '../types';
 
@@ -14,13 +14,13 @@ export function useAudioPlayer(track: TrackInfo | null, isComparisonMode = false
     }
   }, [playingTrack, track, isComparisonMode]);
 
-  const playTrack = (trackToPlay: TrackInfo) => {
+  const playTrack = useCallback((trackToPlay: TrackInfo) => {
     setPlaying(trackToPlay);
-  };
+  }, [setPlaying]);
 
-  const pauseTrack = () => {
+  const pauseTrack = useCallback(() => {
     setPlaying(null);
-  };
+  }, [setPlaying]);
 
   const isPlaying = playingTrack?.id === track?.id;
 

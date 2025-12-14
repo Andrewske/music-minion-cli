@@ -40,6 +40,7 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false, onFi
   const [error, setError] = useState<string | null>(null);
   const lastPositionRef = useRef<number>(0); // Store last playback position
   const lastFinishTimeRef = useRef<number>(0); // Debounce rapid finish triggers
+  const prevTrackIdRef = useRef<number | null>(null);
 
   const handleReady = useCallback((duration: number): void => {
     setDuration(duration);
@@ -116,15 +117,18 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false, onFi
         setError(formatError(error));
       });
 
-       wavesurfer.on('play', () => setIsPlaying(true));
-       wavesurfer.on('pause', () => setIsPlaying(false));
+        wavesurfer.on('play', () => setIsPlaying(true));
+        wavesurfer.on('pause', () => {
+          setIsPlaying(false);
+          lastPositionRef.current = wavesurfer.getCurrentTime(); // Store position on pause
+        });
         wavesurfer.on('finish', handleFinish);
 
-       wavesurfer.on('audioprocess', () => {
-         const time = wavesurfer.getCurrentTime();
-         setCurrentTime(time);
-         lastPositionRef.current = time; // Update resume position during playback
-       });
+        wavesurfer.on('timeupdate', () => {
+          const time = wavesurfer.getCurrentTime();
+          setCurrentTime(time);
+          lastPositionRef.current = time; // Update resume position during playback
+        });
 
        wavesurfer.on('interaction', () => {
          const time = wavesurfer.getCurrentTime();
@@ -153,8 +157,12 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false, onFi
   useEffect(() => {
     if (!containerRef.current || !trackId) return;
 
-    // Reset resume position when track changes
-    lastPositionRef.current = 0;
+    // Only reset position when track ACTUALLY changes, not on callback updates
+    const trackChanged = prevTrackIdRef.current !== trackId;
+    if (trackChanged) {
+      lastPositionRef.current = 0;
+      prevTrackIdRef.current = trackId;
+    }
 
     // AbortController to cancel async operations on cleanup
     const abortController = new AbortController();
@@ -185,7 +193,7 @@ export function useWavesurfer({ trackId, onReady, onSeek, isActive = false, onFi
 
     if (isActive && !prevIsActive.current) {
       // Became active - resume from last position and play
-      if (duration > 0 && lastPositionRef.current > 0) {
+      if (duration > 0) {
         wavesurferRef.current.seekTo(lastPositionRef.current / duration);
       }
       wavesurferRef.current.play().catch(() => {
