@@ -174,16 +174,7 @@ export function useWavesurfer({ trackId, audioUrl, isPlaying, onFinish, onReady,
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trackId, isPlaying, initWavesurfer]); // isPlaying handled by separate effect
-
-  // Keep Track Change Detection
-  useEffect(() => {
-    const trackChanged = prevTrackIdRef.current !== trackId;
-    if (trackChanged) {
-      lastPositionRef.current = 0;  // Reset position for new track
-      prevTrackIdRef.current = trackId;
-    }
-  }, [trackId]);
+  }, [trackId, initWavesurfer]); // isPlaying handled by separate effect below
 
   // Effect responds to isPlaying changes
   useEffect(() => {
@@ -229,7 +220,7 @@ export function useWavesurfer({ trackId, audioUrl, isPlaying, onFinish, onReady,
     // Re-trigger initialization with new AbortController
     const abortController = new AbortController();
     initWavesurfer(abortController.signal);
-  }, [initWavesurfer, isPlaying]);
+  }, [initWavesurfer]);
 
   // Listen for seek commands from IPC
   useEffect(() => {
