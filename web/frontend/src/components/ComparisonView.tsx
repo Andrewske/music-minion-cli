@@ -1,6 +1,7 @@
  import { useState, useEffect, useRef, useCallback } from 'react';
 import { useComparisonStore } from '../stores/comparisonStore';
 import { useStartSession, useRecordComparison, useArchiveTrack } from '../hooks/useComparison';
+import { usePlaylists } from '../hooks/usePlaylists';
 import type { TrackInfo, FoldersResponse, RecordComparisonRequest } from '../types';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import { useIPCWebSocket } from '../hooks/useIPCWebSocket';
@@ -44,6 +45,11 @@ export function ComparisonView() {
   };
 
   // Folder selection state
+  // Playlist selection state
+  const playlistsQuery = usePlaylists();
+  const playlists = playlistsQuery.data;
+  const [setupRankingMode, setSetupRankingMode] = useState<'global' | 'playlist'>('global');
+  const [setupSelectedPlaylistId, setSetupSelectedPlaylistId] = useState<number | null>(null);
   const [foldersData, setFoldersData] = useState<FoldersResponse | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<string>('');
 
@@ -64,12 +70,6 @@ export function ComparisonView() {
   }, [currentTrack]);
 
   const handleStartSession = () => {
-    const priorityPath = selectedFolder && foldersData
-      ? `${foldersData.root}/${selectedFolder}`
-      : undefined;
-    startSession.mutate({
-      priority_path_prefix: priorityPath,
-    });
   };
 
   const handleTrackTap = (track: TrackInfo) => {
@@ -165,7 +165,62 @@ export function ComparisonView() {
             Music Minion
           </h1>
           <p className="text-slate-400 mb-8 text-lg">
-            Curate your library with precision.
+          {/* Ranking mode selector */}
+          <div className="mb-6">
+            <label className="block text-slate-400 text-sm mb-3 text-left">
+              Ranking Mode
+            </label>
+            <div className="flex gap-4">
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  name="rankingMode"
+                  value="global"
+                  checked={setupRankingMode === 'global'}
+                  onChange={(e) => setSetupRankingMode(e.target.value as 'global' | 'playlist')}
+                  className="mr-2 text-indigo-500"
+                />
+                Global Ranking
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  name="rankingMode"
+                  value="playlist"
+                  checked={setupRankingMode === 'playlist'}
+                  onChange={(e) => setSetupRankingMode(e.target.value as 'global' | 'playlist')}
+                  className="mr-2 text-indigo-500"
+                />
+                Playlist Ranking
+              </label>
+            </div>
+          </div>
+
+          {/* Playlist selector */}
+          {setupRankingMode === 'playlist' && playlists && playlists.length > 0 && (
+            <div className="mb-6">
+              <label className="block text-slate-400 text-sm mb-2 text-left">
+                Select Playlist
+              </label>
+              <select
+                value={setupSelectedPlaylistId ?? ''}
+                onChange={(e) => setSetupSelectedPlaylistId(e.target.value ? Number(e.target.value) : null)}
+                className="w-full bg-slate-800 border border-slate-700 text-slate-100 px-4 py-3 rounded-lg focus:outline-none focus:border-indigo-500 transition-colors"
+              >
+                <option value="">Choose a playlist...</option>
+                {playlists.map((playlist) => (
+                  <option key={playlist.id} value={playlist.id}>
+                    {playlist.name}
+                  </option>
+                ))}
+              </select>
+              {setupSelectedPlaylistId && (
+                <p className="text-emerald-400 text-xs mt-2 text-left font-mono">
+                  Only tracks from this playlist will be ranked
+                </p>
+              )}
+            </div>
+          )}
           </p>
 
           {/* Priority folder selector */}
