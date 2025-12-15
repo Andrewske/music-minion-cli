@@ -8,7 +8,7 @@ interface UseSwipeGestureOptions {
 }
 
 // Swipe gesture thresholds
-const SWIPE_DISTANCE_THRESHOLD = 100; // px - minimum drag distance to register swipe
+const SWIPE_DISTANCE_THRESHOLD = 60; // px - minimum drag distance to register swipe
 const SWIPE_VELOCITY_THRESHOLD = 2.0; // px/ms - minimum velocity for quick flicks
 const ROTATION_FACTOR = 0.1; // degrees per pixel - visual rotation during drag
 
@@ -18,7 +18,7 @@ export function useSwipeGesture({ onSwipeRight, onSwipeLeft }: UseSwipeGestureOp
   const [{ x, rotate }, api] = useSpring(() => ({
     x: 0,
     rotate: 0,
-    config: { tension: 300, friction: 30 },
+    config: { tension: 200, friction: 20 },
   }));
 
   const bind = useDrag(
@@ -36,18 +36,18 @@ export function useSwipeGesture({ onSwipeRight, onSwipeLeft }: UseSwipeGestureOp
           }
         }
 
-        // Reset position
-        api.start({ x: 0, rotate: 0 });
+        // Reset position immediately
+        api.start({ x: 0, rotate: 0, immediate: true });
       } else {
-        // Update drag position with rotation
+        // Update drag position immediately (no animation during drag)
         const rotate = mx * ROTATION_FACTOR;
-        api.start({ x: mx, rotate });
+        api.set({ x: mx, rotate });
       }
     },
     {
       axis: 'x',
       bounds: { left: -200, right: 200 },
-      rubberband: true,
+      rubberband: true, // Keep rubberband for UX feedback (provides resistance at bounds)
       filterTaps: false, // Don't filter taps since we handle clicks in TrackCard
     }
   );
