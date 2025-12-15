@@ -1,6 +1,6 @@
  import { useDrag } from '@use-gesture/react';
  import { useSpring } from '@react-spring/web';
- import { useState } from 'react';
+ import { useState, useEffect } from 'react';
 
 interface UseSwipeGestureOptions {
   onSwipeRight: () => void;
@@ -21,6 +21,10 @@ export function useSwipeGesture({ onSwipeRight, onSwipeLeft }: UseSwipeGestureOp
     config: { tension: 200, friction: 20 },
   }));
 
+  // Reset spring state to ensure clean state between gesture instances
+  useEffect(() => {
+    api.set({ x: 0, rotate: 0 });
+  }, [api]);
 
   const bind = useDrag(
     ({ active, movement: [mx], velocity: [vx] }) => {
@@ -46,9 +50,9 @@ export function useSwipeGesture({ onSwipeRight, onSwipeLeft }: UseSwipeGestureOp
       }
     },
     {
-      bounds: { left: -200, right: 200 },
-      rubberband: true, // Keep rubberband for UX feedback (provides resistance at bounds)
       axis: 'x',
+      bounds: { left: -150, right: 150 }, // Reduced bounds for better gesture detection
+      rubberband: 0.3, // Numeric resistance instead of boolean for finer control
       filterTaps: false, // Don't filter taps since we handle clicks in TrackCard
     }
   );
