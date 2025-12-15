@@ -2,7 +2,7 @@
 import { useComparisonStore } from '../stores/comparisonStore';
 import { useStartSession, useRecordComparison, useArchiveTrack } from '../hooks/useComparison';
 import { usePlaylists } from '../hooks/usePlaylists';
-import type { TrackInfo, FoldersResponse, RecordComparisonRequest } from '../types';
+import type { TrackInfo, FoldersResponse, RecordComparisonRequest, StartSessionRequest } from '../types';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import { useIPCWebSocket } from '../hooks/useIPCWebSocket';
 import { SwipeableTrack } from './SwipeableTrack';
@@ -70,7 +70,26 @@ export function ComparisonView() {
   }, [currentTrack]);
 
   const handleStartSession = () => {
-  };
+    const priorityPath = selectedFolder && foldersData
+      ? `${foldersData.root}/${selectedFolder}`
+      : undefined;
+
+    if (setupRankingMode === 'playlist' && !setupSelectedPlaylistId) {
+      alert('Please select a playlist for playlist ranking mode');
+      return;
+    }
+
+    const sessionRequest: StartSessionRequest = {
+      priority_path_prefix: priorityPath,
+    };
+
+    if (setupRankingMode === 'playlist' && setupSelectedPlaylistId) {
+      sessionRequest.ranking_mode = 'playlist';
+      sessionRequest.playlist_id = setupSelectedPlaylistId;
+    }
+
+    startSession.mutate(sessionRequest);
+  }
 
   const handleTrackTap = (track: TrackInfo) => {
     if (currentTrack?.id === track.id) {
