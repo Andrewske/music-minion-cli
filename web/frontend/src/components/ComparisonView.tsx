@@ -1,5 +1,4 @@
-import { useCallback } from 'react';
-import { useState, useEffect, useRef } from 'react';
+ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useComparisonStore } from '../stores/comparisonStore';
 import { useStartSession, useRecordComparison, useArchiveTrack } from '../hooks/useComparison';
 import type { TrackInfo, FoldersResponse, RecordComparisonRequest } from '../types';
@@ -81,13 +80,11 @@ export function ComparisonView() {
     }
   };
 
-  const handleSwipeRight = (trackId: number) => {
+  const handleSwipeRight = useCallback((trackId: number) => {
     console.log('ComparisonView handleSwipeRight called with store values:', {
       sessionRankingMode,
       sessionSelectedPlaylistId,
       priorityPathPrefix,
-    rankingMode: sessionRankingMode,
-    selectedPlaylistId: sessionSelectedPlaylistId,
       currentPairSessionId: currentPair!.session_id
     });
     if (!currentPair) return;
@@ -108,11 +105,29 @@ export function ComparisonView() {
     }
 
     recordComparison.mutate(request);
-  };
+  }, [currentPair, sessionRankingMode, sessionSelectedPlaylistId, priorityPathPrefix, recordComparison]);
 
-  const handleSwipeLeft = (trackId: number) => {
+  const handleSwipeLeft = useCallback((trackId: number) => {
     archiveTrack.mutate(trackId);
-  };
+  }, [archiveTrack]);
+
+  // Stable callback references for SwipeableTrack to prevent gesture hook instability
+  const swipeRightA = useCallback(() => {
+    if (!currentPair) return;
+    handleSwipeRight(currentPair.track_a.id);
+  }, [handleSwipeRight, currentPair]);
+  const swipeLeftA = useCallback(() => {
+    if (!currentPair) return;
+    handleSwipeLeft(currentPair.track_a.id);
+  }, [handleSwipeLeft, currentPair]);
+  const swipeRightB = useCallback(() => {
+    if (!currentPair) return;
+    handleSwipeRight(currentPair.track_b.id);
+  }, [handleSwipeRight, currentPair]);
+  const swipeLeftB = useCallback(() => {
+    if (!currentPair) return;
+    handleSwipeLeft(currentPair.track_b.id);
+  }, [handleSwipeLeft, currentPair]);
 
   /**
    * Handles automatic track switching in comparison mode when one track finishes playing.
@@ -227,16 +242,16 @@ export function ComparisonView() {
         <div className="w-full lg:max-w-md">
           <ErrorBoundary>
             <div className={`relative group transition-opacity duration-150 ${isSubmitting ? 'opacity-70' : ''}`}>
-               <SwipeableTrack
-                 track={currentPair.track_a}
-                 isPlaying={isPlaying && currentTrack?.id === currentPair.track_a.id}
-                 onSwipeRight={() => handleSwipeRight(currentPair.track_a.id)}
-                 onSwipeLeft={() => handleSwipeLeft(currentPair.track_a.id)}
-                 onTap={() => handleTrackTap(currentPair.track_a)}
-                 onArchive={() => handleSwipeLeft(currentPair.track_a.id)}
-                 onWinner={() => handleSwipeRight(currentPair.track_a.id)}
-                 isLoading={isArchiving || isSubmitting}
-               />
+              <SwipeableTrack
+                track={currentPair.track_a}
+                isPlaying={isPlaying && currentTrack?.id === currentPair.track_a.id}
+                onSwipeRight={swipeRightA}
+                onSwipeLeft={swipeLeftA}
+                onTap={() => handleTrackTap(currentPair.track_a)}
+                onArchive={swipeLeftA}
+                onWinner={swipeRightA}
+                isLoading={isArchiving || isSubmitting}
+              />
             </div>
           </ErrorBoundary>
         </div>
@@ -252,16 +267,16 @@ export function ComparisonView() {
         <div className="w-full lg:max-w-md">
           <ErrorBoundary>
             <div className={`relative group transition-opacity duration-150 ${isSubmitting ? 'opacity-70' : ''}`}>
-               <SwipeableTrack
-                 track={currentPair.track_b}
-                 isPlaying={isPlaying && currentTrack?.id === currentPair.track_b.id}
-                 onSwipeRight={() => handleSwipeRight(currentPair.track_b.id)}
-                 onSwipeLeft={() => handleSwipeLeft(currentPair.track_b.id)}
-                 onTap={() => handleTrackTap(currentPair.track_b)}
-                 onArchive={() => handleSwipeLeft(currentPair.track_b.id)}
-                 onWinner={() => handleSwipeRight(currentPair.track_b.id)}
-                 isLoading={isArchiving || isSubmitting}
-               />
+              <SwipeableTrack
+                track={currentPair.track_b}
+                isPlaying={isPlaying && currentTrack?.id === currentPair.track_b.id}
+                onSwipeRight={swipeRightB}
+                onSwipeLeft={swipeLeftB}
+                onTap={() => handleTrackTap(currentPair.track_b)}
+                onArchive={swipeLeftB}
+                onWinner={swipeRightB}
+                isLoading={isArchiving || isSubmitting}
+              />
             </div>
           </ErrorBoundary>
         </div>
