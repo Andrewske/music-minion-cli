@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { useComparisonStore } from '../stores/comparisonStore';
 import { useStartSession, useRecordComparison, useArchiveTrack } from '../hooks/useComparison';
-import type { TrackInfo, FoldersResponse } from '../types';
+import type { TrackInfo, FoldersResponse, RecordComparisonRequest } from '../types';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import { useIPCWebSocket } from '../hooks/useIPCWebSocket';
 import { SwipeableTrack } from './SwipeableTrack';
@@ -21,6 +21,8 @@ export function ComparisonView() {
     currentPair,
     comparisonsCompleted,
     priorityPathPrefix,
+    rankingMode: sessionRankingMode,
+    selectedPlaylistId: sessionSelectedPlaylistId,
     setPriorityPath,
     selectAndPlay,
     setIsPlaying,
@@ -80,14 +82,32 @@ export function ComparisonView() {
   };
 
   const handleSwipeRight = (trackId: number) => {
+    console.log('ComparisonView handleSwipeRight called with store values:', {
+      sessionRankingMode,
+      sessionSelectedPlaylistId,
+      priorityPathPrefix,
+    rankingMode: sessionRankingMode,
+    selectedPlaylistId: sessionSelectedPlaylistId,
+      currentPairSessionId: currentPair!.session_id
+    });
     if (!currentPair) return;
-    recordComparison.mutate({
+
+    const request: RecordComparisonRequest = {
       session_id: currentPair.session_id,
       track_a_id: currentPair.track_a.id,
       track_b_id: currentPair.track_b.id,
       winner_id: trackId,
       priority_path_prefix: priorityPathPrefix ?? undefined,
-    });
+    };
+
+    // Include ranking mode info if in playlist mode
+    if (sessionRankingMode === 'playlist' && sessionSelectedPlaylistId) {
+      request.ranking_mode = 'playlist';
+      request.playlist_id = sessionSelectedPlaylistId;
+      console.log('Sending playlist comparison request:', { ranking_mode: 'playlist', playlist_id: sessionSelectedPlaylistId });
+    }
+
+    recordComparison.mutate(request);
   };
 
   const handleSwipeLeft = (trackId: number) => {
