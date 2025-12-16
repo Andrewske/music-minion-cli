@@ -100,12 +100,6 @@ export function ComparisonView() {
   };
 
   const handleSwipeRight = useCallback((trackId: number) => {
-    console.log('ComparisonView handleSwipeRight called with store values:', {
-      sessionRankingMode,
-      sessionSelectedPlaylistId,
-      priorityPathPrefix,
-      currentPairSessionId: currentPair!.session_id
-    });
     if (!currentPair) return;
 
     const request: RecordComparisonRequest = {
@@ -120,7 +114,6 @@ export function ComparisonView() {
     if (sessionRankingMode === 'playlist' && sessionSelectedPlaylistId) {
       request.ranking_mode = 'playlist';
       request.playlist_id = sessionSelectedPlaylistId;
-      console.log('Sending playlist comparison request:', { ranking_mode: 'playlist', playlist_id: sessionSelectedPlaylistId });
     }
 
     recordComparison.mutate(request);
@@ -296,6 +289,9 @@ export function ComparisonView() {
                 priorityPath={priorityPathPrefix ?? undefined}
                 onPriorityChange={handlePriorityChange}
                 folders={foldersData ?? undefined}
+                rankingMode={sessionRankingMode ?? 'global'}
+                playlists={playlists ?? []}
+                selectedPlaylistId={sessionSelectedPlaylistId}
               />
              <div className="flex items-center gap-2">
                <button
@@ -394,6 +390,7 @@ export function ComparisonView() {
       <StatsModal
         isOpen={isStatsModalOpen}
         onClose={() => setIsStatsModalOpen(false)}
+        playlistId={sessionRankingMode === 'playlist' ? sessionSelectedPlaylistId : null}
       />
     </div>
   );

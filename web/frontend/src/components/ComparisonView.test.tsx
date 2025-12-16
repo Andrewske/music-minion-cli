@@ -327,7 +327,7 @@ describe('ComparisonView', () => {
       // The pause functionality is tested through the useAudioPlayer hook
     });
 
-    it('stops looping when winner is selected', () => {
+    it('keeps current track playing when winner is selected', () => {
       const mockRecordComparison = vi.fn();
 
       mockUseRecordComparison.mockReturnValue({
@@ -341,9 +341,26 @@ describe('ComparisonView', () => {
           track_a: mockTrackA,
           track_b: mockTrackB,
         },
-        playingTrack: mockTrackA,
+        currentTrack: mockTrackA,
+        isPlaying: true,
         comparisonsCompleted: 5,
+        priorityPathPrefix: null,
+        setPriorityPath: vi.fn(),
+        selectAndPlay: vi.fn(),
+        setIsPlaying: vi.fn(),
+        loadPendingPair: vi.fn(),
         isComparisonMode: true,
+        pendingNextPair: null,
+        sessionId: '1',
+        prefetchedPair: null,
+        togglePlaying: vi.fn(),
+        incrementCompleted: vi.fn(),
+        reset: vi.fn(),
+        setCurrentPair: vi.fn(),
+        advanceToNextPair: vi.fn(),
+        setPendingNextPair: vi.fn(),
+        setCurrentTrack: vi.fn(),
+        setSession: vi.fn(),
       });
 
       renderComponent();
@@ -352,7 +369,7 @@ describe('ComparisonView', () => {
       const trackAElement = screen.getAllByText('Track A')[0];
       expect(trackAElement).toBeInTheDocument();
 
-      // The winner selection should stop the looping by advancing to next pair
+      // The winner selection should set a pending next pair but keep current track playing
       // This is tested through the recordComparison mutation
       expect(mockUseRecordComparison).toHaveBeenCalled();
     });

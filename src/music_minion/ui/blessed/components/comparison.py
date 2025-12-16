@@ -102,6 +102,7 @@ def render_comparison_overlay(
             is_playing_a,
             is_playing_b,
             center_col,
+            comparison.playlist_ranking_mode,
         )
         line_num += lines_used
 
@@ -136,6 +137,7 @@ def _render_tracks_side_by_side(
     is_playing_a: bool,
     is_playing_b: bool,
     center_col: int,
+    playlist_ranking_mode: bool = False,
 ) -> int:
     """
     Render two tracks side-by-side with vertical divider.
@@ -326,25 +328,44 @@ def _render_tracks_side_by_side(
         # Clear the line first to remove any leftover placeholder text
         write_at(term, 0, y + line_num, "")
 
-        rating_val_a = round(rating_a.get("rating", 1500))
-        count_a = rating_a.get("comparison_count", 0)
-        rating_val_b = round(rating_b.get("rating", 1500))
-        count_b = rating_b.get("comparison_count", 0)
+        if playlist_ranking_mode:
+            # Dual ratings display for playlist ranking
+            playlist_rating_a = round(
+                rating_a.get("playlist_rating", rating_a.get("rating", 1500))
+            )
+            playlist_count_a = rating_a.get("playlist_comparison_count", 0)
+            global_rating_a = round(rating_a.get("global_rating", 1500))
 
-        # Format rating text with icon based on comparison count threshold
-        threshold = 10
-        if count_a >= threshold:
-            icon_a = "⭐"
+            playlist_rating_b = round(
+                rating_b.get("playlist_rating", rating_b.get("rating", 1500))
+            )
+            playlist_count_b = rating_b.get("playlist_comparison_count", 0)
+            global_rating_b = round(rating_b.get("global_rating", 1500))
+
+            # Primary: Playlist rating, Secondary: Global rating
+            rating_text_a = f"🎯 {playlist_rating_a} (Global: {global_rating_a})"
+            rating_text_b = f"🎯 {playlist_rating_b} (Global: {global_rating_b})"
         else:
-            icon_a = "⚠️"
+            # Standard single rating display
+            rating_val_a = round(rating_a.get("rating", 1500))
+            count_a = rating_a.get("comparison_count", 0)
+            rating_val_b = round(rating_b.get("rating", 1500))
+            count_b = rating_b.get("comparison_count", 0)
 
-        if count_b >= threshold:
-            icon_b = "⭐"
-        else:
-            icon_b = "⚠️"
+            # Format rating text with icon based on comparison count threshold
+            threshold = 10
+            if count_a >= threshold:
+                icon_a = "⭐"
+            else:
+                icon_a = "⚠️"
 
-        rating_text_a = f"{icon_a} Rating: {rating_val_a} ({count_a})"
-        rating_text_b = f"{icon_b} Rating: {rating_val_b} ({count_b})"
+            if count_b >= threshold:
+                icon_b = "⭐"
+            else:
+                icon_b = "⚠️"
+
+            rating_text_a = f"{icon_a} Rating: {rating_val_a} ({count_a})"
+            rating_text_b = f"{icon_b} Rating: {rating_val_b} ({count_b})"
 
         # Apply highlighting
         if is_highlighted_a:

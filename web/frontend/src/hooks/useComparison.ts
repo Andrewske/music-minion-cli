@@ -15,7 +15,9 @@ export function useStartSession() {
         response.session_id,
         response.pair,
         response.prefetched_pair,
-        request.priority_path_prefix
+        request.priority_path_prefix,
+        request.ranking_mode === 'playlist' ? 'playlist' : 'global',
+        request.playlist_id ?? null
       );
 
       // Prefetch waveforms for current and prefetched pairs
@@ -32,7 +34,7 @@ export function useStartSession() {
 }
 
 export function useRecordComparison() {
-  const { incrementCompleted, advanceToNextPair } = useComparisonStore();
+  const { incrementCompleted, setNextPairForComparison } = useComparisonStore();
 
   return useMutation({
     mutationFn: (request: RecordComparisonRequest) => recordComparison(request),
@@ -40,11 +42,13 @@ export function useRecordComparison() {
       if (response.success) {
         incrementCompleted();
 
-        // Immediately advance to next pair (no loading state)
+        // Update pair for comparison but keep current track playing
         if (response.next_pair) {
-          advanceToNextPair(response.next_pair, response.prefetched_pair);
+          setNextPairForComparison(response.next_pair, response.prefetched_pair);
 
-          // Prefetch waveforms for the prefetched pair (next pair's waveforms already loaded)
+          // Prefetch waveforms for the new pair
+          prefetchWaveform(response.next_pair.track_a.id);
+          prefetchWaveform(response.next_pair.track_b.id);
           if (response.prefetched_pair) {
             prefetchWaveform(response.prefetched_pair.track_a.id);
             prefetchWaveform(response.prefetched_pair.track_b.id);

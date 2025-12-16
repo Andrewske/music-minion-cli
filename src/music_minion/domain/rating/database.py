@@ -269,6 +269,60 @@ def get_leaderboard(
         return [dict(row) for row in cursor.fetchall()]
 
 
+def get_playlist_leaderboard(
+    playlist_id: int,
+    limit: int = 50,
+    min_comparisons: int = 1,
+) -> list[dict]:
+    """Get top-rated tracks within a specific playlist using playlist ratings.
+
+    Args:
+        playlist_id: Playlist ID to get rankings for
+        limit: Maximum number of tracks to return
+        min_comparisons: Minimum number of playlist comparisons required
+
+    Returns:
+        List of dicts with track info and playlist ratings
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT
+                t.id,
+                t.title,
+                t.artist,
+                t.album,
+                t.genre,
+                t.year,
+                t.local_path,
+                t.soundcloud_id,
+                t.spotify_id,
+                t.youtube_id,
+                t.source,
+                t.duration,
+                per.rating as playlist_rating,
+                per.comparison_count as playlist_comparison_count,
+                COALESCE(per.wins, 0) as playlist_wins,
+                COALESCE(er.rating, 1500.0) as global_rating,
+                COALESCE(er.comparison_count, 0) as global_comparison_count
+            FROM playlist_tracks pt
+            JOIN tracks t ON pt.track_id = t.id
+            LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
+            LEFT JOIN elo_ratings er ON t.id = er.track_id
+            WHERE pt.playlist_id = ? AND COALESCE(per.comparison_count, 0) >= ?
+            ORDER BY per.rating DESC, per.comparison_count DESC
+            LIMIT ?
+            """,
+            (playlist_id, playlist_id, min_comparisons, limit),
+        )
+
+        tracks = []
+        for row in cursor.fetchall():
+            tracks.append(dict(row))
+
+        return tracks
+
+
 def get_filtered_tracks(
     genre: Optional[str] = None,
     year: Optional[int] = None,
@@ -672,3 +726,418 @@ def batch_initialize_ratings(track_ids: list[int]) -> int:
     except Exception:
         logger.exception(f"Failed to batch initialize {len(track_ids)} ratings")
         raise
+
+
+# Playlist-specific rating functions
+
+
+@dataclass
+class PlaylistEloRating:
+    """Immutable playlist-specific Elo rating data."""
+
+    track_id: str
+    playlist_id: int
+    rating: float
+    comparison_count: int
+    wins: int
+    last_compared: Optional[datetime]
+
+
+def get_playlist_comparison_count(track_id: str, playlist_id: int) -> int:
+    """Get the number of playlist-specific comparisons for a track.
+
+    Args:
+        track_id: Track ID
+        playlist_id: Playlist ID
+
+    Returns:
+        Number of comparisons in this playlist context
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT comparison_count
+            FROM playlist_elo_ratings
+            WHERE track_id = ? AND playlist_id = ?
+            """,
+            (track_id, playlist_id),
+        )
+        row = cursor.fetchone()
+        return row["comparison_count"] if row else 0
+
+
+def should_affect_global_ratings(track_id: str, playlist_id: int) -> bool:
+    """Check if playlist comparison should affect global ratings.
+
+    First 5 comparisons per track in playlist context affect global ratings.
+    Subsequent comparisons are playlist-specific only.
+
+    Args:
+        track_id: Track ID
+        playlist_id: Playlist ID
+
+    Returns:
+        True if global ratings should be updated
+    """
+    return get_playlist_comparison_count(track_id, playlist_id) < 5
+
+
+def get_or_create_playlist_rating(track_id: str, playlist_id: int) -> PlaylistEloRating:
+    """Get playlist rating for track, creating if doesn't exist.
+
+    Initializes with global rating as baseline if available.
+
+    Args:
+        track_id: Track ID
+        playlist_id: Playlist ID
+
+    Returns:
+        PlaylistEloRating dataclass with current rating data
+    """
+    with get_db_connection() as conn:
+        # Try to get existing playlist rating
+        cursor = conn.execute(
+            """
+            SELECT track_id, playlist_id, rating, comparison_count, wins, last_compared
+            FROM playlist_elo_ratings
+            WHERE track_id = ? AND playlist_id = ?
+            """,
+            (track_id, playlist_id),
+        )
+        row = cursor.fetchone()
+
+        if row:
+            return PlaylistEloRating(
+                track_id=row["track_id"],
+                playlist_id=row["playlist_id"],
+                rating=row["rating"],
+                comparison_count=row["comparison_count"],
+                wins=row["wins"] or 0,
+                last_compared=(
+                    datetime.fromisoformat(row["last_compared"])
+                    if row["last_compared"]
+                    else None
+                ),
+            )
+
+        # Get global rating as baseline
+        global_rating = 1500.0
+        cursor = conn.execute(
+            "SELECT rating FROM elo_ratings WHERE track_id = ?",
+            (track_id,),
+        )
+        global_row = cursor.fetchone()
+        if global_row:
+            global_rating = global_row["rating"]
+
+        # Create new playlist rating entry
+        try:
+            conn.execute(
+                """
+                INSERT INTO playlist_elo_ratings (
+                    track_id, playlist_id, rating, comparison_count, wins
+                ) VALUES (?, ?, ?, 0, 0)
+                """,
+                (track_id, playlist_id, global_rating),
+            )
+            conn.commit()
+
+            return PlaylistEloRating(
+                track_id=track_id,
+                playlist_id=playlist_id,
+                rating=global_rating,
+                comparison_count=0,
+                wins=0,
+                last_compared=None,
+            )
+
+        except Exception:
+            logger.exception(
+                f"Failed to create playlist rating: track={track_id}, playlist={playlist_id}"
+            )
+            raise
+
+
+def record_playlist_comparison(
+    track_a_id: str,
+    track_b_id: str,
+    winner_id: str,
+    playlist_id: int,
+    track_a_playlist_rating_before: float,
+    track_b_playlist_rating_before: float,
+    track_a_playlist_rating_after: float,
+    track_b_playlist_rating_after: float,
+    track_a_global_rating_before: float,
+    track_b_global_rating_before: float,
+    track_a_global_rating_after: float,
+    track_b_global_rating_after: float,
+    session_id: str,
+) -> None:
+    """Record a playlist comparison in history and update ratings.
+
+    Updates both playlist and global ratings based on threshold logic.
+    Single transaction ensures atomic update of all tables.
+
+    Args:
+        track_a_id: First track ID
+        track_b_id: Second track ID
+        winner_id: ID of winning track
+        playlist_id: Playlist ID for this comparison
+        track_a_playlist_rating_before/after: Playlist ratings for track A
+        track_b_playlist_rating_before/after: Playlist ratings for track B
+        track_a_global_rating_before/after: Global ratings for track A
+        track_b_global_rating_before/after: Global ratings for track B
+        session_id: UUID for grouping comparisons
+
+    Raises:
+        ValueError: If winner_id is not track_a_id or track_b_id
+        Exception: If database operation fails
+    """
+    if winner_id not in (track_a_id, track_b_id):
+        raise ValueError(
+            f"winner_id must be either track_a_id or track_b_id, got {winner_id}"
+        )
+
+    # Determine if this comparison affects global ratings
+    affects_global_a = should_affect_global_ratings(track_a_id, playlist_id)
+    affects_global_b = should_affect_global_ratings(track_b_id, playlist_id)
+    affects_global = affects_global_a or affects_global_b
+
+    try:
+        with get_db_connection() as conn:
+            # Insert playlist comparison history
+            conn.execute(
+                """
+                INSERT INTO playlist_comparison_history (
+                    track_a_id, track_b_id, winner_id, playlist_id, affects_global,
+                    track_a_playlist_rating_before, track_a_playlist_rating_after,
+                    track_b_playlist_rating_before, track_b_playlist_rating_after,
+                    track_a_global_rating_before, track_a_global_rating_after,
+                    track_b_global_rating_before, track_b_global_rating_after,
+                    session_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    track_a_id,
+                    track_b_id,
+                    winner_id,
+                    playlist_id,
+                    affects_global,
+                    track_a_playlist_rating_before,
+                    track_a_playlist_rating_after,
+                    track_b_playlist_rating_before,
+                    track_b_playlist_rating_after,
+                    track_a_global_rating_before,
+                    track_a_global_rating_after,
+                    track_b_global_rating_before,
+                    track_b_global_rating_after,
+                    session_id,
+                ),
+            )
+
+            # Update playlist ratings for track A
+            track_a_playlist_win_increment = 1 if winner_id == track_a_id else 0
+            conn.execute(
+                """
+                UPDATE playlist_elo_ratings
+                SET rating = ?,
+                    comparison_count = comparison_count + 1,
+                    wins = wins + ?,
+                    last_compared = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE track_id = ? AND playlist_id = ?
+                """,
+                (
+                    track_a_playlist_rating_after,
+                    track_a_playlist_win_increment,
+                    track_a_id,
+                    playlist_id,
+                ),
+            )
+
+            # Update playlist ratings for track B
+            track_b_playlist_win_increment = 1 if winner_id == track_b_id else 0
+            conn.execute(
+                """
+                UPDATE playlist_elo_ratings
+                SET rating = ?,
+                    comparison_count = comparison_count + 1,
+                    wins = wins + ?,
+                    last_compared = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE track_id = ? AND playlist_id = ?
+                """,
+                (
+                    track_b_playlist_rating_after,
+                    track_b_playlist_win_increment,
+                    track_b_id,
+                    playlist_id,
+                ),
+            )
+
+            # Update global ratings only if threshold allows
+            if affects_global_a:
+                track_a_global_win_increment = 1 if winner_id == track_a_id else 0
+                conn.execute(
+                    """
+                    UPDATE elo_ratings
+                    SET rating = ?,
+                        comparison_count = comparison_count + 1,
+                        wins = wins + ?,
+                        last_compared = CURRENT_TIMESTAMP,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE track_id = ?
+                    """,
+                    (
+                        track_a_global_rating_after,
+                        track_a_global_win_increment,
+                        track_a_id,
+                    ),
+                )
+
+            if affects_global_b:
+                track_b_global_win_increment = 1 if winner_id == track_b_id else 0
+                conn.execute(
+                    """
+                    UPDATE elo_ratings
+                    SET rating = ?,
+                        comparison_count = comparison_count + 1,
+                        wins = wins + ?,
+                        last_compared = CURRENT_TIMESTAMP,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE track_id = ?
+                    """,
+                    (
+                        track_b_global_rating_after,
+                        track_b_global_win_increment,
+                        track_b_id,
+                    ),
+                )
+
+            # Single commit for all operations
+            conn.commit()
+
+    except Exception:
+        logger.exception(
+            f"Failed to record playlist comparison: A={track_a_id} B={track_b_id} winner={winner_id} playlist={playlist_id}"
+        )
+        raise
+
+
+def get_playlist_ranking_session(playlist_id: int) -> Optional[dict]:
+    """Get active playlist ranking session if exists.
+
+    Args:
+        playlist_id: Playlist ID
+
+    Returns:
+        Session data dict or None if no active session
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT playlist_id, session_id, last_track_a_id, last_track_b_id,
+                   progress_stats, started_at, updated_at
+            FROM playlist_ranking_sessions
+            WHERE playlist_id = ?
+            """,
+            (playlist_id,),
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
+def create_playlist_ranking_session(
+    playlist_id: int, session_id: str, total_tracks: int
+) -> None:
+    """Create a new playlist ranking session.
+
+    Args:
+        playlist_id: Playlist ID
+        session_id: Unique session identifier
+        total_tracks: Total tracks to be ranked
+    """
+    progress_stats = f'{{"compared": 0, "total": {total_tracks}}}'
+
+    with get_db_connection() as conn:
+        try:
+            conn.execute(
+                """
+                INSERT INTO playlist_ranking_sessions (
+                    playlist_id, session_id, progress_stats
+                ) VALUES (?, ?, ?)
+                """,
+                (playlist_id, session_id, progress_stats),
+            )
+            conn.commit()
+        except Exception as e:
+            logger.exception(
+                f"Failed to create playlist ranking session: playlist={playlist_id}, session={session_id}"
+            )
+            raise
+
+
+def update_playlist_ranking_session(
+    playlist_id: int,
+    last_track_a_id: str = None,
+    last_track_b_id: str = None,
+    compared_count: int = None,
+) -> None:
+    """Update playlist ranking session progress.
+
+    Args:
+        playlist_id: Playlist ID
+        last_track_a_id: Last track A compared
+        last_track_b_id: Last track B compared
+        compared_count: Updated comparison count
+    """
+    updates = []
+    params = []
+
+    if last_track_a_id is not None:
+        updates.append("last_track_a_id = ?")
+        params.append(last_track_a_id)
+
+    if last_track_b_id is not None:
+        updates.append("last_track_b_id = ?")
+        params.append(last_track_b_id)
+
+    if compared_count is not None:
+        # Get current total from existing stats
+        session = get_playlist_ranking_session(playlist_id)
+        if session:
+            import json
+
+            stats = json.loads(session["progress_stats"])
+            stats["compared"] = compared_count
+            updates.append("progress_stats = ?")
+            params.append(json.dumps(stats))
+
+    if updates:
+        updates.append("updated_at = CURRENT_TIMESTAMP")
+        params.append(playlist_id)
+
+        with get_db_connection() as conn:
+            conn.execute(
+                f"""
+                UPDATE playlist_ranking_sessions
+                SET {", ".join(updates)}
+                WHERE playlist_id = ?
+                """,
+                params,
+            )
+            conn.commit()
+
+
+def delete_playlist_ranking_session(playlist_id: int) -> None:
+    """Delete playlist ranking session (when completed).
+
+    Args:
+        playlist_id: Playlist ID
+    """
+    with get_db_connection() as conn:
+        conn.execute(
+            "DELETE FROM playlist_ranking_sessions WHERE playlist_id = ?",
+            (playlist_id,),
+        )
+        conn.commit()

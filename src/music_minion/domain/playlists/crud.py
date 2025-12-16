@@ -181,6 +181,69 @@ def rename_playlist(playlist_id: int, new_name: str) -> bool:
             raise
 
 
+def reorder_playlist_by_elo(playlist_id: int) -> bool:
+    """
+    Reorder tracks in a playlist by their playlist-specific ELO ratings.
+
+    Highest rated tracks get lowest position numbers (appear first).
+    Only works for manual playlists.
+
+    Args:
+        playlist_id: Playlist ID to reorder
+
+    Returns:
+        True if reordering was successful, False if playlist not found or not manual
+
+    Raises:
+        Exception: If database operation fails
+    """
+    with get_db_connection() as conn:
+        # Check if playlist exists and is manual
+        cursor = conn.execute(
+            "SELECT type FROM playlists WHERE id = ?",
+            (playlist_id,),
+        )
+        row = cursor.fetchone()
+        if not row or row["type"] != "manual":
+            logger.warning(f"Playlist {playlist_id} not found or not a manual playlist")
+            return False
+
+        # Get tracks with their playlist ratings, ordered by rating descending
+        cursor = conn.execute(
+            """
+            SELECT pt.track_id, COALESCE(per.rating, 1500.0) as playlist_rating
+            FROM playlist_tracks pt
+            LEFT JOIN playlist_elo_ratings per ON pt.track_id = per.track_id
+                AND per.playlist_id = ?
+            WHERE pt.playlist_id = ?
+            ORDER BY playlist_rating DESC, per.comparison_count DESC
+        """,
+            (playlist_id, playlist_id),
+        )
+
+        tracks = cursor.fetchall()
+        if not tracks:
+            logger.info(f"No tracks found in playlist {playlist_id}")
+            return True
+
+        # Update positions based on rating order
+        for position, track in enumerate(tracks, 1):
+            conn.execute(
+                """
+                UPDATE playlist_tracks
+                SET position = ?
+                WHERE playlist_id = ? AND track_id = ?
+            """,
+                (position, playlist_id, track["track_id"]),
+            )
+
+        conn.commit()
+        logger.info(
+            f"Reordered {len(tracks)} tracks in playlist {playlist_id} by ELO rating"
+        )
+        return True
+
+
 def get_all_playlists(library: Optional[str] = None) -> list[dict[str, Any]]:
     """
     Get all playlists with metadata for the active library.

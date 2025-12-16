@@ -40,14 +40,38 @@ export function useWavesurfer({ trackId, audioUrl, isPlaying, onFinish, onReady,
   const lastFinishTimeRef = useRef<number>(0); // Debounce rapid finish triggers
   const prevTrackIdRef = useRef<number>(trackId);
 
+  // Use refs for callbacks and state to prevent re-initialization
+  const onFinishRef = useRef(onFinish);
+  const onReadyRef = useRef(onReady);
+  const onSeekRef = useRef(onSeek);
+  const onTimeUpdateRef = useRef(onTimeUpdate);
+  const isPlayingRef = useRef(isPlaying);
+
+  // Update refs when values change
+  useEffect(() => {
+    onFinishRef.current = onFinish;
+  }, [onFinish]);
+  useEffect(() => {
+    onReadyRef.current = onReady;
+  }, [onReady]);
+  useEffect(() => {
+    onSeekRef.current = onSeek;
+  }, [onSeek]);
+  useEffect(() => {
+    onTimeUpdateRef.current = onTimeUpdate;
+  }, [onTimeUpdate]);
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
   const handleReady = useCallback((duration: number): void => {
     setDuration(duration);
-    onReady?.(duration);
-  }, [onReady]);
+    onReadyRef.current?.(duration);
+  }, []);
 
   const handleSeek = useCallback((progress: number): void => {
-    onSeek?.(progress);
-  }, [onSeek]);
+    onSeekRef.current?.(progress);
+  }, []);
 
   const handleFinish = useCallback((): void => {
     // Debounce rapid finish triggers with 2 second cooldown to prevent
@@ -58,8 +82,8 @@ export function useWavesurfer({ trackId, audioUrl, isPlaying, onFinish, onReady,
       return;
     }
     lastFinishTimeRef.current = now;
-    onFinish?.();
-  }, [onFinish]);
+    onFinishRef.current?.();
+  }, []);
 
   const initWavesurfer = useCallback(async (abortSignal: AbortSignal) => {
     if (!containerRef.current) return;
@@ -101,7 +125,8 @@ export function useWavesurfer({ trackId, audioUrl, isPlaying, onFinish, onReady,
       // Set up event listeners
       wavesurfer.on('ready', () => {
         handleReady(wavesurfer.getDuration());
-        if (isPlaying) {
+        // Play if currently playing
+        if (isPlayingRef.current) {
           wavesurfer.play().catch(() => {});
         }
       });
@@ -121,13 +146,13 @@ export function useWavesurfer({ trackId, audioUrl, isPlaying, onFinish, onReady,
           lastPositionRef.current = time; // Update resume position during playback
         });
 
-       wavesurfer.on('interaction', () => {
-         const time = wavesurfer.getCurrentTime();
-         setCurrentTime(time);
-         lastPositionRef.current = time; // Update resume position on user interaction
-         const progress = time / wavesurfer.getDuration();
-         handleSeek(progress);
-       });
+        wavesurfer.on('interaction', () => {
+          const time = wavesurfer.getCurrentTime();
+          setCurrentTime(time);
+          lastPositionRef.current = time; // Update resume position on user interaction
+          const progress = time / wavesurfer.getDuration();
+          handleSeek(progress);
+        });
 
       // Final abort check before committing the instance
       if (abortSignal.aborted) {

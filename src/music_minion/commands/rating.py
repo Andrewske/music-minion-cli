@@ -18,6 +18,7 @@ from music_minion.domain.rating.database import (
     RatingCoverageFilters,
     RatingCoverageStats,
     get_ratings_coverage,
+    get_playlist_leaderboard,
 )
 
 
@@ -442,7 +443,7 @@ def parse_rankings_args(args: list[str]) -> dict:
     Returns:
         Dictionary with parsed arguments: limit, genre, year
     """
-    result = {"limit": 50, "genre": None, "year": None}
+    result = {"limit": 50, "genre": None, "year": None, "playlist": None}
 
     for arg in args:
         if arg.startswith("--limit="):
@@ -457,6 +458,11 @@ def parse_rankings_args(args: list[str]) -> dict:
                 result["year"] = int(arg.split("=", 1)[1])
             except ValueError:
                 logger.warning(f"Invalid year value: {arg}")
+        elif arg.startswith("--playlist="):
+            try:
+                result["playlist"] = int(arg.split("=", 1)[1])
+            except ValueError:
+                logger.warning(f"Invalid playlist ID: {arg}")
 
     return result
 
@@ -468,7 +474,7 @@ def handle_rankings_command(
 
     Args:
         ctx: Application context
-        args: Command arguments (--genre=X, --year=Y, --limit=N)
+        args: Command arguments (--genre=X, --year=Y, --playlist=ID, --limit=N)
 
     Returns:
         (updated_context, should_continue)
@@ -477,6 +483,7 @@ def handle_rankings_command(
         rankings                    # Top 50 tracks globally
         rankings --genre=dubstep    # Top dubstep tracks
         rankings --year=2025        # Top 2025 tracks
+        rankings --playlist=123     # Top tracks in playlist 123
         rankings --limit=100        # Top 100 tracks
     """
     from music_minion.domain.rating.database import get_leaderboard
@@ -486,12 +493,21 @@ def handle_rankings_command(
 
     # Load leaderboard from database
     try:
-        tracks = get_leaderboard(
-            limit=parsed["limit"],
-            min_comparisons=1,  # Show any track with at least 1 comparison
-            genre_filter=parsed["genre"],
-            year_filter=parsed["year"],
-        )
+        if parsed["playlist"] is not None:
+            # Use playlist-specific rankings
+            tracks = get_playlist_leaderboard(
+                playlist_id=parsed["playlist"],
+                limit=parsed["limit"],
+                min_comparisons=1,
+            )
+        else:
+            # Use global rankings
+            tracks = get_leaderboard(
+                limit=parsed["limit"],
+                min_comparisons=1,  # Show any track with at least 1 comparison
+                genre_filter=parsed["genre"],
+                year_filter=parsed["year"],
+            )
     except Exception as e:
         logger.exception("Error loading leaderboard")
         log(f"Error loading rankings: {e}", level="error")
@@ -504,7 +520,16 @@ def handle_rankings_command(
 
     # Build title with filter info
     title = "Top Rated Tracks"
-    if parsed["genre"] or parsed["year"]:
+    if parsed["playlist"] is not None:
+        # Get playlist name for title
+        from music_minion.domain.playlists.crud import get_playlist_by_id
+
+        playlist = get_playlist_by_id(parsed["playlist"])
+        if playlist:
+            title = f"Playlist Rankings: {playlist['name']}"
+        else:
+            title = f"Playlist Rankings: ID {parsed['playlist']}"
+    elif parsed["genre"] or parsed["year"]:
         filters = []
         if parsed["genre"]:
             filters.append(parsed["genre"].capitalize())
@@ -747,6 +772,7 @@ def parse_rate_args(args: list[str]) -> dict:
     """
     parsed = {
         "playlist": None,
+        "playlist_rank": None,
         "genre": None,
         "year": None,
         "source": None,
@@ -765,6 +791,13 @@ def parse_rate_args(args: list[str]) -> dict:
             except ValueError:
                 logger.warning(f"Invalid playlist ID: {value}")
                 parsed["playlist"] = None
+
+        elif key == "playlist-rank":
+            try:
+                parsed["playlist_rank"] = int(value)
+            except ValueError:
+                logger.warning(f"Invalid playlist ID for ranking: {value}")
+                parsed["playlist_rank"] = None
 
         elif key == "genre":
             parsed["genre"] = value
@@ -943,6 +976,191 @@ def handle_rate_comparisons_command(ctx: AppContext) -> tuple[AppContext, bool]:
     return ctx, True
 
 
+def handle_playlist_ranking_command(
+    ctx: AppContext, playlist_id: int
+) -> tuple[AppContext, bool]:
+    """
+    Handle playlist ranking command - start playlist-specific ELO ranking session.
+
+    Args:
+        ctx: Application context
+        playlist_id: ID of playlist to rank
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    import threading
+    from music_minion.domain.playlists.crud import get_playlist_by_id
+    from music_minion.domain.rating.database import (
+        get_playlist_ranking_session,
+        create_playlist_ranking_session,
+    )
+    from music_minion.ui.blessed.state import ComparisonState
+
+    # Verify playlist exists
+    playlist = get_playlist_by_id(playlist_id)
+    if not playlist:
+        log(f"❌ Playlist with ID {playlist_id} not found", level="error")
+        return ctx, True
+
+    # Check for existing session
+    existing_session = get_playlist_ranking_session(playlist_id)
+    if existing_session:
+        log(
+            f"📋 Resuming playlist ranking session for '{playlist['name']}'",
+            level="info",
+        )
+        session_id = existing_session["session_id"]
+        # Parse progress from existing session
+        import json
+
+        progress_stats = json.loads(existing_session["progress_stats"])
+        comparisons_done = progress_stats.get("compared", 0)
+    else:
+        log(f"🎯 Starting playlist ranking for '{playlist['name']}'", level="info")
+        session_id = str(uuid.uuid4())
+        comparisons_done = 0
+
+    # Get tracks for ranking
+    tracks = get_playlist_tracks_for_ranking(playlist_id)
+    if not tracks:
+        log(f"❌ No tracks found in playlist '{playlist['name']}'", level="error")
+        return ctx, True
+
+    # Create or resume session
+    if not existing_session:
+        create_playlist_ranking_session(playlist_id, session_id, len(tracks))
+
+    logger.info(f"Playlist ranking session: {session_id} for playlist {playlist_id}")
+
+    # If in blessed UI mode, start comparison interface
+    if ctx.ui_mode == "blessed" and ctx.update_ui_state:
+        # Save current playback state
+        saved_state = ctx.player_state
+
+        # Create comparison state for playlist ranking
+        comparison = ComparisonState(
+            active=True,
+            loading=False,
+            highlighted="a",
+            session_id=session_id,
+            comparisons_done=comparisons_done,
+            playlist_id=playlist_id,
+            genre_filter=None,
+            year_filter=None,
+            source_filter=None,
+            session_start=datetime.now(),
+            saved_player_state=saved_state,
+            coverage_library_filters={},
+            coverage_filter_filters={},
+        )
+
+        # Load initial track pair
+        track_a, track_b = select_playlist_ranking_pair(tracks, session_id)
+
+        # Update comparison with tracks and ratings
+        comparison = comparison._replace(
+            track_a=track_a,
+            track_b=track_b,
+            track_a_rating=track_a.playlist_rating,
+            track_b_rating=track_b.playlist_rating,
+        )
+
+        log(
+            f"🎵 Starting playlist ranking: {len(tracks)} tracks in '{playlist['name']}'",
+            level="info",
+        )
+
+        # Update context with UI action to start comparison mode
+        ctx = ctx.with_ui_action(
+            {
+                "type": "start_playlist_ranking",
+                "comparison": comparison,
+            }
+        )
+
+        return ctx, True
+
+    else:
+        log("❌ Playlist ranking requires blessed UI mode", level="error")
+        return ctx, True
+
+
+def get_playlist_tracks_for_ranking(playlist_id: int) -> list:
+    """Get tracks for playlist ranking with their ratings."""
+    from music_minion.core.database import get_db_connection
+    from music_minion.domain.rating.database import get_or_create_playlist_rating
+
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT
+                t.id, t.title, t.artist, t.album, t.genre, t.year,
+                t.local_path, t.soundcloud_id, t.spotify_id, t.youtube_id, t.source,
+                COALESCE(per.rating, 1500.0) as playlist_rating,
+                COALESCE(per.comparison_count, 0) as playlist_comparison_count,
+                COALESCE(per.wins, 0) as playlist_wins,
+                COALESCE(er.rating, 1500.0) as global_rating
+            FROM playlist_tracks pt
+            JOIN tracks t ON pt.track_id = t.id
+            LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
+            LEFT JOIN elo_ratings er ON t.id = er.track_id
+            WHERE pt.playlist_id = ?
+            ORDER BY pt.position
+        """,
+            (playlist_id, playlist_id),
+        )
+
+        tracks = []
+        for row in cursor.fetchall():
+            # Create playlist rating if it doesn't exist
+            playlist_rating = get_or_create_playlist_rating(row["id"], playlist_id)
+
+            track = type(
+                "Track",
+                (),
+                {
+                    "id": row["id"],
+                    "title": row["title"],
+                    "artist": row["artist"],
+                    "album": row["album"],
+                    "genre": row["genre"],
+                    "year": row["year"],
+                    "local_path": row["local_path"],
+                    "source": row["source"],
+                    "playlist_rating": playlist_rating.rating,
+                    "global_rating": row["global_rating"],
+                    "playlist_comparison_count": playlist_rating.comparison_count,
+                    "wins": row["playlist_wins"],
+                    "losses": row["playlist_comparison_count"] - row["playlist_wins"],
+                },
+            )()
+            tracks.append(track)
+
+        return tracks
+
+
+def select_playlist_ranking_pair(tracks: list, session_id: str) -> tuple:
+    """Select next track pair for playlist ranking."""
+    # Simple random selection for now - can be enhanced with strategic pairing later
+    import random
+
+    if len(tracks) < 2:
+        raise ValueError("Playlist must have at least 2 tracks for ranking")
+
+    # Filter tracks that haven't been compared much in this playlist
+    under_compared = [t for t in tracks if t.playlist_comparison_count < 10]
+
+    if len(under_compared) >= 2:
+        # Prioritize tracks with fewer playlist comparisons
+        track_a, track_b = random.sample(under_compared, 2)
+    else:
+        # Fallback to any tracks
+        track_a, track_b = random.sample(tracks, 2)
+
+    return track_a, track_b
+
+
 def handle_rate_command(
     ctx: AppContext, cmd: str, args: list[str]
 ) -> tuple[AppContext, bool]:
@@ -957,6 +1175,7 @@ def handle_rate_command(
         /rate --source=spotify             # Only Spotify tracks
         /rate --source=all                 # All tracks regardless of source
         /rate --playlist=ID                # Only tracks in playlist
+        /rate --playlist-rank=ID           # Rank tracks within playlist (playlist-specific ratings)
         /rate --genre=dubstep              # Only dubstep tracks
         /rate --year=2025                  # Only 2025 tracks
         /rate --genre=dubstep --year=2025  # Combined filters
@@ -985,9 +1204,14 @@ def handle_rate_command(
     # Parse arguments
     parsed = parse_rate_args(args)
     playlist_id = parsed["playlist"]
+    playlist_rank_id = parsed["playlist_rank"]
     genre_filter = parsed["genre"]
     year_filter = parsed["year"]
     source_filter = parsed.get("source")  # May be None if not specified
+
+    # Handle playlist ranking mode
+    if playlist_rank_id is not None:
+        return handle_playlist_ranking_command(ctx, playlist_rank_id)
 
     # Auto-detect active library if not specified via --source
     if not source_filter:

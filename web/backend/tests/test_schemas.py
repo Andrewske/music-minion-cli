@@ -24,6 +24,33 @@ def test_track_info_schema():
 
     assert track.id == 1
     assert track.title == "Test Track"
+    assert track.artist == "Test Artist"
+    assert track.rating == 1500.0
+    assert track.wins == 3
+    assert track.losses == 2
+
+
+def test_track_info_schema_with_null_artist():
+    """Test TrackInfo Pydantic model with null artist."""
+    track = TrackInfo(
+        id=2,
+        title="Test Track Without Artist",
+        artist=None,
+        album="Test Album",
+        year=2023,
+        bpm=120,
+        genre="Electronic",
+        rating=1500.0,
+        comparison_count=5,
+        wins=3,
+        losses=2,
+        duration=180.5,
+        has_waveform=True,
+    )
+
+    assert track.id == 2
+    assert track.title == "Test Track Without Artist"
+    assert track.artist is None
     assert track.rating == 1500.0
     assert track.wins == 3
     assert track.losses == 2
@@ -64,9 +91,7 @@ def test_comparison_pair_schema():
 
 def test_start_session_request_schema():
     """Test StartSessionRequest Pydantic model."""
-    request = StartSessionRequest(
-        genre_filter="Electronic", year_filter="2023"
-    )
+    request = StartSessionRequest(genre_filter="Electronic", year_filter="2023")
 
     assert request.genre_filter == "Electronic"
     assert request.year_filter == "2023"

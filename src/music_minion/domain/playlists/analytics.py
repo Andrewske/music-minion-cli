@@ -1061,7 +1061,7 @@ def get_playlist_analytics(
         playlist_id: Playlist ID
         sections: Optional list of section names to include. If None, includes all.
                  Valid sections: 'basic', 'artists', 'genres', 'tags', 'bpm',
-                                'keys', 'years', 'ratings', 'quality'
+                                'keys', 'years', 'ratings', 'elo', 'quality'
 
     Returns:
         Dict with all analytics data
@@ -1080,6 +1080,7 @@ def get_playlist_analytics(
         "keys": get_key_distribution,
         "years": get_year_distribution,
         "ratings": get_rating_analysis,
+        "elo": get_elo_analysis,
         "quality": get_quality_metrics,
     }
 
@@ -1096,3 +1097,77 @@ def get_playlist_analytics(
         result[section_name] = all_sections[section_name](playlist_id)
 
     return result
+
+
+def get_elo_analysis(playlist_id: int) -> dict[str, Any]:
+    """
+    Get ELO rating analysis for a playlist.
+
+    Args:
+        playlist_id: Playlist ID
+
+    Returns:
+        Dict with ELO statistics
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT
+                COUNT(*) as total_tracks,
+                COUNT(per.rating) as rated_tracks,
+                COUNT(CASE WHEN per.comparison_count > 0 THEN 1 END) as compared_tracks,
+                COALESCE(AVG(per.rating), 0) as avg_playlist_rating,
+                COALESCE(MIN(per.rating), 0) as min_playlist_rating,
+                COALESCE(MAX(per.rating), 0) as max_playlist_rating,
+                COALESCE(AVG(er.rating), 0) as avg_global_rating,
+                COALESCE(MIN(er.rating), 0) as min_global_rating,
+                COALESCE(MAX(er.rating), 0) as max_global_rating,
+                COALESCE(AVG(per.comparison_count), 0) as avg_playlist_comparisons,
+                COALESCE(SUM(per.comparison_count), 0) as total_playlist_comparisons
+            FROM playlist_tracks pt
+            LEFT JOIN playlist_elo_ratings per ON pt.track_id = per.track_id
+                AND per.playlist_id = ?
+            LEFT JOIN elo_ratings er ON pt.track_id = er.track_id
+            WHERE pt.playlist_id = ?
+        """,
+            (playlist_id, playlist_id),
+        )
+
+        row = cursor.fetchone()
+
+        if not row or row["total_tracks"] == 0:
+            return {
+                "total_tracks": 0,
+                "rated_tracks": 0,
+                "compared_tracks": 0,
+                "coverage_percentage": 0.0,
+                "avg_playlist_rating": 0.0,
+                "min_playlist_rating": 0.0,
+                "max_playlist_rating": 0.0,
+                "avg_global_rating": 0.0,
+                "min_global_rating": 0.0,
+                "max_global_rating": 0.0,
+                "avg_playlist_comparisons": 0.0,
+                "total_playlist_comparisons": 0,
+            }
+
+        total_tracks = row["total_tracks"]
+        rated_tracks = row["rated_tracks"]
+        compared_tracks = row["compared_tracks"]
+
+        return {
+            "total_tracks": total_tracks,
+            "rated_tracks": rated_tracks,
+            "compared_tracks": compared_tracks,
+            "coverage_percentage": (compared_tracks / total_tracks * 100)
+            if total_tracks > 0
+            else 0.0,
+            "avg_playlist_rating": round(row["avg_playlist_rating"], 1),
+            "min_playlist_rating": round(row["min_playlist_rating"], 1),
+            "max_playlist_rating": round(row["max_playlist_rating"], 1),
+            "avg_global_rating": round(row["avg_global_rating"], 1),
+            "min_global_rating": round(row["min_global_rating"], 1),
+            "max_global_rating": round(row["max_global_rating"], 1),
+            "avg_playlist_comparisons": round(row["avg_playlist_comparisons"], 1),
+            "total_playlist_comparisons": row["total_playlist_comparisons"],
+        }

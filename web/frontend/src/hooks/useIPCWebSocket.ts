@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useComparisonStore } from '../stores/comparisonStore';
 import { useRecordComparison, useArchiveTrack } from './useComparison';
+import type { RecordComparisonRequest } from '../types';
 
 export function useIPCWebSocket() {
   // Mutation hooks are stable references from React Query
@@ -27,26 +28,55 @@ export function useIPCWebSocket() {
         break;
 
       case 'play1':
-        if (currentPair) selectAndPlay(currentPair.track_a);
+        if (currentPair) {
+          const { currentTrack, isPlaying, selectAndPlay, setIsPlaying } = useComparisonStore.getState();
+          if (currentTrack?.id === currentPair.track_a.id && isPlaying) {
+            // Track1 is already playing, pause it
+            setIsPlaying(false);
+          } else {
+            // Track1 is not playing, start playing it
+            selectAndPlay(currentPair.track_a);
+          }
+        }
         break;
 
       case 'play2':
-        if (currentPair) selectAndPlay(currentPair.track_b);
-        break;
-
-      case 'winner':
         if (currentPair) {
-          recordComparison.mutate({
-            session_id: currentPair.session_id,
-            track_a_id: currentPair.track_a.id,
-            track_b_id: currentPair.track_b.id,
-            winner_id: currentPair.track_a.id,
-            priority_path_prefix: undefined,
-          });
-        } else {
-          console.log('Winner command received but no active comparison');
+          const { currentTrack, isPlaying, selectAndPlay, setIsPlaying } = useComparisonStore.getState();
+          if (currentTrack?.id === currentPair.track_b.id && isPlaying) {
+            // Track2 is already playing, pause it
+            setIsPlaying(false);
+          } else {
+            // Track2 is not playing, start playing it
+            selectAndPlay(currentPair.track_b);
+          }
         }
         break;
+
+       case 'winner':
+         if (currentPair) {
+           // Read current ranking mode and playlist ID from store
+           const { rankingMode, selectedPlaylistId } = useComparisonStore.getState();
+
+           const request: RecordComparisonRequest = {
+             session_id: currentPair.session_id,
+             track_a_id: currentPair.track_a.id,
+             track_b_id: currentPair.track_b.id,
+             winner_id: currentPair.track_a.id,
+             priority_path_prefix: undefined,
+           };
+
+           // Include ranking mode info if in playlist mode (same as UI clicks)
+           if (rankingMode === 'playlist' && selectedPlaylistId) {
+             request.ranking_mode = 'playlist';
+             request.playlist_id = selectedPlaylistId;
+           }
+
+           recordComparison.mutate(request);
+         } else {
+           console.log('Winner command received but no active comparison');
+         }
+         break;
 
        case 'archive':
          if (currentPair) {
