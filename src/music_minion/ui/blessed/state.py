@@ -115,6 +115,7 @@ class ComparisonState:
     coverage_filter_filters: Optional[RatingCoverageFilters] = None
     last_autoplay_track_id: Optional[int] = None
     last_autoplay_time: Optional[float] = None
+    playlist_ranking_mode: bool = False  # True when ranking tracks within a playlist
 
 
 @dataclass

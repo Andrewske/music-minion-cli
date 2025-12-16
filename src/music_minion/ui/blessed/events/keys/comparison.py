@@ -9,8 +9,10 @@ from music_minion.domain.rating.database import (
     RatingCoverageFilters,
     RatingCoverageStats,
     get_or_create_rating,
+    get_or_create_playlist_rating,
     get_ratings_coverage,
     record_comparison,
+    record_playlist_comparison,
 )
 from music_minion.domain.rating.elo import (
     get_k_factor,
@@ -110,41 +112,98 @@ def handle_comparison_choice(
         winner = comparison.track_b
         loser = comparison.track_a
 
-    # Get current ratings
-    winner_rating_obj = get_or_create_rating(winner["id"])
-    loser_rating_obj = get_or_create_rating(loser["id"])
+    if comparison.playlist_ranking_mode and comparison.playlist_id:
+        # Playlist ranking mode - use playlist-specific ratings
+        winner_playlist_rating_obj = get_or_create_playlist_rating(
+            winner["id"], comparison.playlist_id
+        )
+        loser_playlist_rating_obj = get_or_create_playlist_rating(
+            loser["id"], comparison.playlist_id
+        )
 
-    # Calculate K-factors
-    winner_k = get_k_factor(winner_rating_obj.comparison_count)
-    loser_k = get_k_factor(loser_rating_obj.comparison_count)
+        # Get global ratings for reference
+        winner_global_rating_obj = get_or_create_rating(winner["id"])
+        loser_global_rating_obj = get_or_create_rating(loser["id"])
 
-    # Use average K-factor for update
-    k = (winner_k + loser_k) / 2
+        # Calculate K-factors based on playlist comparison counts
+        winner_k = get_k_factor(winner_playlist_rating_obj.comparison_count)
+        loser_k = get_k_factor(loser_playlist_rating_obj.comparison_count)
 
-    # Update ratings using Elo
-    new_winner_rating, new_loser_rating = update_ratings(
-        winner_rating_obj.rating, loser_rating_obj.rating, k
-    )
+        # Use average K-factor for update
+        k = (winner_k + loser_k) / 2
 
-    # Record comparison in database
-    record_comparison(
-        track_a_id=comparison.track_a["id"],
-        track_b_id=comparison.track_b["id"],
-        winner_id=winner["id"],
-        track_a_rating_before=winner_rating_obj.rating
-        if winner_side == "a"
-        else loser_rating_obj.rating,
-        track_b_rating_before=loser_rating_obj.rating
-        if winner_side == "a"
-        else winner_rating_obj.rating,
-        track_a_rating_after=new_winner_rating
-        if winner_side == "a"
-        else new_loser_rating,
-        track_b_rating_after=new_loser_rating
-        if winner_side == "a"
-        else new_winner_rating,
-        session_id=comparison.session_id,
-    )
+        # Update playlist ratings using Elo
+        new_winner_playlist_rating, new_loser_playlist_rating = update_ratings(
+            winner_playlist_rating_obj.rating, loser_playlist_rating_obj.rating, k
+        )
+
+        # Record playlist comparison in database
+        record_playlist_comparison(
+            track_a_id=comparison.track_a["id"],
+            track_b_id=comparison.track_b["id"],
+            winner_id=winner["id"],
+            playlist_id=comparison.playlist_id,
+            track_a_playlist_rating_before=winner_playlist_rating_obj.rating
+            if winner_side == "a"
+            else loser_playlist_rating_obj.rating,
+            track_b_playlist_rating_before=loser_playlist_rating_obj.rating
+            if winner_side == "a"
+            else winner_playlist_rating_obj.rating,
+            track_a_playlist_rating_after=new_winner_playlist_rating
+            if winner_side == "a"
+            else new_loser_playlist_rating,
+            track_b_playlist_rating_after=new_loser_playlist_rating
+            if winner_side == "a"
+            else new_winner_playlist_rating,
+            track_a_global_rating_before=winner_global_rating_obj.rating,
+            track_b_global_rating_before=loser_global_rating_obj.rating,
+            track_a_global_rating_after=winner_global_rating_obj.rating,  # No change for global
+            track_b_global_rating_after=loser_global_rating_obj.rating,  # No change for global
+            session_id=comparison.session_id,
+        )
+
+        # Use playlist ratings for display/cache updates
+        new_winner_rating = new_winner_playlist_rating
+        new_loser_rating = new_loser_playlist_rating
+        winner_rating_obj = winner_playlist_rating_obj
+        loser_rating_obj = loser_playlist_rating_obj
+
+    else:
+        # Standard global rating mode
+        winner_rating_obj = get_or_create_rating(winner["id"])
+        loser_rating_obj = get_or_create_rating(loser["id"])
+
+        # Calculate K-factors
+        winner_k = get_k_factor(winner_rating_obj.comparison_count)
+        loser_k = get_k_factor(loser_rating_obj.comparison_count)
+
+        # Use average K-factor for update
+        k = (winner_k + loser_k) / 2
+
+        # Update ratings using Elo
+        new_winner_rating, new_loser_rating = update_ratings(
+            winner_rating_obj.rating, loser_rating_obj.rating, k
+        )
+
+        # Record comparison in database
+        record_comparison(
+            track_a_id=comparison.track_a["id"],
+            track_b_id=comparison.track_b["id"],
+            winner_id=winner["id"],
+            track_a_rating_before=winner_rating_obj.rating
+            if winner_side == "a"
+            else loser_rating_obj.rating,
+            track_b_rating_before=loser_rating_obj.rating
+            if winner_side == "a"
+            else winner_rating_obj.rating,
+            track_a_rating_after=new_winner_rating
+            if winner_side == "a"
+            else new_loser_rating,
+            track_b_rating_after=new_loser_rating
+            if winner_side == "a"
+            else new_winner_rating,
+            session_id=comparison.session_id,
+        )
 
     # Increment comparison count
     new_comparisons_done = comparison.comparisons_done + 1

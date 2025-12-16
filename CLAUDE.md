@@ -117,7 +117,7 @@ The `--web` flag starts all three services in one command:
 - FastAPI backend (http://0.0.0.0:8000)
 - Vite frontend (http://localhost:5173)
 
-Logs are captured to `/tmp/music-minion-{uvicorn,vite}.log` to keep the terminal clean. All services stop gracefully when you quit the blessed UI.
+Logs are captured to `music-minion-{uvicorn,vite}.log` in the project root for easier debugging. All services stop gracefully when you quit the blessed UI.
 
 **Hot-Reload** (install: `uv pip install watchdog`):
 - **Reloadable**: Command handlers, domain logic, UI components, utilities

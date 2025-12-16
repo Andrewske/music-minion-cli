@@ -15,7 +15,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 25
+SCHEMA_VERSION = 26
 
 
 def get_database_path() -> Path:
@@ -861,6 +861,83 @@ def migrate_database(conn, current_version: int) -> None:
         """)
 
         logger.info("Migration to schema version 25 complete")
+        conn.commit()
+
+    if current_version < 26:
+        # Migration from v25 to v26: Add playlist-specific ELO rating system
+        logger.info("Migrating database to schema version 26 (Playlist ELO ratings)...")
+
+        # Playlist-specific ELO ratings table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS playlist_elo_ratings (
+                track_id TEXT NOT NULL,
+                playlist_id INTEGER NOT NULL,
+                rating REAL DEFAULT 1500.0,
+                comparison_count INTEGER DEFAULT 0,
+                wins INTEGER DEFAULT 0,
+                last_compared TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (track_id, playlist_id),
+                FOREIGN KEY (track_id) REFERENCES tracks(id),
+                FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE
+            )
+        """)
+
+        # Playlist comparison history table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS playlist_comparison_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                track_a_id TEXT NOT NULL,
+                track_b_id TEXT NOT NULL,
+                winner_id TEXT NOT NULL,
+                playlist_id INTEGER NOT NULL,
+                affects_global BOOLEAN NOT NULL,
+                track_a_playlist_rating_before REAL,
+                track_a_playlist_rating_after REAL,
+                track_b_playlist_rating_before REAL,
+                track_b_playlist_rating_after REAL,
+                track_a_global_rating_before REAL,
+                track_a_global_rating_after REAL,
+                track_b_global_rating_before REAL,
+                track_b_global_rating_after REAL,
+                session_id TEXT NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (track_a_id) REFERENCES tracks(id),
+                FOREIGN KEY (track_b_id) REFERENCES tracks(id),
+                FOREIGN KEY (winner_id) REFERENCES tracks(id),
+                FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE
+            )
+        """)
+
+        # Session tracking for resumable playlist ranking
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS playlist_ranking_sessions (
+                playlist_id INTEGER PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                last_track_a_id TEXT,
+                last_track_b_id TEXT,
+                progress_stats TEXT, -- JSON: {"compared": 45, "total": 120}
+                started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE
+            )
+        """)
+
+        # Create indexes for performance
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_playlist_elo_ratings_playlist_id
+            ON playlist_elo_ratings(playlist_id, rating DESC)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_playlist_comparison_history_playlist_id
+            ON playlist_comparison_history(playlist_id, timestamp DESC)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_playlist_ranking_sessions_playlist_id
+            ON playlist_ranking_sessions(playlist_id)
+        """)
+
+        logger.info("Migration to schema version 26 complete")
         conn.commit()
 
 

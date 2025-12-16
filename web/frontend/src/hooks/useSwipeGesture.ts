@@ -1,6 +1,6 @@
  import { useDrag } from '@use-gesture/react';
  import { useSpring } from '@react-spring/web';
- import { useState, useEffect } from 'react';
+ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
 interface UseSwipeGestureOptions {
   onSwipeRight: () => void;
@@ -15,6 +15,15 @@ const ROTATION_FACTOR = 0.1; // degrees per pixel - visual rotation during drag
 export function useSwipeGesture({ onSwipeRight, onSwipeLeft }: UseSwipeGestureOptions) {
   const [isDragging, setIsDragging] = useState(false);
 
+  // Fix stale closure: Store current callbacks in ref so useDrag always uses latest values
+  const callbacksRef = useRef({ onSwipeRight, onSwipeLeft });
+  useEffect(() => {
+    callbacksRef.current = { onSwipeRight, onSwipeLeft };
+  }, [onSwipeRight, onSwipeLeft]);
+
+  // Track the last movement value during drag to check on release
+  const lastMovementRef = useRef({ mx: 0, vx: 0 });
+
   const [{ x, rotate }, api] = useSpring(() => ({
     x: 0,
     rotate: 0,
@@ -26,36 +35,54 @@ export function useSwipeGesture({ onSwipeRight, onSwipeLeft }: UseSwipeGestureOp
     api.set({ x: 0, rotate: 0 });
   }, [api]);
 
-  const bind = useDrag(
+  // Stabilize handler identity to prevent useDrag from recreating bindings on every render
+  const handler = useCallback(
     ({ active, movement: [mx], velocity: [vx] }) => {
       setIsDragging(active);
 
-      if (!active) {
+      if (active) {
+        // During drag: store movement values for checking on release
+        lastMovementRef.current = { mx, vx };
+
+        // Update drag position immediately (no animation during drag)
+        const rotate = mx * ROTATION_FACTOR;
+        api.set({ x: mx, rotate });
+      } else {
+        // On release: use stored values (mx/vx from params are often 0 due to bounds)
+        const { mx: lastMx, vx: lastVx } = lastMovementRef.current;
+
         // Accept swipes that meet EITHER distance OR velocity threshold
         // This supports both mobile (fast flicks) and desktop (slow drags)
-        if (Math.abs(mx) > SWIPE_DISTANCE_THRESHOLD || Math.abs(vx) > SWIPE_VELOCITY_THRESHOLD) {
-          if (mx > 0) {
-            onSwipeRight();
+        if (Math.abs(lastMx) > SWIPE_DISTANCE_THRESHOLD || Math.abs(lastVx) > SWIPE_VELOCITY_THRESHOLD) {
+          if (lastMx > 0) {
+            callbacksRef.current.onSwipeRight();
           } else {
-            onSwipeLeft();
+            callbacksRef.current.onSwipeLeft();
           }
         }
 
         // Reset position immediately
         api.start({ x: 0, rotate: 0, immediate: true });
-      } else {
-        // Update drag position immediately (no animation during drag)
-        const rotate = mx * ROTATION_FACTOR;
-        api.set({ x: mx, rotate });
+
+        // Reset tracking
+        lastMovementRef.current = { mx: 0, vx: 0 };
       }
     },
-    {
-      axis: 'x',
-      bounds: { left: -150, right: 150 }, // Reduced bounds for better gesture detection
-      rubberband: 0.3, // Numeric resistance instead of boolean for finer control
-      filterTaps: false, // Don't filter taps since we handle clicks in TrackCard
-    }
+    [api] // Only api dependency - stable from useSpring
   );
+
+  // Stabilize config object to prevent useDrag from seeing it as changed
+  const config = useMemo(
+    () => ({
+      axis: 'x' as const,
+      bounds: { left: -150, right: 150 },
+      rubberband: 0.3,
+      filterTaps: false,
+    }),
+    [] // Config is static constants
+  );
+
+  const bind = useDrag(handler, config);
 
   return {
     bind,

@@ -545,7 +545,7 @@ def setup_web_mode(current_config: config.Config) -> tuple[Any, Any] | None:
         f"   Frontend: http://localhost:{current_config.web.frontend_port}",
         style="green",
     )
-    safe_print("   Logs: /tmp/music-minion-{uvicorn,vite}.log", style="dim")
+    safe_print("   Logs: music-minion-{uvicorn,vite}.log", style="dim")
 
     return web_processes
 

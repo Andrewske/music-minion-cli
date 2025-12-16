@@ -139,11 +139,10 @@ def _add_tracks_from_paths(
             if row:
                 track_id = row["id"]
                 # Add track to playlist
-                try:
-                    add_track_to_playlist(playlist_id, track_id)
+                if add_track_to_playlist(playlist_id, track_id):
                     tracks_added += 1
-                except ValueError:
-                    # Track already in playlist, skip
+                else:
+                    # Track already in playlist or other failure
                     duplicates_skipped += 1
             else:
                 # Track not in database
@@ -210,7 +209,7 @@ def import_m3u(
     # Create playlist
     playlist_id = create_playlist(
         name=playlist_name,
-        type="manual",
+        playlist_type="manual",
         description=description or f"Imported from {local_path.name}",
     )
 
@@ -290,7 +289,7 @@ def import_serato_crate(
     # Create playlist
     playlist_id = create_playlist(
         name=playlist_name,
-        type="manual",
+        playlist_type="manual",
         description=description or f"Imported from {local_path.name}",
     )
 

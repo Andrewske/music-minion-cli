@@ -18,8 +18,8 @@ from .core.config import WebConfig
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 # Log file paths
-UVICORN_LOG = Path("/tmp/music-minion-uvicorn.log")
-VITE_LOG = Path("/tmp/music-minion-vite.log")
+UVICORN_LOG = PROJECT_ROOT / "music-minion-uvicorn.log"
+VITE_LOG = PROJECT_ROOT / "music-minion-vite.log"
 
 
 def is_port_available(port: int) -> bool:

@@ -13,23 +13,32 @@ interface TrackCardProps {
 export function TrackCard({ track, isPlaying, className = '', onArchive, onWinner, onClick, isLoading }: TrackCardProps) {
   const renderRatingBadge = (rating: number, wins: number, losses: number, comparisonCount: number) => {
     const isBootstrap = comparisonCount < 10;
-    
+
+    // Check if we have playlist-specific ratings
+    const hasPlaylistRating = track.playlist_rating !== undefined && track.playlist_rating !== null;
+    const displayRating = hasPlaylistRating ? (track.playlist_rating as number) : rating;
+
     return (
       <div className={`
         flex items-center gap-2 px-3 py-1.5 rounded-full text-sm border backdrop-blur-sm shadow-sm
         transition-colors duration-300
-        ${isBootstrap 
-          ? 'bg-slate-900/50 border-slate-800 text-slate-400' 
+        ${isBootstrap
+          ? 'bg-slate-900/50 border-slate-800 text-slate-400'
           : 'bg-amber-950/20 border-amber-500/20 text-amber-400'}
       `}>
         {/* Icon & Score */}
         <div className="flex items-center gap-1.5">
           <span className={isBootstrap ? 'opacity-70' : ''}>
-            {isBootstrap ? '🎵' : '⭐'}
+            {hasPlaylistRating ? '🎯' : (isBootstrap ? '🎵' : '⭐')}
           </span>
           <span className="font-bold tabular-nums tracking-tight">
-            {rating.toFixed(0)}
+            {displayRating.toFixed(0)}
           </span>
+          {hasPlaylistRating && (
+            <span className="text-xs text-slate-500 ml-1">
+              (Global: {rating.toFixed(0)})
+            </span>
+          )}
         </div>
 
         {/* Divider */}
@@ -65,9 +74,10 @@ export function TrackCard({ track, isPlaying, className = '', onArchive, onWinne
       )}
 
       {/* Clickable content area */}
-      <div 
+      <button
+        type="button"
         onClick={onClick}
-        className="cursor-pointer flex flex-col"
+        className="cursor-pointer flex flex-col w-full text-left"
       >
         <div className="p-4 flex flex-col items-center justify-center text-center relative z-10">
           <div className="flex-1 pt-2">
@@ -92,12 +102,13 @@ export function TrackCard({ track, isPlaying, className = '', onArchive, onWinne
             {renderRatingBadge(track.rating, track.wins, track.losses, track.comparison_count)}
           </div>
         </div>
-      </div>
+      </button>
 
       {/* Action Buttons - separate from clickable area */}
       {(onArchive && onWinner) && (
         <div className="hidden lg:flex border-t border-slate-800">
           <button
+            type="button"
             onClick={(e) => { e.stopPropagation(); onArchive(); }}
             disabled={isLoading}
             className="flex-1 py-2 text-sm font-medium text-rose-400/70 hover:text-rose-400 hover:bg-rose-500/10 transition-colors border-r border-slate-800 disabled:opacity-50"
@@ -105,6 +116,7 @@ export function TrackCard({ track, isPlaying, className = '', onArchive, onWinne
             🗂️ Archive
           </button>
           <button
+            type="button"
             onClick={(e) => { e.stopPropagation(); onWinner(); }}
             disabled={isLoading}
             className="flex-1 py-2 text-sm font-medium text-emerald-400/70 hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-50"

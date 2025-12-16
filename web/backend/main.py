@@ -1,6 +1,12 @@
 import os
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+# Configure logging for web backend
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 
 app = FastAPI(title="Music Minion Web API", version="1.0.0")
 
@@ -21,11 +27,13 @@ app.add_middleware(
 )
 
 # Include routers
-from web.backend.routers import comparisons, tracks, stats
+from .routers import comparisons, tracks, stats
+from .routers.playlists import router as playlists_router
 
 app.include_router(comparisons.router, prefix="/api", tags=["comparisons"])
 app.include_router(tracks.router, prefix="/api", tags=["tracks"])
 app.include_router(stats.router, prefix="/api", tags=["stats"])
+app.include_router(playlists_router, prefix="/api", tags=["playlists"])
 
 
 @app.get("/health")

@@ -9,11 +9,13 @@ interface ComparisonState {
   isPlaying: boolean;              // Is audio currently playing
   comparisonsCompleted: number;
   priorityPathPrefix: string | null;
+  rankingMode: 'global' | 'playlist' | null;
+  selectedPlaylistId: number | null;
   isComparisonMode: boolean;
 }
 
 interface ComparisonActions {
-  setSession: (sessionId: string, pair: ComparisonPair, prefetched?: ComparisonPair, priorityPathPrefix?: string) => void;
+  setSession: (sessionId: string, pair: ComparisonPair, prefetched?: ComparisonPair, priorityPathPrefix?: string, rankingMode?: 'global' | 'playlist', selectedPlaylistId?: number | null) => void;
   setCurrentTrack: (track: TrackInfo | null) => void;
   setIsPlaying: (playing: boolean) => void;
   togglePlaying: () => void;
@@ -22,6 +24,7 @@ interface ComparisonActions {
   reset: () => void;
   setCurrentPair: (pair: ComparisonPair, prefetched?: ComparisonPair) => void;
   advanceToNextPair: (nextPair: ComparisonPair, prefetched?: ComparisonPair) => void;
+  setNextPairForComparison: (nextPair: ComparisonPair, prefetched?: ComparisonPair) => void;  // Update pair for comparison but keep current track playing
   setPriorityPath: (priorityPathPrefix: string | null) => void;
 }
 
@@ -35,13 +38,23 @@ const initialState: ComparisonState = {
   isPlaying: false,
   comparisonsCompleted: 0,
   priorityPathPrefix: null,
+  rankingMode: null,
+  selectedPlaylistId: null,
   isComparisonMode: false,
 };
 
 export const useComparisonStore = create<ComparisonStore>((set, get) => ({
   ...initialState,
 
-  setSession: (sessionId, pair, prefetched, priorityPathPrefix) => {
+  setSession: (sessionId, pair, prefetched, priorityPathPrefix, rankingMode, selectedPlaylistId) => {
+    console.log('ComparisonStore setSession called with:', {
+      sessionId,
+      rankingMode,
+      selectedPlaylistId,
+      priorityPathPrefix,
+      hasPair: !!pair,
+      hasPrefetched: !!prefetched
+    });
     set({
       sessionId,
       currentPair: pair,
@@ -50,6 +63,8 @@ export const useComparisonStore = create<ComparisonStore>((set, get) => ({
       isPlaying: false,            // But don't play yet
       comparisonsCompleted: 0,
       priorityPathPrefix: priorityPathPrefix ?? null,
+      rankingMode: rankingMode ?? null,
+      selectedPlaylistId: selectedPlaylistId ?? null,
       isComparisonMode: true,
     });
   },
@@ -105,5 +120,14 @@ export const useComparisonStore = create<ComparisonStore>((set, get) => ({
 
   setPriorityPath: (priorityPathPrefix: string | null) => {
     set({ priorityPathPrefix });
+  },
+
+  setNextPairForComparison: (nextPair: ComparisonPair, prefetched?: ComparisonPair) => {
+    // Update pair for comparison but keep current track and playing state
+    set({
+      currentPair: nextPair,
+      prefetchedPair: prefetched ?? null,
+      isComparisonMode: true, // Keep comparison mode active
+    });
   },
 }));
