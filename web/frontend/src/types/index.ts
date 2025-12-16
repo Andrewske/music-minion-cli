@@ -1,7 +1,7 @@
 export interface TrackInfo {
   id: number;
   title: string;
-  artist: string;
+  artist?: string;
   album?: string;
   year?: number;
   bpm?: number;
@@ -12,6 +12,18 @@ export interface TrackInfo {
   losses: number;
   duration?: number;
   has_waveform: boolean;
+  // Playlist ranking fields
+  playlist_rating?: number;
+  playlist_comparison_count?: number;
+  global_rating?: number;
+}
+
+export interface Playlist {
+  id: number;
+  name: string;
+  type: string;
+  description?: string;
+  track_count: number;
 }
 
 export interface ComparisonPair {
@@ -25,6 +37,7 @@ export interface StartSessionRequest {
   genre_filter?: string;
   year_filter?: string;
   playlist_id?: number;
+  ranking_mode?: string;
   priority_path_prefix?: string;
 }
 
@@ -40,6 +53,8 @@ export interface RecordComparisonRequest {
   track_a_id: number;
   track_b_id: number;
   winner_id: number;
+  ranking_mode?: string;
+  playlist_id?: number;
   priority_path_prefix?: string;
 }
 
@@ -70,7 +85,7 @@ export interface GenreStat {
 export interface LeaderboardEntry {
   track_id: number;
   title: string;
-  artist: string;
+  artist?: string;
   rating: number;
   comparison_count: number;
   wins: number;
@@ -94,4 +109,73 @@ export interface StatsResponse {
 export interface FoldersResponse {
   root: string;
   folders: string[];
+}
+
+export interface PlaylistBasicStats {
+  total_tracks: number;
+  total_duration: number;
+  avg_duration: number;
+  year_min?: number;
+  year_max?: number;
+}
+
+export interface PlaylistEloAnalysis {
+  total_tracks: number;
+  rated_tracks: number;
+  compared_tracks: number;
+  coverage_percentage: number;
+  avg_playlist_rating: number;
+  min_playlist_rating: number;
+  max_playlist_rating: number;
+  avg_global_rating: number;
+  min_global_rating: number;
+  max_global_rating: number;
+  avg_playlist_comparisons: number;
+  total_playlist_comparisons: number;
+}
+
+export interface PlaylistQualityMetrics {
+  total_tracks: number;
+  missing_bpm: number;
+  missing_key: number;
+  missing_year: number;
+  missing_genre: number;
+  without_tags: number;
+  completeness_score: number;
+}
+
+export interface ArtistStat {
+  artist: string;
+  track_count: number;
+}
+
+export interface GenreDistribution {
+  genre: string;
+  count: number;
+  percentage: number;
+}
+
+export interface PlaylistTrackEntry {
+  id: number;
+  title: string;
+  artist?: string;
+  rating: number;
+  wins: number;
+  losses: number;
+  comparison_count: number;
+}
+
+export interface PlaylistTracksResponse {
+  playlist_name: string;
+  tracks: PlaylistTrackEntry[];
+}
+
+export interface PlaylistStatsResponse {
+  playlist_name: string;
+  playlist_type: string;
+  basic: PlaylistBasicStats;
+  elo: PlaylistEloAnalysis;
+  quality: PlaylistQualityMetrics;
+  top_artists: ArtistStat[];
+  top_genres: GenreDistribution[];
 }
