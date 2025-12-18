@@ -118,6 +118,7 @@ def export_serato_crate(playlist_id: int, output_path: Path, library_root: Path)
     try:
         from pyserato.model.crate import Crate
         from pyserato.builder import Builder
+        from pyserato.model.track import Track
     except ImportError:
         raise ImportError(
             "pyserato library not installed. Install with: uv pip install pyserato"
@@ -143,8 +144,6 @@ def export_serato_crate(playlist_id: int, output_path: Path, library_root: Path)
     for track in tracks:
         track_path = Path(track["local_path"])
         # Serato expects Track objects with absolute paths
-        from pyserato.model.track import Track
-
         serato_track = Track(path=track_path.absolute())
         crate.add_track(serato_track)
 
@@ -161,6 +160,8 @@ def export_csv(
 ) -> int:
     """
     Export a playlist to CSV format with all track metadata including database ID.
+
+    Note: NULL values are exported as empty strings for CSV compatibility.
 
     Args:
         playlist_id: ID of the playlist to export
@@ -226,12 +227,7 @@ def export_csv(
             for field in fieldnames:
                 value = track.get(field)
                 # Convert None to empty string for CSV
-                if value is None:
-                    row[field] = ""
-                elif isinstance(value, (int, float)):
-                    row[field] = str(value)
-                else:
-                    row[field] = str(value)
+                row[field] = "" if value is None else str(value)
             writer.writerow(row)
 
     return len(tracks)
