@@ -12,6 +12,7 @@ interface ComparisonState {
   rankingMode: 'global' | 'playlist' | null;
   selectedPlaylistId: number | null;
   isComparisonMode: boolean;
+  autoplay: boolean;               // Whether to auto-select track A when new pairs load
 }
 
 interface ComparisonActions {
@@ -26,6 +27,7 @@ interface ComparisonActions {
   advanceToNextPair: (nextPair: ComparisonPair, prefetched?: ComparisonPair) => void;
   setNextPairForComparison: (nextPair: ComparisonPair, prefetched?: ComparisonPair) => void;  // Update pair for comparison but keep current track playing
   setPriorityPath: (priorityPathPrefix: string | null) => void;
+  setAutoplay: (enabled: boolean) => void;
 }
 
 type ComparisonStore = ComparisonState & ComparisonActions;
@@ -41,6 +43,7 @@ const initialState: ComparisonState = {
   rankingMode: null,
   selectedPlaylistId: null,
   isComparisonMode: false,
+  autoplay: JSON.parse(localStorage.getItem('music-minion-autoplay') ?? 'true'),
 };
 
 export const useComparisonStore = create<ComparisonStore>((set, get) => ({
@@ -122,12 +125,19 @@ export const useComparisonStore = create<ComparisonStore>((set, get) => ({
     set({ priorityPathPrefix });
   },
 
+  setAutoplay: (enabled: boolean) => {
+    localStorage.setItem('music-minion-autoplay', JSON.stringify(enabled));
+    set({ autoplay: enabled });
+  },
+
   setNextPairForComparison: (nextPair: ComparisonPair, prefetched?: ComparisonPair) => {
-    // Update pair for comparison but keep current track and playing state
+    const { autoplay } = get();
+    // Update pair for comparison but keep current track and playing state unless autoplay is enabled
     set({
       currentPair: nextPair,
       prefetchedPair: prefetched ?? null,
       isComparisonMode: true, // Keep comparison mode active
+      ...(autoplay && { currentTrack: nextPair.track_a }), // Auto-select track A when autoplay enabled
     });
   },
 }));

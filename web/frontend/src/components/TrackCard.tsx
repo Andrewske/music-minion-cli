@@ -113,7 +113,7 @@ export function TrackCard({ track, isPlaying, className = '', onArchive, onWinne
             disabled={isLoading}
             className="flex-1 py-2 text-sm font-medium text-rose-400/70 hover:text-rose-400 hover:bg-rose-500/10 transition-colors border-r border-slate-800 disabled:opacity-50"
           >
-            🗂️ Archive
+            🗂️ Remove from playlist
           </button>
           <button
             type="button"

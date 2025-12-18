@@ -38,7 +38,7 @@ export function SwipeableTrack({
           <div className="w-16 h-16 rounded-full bg-rose-500/20 flex items-center justify-center border-2 border-rose-500 shadow-[0_0_20px_rgba(244,63,94,0.3)]">
             <span className="text-3xl">🗂️</span>
           </div>
-          <span className="text-rose-500 font-bold mt-2 uppercase tracking-wider text-sm">Archive</span>
+           <span className="text-rose-500 font-bold mt-2 uppercase tracking-wider text-sm">Remove from playlist</span>
         </div>
 
         {/* Winner Indicator (Right) */}
