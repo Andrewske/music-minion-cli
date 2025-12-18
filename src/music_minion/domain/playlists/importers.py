@@ -3,9 +3,10 @@ Playlist import functionality for Music Minion CLI.
 Supports importing M3U/M3U8 and Serato .crate playlists.
 """
 
+import csv
 import urllib.parse
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, cast
 
 from music_minion.core.database import get_db_connection
 
@@ -20,7 +21,7 @@ def detect_playlist_format(local_path: Path) -> Optional[str]:
         local_path: Path to the playlist file
 
     Returns:
-        Format string ('m3u', 'm3u8', 'crate') or None if unknown
+        Format string ('m3u', 'm3u8', 'crate', 'csv') or None if unknown
     """
     suffix = local_path.suffix.lower()
 
@@ -28,6 +29,8 @@ def detect_playlist_format(local_path: Path) -> Optional[str]:
         return "m3u8"  # Treat both as M3U8 (UTF-8)
     elif suffix == ".crate":
         return "crate"
+    elif suffix == ".csv":
+        return "csv"
 
     return None
 
@@ -304,6 +307,260 @@ def import_serato_crate(
     return playlist_id, tracks_added, duplicates_skipped, unresolved_paths
 
 
+def validate_csv_metadata_field(
+    field_name: str, value: str
+) -> tuple[bool, Optional[str]]:
+    """
+    Validate a CSV metadata field value.
+
+    Args:
+        field_name: Name of the metadata field
+        value: String value from CSV
+
+    Returns:
+        Tuple of (is_valid, error_message_or_none)
+    """
+    if not value.strip():  # Empty values are OK (will be None in DB)
+        return True, None
+
+    # Field-specific validation
+    if field_name in ["year"]:
+        try:
+            int(value)
+        except ValueError:
+            return False, f"Year must be a valid integer, got '{value}'"
+    elif field_name in ["duration", "bpm"]:
+        try:
+            float(value)
+        except ValueError:
+            return False, f"{field_name.title()} must be a valid number, got '{value}'"
+
+    return True, None
+
+
+def import_csv(
+    local_path: Path,
+    playlist_name: str,
+    description: Optional[str] = None,
+) -> tuple[int, int, int, list[str]]:
+    """
+    Import a CSV playlist file with track metadata.
+
+    Expected CSV format:
+    - Must have headers (first row)
+    - At minimum, should have 'local_path' column
+    - Other columns match track metadata fields
+    - Tracks are matched by local_path for updates, or created if not found
+
+    Args:
+        local_path: Path to the CSV file
+        playlist_name: Name for the imported playlist
+        description: Optional description for the playlist
+
+    Returns:
+        Tuple of (playlist_id, tracks_added, duplicates_skipped, error_messages)
+        - playlist_id: ID of created playlist
+        - tracks_added: Number of tracks successfully added
+        - duplicates_skipped: Number of duplicate tracks skipped
+        - error_messages: List of validation/parsing error messages
+
+    Raises:
+        FileNotFoundError: If CSV file doesn't exist
+        ValueError: If CSV format is invalid
+    """
+    if not local_path.exists():
+        raise FileNotFoundError(f"CSV file not found: {local_path}")
+
+    # Read and parse CSV
+    try:
+        with open(local_path, "r", encoding="utf-8") as csvfile:
+            # Try to detect if file has headers by reading first few lines
+            sample = csvfile.read(1024)
+            csvfile.seek(0)
+
+            # Use csv.Sniffer to detect CSV dialect
+            try:
+                sniffer = csv.Sniffer()
+                dialect = sniffer.sniff(sample, delimiters=",\t;|")
+                has_header = sniffer.has_header(sample)
+            except csv.Error:
+                # Fall back to basic comma-separated with header assumption
+                dialect = csv.excel()
+                has_header = True
+
+            if not has_header:
+                raise ValueError(
+                    "CSV file must have headers in the first row. "
+                    "Expected columns include: local_path, title, artist, album, etc."
+                )
+
+            reader = csv.DictReader(csvfile, dialect=dialect)
+
+            # Validate headers
+            if not reader.fieldnames:
+                raise ValueError("CSV file appears to be empty or malformed")
+
+            required_fields = ["local_path"]
+            missing_required = [
+                field for field in required_fields if field not in reader.fieldnames
+            ]
+            if missing_required:
+                raise ValueError(
+                    f"CSV missing required columns: {', '.join(missing_required)}"
+                )
+
+            # Valid metadata fields from database schema
+            valid_metadata_fields = {
+                "title",
+                "artist",
+                "top_level_artist",
+                "album",
+                "genre",
+                "year",
+                "duration",
+                "key_signature",
+                "bpm",
+                "remix_artist",
+                "soundcloud_id",
+                "spotify_id",
+                "youtube_id",
+                "source",
+            }
+
+            # Parse rows
+            tracks_data = []
+            error_messages = []
+
+            for row_num, row in enumerate(
+                reader, start=2
+            ):  # Start at 2 since row 1 is header
+                local_path_str = row.get("local_path", "").strip()
+                if not local_path_str:
+                    error_messages.append(f"Row {row_num}: Missing local_path")
+                    continue
+
+                # Validate local_path exists as file
+                track_path = Path(local_path_str).expanduser()
+                if not track_path.exists():
+                    error_messages.append(
+                        f"Row {row_num}: Track file not found: {local_path_str}"
+                    )
+                    continue
+
+                # Validate metadata fields
+                track_metadata: dict[str, Any] = {"local_path": str(track_path)}
+
+                for field_name, value in row.items():
+                    if field_name == "local_path":
+                        continue  # Already handled
+
+                    if field_name not in valid_metadata_fields:
+                        # Skip unknown fields silently
+                        continue
+
+                    value = value.strip() if value else ""
+                    if value:  # Only validate non-empty values
+                        is_valid, error_msg = validate_csv_metadata_field(
+                            field_name, value
+                        )
+                        if not is_valid:
+                            error_messages.append(
+                                f"Row {row_num}, {field_name}: {error_msg}"
+                            )
+                            continue
+
+                        # Convert types appropriately
+                        if field_name == "year":
+                            track_metadata[field_name] = (
+                                value  # Will be converted to int in DB
+                            )
+                        elif field_name in ["duration", "bpm"]:
+                            track_metadata[field_name] = (
+                                value  # Will be converted to float in DB
+                            )
+                        else:
+                            track_metadata[field_name] = value
+
+                tracks_data.append(track_metadata)
+
+    except UnicodeDecodeError:
+        raise ValueError(
+            f"CSV file encoding error. File must be UTF-8 encoded: {local_path}"
+        )
+    except csv.Error as e:
+        raise ValueError(f"CSV parsing error: {e}")
+
+    # Create playlist
+    playlist_id = create_playlist(
+        name=playlist_name,
+        playlist_type="manual",
+        description=description or f"Imported from {local_path.name}",
+    )
+
+    # Process tracks: update/create in database and add to playlist
+    tracks_added = 0
+    duplicates_skipped = 0
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+
+        for track_data in tracks_data:
+            local_path_str = track_data["local_path"]
+
+            # Check if track exists in database
+            cursor.execute(
+                "SELECT id FROM tracks WHERE local_path = ?", (local_path_str,)
+            )
+            existing_track = cursor.fetchone()
+
+            if existing_track:
+                # Update existing track metadata
+                track_id = existing_track["id"]
+
+                # Build update query dynamically
+                update_fields = []
+                update_values = []
+                for field, value in track_data.items():
+                    if field != "local_path":  # Don't update local_path
+                        update_fields.append(f"{field} = ?")
+                        update_values.append(value)
+
+                if update_fields:
+                    update_query = f"""
+                        UPDATE tracks
+                        SET {", ".join(update_fields)}, metadata_updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    """
+                    update_values.append(track_id)
+                    cursor.execute(update_query, update_values)
+            else:
+                # Create new track
+                # Build insert query dynamically
+                fields = list(track_data.keys())
+                placeholders = ["?" for _ in fields]
+                values = list(track_data.values())
+
+                insert_query = f"""
+                    INSERT INTO tracks ({", ".join(fields)}, metadata_updated_at)
+                    VALUES ({", ".join(placeholders)}, CURRENT_TIMESTAMP)
+                """
+                cursor.execute(insert_query, values)
+                track_id = cursor.lastrowid
+                if track_id is None:
+                    error_messages.append(
+                        f"Failed to create track: {track_data.get('local_path', 'unknown')}"
+                    )
+                    continue
+
+            # Add track to playlist
+            if add_track_to_playlist(playlist_id, cast(int, track_id)):
+                tracks_added += 1
+            else:
+                duplicates_skipped += 1
+
+    return playlist_id, tracks_added, duplicates_skipped, error_messages
+
+
 def import_playlist(
     local_path: Path,
     playlist_name: Optional[str] = None,
@@ -345,8 +602,10 @@ def import_playlist(
         return import_m3u(local_path, playlist_name, library_root, description)
     elif format_type == "crate":
         return import_serato_crate(local_path, playlist_name, library_root, description)
+    elif format_type == "csv":
+        return import_csv(local_path, playlist_name, description)
     else:
         raise ValueError(
             f"Unsupported playlist format: {local_path.suffix}. "
-            "Supported formats: .m3u, .m3u8, .crate"
+            "Supported formats: .m3u, .m3u8, .crate, .csv"
         )

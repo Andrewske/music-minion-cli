@@ -952,7 +952,7 @@ def handle_playlist_import_command(
     if not args:
         log("Error: Please specify playlist file path", level="error")
         log("Usage: playlist import <file>", level="info")
-        log("Supported formats: .m3u, .m3u8, .crate", level="info")
+        log("Supported formats: .m3u, .m3u8, .crate, .csv", level="info")
         return ctx, True
 
     local_path_str = " ".join(args)
@@ -974,7 +974,7 @@ def handle_playlist_import_command(
         format_type = playlist_import.detect_playlist_format(local_path)
         if not format_type:
             log(f"❌ Unsupported file format: {local_path.suffix}", level="error")
-            log("Supported formats: .m3u, .m3u8, .crate", level="info")
+            log("Supported formats: .m3u, .m3u8, .crate, .csv", level="info")
             return ctx, True
 
         log(
@@ -999,17 +999,31 @@ def handle_playlist_import_command(
                 log(f"   Duplicates skipped: {duplicates_skipped}", level="info")
 
             if unresolved:
-                log(f"   ⚠️  Unresolved tracks: {len(unresolved)}", level="warning")
-                if len(unresolved) <= 5:
-                    log("\n   Could not find these tracks:", level="warning")
-                    for path in unresolved:
-                        # Show just filename for brevity
-                        log(f"     • {Path(path).name}", level="warning")
+                if format_type == "csv":
+                    # For CSV, unresolved contains error messages
+                    log(f"   ⚠️  Validation errors: {len(unresolved)}", level="warning")
+                    if len(unresolved) <= 5:
+                        log("\n   Errors found:", level="warning")
+                        for error in unresolved:
+                            log(f"     • {error}", level="warning")
+                    else:
+                        log(
+                            f"   Run 'playlist show {pl['name']}' to see details",
+                            level="info",
+                        )
                 else:
-                    log(
-                        f"   Run 'playlist show {pl['name']}' to see details",
-                        level="info",
-                    )
+                    # For other formats, unresolved contains file paths
+                    log(f"   ⚠️  Unresolved tracks: {len(unresolved)}", level="warning")
+                    if len(unresolved) <= 5:
+                        log("\n   Could not find these tracks:", level="warning")
+                        for path in unresolved:
+                            # Show just filename for brevity
+                            log(f"     • {Path(path).name}", level="warning")
+                    else:
+                        log(
+                            f"   Run 'playlist show {pl['name']}' to see details",
+                            level="info",
+                        )
 
             # Auto-export if enabled
             helpers.auto_export_if_enabled(playlist_id)
@@ -1036,7 +1050,7 @@ def handle_playlist_export_command(
     if not args:
         log("Error: Please specify playlist name", level="error")
         log("Usage: playlist export <name> [format]", level="info")
-        log("Formats: m3u8 (default), crate, all", level="info")
+        log("Formats: m3u8 (default), crate, csv, all", level="info")
         return ctx, True
 
     # Parse arguments with smart format detection
@@ -1045,7 +1059,7 @@ def handle_playlist_export_command(
     playlist_name = " ".join(args)
 
     # If more than one arg and last arg looks like a format, try separating
-    if len(args) > 1 and args[-1].lower() in ["m3u8", "m3u", "crate", "all"]:
+    if len(args) > 1 and args[-1].lower() in ["m3u8", "m3u", "crate", "csv", "all"]:
         # First check if the full name exists as a playlist
         pl_full = playlists.get_playlist_by_name(playlist_name)
         if not pl_full:
@@ -1077,8 +1091,8 @@ def handle_playlist_export_command(
 
     try:
         if format_type == "all":
-            # Export to both formats
-            formats = ["m3u8", "crate"]
+            # Export to all formats
+            formats = ["m3u8", "crate", "csv"]
             log(
                 f"📤 Exporting playlist '{playlist_name}' to all formats...",
                 level="info",
