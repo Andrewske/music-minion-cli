@@ -8,6 +8,7 @@ import { useIPCWebSocket } from '../hooks/useIPCWebSocket';
 import { SwipeableTrack } from './SwipeableTrack';
 import { SessionProgress } from './SessionProgress';
 import { WaveformPlayer } from './WaveformPlayer';
+import { AutoplayToggle } from './AutoplayToggle';
 
 import { ErrorState } from './ErrorState';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -273,7 +274,7 @@ export function ComparisonView() {
     );
   }
 
-  // Only show loading for archive (which removes track from library)
+  // Only show loading for archive (which removes track from playlist)
   // Recording comparison uses optimistic UI - no loading state
   const isArchiving = archiveTrack.isPending;
   const isSubmitting = recordComparison.isPending;
@@ -293,14 +294,15 @@ export function ComparisonView() {
                 playlists={playlists ?? []}
                 selectedPlaylistId={sessionSelectedPlaylistId}
               />
-             <div className="flex items-center gap-2">
-               <button
-                 onClick={() => setIsStatsModalOpen(true)}
-                 className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-slate-100 rounded-lg transition-colors text-xs font-medium"
-               >
-                 Stats
-               </button>
-             </div>
+              <div className="flex items-center gap-4">
+                <AutoplayToggle />
+                <button
+                  onClick={() => setIsStatsModalOpen(true)}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-slate-100 rounded-lg transition-colors text-xs font-medium"
+                >
+                  Stats
+                </button>
+              </div>
           </div>
         </div>
       </div>
