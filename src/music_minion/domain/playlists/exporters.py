@@ -4,11 +4,11 @@ Supports exporting to M3U/M3U8 and Serato .crate formats.
 """
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 from datetime import datetime
 import sys
+import csv
 
-from music_minion.core.database import get_db_connection
 from .crud import get_playlist_by_id, get_playlist_by_name, get_playlist_tracks
 
 
@@ -142,12 +142,97 @@ def export_serato_crate(playlist_id: int, output_path: Path, library_root: Path)
     # Add tracks to crate
     for track in tracks:
         track_path = Path(track["local_path"])
-        # Serato expects absolute paths
-        crate.add_track(str(track_path.absolute()))
+        # Serato expects Track objects with absolute paths
+        from pyserato.model.track import Track
+
+        serato_track = Track(path=track_path.absolute())
+        crate.add_track(serato_track)
 
     # Save crate using pyserato builder
     builder = Builder()
-    builder.save(crate, str(output_path))
+    builder.save(crate, output_path)
+
+    return len(tracks)
+
+
+def export_csv(
+    playlist_id: int,
+    output_path: Path,
+) -> int:
+    """
+    Export a playlist to CSV format with all track metadata including database ID.
+
+    Args:
+        playlist_id: ID of the playlist to export
+        output_path: Path where CSV file should be written
+
+    Returns:
+        Number of tracks exported
+
+    Raises:
+        ValueError: If playlist doesn't exist or is empty
+    """
+    # Get playlist info
+    pl = get_playlist_by_id(playlist_id)
+    if not pl:
+        raise ValueError(f"Playlist with ID {playlist_id} not found")
+
+    # Get tracks
+    tracks = get_playlist_tracks(playlist_id)
+    if not tracks:
+        raise ValueError(f"Playlist '{pl['name']}' is empty")
+
+    # Ensure output directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Define CSV field names (all available track metadata)
+    fieldnames = [
+        "id",  # Database ID
+        "position",  # Position in playlist
+        "added_at",  # When added to playlist
+        "local_path",
+        "title",
+        "artist",
+        "top_level_artist",
+        "album",
+        "genre",
+        "year",
+        "duration",
+        "key_signature",
+        "bpm",
+        "remix_artist",
+        "soundcloud_id",
+        "spotify_id",
+        "youtube_id",
+        "source",
+        "created_at",
+        "updated_at",
+        "file_mtime",
+        "last_synced_at",
+        "soundcloud_synced_at",
+        "spotify_synced_at",
+        "youtube_synced_at",
+        "metadata_updated_at",
+    ]
+
+    # Write CSV file
+    with open(output_path, "w", newline="", encoding="utf-8") as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)
+        writer.writeheader()
+
+        for track in tracks:
+            # Convert track dict to CSV row, ensuring all fields are present
+            row = {}
+            for field in fieldnames:
+                value = track.get(field)
+                # Convert None to empty string for CSV
+                if value is None:
+                    row[field] = ""
+                elif isinstance(value, (int, float)):
+                    row[field] = str(value)
+                else:
+                    row[field] = str(value)
+            writer.writerow(row)
 
     return len(tracks)
 
@@ -166,7 +251,7 @@ def export_playlist(
     Args:
         playlist_id: ID of the playlist to export (provide either this or playlist_name)
         playlist_name: Name of the playlist to export
-        format_type: Export format ('m3u8', 'crate') - default 'm3u8'
+        format_type: Export format ('m3u8', 'crate', 'csv') - default 'm3u8'
         output_path: Where to save the file (defaults to ~/Music/playlists/<name>.<ext>)
         library_root: Root directory of music library (defaults to ~/Music)
         use_relative_paths: Whether to use relative paths for M3U8 (default True)
@@ -204,9 +289,11 @@ def export_playlist(
             output_path = playlists_dir / f"{pl['name']}.m3u8"
         elif format_type == "crate":
             output_path = playlists_dir / f"{pl['name']}.crate"
+        elif format_type == "csv":
+            output_path = playlists_dir / f"{pl['name']}.csv"
         else:
             raise ValueError(
-                f"Unsupported format: {format_type}. Use 'm3u8' or 'crate'"
+                f"Unsupported format: {format_type}. Use 'm3u8', 'crate', or 'csv'"
             )
 
     # Export based on format
@@ -221,8 +308,12 @@ def export_playlist(
         tracks_exported = export_serato_crate(
             playlist_id=pl["id"], output_path=output_path, library_root=library_root
         )
+    elif format_type == "csv":
+        tracks_exported = export_csv(playlist_id=pl["id"], output_path=output_path)
     else:
-        raise ValueError(f"Unsupported format: {format_type}. Use 'm3u8' or 'crate'")
+        raise ValueError(
+            f"Unsupported format: {format_type}. Use 'm3u8', 'crate', or 'csv'"
+        )
 
     return output_path, tracks_exported
 
@@ -240,7 +331,7 @@ def auto_export_playlist(
 
     Args:
         playlist_id: ID of the playlist to export
-        export_formats: List of formats to export ('m3u8', 'crate')
+        export_formats: List of formats to export ('m3u8', 'crate', 'csv')
         library_root: Root directory of music library
         use_relative_paths: Whether to use relative paths for M3U8
 
@@ -279,14 +370,14 @@ def export_all_playlists(
     Export all playlists to specified formats.
 
     Args:
-        export_formats: List of formats to export ('m3u8', 'crate')
+        export_formats: List of formats to export ('m3u8', 'crate', 'csv')
         library_root: Root directory of music library
         use_relative_paths: Whether to use relative paths for M3U8
 
     Returns:
         Dict mapping playlist names to list of (format, output_path, tracks_exported)
     """
-    from .playlist import get_all_playlists
+    from .crud import get_all_playlists
 
     all_playlists = get_all_playlists()
     results = {}
