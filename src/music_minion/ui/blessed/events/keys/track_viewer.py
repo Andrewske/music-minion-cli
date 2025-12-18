@@ -9,6 +9,7 @@ from music_minion.ui.blessed.state import (
     move_track_viewer_action_selection,
     update_track_viewer_filter,
     show_confirmation,
+    enter_export_selector,
 )
 from music_minion.ui.blessed.components.track_viewer import (
     TRACK_VIEWER_HEADER_LINES,
@@ -95,6 +96,14 @@ def handle_track_viewer_key(
         else:
             # Detail -> Execute: execute selected action
             return _execute_track_viewer_action(state)
+
+    # Export playlist shortcut
+    if event["type"] == "char" and event["char"] == "x":
+        if state.track_viewer_playlist_id and state.track_viewer_playlist_name:
+            return enter_export_selector(
+                state, state.track_viewer_playlist_id, state.track_viewer_playlist_name
+            ), None
+        return state, None
 
     # Quick keyboard shortcuts (work in both modes, but differ based on context)
     if event["type"] == "char":

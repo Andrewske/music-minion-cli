@@ -362,6 +362,15 @@ class UIState:
     comparison_history_scroll: int = 0  # Scroll offset
 
     # ============================================================================
+    # EXPORT SELECTOR MODE
+    # ============================================================================
+    # Export selector mode state (full screen export format selection)
+    export_selector_active: bool = False
+    export_selector_playlist_id: Optional[int] = None
+    export_selector_playlist_name: str = ""
+    export_selector_selected: int = 0  # Selected export format index
+
+    # ============================================================================
     # UI FEEDBACK (TOAST)
     # ============================================================================
     # UI feedback (toast notifications)
@@ -2484,3 +2493,61 @@ def _apply_builder_sort(tracks: list[dict], field: str, direction: str) -> list[
         return (0, str(val).lower())
 
     return sorted(tracks, key=sort_key, reverse=reverse)
+
+
+def enter_export_selector(
+    state: UIState, playlist_id: int, playlist_name: str
+) -> UIState:
+    """
+    Enter export selector mode for playlist.
+
+    Args:
+        state: Current UI state
+        playlist_id: ID of playlist to export
+        playlist_name: Name of playlist to export
+
+    Returns:
+        Updated state with export selector active (exits track viewer and builder)
+    """
+    # Validate inputs
+    if playlist_id is None or playlist_name is None:
+        return state  # Return unchanged state if invalid
+
+    return replace(
+        state,
+        builder=replace(state.builder, active=False),  # Exit playlist builder if active
+        track_viewer_visible=False,  # Exit track viewer
+        track_viewer_playlist_id=None,
+        track_viewer_playlist_name="",
+        track_viewer_playlist_type="",
+        track_viewer_tracks=[],
+        track_viewer_filtered_tracks=[],
+        track_viewer_filter_query="",
+        track_viewer_selected=0,
+        track_viewer_scroll=0,
+        track_viewer_mode="list",
+        track_viewer_action_selected=0,
+        export_selector_active=True,
+        export_selector_playlist_id=playlist_id,
+        export_selector_playlist_name=str(playlist_name),  # Ensure string
+        export_selector_selected=0,
+    )
+
+
+def exit_export_selector(state: UIState) -> UIState:
+    """
+    Exit export selector mode and reset state.
+
+    Args:
+        state: Current UI state
+
+    Returns:
+        Updated state with export selector inactive
+    """
+    return replace(
+        state,
+        export_selector_active=False,
+        export_selector_playlist_id=None,
+        export_selector_playlist_name="",
+        export_selector_selected=0,
+    )

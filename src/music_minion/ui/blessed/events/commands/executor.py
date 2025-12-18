@@ -658,6 +658,61 @@ def _handle_internal_command(
     return ctx, ui_state, False
 
 
+def handle_export_playlist(
+    ctx: AppContext,
+    ui_state: UIState,
+    playlist_id: int,
+    playlist_name: str,
+    export_format: str,
+) -> tuple[AppContext, UIState]:
+    """
+    Handle playlist export from UI modal.
+
+    Args:
+        ctx: Application context
+        ui_state: UI state
+        playlist_id: ID of playlist to export
+        playlist_name: Name of playlist
+        export_format: Export format ('m3u8', 'crate', 'csv', 'all')
+
+    Returns:
+        Updated context and UI state
+    """
+    try:
+        from music_minion.domain.playlists import exporters
+
+        # Get library root from config
+        from pathlib import Path
+
+        library_root = (
+            Path(ctx.config.music.library_paths[0])
+            if ctx.config.music.library_paths
+            else Path.home() / "Music"
+        )
+
+        # Export playlist
+        output_path, tracks_exported = exporters.export_playlist(
+            playlist_id=playlist_id,
+            format_type=export_format,
+            library_root=library_root,
+        )
+
+        # Add success message
+        ui_state = add_history_line(
+            ui_state,
+            f"✅ Exported {tracks_exported} tracks from '{playlist_name}' to {export_format.upper()}: {output_path}",
+            "green",
+        )
+
+    except Exception as e:
+        # Add error message
+        ui_state = add_history_line(
+            ui_state, f"❌ Failed to export playlist '{playlist_name}': {e}", "red"
+        )
+
+    return ctx, ui_state
+
+
 def execute_command(
     ctx: AppContext, ui_state: UIState, command_line: str | InternalCommand
 ) -> tuple[AppContext, UIState, bool]:
@@ -707,6 +762,37 @@ def execute_command(
     # Special case: Save wizard playlist
     if command == "__SAVE_WIZARD_PLAYLIST__":
         ctx, ui_state = handle_wizard_save(ctx, ui_state)
+        return ctx, ui_state, False
+
+    # Special case: Export playlist from UI
+    if command.startswith("__EXPORT_PLAYLIST__"):
+        # Format: __EXPORT_PLAYLIST__:playlist_id|encoded_playlist_name|format
+        from urllib.parse import unquote
+
+        parts = command.split(":", 1)
+        if len(parts) == 2 and parts[0] == "__EXPORT_PLAYLIST__":
+            data_part = parts[1]
+            data_parts = data_part.split("|", 2)
+            if len(data_parts) == 3:
+                playlist_id_str, encoded_playlist_name, export_format = data_parts
+                playlist_name = unquote(encoded_playlist_name)
+                try:
+                    playlist_id = int(playlist_id_str)
+                    ctx, ui_state = handle_export_playlist(
+                        ctx, ui_state, playlist_id, playlist_name, export_format
+                    )
+                except ValueError:
+                    ui_state = add_history_line(
+                        ui_state, "❌ Invalid playlist ID for export", "red"
+                    )
+            else:
+                ui_state = add_history_line(
+                    ui_state, "❌ Invalid export data format", "red"
+                )
+        else:
+            ui_state = add_history_line(
+                ui_state, "❌ Invalid export command format", "red"
+            )
         return ctx, ui_state, False
 
     # Add command to history display
