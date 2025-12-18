@@ -30,6 +30,7 @@ from .components import (
     render_palette,
     render_smart_playlist_wizard,
 )
+from .components.export_selector import render_export_selector
 from .components.comparison_history import render_comparison_history_viewer
 from .components.metadata_editor import render_metadata_editor
 from .components.rating_history import render_rating_history_viewer
@@ -837,6 +838,10 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         False,  # builder.active
         0,  # builder.selected_index
         0,  # builder.scroll_offset
+        "view",  # builder.filter_editor_mode
+        0,  # builder.filter_editor_selected
+        False,  # builder.filter_editor_editing
+        0,  # builder.filter_editor_step
         False,  # track_viewer_visible
         0,  # track_viewer_selected
         "main",  # track_viewer_mode
@@ -855,6 +860,8 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         "a",  # comparison.highlighted
         None,  # comparison.track_a id
         None,  # comparison.track_b id
+        False,  # export_selector_active
+        0,  # export_selector_selected
     )
     layout = None
     last_position = (
@@ -1031,6 +1038,8 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 ui_state.comparison.track_b.get("id")
                 if ui_state.comparison.track_b
                 else None,
+                ui_state.export_selector_active,
+                ui_state.export_selector_selected,
             ) != last_palette_state
 
             # Determine if we need a full redraw
@@ -1137,6 +1146,13 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                         layout["palette_y"],  # Use palette area
                         layout["palette_height"],
                     )
+                elif ui_state.export_selector_active:
+                    render_export_selector(
+                        term,
+                        ui_state,
+                        layout["export_selector_y"],
+                        layout["export_selector_height"],
+                    )
 
                 # Flush output
                 sys.stdout.flush()
@@ -1151,6 +1167,10 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     ui_state.builder.active,
                     ui_state.builder.selected_index,
                     ui_state.builder.scroll_offset,
+                    ui_state.builder.filter_editor_mode,
+                    ui_state.builder.filter_editor_selected,
+                    ui_state.builder.filter_editor_editing,
+                    ui_state.builder.filter_editor_step,
                     ui_state.track_viewer_visible,
                     ui_state.track_viewer_selected,
                     ui_state.track_viewer_mode,
@@ -1173,6 +1193,8 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                     ui_state.comparison.track_b.get("id")
                     if ui_state.comparison.track_b
                     else None,
+                    ui_state.export_selector_active,
+                    ui_state.export_selector_selected,
                 )
 
                 # Update rendered position for partial update threshold
@@ -1246,12 +1268,12 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                 ui_state.palette_visible != last_palette_state[0]
                 or ui_state.wizard_active != last_palette_state[3]
                 or ui_state.builder.active != last_palette_state[5]
-                or ui_state.track_viewer_visible != last_palette_state[8]
-                or ui_state.track_viewer_mode != last_palette_state[10]
-                or ui_state.analytics_viewer_visible != last_palette_state[11]
-                or ui_state.editor_visible != last_palette_state[13]
-                or ui_state.comparison.active
-                != last_palette_state[22]  # Check comparison state
+                or ui_state.track_viewer_visible != last_palette_state[12]
+                or ui_state.track_viewer_mode != last_palette_state[14]
+                or ui_state.analytics_viewer_visible != last_palette_state[15]
+                or ui_state.editor_visible != last_palette_state[17]
+                or ui_state.comparison.active != last_palette_state[26]
+                or ui_state.export_selector_active != last_palette_state[30]
             ):
                 needs_full_redraw = True
 
@@ -1272,6 +1294,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                         or ui_state.analytics_viewer_visible
                         or ui_state.editor_visible
                         or ui_state.comparison.active
+                        or ui_state.export_selector_active
                     ):
                         overlay_y = layout[
                             "palette_y"
@@ -1357,6 +1380,13 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                             layout["palette_y"],
                             layout["palette_height"],
                         )
+                    elif ui_state.export_selector_active:
+                        render_export_selector(
+                            term,
+                            ui_state,
+                            layout["export_selector_y"],
+                            layout["export_selector_height"],
+                        )
 
                     # Flush output
                     sys.stdout.flush()
@@ -1371,6 +1401,10 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                         ui_state.builder.active,
                         ui_state.builder.selected_index,
                         ui_state.builder.scroll_offset,
+                        ui_state.builder.filter_editor_mode,
+                        ui_state.builder.filter_editor_selected,
+                        ui_state.builder.filter_editor_editing,
+                        ui_state.builder.filter_editor_step,
                         ui_state.track_viewer_visible,
                         ui_state.track_viewer_selected,
                         ui_state.track_viewer_mode,
@@ -1393,6 +1427,8 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                         ui_state.comparison.track_b.get("id")
                         if ui_state.comparison.track_b
                         else None,
+                        ui_state.export_selector_active,
+                        ui_state.export_selector_selected,
                     )
 
             else:
@@ -1483,10 +1519,12 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
         try:
             # Send shutdown message to all connected web clients
             # This pauses browser audio players before backend shutdown
-            ipc_srv.broadcast_to_web_clients({
-                "type": "shutdown",
-                "message": "Backend shutting down - pausing playback"
-            })
+            ipc_srv.broadcast_to_web_clients(
+                {
+                    "type": "shutdown",
+                    "message": "Backend shutting down - pausing playback",
+                }
+            )
             # Brief delay to ensure message is sent before server stops
             time.sleep(0.1)
         except Exception:

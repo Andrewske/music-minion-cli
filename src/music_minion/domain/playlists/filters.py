@@ -315,15 +315,26 @@ def evaluate_filters(playlist_id: int) -> list[dict[str, Any]]:
     # Build WHERE clause
     where_clause, params = build_filter_query(filters)
 
-    # Query tracks
+    # Query tracks with ELO ratings
     # Note: f-string is safe here because build_filter_query() validates column names
     # via FIELD_TO_COLUMN whitelist and returns parameterized WHERE clause with ? placeholders
     with get_db_connection() as conn:
         query = f"""
-            SELECT *
-            FROM tracks
+            SELECT
+                t.*,
+                COALESCE(per.rating, 1500.0) as playlist_elo_rating,
+                COALESCE(per.comparison_count, 0) as playlist_elo_comparison_count,
+                COALESCE(per.wins, 0) as playlist_elo_wins,
+                COALESCE(er.rating, 1500.0) as global_elo_rating,
+                COALESCE(er.comparison_count, 0) as global_elo_comparison_count,
+                COALESCE(er.wins, 0) as global_elo_wins,
+                NULL as position,  -- Smart playlists don't have fixed positions
+                NULL as added_at   -- Smart playlists don't have added_at timestamps
+            FROM tracks t
+            LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
+            LEFT JOIN elo_ratings er ON t.id = er.track_id
             WHERE {where_clause}
             ORDER BY artist, album, title
         """
-        cursor = conn.execute(query, params)
+        cursor = conn.execute(query, (playlist_id,) + params)
         return [dict(row) for row in cursor.fetchall()]

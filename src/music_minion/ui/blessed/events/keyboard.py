@@ -18,6 +18,7 @@ from .keys import (
     handle_analytics_viewer_key,
     handle_metadata_editor_key,
     handle_comparison_key,
+    handle_export_selector_key,
     handle_normal_mode_key,
 )
 
@@ -35,7 +36,7 @@ def detect_mode(state: UIState) -> str:
     Returns:
         Mode name: "comparison", "wizard", "playlist_builder", "track_viewer",
                    "rating_history", "comparison_history", "analytics_viewer",
-                   "metadata_editor", or "normal"
+                   "metadata_editor", "export_options", or "normal"
     """
     if state.comparison.active:
         return "comparison"
@@ -43,6 +44,8 @@ def detect_mode(state: UIState) -> str:
         return "wizard"
     elif state.builder.active:
         return "playlist_builder"
+    elif state.export_selector_active:
+        return "export_selector"
     elif state.track_viewer_visible:
         return "track_viewer"
     elif state.rating_history_visible:
@@ -109,6 +112,8 @@ def handle_key(
             )
 
             return handle_playlist_builder_key(state, event, palette_height)
+        case "export_selector":
+            return handle_export_selector_key(state, event)
         case "track_viewer":
             return handle_track_viewer_key(state, event, palette_height)
         case "rating_history":

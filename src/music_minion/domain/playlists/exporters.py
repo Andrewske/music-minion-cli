@@ -3,11 +3,11 @@ Playlist export functionality for Music Minion CLI.
 Supports exporting to M3U/M3U8 and Serato .crate formats.
 """
 
+import csv
+import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
-from datetime import datetime
-import sys
-import csv
 
 from .crud import get_playlist_by_id, get_playlist_by_name, get_playlist_tracks
 
@@ -116,8 +116,8 @@ def export_serato_crate(playlist_id: int, output_path: Path, library_root: Path)
         ImportError: If pyserato is not installed
     """
     try:
-        from pyserato.model.crate import Crate
         from pyserato.builder import Builder
+        from pyserato.model.crate import Crate
         from pyserato.model.track import Track
     except ImportError:
         raise ImportError(
@@ -190,30 +190,28 @@ def export_csv(
     fieldnames = [
         "id",  # Database ID
         "position",  # Position in playlist
-        "added_at",  # When added to playlist
-        "local_path",
+        "playlist_elo_rating",
         "title",
         "artist",
         "top_level_artist",
-        "album",
+        "remix_artist",
         "genre",
         "year",
         "duration",
         "key_signature",
         "bpm",
-        "remix_artist",
+        "album",
+        "local_path",
         "soundcloud_id",
         "spotify_id",
         "youtube_id",
         "source",
-        "created_at",
-        "updated_at",
-        "file_mtime",
-        "last_synced_at",
-        "soundcloud_synced_at",
-        "spotify_synced_at",
-        "youtube_synced_at",
-        "metadata_updated_at",
+        # ELO Ratings
+        "playlist_elo_comparison_count",
+        "playlist_elo_wins",
+        "global_elo_rating",
+        "global_elo_comparison_count",
+        "global_elo_wins",
     ]
 
     # Write CSV file
@@ -227,7 +225,13 @@ def export_csv(
             for field in fieldnames:
                 value = track.get(field)
                 # Convert None to empty string for CSV
-                row[field] = "" if value is None else str(value)
+                if value is None:
+                    row[field] = ""
+                elif field in ["playlist_elo_rating", "global_elo_rating"]:
+                    # Round ELO ratings to 0 decimal places
+                    row[field] = str(int(round(float(value))))
+                else:
+                    row[field] = str(value)
             writer.writerow(row)
 
     return len(tracks)

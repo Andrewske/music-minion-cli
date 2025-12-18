@@ -9,6 +9,7 @@ from .analytics import handle_analytics_viewer_key
 from .metadata_editor import handle_metadata_editor_key
 from .comparison import handle_comparison_key
 from .playlist_builder import handle_playlist_builder_key
+from .export_selector import handle_export_selector_key
 from .normal import handle_normal_mode_key
 
 __all__ = [
@@ -21,5 +22,6 @@ __all__ = [
     "handle_metadata_editor_key",
     "handle_comparison_key",
     "handle_playlist_builder_key",
+    "handle_export_options_key",
     "handle_normal_mode_key",
 ]
