@@ -23,6 +23,10 @@ from music_minion.domain.playlists import filters as playlist_filters
 from music_minion.domain.playlists import importers as playlist_import
 
 
+# Supported playlist import/export formats
+SUPPORTED_IMPORT_FORMATS = ".m3u, .m3u8, .crate, .csv"
+
+
 # ============================================================================
 # Background Conversion State Management (Thread-Safe)
 # ============================================================================
@@ -952,7 +956,7 @@ def handle_playlist_import_command(
     if not args:
         log("Error: Please specify playlist file path", level="error")
         log("Usage: playlist import <file>", level="info")
-        log("Supported formats: .m3u, .m3u8, .crate, .csv", level="info")
+        log(f"Supported formats: {SUPPORTED_IMPORT_FORMATS}", level="info")
         return ctx, True
 
     local_path_str = " ".join(args)
@@ -974,7 +978,7 @@ def handle_playlist_import_command(
         format_type = playlist_import.detect_playlist_format(local_path)
         if not format_type:
             log(f"❌ Unsupported file format: {local_path.suffix}", level="error")
-            log("Supported formats: .m3u, .m3u8, .crate, .csv", level="info")
+            log(f"Supported formats: {SUPPORTED_IMPORT_FORMATS}", level="info")
             return ctx, True
 
         log(

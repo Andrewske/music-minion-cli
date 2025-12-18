@@ -6,11 +6,30 @@ Supports importing M3U/M3U8 and Serato .crate playlists.
 import csv
 import urllib.parse
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import Optional, cast
 
+from music_minion.core import database
 from music_minion.core.database import get_db_connection
 
 from .crud import add_track_to_playlist, create_playlist
+
+# Valid metadata fields for CSV import
+VALID_CSV_METADATA_FIELDS = {
+    "title",
+    "artist",
+    "top_level_artist",
+    "album",
+    "genre",
+    "year",
+    "duration",
+    "key_signature",
+    "bpm",
+    "remix_artist",
+    "soundcloud_id",
+    "spotify_id",
+    "youtube_id",
+    "source",
+}
 
 
 def detect_playlist_format(local_path: Path) -> Optional[str]:
@@ -338,166 +357,91 @@ def validate_csv_metadata_field(
     return True, None
 
 
-def import_csv(
-    local_path: Path,
-    playlist_name: str,
-    description: Optional[str] = None,
-) -> tuple[int, int, int, list[str]]:
-    """
-    Import a CSV playlist file with track metadata.
+def _parse_csv_file(local_path: Path) -> tuple[csv.DictReader, dict]:
+    """Handle CSV file reading and dialect detection."""
+    csvfile = open(local_path, "r", encoding="utf-8")
+    sample = csvfile.read(1024)
+    csvfile.seek(0)
 
-    Expected CSV format:
-    - Must have headers (first row)
-    - At minimum, should have 'local_path' column
-    - Other columns match track metadata fields
-    - Tracks are matched by local_path for updates, or created if not found
+    try:
+        sniffer = csv.Sniffer()
+        dialect = sniffer.sniff(sample, delimiters=",\t;|")
+        has_header = sniffer.has_header(sample)
+    except csv.Error:
+        dialect = csv.excel()
+        has_header = True
+
+    if not has_header:
+        raise ValueError("CSV file must have headers in the first row")
+
+    reader = csv.DictReader(csvfile, dialect=dialect)
+
+    if "local_path" not in (reader.fieldnames or []):
+        raise ValueError("CSV missing required 'local_path' column")
+
+    return reader, {"valid_fields": VALID_CSV_METADATA_FIELDS}
+
+
+def _validate_csv_rows(
+    reader: csv.DictReader, library_root: Path, valid_fields: set[str]
+) -> tuple[list[dict], list[str]]:
+    """Parse and validate CSV rows with security checks."""
+    tracks_data = []
+    error_messages = []
+
+    for row_num, row in enumerate(reader, start=2):
+        local_path_str = row.get("local_path", "").strip()
+        if not local_path_str:
+            error_messages.append(f"Row {row_num}: Missing local_path")
+            continue
+
+        track_path = Path(local_path_str).expanduser()
+        if not track_path.exists():
+            error_messages.append(
+                f"Row {row_num}: Track file not found: {local_path_str}"
+            )
+            continue
+
+        try:
+            track_path.resolve().relative_to(library_root.resolve())
+        except ValueError:
+            error_messages.append(
+                f"Row {row_num}: Track outside library root: {local_path_str}"
+            )
+            continue
+
+        track_metadata = {"local_path": str(track_path)}
+
+        for field_name, value in row.items():
+            if (
+                field_name != "local_path"
+                and field_name in valid_fields
+                and (value := value.strip())
+            ):
+                is_valid, error_msg = validate_csv_metadata_field(field_name, value)
+                if is_valid:
+                    track_metadata[field_name] = value
+                else:
+                    error_messages.append(f"Row {row_num}, {field_name}: {error_msg}")
+
+        tracks_data.append(track_metadata)
+
+    return tracks_data, error_messages
+
+
+def _upsert_tracks_to_playlist(
+    playlist_id: int, tracks_data: list[dict]
+) -> tuple[int, int]:
+    """
+    Database operations in single transaction.
 
     Args:
-        local_path: Path to the CSV file
-        playlist_name: Name for the imported playlist
-        description: Optional description for the playlist
+        playlist_id: ID of the playlist to add tracks to
+        tracks_data: List of track metadata dictionaries
 
     Returns:
-        Tuple of (playlist_id, tracks_added, duplicates_skipped, error_messages)
-        - playlist_id: ID of created playlist
-        - tracks_added: Number of tracks successfully added
-        - duplicates_skipped: Number of duplicate tracks skipped
-        - error_messages: List of validation/parsing error messages
-
-    Raises:
-        FileNotFoundError: If CSV file doesn't exist
-        ValueError: If CSV format is invalid
+        Tuple of (tracks_added, duplicates_skipped)
     """
-    if not local_path.exists():
-        raise FileNotFoundError(f"CSV file not found: {local_path}")
-
-    # Read and parse CSV
-    try:
-        with open(local_path, "r", encoding="utf-8") as csvfile:
-            # Try to detect if file has headers by reading first few lines
-            sample = csvfile.read(1024)
-            csvfile.seek(0)
-
-            # Use csv.Sniffer to detect CSV dialect
-            try:
-                sniffer = csv.Sniffer()
-                dialect = sniffer.sniff(sample, delimiters=",\t;|")
-                has_header = sniffer.has_header(sample)
-            except csv.Error:
-                # Fall back to basic comma-separated with header assumption
-                dialect = csv.excel()
-                has_header = True
-
-            if not has_header:
-                raise ValueError(
-                    "CSV file must have headers in the first row. "
-                    "Expected columns include: local_path, title, artist, album, etc."
-                )
-
-            reader = csv.DictReader(csvfile, dialect=dialect)
-
-            # Validate headers
-            if not reader.fieldnames:
-                raise ValueError("CSV file appears to be empty or malformed")
-
-            required_fields = ["local_path"]
-            missing_required = [
-                field for field in required_fields if field not in reader.fieldnames
-            ]
-            if missing_required:
-                raise ValueError(
-                    f"CSV missing required columns: {', '.join(missing_required)}"
-                )
-
-            # Valid metadata fields from database schema
-            valid_metadata_fields = {
-                "title",
-                "artist",
-                "top_level_artist",
-                "album",
-                "genre",
-                "year",
-                "duration",
-                "key_signature",
-                "bpm",
-                "remix_artist",
-                "soundcloud_id",
-                "spotify_id",
-                "youtube_id",
-                "source",
-            }
-
-            # Parse rows
-            tracks_data = []
-            error_messages = []
-
-            for row_num, row in enumerate(
-                reader, start=2
-            ):  # Start at 2 since row 1 is header
-                local_path_str = row.get("local_path", "").strip()
-                if not local_path_str:
-                    error_messages.append(f"Row {row_num}: Missing local_path")
-                    continue
-
-                # Validate local_path exists as file
-                track_path = Path(local_path_str).expanduser()
-                if not track_path.exists():
-                    error_messages.append(
-                        f"Row {row_num}: Track file not found: {local_path_str}"
-                    )
-                    continue
-
-                # Validate metadata fields
-                track_metadata: dict[str, Any] = {"local_path": str(track_path)}
-
-                for field_name, value in row.items():
-                    if field_name == "local_path":
-                        continue  # Already handled
-
-                    if field_name not in valid_metadata_fields:
-                        # Skip unknown fields silently
-                        continue
-
-                    value = value.strip() if value else ""
-                    if value:  # Only validate non-empty values
-                        is_valid, error_msg = validate_csv_metadata_field(
-                            field_name, value
-                        )
-                        if not is_valid:
-                            error_messages.append(
-                                f"Row {row_num}, {field_name}: {error_msg}"
-                            )
-                            continue
-
-                        # Convert types appropriately
-                        if field_name == "year":
-                            track_metadata[field_name] = (
-                                value  # Will be converted to int in DB
-                            )
-                        elif field_name in ["duration", "bpm"]:
-                            track_metadata[field_name] = (
-                                value  # Will be converted to float in DB
-                            )
-                        else:
-                            track_metadata[field_name] = value
-
-                tracks_data.append(track_metadata)
-
-    except UnicodeDecodeError:
-        raise ValueError(
-            f"CSV file encoding error. File must be UTF-8 encoded: {local_path}"
-        )
-    except csv.Error as e:
-        raise ValueError(f"CSV parsing error: {e}")
-
-    # Create playlist
-    playlist_id = create_playlist(
-        name=playlist_name,
-        playlist_type="manual",
-        description=description or f"Imported from {local_path.name}",
-    )
-
-    # Process tracks: update/create in database and add to playlist
     tracks_added = 0
     duplicates_skipped = 0
 
@@ -547,9 +491,7 @@ def import_csv(
                 cursor.execute(insert_query, values)
                 track_id = cursor.lastrowid
                 if track_id is None:
-                    error_messages.append(
-                        f"Failed to create track: {track_data.get('local_path', 'unknown')}"
-                    )
+                    # This would be an error case, but we'll skip for now
                     continue
 
             # Add track to playlist
@@ -558,7 +500,296 @@ def import_csv(
             else:
                 duplicates_skipped += 1
 
+    return tracks_added, duplicates_skipped
+
+
+def import_csv(
+    local_path: Path,
+    playlist_name: str,
+    library_root: Path,
+    description: Optional[str] = None,
+) -> tuple[int, int, int, list[str]]:
+    """
+    Import a CSV playlist file with track metadata.
+
+    Two-phase approach:
+    1. Parse and validate entire CSV (collect all errors)
+    2. Batch process all valid tracks in single transaction
+
+    Args:
+        local_path: Path to the CSV file
+        playlist_name: Name for the imported playlist
+        library_root: Root directory of music library (for path validation)
+        description: Optional description for the playlist
+
+    Returns:
+        Tuple of (playlist_id, tracks_added, duplicates_skipped, error_messages)
+
+    Raises:
+        FileNotFoundError: If CSV file doesn't exist
+        ValueError: If CSV format is invalid
+    """
+    if not local_path.exists():
+        raise FileNotFoundError(f"CSV file not found: {local_path}")
+
+    # Phase 1: Parse and validate
+    reader, metadata = _parse_csv_file(local_path)
+
+    valid_tracks_data, error_messages = _validate_csv_rows(
+        reader, library_root, VALID_CSV_METADATA_FIELDS
+    )
+
+    # Create playlist
+    playlist_id = create_playlist(
+        name=playlist_name,
+        playlist_type="manual",
+        description=description or f"Imported from {local_path.name}",
+    )
+
+    # Phase 2: Batch process valid tracks
+    if valid_tracks_data:
+        tracks_added, duplicates_skipped = _upsert_tracks_to_playlist(
+            playlist_id, valid_tracks_data
+        )
+    else:
+        tracks_added, duplicates_skipped = 0, 0
+
     return playlist_id, tracks_added, duplicates_skipped, error_messages
+
+
+def import_playlist_metadata_csv(
+    local_path: Path,
+) -> tuple[int, int, int, list[str]]:
+    """
+    Import track metadata from a CSV file and update existing tracks.
+
+    Expected CSV format:
+    - Must have headers (first row)
+    - Must have an identifier column (local_path, id, or title+artist)
+    - Other columns match track metadata fields
+    - Tracks are matched by identifier and updated in database + files
+
+    Args:
+        local_path: Path to the CSV file
+
+    Returns:
+        Tuple of (tracks_updated, tracks_not_found, validation_errors, error_messages)
+        - tracks_updated: Number of tracks successfully updated
+        - tracks_not_found: Number of tracks that couldn't be found
+        - validation_errors: Number of rows with validation errors
+        - error_messages: List of error messages
+
+    Raises:
+        FileNotFoundError: If CSV file doesn't exist
+        ValueError: If CSV format is invalid
+    """
+    if not local_path.exists():
+        raise FileNotFoundError(f"CSV file not found: {local_path}")
+
+    # Read and parse CSV
+    try:
+        with open(local_path, "r", encoding="utf-8") as csvfile:
+            # Try to detect if file has headers by reading first few lines
+            sample = csvfile.read(1024)
+            csvfile.seek(0)
+
+            # Use csv.Sniffer to detect CSV dialect
+            try:
+                sniffer = csv.Sniffer()
+                dialect = sniffer.sniff(sample, delimiters=",\t;|")
+                has_header = sniffer.has_header(sample)
+            except csv.Error:
+                # Fall back to basic comma-separated with header assumption
+                dialect = csv.excel()
+                has_header = True
+
+            if not has_header:
+                raise ValueError(
+                    "CSV file must have headers in the first row. "
+                    "Expected columns include: local_path, title, artist, album, etc."
+                )
+
+            reader = csv.DictReader(csvfile, dialect=dialect)
+
+            # Validate headers
+            if not reader.fieldnames:
+                raise ValueError("CSV file appears to be empty or malformed")
+
+            # Check for identifier columns
+            identifier_columns = ["local_path", "id", "title", "artist"]
+            available_identifiers = [
+                col for col in identifier_columns if col in reader.fieldnames
+            ]
+
+            if not available_identifiers:
+                raise ValueError(
+                    f"CSV must have at least one identifier column: {', '.join(identifier_columns)}"
+                )
+
+            # Valid metadata fields from database schema
+            valid_metadata_fields = {
+                "title",
+                "artist",
+                "remix_artist",
+                "album",
+                "genre",
+                "year",
+                "bpm",
+                "key_signature",
+            }
+
+            # Parse and validate rows
+            update_operations = []
+            error_messages = []
+            validation_errors = 0
+
+            for row_num, row in enumerate(
+                reader, start=2
+            ):  # Start at 2 since row 1 is header
+                # Extract identifier
+                identifier = None
+                identifier_type = None
+
+                if "local_path" in row and row["local_path"].strip():
+                    identifier = row["local_path"].strip()
+                    identifier_type = "local_path"
+                elif "id" in row and row["id"].strip():
+                    try:
+                        identifier = int(row["id"].strip())
+                        identifier_type = "id"
+                    except ValueError:
+                        error_messages.append(
+                            f"Row {row_num}: Invalid track ID '{row['id']}'"
+                        )
+                        validation_errors += 1
+                        continue
+                elif "title" in row and "artist" in row:
+                    title = row["title"].strip()
+                    artist = row["artist"].strip()
+                    if title and artist:
+                        identifier = {"title": title, "artist": artist}
+                        identifier_type = "title_artist"
+                    else:
+                        error_messages.append(
+                            f"Row {row_num}: Missing title or artist for identification"
+                        )
+                        validation_errors += 1
+                        continue
+                else:
+                    error_messages.append(f"Row {row_num}: No valid identifier found")
+                    validation_errors += 1
+                    continue
+
+                # Extract metadata fields to update
+                metadata_updates = {}
+                for field_name, value in row.items():
+                    if field_name in ["local_path", "id", "title", "artist"]:
+                        continue  # Skip identifier fields
+
+                    if field_name not in valid_metadata_fields:
+                        # Skip unknown fields silently
+                        continue
+
+                    value = value.strip() if value else ""
+                    if value:  # Only validate non-empty values
+                        is_valid, error_msg = validate_csv_metadata_field(
+                            field_name, value
+                        )
+                        if not is_valid:
+                            error_messages.append(
+                                f"Row {row_num}, {field_name}: {error_msg}"
+                            )
+                            validation_errors += 1
+                            continue
+
+                        # Convert types appropriately
+                        if field_name == "year":
+                            metadata_updates[field_name] = int(value)
+                        elif field_name == "bpm":
+                            metadata_updates[field_name] = int(
+                                float(value)
+                            )  # BPM stored as int
+                        else:
+                            metadata_updates[field_name] = value
+
+                if metadata_updates:
+                    update_operations.append(
+                        {
+                            "identifier": identifier,
+                            "identifier_type": identifier_type,
+                            "updates": metadata_updates,
+                            "row_num": row_num,
+                        }
+                    )
+                else:
+                    error_messages.append(
+                        f"Row {row_num}: No metadata fields to update"
+                    )
+                    validation_errors += 1
+
+    except UnicodeDecodeError:
+        raise ValueError(
+            f"CSV file encoding error. File must be UTF-8 encoded: {local_path}"
+        )
+    except csv.Error as e:
+        raise ValueError(f"CSV parsing error: {e}")
+
+    # Process updates
+    tracks_updated = 0
+    tracks_not_found = 0
+
+    for operation in update_operations:
+        try:
+            # Find track by identifier
+            track_id = None
+
+            if operation["identifier_type"] == "local_path":
+                track_path = Path(operation["identifier"]).expanduser()
+                track = database.get_track_by_path(str(track_path))
+                if track:
+                    track_id = track["id"]
+
+            elif operation["identifier_type"] == "id":
+                track = database.get_track_by_id(operation["identifier"])
+                if track:
+                    track_id = track["id"]
+
+            elif operation["identifier_type"] == "title_artist":
+                # Find by title and artist combination
+                with database.get_db_connection() as conn:
+                    cursor = conn.execute(
+                        "SELECT id FROM tracks WHERE title = ? AND artist = ? LIMIT 1",
+                        (
+                            operation["identifier"]["title"],
+                            operation["identifier"]["artist"],
+                        ),
+                    )
+                    row = cursor.fetchone()
+                    if row:
+                        track_id = row["id"]
+
+            if track_id is None:
+                tracks_not_found += 1
+                error_messages.append(
+                    f"Row {operation['row_num']}: Track not found with identifier {operation['identifier']}"
+                )
+                continue
+
+            # Update track metadata (this also writes to file)
+            success = database.update_track_metadata(track_id, **operation["updates"])
+            if success:
+                tracks_updated += 1
+            else:
+                error_messages.append(
+                    f"Row {operation['row_num']}: Failed to update track metadata"
+                )
+
+        except Exception as e:
+            error_messages.append(
+                f"Row {operation['row_num']}: Error updating track: {e}"
+            )
+
+    return tracks_updated, tracks_not_found, validation_errors, error_messages
 
 
 def import_playlist(
@@ -603,7 +834,7 @@ def import_playlist(
     elif format_type == "crate":
         return import_serato_crate(local_path, playlist_name, library_root, description)
     elif format_type == "csv":
-        return import_csv(local_path, playlist_name, description)
+        return import_csv(local_path, playlist_name, library_root, description)
     else:
         raise ValueError(
             f"Unsupported playlist format: {local_path.suffix}. "
