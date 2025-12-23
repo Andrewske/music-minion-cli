@@ -4,12 +4,15 @@ Supports exporting to M3U/M3U8 and Serato .crate formats.
 """
 
 import csv
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from .crud import get_playlist_by_id, get_playlist_by_name, get_playlist_tracks
+
+from music_minion.domain.library.metadata import write_elo_to_file
 
 
 def make_relative_path(track_path: Path, library_root: Path) -> str:
@@ -244,6 +247,7 @@ def export_playlist(
     output_path: Optional[Path] = None,
     library_root: Optional[Path] = None,
     use_relative_paths: bool = True,
+    sync_metadata: bool = False,
 ) -> tuple[Path, int]:
     """
     Export a playlist to a file, with flexible format selection.
@@ -255,6 +259,7 @@ def export_playlist(
         output_path: Where to save the file (defaults to ~/Music/playlists/<name>.<ext>)
         library_root: Root directory of music library (defaults to ~/Music)
         use_relative_paths: Whether to use relative paths for M3U8 (default True)
+        sync_metadata: Whether to sync PLAYLIST_ELO to COMMENT field in audio files
 
     Returns:
         Tuple of (output_path, tracks_exported)
@@ -315,6 +320,40 @@ def export_playlist(
             f"Unsupported format: {format_type}. Use 'm3u8', 'crate', or 'csv'"
         )
 
+    # Sync ELO metadata to files if requested
+    if sync_metadata:
+        from loguru import logger
+
+        tracks = get_playlist_tracks(pl["id"])
+        elo_success = 0
+        elo_failed = 0
+
+        for track in tracks:
+            local_path = track.get("local_path")
+            playlist_elo = track.get("playlist_elo_rating")
+
+            # Skip tracks without local files or ELO ratings
+            if not local_path or not os.path.exists(local_path):
+                continue
+            if playlist_elo is None or playlist_elo == 1500.0:
+                continue
+
+            success = write_elo_to_file(
+                local_path=local_path,
+                playlist_elo=playlist_elo,
+                update_comment=True,  # Prepend to COMMENT for DJ software sorting
+            )
+
+            if success:
+                elo_success += 1
+            else:
+                elo_failed += 1
+
+        if elo_success > 0 or elo_failed > 0:
+            logger.info(
+                f"ELO metadata sync: {elo_success} succeeded, {elo_failed} failed"
+            )
+
     return output_path, tracks_exported
 
 
@@ -323,6 +362,7 @@ def auto_export_playlist(
     export_formats: list[str],
     library_root: Path,
     use_relative_paths: bool = True,
+    sync_metadata: bool = False,
 ) -> list[tuple[str, Path, int]]:
     """
     Auto-export a playlist to multiple formats.
@@ -334,6 +374,7 @@ def auto_export_playlist(
         export_formats: List of formats to export ('m3u8', 'crate', 'csv')
         library_root: Root directory of music library
         use_relative_paths: Whether to use relative paths for M3U8
+        sync_metadata: Whether to sync PLAYLIST_ELO to COMMENT field in audio files
 
     Returns:
         List of tuples (format, output_path, tracks_exported)
@@ -347,6 +388,7 @@ def auto_export_playlist(
                 format_type=format_type,
                 library_root=library_root,
                 use_relative_paths=use_relative_paths,
+                sync_metadata=sync_metadata,
             )
             results.append((format_type, output_path, tracks_exported))
         except (ValueError, FileNotFoundError, ImportError, OSError) as e:

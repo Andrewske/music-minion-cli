@@ -1053,8 +1053,22 @@ def handle_playlist_export_command(
 
     if not args:
         log("Error: Please specify playlist name", level="error")
-        log("Usage: playlist export <name> [format]", level="info")
+        log("Usage: playlist export <name> [format] [--sync-metadata]", level="info")
         log("Formats: m3u8 (default), crate, csv, all", level="info")
+        log(
+            "Options: --sync-metadata (write PLAYLIST_ELO to COMMENT field)",
+            level="info",
+        )
+        return ctx, True
+
+    # Parse --sync-metadata flag
+    sync_metadata = "--sync-metadata" in args
+    # Remove the flag from args if present
+    args = [arg for arg in args if arg != "--sync-metadata"]
+
+    if not args:
+        log("Error: Please specify playlist name", level="error")
+        log("Usage: playlist export <name> [format] [--sync-metadata]", level="info")
         return ctx, True
 
     # Parse arguments with smart format detection
@@ -1108,6 +1122,7 @@ def handle_playlist_export_command(
                         playlist_name=playlist_name,
                         format_type=fmt,
                         library_root=library_root,
+                        sync_metadata=sync_metadata,
                     )
                     log(
                         f"   ✅ {fmt.upper()}: {output_path} ({tracks_exported} tracks)",
@@ -1127,6 +1142,7 @@ def handle_playlist_export_command(
                 playlist_name=playlist_name,
                 format_type=format_type,
                 library_root=library_root,
+                sync_metadata=sync_metadata,
             )
 
             log(f"✅ Exported {tracks_exported} tracks to: {output_path}", level="info")
