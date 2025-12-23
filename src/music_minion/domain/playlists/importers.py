@@ -683,8 +683,11 @@ def import_playlist_metadata_csv(
                 # Extract metadata fields to update
                 metadata_updates = {}
                 for field_name, value in row.items():
-                    if field_name in ["local_path", "id", "title", "artist"]:
-                        continue  # Skip identifier fields
+                    if field_name in [
+                        "local_path",
+                        "id",
+                    ]:  # Skip identifier-only fields
+                        continue  # But allow title/artist to be updated
 
                     if field_name not in valid_metadata_fields:
                         # Skip unknown fields silently
@@ -775,14 +778,41 @@ def import_playlist_metadata_csv(
                 )
                 continue
 
-            # Update track metadata (this also writes to file)
-            success = database.update_track_metadata(track_id, **operation["updates"])
-            if success:
-                tracks_updated += 1
-            else:
+            # Get full track data for comparison
+            track = database.get_track_by_id(track_id)
+            if not track:
                 error_messages.append(
-                    f"Row {operation['row_num']}: Failed to update track metadata"
+                    f"Row {operation['row_num']}: Could not retrieve track data for ID {track_id}"
                 )
+                continue
+
+            # Filter updates to only include actual changes (not just format conversions)
+            actual_updates = {}
+            for field_name, new_value in operation["updates"].items():
+                current_value = track.get(field_name)
+
+                # Normalize both values for comparison
+                if field_name == "bpm":
+                    # Normalize BPM: convert floats to ints for comparison
+                    if isinstance(current_value, float):
+                        current_value = int(current_value)
+                    if isinstance(new_value, float):
+                        new_value = int(new_value)
+
+                # Only include if actually different
+                if new_value != current_value:
+                    actual_updates[field_name] = new_value
+
+            # Only update if there are actual changes
+            if actual_updates:
+                success = database.update_track_metadata(track_id, **actual_updates)
+                if success:
+                    tracks_updated += 1
+                else:
+                    error_messages.append(
+                        f"Row {operation['row_num']}: Failed to update track metadata"
+                    )
+            # If no actual updates, this operation is silently skipped (no error)
 
         except Exception as e:
             error_messages.append(

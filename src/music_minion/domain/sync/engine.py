@@ -254,10 +254,10 @@ def sync_metadata_export(
                 SELECT id, local_path, title, artist, album, genre, year, bpm, key_signature
                 FROM tracks
                 WHERE id IN ({placeholders})
-                  AND local_path IS NOT NULL
+                  AND local_path IS NOT NULL AND local_path != ''
                   AND (file_mtime IS NULL
                        OR (metadata_updated_at IS NOT NULL
-                           AND metadata_updated_at > file_mtime))
+                           AND strftime('%s', metadata_updated_at) > file_mtime))
             """,
                 track_ids,
             )
@@ -266,10 +266,10 @@ def sync_metadata_export(
                 """
                 SELECT id, local_path, title, artist, album, genre, year, bpm, key_signature
                 FROM tracks
-                WHERE local_path IS NOT NULL
+                WHERE local_path IS NOT NULL AND local_path != ''
                   AND (file_mtime IS NULL
                        OR (metadata_updated_at IS NOT NULL
-                           AND metadata_updated_at > file_mtime))
+                           AND strftime('%s', metadata_updated_at) > file_mtime))
             """
             )
 
@@ -284,7 +284,7 @@ def sync_metadata_export(
         print(f"Exporting metadata to {len(tracks)} file(s)...")
 
     total_tracks = len(tracks)
-    progress_interval = max(1, total_tracks // 100)
+    reported_milestones: set[int] = set()
 
     # Batch mtime updates
     mtime_updates = []
@@ -313,13 +313,16 @@ def sync_metadata_export(
             # Get mtime after write to update database
             current_mtime = get_file_mtime(local_path)
             mtime_updates.append((current_mtime, track["id"]))
-
             stats["success"] += 1
-            if show_progress and i % progress_interval == 0:
-                percent = (i * 100) // total_tracks
-                print(f"  Exported {percent}% ({i}/{total_tracks})...")
         else:
             stats["failed"] += 1
+
+        # Milestone-based progress (25%, 50%, 75%, 100%)
+        if show_progress:
+            percent = (i * 100) // total_tracks
+            if percent in {25, 50, 75, 100} and percent not in reported_milestones:
+                reported_milestones.add(percent)
+                print(f"  {percent}% complete ({i}/{total_tracks})")
 
     # Batch update mtimes in database
     if mtime_updates:
@@ -385,7 +388,7 @@ def sync_export(
         print(f"Exporting tags to {len(tracks)} file(s)...")
 
     total_tracks = len(tracks)
-    progress_interval = max(1, total_tracks // 100)  # Show progress every 1%
+    reported_milestones: set[int] = set()
 
     # Batch database updates
     updates = []
@@ -411,13 +414,16 @@ def sync_export(
             # Get mtime AFTER write
             current_mtime = get_file_mtime(local_path)
             updates.append((current_mtime, track_id))
-
             stats["success"] += 1
-            if show_progress and i % progress_interval == 0:
-                percent = (i * 100) // total_tracks
-                print(f"  Exported {percent}% ({i}/{total_tracks})...")
         else:
             stats["failed"] += 1
+
+        # Milestone-based progress (25%, 50%, 75%, 100%)
+        if show_progress:
+            percent = (i * 100) // total_tracks
+            if percent in {25, 50, 75, 100} and percent not in reported_milestones:
+                reported_milestones.add(percent)
+                print(f"  {percent}% complete ({i}/{total_tracks})")
 
     # Batch update database
     if updates:
@@ -482,7 +488,7 @@ def sync_import(
             print(f"Importing tags from {len(changed_tracks)} changed file(s)...")
 
     total_tracks = len(changed_tracks)
-    progress_interval = max(1, total_tracks // 100)  # Show progress every 1%
+    reported_milestones: set[int] = set()
 
     # Batch load all tags for changed tracks (optimization: single query instead of N queries)
     track_ids = [track["id"] for track in changed_tracks]
@@ -531,16 +537,19 @@ def sync_import(
             # Update mtime for batch processing
             current_mtime = get_file_mtime(local_path)
             mtime_updates.append((current_mtime, track_id))
-
             stats["success"] += 1
-            if show_progress and i % progress_interval == 0:
-                percent = (i * 100) // total_tracks
-                print(f"  Imported {percent}% ({i}/{total_tracks})...")
 
         except Exception as e:
             if show_progress:
                 print(f"  Error importing {local_path}: {e}")
             stats["failed"] += 1
+
+        # Milestone-based progress (25%, 50%, 75%, 100%)
+        if show_progress:
+            percent = (i * 100) // total_tracks
+            if percent in {25, 50, 75, 100} and percent not in reported_milestones:
+                reported_milestones.add(percent)
+                print(f"  {percent}% complete ({i}/{total_tracks})")
 
     # Batch update mtimes
     if mtime_updates:

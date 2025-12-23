@@ -278,11 +278,12 @@ def handle_track_viewer_edit(
         "id": track_id,
         "title": track.get("title", ""),
         "artist": track.get("artist", ""),
+        "remix_artist": track.get("remix_artist", ""),
         "album": track.get("album", ""),
         "genre": track.get("genre", ""),
         "year": track.get("year"),
         "bpm": track.get("bpm"),
-        "key_signature": track.get("key_signature", ""),
+        "key": track.get("key_signature", ""),
         "tags": [tag["tag_name"] for tag in tags],
         "notes": [note["note_text"] for note in notes],
     }

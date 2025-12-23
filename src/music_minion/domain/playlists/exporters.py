@@ -83,7 +83,7 @@ def export_m3u8(
             track_path = Path(track["local_path"])
 
             # Write EXTINF line (metadata)
-            duration = int(track.get("duration", 0))
+            duration = int(track.get("duration") or 0)
             artist = track.get("artist", "Unknown Artist")
             title = track.get("title", track_path.stem)
             f.write(f"#EXTINF:{duration},{artist} - {title}\n")
