@@ -21,6 +21,7 @@ from music_minion.core.database import (
     get_track_tags_batch,
     remove_tag,
 )
+from music_minion.domain.library.metadata import write_elo_to_file
 
 
 def get_file_mtime(local_path: str) -> Optional[float]:
@@ -340,6 +341,99 @@ def sync_metadata_export(
     if show_progress:
         print(
             f"\nMetadata export complete: {stats['success']} succeeded, "
+            f"{stats['failed']} failed, {stats['skipped']} skipped"
+        )
+
+    return stats
+
+
+def sync_elo_export(
+    track_ids: Optional[list[int]] = None,
+    show_progress: bool = True,
+) -> dict[str, int]:
+    """Export global ELO ratings to file metadata.
+
+    Writes GLOBAL_ELO tag to audio files for tracks that have been rated.
+    Skips tracks with default ELO (1500) to avoid cluttering unrated tracks.
+
+    Args:
+        track_ids: Optional list of specific track IDs to export (None = all rated tracks)
+        show_progress: Whether to print progress messages
+
+    Returns:
+        Dictionary with stats: {'success': count, 'failed': count, 'skipped': count}
+    """
+    stats = {"success": 0, "failed": 0, "skipped": 0}
+
+    with get_db_connection() as conn:
+        # Get tracks with ELO ratings that have been compared
+        if track_ids:
+            placeholders = ",".join("?" * len(track_ids))
+            cursor = conn.execute(
+                f"""
+                SELECT t.id, t.local_path, e.rating
+                FROM tracks t
+                JOIN elo_ratings e ON t.id = e.track_id
+                WHERE t.id IN ({placeholders})
+                  AND t.local_path IS NOT NULL AND t.local_path != ''
+                  AND e.rating != 1500.0 AND e.comparison_count > 0
+            """,
+                track_ids,
+            )
+        else:
+            cursor = conn.execute(
+                """
+                SELECT t.id, t.local_path, e.rating
+                FROM tracks t
+                JOIN elo_ratings e ON t.id = e.track_id
+                WHERE t.local_path IS NOT NULL AND t.local_path != ''
+                  AND e.rating != 1500.0 AND e.comparison_count > 0
+            """
+            )
+
+        tracks = [dict(row) for row in cursor.fetchall()]
+
+    if not tracks:
+        if show_progress:
+            print("No rated tracks to export ELO for")
+        return stats
+
+    if show_progress:
+        print(f"Exporting ELO ratings to {len(tracks)} file(s)...")
+
+    total_tracks = len(tracks)
+    reported_milestones: set[int] = set()
+
+    for i, track in enumerate(tracks, 1):
+        local_path = track["local_path"]
+
+        # Check if file exists
+        if not os.path.exists(local_path):
+            stats["skipped"] += 1
+            continue
+
+        # Write ELO to file
+        success = write_elo_to_file(
+            local_path,
+            global_elo=track["rating"],
+            update_comment=False,
+        )
+
+        if success:
+            stats["success"] += 1
+        else:
+            stats["failed"] += 1
+
+        # Milestone-based progress (25%, 50%, 75%, 100%)
+        if show_progress:
+            percent = (i * 100) // total_tracks
+            if percent in {25, 50, 75, 100} and percent not in reported_milestones:
+                reported_milestones.add(percent)
+                print(f"  {percent}% complete ({i}/{total_tracks})")
+
+    if show_progress:
+        print(
+            f"\nELO export complete: {stats['success']} succeeded, "
             f"{stats['failed']} failed, {stats['skipped']} skipped"
         )
 

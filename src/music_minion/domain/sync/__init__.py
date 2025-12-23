@@ -16,6 +16,7 @@ from .engine import (
     sync_export,
     sync_import,
     sync_metadata_export,
+    sync_elo_export,
     get_sync_status,
     rescan_library,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "sync_export",
     "sync_import",
     "sync_metadata_export",
+    "sync_elo_export",
     "get_sync_status",
     "rescan_library",
 ]

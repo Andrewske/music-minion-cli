@@ -147,6 +147,11 @@ def _sync_local_full(ctx: AppContext) -> tuple[AppContext, bool]:
         level="info",
     )
 
+    # Phase 3: Export ELO ratings to files
+    log("Exporting ELO ratings to files...", level="info")
+    elo_result = sync.sync_elo_export(show_progress=True)
+    log(f"✓ Exported ELO to {elo_result.get('success', 0)} files", level="info")
+
     # Reload tracks in context
     from music_minion import helpers
 

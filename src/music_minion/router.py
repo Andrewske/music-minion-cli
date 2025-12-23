@@ -65,7 +65,7 @@ Playlist Commands:
   playlist none                   Clear active playlist (shorthand)
   playlist restart                Restart active playlist from first track (disables shuffle)
   playlist import <file>          Import playlist from M3U/M3U8/Serato crate
-  playlist export <name> [format] Export playlist (m3u8/crate/all, default: m3u8)
+   playlist export <name> [format] [--sync-metadata] Export playlist (m3u8/crate/all, default: m3u8)
   add <playlist>                  Add current track to playlist
   remove <playlist>               Remove current track from playlist
 
