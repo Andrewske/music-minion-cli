@@ -95,6 +95,44 @@ class SyncConfig:
 
 
 @dataclass
+class SyncthingConfig:
+    """Configuration for Syncthing path translation (Linux ↔ Windows)."""
+
+    enabled: bool = False
+    linux_music_root: str = "/home/kevin/Music"
+    windows_music_root: str = "C:/Users/kevin/Music"
+
+    def translate_to_windows(self, linux_path: str) -> str:
+        """Translate Linux path to Windows path for Serato.
+
+        Note: Returns path without drive letter (e.g., Users/kevin/Music/...)
+        because Serato may add its own C:/ prefix.
+        """
+        if not self.enabled:
+            return linux_path
+
+        # Replace Linux music root with Windows music root
+        if not linux_path.startswith(self.linux_music_root):
+            # Path doesn't start with expected root - return as-is
+            return linux_path
+
+        # Remove Linux root and get relative path
+        relative_path = linux_path[len(self.linux_music_root):].lstrip("/")
+
+        # Remove drive letter from Windows root (C:/ -> empty, or C:/Users/... -> Users/...)
+        windows_root = self.windows_music_root
+        if len(windows_root) >= 3 and windows_root[1:3] == ":/":
+            # Strip the "C:/" part
+            windows_root = windows_root[3:]
+
+        # Combine paths
+        if windows_root:
+            return f"{windows_root}/{relative_path}"
+        else:
+            return relative_path
+
+
+@dataclass
 class LoggingConfig:
     """Configuration for logging."""
 
@@ -178,6 +216,7 @@ class Config:
     ui: UIConfig = field(default_factory=UIConfig)
     playlists: PlaylistConfig = field(default_factory=PlaylistConfig)
     sync: SyncConfig = field(default_factory=SyncConfig)
+    syncthing: SyncthingConfig = field(default_factory=SyncthingConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     soundcloud: SoundCloudConfig = field(default_factory=SoundCloudConfig)
     spotify: SpotifyConfig = field(default_factory=SpotifyConfig)
@@ -551,6 +590,18 @@ def load_config() -> Config:
                 sync_method=sync_data.get("sync_method", config.sync.sync_method),
                 auto_watch_files=sync_data.get(
                     "auto_watch_files", config.sync.auto_watch_files
+                ),
+            )
+
+        if "syncthing" in toml_data:
+            syncthing_data = toml_data["syncthing"]
+            config.syncthing = SyncthingConfig(
+                enabled=syncthing_data.get("enabled", config.syncthing.enabled),
+                linux_music_root=syncthing_data.get(
+                    "linux_music_root", config.syncthing.linux_music_root
+                ),
+                windows_music_root=syncthing_data.get(
+                    "windows_music_root", config.syncthing.windows_music_root
                 ),
             )
 

@@ -65,6 +65,7 @@ def resolve_relative_path(
     - Relative paths from playlist location
     - Relative paths from library root
     - URL-encoded paths
+    - Cross-platform paths (Mac/Windows -> Linux)
 
     Args:
         playlist_path: Path to the playlist file
@@ -78,30 +79,24 @@ def resolve_relative_path(
     if "%" in track_path:
         track_path = urllib.parse.unquote(track_path)
 
-    # Convert to Path
     track_path_obj = Path(track_path)
 
     # If already absolute and exists, return it
-    if track_path_obj.is_absolute():
-        if track_path_obj.exists():
-            return track_path_obj
-        # Try making it relative to library root (for cross-platform compatibility)
-        # Extract just the relative part
-        try:
-            # If path starts with a drive letter or root, try to find common music structure
-            parts = track_path_obj.parts
-            # Look for common music directory names
-            for i, part in enumerate(parts):
-                if part.lower() in ["music", "music library", "itunes", "serato"]:
-                    rel_parts = parts[i + 1 :]
-                    if rel_parts:
-                        candidate = library_root / Path(*rel_parts)
-                        if candidate.exists():
-                            return candidate
-        except (ValueError, OSError, IndexError):
-            # Path operations can fail on invalid paths or permissions issues
-            pass
-        return None
+    if track_path_obj.is_absolute() and track_path_obj.exists():
+        return track_path_obj
+
+    # Try to extract relative part after known music directory markers
+    # This handles cross-platform paths (Mac -> Linux, Windows -> Linux)
+    # e.g., "Users/kevin/Music/EDM/track.mp3" → "EDM/track.mp3"
+    parts = track_path_obj.parts
+    for i, part in enumerate(parts):
+        if part.lower() in ["music", "music library", "itunes", "serato"]:
+            rel_parts = parts[i + 1 :]
+            if rel_parts:
+                candidate = library_root / Path(*rel_parts)
+                if candidate.exists():
+                    return candidate
+            break  # Only try first match
 
     # Try relative to playlist directory
     playlist_dir = playlist_path.parent
@@ -272,40 +267,34 @@ def import_serato_crate(
         raise FileNotFoundError(f"Crate file not found: {local_path}")
 
     try:
-        from pyserato.builder import Builder
+        from serato_crate import SeratoCrate
     except ImportError:
         raise ImportError(
-            "pyserato library not installed. Install with: uv pip install pyserato"
+            "serato-crate library not installed. Install with: uv pip install serato-crate"
         )
 
-    # Parse Serato crate
+    # Parse Serato crate using class method .load()
     try:
-        builder = Builder()
-        crate = builder.parse_crate(str(local_path))
+        crate = SeratoCrate.load(local_path)
     except Exception as e:
         raise ValueError(f"Failed to parse Serato crate: {e}")
 
     # Extract track paths from crate
-    # Serato crates store tracks with full paths
-    # Note: pyserato object structure may vary by version
+    # SeratoCrate.tracks is a list of Path objects (relative to drive root)
     track_paths = []
     try:
-        if hasattr(crate, "tracks"):
-            for track in crate.tracks:
-                if hasattr(track, "path"):
-                    track_paths.append(track.path)
-                elif isinstance(track, str):
-                    track_paths.append(track)
+        for track_path in crate.tracks:
+            # Convert Path object to string
+            track_paths.append(str(track_path))
 
-        # If no tracks found, the crate structure may be different than expected
+        # If no tracks found, the crate is empty
         if not track_paths:
             raise ValueError(
-                "Could not extract tracks from Serato crate. "
-                "The crate file may be in an unsupported format or pyserato library version mismatch."
+                "Serato crate is empty (contains no tracks)."
             )
     except AttributeError as e:
         raise ValueError(
-            f"Failed to extract tracks from Serato crate (pyserato API changed?): {e}"
+            f"Failed to extract tracks from Serato crate (API mismatch?): {e}"
         )
 
     # Create playlist

@@ -1101,6 +1101,13 @@ def handle_playlist_export_command(
         return ctx, True
     library_root = Path(current_config.music.library_paths[0]).expanduser()
 
+    # For crate format: use syncthing music root if enabled, otherwise Music directory
+    if format_type in ("crate", "all") and current_config.syncthing.enabled:
+        library_root = Path(current_config.syncthing.linux_music_root).expanduser()
+    elif format_type in ("crate", "all"):
+        # Default to ~/Music for crates (standard Serato location)
+        library_root = Path.home() / "Music"
+
     # Check if playlist exists
     pl = playlists.get_playlist_by_name(playlist_name)
     if not pl:
@@ -1123,6 +1130,7 @@ def handle_playlist_export_command(
                         format_type=fmt,
                         library_root=library_root,
                         sync_metadata=sync_metadata,
+                        syncthing_config=current_config.syncthing,
                     )
                     log(
                         f"   ✅ {fmt.upper()}: {output_path} ({tracks_exported} tracks)",
@@ -1143,6 +1151,7 @@ def handle_playlist_export_command(
                 format_type=format_type,
                 library_root=library_root,
                 sync_metadata=sync_metadata,
+                syncthing_config=current_config.syncthing,
             )
 
             log(f"✅ Exported {tracks_exported} tracks to: {output_path}", level="info")
@@ -1385,96 +1394,21 @@ def convert_playlist_background(
     return ctx, True
 
 
-def handle_playlist_convert_command(
-    ctx: AppContext, args: list[str]
+def _report_conversion_result(
+    ctx: AppContext, result: "ConversionResult"
 ) -> tuple[AppContext, bool]:
-    """
-    Handle playlist convert command - convert Spotify playlist to SoundCloud.
+    """Report conversion result to user."""
+    from ..domain.playlists.conversion import ConversionResult
 
-    Usage:
-      playlist convert <spotify_playlist_name> <soundcloud_playlist_name>
-
-    Args:
-        ctx: Application context
-        args: [spotify_name, soundcloud_name]
-
-    Returns:
-        (updated_context, should_continue)
-    """
-    from ..domain.playlists.conversion import convert_spotify_to_soundcloud
-
-    if len(args) < 2:
-        log(
-            "Error: Please specify both Spotify and SoundCloud playlist names",
-            level="error",
-        )
-        log('Usage: playlist convert "Spotify Name" "SoundCloud Name"', level="info")
-        log(
-            'Example: playlist convert "Release Radar" "SC Release Radar"', level="info"
-        )
-        return ctx, True
-
-    # Parse quoted args
-    parsed_args = helpers.parse_quoted_args(args)
-
-    if len(parsed_args) < 2:
-        log("Error: Please specify both playlist names", level="error")
-        log('Usage: playlist convert "Spotify Name" "SoundCloud Name"', level="info")
-        return ctx, True
-
-    spotify_name = parsed_args[0]
-    soundcloud_name = parsed_args[1]
-
-    # Find Spotify playlist
-    spotify_playlist = playlists.get_playlist_by_name(spotify_name, library="spotify")
-
-    if not spotify_playlist:
-        log(f"❌ Spotify playlist '{spotify_name}' not found", level="error")
-        log("   Make sure you've synced your Spotify library first", level="info")
-        return ctx, True
-
-    # Check if it's actually a Spotify playlist
-    if spotify_playlist.get("library") != "spotify":
-        log(f"❌ '{spotify_name}' is not a Spotify playlist", level="error")
-        log(f"   Library: {spotify_playlist.get('library', 'unknown')}", level="info")
-        return ctx, True
-
-    spotify_playlist_id = spotify_playlist.get("spotify_playlist_id")
-    if not spotify_playlist_id:
-        log(f"❌ Playlist '{spotify_name}' has no Spotify ID", level="error")
-        return ctx, True
-
-    # Use background conversion in blessed UI mode for non-blocking behavior
-    if ctx.ui_mode == "blessed" and ctx.update_ui_state:
-        return convert_playlist_background(
-            ctx, spotify_playlist_id, spotify_name, soundcloud_name
-        )
-
-    # Otherwise, run synchronous conversion (CLI mode)
-    # Progress callback for user feedback
-    def progress_callback(current: int, total: int) -> None:
-        percentage = (current / total * 100) if total > 0 else 0
-        log(f"⏳ Matching tracks: {current}/{total} ({percentage:.0f}%)", level="info")
-
-    # Run conversion
-    log("\n🎵 Starting Spotify → SoundCloud conversion", level="info")
-    log(f"   Source: {spotify_name}", level="info")
-    log(f"   Target: {soundcloud_name}", level="info")
-    log("", level="info")
-
-    result = convert_spotify_to_soundcloud(
-        spotify_playlist_id, soundcloud_name, progress_callback
-    )
-
-    # Report results
     log("\n" + "=" * 60, level="info")
     if result.success:
         log("✅ Conversion completed successfully!", level="info")
         log(f"   Total tracks: {result.total_tracks}", level="info")
-        log(
-            f"   Matched: {result.matched_tracks} ({result.matched_tracks / result.total_tracks * 100:.1f}%)",
-            level="info",
-        )
+        if result.total_tracks > 0:
+            log(
+                f"   Matched: {result.matched_tracks} ({result.matched_tracks / result.total_tracks * 100:.1f}%)",
+                level="info",
+            )
 
         if result.matched_tracks > 0:
             log(
@@ -1504,5 +1438,116 @@ def handle_playlist_convert_command(
             log(f"   Error: {result.error_message}", level="error")
 
     log("=" * 60, level="info")
-
     return ctx, True
+
+
+def handle_playlist_convert_command(
+    ctx: AppContext, args: list[str]
+) -> tuple[AppContext, bool]:
+    """
+    Handle playlist convert command - convert local or Spotify playlist to SoundCloud.
+
+    Usage:
+      playlist convert <playlist_name> <soundcloud_playlist_name>
+
+    Supports both local playlists and Spotify playlists. Local playlists are
+    checked first, then Spotify.
+
+    Args:
+        ctx: Application context
+        args: [source_name, soundcloud_name]
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    from ..domain.playlists.conversion import (
+        convert_local_to_soundcloud,
+        convert_spotify_to_soundcloud,
+    )
+
+    if len(args) < 2:
+        log(
+            "Error: Please specify both source and SoundCloud playlist names",
+            level="error",
+        )
+        log('Usage: playlist convert "Playlist Name" "SoundCloud Name"', level="info")
+        log(
+            'Example: playlist convert "NYE25" "NYE25"', level="info"
+        )
+        return ctx, True
+
+    # Parse quoted args
+    parsed_args = helpers.parse_quoted_args(args)
+
+    if len(parsed_args) < 2:
+        log("Error: Please specify both playlist names", level="error")
+        log('Usage: playlist convert "Playlist Name" "SoundCloud Name"', level="info")
+        return ctx, True
+
+    source_name = parsed_args[0]
+    soundcloud_name = parsed_args[1]
+
+    # First check if it's a local playlist
+    local_playlist = playlists.get_playlist_by_name(source_name)
+
+    if local_playlist and local_playlist.get("library") in (None, "local"):
+        # It's a local playlist - convert to SoundCloud
+        log(f"\n🎵 Starting Local → SoundCloud conversion", level="info")
+        log(f"   Source: {source_name} (local)", level="info")
+        log(f"   Target: {soundcloud_name}", level="info")
+        log("", level="info")
+
+        # Progress callback for user feedback
+        def progress_callback(current: int, total: int) -> None:
+            percentage = (current / total * 100) if total > 0 else 0
+            log(f"⏳ Matching tracks: {current}/{total} ({percentage:.0f}%)", level="info")
+
+        result = convert_local_to_soundcloud(
+            source_name, soundcloud_name, progress_callback
+        )
+
+        # Report results (same as Spotify conversion)
+        return _report_conversion_result(ctx, result)
+
+    # Try as Spotify playlist
+    spotify_playlist = playlists.get_playlist_by_name(source_name, library="spotify")
+
+    if not spotify_playlist:
+        log(f"❌ Playlist '{source_name}' not found", level="error")
+        log("   Checked both local and Spotify libraries", level="info")
+        return ctx, True
+
+    # Check if it's actually a Spotify playlist
+    if spotify_playlist.get("library") != "spotify":
+        log(f"❌ '{source_name}' is not a Spotify playlist", level="error")
+        log(f"   Library: {spotify_playlist.get('library', 'unknown')}", level="info")
+        return ctx, True
+
+    spotify_playlist_id = spotify_playlist.get("spotify_playlist_id")
+    if not spotify_playlist_id:
+        log(f"❌ Playlist '{source_name}' has no Spotify ID", level="error")
+        return ctx, True
+
+    # Use background conversion in blessed UI mode for non-blocking behavior
+    if ctx.ui_mode == "blessed" and ctx.update_ui_state:
+        return convert_playlist_background(
+            ctx, spotify_playlist_id, source_name, soundcloud_name
+        )
+
+    # Otherwise, run synchronous conversion (CLI mode)
+    # Progress callback for user feedback
+    def progress_callback(current: int, total: int) -> None:
+        percentage = (current / total * 100) if total > 0 else 0
+        log(f"⏳ Matching tracks: {current}/{total} ({percentage:.0f}%)", level="info")
+
+    # Run conversion
+    log("\n🎵 Starting Spotify → SoundCloud conversion", level="info")
+    log(f"   Source: {source_name}", level="info")
+    log(f"   Target: {soundcloud_name}", level="info")
+    log("", level="info")
+
+    result = convert_spotify_to_soundcloud(
+        spotify_playlist_id, soundcloud_name, progress_callback
+    )
+
+    return _report_conversion_result(ctx, result)
