@@ -286,6 +286,14 @@ def auto_export_if_enabled(playlist_id: int, ctx: Optional[AppContext] = None) -
     # Get library root from config
     library_root = Path(cfg.music.library_paths[0]).expanduser()
 
+    # For crate format: use syncthing music root if enabled, otherwise Music directory
+    if "crate" in cfg.playlists.export_formats:
+        if cfg.syncthing.enabled:
+            library_root = Path(cfg.syncthing.linux_music_root).expanduser()
+        else:
+            # Default to ~/Music for crates (standard Serato location)
+            library_root = Path.home() / "Music"
+
     # Silently export in the background - don't interrupt user workflow
     try:
         playlist_export.auto_export_playlist(
@@ -293,6 +301,7 @@ def auto_export_if_enabled(playlist_id: int, ctx: Optional[AppContext] = None) -
             export_formats=cfg.playlists.export_formats,
             library_root=library_root,
             use_relative_paths=cfg.playlists.use_relative_paths,
+            syncthing_config=cfg.syncthing,
         )
     except (ValueError, FileNotFoundError, ImportError, OSError) as e:
         # Expected errors - log but don't interrupt workflow

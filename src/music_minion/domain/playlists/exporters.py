@@ -10,9 +10,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from .crud import get_playlist_by_id, get_playlist_by_name, get_playlist_tracks
-
 from music_minion.domain.library.metadata import write_elo_to_file
+
+from .crud import get_playlist_by_id, get_playlist_by_name, get_playlist_tracks
 
 
 def make_relative_path(track_path: Path, library_root: Path) -> str:
@@ -102,13 +102,18 @@ def export_m3u8(
     return len(tracks)
 
 
-def export_serato_crate(playlist_id: int, output_path: Path, library_root: Path) -> int:
+def export_serato_crate(
+    playlist_id: int, output_path: Path, library_root: Path, syncthing_config=None
+) -> int:
     """
     Export a playlist to Serato .crate format.
 
+    Note: Serato crates are stored in a _Serato_/SubCrates/ directory structure.
+    This function creates the proper Serato directory structure and exports the crate.
+
     Args:
         playlist_id: ID of the playlist to export
-        output_path: Path where .crate file should be written
+        output_path: Directory where _Serato_ folder structure will be created
         library_root: Root directory of music library
 
     Returns:
@@ -137,22 +142,75 @@ def export_serato_crate(playlist_id: int, output_path: Path, library_root: Path)
     if not tracks:
         raise ValueError(f"Playlist '{pl['name']}' is empty")
 
-    # Ensure output directory exists
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    # Create Serato directory structure
+    # pyserato expects a _Serato_ directory and will create SubCrates/ inside it
+    serato_dir = output_path / "_Serato_"
+    serato_dir.mkdir(parents=True, exist_ok=True)
 
     # Create Serato crate
     crate = Crate(pl["name"])
 
     # Add tracks to crate
+    added_count = 0
+    failed_count = 0
     for track in tracks:
-        track_path = Path(track["local_path"])
-        # Serato expects Track objects with absolute paths
-        serato_track = Track(path=track_path.absolute())
-        crate.add_track(serato_track)
+        try:
+            track_path = Path(track["local_path"]).absolute()
+
+            # Translate path to Windows format if Syncthing is enabled
+            if syncthing_config and syncthing_config.enabled:
+                # Translate to Windows path string (without drive letter)
+                path_str = syncthing_config.translate_to_windows(str(track_path))
+                # Pass as string - our monkey-patched resolve() will preserve it
+                serato_track = Track(path=path_str)
+            else:
+                # Use Path object for Linux paths
+                serato_track = Track(path=track_path)
+
+            crate.add_track(serato_track)
+            added_count += 1
+        except Exception as e:
+            # Log errors but continue processing
+            failed_count += 1
+            if failed_count <= 5:  # Only log first 5 failures
+                from loguru import logger
+                logger.warning(f"Failed to add track to crate: {track.get('local_path', 'unknown')} - {e}")
+
+    if failed_count > 0:
+        from loguru import logger
+        logger.warning(f"Crate export: {added_count} tracks added, {failed_count} tracks failed")
 
     # Save crate using pyserato builder
-    builder = Builder()
-    builder.save(crate, output_path)
+    # Builder.save() will create SubCrates/<crate_name>.crate inside the _Serato_ directory
+    #
+    # IMPORTANT: pyserato calls Path(track.path).resolve() which treats Windows paths
+    # as relative on Linux. Monkey-patch PosixPath.resolve() to preserve Windows paths.
+    if syncthing_config and syncthing_config.enabled:
+        from pathlib import PosixPath
+
+        original_resolve = PosixPath.resolve
+
+        def patched_resolve(self, strict=False):
+            path_str = str(self)
+            # Detect Windows-style path (with or without drive letter)
+            is_windows = (
+                (len(path_str) >= 3 and path_str[1:3] == ":/")
+                or path_str.startswith("Users/")
+                or path_str.startswith("Program Files/")
+            )
+            if is_windows:
+                # Return self unchanged - don't resolve Windows paths on Linux
+                return self
+            return original_resolve(self, strict=strict)
+
+        PosixPath.resolve = patched_resolve
+
+    try:
+        builder = Builder()
+        builder.save(crate, serato_dir, overwrite=True)
+    finally:
+        if syncthing_config and syncthing_config.enabled:
+            PosixPath.resolve = original_resolve
 
     return len(tracks)
 
@@ -248,6 +306,7 @@ def export_playlist(
     library_root: Optional[Path] = None,
     use_relative_paths: bool = True,
     sync_metadata: bool = False,
+    syncthing_config=None,
 ) -> tuple[Path, int]:
     """
     Export a playlist to a file, with flexible format selection.
@@ -287,19 +346,22 @@ def export_playlist(
 
     # Default output path based on format
     if output_path is None:
-        playlists_dir = library_root / "playlists"
-        playlists_dir.mkdir(parents=True, exist_ok=True)
-
-        if format_type == "m3u8":
-            output_path = playlists_dir / f"{pl['name']}.m3u8"
-        elif format_type == "crate":
-            output_path = playlists_dir / f"{pl['name']}.crate"
-        elif format_type == "csv":
-            output_path = playlists_dir / f"{pl['name']}.csv"
+        if format_type == "crate":
+            # Crate format: export to library_root/_Serato_/SubCrates (standard Serato location)
+            output_path = library_root
         else:
-            raise ValueError(
-                f"Unsupported format: {format_type}. Use 'm3u8', 'crate', or 'csv'"
-            )
+            # Other formats: export to library_root/playlists
+            playlists_dir = library_root / "playlists"
+            playlists_dir.mkdir(parents=True, exist_ok=True)
+
+            if format_type == "m3u8":
+                output_path = playlists_dir / f"{pl['name']}.m3u8"
+            elif format_type == "csv":
+                output_path = playlists_dir / f"{pl['name']}.csv"
+            else:
+                raise ValueError(
+                    f"Unsupported format: {format_type}. Use 'm3u8', 'crate', or 'csv'"
+                )
 
     # Export based on format
     if format_type == "m3u8":
@@ -311,8 +373,13 @@ def export_playlist(
         )
     elif format_type == "crate":
         tracks_exported = export_serato_crate(
-            playlist_id=pl["id"], output_path=output_path, library_root=library_root
+            playlist_id=pl["id"],
+            output_path=output_path,
+            library_root=library_root,
+            syncthing_config=syncthing_config,
         )
+        # Update output_path to reflect the actual .crate file location
+        output_path = output_path / "_Serato_" / "SubCrates" / f"{pl['name']}.crate"
     elif format_type == "csv":
         tracks_exported = export_csv(playlist_id=pl["id"], output_path=output_path)
     else:
@@ -363,6 +430,7 @@ def auto_export_playlist(
     library_root: Path,
     use_relative_paths: bool = True,
     sync_metadata: bool = False,
+    syncthing_config=None,
 ) -> list[tuple[str, Path, int]]:
     """
     Auto-export a playlist to multiple formats.
@@ -375,6 +443,7 @@ def auto_export_playlist(
         library_root: Root directory of music library
         use_relative_paths: Whether to use relative paths for M3U8
         sync_metadata: Whether to sync PLAYLIST_ELO to COMMENT field in audio files
+        syncthing_config: Syncthing configuration for path translation
 
     Returns:
         List of tuples (format, output_path, tracks_exported)
@@ -389,6 +458,7 @@ def auto_export_playlist(
                 library_root=library_root,
                 use_relative_paths=use_relative_paths,
                 sync_metadata=sync_metadata,
+                syncthing_config=syncthing_config,
             )
             results.append((format_type, output_path, tracks_exported))
         except (ValueError, FileNotFoundError, ImportError, OSError) as e:

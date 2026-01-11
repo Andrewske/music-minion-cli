@@ -2721,3 +2721,34 @@ When cards have both content click areas (for play/pause) and button click areas
 - Playlist reordering UI (needs TUI/web interface)
 - Streaming service integration (Spotify, Apple Music)
 - Collaborative playlists (needs cloud sync or P2P)
+
+## Serato Crate Export with Syncthing Path Translation (2025-12-23)
+
+**Problem**: Export playlists to Serato `.crate` format for Syncthing sync between Linux and Windows.
+
+**Challenges**:
+1. Serato `.crate` files are actually directories with `_Serato_/SubCrates/` structure
+2. `pyserato` library hardcodes `SubCrates` (capital C), not `Subcrates`
+3. Linux paths need translation to Windows format for Serato on Windows
+4. `pyserato` calls `Path.resolve()` which treats Windows paths as relative on Linux, prepending current directory
+5. Serato automatically adds drive letter, so paths should be `Users/kevin/Music/...` not `C:/Users/kevin/Music/...`
+
+**Solution**:
+- Added `SyncthingConfig` dataclass with path translation logic
+- Monkey-patch `PosixPath.resolve()` during save to detect and preserve Windows paths
+- Strip drive letter from translated paths (Serato adds it)
+- Export to `/home/kevin/Music/_Serato_/SubCrates/` (standard Serato location)
+
+**Config**:
+```toml
+[syncthing]
+enabled = true
+linux_music_root = "/home/kevin/Music"
+windows_music_root = "C:/Users/kevin/Music"
+```
+
+**Key learnings**:
+- `pyserato.model.crate.Crate.tracks` is a `set`, not a list (use `next(iter())` to get first item)
+- `Path("C:/Users/...").resolve()` on Linux treats it as relative and prepends CWD
+- Serato expects paths without drive letter in crate files, adds it automatically
+

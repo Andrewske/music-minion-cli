@@ -14,6 +14,7 @@ from ...core import database
 from ...core.output import log
 from ...domain.library import providers
 from ...domain.library.provider import ProviderConfig
+from . import crud
 from .matching import (
     MIN_CONFIDENCE_THRESHOLD,
     MatchCandidate,
@@ -406,6 +407,173 @@ def convert_spotify_to_soundcloud(
 
     except Exception as e:
         logger.exception(f"Conversion failed: {e}")
+        return ConversionResult(
+            success=False,
+            total_tracks=0,
+            matched_tracks=0,
+            failed_tracks=0,
+            soundcloud_playlist_id=None,
+            soundcloud_playlist_url=None,
+            average_confidence=0.0,
+            unmatched_track_names=[],
+            error_message=str(e),
+        )
+
+
+def convert_local_to_soundcloud(
+    local_playlist_name: str,
+    soundcloud_playlist_name: str,
+    progress_callback: Callable[[int, int], None] | None = None,
+) -> ConversionResult:
+    """Convert local playlist to SoundCloud playlist.
+
+    Matches local tracks to SoundCloud using title/artist search,
+    creates a new SoundCloud playlist, and adds matched tracks.
+
+    Args:
+        local_playlist_name: Name of local playlist to convert
+        soundcloud_playlist_name: Name for new SoundCloud playlist
+        progress_callback: Optional callback(current, total) for progress
+
+    Returns:
+        ConversionResult with success status and statistics
+    """
+    try:
+        # Get local playlist
+        playlist = crud.get_playlist_by_name(local_playlist_name)
+        if not playlist:
+            return ConversionResult(
+                success=False,
+                total_tracks=0,
+                matched_tracks=0,
+                failed_tracks=0,
+                soundcloud_playlist_id=None,
+                soundcloud_playlist_url=None,
+                average_confidence=0.0,
+                unmatched_track_names=[],
+                error_message=f"Local playlist '{local_playlist_name}' not found",
+            )
+
+        tracks = crud.get_playlist_tracks(playlist["id"])
+        if not tracks:
+            return ConversionResult(
+                success=False,
+                total_tracks=0,
+                matched_tracks=0,
+                failed_tracks=0,
+                soundcloud_playlist_id=None,
+                soundcloud_playlist_url=None,
+                average_confidence=0.0,
+                unmatched_track_names=[],
+                error_message="Local playlist is empty",
+            )
+
+        # Convert to format expected by matching function
+        local_tracks = [
+            (
+                str(t["id"]),
+                {
+                    "title": t.get("title", "Unknown"),
+                    "artist": t.get("artist", "Unknown"),
+                    "top_level_artist": t.get("top_level_artist") or t.get("artist", "Unknown"),
+                    "duration": t.get("duration", 0),
+                },
+            )
+            for t in tracks
+        ]
+
+        # Initialize SoundCloud provider
+        soundcloud = providers.get_provider("soundcloud")
+        soundcloud_state = soundcloud.init_provider(
+            ProviderConfig(name="soundcloud", enabled=True)
+        )
+
+        if not soundcloud_state.authenticated:
+            return ConversionResult(
+                success=False,
+                total_tracks=len(local_tracks),
+                matched_tracks=0,
+                failed_tracks=0,
+                soundcloud_playlist_id=None,
+                soundcloud_playlist_url=None,
+                average_confidence=0.0,
+                unmatched_track_names=[],
+                error_message="SoundCloud not authenticated. Run 'library auth soundcloud' first.",
+            )
+
+        log(f"🔍 Found {len(local_tracks)} tracks in local playlist", level="info")
+
+        # Match tracks to SoundCloud (reuse existing function)
+        log("🔎 Matching tracks to SoundCloud...", level="info")
+        soundcloud_state, matches = match_spotify_tracks_to_soundcloud(
+            local_tracks, soundcloud_state, progress_callback
+        )
+
+        matched = [m for m in matches if m.matched]
+        unmatched = [m for m in matches if not m.matched]
+
+        log(f"✓ Matched {len(matched)}/{len(matches)} tracks", level="info")
+
+        if not matched:
+            return ConversionResult(
+                success=False,
+                total_tracks=len(matches),
+                matched_tracks=0,
+                failed_tracks=len(matches),
+                soundcloud_playlist_id=None,
+                soundcloud_playlist_url=None,
+                average_confidence=0.0,
+                unmatched_track_names=[
+                    f"{m.spotify_artist} - {m.spotify_title}" for m in unmatched
+                ],
+                error_message="No tracks matched on SoundCloud",
+            )
+
+        # Create SoundCloud playlist and add tracks
+        log("📝 Creating SoundCloud playlist...", level="info")
+        matched_track_ids = [m.soundcloud_id for m in matched if m.soundcloud_id]
+
+        soundcloud_state, playlist_id, error = create_soundcloud_playlist(
+            soundcloud_state, soundcloud_playlist_name, matched_track_ids
+        )
+
+        if not playlist_id:
+            return ConversionResult(
+                success=False,
+                total_tracks=len(matches),
+                matched_tracks=len(matched),
+                failed_tracks=len(unmatched),
+                soundcloud_playlist_id=None,
+                soundcloud_playlist_url=None,
+                average_confidence=sum(m.confidence for m in matched) / len(matched),
+                unmatched_track_names=[
+                    f"{m.spotify_artist} - {m.spotify_title}" for m in unmatched
+                ],
+                error_message=error,
+            )
+
+        # Calculate statistics
+        avg_confidence = sum(m.confidence for m in matched) / len(matched)
+        playlist_url = f"https://soundcloud.com/you/sets/{playlist_id}"
+
+        log(f"✅ Created SoundCloud playlist with {len(matched)} tracks", level="info")
+
+        return ConversionResult(
+            success=True,
+            total_tracks=len(matches),
+            matched_tracks=len(matched),
+            failed_tracks=len(unmatched),
+            soundcloud_playlist_id=playlist_id,
+            soundcloud_playlist_url=playlist_url,
+            average_confidence=avg_confidence,
+            unmatched_track_names=[
+                f"{m.spotify_artist} - {m.spotify_title}" for m in unmatched
+            ],
+            error_message=None,
+        )
+
+    except Exception as e:
+        logger.exception(f"Local to SoundCloud conversion failed: {e}")
         return ConversionResult(
             success=False,
             total_tracks=0,
