@@ -27,13 +27,28 @@ app.add_middleware(
 )
 
 # Include routers
-from .routers import comparisons, tracks, stats
+from .routers import comparisons, tracks, stats, radio
 from .routers.playlists import router as playlists_router
 
 app.include_router(comparisons.router, prefix="/api", tags=["comparisons"])
 app.include_router(tracks.router, prefix="/api", tags=["tracks"])
 app.include_router(stats.router, prefix="/api", tags=["stats"])
 app.include_router(playlists_router, prefix="/api", tags=["playlists"])
+app.include_router(radio.router, prefix="/api", tags=["radio"])
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database on startup."""
+    from music_minion.core.db_adapter import is_postgres, init_postgres_schema
+
+    if is_postgres():
+        logging.info("PostgreSQL detected, initializing schema...")
+        init_postgres_schema()
+    else:
+        # SQLite - use existing init
+        from music_minion.core.database import init_database
+        init_database()
 
 
 @app.get("/health")
