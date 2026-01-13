@@ -15,7 +15,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 26
+SCHEMA_VERSION = 27
 
 
 def get_database_path() -> Path:
@@ -938,6 +938,101 @@ def migrate_database(conn, current_version: int) -> None:
         """)
 
         logger.info("Migration to schema version 26 complete")
+        conn.commit()
+
+    if current_version < 27:
+        # Migration from v26 to v27: Add personal radio station tables
+        logger.info("Migrating database to schema version 27 (Personal Radio)...")
+
+        # Stations table - links to existing playlists with radio-specific metadata
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS stations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                playlist_id INTEGER REFERENCES playlists(id) ON DELETE SET NULL,
+                mode TEXT NOT NULL DEFAULT 'shuffle',  -- 'shuffle' | 'queue'
+                is_active BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Station schedule - time ranges for meta-stations (like Main)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS station_schedule (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                station_id INTEGER NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
+                start_time TEXT NOT NULL,  -- "06:00" format
+                end_time TEXT NOT NULL,    -- "09:00" format
+                target_station_id INTEGER NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
+                position INTEGER DEFAULT 0,  -- Order for overlapping ranges
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Radio playback history
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS radio_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                station_id INTEGER REFERENCES stations(id) ON DELETE SET NULL,
+                track_id INTEGER REFERENCES tracks(id) ON DELETE SET NULL,
+                source_type TEXT NOT NULL,  -- 'local' | 'youtube' | 'spotify' | 'soundcloud'
+                source_url TEXT,            -- For non-local sources
+                started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                ended_at TIMESTAMP,
+                position_ms INTEGER DEFAULT 0  -- Where in track we started
+            )
+        """)
+
+        # Radio state for resume after restart
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS radio_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                active_station_id INTEGER REFERENCES stations(id) ON DELETE SET NULL,
+                started_at TIMESTAMP,
+                last_track_id INTEGER REFERENCES tracks(id) ON DELETE SET NULL,
+                last_position_ms INTEGER DEFAULT 0,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Initialize radio state with no active station
+        conn.execute("""
+            INSERT OR IGNORE INTO radio_state (id, active_station_id, last_position_ms)
+            VALUES (1, NULL, 0)
+        """)
+
+        # Session-level skipped tracks (cleared daily with shuffle reseed)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS radio_skipped (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                station_id INTEGER NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
+                track_id INTEGER REFERENCES tracks(id) ON DELETE CASCADE,
+                source_url TEXT,
+                skipped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                skip_date DATE DEFAULT (DATE('now')),  -- For daily clearing
+                reason TEXT  -- 'unavailable' | 'error'
+            )
+        """)
+
+        # Create indexes for performance
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_station_schedule_station ON station_schedule(station_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_station_schedule_target ON station_schedule(target_station_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_radio_history_station ON radio_history(station_id, started_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_radio_history_track ON radio_history(track_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_radio_skipped_station_date ON radio_skipped(station_id, skip_date)"
+        )
+
+        logger.info("Migration to schema version 27 complete")
         conn.commit()
 
 
