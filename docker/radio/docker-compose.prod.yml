@@ -1,0 +1,85 @@
+services:
+  # =============================================================================
+  # Caddy - HTTPS reverse proxy with automatic Let's Encrypt
+  # =============================================================================
+  caddy:
+    image: caddy:2-alpine
+    container_name: radio-caddy
+    ports:
+      - "8080:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - frontend_build:/srv/frontend:ro
+    depends_on:
+      - backend
+      - icecast
+    restart: unless-stopped
+
+  # =============================================================================
+  # Frontend - Build React app (runs once, then exits)
+  # =============================================================================
+  frontend-builder:
+    image: node:20-alpine
+    container_name: radio-frontend-builder
+    working_dir: /build
+    volumes:
+      - ../../web/frontend:/src:ro
+      - frontend_build:/output
+    command: sh -c "cp -r /src/* /build/ && npm ci && npx vite build && cp -r /build/dist/* /output/"
+    environment:
+      - VITE_API_URL=
+
+  # =============================================================================
+  # Backend - FastAPI server
+  # =============================================================================
+  backend:
+    build:
+      context: ../..
+      dockerfile: docker/radio/backend.Dockerfile
+    container_name: radio-backend
+    volumes:
+      # Mount music at path matching database (local path = /home/kevin/Music/radio-library)
+      - ${MUSIC_PATH}:/home/kevin/Music/radio-library:ro
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - ALLOWED_ORIGINS=*
+    restart: unless-stopped
+
+  # =============================================================================
+  # Icecast - Streaming server
+  # =============================================================================
+  icecast:
+    build: ./icecast
+    container_name: radio-icecast
+    volumes:
+      - ./icecast.xml:/etc/icecast.xml:ro
+    restart: unless-stopped
+
+  # =============================================================================
+  # Liquidsoap - Audio engine
+  # =============================================================================
+  liquidsoap:
+    build: ./liquidsoap
+    container_name: radio-liquidsoap
+    depends_on:
+      - icecast
+      - backend
+    volumes:
+      # Mount music at path matching database (local path = /home/kevin/Music/radio-library)
+      - ${MUSIC_PATH}:/home/kevin/Music/radio-library:ro
+      - ./liquidsoap/radio.liq:/etc/liquidsoap/radio.liq:ro
+    environment:
+      - ICECAST_HOST=icecast
+      - ICECAST_PORT=8000
+      - ICECAST_PASSWORD=hackme
+      - ICECAST_MOUNT=/stream
+      - SCHEDULER_URL=http://backend:8000/api/radio/next-track
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
+  frontend_build:
+  radio_data:

@@ -1,0 +1,79 @@
+<?xml version="1.0"?>
+<icecast>
+    <!-- Location and admin contact -->
+    <location>Local Development</location>
+    <admin>admin@localhost</admin>
+
+    <!-- Connection limits for local dev -->
+    <limits>
+        <clients>10</clients>
+        <sources>2</sources>
+        <queue-size>524288</queue-size>
+        <client-timeout>30</client-timeout>
+        <header-timeout>15</header-timeout>
+        <source-timeout>10</source-timeout>
+        <burst-on-connect>1</burst-on-connect>
+        <burst-size>65535</burst-size>
+    </limits>
+
+    <!-- Authentication -->
+    <authentication>
+        <!-- Source password - used by Liquidsoap to connect -->
+        <source-password>hackme</source-password>
+        <!-- Relay password - for relaying streams -->
+        <relay-password>hackme</relay-password>
+        <!-- Admin password - for web admin interface -->
+        <admin-user>admin</admin-user>
+        <admin-password>admin123</admin-password>
+    </authentication>
+
+    <!-- Hostname and ports -->
+    <hostname>localhost</hostname>
+    <listen-socket>
+        <port>8000</port>
+    </listen-socket>
+
+    <!-- HTTP headers -->
+    <http-headers>
+        <header name="Access-Control-Allow-Origin" value="*" />
+    </http-headers>
+
+    <!-- File paths - using Docker defaults -->
+    <fileserve>1</fileserve>
+
+    <paths>
+        <basedir>/usr/share/icecast</basedir>
+        <logdir>/var/log/icecast</logdir>
+        <webroot>/usr/share/icecast/web</webroot>
+        <adminroot>/usr/share/icecast/admin</adminroot>
+        <alias source="/" destination="/status.xsl"/>
+    </paths>
+
+    <!-- Logging to stdout for Docker -->
+    <logging>
+        <accesslog>-</accesslog>
+        <errorlog>-</errorlog>
+        <loglevel>3</loglevel>
+        <logsize>10000</logsize>
+    </logging>
+
+    <!-- Security settings -->
+    <security>
+        <chroot>0</chroot>
+        <changeowner>
+            <user>icecast</user>
+            <group>icecast</group>
+        </changeowner>
+    </security>
+
+    <!-- Mount point configuration -->
+    <mount type="normal">
+        <mount-name>/stream</mount-name>
+        <fallback-mount>/silence.ogg</fallback-mount>
+        <fallback-override>1</fallback-override>
+        <public>0</public>
+        <stream-name>Personal Radio</stream-name>
+        <stream-description>24/7 Personal Radio Station</stream-description>
+        <genre>Various</genre>
+    </mount>
+</icecast>
