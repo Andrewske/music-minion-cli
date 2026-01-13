@@ -27,6 +27,7 @@ dependencies = [
     "websockets>=12.0", # WebSocket support for IPC
     "python-multipart>=0.0.6", # Form data parsing
     "pydub>=0.25.1", # Audio waveform (requires ffmpeg runtime)
+    "psycopg2-binary>=2.9.9", # PostgreSQL adapter
 ]
 
 [project.optional-dependencies]
