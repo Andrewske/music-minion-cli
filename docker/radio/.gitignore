@@ -1,0 +1,5 @@
+# Docker runtime files
+*.log
+
+# Local overrides (if any)
+docker-compose.override.yml

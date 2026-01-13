@@ -1,0 +1,34 @@
+:80 {
+    # Compression
+    encode gzip
+
+    # Security headers
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+
+    # API - proxy to backend (must come before file_server)
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+
+    # Stream - proxy to Icecast
+    handle /stream {
+        reverse_proxy icecast:8000
+    }
+
+    # Frontend - static files and SPA fallback
+    handle {
+        root * /srv/frontend
+        try_files {path} /index.html
+        file_server
+    }
+
+    # Logging
+    log {
+        output stdout
+        format console
+    }
+}
