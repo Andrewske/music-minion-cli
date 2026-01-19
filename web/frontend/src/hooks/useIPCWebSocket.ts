@@ -18,7 +18,7 @@ export function useIPCWebSocket() {
 
   const handleCommand = useCallback((command: string, args: string[]) => {
     // Read FRESH state when command is received (avoids stale closure)
-    const { currentPair, togglePlaying, selectAndPlay } = useComparisonStore.getState();
+    const { currentPair, togglePlaying } = useComparisonStore.getState();
 
     console.log('Received IPC command:', command, args);
 

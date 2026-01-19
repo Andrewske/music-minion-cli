@@ -12,7 +12,7 @@ from typing import Optional, Callable, Tuple, Any, Set
 from loguru import logger
 
 from music_minion.context import AppContext
-from music_minion import router, actions, notifications
+from music_minion import actions, notifications
 
 # WebSocket support (optional)
 WEBSOCKETS_AVAILABLE = False
@@ -460,6 +460,7 @@ def process_ipc_command(
             return ctx, success, message
 
         # Regular command - route through router
+        from music_minion import router  # Lazy import to break circular dependency
         ctx, should_continue = router.handle_command(ctx, command, args)
 
         # Commands that succeed typically don't return explicit success messages

@@ -114,7 +114,7 @@ except Exception:
 **Web Development Workflow**:
 The `--web` flag starts all three services in one command:
 - Blessed CLI UI (with IPC server for hotkeys)
-- FastAPI backend (http://0.0.0.0:8000)
+- FastAPI backend (http://0.0.0.0:8642)
 - Vite frontend (http://localhost:5173)
 
 Logs are captured to `music-minion-{uvicorn,vite}.log` in the project root for easier debugging. All services stop gracefully when you quit the blessed UI.

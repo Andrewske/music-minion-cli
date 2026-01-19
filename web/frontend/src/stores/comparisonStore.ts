@@ -50,14 +50,6 @@ export const useComparisonStore = create<ComparisonStore>((set, get) => ({
   ...initialState,
 
   setSession: (sessionId, pair, prefetched, priorityPathPrefix, rankingMode, selectedPlaylistId) => {
-    console.log('ComparisonStore setSession called with:', {
-      sessionId,
-      rankingMode,
-      selectedPlaylistId,
-      priorityPathPrefix,
-      hasPair: !!pair,
-      hasPrefetched: !!prefetched
-    });
     set({
       sessionId,
       currentPair: pair,
