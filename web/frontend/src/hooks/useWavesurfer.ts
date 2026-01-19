@@ -5,14 +5,11 @@ import { formatError } from '../utils/formatError';
 
 interface UseWavesurferOptions {
   trackId: number;
-  audioUrl?: string;
   isPlaying: boolean;  // Explicit control instead of isActive
   onFinish?: () => void;
   onReady?: (duration: number) => void;
   onSeek?: (progress: number) => void;
   onTimeUpdate?: (currentTime: number) => void;
-  startPosition?: number;
-  endPosition?: number;
 }
 
 function createWavesurferConfig(container: HTMLDivElement) {
@@ -30,7 +27,7 @@ function createWavesurferConfig(container: HTMLDivElement) {
   };
 }
 
-export function useWavesurfer({ trackId, audioUrl, isPlaying, onFinish, onReady, onSeek, onTimeUpdate, startPosition, endPosition }: UseWavesurferOptions) {
+export function useWavesurfer({ trackId, isPlaying, onFinish, onReady, onSeek, onTimeUpdate }: UseWavesurferOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
