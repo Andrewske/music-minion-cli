@@ -224,3 +224,8 @@ class CandidatesResponse(BaseModel):
 class SkippedTracksResponse(BaseModel):
     skipped: list[dict]
     total: int
+
+
+class CreatePlaylistRequest(BaseModel):
+    name: str
+    description: str = ""
