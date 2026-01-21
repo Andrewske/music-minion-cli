@@ -1,30 +1,38 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ComparisonView } from './components/ComparisonView';
-import { PlaylistBuilder } from './pages/PlaylistBuilder';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { createRouter, RouterProvider } from '@tanstack/react-router'
+import { routeTree } from './routeTree.gen'
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
-      staleTime: 5 * 60 * 1000, // 5 minutes
+      staleTime: 5 * 60 * 1000,
     },
     mutations: {
       retry: 1,
     },
   },
-});
+})
+
+const router = createRouter({
+  routeTree,
+  context: {
+    queryClient,
+  },
+})
+
+declare module '@tanstack/react-router' {
+  interface Register {
+    router: typeof router
+  }
+}
 
 function App() {
-  // Simple hash-based routing (install react-router-dom for proper routing)
-  const isBuilderView = window.location.hash === '#/playlist-builder';
-
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="min-h-screen bg-slate-950">
-        {isBuilderView ? <PlaylistBuilder /> : <ComparisonView />}
-      </div>
+      <RouterProvider router={router} />
     </QueryClientProvider>
-  );
+  )
 }
 
 export default App

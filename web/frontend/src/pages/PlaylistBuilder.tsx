@@ -4,8 +4,11 @@ import { useIPCWebSocket } from '../hooks/useIPCWebSocket';
 import { builderApi } from '../api/builder';
 import type { Track } from '../api/builder';
 
-export function PlaylistBuilder() {
-  const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | null>(null);
+interface PlaylistBuilderProps {
+  playlistId: number;
+}
+
+export function PlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -18,25 +21,25 @@ export function PlaylistBuilder() {
     startSession,
     isAddingTrack,
     isSkippingTrack
-  } = useBuilderSession(selectedPlaylistId);
+  } = useBuilderSession(playlistId);
 
   // Activate builder mode on mount, deactivate on unmount
   useEffect(() => {
-    if (selectedPlaylistId) {
-      builderApi.activateBuilderMode(selectedPlaylistId);
+    if (playlistId) {
+      builderApi.activateBuilderMode(playlistId);
 
       return () => {
         builderApi.deactivateBuilderMode();
       };
     }
-  }, [selectedPlaylistId]);
+  }, [playlistId]);
 
   // Fetch initial candidate after session starts
   useEffect(() => {
     if (session && !currentTrack) {
-      builderApi.getNextCandidate(selectedPlaylistId!).then(setCurrentTrack);
+      builderApi.getNextCandidate(playlistId!).then(setCurrentTrack);
     }
-  }, [session, currentTrack, selectedPlaylistId]);
+  }, [session, currentTrack, playlistId]);
 
   // Handle keyboard shortcuts via WebSocket (useRef pattern)
   useIPCWebSocket({
@@ -83,7 +86,7 @@ export function PlaylistBuilder() {
     await addTrack.mutateAsync(trackId);
 
     // Fetch next candidate
-    const nextTrack = await builderApi.getNextCandidate(selectedPlaylistId!, trackId);
+    const nextTrack = await builderApi.getNextCandidate(playlistId!, trackId);
     setCurrentTrack(nextTrack);
   };
 
@@ -95,13 +98,9 @@ export function PlaylistBuilder() {
     await skipTrack.mutateAsync(trackId);
 
     // Fetch next candidate
-    const nextTrack = await builderApi.getNextCandidate(selectedPlaylistId!, trackId);
+    const nextTrack = await builderApi.getNextCandidate(playlistId!, trackId);
     setCurrentTrack(nextTrack);
   };
-
-  if (!selectedPlaylistId) {
-    return <PlaylistSelection onSelect={setSelectedPlaylistId} />;
-  }
 
   if (!session) {
     return (
@@ -109,7 +108,7 @@ export function PlaylistBuilder() {
         <div className="text-center">
           <h2 className="text-2xl font-bold text-white mb-4">Start Building Playlist</h2>
           <button
-            onClick={() => startSession.mutate(selectedPlaylistId)}
+            onClick={() => startSession.mutate(playlistId)}
             className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             Start Session
@@ -212,23 +211,6 @@ function FilterPanel(_props: { filters: any[]; onUpdate: (filters: any[]) => voi
     <div className="text-gray-400">
       <p className="text-sm">Filter UI coming soon</p>
       <p className="text-xs mt-2">Genre, BPM, Year, Key</p>
-    </div>
-  );
-}
-
-function PlaylistSelection({ onSelect }: { onSelect: (id: number) => void }) {
-  return (
-    <div className="flex items-center justify-center min-h-screen bg-slate-950">
-      <div className="text-center text-white">
-        <h2 className="text-2xl font-bold mb-4">Select a Playlist</h2>
-        <p className="text-gray-400 mb-6">Playlist selection UI coming soon</p>
-        <button
-          onClick={() => onSelect(1)}
-          className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-        >
-          Use Playlist #1 (Dev)
-        </button>
-      </div>
     </div>
   );
 }
