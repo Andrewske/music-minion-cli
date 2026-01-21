@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { useBuilderSession } from '../hooks/useBuilderSession';
 import { useIPCWebSocket } from '../hooks/useIPCWebSocket';
 import { builderApi } from '../api/builder';
@@ -10,6 +11,7 @@ interface PlaylistBuilderProps {
 
 export function PlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   const {
@@ -22,6 +24,15 @@ export function PlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
     isAddingTrack,
     isSkippingTrack
   } = useBuilderSession(playlistId);
+
+  // Mutation for fetching next candidate with automatic React Query cancellation
+  const fetchNextCandidate = useMutation({
+    mutationFn: ({ playlistId, excludeTrackId }: { playlistId: number; excludeTrackId?: number }) =>
+      builderApi.getNextCandidate(playlistId, excludeTrackId),
+    onSuccess: (track) => {
+      setCurrentTrack(track);
+    },
+  });
 
   // Activate builder mode on mount, deactivate on unmount
   useEffect(() => {
@@ -36,8 +47,8 @@ export function PlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
 
   // Fetch initial candidate after session starts
   useEffect(() => {
-    if (session && !currentTrack) {
-      builderApi.getNextCandidate(playlistId!).then(setCurrentTrack);
+    if (session && !currentTrack && playlistId) {
+      fetchNextCandidate.mutate({ playlistId });
     }
   }, [session, currentTrack, playlistId]);
 
@@ -63,10 +74,13 @@ export function PlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
       audio.loop = true;
       audio.play().catch(err => {
         console.error('Failed to play audio:', err);
+        // Show toast notification before auto-skipping
+        setToastMessage('⚠️ Playback failed - auto-skipping in 3s. Check browser permissions.');
         // Auto-skip on playback error
         setTimeout(() => {
           if (currentTrack) {
             skipTrack.mutate(currentTrack.id);
+            setToastMessage(null);
           }
         }, 3000);
       });
@@ -85,9 +99,8 @@ export function PlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
     const trackId = currentTrack.id;
     await addTrack.mutateAsync(trackId);
 
-    // Fetch next candidate
-    const nextTrack = await builderApi.getNextCandidate(playlistId!, trackId);
-    setCurrentTrack(nextTrack);
+    // Fetch next candidate using mutation (automatic React Query cancellation)
+    fetchNextCandidate.mutate({ playlistId, excludeTrackId: trackId });
   };
 
   // Handle skip track
@@ -97,9 +110,8 @@ export function PlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
     const trackId = currentTrack.id;
     await skipTrack.mutateAsync(trackId);
 
-    // Fetch next candidate
-    const nextTrack = await builderApi.getNextCandidate(playlistId!, trackId);
-    setCurrentTrack(nextTrack);
+    // Fetch next candidate using mutation (automatic React Query cancellation)
+    fetchNextCandidate.mutate({ playlistId, excludeTrackId: trackId });
   };
 
   if (!session) {
@@ -126,6 +138,13 @@ export function PlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       <audio ref={audioRef} />
+
+      {/* Toast notification */}
+      {toastMessage && (
+        <div className="fixed top-4 right-4 bg-amber-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md">
+          {toastMessage}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-6">
         {/* Left Panel: Filters */}

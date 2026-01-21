@@ -4,6 +4,8 @@ import { apiRequest } from './client';
 
 const API_BASE = '/api';
 
+// Using direct fetch here for custom error handling (see builder.ts for similar pattern).
+// Use apiRequest for simple GET/POST without special error handling needs.
 export async function createPlaylist(name: string, description: string = ''): Promise<Playlist> {
   const response = await fetch(`${API_BASE}/playlists`, {
     method: 'POST',
@@ -12,12 +14,13 @@ export async function createPlaylist(name: string, description: string = ''): Pr
   });
 
   if (!response.ok) {
+    const errorText = await response.text();
     try {
-      const error = await response.json();
+      const error = JSON.parse(errorText);
       throw new Error(error.detail || 'Failed to create playlist');
-    } catch (e) {
-      // If JSON parsing fails (e.g., HTML error page), use generic message
-      throw new Error('Failed to create playlist');
+    } catch {
+      // If JSON parsing fails (e.g., HTML error page), include status and preview
+      throw new Error(`Failed to create playlist: ${response.status} ${errorText.substring(0, 100)}`);
     }
   }
 
