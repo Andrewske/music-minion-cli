@@ -1,19 +1,21 @@
-import { useState, useEffect, useRef } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useBuilderSession } from '../hooks/useBuilderSession';
 import { useIPCWebSocket } from '../hooks/useIPCWebSocket';
 import { builderApi } from '../api/builder';
 import type { Track } from '../api/builder';
+import { SortControl } from '../components/builder/SortControl';
 import FilterPanel from '../components/builder/FilterPanel';
-
+import { WaveformPlayer } from '../components/WaveformPlayer';
 interface PlaylistBuilderProps {
   playlistId: number;
+  playlistName: string;
 }
 
-export function PlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
-  const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
+export function PlaylistBuilder({ playlistId, playlistName }: PlaylistBuilderProps) {
+  const [candidateIndex, setCandidateIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(true); // Auto-play by default
+  const [loopEnabled, setLoopEnabled] = useState(true);
 
   const {
     session,
@@ -23,17 +25,34 @@ export function PlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
     updateFilters,
     startSession,
     isAddingTrack,
-    isSkippingTrack
+    isSkippingTrack,
+    sortField,
+    sortDirection,
+    setSortField,
+    setSortDirection
   } = useBuilderSession(playlistId);
 
-  // Mutation for fetching next candidate with automatic React Query cancellation
-  const fetchNextCandidate = useMutation({
-    mutationFn: ({ playlistId, excludeTrackId }: { playlistId: number; excludeTrackId?: number }) =>
-      builderApi.getNextCandidate(playlistId, excludeTrackId),
-    onSuccess: (track) => {
-      setCurrentTrack(track);
+  // Fetch candidates with sorting
+  const { data: candidatesData } = useQuery({
+    queryKey: ['builder-candidates', playlistId, sortField, sortDirection],
+    queryFn: () => playlistId ? builderApi.getCandidates(playlistId, 100, 0) : null,
+    enabled: !!playlistId && !!session,
+    select: (data) => {
+      if (!data?.candidates) return data;
+      const sorted = [...data.candidates].sort((a, b) => {
+        const aVal = a[sortField] ?? '';
+        const bVal = b[sortField] ?? '';
+        const cmp = typeof aVal === 'number' ? aVal - (bVal as number) : String(aVal).localeCompare(String(bVal));
+        return sortDirection === 'asc' ? cmp : -cmp;
+      });
+      return { ...data, candidates: sorted };
     },
   });
+
+  // Current track from sorted candidates
+  const currentTrack = candidatesData?.candidates?.[candidateIndex] ?? null;
+
+
 
   // Activate builder mode on mount, deactivate on unmount
   useEffect(() => {
@@ -46,12 +65,13 @@ export function PlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
     }
   }, [playlistId]);
 
-  // Fetch initial candidate after session starts
+  // Reset candidate index when session starts or sorting changes
   useEffect(() => {
-    if (session && !currentTrack && playlistId) {
-      fetchNextCandidate.mutate({ playlistId });
+    if (session) {
+      setCandidateIndex(0);
     }
-  }, [session, currentTrack, playlistId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, sortField, sortDirection]);
 
   // Handle keyboard shortcuts via WebSocket (useRef pattern)
   useIPCWebSocket({
@@ -67,31 +87,29 @@ export function PlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
     }
   });
 
-  // Auto-play current track on loop
+  // Auto-play new tracks
   useEffect(() => {
-    if (currentTrack && audioRef.current) {
-      const audio = audioRef.current;
-      audio.src = `/api/tracks/${currentTrack.id}/stream`;
-      audio.loop = true;
-      audio.play().catch(err => {
-        console.error('Failed to play audio:', err);
-        // Show toast notification before auto-skipping
-        setToastMessage('⚠️ Playback failed - auto-skipping in 3s. Check browser permissions.');
-        // Auto-skip on playback error
-        setTimeout(() => {
-          if (currentTrack) {
-            skipTrack.mutate(currentTrack.id);
-            setToastMessage(null);
-          }
-        }, 3000);
-      });
-
-      return () => {
-        audio.pause();
-        audio.src = '';
-      };
+    if (currentTrack) {
+      setIsPlaying(true);
     }
-  }, [currentTrack?.id]);
+  }, [currentTrack]);
+
+  // Keyboard shortcuts for waveform control
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key >= '0' && e.key <= '9') {
+        const percent = parseInt(e.key) * 10;
+        window.dispatchEvent(new CustomEvent('music-minion-seek-percent', { detail: percent }));
+      }
+      if (e.key === ' ') {
+        e.preventDefault();
+        setIsPlaying(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Handle add track
   const handleAdd = async () => {
@@ -100,8 +118,8 @@ export function PlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
     const trackId = currentTrack.id;
     await addTrack.mutateAsync(trackId);
 
-    // Fetch next candidate using mutation (automatic React Query cancellation)
-    fetchNextCandidate.mutate({ playlistId, excludeTrackId: trackId });
+    // Move to next candidate
+    setCandidateIndex(prev => prev + 1);
   };
 
   // Handle skip track
@@ -111,8 +129,8 @@ export function PlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
     const trackId = currentTrack.id;
     await skipTrack.mutateAsync(trackId);
 
-    // Fetch next candidate using mutation (automatic React Query cancellation)
-    fetchNextCandidate.mutate({ playlistId, excludeTrackId: trackId });
+    // Move to next candidate
+    setCandidateIndex(prev => prev + 1);
   };
 
   if (!session) {
@@ -138,16 +156,21 @@ export function PlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
-      <audio ref={audioRef} />
 
-      {/* Toast notification */}
-      {toastMessage && (
-        <div className="fixed top-4 right-4 bg-amber-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md">
-          {toastMessage}
-        </div>
-      )}
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-6">
+
+      {/* Header with playlist name and sort controls */}
+      <div className="flex justify-between items-center mb-4 px-6 pt-6">
+        <h2 className="text-xl font-semibold">Building: {playlistName}</h2>
+        <SortControl
+          sortField={sortField}
+          sortDirection={sortDirection}
+          onSortFieldChange={setSortField}
+          onSortDirectionChange={setSortDirection}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 px-6 pb-6">
         {/* Left Panel: Filters */}
         <aside className="md:col-span-1 bg-slate-900 rounded-lg p-4">
           <FilterPanel
@@ -160,11 +183,50 @@ export function PlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
 
         {/* Center: Track Player */}
         <main className="md:col-span-3">
-          {currentTrack ? (
+          {currentTrack && candidateIndex < (candidatesData?.candidates?.length ?? 0) ? (
             <div className="bg-slate-900 rounded-lg p-8">
               <TrackDisplay track={currentTrack} />
 
-              <div className="flex gap-4 mt-8 justify-center">
+              {currentTrack && (
+                <div className="h-20 mb-6">
+                  <WaveformPlayer
+                    track={{
+                      id: currentTrack.id,
+                      title: currentTrack.title,
+                      artist: currentTrack.artist,
+                      rating: currentTrack.elo_rating || 0,
+                      comparison_count: 0,
+                      wins: 0,
+                      losses: 0,
+                      has_waveform: true,
+                    }}
+                    isPlaying={isPlaying}
+                    onTogglePlayPause={() => setIsPlaying(!isPlaying)}
+                     onFinish={() => {
+                       if (loopEnabled) {
+                         setIsPlaying(false);
+                         setTimeout(() => setIsPlaying(true), 100);
+                       } else {
+                         handleSkip();
+                       }
+                     }}
+                  />
+                 </div>
+               )}
+
+               <div className="flex justify-center mb-4">
+                 <label className="flex items-center gap-2 text-sm text-slate-400">
+                   <input
+                     type="checkbox"
+                     checked={loopEnabled}
+                     onChange={(e) => setLoopEnabled(e.target.checked)}
+                     className="rounded"
+                   />
+                   Loop track
+                 </label>
+               </div>
+
+               <div className="flex gap-4 mt-8 justify-center">
                 <button
                   onClick={handleAdd}
                   disabled={isAddingTrack || isSkippingTrack}
@@ -185,8 +247,15 @@ export function PlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
             </div>
           ) : (
             <div className="bg-slate-900 rounded-lg p-8 text-center">
-              <h3 className="text-2xl font-bold mb-2">No more candidates</h3>
-              <p className="text-gray-400">Adjust your filters or review skipped tracks</p>
+              <h3 className="text-2xl font-bold mb-2">
+                {candidateIndex >= (candidatesData?.candidates?.length ?? 0) ? 'No more candidates' : 'Loading candidates...'}
+              </h3>
+              <p className="text-gray-400">
+                {candidateIndex >= (candidatesData?.candidates?.length ?? 0)
+                  ? 'Adjust your filters or review skipped tracks'
+                  : 'Fetching tracks that match your criteria'
+                }
+              </p>
             </div>
           )}
         </main>
