@@ -11,6 +11,92 @@ import os
 from music_minion import ipc
 
 
+def run_sync_radio(force: bool = False, since: str | None = None) -> int:
+    """Sync local music library and database to radio server.
+
+    Args:
+        force: If True, skip change detection and sync everything.
+        since: If provided, sync tracks modified since this date (YYYY-MM-DD or 'today').
+
+    Returns:
+        Exit code (0 for success, 1 for failure)
+    """
+    import subprocess
+    from pathlib import Path
+
+    SERVER = "root@46.62.221.136"
+    LOCAL_MUSIC = Path.home() / "Music" / "radio-library"
+    REMOTE_MUSIC = "/root/music/"
+    PROJECT_ROOT = Path(__file__).parent.parent.parent
+    IMPORT_SCRIPT = PROJECT_ROOT / "docker" / "radio" / "import_tracks.py"
+    LAST_SYNC_FILE = PROJECT_ROOT / ".last_sync"
+
+    print("=== Syncing to Radio Server ===")
+    print()
+
+    # Check if any files changed since last sync
+    files_changed = True
+    if not force and LAST_SYNC_FILE.exists():
+        result = subprocess.run(
+            ["find", str(LOCAL_MUSIC), "-newer", str(LAST_SYNC_FILE), "-type", "f"],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        if result.returncode == 0 and not result.stdout.strip():
+            files_changed = False
+            print("[1/2] Syncing audio files... SKIPPED (no changes)")
+
+    # Step 1: Sync audio files (only if changed)
+    if files_changed:
+        print("[1/2] Syncing audio files...")
+        rsync_result = subprocess.run(
+            ["rsync", "-avz", "--progress", "--delete", f"{LOCAL_MUSIC}/", f"{SERVER}:{REMOTE_MUSIC}"],
+            check=False
+        )
+        if rsync_result.returncode != 0:
+            print(f"Error: rsync failed with code {rsync_result.returncode}", file=sys.stderr)
+            return 1
+
+    # Step 2: Get DATABASE_URL from local .env
+    print()
+    print("[2/2] Importing to PostgreSQL...")
+    env_file = PROJECT_ROOT / ".env"
+    database_url = None
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            if line.startswith("DATABASE_URL="):
+                database_url = line.split("=", 1)[1]
+                break
+
+    if not database_url:
+        print(f"Error: DATABASE_URL not found in {env_file}", file=sys.stderr)
+        return 1
+
+    # Step 3: Run import script
+    import_cmd = ["uv", "run", "python", str(IMPORT_SCRIPT)]
+    if force:
+        import_cmd.append("--full")
+    elif since:
+        import_cmd.extend(["--since", since])
+    import_result = subprocess.run(
+        import_cmd,
+        env={**os.environ, "DATABASE_URL": database_url},
+        check=False
+    )
+    if import_result.returncode != 0:
+        print(f"Error: import failed with code {import_result.returncode}", file=sys.stderr)
+        return 1
+
+    # Update last sync timestamp
+    LAST_SYNC_FILE.touch()
+
+    print()
+    print("=== Sync complete ===")
+    print("Stream: http://46.62.221.136:8080/stream")
+    return 0
+
+
 def run_locate_opus(folder: str, apply: bool = False) -> int:
     """Run the locate-opus utility to match opus files to MP3 records.
 
@@ -189,6 +275,22 @@ def main() -> None:
         help="Actually update database (default: dry run)",
     )
 
+    # Radio server sync
+    sync_radio_parser = subparsers.add_parser(
+        "sync-radio", help="Sync music files and database to radio server"
+    )
+    sync_radio_parser.add_argument(
+        "--force", "-f",
+        action="store_true",
+        help="Force full sync (skip change detection)",
+    )
+    sync_radio_parser.add_argument(
+        "--since", "-s",
+        type=str,
+        metavar="DATE",
+        help="Sync tracks modified since DATE (YYYY-MM-DD or 'today')",
+    )
+
     # Parse arguments
     args, unknown = parser.parse_known_args()
 
@@ -243,6 +345,10 @@ def main() -> None:
         elif args.subcommand == "locate-opus":
             # Run locate-opus utility directly
             sys.exit(run_locate_opus(args.folder, apply=args.apply))
+
+        elif args.subcommand == "sync-radio":
+            # Sync to radio server
+            sys.exit(run_sync_radio(force=args.force, since=args.since))
 
     # No subcommand - start interactive mode
     if args.dev:

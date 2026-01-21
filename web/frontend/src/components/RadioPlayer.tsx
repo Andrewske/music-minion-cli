@@ -17,11 +17,6 @@ function formatPosition(ms: number): string {
   return mins + ':' + secs.toString().padStart(2, '0');
 }
 
-function getArtistInitial(artist: string | null): string {
-  if (!artist) return '?';
-  return artist.charAt(0).toUpperCase();
-}
-
 export function RadioPlayer(): JSX.Element {
   const [isMuted, setIsMuted] = useState(true);
   const [localPosition, setLocalPosition] = useState<number>(0);

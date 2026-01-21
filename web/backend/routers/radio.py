@@ -94,6 +94,38 @@ class UpdateScheduleRequest(BaseModel):
     position: Optional[int] = None
 
 
+class HistoryEntryResponse(BaseModel):
+    """History entry representation for API responses."""
+
+    id: int
+    station_id: int
+    station_name: str
+    track: TrackResponse
+    source_type: str
+    started_at: str  # ISO format
+    ended_at: Optional[str]  # ISO format
+    position_ms: int
+
+
+class StationStatsResponse(BaseModel):
+    """Station statistics for API responses."""
+
+    station_id: int
+    station_name: str
+    total_plays: int
+    total_minutes: int
+    unique_tracks: int
+    days_queried: int
+
+
+class TrackPlayStatsResponse(BaseModel):
+    """Track play statistics for API responses."""
+
+    track: TrackResponse
+    play_count: int
+    total_duration_seconds: int
+
+
 # === Helper Functions ===
 
 
@@ -129,6 +161,41 @@ def _track_to_response(track) -> TrackResponse:
         album=track.album,
         duration=track.duration,
         local_path=track.local_path,
+    )
+
+
+def _history_entry_to_response(entry) -> HistoryEntryResponse:
+    """Convert HistoryEntry dataclass to response model."""
+    return HistoryEntryResponse(
+        id=entry.id,
+        station_id=entry.station_id,
+        station_name=entry.station_name,
+        track=_track_to_response(entry.track),
+        source_type=entry.source_type,
+        started_at=entry.started_at.isoformat(),
+        ended_at=entry.ended_at.isoformat() if entry.ended_at else None,
+        position_ms=entry.position_ms,
+    )
+
+
+def _station_stats_to_response(stats) -> StationStatsResponse:
+    """Convert StationStats dataclass to response model."""
+    return StationStatsResponse(
+        station_id=stats.station_id,
+        station_name=stats.station_name,
+        total_plays=stats.total_plays,
+        total_minutes=stats.total_minutes,
+        unique_tracks=stats.unique_tracks,
+        days_queried=stats.days_queried,
+    )
+
+
+def _track_play_stats_to_response(stats) -> TrackPlayStatsResponse:
+    """Convert TrackPlayStats dataclass to response model."""
+    return TrackPlayStatsResponse(
+        track=_track_to_response(stats.track),
+        play_count=stats.play_count,
+        total_duration_seconds=stats.total_duration_seconds,
     )
 
 
@@ -488,4 +555,80 @@ def reorder_schedule(station_id: int, entry_ids: list[int]) -> dict[str, bool]:
         return {"ok": True}
     except Exception as e:
         logger.exception(f"Failed to reorder schedule for station {station_id}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# === History & Analytics ===
+
+
+@router.get("/history", response_model=list[HistoryEntryResponse])
+def get_history(
+    station_id: Optional[int] = None,
+    limit: int = 50,
+    offset: int = 0,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> list[HistoryEntryResponse]:
+    """Get playback history with filtering and pagination.
+
+    Args:
+        station_id: Filter by station ID (None = all stations)
+        limit: Maximum number of entries to return (default 50)
+        offset: Number of entries to skip for pagination (default 0)
+        start_date: Filter entries on or after this date (YYYY-MM-DD)
+        end_date: Filter entries before this date (YYYY-MM-DD)
+
+    Returns:
+        List of history entries, ordered by started_at DESC
+    """
+    from music_minion.domain.radio import get_history_entries
+
+    try:
+        entries = get_history_entries(station_id, limit, offset, start_date, end_date)
+        return [_history_entry_to_response(e) for e in entries]
+    except Exception as e:
+        logger.exception("Failed to fetch history")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/stations/{station_id}/stats", response_model=StationStatsResponse)
+def get_station_stats_endpoint(station_id: int, days: int = 30) -> StationStatsResponse:
+    """Get aggregated statistics for a station.
+
+    Args:
+        station_id: Station ID
+        days: Number of days to include in stats (default 30)
+
+    Returns:
+        Station statistics including play counts, listening time, and unique tracks
+    """
+    from music_minion.domain.radio import get_station_stats
+
+    stats = get_station_stats(station_id, days)
+    if not stats:
+        raise HTTPException(status_code=404, detail="Station not found")
+    return _station_stats_to_response(stats)
+
+
+@router.get("/top-tracks", response_model=list[TrackPlayStatsResponse])
+def get_top_tracks_endpoint(
+    station_id: Optional[int] = None, limit: int = 10, days: int = 30
+) -> list[TrackPlayStatsResponse]:
+    """Get most played tracks across all stations or for a specific station.
+
+    Args:
+        station_id: Station ID (None = all stations)
+        limit: Maximum number of tracks to return (default 10)
+        days: Number of days to include (default 30)
+
+    Returns:
+        List of tracks with play counts, ordered by play count DESC
+    """
+    from music_minion.domain.radio import get_most_played_tracks
+
+    try:
+        stats = get_most_played_tracks(station_id, limit, days)
+        return [_track_play_stats_to_response(s) for s in stats]
+    except Exception as e:
+        logger.exception("Failed to fetch top tracks")
         raise HTTPException(status_code=500, detail=str(e))

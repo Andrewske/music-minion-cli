@@ -30,7 +30,7 @@ function createWavesurferConfig(container: HTMLDivElement) {
   };
 }
 
-export function useWavesurfer({ trackId, audioUrl, isPlaying, onFinish, onReady, onSeek, onTimeUpdate, startPosition, endPosition }: UseWavesurferOptions) {
+export function useWavesurfer({ trackId, audioUrl: _audioUrl, isPlaying, onFinish, onReady, onSeek, onTimeUpdate, startPosition: _startPosition, endPosition: _endPosition }: UseWavesurferOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const [currentTime, setCurrentTime] = useState(0);

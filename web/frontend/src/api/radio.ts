@@ -43,6 +43,32 @@ export interface CreateStationRequest {
   mode?: 'shuffle' | 'queue';
 }
 
+export interface HistoryEntry {
+  id: number;
+  station_id: number;
+  station_name: string;
+  track: TrackInfo;
+  source_type: string;
+  started_at: string; // ISO format
+  ended_at: string | null;
+  position_ms: number;
+}
+
+export interface StationStats {
+  station_id: number;
+  station_name: string;
+  total_plays: number;
+  total_minutes: number;
+  unique_tracks: number;
+  days_queried: number;
+}
+
+export interface TrackPlayStats {
+  track: TrackInfo;
+  play_count: number;
+  total_duration_seconds: number;
+}
+
 // === API Functions ===
 
 export async function getNowPlaying(): Promise<NowPlaying> {
@@ -94,4 +120,109 @@ export async function deactivateStation(): Promise<void> {
 
 export async function getSchedule(stationId: number): Promise<ScheduleEntry[]> {
   return apiRequest<ScheduleEntry[]>(`/radio/stations/${stationId}/schedule`);
+}
+
+export async function createScheduleEntry(
+  stationId: number,
+  startTime: string,
+  endTime: string,
+  targetStationId: number
+): Promise<ScheduleEntry> {
+  return apiRequest<ScheduleEntry>(`/radio/stations/${stationId}/schedule`, {
+    method: 'POST',
+    body: JSON.stringify({
+      start_time: startTime,
+      end_time: endTime,
+      target_station_id: targetStationId,
+    }),
+  });
+}
+
+export async function updateScheduleEntry(
+  entryId: number,
+  updates: {
+    start_time?: string;
+    end_time?: string;
+    target_station_id?: number;
+    position?: number;
+  }
+): Promise<ScheduleEntry> {
+  return apiRequest<ScheduleEntry>(`/radio/schedule/${entryId}`, {
+    method: 'PUT',
+    body: JSON.stringify(updates),
+  });
+}
+
+export async function deleteScheduleEntry(entryId: number): Promise<void> {
+  await apiRequest<{ ok: boolean }>(`/radio/schedule/${entryId}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function reorderSchedule(
+  stationId: number,
+  entryIds: number[]
+): Promise<void> {
+  await apiRequest<{ ok: boolean }>(
+    `/radio/stations/${stationId}/schedule/reorder`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(entryIds),
+    }
+  );
+}
+
+export async function getHistory(params: {
+  stationId?: number;
+  limit?: number;
+  offset?: number;
+  startDate?: string; // YYYY-MM-DD
+  endDate?: string; // YYYY-MM-DD
+}): Promise<HistoryEntry[]> {
+  const queryParams = new URLSearchParams();
+  if (params.stationId !== undefined) {
+    queryParams.append('station_id', params.stationId.toString());
+  }
+  if (params.limit !== undefined) {
+    queryParams.append('limit', params.limit.toString());
+  }
+  if (params.offset !== undefined) {
+    queryParams.append('offset', params.offset.toString());
+  }
+  if (params.startDate) {
+    queryParams.append('start_date', params.startDate);
+  }
+  if (params.endDate) {
+    queryParams.append('end_date', params.endDate);
+  }
+
+  const query = queryParams.toString();
+  return apiRequest<HistoryEntry[]>(`/radio/history${query ? `?${query}` : ''}`);
+}
+
+export async function getStationStats(
+  stationId: number,
+  days: number = 30
+): Promise<StationStats> {
+  return apiRequest<StationStats>(
+    `/radio/stations/${stationId}/stats?days=${days}`
+  );
+}
+
+export async function getTopTracks(
+  stationId?: number,
+  limit: number = 10,
+  days: number = 30
+): Promise<TrackPlayStats[]> {
+  const queryParams = new URLSearchParams();
+  if (stationId !== undefined) {
+    queryParams.append('station_id', stationId.toString());
+  }
+  queryParams.append('limit', limit.toString());
+  queryParams.append('days', days.toString());
+
+  const query = queryParams.toString();
+  return apiRequest<TrackPlayStats[]>(
+    `/radio/top-tracks?${query}`
+  );
 }

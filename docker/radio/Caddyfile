@@ -1,4 +1,4 @@
-:80 {
+music.kevinandrews.info {
     # Compression
     encode gzip
 
