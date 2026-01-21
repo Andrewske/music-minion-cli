@@ -8,12 +8,14 @@ import {
   deleteStation,
 } from '../api/radio';
 import type { Station } from '../api/radio';
+import { ScheduleEditorModal } from './ScheduleEditorModal';
 
 interface StationItemProps {
   station: Station;
   onActivate: (id: number) => void;
   onDeactivate: () => void;
   onDelete: (id: number) => void;
+  onEditSchedule?: (id: number, name: string) => void;
   isActivating: boolean;
   isDeleting: boolean;
 }
@@ -23,6 +25,7 @@ function StationItem({
   onActivate,
   onDeactivate,
   onDelete,
+  onEditSchedule,
   isActivating,
   isDeleting,
 }: StationItemProps): JSX.Element {
@@ -41,6 +44,13 @@ function StationItem({
       onDelete(station.id);
     }
   };
+
+  const handleEditSchedule = (e: React.MouseEvent): void => {
+    e.stopPropagation();
+    onEditSchedule?.(station.id, station.name);
+  };
+
+  const isMetaStation = station.playlist_id === null;
 
   return (
     <div
@@ -74,6 +84,23 @@ function StationItem({
       <div className="flex items-center gap-2">
         {station.is_active && (
           <span className="text-xs text-emerald-500 font-medium">LIVE</span>
+        )}
+        {isMetaStation && onEditSchedule && (
+          <button
+            onClick={handleEditSchedule}
+            className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-emerald-400 transition-opacity"
+            aria-label="Edit schedule"
+            title="Edit Schedule"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
+            </svg>
+          </button>
         )}
         <button
           onClick={handleDelete}
@@ -144,6 +171,10 @@ function CreateStationForm({
 
 export function StationsList(): JSX.Element {
   const [isCreating, setIsCreating] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState<{
+    stationId: number;
+    stationName: string;
+  } | null>(null);
   const queryClient = useQueryClient();
 
   const { data: stations, isLoading, error } = useQuery<Station[]>({
@@ -207,48 +238,60 @@ export function StationsList(): JSX.Element {
   }
 
   return (
-    <div className="bg-slate-900 rounded-lg p-4">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
-          Stations
-        </h3>
-        {!isCreating && (
-          <button
-            onClick={() => setIsCreating(true)}
-            className="text-xs text-emerald-500 hover:text-emerald-400 font-medium transition-colors"
-          >
-            + Add
-          </button>
+    <>
+      <div className="bg-slate-900 rounded-lg p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
+            Stations
+          </h3>
+          {!isCreating && (
+            <button
+              onClick={() => setIsCreating(true)}
+              className="text-xs text-emerald-500 hover:text-emerald-400 font-medium transition-colors"
+            >
+              + Add
+            </button>
+          )}
+        </div>
+
+        {isCreating && (
+          <div className="mb-4">
+            <CreateStationForm
+              onSubmit={(name) => createMutation.mutate(name)}
+              onCancel={() => setIsCreating(false)}
+              isCreating={createMutation.isPending}
+            />
+          </div>
+        )}
+
+        {!stations || stations.length === 0 ? (
+          <p className="text-slate-500 text-sm">No stations created</p>
+        ) : (
+          <div className="space-y-2">
+            {stations.map((station) => (
+              <StationItem
+                key={station.id}
+                station={station}
+                onActivate={(id) => activateMutation.mutate(id)}
+                onDeactivate={() => deactivateMutation.mutate()}
+                onDelete={(id) => deleteMutation.mutate(id)}
+                onEditSchedule={(id, name) => setEditingSchedule({ stationId: id, stationName: name })}
+                isActivating={activateMutation.isPending}
+                isDeleting={deleteMutation.isPending}
+              />
+            ))}
+          </div>
         )}
       </div>
 
-      {isCreating && (
-        <div className="mb-4">
-          <CreateStationForm
-            onSubmit={(name) => createMutation.mutate(name)}
-            onCancel={() => setIsCreating(false)}
-            isCreating={createMutation.isPending}
-          />
-        </div>
+      {editingSchedule && (
+        <ScheduleEditorModal
+          isOpen={true}
+          onClose={() => setEditingSchedule(null)}
+          stationId={editingSchedule.stationId}
+          stationName={editingSchedule.stationName}
+        />
       )}
-
-      {!stations || stations.length === 0 ? (
-        <p className="text-slate-500 text-sm">No stations created</p>
-      ) : (
-        <div className="space-y-2">
-          {stations.map((station) => (
-            <StationItem
-              key={station.id}
-              station={station}
-              onActivate={(id) => activateMutation.mutate(id)}
-              onDeactivate={() => deactivateMutation.mutate()}
-              onDelete={(id) => deleteMutation.mutate(id)}
-              isActivating={activateMutation.isPending}
-              isDeleting={deleteMutation.isPending}
-            />
-          ))}
-        </div>
-      )}
-    </div>
+    </>
   );
 }

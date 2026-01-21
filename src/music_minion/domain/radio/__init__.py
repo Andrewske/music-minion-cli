@@ -45,12 +45,23 @@ from .scheduler import (
     handle_track_unavailable,
     reset_scheduler_state,
 )
+from .history import (
+    HistoryEntry,
+    StationStats,
+    TrackPlayStats,
+    get_history_entries,
+    get_most_played_tracks,
+    get_station_stats,
+)
 
 __all__ = [
     # Models
     "Station",
     "ScheduleEntry",
     "NowPlaying",
+    "HistoryEntry",
+    "StationStats",
+    "TrackPlayStats",
     # Station CRUD
     "create_station",
     "get_station",
@@ -86,4 +97,8 @@ __all__ = [
     "handle_track_unavailable",
     "get_scheduler_info",
     "reset_scheduler_state",
+    # History & analytics
+    "get_history_entries",
+    "get_station_stats",
+    "get_most_played_tracks",
 ]

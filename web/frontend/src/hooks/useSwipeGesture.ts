@@ -37,7 +37,7 @@ export function useSwipeGesture({ onSwipeRight, onSwipeLeft }: UseSwipeGestureOp
 
   // Stabilize handler identity to prevent useDrag from recreating bindings on every render
   const handler = useCallback(
-    ({ active, movement: [mx], velocity: [vx] }) => {
+    ({ active, movement: [mx], velocity: [vx] }: { active: boolean; movement: [number, number]; velocity: [number, number] }) => {
       setIsDragging(active);
 
       if (active) {

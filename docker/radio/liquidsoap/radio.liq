@@ -103,16 +103,6 @@ radio = amplify(
   radio
 )
 
-# Normalize audio levels (target -6 LUFS for louder output)
-radio = normalize(
-  id="normalize",
-  target=-6.,
-  radio
-)
-
-# Additional volume boost (2x = +6dB)
-radio = amplify(id="volume_boost", 2.0, radio)
-
 # Smart crossfade between tracks (3 second duration)
 radio = crossfade(
   id="crossfade",

@@ -1,0 +1,352 @@
+import { useState } from 'react';
+import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
+import { getHistory, getStations, getStationStats, getTopTracks } from '../api/radio';
+import { StatCard } from './StatCard';
+import type { HistoryEntry } from '../api/radio';
+
+type DatePreset = 'last7' | 'last30' | 'all';
+
+interface DateRange {
+  startDate?: string;
+  endDate?: string;
+}
+
+function getDateRange(preset: DatePreset): DateRange {
+  const now = new Date();
+  const today = now.toISOString().split('T')[0];
+
+  switch (preset) {
+    case 'last7': {
+      const sevenDaysAgo = new Date(now);
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      return { startDate: sevenDaysAgo.toISOString().split('T')[0], endDate: today };
+    }
+    case 'last30': {
+      const thirtyDaysAgo = new Date(now);
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      return { startDate: thirtyDaysAgo.toISOString().split('T')[0], endDate: today };
+    }
+    case 'all':
+      return {};
+  }
+}
+
+function getPresetDays(preset: DatePreset): number | undefined {
+  switch (preset) {
+    case 'last7': return 7;
+    case 'last30': return 30;
+    case 'all': return undefined;
+  }
+}
+
+interface InlineErrorStateProps {
+  title: string;
+  message: string;
+  onRetry?: () => void;
+}
+
+function InlineErrorState({ title, message, onRetry }: InlineErrorStateProps) {
+  return (
+    <div className="bg-slate-900 border border-red-900/50 rounded-xl p-6">
+      <div className="text-center">
+        <div className="text-4xl mb-3">⚠️</div>
+        <h3 className="text-lg font-semibold text-red-400 mb-2">{title}</h3>
+        <p className="text-slate-400 text-sm mb-4">{message}</p>
+        {onRetry && (
+          <button
+            onClick={onRetry}
+            className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          >
+            Retry
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ message }: { message: string }) {
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 text-center">
+      <div className="text-4xl mb-3">📊</div>
+      <p className="text-slate-400">{message}</p>
+    </div>
+  );
+}
+
+export function HistoryPage(): JSX.Element {
+  const [selectedStationId, setSelectedStationId] = useState<number | null>(null);
+  const [datePreset, setDatePreset] = useState<DatePreset>('last30');
+
+  const dateRange = getDateRange(datePreset);
+  const days = getPresetDays(datePreset);
+
+  // Fetch stations for the dropdown
+  const { data: stations, isLoading: isStationsLoading } = useQuery({
+    queryKey: ['stations'],
+    queryFn: getStations,
+  });
+
+  // Fetch history with infinite pagination
+  const {
+    data: historyData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading: isHistoryLoading,
+    isError: isHistoryError,
+    error: historyError,
+    refetch: refetchHistory,
+  } = useInfiniteQuery({
+    queryKey: ['history', selectedStationId, dateRange.startDate, dateRange.endDate],
+    queryFn: ({ pageParam }) =>
+      getHistory({
+        stationId: selectedStationId ?? undefined,
+        limit: 50,
+        offset: pageParam,
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate,
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      return lastPage.length === 50 ? allPages.length * 50 : undefined;
+    },
+  });
+
+  // Fetch station stats (only when a station is selected)
+  const {
+    data: stats,
+    isLoading: isStatsLoading,
+    isError: isStatsError,
+    refetch: refetchStats,
+  } = useQuery({
+    queryKey: ['stationStats', selectedStationId, days],
+    queryFn: () => getStationStats(selectedStationId!, days ?? 30),
+    enabled: selectedStationId !== null,
+  });
+
+  // Fetch top tracks (only when a station is selected)
+  const {
+    data: topTracks,
+    isLoading: isTopTracksLoading,
+    isError: isTopTracksError,
+    refetch: refetchTopTracks,
+  } = useQuery({
+    queryKey: ['topTracks', selectedStationId, days],
+    queryFn: () => getTopTracks(selectedStationId ?? undefined, 10, days ?? 30),
+    enabled: selectedStationId !== null,
+  });
+
+  const allHistoryEntries = historyData?.pages.flat() ?? [];
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-white p-6">
+      <h1 className="text-2xl font-bold mb-6">Listening History</h1>
+
+      {/* Filters */}
+      <div className="mb-6 flex flex-wrap gap-4">
+        {/* Station Dropdown */}
+        <div>
+          <label className="block text-sm text-slate-400 mb-2">Station</label>
+          <select
+            value={selectedStationId ?? ''}
+            onChange={(e) => setSelectedStationId(e.target.value ? Number(e.target.value) : null)}
+            className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-emerald-500"
+            disabled={isStationsLoading}
+          >
+            <option value="">All Stations</option>
+            {stations?.map((station) => (
+              <option key={station.id} value={station.id}>
+                {station.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Date Preset Buttons */}
+        <div>
+          <label className="block text-sm text-slate-400 mb-2">Time Period</label>
+          <div className="flex gap-2">
+            {(['last7', 'last30', 'all'] as DatePreset[]).map((preset) => {
+              const labels: Record<DatePreset, string> = {
+                last7: 'Last 7 Days',
+                last30: 'Last 30 Days',
+                all: 'All Time',
+              };
+              return (
+                <button
+                  key={preset}
+                  onClick={() => setDatePreset(preset)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    datePreset === preset
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  {labels[preset]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Stats Cards - Only show when a station is selected */}
+      {selectedStationId === null ? (
+        <div className="mb-6 bg-slate-900 border border-slate-800 rounded-xl p-6 text-center">
+          <p className="text-slate-400">Select a station to view statistics</p>
+        </div>
+      ) : isStatsError ? (
+        <div className="mb-6">
+          <InlineErrorState
+            title="Failed to Load Stats"
+            message="Unable to fetch station statistics. Please try again."
+            onRetry={refetchStats}
+          />
+        </div>
+      ) : isStatsLoading ? (
+        <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl p-6 animate-pulse">
+              <div className="h-20"></div>
+            </div>
+          ))}
+        </div>
+      ) : stats ? (
+        <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <StatCard
+            icon="🎵"
+            value={stats.total_plays}
+            label="Total Plays"
+            subtitle={`In ${stats.station_name}`}
+          />
+          <StatCard
+            icon="⏱️"
+            value={`${(stats.total_minutes / 60).toFixed(1)}h`}
+            label="Hours Listened"
+            subtitle={`${stats.total_minutes.toFixed(0)} minutes`}
+          />
+          <StatCard
+            icon="🎼"
+            value={stats.unique_tracks}
+            label="Unique Tracks"
+            subtitle="Different tracks played"
+          />
+        </div>
+      ) : null}
+
+      {/* Top Tracks Section - Only show when a station is selected */}
+      {selectedStationId !== null && (
+        <div className="mb-6">
+          <h2 className="text-xl font-semibold mb-4">Top Tracks</h2>
+          {isTopTracksError ? (
+            <InlineErrorState
+              title="Failed to Load Top Tracks"
+              message="Unable to fetch top tracks. Please try again."
+              onRetry={refetchTopTracks}
+            />
+          ) : isTopTracksLoading ? (
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 animate-pulse">
+              <div className="space-y-3">
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} className="h-12"></div>
+                ))}
+              </div>
+            </div>
+          ) : topTracks && topTracks.length > 0 ? (
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+              <div className="space-y-3">
+                {topTracks.map((trackStat, index) => (
+                  <div
+                    key={`${trackStat.track.id}-${index}`}
+                    className="flex justify-between items-center py-2 border-b border-slate-800/50 last:border-0"
+                  >
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <span className="text-slate-400 text-sm w-6">#{index + 1}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-slate-200 font-medium truncate">
+                          {trackStat.track.title || 'Unknown Track'}
+                        </div>
+                        <div className="text-slate-400 text-sm truncate">
+                          {trackStat.track.artist || 'Unknown Artist'}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-slate-400 text-sm ml-2 whitespace-nowrap">
+                      {trackStat.play_count} plays
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <EmptyState message="No top tracks data available for this period" />
+          )}
+        </div>
+      )}
+
+      {/* History Timeline */}
+      <div>
+        <h2 className="text-xl font-semibold mb-4">Timeline</h2>
+        {isHistoryError ? (
+          <InlineErrorState
+            title="Failed to Load History"
+            message={historyError instanceof Error ? historyError.message : 'Unable to fetch listening history. Please try again.'}
+            onRetry={refetchHistory}
+          />
+        ) : isHistoryLoading ? (
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 animate-pulse">
+            <div className="space-y-4">
+              {[...Array(10)].map((_, i) => (
+                <div key={i} className="h-16"></div>
+              ))}
+            </div>
+          </div>
+        ) : allHistoryEntries.length > 0 ? (
+          <>
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+              <div className="space-y-4">
+                {allHistoryEntries.map((entry: HistoryEntry) => (
+                  <div
+                    key={entry.id}
+                    className="flex justify-between items-start py-3 border-b border-slate-800/50 last:border-0"
+                  >
+                    <div className="flex-1 min-w-0 mr-4">
+                      <div className="text-slate-200 font-medium truncate">
+                        {entry.track.title || 'Unknown Track'}
+                      </div>
+                      <div className="text-slate-400 text-sm truncate">
+                        {entry.track.artist || 'Unknown Artist'}
+                      </div>
+                      <div className="text-slate-500 text-xs mt-1">
+                        {entry.station_name} • {entry.source_type}
+                      </div>
+                    </div>
+                    <div className="text-slate-400 text-sm whitespace-nowrap">
+                      {new Date(entry.started_at).toLocaleString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Load More Button */}
+            {hasNextPage && (
+              <div className="mt-4 text-center">
+                <button
+                  onClick={() => fetchNextPage()}
+                  disabled={isFetchingNextPage}
+                  className="bg-slate-800 hover:bg-slate-700 text-white px-6 py-3 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isFetchingNextPage ? 'Loading...' : 'Load More'}
+                </button>
+              </div>
+            )}
+          </>
+        ) : (
+          <EmptyState message="No listening history found for this period" />
+        )}
+      </div>
+    </div>
+  );
+}

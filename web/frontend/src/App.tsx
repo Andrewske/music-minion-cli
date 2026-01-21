@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ComparisonView } from './components/ComparisonView';
 import { RadioPage } from './components/RadioPage';
+import { HistoryPage } from './components/HistoryPage';
 
-type View = 'radio' | 'comparison';
+type View = 'radio' | 'comparison' | 'history';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -53,6 +54,9 @@ function App(): JSX.Element {
             <NavButton active={view === 'radio'} onClick={() => setView('radio')}>
               Radio
             </NavButton>
+            <NavButton active={view === 'history'} onClick={() => setView('history')}>
+              History
+            </NavButton>
             <NavButton active={view === 'comparison'} onClick={() => setView('comparison')}>
               Ranking
             </NavButton>
@@ -60,7 +64,13 @@ function App(): JSX.Element {
         </nav>
 
         {/* Content */}
-        {view === 'radio' ? <RadioPage /> : <ComparisonView />}
+        {view === 'radio' ? (
+          <RadioPage />
+        ) : view === 'history' ? (
+          <HistoryPage />
+        ) : (
+          <ComparisonView />
+        )}
       </div>
     </QueryClientProvider>
   );
