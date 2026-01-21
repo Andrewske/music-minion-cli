@@ -228,4 +228,4 @@ class SkippedTracksResponse(BaseModel):
 
 class CreatePlaylistRequest(BaseModel):
     name: str
-    description: str = ""
+    description: Optional[str] = None

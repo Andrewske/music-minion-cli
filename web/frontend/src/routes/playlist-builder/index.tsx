@@ -20,11 +20,13 @@ function PlaylistSelection() {
   const createMutation = useMutation({
     mutationFn: (name: string) => createPlaylist(name),
     onSuccess: (playlist) => {
-      // Optimistically update cache
-      queryClient.setQueryData(['playlists'], (old: any) => [
-        ...(old || []),
-        playlist
-      ])
+      // Optimistically update cache with proper typing
+      queryClient.setQueryData<{ playlists: Playlist[] }>(
+        ['playlists'],
+        (old) => ({
+          playlists: [...(old?.playlists || []), playlist]
+        })
+      )
       // Navigate to builder with type-safe routing (using ID instead of name)
       navigate({
         to: '/playlist-builder/$playlistId',
