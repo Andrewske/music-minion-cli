@@ -267,6 +267,15 @@ export function useWavesurfer({ trackId, isPlaying, onFinish, onReady, onSeek, o
     };
   }, [isPlaying, seekRelative]);
 
+  // Listen for seek percent commands
+  useEffect(() => {
+    const handleSeekPercent = (e: CustomEvent<number>) => {
+      seekToPercent(e.detail);
+    };
+    window.addEventListener('music-minion-seek-percent', handleSeekPercent as EventListener);
+    return () => window.removeEventListener('music-minion-seek-percent', handleSeekPercent as EventListener);
+  }, [seekToPercent]);
+
   return {
     containerRef,
     currentTime,

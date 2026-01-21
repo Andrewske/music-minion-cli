@@ -1,9 +1,17 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { builderApi } from '../api/builder';
-import type { Filter } from '../api/builder';
+ import { useState } from 'react';
+ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+ import { builderApi } from '../api/builder';
+ import type { Filter } from '../api/builder';
+
+ export type SortField = 'artist' | 'title' | 'year' | 'bpm' | 'elo_rating';
+ export type SortDirection = 'asc' | 'desc';
 
 export function useBuilderSession(playlistId: number | null) {
   const queryClient = useQueryClient();
+
+  // Sort state
+  const [sortField, setSortField] = useState<SortField>('artist');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
   // Fetch active session (no polling - rely on manual refetch)
   const { data: session, isLoading, error } = useQuery({
@@ -107,6 +115,12 @@ export function useBuilderSession(playlistId: number | null) {
     // Filter state
     filters,
     updateFilters,
+
+    // Sort state
+    sortField,
+    sortDirection,
+    setSortField,
+    setSortDirection,
 
     // Loading states
     isAddingTrack: addTrack.isPending,
