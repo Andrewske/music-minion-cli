@@ -171,3 +171,56 @@ class PlaylistStatsResponse(BaseModel):
     quality: PlaylistQualityMetrics
     top_artists: list[ArtistStat]
     top_genres: list[GenreDistribution]
+
+
+# Playlist Builder Schemas
+
+
+class BuilderStartSessionRequest(BaseModel):
+    playlist_id: int
+
+
+class BuilderStartSessionResponse(BaseModel):
+    session_id: int
+    playlist_id: int
+    started_at: str
+    updated_at: str
+
+
+class SessionResponse(BaseModel):
+    id: int
+    playlist_id: int
+    last_processed_track_id: Optional[int] = None
+    started_at: str
+    updated_at: str
+
+
+class TrackActionResponse(BaseModel):
+    success: bool
+
+
+class Filter(BaseModel):
+    field: str
+    operator: str
+    value: str
+    conjunction: str = "AND"
+
+
+class UpdateFiltersRequest(BaseModel):
+    filters: list[Filter]
+
+
+class FiltersResponse(BaseModel):
+    filters: list[Filter]
+
+
+class CandidatesResponse(BaseModel):
+    candidates: list[dict]
+    total: int
+    limit: int
+    offset: int
+
+
+class SkippedTracksResponse(BaseModel):
+    skipped: list[dict]
+    total: int

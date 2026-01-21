@@ -10,6 +10,7 @@ from ..schemas import (
     ComparisonPair,
     TrackInfo,
 )
+from music_minion.ipc import send_command
 from music_minion.domain.rating.database import (
     get_filtered_tracks,
     get_or_create_rating,
@@ -259,6 +260,12 @@ async def start_comparison_session(
                 )
             except ValueError:
                 pass  # Not enough tracks for prefetch, that's fine
+
+        # Activate comparison mode in CLI context for web-winner hotkey
+        logger.info("Activating comparison mode in CLI context")
+        ipc_success, ipc_message = send_command("set-web-mode", ["comparison"])
+        if not ipc_success:
+            logger.warning(f"Failed to activate comparison mode: {ipc_message}")
 
         logger.info(
             f"Returning StartSessionResponse with session_id={session_id}, total_tracks={len(tracks)}"

@@ -3,7 +3,12 @@ import { useComparisonStore } from '../stores/comparisonStore';
 import { useRecordComparison, useArchiveTrack } from './useComparison';
 import type { RecordComparisonRequest } from '../types';
 
-export function useIPCWebSocket() {
+interface IPCWebSocketHandlers {
+  onBuilderAdd?: () => void;
+  onBuilderSkip?: () => void;
+}
+
+export function useIPCWebSocket(handlers?: IPCWebSocketHandlers) {
   // Mutation hooks are stable references from React Query
   const recordComparison = useRecordComparison();
   const archiveTrack = useArchiveTrack();
@@ -15,6 +20,12 @@ export function useIPCWebSocket() {
   const wasConnectedRef = useRef(false);  // Track if we ever successfully connected
   const reconnectAttemptsRef = useRef(0);  // Track reconnection attempts for backoff
   const maxReconnectAttempts = 10;  // Stop trying after 10 failed attempts
+
+  // Store handlers in ref to prevent reconnections when they change
+  const handlersRef = useRef(handlers);
+  useEffect(() => {
+    handlersRef.current = handlers;
+  }, [handlers]);
 
   const handleCommand = useCallback((command: string, args: string[]) => {
     // Read FRESH state when command is received (avoids stale closure)
@@ -124,6 +135,18 @@ export function useIPCWebSocket() {
 
           if (data.type === 'command') {
             handleCommand(data.command, data.args || []);
+          } else if (data.type === 'builder:add') {
+            // Builder mode: Add track
+            handlersRef.current?.onBuilderAdd?.();
+          } else if (data.type === 'builder:skip') {
+            // Builder mode: Skip track
+            handlersRef.current?.onBuilderSkip?.();
+          } else if (data.type === 'comparison:winner') {
+            // Comparison mode: Select track A as winner (via hotkey)
+            handleCommand('winner', []);
+          } else if (data.type === 'comparison:loser') {
+            // Comparison mode: Archive track A (via hotkey)
+            handleCommand('archive', []);
           } else if (data.type === 'shutdown') {
             // Backend is shutting down - pause all playback immediately
             console.log('Backend shutdown detected - pausing and reloading page');
