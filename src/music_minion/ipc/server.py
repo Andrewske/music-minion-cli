@@ -17,6 +17,22 @@ from music_minion import actions, notifications
 # WebSocket support (optional)
 WEBSOCKETS_AVAILABLE = False
 
+# Builder WebSocket Messages:
+#
+# Add track:
+# {
+#   "type": "builder:add",
+#   "playlist_id": 123,
+#   "timestamp": "2026-01-19T12:00:00Z"
+# }
+#
+# Skip track:
+# {
+#   "type": "builder:skip",
+#   "playlist_id": 123,
+#   "timestamp": "2026-01-19T12:00:00Z"
+# }
+
 
 def get_socket_path() -> Path:
     """
@@ -157,9 +173,14 @@ class IPCServer:
             import logging as std_logging
 
             # Suppress benign handshake/connection error logs
-            # Set to ERROR to suppress DEBUG/INFO noise while preserving real error visibility
+            # Set to CRITICAL to suppress ERROR-level "opening handshake failed" messages
+            # These occur during normal browser refresh/HMR/tab close and pollute blessed UI
             websockets_logger = std_logging.getLogger("websockets")
-            websockets_logger.setLevel(std_logging.ERROR)
+            websockets_logger.setLevel(std_logging.CRITICAL)
+
+            # Defense in depth: Add NullHandler to prevent lastResort stderr fallback
+            if not websockets_logger.handlers:
+                websockets_logger.addHandler(std_logging.NullHandler())
 
             # CRITICAL: Suppress asyncio logger to prevent stderr output in blessed UI
             # Why suppression is safe:
@@ -402,7 +423,8 @@ def process_ipc_command(
 
     try:
         # Check if it's a web control command
-        if command.startswith("web-"):
+        # web-winner and web-archive are context-aware - route through router
+        if command.startswith("web-") and command not in ("web-winner", "web-archive"):
             # Web control commands - broadcast to web clients
             web_command = command[4:]  # Remove "web-" prefix
             message = {"type": "command", "command": web_command, "args": args or []}
@@ -462,6 +484,38 @@ def process_ipc_command(
         # Regular command - route through router
         from music_minion import router  # Lazy import to break circular dependency
         ctx, should_continue = router.handle_command(ctx, command, args)
+
+        # Handle WebSocket broadcasts for context-aware web commands
+        if command == "web-winner" and ctx.active_web_mode == "builder" and ipc_server:
+            from datetime import datetime
+            broadcast_message = {
+                "type": "builder:add",
+                "playlist_id": ctx.active_builder_playlist_id,
+                "timestamp": datetime.now().isoformat()
+            }
+            ipc_server.broadcast_to_web_clients(broadcast_message)
+        elif command == "web-winner" and ctx.active_web_mode == "comparison" and ipc_server:
+            from datetime import datetime
+            broadcast_message = {
+                "type": "comparison:winner",
+                "timestamp": datetime.now().isoformat()
+            }
+            ipc_server.broadcast_to_web_clients(broadcast_message)
+        elif command == "web-archive" and ctx.active_web_mode == "builder" and ipc_server:
+            from datetime import datetime
+            broadcast_message = {
+                "type": "builder:skip",
+                "playlist_id": ctx.active_builder_playlist_id,
+                "timestamp": datetime.now().isoformat()
+            }
+            ipc_server.broadcast_to_web_clients(broadcast_message)
+        elif command == "web-archive" and ctx.active_web_mode == "comparison" and ipc_server:
+            from datetime import datetime
+            broadcast_message = {
+                "type": "comparison:loser",
+                "timestamp": datetime.now().isoformat()
+            }
+            ipc_server.broadcast_to_web_clients(broadcast_message)
 
         # Commands that succeed typically don't return explicit success messages
         # so we construct a generic success message
