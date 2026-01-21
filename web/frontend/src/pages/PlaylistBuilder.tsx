@@ -4,6 +4,7 @@ import { useBuilderSession } from '../hooks/useBuilderSession';
 import { useIPCWebSocket } from '../hooks/useIPCWebSocket';
 import { builderApi } from '../api/builder';
 import type { Track } from '../api/builder';
+import FilterPanel from '../components/builder/FilterPanel';
 
 interface PlaylistBuilderProps {
   playlistId: number;
@@ -149,10 +150,11 @@ export function PlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-6">
         {/* Left Panel: Filters */}
         <aside className="md:col-span-1 bg-slate-900 rounded-lg p-4">
-          <h3 className="text-lg font-semibold mb-4">Filters</h3>
           <FilterPanel
             filters={filters || []}
             onUpdate={(newFilters) => updateFilters.mutate(newFilters)}
+            isUpdating={updateFilters.isPending}
+            playlistId={playlistId}
           />
         </aside>
 
@@ -225,11 +227,4 @@ function StatsPanel({ stats }: { stats: { startedAt: string; updatedAt: string }
   );
 }
 
-function FilterPanel(_props: { filters: any[]; onUpdate: (filters: any[]) => void }) {
-  return (
-    <div className="text-gray-400">
-      <p className="text-sm">Filter UI coming soon</p>
-      <p className="text-xs mt-2">Genre, BPM, Year, Key</p>
-    </div>
-  );
-}
+
