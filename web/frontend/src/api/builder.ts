@@ -144,14 +144,20 @@ export const builderApi = {
   // Review
   getCandidates: async (
     playlistId: number,
-    limit: number = 50,
-    offset: number = 0
-  ): Promise<{ candidates: Track[]; total: number }> => {
+    limit: number = 100,
+    offset: number = 0,
+    sortField: string = 'artist',
+    sortDirection: string = 'asc'
+  ): Promise<{ candidates: Track[]; total: number; hasMore: boolean }> => {
     const res = await fetch(
-      `${API_BASE}/builder/candidates/${playlistId}?limit=${limit}&offset=${offset}`
+      `${API_BASE}/builder/candidates/${playlistId}?limit=${limit}&offset=${offset}&sort_field=${sortField}&sort_direction=${sortDirection}`
     );
     if (!res.ok) throw new Error('Failed to get candidates');
-    return res.json();
+    const data = await res.json();
+    return {
+      ...data,
+      hasMore: offset + data.candidates.length < data.total,
+    };
   },
 
   getSkippedTracks: async (playlistId: number): Promise<Track[]> => {

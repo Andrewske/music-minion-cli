@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
+import type { SortingState } from '@tanstack/react-table';
 import { useBuilderSession } from '../hooks/useBuilderSession';
 import { useIPCWebSocket } from '../hooks/useIPCWebSocket';
 import { builderApi } from '../api/builder';
 import type { Track } from '../api/builder';
-import { SortControl } from '../components/builder/SortControl';
+import { TrackQueueTable } from '../components/builder/TrackQueueTable';
 import FilterPanel from '../components/builder/FilterPanel';
 import { WaveformPlayer } from '../components/WaveformPlayer';
 interface PlaylistBuilderProps {
@@ -13,9 +14,19 @@ interface PlaylistBuilderProps {
 }
 
 export function PlaylistBuilder({ playlistId, playlistName }: PlaylistBuilderProps) {
-  const [candidateIndex, setCandidateIndex] = useState(0);
+  const [queueTrackId, setQueueTrackId] = useState<number | null>(null);
+  const [nowPlayingTrack, setNowPlayingTrack] = useState<Track | null>(null);
   const [isPlaying, setIsPlaying] = useState(true); // Auto-play by default
   const [loopEnabled, setLoopEnabled] = useState(true);
+
+  // Sorting state - controls server-side sort via API params
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: 'artist', desc: false }
+  ]);
+
+  // Derive sort params from TanStack state
+  const sortField = sorting[0]?.id ?? 'artist';
+  const sortDirection = sorting[0]?.desc ? 'desc' : 'asc';
 
   const {
     session,
@@ -26,31 +37,43 @@ export function PlaylistBuilder({ playlistId, playlistName }: PlaylistBuilderPro
     startSession,
     isAddingTrack,
     isSkippingTrack,
-    sortField,
-    sortDirection,
-    setSortField,
-    setSortDirection
   } = useBuilderSession(playlistId);
 
-  // Fetch candidates with sorting
-  const { data: candidatesData } = useQuery({
+  const PAGE_SIZE = 100;
+
+  // Fetch candidates with server-side sorting and pagination
+  const {
+    data: candidatesData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: ['builder-candidates', playlistId, sortField, sortDirection],
-    queryFn: () => playlistId ? builderApi.getCandidates(playlistId, 100, 0) : null,
+    queryFn: ({ pageParam = 0 }) =>
+      builderApi.getCandidates(playlistId, PAGE_SIZE, pageParam, sortField, sortDirection),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.hasMore ? allPages.length * PAGE_SIZE : undefined,
     enabled: !!playlistId && !!session,
-    select: (data) => {
-      if (!data?.candidates) return data;
-      const sorted = [...data.candidates].sort((a, b) => {
-        const aVal = a[sortField] ?? '';
-        const bVal = b[sortField] ?? '';
-        const cmp = typeof aVal === 'number' ? aVal - (bVal as number) : String(aVal).localeCompare(String(bVal));
-        return sortDirection === 'asc' ? cmp : -cmp;
-      });
-      return { ...data, candidates: sorted };
-    },
   });
 
-  // Current track from sorted candidates
-  const currentTrack = candidatesData?.candidates?.[candidateIndex] ?? null;
+  // Flatten pages into single array for table display
+  const candidates = candidatesData?.pages.flatMap(p => p.candidates) ?? [];
+
+  // Derive queue index from ID
+  const queueIndex = queueTrackId
+    ? candidates.findIndex(t => t.id === queueTrackId)
+    : 0;
+
+  // If queueTrackId not found (filtered out), reset to first track
+  useEffect(() => {
+    if (candidates.length > 0 && (queueTrackId === null || queueIndex === -1)) {
+      setQueueTrackId(candidates[0].id);
+    }
+  }, [candidates, queueTrackId, queueIndex]);
+
+  // Current track for display = nowPlayingTrack ?? candidates[queueIndex]
+  const currentTrack = nowPlayingTrack ?? candidates[queueIndex] ?? null;
 
 
 
@@ -65,10 +88,11 @@ export function PlaylistBuilder({ playlistId, playlistName }: PlaylistBuilderPro
     }
   }, [playlistId]);
 
-  // Reset candidate index when session starts or sorting changes
+  // Reset queue to first track when session starts or sorting changes
   useEffect(() => {
-    if (session) {
-      setCandidateIndex(0);
+    if (session && candidates.length > 0) {
+      setQueueTrackId(candidates[0].id);
+      setNowPlayingTrack(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, sortField, sortDirection]);
@@ -113,24 +137,32 @@ export function PlaylistBuilder({ playlistId, playlistName }: PlaylistBuilderPro
 
   // Handle add track
   const handleAdd = async () => {
-    if (!currentTrack || isAddingTrack || isSkippingTrack) return;
+    const trackToAdd = nowPlayingTrack ?? candidates[queueIndex];
+    if (!trackToAdd || isAddingTrack || isSkippingTrack) return;
 
-    const trackId = currentTrack.id;
-    await addTrack.mutateAsync(trackId);
+    await addTrack.mutateAsync(trackToAdd.id);
 
-    // Move to next candidate
-    setCandidateIndex(prev => prev + 1);
+    // Advance queue to next track by ID
+    const nextIndex = queueIndex + 1;
+    if (nextIndex < candidates.length) {
+      setQueueTrackId(candidates[nextIndex].id);
+    }
+    setNowPlayingTrack(null); // Clear preview state
   };
 
   // Handle skip track
   const handleSkip = async () => {
-    if (!currentTrack || isAddingTrack || isSkippingTrack) return;
+    const trackToSkip = nowPlayingTrack ?? candidates[queueIndex];
+    if (!trackToSkip || isAddingTrack || isSkippingTrack) return;
 
-    const trackId = currentTrack.id;
-    await skipTrack.mutateAsync(trackId);
+    await skipTrack.mutateAsync(trackToSkip.id);
 
-    // Move to next candidate
-    setCandidateIndex(prev => prev + 1);
+    // Advance queue to next track by ID
+    const nextIndex = queueIndex + 1;
+    if (nextIndex < candidates.length) {
+      setQueueTrackId(candidates[nextIndex].id);
+    }
+    setNowPlayingTrack(null); // Clear preview state
   };
 
   if (!session) {
@@ -156,18 +188,9 @@ export function PlaylistBuilder({ playlistId, playlistName }: PlaylistBuilderPro
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
-
-
-
-      {/* Header with playlist name and sort controls */}
+      {/* Header with playlist name */}
       <div className="flex justify-between items-center mb-4 px-6 pt-6">
         <h2 className="text-xl font-semibold">Building: {playlistName}</h2>
-        <SortControl
-          sortField={sortField}
-          sortDirection={sortDirection}
-          onSortFieldChange={setSortField}
-          onSortDirectionChange={setSortDirection}
-        />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 px-6 pb-6">
@@ -183,7 +206,7 @@ export function PlaylistBuilder({ playlistId, playlistName }: PlaylistBuilderPro
 
         {/* Center: Track Player */}
         <main className="md:col-span-3">
-          {currentTrack && candidateIndex < (candidatesData?.candidates?.length ?? 0) ? (
+          {currentTrack && queueIndex < candidates.length ? (
             <div className="bg-slate-900 rounded-lg p-8">
               <TrackDisplay track={currentTrack} />
 
@@ -243,15 +266,34 @@ export function PlaylistBuilder({ playlistId, playlistName }: PlaylistBuilderPro
                 </button>
               </div>
 
+              {/* Track Queue Table */}
+              <div className="mt-8">
+                <TrackQueueTable
+                  tracks={candidates}
+                  queueIndex={queueIndex >= 0 ? queueIndex : 0}
+                  nowPlayingId={nowPlayingTrack?.id ?? null}
+                  onTrackClick={(track) => {
+                    // No-op if clicking already-playing track
+                    if (track.id === nowPlayingTrack?.id) return;
+                    setNowPlayingTrack(track);
+                  }}
+                  sorting={sorting}
+                  onSortingChange={setSorting}
+                  onLoadMore={() => fetchNextPage()}
+                  hasMore={hasNextPage ?? false}
+                  isLoadingMore={isFetchingNextPage}
+                />
+              </div>
+
               <StatsPanel stats={stats} />
             </div>
           ) : (
             <div className="bg-slate-900 rounded-lg p-8 text-center">
               <h3 className="text-2xl font-bold mb-2">
-                {candidateIndex >= (candidatesData?.candidates?.length ?? 0) ? 'No more candidates' : 'Loading candidates...'}
+                {queueIndex >= candidates.length ? 'No more candidates' : 'Loading candidates...'}
               </h3>
               <p className="text-gray-400">
-                {candidateIndex >= (candidatesData?.candidates?.length ?? 0)
+                {queueIndex >= candidates.length
                   ? 'Adjust your filters or review skipped tracks'
                   : 'Fetching tracks that match your criteria'
                 }
