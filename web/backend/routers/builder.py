@@ -264,22 +264,36 @@ async def clear_filters(playlist_id: int):
 
 @router.get("/candidates/{playlist_id}", response_model=CandidatesResponse)
 async def get_candidates(
-    playlist_id: int, limit: int = 50, offset: int = 0
+    playlist_id: int,
+    limit: int = 100,
+    offset: int = 0,
+    sort_field: str = "artist",
+    sort_direction: str = "asc",
 ):
-    """Get paginated list of candidate tracks."""
+    """Get paginated list of candidate tracks with server-side sorting.
+
+    Query params:
+        limit: Tracks per page (default 100)
+        offset: Number of tracks to skip
+        sort_field: Column to sort by (artist, title, year, bpm, genre, key_signature, elo_rating)
+        sort_direction: 'asc' or 'desc'
+    """
     try:
         # Validate playlist
         _validate_manual_playlist(playlist_id)
 
-        # Get all candidates (already limited to 100 by domain logic)
-        all_candidates = builder.get_candidate_tracks(playlist_id)
-
-        # Apply pagination
-        paginated = all_candidates[offset : offset + limit]
+        # Get candidates with server-side sorting and pagination
+        candidates, total = builder.get_candidate_tracks(
+            playlist_id,
+            sort_field=sort_field,
+            sort_direction=sort_direction,
+            limit=limit,
+            offset=offset,
+        )
 
         return CandidatesResponse(
-            candidates=paginated,
-            total=len(all_candidates),
+            candidates=candidates,
+            total=total,
             limit=limit,
             offset=offset,
         )

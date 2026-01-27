@@ -12,7 +12,7 @@ from music_minion.core.database import get_db_connection
 
 
 # Valid filter fields (must match tracks table columns)
-VALID_FIELDS = {"title", "artist", "album", "genre", "year", "bpm", "key"}
+VALID_FIELDS = {"title", "artist", "album", "genre", "year", "bpm", "key", "local_path"}
 
 # Text operators for string fields
 TEXT_OPERATORS = {"contains", "starts_with", "ends_with", "equals", "not_equals"}
@@ -22,7 +22,7 @@ NUMERIC_OPERATORS = {"equals", "not_equals", "gt", "lt", "gte", "lte"}
 
 # Field type mapping
 NUMERIC_FIELDS = {"year", "bpm"}
-TEXT_FIELDS = {"title", "artist", "album", "genre", "key"}
+TEXT_FIELDS = {"title", "artist", "album", "genre", "key", "local_path"}
 
 # Field name to column name mapping (for SQL safety)
 FIELD_TO_COLUMN = {
@@ -33,6 +33,7 @@ FIELD_TO_COLUMN = {
     "year": "year",
     "bpm": "bpm",
     "key": "key_signature",  # Note: database column is key_signature
+    "local_path": "local_path",
 }
 
 

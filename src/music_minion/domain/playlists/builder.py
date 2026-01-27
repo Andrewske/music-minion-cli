@@ -106,8 +106,14 @@ def clear_builder_filters(playlist_id: int) -> None:
 # Candidate Selection
 
 
-def get_candidate_tracks(playlist_id: int) -> list[dict]:
-    """Get all eligible candidate tracks.
+def get_candidate_tracks(
+    playlist_id: int,
+    sort_field: str = "artist",
+    sort_direction: str = "asc",
+    limit: int = 100,
+    offset: int = 0,
+) -> tuple[list[dict], int]:
+    """Get paginated candidate tracks with server-side sorting.
 
     Returns tracks that:
     - Match builder filters (if any set)
@@ -115,15 +121,35 @@ def get_candidate_tracks(playlist_id: int) -> list[dict]:
     - Are NOT in the skipped list
     - Are NOT archived
 
-    Returns up to 100 random candidates for performance.
-    Includes ELO rating data.
-
     Args:
         playlist_id: Playlist ID
+        sort_field: Column to sort by (artist, title, year, bpm, genre, key_signature, elo_rating)
+        sort_direction: 'asc' or 'desc'
+        limit: Tracks per page (default 100)
+        offset: Number of tracks to skip
 
     Returns:
-        List of track dictionaries with metadata and ratings
+        Tuple of (tracks list, total count)
     """
+    # Validate sort_field against allowlist to prevent SQL injection
+    ALLOWED_SORT_FIELDS = {
+        "artist",
+        "title",
+        "year",
+        "bpm",
+        "genre",
+        "key_signature",
+        "elo_rating",
+    }
+    if sort_field not in ALLOWED_SORT_FIELDS:
+        sort_field = "artist"
+
+    # Map elo_rating to the computed column
+    order_column = (
+        "COALESCE(er.rating, 1500.0)" if sort_field == "elo_rating" else f"t.{sort_field}"
+    )
+    order_dir = "DESC" if sort_direction == "desc" else "ASC"
+
     # Get builder filters
     filters = get_builder_filters(playlist_id)
 
@@ -136,6 +162,33 @@ def get_candidate_tracks(playlist_id: int) -> list[dict]:
 
     # Query with NOT EXISTS optimization for better performance
     with get_db_connection() as conn:
+        # First get total count (without LIMIT/OFFSET)
+        count_query = f"""
+            SELECT COUNT(DISTINCT t.id)
+            FROM tracks t
+            LEFT JOIN elo_ratings er ON t.id = er.track_id
+            WHERE {filter_where}
+                NOT EXISTS (
+                    SELECT 1 FROM playlist_tracks
+                    WHERE playlist_id = ? AND track_id = t.id
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM playlist_builder_skipped
+                    WHERE playlist_id = ? AND track_id = t.id
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM ratings
+                    WHERE rating_type = 'archive' AND track_id = t.id
+                )
+        """
+
+        cursor = conn.execute(
+            count_query,
+            tuple(filter_params) + (playlist_id, playlist_id),
+        )
+        total_count = cursor.fetchone()[0]
+
+        # Then get paginated results
         query = f"""
             SELECT DISTINCT
                 t.*,
@@ -157,15 +210,17 @@ def get_candidate_tracks(playlist_id: int) -> list[dict]:
                     SELECT 1 FROM ratings
                     WHERE rating_type = 'archive' AND track_id = t.id
                 )
-            ORDER BY RANDOM()
-            LIMIT 100
+            ORDER BY {order_column} {order_dir} NULLS LAST, t.id ASC
+            LIMIT ? OFFSET ?
         """
 
         cursor = conn.execute(
             query,
-            tuple(filter_params) + (playlist_id, playlist_id),
+            tuple(filter_params) + (playlist_id, playlist_id, limit, offset),
         )
-        return [dict(row) for row in cursor.fetchall()]
+        tracks = [dict(row) for row in cursor.fetchall()]
+
+        return (tracks, total_count)
 
 
 def get_next_candidate(
@@ -183,8 +238,8 @@ def get_next_candidate(
     Returns:
         Track dict or None
     """
-    # Get all candidates
-    candidates = get_candidate_tracks(playlist_id)
+    # Get all candidates (first page, random order)
+    candidates, _ = get_candidate_tracks(playlist_id, sort_field="artist", sort_direction="asc", limit=100, offset=0)
 
     # Filter out excluded track
     if exclude_track_id is not None:
