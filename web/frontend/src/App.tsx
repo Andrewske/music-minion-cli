@@ -3,8 +3,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ComparisonView } from './components/ComparisonView';
 import { RadioPage } from './components/RadioPage';
 import { HistoryPage } from './components/HistoryPage';
+import { YouTubeImport } from './components/YouTube/YouTubeImport';
 
-type View = 'radio' | 'comparison' | 'history';
+type View = 'radio' | 'comparison' | 'history' | 'youtube';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -60,6 +61,9 @@ function App(): JSX.Element {
             <NavButton active={view === 'comparison'} onClick={() => setView('comparison')}>
               Ranking
             </NavButton>
+            <NavButton active={view === 'youtube'} onClick={() => setView('youtube')}>
+              YouTube
+            </NavButton>
           </div>
         </nav>
 
@@ -68,6 +72,8 @@ function App(): JSX.Element {
           <RadioPage />
         ) : view === 'history' ? (
           <HistoryPage />
+        ) : view === 'youtube' ? (
+          <YouTubeImport />
         ) : (
           <ComparisonView />
         )}

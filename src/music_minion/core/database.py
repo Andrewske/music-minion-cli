@@ -2103,6 +2103,158 @@ def batch_upsert_tracks(tracks: list[Any]) -> tuple[int, int]:
     return added, updated
 
 
+# YouTube-specific track functions
+
+
+def insert_youtube_track(
+    local_path: str,
+    youtube_id: str,
+    title: str,
+    artist: Optional[str],
+    album: Optional[str],
+    duration: float,
+) -> int:
+    """Insert a YouTube-sourced track into database.
+
+    Sets:
+    - source = 'youtube'
+    - youtube_synced_at = current timestamp
+    - youtube_id = provided video ID
+    - local_path = path to downloaded file
+
+    Args:
+        local_path: Path to downloaded video file
+        youtube_id: YouTube video ID (11 characters)
+        title: Track title
+        artist: Track artist (optional)
+        album: Album name (optional)
+        duration: Duration in seconds
+
+    Returns:
+        Track ID of newly inserted track
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO tracks (
+                local_path, youtube_id, title, artist, album, duration,
+                source, youtube_synced_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 'youtube', ?)
+            """,
+            (local_path, youtube_id, title, artist, album, duration, datetime.now()),
+        )
+        conn.commit()
+        return cursor.lastrowid
+
+
+def batch_insert_youtube_tracks(tracks_data: list[dict]) -> list[int]:
+    """Batch insert multiple YouTube tracks efficiently.
+
+    Uses SQLite RETURNING clause (requires SQLite 3.35+) to get all IDs in one query.
+
+    Args:
+        tracks_data: List of dicts with keys:
+            local_path, youtube_id, title, artist, album, duration
+
+    Returns:
+        List of track IDs for inserted tracks (same order as input)
+
+    Raises:
+        sqlite3.IntegrityError: If any youtube_id already exists (transaction rolls back)
+    """
+    if not tracks_data:
+        return []
+
+    with get_db_connection() as conn:
+        # Use RETURNING clause to get all IDs in one query
+        placeholders = ", ".join(["(?, ?, ?, ?, ?, ?, 'youtube', ?)"] * len(tracks_data))
+
+        # Flatten the data with youtube_synced_at timestamp
+        synced_at = datetime.now()
+        values = []
+        for track in tracks_data:
+            values.extend(
+                [
+                    track["local_path"],
+                    track["youtube_id"],
+                    track["title"],
+                    track.get("artist"),
+                    track.get("album"),
+                    track["duration"],
+                    synced_at,
+                ]
+            )
+
+        cursor = conn.execute(
+            f"""
+            INSERT INTO tracks (
+                local_path, youtube_id, title, artist, album, duration,
+                source, youtube_synced_at
+            )
+            VALUES {placeholders}
+            RETURNING id
+            """,
+            values,
+        )
+
+        # Extract IDs in order
+        track_ids = [row[0] for row in cursor.fetchall()]
+        conn.commit()
+
+        return track_ids
+
+
+def get_track_by_youtube_id(youtube_id: str) -> Optional[Track]:
+    """Check if a YouTube video is already imported.
+
+    Args:
+        youtube_id: YouTube video ID (11 characters)
+
+    Returns:
+        Track object if found, None otherwise
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT * FROM tracks WHERE youtube_id = ?
+            """,
+            (youtube_id,),
+        )
+        row = cursor.fetchone()
+
+        if row:
+            return db_track_to_library_track(dict(row))
+
+        return None
+
+
+def get_existing_youtube_ids(youtube_ids: list[str]) -> set[str]:
+    """Batch check which YouTube IDs already exist in database.
+
+    Args:
+        youtube_ids: List of YouTube video IDs to check
+
+    Returns:
+        Set of youtube_ids that already exist
+    """
+    if not youtube_ids:
+        return set()
+
+    with get_db_connection() as conn:
+        # Build parameterized query dynamically
+        placeholders = ", ".join("?" * len(youtube_ids))
+        cursor = conn.execute(
+            f"""
+            SELECT youtube_id FROM tracks WHERE youtube_id IN ({placeholders})
+            """,
+            youtube_ids,
+        )
+
+        # Return set for O(1) lookup
+        return {row["youtube_id"] for row in cursor.fetchall()}
+
+
 def update_ai_processed_note(note_id: int, ai_tags: str) -> None:
     """Mark a note as processed by AI and store extracted tags."""
     with get_db_connection() as conn:
