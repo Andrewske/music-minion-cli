@@ -4,6 +4,8 @@ Library management command handlers for Music Minion CLI.
 Handles: library, library list, library active, library sync, library auth, library device
 """
 
+import argparse
+import re
 import threading
 from typing import Any, Callable, Optional
 
@@ -1642,5 +1644,145 @@ def clear_spotify_device(ctx: AppContext) -> tuple[AppContext, bool]:
 
     except Exception as e:
         log(f"❌ Error clearing device preference: {e}", level="error")
+
+    return ctx, True
+
+
+# YouTube import commands
+
+
+def handle_youtube_add(ctx: AppContext, args: list[str]) -> tuple[AppContext, bool]:
+    """Import a single YouTube video with optional metadata.
+
+    Usage: youtube add <url> [--artist <name>] [--title <name>] [--album <name>]
+
+    Args:
+        ctx: Application context
+        args: Command arguments
+
+    Returns:
+        (ctx, True)
+    """
+    parser = argparse.ArgumentParser(
+        prog="youtube add", description="Import a YouTube video"
+    )
+    parser.add_argument("url", help="YouTube video URL")
+    parser.add_argument("--artist", help="Artist name (default: video uploader)")
+    parser.add_argument("--title", help="Track title (default: video title)")
+    parser.add_argument("--album", help="Album name (default: empty)")
+
+    try:
+        parsed = parser.parse_args(args)
+    except SystemExit:
+        # argparse calls sys.exit on error, catch it
+        return ctx, True
+
+    url = parsed.url
+    artist = parsed.artist
+    title = parsed.title
+    album = parsed.album
+
+    log(f"📥 Importing YouTube video...", level="info")
+    if artist or title or album:
+        log(
+            f"   Using custom metadata: {artist or '[uploader]'} - {title or '[video title]'}",
+            level="info",
+        )
+
+    try:
+        # Import from the youtube provider
+        from music_minion.domain.library.providers import youtube
+
+        track = youtube.import_single_video(
+            url=url, artist=artist, title=title, album=album
+        )
+
+        log(f"✓ Imported: {track.artist} - {track.title}", level="info")
+        log(f"  File: {track.local_path}", level="info")
+        log(f"  Track ID: {track.id}", level="info")
+
+    except youtube.DuplicateVideoError as e:
+        log(f"⚠ Video already imported as track #{e.track_id}", level="warning")
+    except youtube.InvalidYouTubeURLError as e:
+        log(f"❌ Invalid YouTube URL: {e}", level="error")
+    except youtube.AgeRestrictedError as e:
+        log(f"❌ {e}", level="error")
+        log("   Age-restricted videos require login (not supported)", level="info")
+    except youtube.VideoUnavailableError as e:
+        log(f"❌ {e}", level="error")
+    except youtube.InsufficientSpaceError as e:
+        log(f"❌ {e}", level="error")
+    except youtube.YouTubeError as e:
+        log(f"❌ Import failed: {e}", level="error")
+    except Exception as e:
+        log(f"❌ Unexpected error: {e}", level="error")
+
+    return ctx, True
+
+
+def handle_youtube_add_playlist(
+    ctx: AppContext, args: list[str]
+) -> tuple[AppContext, bool]:
+    """Import all videos from a YouTube playlist.
+
+    Usage: youtube add-playlist <playlist_id or url>
+
+    Args:
+        ctx: Application context
+        args: Command arguments
+
+    Returns:
+        (ctx, True)
+    """
+    parser = argparse.ArgumentParser(
+        prog="youtube add-playlist", description="Import a YouTube playlist"
+    )
+    parser.add_argument("playlist", help="YouTube playlist ID or URL")
+
+    try:
+        parsed = parser.parse_args(args)
+    except SystemExit:
+        # argparse calls sys.exit on error, catch it
+        return ctx, True
+
+    playlist_arg = parsed.playlist
+
+    # Extract playlist ID from URL if necessary
+    # Pattern: list=([a-zA-Z0-9_-]+)
+    match = re.search(r"list=([a-zA-Z0-9_-]+)", playlist_arg)
+    if match:
+        playlist_id = match.group(1)
+        log(f"📥 Importing playlist: {playlist_id}", level="info")
+    else:
+        # Assume it's already a playlist ID
+        playlist_id = playlist_arg
+        log(f"📥 Importing playlist: {playlist_id}", level="info")
+
+    try:
+        # Import from the youtube provider
+        from music_minion.domain.library.providers import youtube
+
+        result = youtube.import_playlist(playlist_id)
+
+        log(f"✓ Playlist import complete!", level="info")
+        log(f"  Imported: {result.imported_count} tracks", level="info")
+        log(f"  Skipped: {result.skipped_count} duplicates", level="info")
+
+        if result.failed_count > 0:
+            log(f"  Failed: {result.failed_count} videos", level="warning")
+            for video_id, error in result.failures[:5]:  # Show first 5 failures
+                log(f"    - {video_id}: {error}", level="warning")
+            if len(result.failures) > 5:
+                log(
+                    f"    ... and {len(result.failures) - 5} more failures",
+                    level="warning",
+                )
+
+    except youtube.InsufficientSpaceError as e:
+        log(f"❌ {e}", level="error")
+    except youtube.YouTubeError as e:
+        log(f"❌ Import failed: {e}", level="error")
+    except Exception as e:
+        log(f"❌ Unexpected error: {e}", level="error")
 
     return ctx, True

@@ -28,6 +28,7 @@ dependencies = [
     "python-multipart>=0.0.6", # Form data parsing
     "pydub>=0.25.1", # Audio waveform (requires ffmpeg runtime)
     "psycopg2-binary>=2.9.9", # PostgreSQL adapter
+    "yt-dlp>=2024.1.0", # YouTube video downloads
 ]
 
 [project.optional-dependencies]
@@ -51,4 +52,3 @@ dev = [
 ]
 
 [tool.uv]
-include = ["src", "web"]
