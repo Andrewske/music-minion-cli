@@ -206,12 +206,26 @@ class Filter(BaseModel):
     conjunction: str = "AND"
 
 
+class FilterResponse(BaseModel):
+    """Filter with ID - used for smart playlist filters."""
+    id: int
+    field: str
+    operator: str
+    value: str
+    conjunction: str
+
+
 class UpdateFiltersRequest(BaseModel):
     filters: list[Filter]
 
 
 class FiltersResponse(BaseModel):
     filters: list[Filter]
+
+
+class SmartFiltersResponse(BaseModel):
+    """Response for smart playlist filters."""
+    filters: list[FilterResponse]
 
 
 class CandidatesResponse(BaseModel):
