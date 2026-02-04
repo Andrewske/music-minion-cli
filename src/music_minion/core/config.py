@@ -260,6 +260,22 @@ def _find_project_config() -> Optional[Path]:
     return None
 
 
+def get_project_root() -> Optional[Path]:
+    """Get project root directory by finding pyproject.toml.
+
+    Returns:
+        Path to project root, or None if not in a project context.
+    """
+    try:
+        current = Path(__file__).resolve().parent
+        for parent in [current] + list(current.parents):
+            if (parent / "pyproject.toml").exists():
+                return parent
+    except Exception:
+        pass
+    return None
+
+
 def get_config_path() -> Path:
     """Get the main configuration file path.
 

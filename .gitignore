@@ -40,6 +40,7 @@ config.toml
 
 *.log
 *.backup
+*.backup.last_sync
 
 # Temporary scripts and data files (keep organized in scripts/ directory)
 /check_*.py

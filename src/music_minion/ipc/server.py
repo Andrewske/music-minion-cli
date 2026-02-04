@@ -178,6 +178,11 @@ class IPCServer:
             websockets_logger = std_logging.getLogger("websockets")
             websockets_logger.setLevel(std_logging.CRITICAL)
 
+            # Also suppress websockets.server logger for defense in depth
+            # This logger emits the "opening handshake failed" message at ERROR level
+            server_logger = std_logging.getLogger("websockets.server")
+            server_logger.setLevel(std_logging.CRITICAL)
+
             # Defense in depth: Add NullHandler to prevent lastResort stderr fallback
             if not websockets_logger.handlers:
                 websockets_logger.addHandler(std_logging.NullHandler())
@@ -222,6 +227,8 @@ class IPCServer:
                 pass  # Normal closure
             except websockets.InvalidHandshake:
                 pass  # Handshake failed - benign (HMR, refresh, etc.)
+            except websockets.exceptions.InvalidMessage:
+                pass  # Invalid HTTP request - benign (dev tools, preflight, etc.)
             except OSError as e:
                 if "Connection reset" in str(e) or "Broken pipe" in str(e):
                     pass  # Benign network error

@@ -34,5 +34,8 @@ class Track(NamedTuple):
     spotify_id: Optional[str] = None  # Spotify track ID
     youtube_id: Optional[str] = None  # YouTube video ID
 
+    # Source URL for streaming tracks (permalink for yt-dlp resolution)
+    source_url: Optional[str] = None  # SoundCloud/YouTube permalink URL
+
     # Database ID (None for tracks not yet persisted to database)
     id: Optional[int] = None  # Database track ID

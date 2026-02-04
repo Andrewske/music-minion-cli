@@ -18,6 +18,10 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8642',
         changeOrigin: true
+      },
+      '/stream': {
+        target: 'http://localhost:8001',
+        changeOrigin: true
       }
     }
   }

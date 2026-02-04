@@ -1,0 +1,30 @@
+services:
+  icecast:
+    image: infiniteproject/icecast
+    container_name: radio-icecast
+    ports:
+      - "8001:8000"  # External 8001 -> Internal 8000 (avoids conflict with FastAPI on 8000)
+    volumes:
+      - ./icecast.xml:/etc/icecast.xml:ro
+    restart: unless-stopped
+
+  liquidsoap:
+    build: ./liquidsoap
+    container_name: radio-liquidsoap
+    depends_on:
+      - icecast
+    volumes:
+      - ~/Music:/home/kevin/Music:ro  # Mount entire Music dir so all paths work
+      - ~/music:/home/kevin/music:ro  # Mount lowercase music dir (YouTube downloads)
+      - ./liquidsoap/radio.liq:/etc/liquidsoap/radio.liq:ro
+    ports:
+      - "1234:1234"  # Telnet control port
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - ICECAST_HOST=icecast
+      - ICECAST_PORT=8000
+      - ICECAST_PASSWORD=hackme
+      - ICECAST_MOUNT=/stream
+      - SCHEDULER_URL=http://host.docker.internal:8888/api/radio/next-track

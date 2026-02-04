@@ -243,6 +243,8 @@ Library Commands:
   spotify device clear             Clear device preference
   youtube auth                     Authenticate YouTube
   youtube sync                     Sync YouTube library
+  youtube add <url>                Import single YouTube video
+  youtube add-playlist <id/url>    Import entire YouTube playlist
 
   Legacy syntax (still supported):
   auth                             Authenticate with active library provider
@@ -560,10 +562,14 @@ def handle_command(
             return library.handle_library_command(ctx, ["auth", "youtube"] + args[1:])
         elif args[0] == "sync":
             return library.handle_library_command(ctx, ["sync", "youtube"] + args[1:])
+        elif args[0] == "add":
+            return library.handle_youtube_add(ctx, args[1:])
+        elif args[0] == "add-playlist":
+            return library.handle_youtube_add_playlist(ctx, args[1:])
         else:
             logger.warning(f"Unknown youtube subcommand: '{args[0]}'")
             log(
-                f"Unknown youtube subcommand: '{args[0]}'. Available: auth, sync",
+                f"Unknown youtube subcommand: '{args[0]}'. Available: auth, sync, add, add-playlist",
                 level="error",
             )
             return ctx, True

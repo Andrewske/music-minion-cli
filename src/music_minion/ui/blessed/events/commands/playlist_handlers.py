@@ -127,9 +127,9 @@ def handle_playlist_deletion(
         )
         return ctx, ui_state
 
-    # Check if it's the active playlist (stored in database, not context)
-    active_pl = playlists.get_active_playlist()
-    is_active = active_pl is not None and active_pl["id"] == pl["id"]
+    # Check if it's the active playlist
+    active_playlist = playlists.get_active_playlist()
+    is_active = active_playlist is not None and active_playlist["id"] == pl["id"]
 
     # Delete the playlist
     try:

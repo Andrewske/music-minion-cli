@@ -15,7 +15,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 27
+SCHEMA_VERSION = 30
 
 
 def get_database_path() -> Path:
@@ -996,6 +996,141 @@ def migrate_database(conn, current_version: int) -> None:
         """)
 
         logger.info("Migration to schema version 27 complete")
+        conn.commit()
+
+    if current_version < 28:
+        # Migration from v27 to v28: Add personal radio station tables
+        logger.info("Migrating database to schema version 28 (Personal Radio)...")
+
+        # Stations table - links to existing playlists with radio-specific metadata
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS stations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                playlist_id INTEGER REFERENCES playlists(id) ON DELETE SET NULL,
+                mode TEXT NOT NULL DEFAULT 'shuffle',  -- 'shuffle' | 'queue'
+                is_active BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Station schedule - time ranges for meta-stations (like Main)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS station_schedule (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                station_id INTEGER NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
+                start_time TEXT NOT NULL,  -- "06:00" format
+                end_time TEXT NOT NULL,    -- "09:00" format
+                target_station_id INTEGER NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
+                position INTEGER DEFAULT 0,  -- Order for overlapping ranges
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Radio playback history
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS radio_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                station_id INTEGER REFERENCES stations(id) ON DELETE SET NULL,
+                track_id INTEGER REFERENCES tracks(id) ON DELETE SET NULL,
+                source_type TEXT NOT NULL,  -- 'local' | 'youtube' | 'spotify' | 'soundcloud'
+                source_url TEXT,            -- For non-local sources
+                started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                ended_at TIMESTAMP,
+                position_ms INTEGER DEFAULT 0  -- Where in track we started
+            )
+        """)
+
+        # Radio state for resume after restart
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS radio_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                active_station_id INTEGER REFERENCES stations(id) ON DELETE SET NULL,
+                started_at TIMESTAMP,
+                last_track_id INTEGER REFERENCES tracks(id) ON DELETE SET NULL,
+                last_position_ms INTEGER DEFAULT 0,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Initialize radio state with no active station
+        conn.execute("""
+            INSERT OR IGNORE INTO radio_state (id, active_station_id, last_position_ms)
+            VALUES (1, NULL, 0)
+        """)
+
+        # Session-level skipped tracks (cleared daily with shuffle reseed)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS radio_skipped (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                station_id INTEGER NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
+                track_id INTEGER REFERENCES tracks(id) ON DELETE CASCADE,
+                source_url TEXT,
+                skipped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                skip_date DATE DEFAULT (DATE('now')),  -- For daily clearing
+                reason TEXT  -- 'unavailable' | 'error'
+            )
+        """)
+
+        # Create indexes for performance
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_station_schedule_station ON station_schedule(station_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_station_schedule_target ON station_schedule(target_station_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_radio_history_station ON radio_history(station_id, started_at DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_radio_history_track ON radio_history(track_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_radio_skipped_station_date ON radio_skipped(station_id, skip_date)"
+        )
+
+        logger.info("Migration to schema version 28 complete")
+        conn.commit()
+
+    if current_version < 29:
+        # Migration from v28 to v29: Add source_url for streaming tracks
+        logger.info("Migrating database to schema version 29 (SoundCloud streaming)...")
+
+        # Add source_url column to tracks table for streaming permalink URLs
+        conn.execute("""
+            ALTER TABLE tracks ADD COLUMN source_url TEXT
+        """)
+
+        # Index for source_url lookups (partial index, only non-null values)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_tracks_source_url
+            ON tracks(source_url) WHERE source_url IS NOT NULL
+        """)
+
+        logger.info("Migration to schema version 29 complete")
+        conn.commit()
+
+    if current_version < 30:
+        # Migration from v29 to v30: Add source_filter to stations
+        logger.info("Migrating database to schema version 30 (Station Source Filter)...")
+
+        try:
+            conn.execute(
+                "ALTER TABLE stations ADD COLUMN source_filter TEXT NOT NULL DEFAULT 'all'"
+            )
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+
+        # Auto-migrate existing YouTube stations
+        conn.execute("""
+            UPDATE stations
+            SET source_filter = 'youtube'
+            WHERE name LIKE '%YouTube%' OR name LIKE '%youtube%'
+        """)
+
+        logger.info("Migration to schema version 30 complete")
         conn.commit()
 
 
@@ -2066,6 +2201,384 @@ def batch_upsert_tracks(tracks: list[Any]) -> tuple[int, int]:
     return added, updated
 
 
+# YouTube-specific track functions
+
+
+def insert_youtube_track(
+    local_path: str,
+    youtube_id: str,
+    title: str,
+    artist: Optional[str],
+    album: Optional[str],
+    duration: float,
+) -> int:
+    """Insert a YouTube-sourced track into database.
+
+    Sets:
+    - source = 'youtube'
+    - youtube_synced_at = current timestamp
+    - youtube_id = provided video ID
+    - local_path = path to downloaded file
+
+    Args:
+        local_path: Path to downloaded video file
+        youtube_id: YouTube video ID (11 characters)
+        title: Track title
+        artist: Track artist (optional)
+        album: Album name (optional)
+        duration: Duration in seconds
+
+    Returns:
+        Track ID of newly inserted track
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO tracks (
+                local_path, youtube_id, title, artist, album, duration,
+                source, youtube_synced_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 'youtube', ?)
+            """,
+            (local_path, youtube_id, title, artist, album, duration, datetime.now()),
+        )
+        conn.commit()
+        return cursor.lastrowid
+
+
+def batch_insert_youtube_tracks(tracks_data: list[dict]) -> list[int]:
+    """Batch insert multiple YouTube tracks efficiently.
+
+    Uses SQLite RETURNING clause (requires SQLite 3.35+) to get all IDs in one query.
+
+    Args:
+        tracks_data: List of dicts with keys:
+            local_path, youtube_id, title, artist, album, duration
+
+    Returns:
+        List of track IDs for inserted tracks (same order as input)
+
+    Raises:
+        sqlite3.IntegrityError: If any youtube_id already exists (transaction rolls back)
+    """
+    if not tracks_data:
+        return []
+
+    with get_db_connection() as conn:
+        # Use RETURNING clause to get all IDs in one query
+        placeholders = ", ".join(["(?, ?, ?, ?, ?, ?, 'youtube', ?)"] * len(tracks_data))
+
+        # Flatten the data with youtube_synced_at timestamp
+        synced_at = datetime.now()
+        values = []
+        for track in tracks_data:
+            values.extend(
+                [
+                    track["local_path"],
+                    track["youtube_id"],
+                    track["title"],
+                    track.get("artist"),
+                    track.get("album"),
+                    track["duration"],
+                    synced_at,
+                ]
+            )
+
+        cursor = conn.execute(
+            f"""
+            INSERT INTO tracks (
+                local_path, youtube_id, title, artist, album, duration,
+                source, youtube_synced_at
+            )
+            VALUES {placeholders}
+            RETURNING id
+            """,
+            values,
+        )
+
+        # Extract IDs in order
+        track_ids = [row[0] for row in cursor.fetchall()]
+        conn.commit()
+
+        return track_ids
+
+
+def get_track_by_youtube_id(youtube_id: str) -> Optional[Track]:
+    """Check if a YouTube video is already imported.
+
+    Args:
+        youtube_id: YouTube video ID (11 characters)
+
+    Returns:
+        Track object if found, None otherwise
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT * FROM tracks WHERE youtube_id = ?
+            """,
+            (youtube_id,),
+        )
+        row = cursor.fetchone()
+
+        if row:
+            return db_track_to_library_track(dict(row))
+
+        return None
+
+
+def get_existing_youtube_ids(youtube_ids: list[str]) -> set[str]:
+    """Batch check which YouTube IDs already exist in database.
+
+    Args:
+        youtube_ids: List of YouTube video IDs to check
+
+    Returns:
+        Set of youtube_ids that already exist
+    """
+    if not youtube_ids:
+        return set()
+
+    with get_db_connection() as conn:
+        # Build parameterized query dynamically
+        placeholders = ", ".join("?" * len(youtube_ids))
+        cursor = conn.execute(
+            f"""
+            SELECT youtube_id FROM tracks WHERE youtube_id IN ({placeholders})
+            """,
+            youtube_ids,
+        )
+
+        # Return set for O(1) lookup
+        return {row["youtube_id"] for row in cursor.fetchall()}
+
+
+def get_tracks_by_youtube_ids(youtube_ids: list[str]) -> list[Track]:
+    """Batch retrieve tracks by YouTube IDs.
+
+    More efficient than calling get_track_by_youtube_id() N times.
+
+    Args:
+        youtube_ids: List of YouTube video IDs to retrieve
+
+    Returns:
+        List of Track objects (order may not match input order)
+    """
+    if not youtube_ids:
+        return []
+
+    with get_db_connection() as conn:
+        placeholders = ", ".join("?" * len(youtube_ids))
+        cursor = conn.execute(
+            f"""
+            SELECT * FROM tracks WHERE youtube_id IN ({placeholders})
+            """,
+            youtube_ids,
+        )
+
+        return [db_track_to_library_track(dict(row)) for row in cursor.fetchall()]
+
+
+# ============================================================================
+# SoundCloud Track Functions (Streaming - no local_path)
+# ============================================================================
+
+
+def insert_soundcloud_track(
+    soundcloud_id: str,
+    source_url: str,
+    title: str,
+    artist: Optional[str],
+    duration: float,
+    genre: Optional[str] = None,
+    bpm: Optional[float] = None,
+) -> int:
+    """Insert a SoundCloud streaming track into database.
+
+    Unlike YouTube tracks, SoundCloud tracks are streamed (not downloaded),
+    so local_path is NULL. The source_url stores the permalink for yt-dlp.
+
+    Sets:
+    - source = 'soundcloud'
+    - soundcloud_synced_at = current timestamp
+    - soundcloud_id = provided track ID
+    - source_url = SoundCloud permalink (for yt-dlp)
+    - local_path = NULL (streaming only)
+
+    Args:
+        soundcloud_id: SoundCloud track ID
+        source_url: SoundCloud track permalink (e.g., https://soundcloud.com/artist/track)
+        title: Track title
+        artist: Track artist (optional)
+        duration: Duration in seconds
+        genre: Track genre (optional)
+        bpm: Beats per minute (optional)
+
+    Returns:
+        Track ID of newly inserted track
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO tracks (
+                soundcloud_id, source_url, title, artist, duration,
+                genre, bpm, source, soundcloud_synced_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'soundcloud', ?)
+            RETURNING id
+            """,
+            (
+                soundcloud_id,
+                source_url,
+                title,
+                artist,
+                duration,
+                genre,
+                bpm,
+                datetime.now(),
+            ),
+        )
+        row = cursor.fetchone()
+        conn.commit()
+        return row[0]
+
+
+def batch_insert_soundcloud_tracks(tracks_data: list[dict]) -> list[int]:
+    """Batch insert multiple SoundCloud streaming tracks efficiently.
+
+    Uses SQLite RETURNING clause (requires SQLite 3.35+) to get all IDs in one query.
+
+    Args:
+        tracks_data: List of dicts with keys:
+            soundcloud_id, source_url, title, artist, duration, genre (optional), bpm (optional)
+
+    Returns:
+        List of track IDs for inserted tracks (same order as input)
+
+    Raises:
+        sqlite3.IntegrityError: If any soundcloud_id already exists (transaction rolls back)
+    """
+    if not tracks_data:
+        return []
+
+    with get_db_connection() as conn:
+        # Use RETURNING clause to get all IDs in one query
+        placeholders = ", ".join(
+            ["(?, ?, ?, ?, ?, ?, ?, 'soundcloud', ?)"] * len(tracks_data)
+        )
+
+        # Flatten the data with soundcloud_synced_at timestamp
+        synced_at = datetime.now()
+        values = []
+        for track in tracks_data:
+            values.extend(
+                [
+                    track["soundcloud_id"],
+                    track["source_url"],
+                    track["title"],
+                    track.get("artist"),
+                    track["duration"],
+                    track.get("genre"),
+                    track.get("bpm"),
+                    synced_at,
+                ]
+            )
+
+        cursor = conn.execute(
+            f"""
+            INSERT INTO tracks (
+                soundcloud_id, source_url, title, artist, duration,
+                genre, bpm, source, soundcloud_synced_at
+            )
+            VALUES {placeholders}
+            RETURNING id
+            """,
+            values,
+        )
+
+        # Extract IDs in order
+        track_ids = [row[0] for row in cursor.fetchall()]
+        conn.commit()
+
+        return track_ids
+
+
+def get_track_by_soundcloud_id(soundcloud_id: str) -> Optional[Track]:
+    """Check if a SoundCloud track is already imported.
+
+    Args:
+        soundcloud_id: SoundCloud track ID
+
+    Returns:
+        Track object if found, None otherwise
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT * FROM tracks WHERE soundcloud_id = ?
+            """,
+            (soundcloud_id,),
+        )
+        row = cursor.fetchone()
+
+        if row:
+            return db_track_to_library_track(dict(row))
+
+        return None
+
+
+def get_existing_soundcloud_ids(soundcloud_ids: list[str]) -> set[str]:
+    """Batch check which SoundCloud IDs already exist in database.
+
+    Args:
+        soundcloud_ids: List of SoundCloud track IDs to check
+
+    Returns:
+        Set of soundcloud_ids that already exist
+    """
+    if not soundcloud_ids:
+        return set()
+
+    with get_db_connection() as conn:
+        # Build parameterized query dynamically
+        placeholders = ", ".join("?" * len(soundcloud_ids))
+        cursor = conn.execute(
+            f"""
+            SELECT soundcloud_id FROM tracks WHERE soundcloud_id IN ({placeholders})
+            """,
+            soundcloud_ids,
+        )
+
+        # Return set for O(1) lookup
+        return {row["soundcloud_id"] for row in cursor.fetchall()}
+
+
+def get_tracks_by_soundcloud_ids(soundcloud_ids: list[str]) -> list[Track]:
+    """Batch retrieve tracks by SoundCloud IDs.
+
+    More efficient than calling get_track_by_soundcloud_id() N times.
+
+    Args:
+        soundcloud_ids: List of SoundCloud track IDs to retrieve
+
+    Returns:
+        List of Track objects (order may not match input order)
+    """
+    if not soundcloud_ids:
+        return []
+
+    with get_db_connection() as conn:
+        placeholders = ", ".join("?" * len(soundcloud_ids))
+        cursor = conn.execute(
+            f"""
+            SELECT * FROM tracks WHERE soundcloud_id IN ({placeholders})
+            """,
+            soundcloud_ids,
+        )
+
+        return [db_track_to_library_track(dict(row)) for row in cursor.fetchall()]
+
+
 def update_ai_processed_note(note_id: int, ai_tags: str) -> None:
     """Mark a note as processed by AI and store extracted tags."""
     with get_db_connection() as conn:
@@ -2241,6 +2754,7 @@ def db_track_to_library_track(db_track: dict[str, Any]) -> Track:
         soundcloud_id=db_track.get("soundcloud_id"),
         spotify_id=db_track.get("spotify_id"),
         youtube_id=db_track.get("youtube_id"),
+        source_url=db_track.get("source_url"),
         id=db_track.get("id"),
     )
 
