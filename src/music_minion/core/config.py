@@ -192,7 +192,7 @@ class WebConfig:
     """Configuration for web UI mode."""
 
     backend_host: str = "0.0.0.0"
-    backend_port: int = 8000
+    backend_port: int = 8642
     frontend_port: int = 5173
     auto_reload: bool = True  # For uvicorn --reload flag
 
@@ -467,7 +467,7 @@ not_interested_playlist = "Not Interested"
 backend_host = "0.0.0.0"
 
 # Backend server port
-backend_port = 8000
+backend_port = 8642
 
 # Frontend dev server port
 frontend_port = 5173
