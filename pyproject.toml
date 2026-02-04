@@ -50,4 +50,3 @@ dev = [
 ]
 
 [tool.uv]
-include = ["src", "web"]

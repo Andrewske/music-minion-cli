@@ -12,9 +12,38 @@ router = APIRouter()
 
 
 def get_playlist_tracks_with_ratings(playlist_id: int) -> List[dict]:
-    """Get all tracks in a playlist with their ratings, wins, and losses."""
-    from music_minion.core.database import get_db_connection
+    """Get all tracks in a playlist with their ratings, wins, and losses.
 
+    Handles both manual playlists (from playlist_tracks table) and
+    smart playlists (dynamically evaluated from filters).
+    """
+    from music_minion.core.database import get_db_connection
+    from music_minion.domain.playlists import get_playlist_by_id
+    from music_minion.domain.playlists.filters import evaluate_filters
+
+    # Check if this is a smart playlist
+    playlist = get_playlist_by_id(playlist_id)
+    if not playlist:
+        return []
+
+    if playlist["type"] == "smart":
+        # Smart playlist - use filter evaluation
+        tracks = evaluate_filters(playlist_id)
+        # Transform to match expected format with rating data
+        return [
+            {
+                "id": t["id"],
+                "title": t["title"],
+                "artist": t["artist"],
+                "rating": t.get("playlist_elo_rating", 1500.0),
+                "comparison_count": t.get("playlist_elo_comparison_count", 0),
+                "wins": t.get("playlist_elo_wins", 0),
+                "losses": t.get("playlist_elo_comparison_count", 0) - t.get("playlist_elo_wins", 0),
+            }
+            for t in tracks
+        ]
+
+    # Manual playlist - query from playlist_tracks table
     with get_db_connection() as conn:
         cursor = conn.execute(
             """

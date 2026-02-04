@@ -337,5 +337,5 @@ def evaluate_filters(playlist_id: int) -> list[dict[str, Any]]:
             WHERE {where_clause}
             ORDER BY artist, album, title
         """
-        cursor = conn.execute(query, (playlist_id,) + params)
+        cursor = conn.execute(query, (playlist_id,) + tuple(params))
         return [dict(row) for row in cursor.fetchall()]

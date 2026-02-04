@@ -100,6 +100,13 @@ def _sync_local_incremental(ctx: AppContext) -> tuple[AppContext, bool]:
     else:
         log("✓ No changed files to import from", level="info")
 
+    # Cleanup: Detect and handle missing/moved files
+    cleanup_result = sync.detect_missing_and_moved_files(ctx.config)
+    if cleanup_result['relocated'] > 0:
+        log(f"✓ Relocated {cleanup_result['relocated']} moved files", level="info")
+    if cleanup_result['deleted'] > 0:
+        log(f"✓ Removed {cleanup_result['deleted']} orphaned tracks", level="info")
+
     # Reload tracks in context
     from music_minion import helpers
 
@@ -151,6 +158,13 @@ def _sync_local_full(ctx: AppContext) -> tuple[AppContext, bool]:
     log("Exporting ELO ratings to files...", level="info")
     elo_result = sync.sync_elo_export(show_progress=True)
     log(f"✓ Exported ELO to {elo_result.get('success', 0)} files", level="info")
+
+    # Phase 4: Cleanup: Detect and handle missing/moved files
+    cleanup_result = sync.detect_missing_and_moved_files(ctx.config)
+    if cleanup_result['relocated'] > 0:
+        log(f"✓ Relocated {cleanup_result['relocated']} moved files", level="info")
+    if cleanup_result['deleted'] > 0:
+        log(f"✓ Removed {cleanup_result['deleted']} orphaned tracks", level="info")
 
     # Reload tracks in context
     from music_minion import helpers

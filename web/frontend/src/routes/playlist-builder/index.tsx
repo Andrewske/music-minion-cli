@@ -21,11 +21,10 @@ function PlaylistSelection() {
     mutationFn: (name: string) => createPlaylist(name),
     onSuccess: (playlist) => {
       // Optimistically update cache with proper typing
-      queryClient.setQueryData<{ playlists: Playlist[] }>(
+      // Note: queryFn returns data.playlists (array), so cache expects array not object
+      queryClient.setQueryData<Playlist[]>(
         ['playlists'],
-        (old) => ({
-          playlists: [...(old?.playlists || []), playlist]
-        })
+        (old) => [...(old || []), playlist]
       )
       // Navigate to builder with type-safe routing (using ID instead of name)
       navigate({

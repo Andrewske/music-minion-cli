@@ -140,6 +140,14 @@ Logs are captured to `music-minion-{uvicorn,vite}.log` in the project root for e
 - Syncs: Audio files + metadata (COMMENT field), M3U8/crate playlists
 - Settings: Send & Receive, Simple versioning (5-10), Watch enabled
 - Reference: `docs/reference/syncthing-setup.md`
+- **Auto-cleanup**: `sync local` automatically deletes `.sync-conflict-*` tracks and removes orphaned records
+
+**File Move Detection** (automatic during `sync local`):
+- Detects moved files via filename + filesize matching
+- Relocates tracks preserving ratings/tags/ELO/playlist memberships
+- Auto-deletes Syncthing conflict files from database
+- Removes orphaned records when files deleted
+- Performance: ~1.5-2s for 5000-track library
 
 ## Files
 
