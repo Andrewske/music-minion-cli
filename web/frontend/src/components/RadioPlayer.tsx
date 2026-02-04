@@ -1,7 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { getNowPlaying } from '../api/radio';
-import type { NowPlaying } from '../api/radio';
+import { useRadioStore } from '../stores/radioStore';
 
 function formatDuration(seconds: number | null): string {
   if (seconds === null || seconds === undefined) return '--:--';
@@ -11,6 +9,8 @@ function formatDuration(seconds: number | null): string {
 }
 
 function formatPosition(ms: number): string {
+  // Clamp negative values (can occur from clock drift or timezone issues)
+  if (ms < 0) ms = 0;
   const totalSeconds = Math.floor(ms / 1000);
   const mins = Math.floor(totalSeconds / 60);
   const secs = totalSeconds % 60;
@@ -18,26 +18,9 @@ function formatPosition(ms: number): string {
 }
 
 export function RadioPlayer(): JSX.Element {
-  const [isMuted, setIsMuted] = useState(true);
+  const { isMuted, nowPlaying, isLoading, error, toggleMute } = useRadioStore();
   const [localPosition, setLocalPosition] = useState<number>(0);
   const lastFetchTime = useRef<number>(Date.now());
-  const audioRef = useRef<HTMLAudioElement>(null);
-
-  const { data: nowPlaying, isLoading, error } = useQuery<NowPlaying>({
-    queryKey: ['nowPlaying'],
-    queryFn: getNowPlaying,
-    refetchInterval: 5000,
-    retry: 1,
-  });
-
-  // Start playing when component mounts (muted initially)
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.play().catch(() => {
-        // Autoplay blocked - user will need to click to start
-      });
-    }
-  }, []);
 
   // Sync local position when we get fresh data from server
   useEffect(() => {
@@ -63,14 +46,8 @@ export function RadioPlayer(): JSX.Element {
   }, [nowPlaying]);
 
   const handleMuteToggle = useCallback(() => {
-    if (audioRef.current) {
-      // If not playing yet, start playing
-      if (audioRef.current.paused) {
-        audioRef.current.play().catch(console.error);
-      }
-      setIsMuted((prev) => !prev);
-    }
-  }, []);
+    toggleMute();
+  }, [toggleMute]);
 
   if (isLoading) {
     return (
@@ -100,7 +77,7 @@ export function RadioPlayer(): JSX.Element {
 
   const track = nowPlaying.track;
   const durationMs = (track.duration ?? 0) * 1000;
-  const progressPercent = durationMs > 0 ? Math.min(100, (localPosition / durationMs) * 100) : 0;
+  const progressPercent = durationMs > 0 ? Math.max(0, Math.min(100, (localPosition / durationMs) * 100)) : 0;
 
   return (
     <div className="bg-slate-900 rounded-lg p-6">
@@ -158,13 +135,6 @@ export function RadioPlayer(): JSX.Element {
         </div>
       </div>
 
-      {/* Hidden Audio Element */}
-      <audio
-        ref={audioRef}
-        src="/stream"
-        muted={isMuted}
-        onError={(e) => console.error('Audio error:', e)}
-      />
     </div>
   );
 }
