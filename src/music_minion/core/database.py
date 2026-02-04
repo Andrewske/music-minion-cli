@@ -15,7 +15,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 27
+SCHEMA_VERSION = 29
 
 
 def get_database_path() -> Path:
@@ -1033,6 +1033,46 @@ def migrate_database(conn, current_version: int) -> None:
         )
 
         logger.info("Migration to schema version 27 complete")
+        conn.commit()
+
+    if current_version < 28:
+        # Migration from v27 to v28: Add source_url for streaming tracks
+        logger.info("Migrating database to schema version 28 (SoundCloud streaming)...")
+
+        # Add source_url column to tracks table for streaming permalink URLs
+        conn.execute("""
+            ALTER TABLE tracks ADD COLUMN source_url TEXT
+        """)
+
+        # Index for source_url lookups (partial index, only non-null values)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_tracks_source_url
+            ON tracks(source_url) WHERE source_url IS NOT NULL
+        """)
+
+        logger.info("Migration to schema version 28 complete")
+        conn.commit()
+
+    if current_version < 29:
+        # Migration from v28 to v29: Add source_filter to stations
+        logger.info("Migrating database to schema version 29 (Station Source Filter)...")
+
+        try:
+            conn.execute(
+                "ALTER TABLE stations ADD COLUMN source_filter TEXT NOT NULL DEFAULT 'all'"
+            )
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+
+        # Auto-migrate existing YouTube stations
+        conn.execute("""
+            UPDATE stations
+            SET source_filter = 'youtube'
+            WHERE name LIKE '%YouTube%' OR name LIKE '%youtube%'
+        """)
+
+        logger.info("Migration to schema version 29 complete")
         conn.commit()
 
 
@@ -2255,6 +2295,232 @@ def get_existing_youtube_ids(youtube_ids: list[str]) -> set[str]:
         return {row["youtube_id"] for row in cursor.fetchall()}
 
 
+def get_tracks_by_youtube_ids(youtube_ids: list[str]) -> list[Track]:
+    """Batch retrieve tracks by YouTube IDs.
+
+    More efficient than calling get_track_by_youtube_id() N times.
+
+    Args:
+        youtube_ids: List of YouTube video IDs to retrieve
+
+    Returns:
+        List of Track objects (order may not match input order)
+    """
+    if not youtube_ids:
+        return []
+
+    with get_db_connection() as conn:
+        placeholders = ", ".join("?" * len(youtube_ids))
+        cursor = conn.execute(
+            f"""
+            SELECT * FROM tracks WHERE youtube_id IN ({placeholders})
+            """,
+            youtube_ids,
+        )
+
+        return [db_track_to_library_track(dict(row)) for row in cursor.fetchall()]
+
+
+# ============================================================================
+# SoundCloud Track Functions (Streaming - no local_path)
+# ============================================================================
+
+
+def insert_soundcloud_track(
+    soundcloud_id: str,
+    source_url: str,
+    title: str,
+    artist: Optional[str],
+    duration: float,
+    genre: Optional[str] = None,
+    bpm: Optional[float] = None,
+) -> int:
+    """Insert a SoundCloud streaming track into database.
+
+    Unlike YouTube tracks, SoundCloud tracks are streamed (not downloaded),
+    so local_path is NULL. The source_url stores the permalink for yt-dlp.
+
+    Sets:
+    - source = 'soundcloud'
+    - soundcloud_synced_at = current timestamp
+    - soundcloud_id = provided track ID
+    - source_url = SoundCloud permalink (for yt-dlp)
+    - local_path = NULL (streaming only)
+
+    Args:
+        soundcloud_id: SoundCloud track ID
+        source_url: SoundCloud track permalink (e.g., https://soundcloud.com/artist/track)
+        title: Track title
+        artist: Track artist (optional)
+        duration: Duration in seconds
+        genre: Track genre (optional)
+        bpm: Beats per minute (optional)
+
+    Returns:
+        Track ID of newly inserted track
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO tracks (
+                soundcloud_id, source_url, title, artist, duration,
+                genre, bpm, source, soundcloud_synced_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'soundcloud', ?)
+            RETURNING id
+            """,
+            (
+                soundcloud_id,
+                source_url,
+                title,
+                artist,
+                duration,
+                genre,
+                bpm,
+                datetime.now(),
+            ),
+        )
+        row = cursor.fetchone()
+        conn.commit()
+        return row[0]
+
+
+def batch_insert_soundcloud_tracks(tracks_data: list[dict]) -> list[int]:
+    """Batch insert multiple SoundCloud streaming tracks efficiently.
+
+    Uses SQLite RETURNING clause (requires SQLite 3.35+) to get all IDs in one query.
+
+    Args:
+        tracks_data: List of dicts with keys:
+            soundcloud_id, source_url, title, artist, duration, genre (optional), bpm (optional)
+
+    Returns:
+        List of track IDs for inserted tracks (same order as input)
+
+    Raises:
+        sqlite3.IntegrityError: If any soundcloud_id already exists (transaction rolls back)
+    """
+    if not tracks_data:
+        return []
+
+    with get_db_connection() as conn:
+        # Use RETURNING clause to get all IDs in one query
+        placeholders = ", ".join(
+            ["(?, ?, ?, ?, ?, ?, ?, 'soundcloud', ?)"] * len(tracks_data)
+        )
+
+        # Flatten the data with soundcloud_synced_at timestamp
+        synced_at = datetime.now()
+        values = []
+        for track in tracks_data:
+            values.extend(
+                [
+                    track["soundcloud_id"],
+                    track["source_url"],
+                    track["title"],
+                    track.get("artist"),
+                    track["duration"],
+                    track.get("genre"),
+                    track.get("bpm"),
+                    synced_at,
+                ]
+            )
+
+        cursor = conn.execute(
+            f"""
+            INSERT INTO tracks (
+                soundcloud_id, source_url, title, artist, duration,
+                genre, bpm, source, soundcloud_synced_at
+            )
+            VALUES {placeholders}
+            RETURNING id
+            """,
+            values,
+        )
+
+        # Extract IDs in order
+        track_ids = [row[0] for row in cursor.fetchall()]
+        conn.commit()
+
+        return track_ids
+
+
+def get_track_by_soundcloud_id(soundcloud_id: str) -> Optional[Track]:
+    """Check if a SoundCloud track is already imported.
+
+    Args:
+        soundcloud_id: SoundCloud track ID
+
+    Returns:
+        Track object if found, None otherwise
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT * FROM tracks WHERE soundcloud_id = ?
+            """,
+            (soundcloud_id,),
+        )
+        row = cursor.fetchone()
+
+        if row:
+            return db_track_to_library_track(dict(row))
+
+        return None
+
+
+def get_existing_soundcloud_ids(soundcloud_ids: list[str]) -> set[str]:
+    """Batch check which SoundCloud IDs already exist in database.
+
+    Args:
+        soundcloud_ids: List of SoundCloud track IDs to check
+
+    Returns:
+        Set of soundcloud_ids that already exist
+    """
+    if not soundcloud_ids:
+        return set()
+
+    with get_db_connection() as conn:
+        # Build parameterized query dynamically
+        placeholders = ", ".join("?" * len(soundcloud_ids))
+        cursor = conn.execute(
+            f"""
+            SELECT soundcloud_id FROM tracks WHERE soundcloud_id IN ({placeholders})
+            """,
+            soundcloud_ids,
+        )
+
+        # Return set for O(1) lookup
+        return {row["soundcloud_id"] for row in cursor.fetchall()}
+
+
+def get_tracks_by_soundcloud_ids(soundcloud_ids: list[str]) -> list[Track]:
+    """Batch retrieve tracks by SoundCloud IDs.
+
+    More efficient than calling get_track_by_soundcloud_id() N times.
+
+    Args:
+        soundcloud_ids: List of SoundCloud track IDs to retrieve
+
+    Returns:
+        List of Track objects (order may not match input order)
+    """
+    if not soundcloud_ids:
+        return []
+
+    with get_db_connection() as conn:
+        placeholders = ", ".join("?" * len(soundcloud_ids))
+        cursor = conn.execute(
+            f"""
+            SELECT * FROM tracks WHERE soundcloud_id IN ({placeholders})
+            """,
+            soundcloud_ids,
+        )
+
+        return [db_track_to_library_track(dict(row)) for row in cursor.fetchall()]
+
+
 def update_ai_processed_note(note_id: int, ai_tags: str) -> None:
     """Mark a note as processed by AI and store extracted tags."""
     with get_db_connection() as conn:
@@ -2430,6 +2696,7 @@ def db_track_to_library_track(db_track: dict[str, Any]) -> Track:
         soundcloud_id=db_track.get("soundcloud_id"),
         spotify_id=db_track.get("spotify_id"),
         youtube_id=db_track.get("youtube_id"),
+        source_url=db_track.get("source_url"),
         id=db_track.get("id"),
     )
 
