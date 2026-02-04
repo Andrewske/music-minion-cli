@@ -39,4 +39,14 @@ config.toml
 !CLAUDE.md
 
 *.log
+*.backup
 *.backup.last_sync
+
+# Temporary scripts and data files (keep organized in scripts/ directory)
+/check_*.py
+/debug_*.py
+/import_*.py
+/match_*.py
+/*.m3u8
+/nye*.md
+/*_sc_ids.txt

@@ -5,14 +5,11 @@ import { formatError } from '../utils/formatError';
 
 interface UseWavesurferOptions {
   trackId: number;
-  audioUrl?: string;
   isPlaying: boolean;  // Explicit control instead of isActive
   onFinish?: () => void;
   onReady?: (duration: number) => void;
   onSeek?: (progress: number) => void;
   onTimeUpdate?: (currentTime: number) => void;
-  startPosition?: number;
-  endPosition?: number;
 }
 
 function createWavesurferConfig(container: HTMLDivElement) {
@@ -30,7 +27,7 @@ function createWavesurferConfig(container: HTMLDivElement) {
   };
 }
 
-export function useWavesurfer({ trackId, audioUrl: _audioUrl, isPlaying, onFinish, onReady, onSeek, onTimeUpdate, startPosition: _startPosition, endPosition: _endPosition }: UseWavesurferOptions) {
+export function useWavesurfer({ trackId, isPlaying, onFinish, onReady, onSeek, onTimeUpdate }: UseWavesurferOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -269,6 +266,15 @@ export function useWavesurfer({ trackId, audioUrl: _audioUrl, isPlaying, onFinis
       window.removeEventListener('music-minion-seek-neg', handleSeekNeg);
     };
   }, [isPlaying, seekRelative]);
+
+  // Listen for seek percent commands
+  useEffect(() => {
+    const handleSeekPercent = (e: CustomEvent<number>) => {
+      seekToPercent(e.detail);
+    };
+    window.addEventListener('music-minion-seek-percent', handleSeekPercent as EventListener);
+    return () => window.removeEventListener('music-minion-seek-percent', handleSeekPercent as EventListener);
+  }, [seekToPercent]);
 
   return {
     containerRef,

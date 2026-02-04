@@ -458,15 +458,18 @@ def cleanup_web_processes_safe(web_processes: tuple | None) -> None:
     Args:
         web_processes: Tuple of (uvicorn_proc, vite_proc) or None
     """
-    if not web_processes:
-        return
-
     try:
         from . import web_launcher
         from .core.console import safe_print
 
-        safe_print("\n🛑 Stopping web services...", style="yellow")
-        web_launcher.stop_web_processes(*web_processes)
+        if web_processes:
+            # Normal cleanup path
+            safe_print("\n🛑 Stopping web services...", style="yellow")
+            web_launcher.stop_web_processes(*web_processes)
+        else:
+            # Emergency cleanup path - check for tracked processes
+            web_launcher.cleanup_tracked_processes()
+
         logger.debug("Web processes stopped successfully")
     except Exception as e:
         # Log for debugging but don't raise - cleanup must complete

@@ -1,4 +1,5 @@
  import { useDrag } from '@use-gesture/react';
+ import type { FullGestureState } from '@use-gesture/react';
  import { useSpring } from '@react-spring/web';
  import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
@@ -37,7 +38,8 @@ export function useSwipeGesture({ onSwipeRight, onSwipeLeft }: UseSwipeGestureOp
 
   // Stabilize handler identity to prevent useDrag from recreating bindings on every render
   const handler = useCallback(
-    ({ active, movement: [mx], velocity: [vx] }: { active: boolean; movement: [number, number]; velocity: [number, number] }) => {
+    (state: FullGestureState<'drag'>) => {
+      const { active, movement: [mx], velocity: [vx] } = state;
       setIsDragging(active);
 
       if (active) {

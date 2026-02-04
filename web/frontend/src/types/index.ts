@@ -24,6 +24,7 @@ export interface Playlist {
   type: string;
   description?: string;
   track_count: number;
+  library: string;
 }
 
 export interface ComparisonPair {
