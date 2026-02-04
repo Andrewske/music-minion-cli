@@ -21,6 +21,10 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 UVICORN_LOG = PROJECT_ROOT / "music-minion-uvicorn.log"
 VITE_LOG = PROJECT_ROOT / "music-minion-vite.log"
 
+# Module-level process tracking (for cleanup on exception)
+_running_uvicorn: Optional[subprocess.Popen] = None
+_running_vite: Optional[subprocess.Popen] = None
+
 
 def is_port_available(port: int) -> bool:
     """
@@ -164,17 +168,81 @@ def start_web_processes(
     config: Optional[WebConfig] = None,
 ) -> tuple[subprocess.Popen, subprocess.Popen]:
     """
-    Convenience function to start both web processes.
+    Start both web processes with exception safety.
+
+    If second process fails to start, first process is automatically
+    cleaned up before exception propagates.
 
     Args:
         config: Optional WebConfig with custom settings
 
     Returns:
         (uvicorn_proc, vite_proc) tuple of subprocess.Popen instances
+
+    Raises:
+        Exception: If either process fails to start (with cleanup of partial state)
     """
-    uvicorn_proc = start_uvicorn_process(config)
-    vite_proc = start_vite_process(config)
-    return uvicorn_proc, vite_proc
+    global _running_uvicorn, _running_vite
+
+    uvicorn_proc = None
+    vite_proc = None
+
+    try:
+        uvicorn_proc = start_uvicorn_process(config)
+        _running_uvicorn = uvicorn_proc  # Track immediately
+
+        vite_proc = start_vite_process(config)
+        _running_vite = vite_proc  # Track immediately
+
+        return uvicorn_proc, vite_proc
+
+    except Exception:
+        # Cleanup any processes that started before re-raising
+        if uvicorn_proc:
+            try:
+                uvicorn_proc.kill()
+                uvicorn_proc.wait(timeout=2.0)
+            except Exception:
+                pass
+        if vite_proc:
+            try:
+                vite_proc.kill()
+                vite_proc.wait(timeout=2.0)
+            except Exception:
+                pass
+
+        # Clear tracking
+        _running_uvicorn = None
+        _running_vite = None
+
+        raise  # Re-raise original exception
+
+
+def cleanup_tracked_processes() -> None:
+    """
+    Emergency cleanup of tracked processes.
+
+    Called from exception handlers when normal cleanup may not have
+    access to process handles.
+    """
+    global _running_uvicorn, _running_vite
+
+    processes = []
+    if _running_uvicorn:
+        processes.append(_running_uvicorn)
+    if _running_vite:
+        processes.append(_running_vite)
+
+    for proc in processes:
+        try:
+            proc.kill()
+            proc.wait(timeout=2.0)
+        except Exception:
+            pass
+
+    # Clear tracking
+    _running_uvicorn = None
+    _running_vite = None
 
 
 def stop_web_processes(
@@ -187,6 +255,8 @@ def stop_web_processes(
         uvicorn_proc: FastAPI backend process
         vite_proc: Vite frontend process
     """
+    global _running_uvicorn, _running_vite
+
     processes = [uvicorn_proc, vite_proc]
 
     # Kill processes immediately
@@ -197,3 +267,7 @@ def stop_web_processes(
         except Exception:
             # Process already terminated or couldn't be killed
             pass
+
+    # Clear tracking
+    _running_uvicorn = None
+    _running_vite = None
