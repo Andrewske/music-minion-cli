@@ -82,8 +82,26 @@ def get_next_track_path() -> Optional[str]:
     if track.local_path:
         return track.local_path
 
-    # For non-local sources (future phases)
-    logger.warning(f"Non-local track not yet supported: {track}")
+    # For streaming tracks (SoundCloud, YouTube, etc.), resolve URL via yt-dlp
+    if track.source_url:
+        from .stream_resolver import resolve_stream_url
+
+        stream_url = resolve_stream_url(track.source_url)
+        if stream_url:
+            logger.debug(f"Resolved stream URL for track {track.id}: {track.source_url}")
+            return stream_url
+        else:
+            # Stream resolution failed - mark as skipped and try next
+            logger.warning(
+                f"Failed to resolve stream URL for track {track.id}, marking as skipped"
+            )
+            mark_track_skipped(station.id, track.id, reason="unavailable")
+            # Reset state and try to get next track
+            _scheduler_state = SchedulerState()
+            return get_next_track_path()
+
+    # No local path and no streaming URL - track has no playable source
+    logger.warning(f"Track has no playable source: {track}")
     return None
 
 
@@ -101,13 +119,16 @@ def _record_history(
         source_type: Source type (local, youtube, spotify, soundcloud)
         position_ms: Starting position in track
     """
+    # For streaming tracks, record the source URL for debugging/history
+    source_url = track.source_url if source_type != "local" else None
+
     with get_radio_db_connection() as conn:
         conn.execute(
             """
-            INSERT INTO radio_history (station_id, track_id, source_type, started_at, position_ms)
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)
+            INSERT INTO radio_history (station_id, track_id, source_type, source_url, started_at, position_ms)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
             """,
-            (station_id, track.id, source_type, position_ms),
+            (station_id, track.id, source_type, source_url, position_ms),
         )
         conn.commit()
         logger.debug(

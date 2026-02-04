@@ -216,26 +216,55 @@ def _resolve_target_station(
     return station_id, range_start
 
 
+def _build_source_filter_clause(source_filter: str) -> str:
+    """Build SQL WHERE clause fragment for source filtering.
+
+    Args:
+        source_filter: Filter type ('all', 'local', 'youtube', 'soundcloud', 'spotify')
+
+    Returns:
+        SQL fragment to append to WHERE clause (includes leading AND)
+    """
+    if source_filter == "all":
+        return ""
+    elif source_filter == "youtube":
+        return " AND t.youtube_id IS NOT NULL"
+    elif source_filter == "soundcloud":
+        return " AND t.soundcloud_id IS NOT NULL"
+    elif source_filter == "spotify":
+        return " AND t.spotify_id IS NOT NULL"
+    elif source_filter == "local":
+        # Local = has local_path AND no provider IDs
+        return " AND t.local_path IS NOT NULL AND t.youtube_id IS NULL AND t.soundcloud_id IS NULL"
+    else:
+        return ""
+
+
 def _get_playlist_tracks_as_models(
     playlist_id: int,
     exclude_ids: set[int],
+    source_filter: str = "all",
 ) -> list[Track]:
     """Get playlist tracks as Track models, excluding specific IDs.
 
     Args:
         playlist_id: Playlist ID
         exclude_ids: Track IDs to exclude
+        source_filter: Filter tracks by source type ('all', 'local', 'youtube', 'soundcloud', 'spotify')
 
     Returns:
         List of Track objects
     """
+    source_clause = _build_source_filter_clause(source_filter)
+
     with get_radio_db_connection() as conn:
-        cursor = conn.execute("""
+        cursor = conn.execute(f"""
             SELECT t.id, t.local_path, t.title, t.artist, t.album, t.genre,
-                   t.year, t.duration, t.key_signature, t.bpm
+                   t.year, t.duration, t.key_signature, t.bpm,
+                   t.soundcloud_id, t.youtube_id, t.source_url
             FROM tracks t
             JOIN playlist_tracks pt ON t.id = pt.track_id
-            WHERE pt.playlist_id = ?
+            WHERE pt.playlist_id = ?{source_clause}
             ORDER BY pt.position
         """, (playlist_id,))
 
@@ -244,7 +273,7 @@ def _get_playlist_tracks_as_models(
             if row["id"] not in exclude_ids:
                 track = Track(
                     id=row["id"],
-                    local_path=row["local_path"],
+                    local_path=row["local_path"] or "",
                     title=row["title"],
                     artist=row["artist"],
                     album=row["album"],
@@ -253,6 +282,9 @@ def _get_playlist_tracks_as_models(
                     duration=row["duration"],
                     key=row["key_signature"],
                     bpm=row["bpm"],
+                    soundcloud_id=row["soundcloud_id"],
+                    youtube_id=row["youtube_id"],
+                    source_url=row["source_url"],
                 )
                 tracks.append(track)
         return tracks
@@ -296,12 +328,19 @@ def calculate_now_playing(
         logger.warning(f"Station {resolved_station_id} has no playlist")
         return None
 
-    # Get tracks, excluding skipped ones
+    # Get tracks, excluding skipped ones and applying source filter
     skipped_ids = get_skipped_tracks(resolved_station_id, current_time.date())
-    tracks = _get_playlist_tracks_as_models(resolved_station.playlist_id, skipped_ids)
+    tracks = _get_playlist_tracks_as_models(
+        resolved_station.playlist_id,
+        skipped_ids,
+        source_filter=resolved_station.source_filter,
+    )
 
     if not tracks:
-        logger.warning(f"No tracks available for station {resolved_station_id}")
+        logger.warning(
+            f"No tracks available for station {resolved_station_id} "
+            f"(source_filter={resolved_station.source_filter})"
+        )
         return None
 
     # Apply shuffle if needed (deterministic daily seed)
@@ -425,7 +464,11 @@ def get_upcoming_tracks(
             skipped_ids = get_skipped_tracks(
                 now_playing.station_id, current_time.date()
             )
-            tracks = _get_playlist_tracks_as_models(station.playlist_id, skipped_ids)
+            tracks = _get_playlist_tracks_as_models(
+                station.playlist_id,
+                skipped_ids,
+                source_filter=station.source_filter,
+            )
 
             if station.mode == "shuffle":
                 seed = f"{now_playing.station_id}-{current_time.date()}"

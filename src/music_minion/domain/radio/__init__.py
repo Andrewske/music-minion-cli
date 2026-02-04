@@ -27,6 +27,7 @@ from .stations import (
     get_station,
     get_station_by_name,
     record_now_playing,
+    record_track_history,
     update_station,
 )
 from .timeline import (
@@ -74,6 +75,7 @@ __all__ = [
     "update_station",
     "delete_station",
     "record_now_playing",
+    "record_track_history",
     # Schedule management
     "add_schedule_entry",
     "get_schedule_entries",

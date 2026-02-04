@@ -23,6 +23,7 @@ class Station:
     name: str
     playlist_id: Optional[int]  # Links to existing playlist, None for meta-stations
     mode: str  # 'shuffle' | 'queue'
+    source_filter: str  # 'all' | 'local' | 'youtube' | 'soundcloud' | 'spotify'
     is_active: bool
     created_at: datetime
     updated_at: datetime
