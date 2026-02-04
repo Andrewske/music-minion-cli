@@ -21,7 +21,7 @@ export interface TrackInfo {
 export interface Playlist {
   id: number;
   name: string;
-  type: string;
+  type: 'manual' | 'smart';
   description?: string;
   track_count: number;
   library: string;

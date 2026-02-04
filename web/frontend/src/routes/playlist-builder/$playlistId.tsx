@@ -68,7 +68,11 @@ function PlaylistBuilder() {
       >
         ← Back to Playlists
       </Link>
-      <PlaylistBuilderComponent playlistId={playlist.id} playlistName={playlist.name} />
+      <PlaylistBuilderComponent
+        playlistId={playlist.id}
+        playlistName={playlist.name}
+        playlistType={playlist.type}
+      />
     </div>
   )
 }

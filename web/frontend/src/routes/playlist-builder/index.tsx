@@ -53,9 +53,9 @@ function PlaylistSelection() {
     })
   }
 
-  // Filter local manual playlists
+  // Filter local playlists (both manual and smart)
   const playlists = playlistsData?.filter(
-    (p: Playlist) => p.library === 'local' && p.type === 'manual'
+    (p: Playlist) => p.library === 'local'
   ) || [];
 
   if (isLoading) {
@@ -132,10 +132,20 @@ function PlaylistSelection() {
                 hover:border-indigo-500 hover:bg-slate-800/80 transition-all
                 text-left group"
             >
-              <h3 className="text-lg font-semibold text-slate-100 mb-2
-                group-hover:text-indigo-400 transition-colors">
-                {playlist.name}
-              </h3>
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="text-lg font-semibold text-slate-100
+                  group-hover:text-indigo-400 transition-colors">
+                  {playlist.name}
+                </h3>
+                {/* Type badge */}
+                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                  playlist.type === 'smart'
+                    ? 'bg-purple-600 text-purple-100'
+                    : 'bg-slate-700 text-slate-300'
+                }`}>
+                  {playlist.type === 'smart' ? 'Smart' : 'Manual'}
+                </span>
+              </div>
               <p className="text-slate-400 text-sm">
                 {playlist.track_count} {playlist.track_count === 1 ? 'track' : 'tracks'}
               </p>

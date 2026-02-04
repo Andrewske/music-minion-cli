@@ -8,12 +8,21 @@ import type { Track } from '../api/builder';
 import { TrackQueueTable } from '../components/builder/TrackQueueTable';
 import FilterPanel from '../components/builder/FilterPanel';
 import { WaveformPlayer } from '../components/WaveformPlayer';
+import { SmartPlaylistEditor } from './SmartPlaylistEditor';
+
 interface PlaylistBuilderProps {
   playlistId: number;
   playlistName: string;
+  playlistType: 'manual' | 'smart';
 }
 
-export function PlaylistBuilder({ playlistId, playlistName }: PlaylistBuilderProps) {
+export function PlaylistBuilder({ playlistId, playlistName, playlistType }: PlaylistBuilderProps) {
+  // Route to smart editor for smart playlists
+  if (playlistType === 'smart') {
+    return <SmartPlaylistEditor playlistId={playlistId} playlistName={playlistName} />;
+  }
+
+  // Existing manual builder code continues below...
   const [queueTrackId, setQueueTrackId] = useState<number | null>(null);
   const [nowPlayingTrack, setNowPlayingTrack] = useState<Track | null>(null);
   const [isPlaying, setIsPlaying] = useState(true); // Auto-play by default

@@ -1,4 +1,5 @@
 import type { Playlist, PlaylistStatsResponse, PlaylistTracksResponse } from '../types';
+import type { Filter } from './builder';
 
 import { apiRequest } from './client';
 
@@ -33,4 +34,28 @@ export async function getPlaylistStats(playlistId: number): Promise<PlaylistStat
 
 export async function getPlaylistTracks(playlistId: number): Promise<PlaylistTracksResponse> {
   return apiRequest<PlaylistTracksResponse>(`/playlists/${playlistId}/tracks`);
+}
+
+export async function getSmartFilters(playlistId: number): Promise<Filter[]> {
+  const response = await fetch(`${API_BASE}/playlists/${playlistId}/filters`);
+  if (!response.ok) throw new Error('Failed to fetch filters');
+  const data = await response.json();
+  return data.filters;
+}
+
+export async function updateSmartFilters(
+  playlistId: number,
+  filters: Filter[]
+): Promise<Filter[]> {
+  const response = await fetch(`${API_BASE}/playlists/${playlistId}/filters`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(filters),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to update filters');
+  }
+  const data = await response.json();
+  return data.filters;
 }
