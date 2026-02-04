@@ -3,7 +3,7 @@
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from loguru import logger
 
@@ -19,6 +19,12 @@ from .download import (
     sanitize_filename,
 )
 from .exceptions import DuplicateVideoError
+
+# Type aliases for progress callbacks
+VideoProgressCallback = Callable[[str, int], None]  # (step, progress)
+PlaylistProgressCallback = Callable[
+    [int, str, int, dict | None], None
+]  # (current, step, progress, failure)
 
 
 @dataclass(frozen=True)
@@ -51,6 +57,7 @@ def import_single_video(
     artist: Optional[str] = None,
     title: Optional[str] = None,
     album: Optional[str] = None,
+    progress_callback: Optional[VideoProgressCallback] = None,
 ) -> Track:
     """Import a single YouTube video with optional user-controlled metadata.
 
@@ -59,6 +66,7 @@ def import_single_video(
         artist: Artist name (falls back to video uploader if not provided)
         title: Track title (falls back to video title if not provided)
         album: Album name (optional)
+        progress_callback: Optional callback for progress updates (step, progress)
 
     Returns:
         Track object for the imported video
@@ -67,13 +75,21 @@ def import_single_video(
         DuplicateVideoError: If video is already imported
         YouTubeError: For various download/import failures
     """
+
+    def report(step: str, progress: int) -> None:
+        if progress_callback:
+            progress_callback(step, progress)
+
     # Extract youtube_id from URL
     youtube_id = extract_video_id(url)
+    report("downloading", 5)
 
     # Check for duplicate before downloading (saves bandwidth)
     existing_track = database.get_track_by_youtube_id(youtube_id)
     if existing_track:
         raise DuplicateVideoError(existing_track.id)
+
+    report("downloading", 10)
 
     # Download to temp directory first
     output_dir = _get_output_dir()
@@ -81,10 +97,18 @@ def import_single_video(
 
     temp_path = None
     try:
+        # Create download progress callback that maps 0-100 to 15-100
+        def download_progress(percent: int) -> None:
+            scaled = 15 + int(percent * 0.85)
+            report("downloading", scaled)
+
         # Download video to temp location
-        temp_path, metadata = download_video(url, temp_dir)
+        report("downloading", 15)
+        temp_path, metadata = download_video(url, temp_dir, progress_callback=download_progress)
+        report("downloading", 100)
 
         # Fall back to YouTube metadata if user didn't provide
+        report("processing", 10)
         final_title = title or metadata["title"]
         final_artist = artist or metadata["uploader"]
         final_album = album or ""
@@ -99,6 +123,8 @@ def import_single_video(
             sanitized_name = f"{name_parts[0]}_{youtube_id}.{name_parts[1]}"
             final_path = output_dir / sanitized_name
 
+        report("processing", 40)
+
         # Insert track into database with final path
         track_id = database.insert_youtube_track(
             local_path=str(final_path),
@@ -109,12 +135,17 @@ def import_single_video(
             duration=metadata["duration"],
         )
 
+        report("processing", 70)
+
         # Move file to final location atomically
         os.replace(temp_path, final_path)
+
+        report("processing", 90)
 
         # Get the inserted track
         track = database.get_track_by_youtube_id(youtube_id)
 
+        report("processing", 100)
         logger.info(f"Imported YouTube video: {final_artist} - {final_title} (ID: {track_id})")
 
         return track
@@ -127,11 +158,15 @@ def import_single_video(
         raise
 
 
-def import_playlist(playlist_id: str) -> ImportResult:
+def import_playlist(
+    playlist_id: str,
+    progress_callback: Optional[PlaylistProgressCallback] = None,
+) -> ImportResult:
     """Bulk import all videos from a YouTube playlist with pre-download duplicate filtering.
 
     Args:
         playlist_id: YouTube playlist ID
+        progress_callback: Optional callback for progress updates
 
     Returns:
         ImportResult with statistics and any failures
@@ -139,6 +174,11 @@ def import_playlist(playlist_id: str) -> ImportResult:
     Raises:
         YouTubeError: If playlist cannot be accessed
     """
+
+    def report(current: int, step: str, progress: int, failure: dict | None = None) -> None:
+        if progress_callback:
+            progress_callback(current, step, progress, failure)
+
     output_dir = _get_output_dir()
     temp_dir = _get_temp_dir()
 
@@ -174,14 +214,18 @@ def import_playlist(playlist_id: str) -> ImportResult:
     # Check disk space
     check_available_space(output_dir, len(new_video_ids))
 
-    # Download only new videos
+    # Download only new videos with progress reporting
     successes, failures = download_playlist_videos(
-        playlist_id=playlist_id, output_dir=temp_dir, skip_ids=existing_ids
+        playlist_id=playlist_id,
+        output_dir=temp_dir,
+        skip_ids=existing_ids,
+        progress_callback=report,
     )
 
     # Prepare track data for batch insert
-    tracks_data = []
-    temp_to_final = {}  # Map temp paths to final paths
+    tracks_data: list[dict] = []
+    temp_to_final: dict[Path, Path] = {}  # Map temp paths to final paths
+    used_paths: set[str] = set()  # O(1) lookup for collision detection
 
     for temp_path, metadata in successes:
         # Use playlist title as album name
@@ -192,9 +236,9 @@ def import_playlist(playlist_id: str) -> ImportResult:
         sanitized_name = sanitize_filename(title, temp_path.suffix)
         final_path = output_dir / sanitized_name
 
-        # Handle collision by appending a counter
+        # Handle collision by appending a counter (O(1) set lookup instead of O(n) list)
         counter = 1
-        while final_path.exists() or str(final_path) in [d["local_path"] for d in tracks_data]:
+        while final_path.exists() or str(final_path) in used_paths:
             name_parts = sanitized_name.rsplit(".", 1)
             sanitized_name = f"{name_parts[0]}_{counter}.{name_parts[1]}"
             final_path = output_dir / sanitized_name
@@ -202,6 +246,9 @@ def import_playlist(playlist_id: str) -> ImportResult:
 
         # Get youtube_id from metadata
         youtube_id = metadata["id"]
+
+        # Track the path for collision detection
+        used_paths.add(str(final_path))
 
         tracks_data.append(
             {
@@ -227,12 +274,11 @@ def import_playlist(playlist_id: str) -> ImportResult:
 
             logger.info(f"Batch inserted {len(track_ids)} tracks")
 
-            # Get all inserted tracks
-            inserted_tracks = [
-                database.get_track_by_youtube_id(data["youtube_id"]) for data in tracks_data
-            ]
+            # Get all inserted tracks in one query (instead of N queries)
+            youtube_ids = [data["youtube_id"] for data in tracks_data]
+            inserted_tracks = database.get_tracks_by_youtube_ids(youtube_ids)
 
-        except Exception as e:
+        except Exception:
             # Clean up temp files on batch insert failure
             logger.exception("Batch insert failed, cleaning up temp files")
             for temp_path in temp_to_final.keys():

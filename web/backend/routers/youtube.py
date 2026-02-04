@@ -1,8 +1,8 @@
 """YouTube import endpoints for Music Minion Web API."""
 
+import time
 import uuid
 from enum import Enum
-from pathlib import Path
 from threading import Lock
 from typing import Optional
 
@@ -17,7 +17,6 @@ from music_minion.domain.library.providers.youtube import (
 )
 from music_minion.domain.library.providers.youtube.exceptions import (
     AgeRestrictedError,
-    CopyrightBlockedError,
     DuplicateVideoError,
     InsufficientSpaceError,
     InvalidYouTubeURLError,
@@ -28,8 +27,10 @@ from music_minion.domain.library.providers.youtube.exceptions import (
 router = APIRouter()
 
 # Job storage (in-memory for single-instance deployment)
+# Jobs are cleaned up after JOB_TTL_SECONDS to prevent memory leaks
 _jobs: dict[str, dict] = {}
 _jobs_lock = Lock()
+JOB_TTL_SECONDS = 3600  # 1 hour
 
 
 class JobStatus(str, Enum):
@@ -75,12 +76,24 @@ class ImportJobResponse(BaseModel):
     status: JobStatus
 
 
+class FailureInfo(BaseModel):
+    """Info about a failed video in playlist import."""
+
+    video_id: str
+    title: str
+    error: str
+
+
 class ImportJobStatusResponse(BaseModel):
     """Response model for job status polling."""
 
     job_id: str
     status: JobStatus
     progress: Optional[int] = None  # Percentage 0-100
+    current_step: Optional[str] = None  # "downloading" or "processing"
+    current_item: Optional[int] = None  # Current video index (playlist only)
+    total_items: Optional[int] = None  # Total videos (playlist only)
+    failures: list[FailureInfo] = []  # Live failures during import
     result: Optional[dict] = None  # ImportResult as dict when completed
     error: Optional[str] = None  # Error message if failed
 
@@ -96,20 +109,39 @@ class PlaylistInfoResponse(BaseModel):
 # Job management functions
 
 
+def _cleanup_old_jobs() -> None:
+    """Remove jobs older than JOB_TTL_SECONDS. Must be called with _jobs_lock held."""
+    cutoff = time.time() - JOB_TTL_SECONDS
+    expired_ids = [
+        job_id for job_id, job in _jobs.items() if job.get("created_at", 0) < cutoff
+    ]
+    for job_id in expired_ids:
+        del _jobs[job_id]
+    if expired_ids:
+        logger.debug(f"Cleaned up {len(expired_ids)} expired import jobs")
+
+
 def create_job() -> str:
     """Create a new import job and return its ID."""
     job_id = str(uuid.uuid4())
     with _jobs_lock:
+        # Clean up old jobs to prevent memory leak
+        _cleanup_old_jobs()
         _jobs[job_id] = {
             "status": JobStatus.PENDING,
-            "progress": None,
+            "progress": 0,
+            "current_step": None,
+            "current_item": None,
+            "total_items": None,
+            "failures": [],
             "result": None,
             "error": None,
+            "created_at": time.time(),
         }
     return job_id
 
 
-def update_job(job_id: str, **kwargs):
+def update_job(job_id: str, **kwargs) -> None:
     """Update job status and metadata."""
     with _jobs_lock:
         if job_id in _jobs:
@@ -119,7 +151,17 @@ def update_job(job_id: str, **kwargs):
 def get_job(job_id: str) -> Optional[dict]:
     """Get job status and metadata."""
     with _jobs_lock:
-        return _jobs.get(job_id)
+        job = _jobs.get(job_id)
+        if job:
+            # Return copy without internal fields
+            result = {k: v for k, v in job.items() if k != "created_at"}
+            # Convert failures to FailureInfo format
+            result["failures"] = [
+                FailureInfo(video_id=f["video_id"], title=f["title"], error=f["error"])
+                for f in result.get("failures", [])
+            ]
+            return result
+        return None
 
 
 # Helper functions
@@ -149,17 +191,87 @@ def import_result_to_dict(result) -> dict:
     }
 
 
+# Progress callback factories
+
+
+def make_video_progress_callback(job_id: str):
+    """Create a progress callback for single video import.
+
+    Single video progress:
+    - downloading: 0-80%
+    - processing: 80-100%
+    """
+
+    def callback(step: str, progress: int) -> None:
+        if step == "downloading":
+            # Scale 0-100 to 0-80
+            scaled = int(progress * 0.8)
+        else:  # processing
+            # Scale 0-100 to 80-100
+            scaled = 80 + int(progress * 0.2)
+        update_job(job_id, progress=scaled, current_step=step)
+
+    return callback
+
+
+def make_playlist_progress_callback(job_id: str, total: int):
+    """Create a progress callback for playlist import.
+
+    Playlist progress is calculated as:
+    - (completed_videos / total_videos) * 100
+    - With partial credit for current video's download progress
+    """
+
+    def callback(
+        current: int,
+        step: str,
+        video_progress: int,
+        failure: dict | None = None,
+    ) -> None:
+        # Base progress from completed videos
+        base = ((current - 1) / total) * 100 if total > 0 else 0
+        # Partial credit for current video (downloading = 0-80%, processing = 80-100%)
+        if step == "downloading":
+            video_portion = video_progress * 0.8
+        else:
+            video_portion = 80 + video_progress * 0.2
+        # Scale video portion to its share of total progress
+        partial = (video_portion / 100) * (100 / total) if total > 0 else 0
+        overall = int(base + partial)
+
+        update_fields = {
+            "progress": min(overall, 99),  # Reserve 100 for completion
+            "current_step": step,
+            "current_item": current,
+            "total_items": total,
+        }
+        update_job(job_id, **update_fields)
+
+        # Handle live failure reporting
+        if failure:
+            with _jobs_lock:
+                if job_id in _jobs:
+                    _jobs[job_id]["failures"].append(failure)
+
+    return callback
+
+
 # Background task workers
 
 
 def run_video_import(job_id: str, req: ImportVideoRequest):
     """Background worker for single video import."""
-    update_job(job_id, status=JobStatus.RUNNING)
+    update_job(job_id, status=JobStatus.RUNNING, current_step="downloading", progress=0)
+    progress_cb = make_video_progress_callback(job_id)
     try:
         track = import_single_video(
-            url=req.url, artist=req.artist, title=req.title, album=req.album
+            url=req.url,
+            artist=req.artist,
+            title=req.title,
+            album=req.album,
+            progress_callback=progress_cb,
         )
-        update_job(job_id, status=JobStatus.COMPLETED, result=track_to_dict(track))
+        update_job(job_id, status=JobStatus.COMPLETED, progress=100, result=track_to_dict(track))
         logger.info(f"Video import job {job_id} completed: {track.artist} - {track.title}")
     except DuplicateVideoError as e:
         error_msg = f"Video already imported as track #{e.track_id}"
@@ -187,11 +299,22 @@ def run_video_import(job_id: str, req: ImportVideoRequest):
 
 def run_playlist_import(job_id: str, req: ImportPlaylistRequest):
     """Background worker for playlist import."""
-    update_job(job_id, status=JobStatus.RUNNING)
+    update_job(job_id, status=JobStatus.RUNNING, current_step="downloading", progress=0)
     try:
-        result = import_playlist(req.playlist_id)
+        # First get playlist info to know total count for progress
+        from music_minion.domain.library.providers.youtube.download import get_playlist_info
+
+        playlist_info = get_playlist_info(req.playlist_id)
+        total_videos = playlist_info["video_count"]
+        update_job(job_id, total_items=total_videos, current_item=1)
+
+        progress_cb = make_playlist_progress_callback(job_id, total_videos)
+        result = import_playlist(req.playlist_id, progress_callback=progress_cb)
         update_job(
-            job_id, status=JobStatus.COMPLETED, result=import_result_to_dict(result)
+            job_id,
+            status=JobStatus.COMPLETED,
+            progress=100,
+            result=import_result_to_dict(result),
         )
         logger.info(
             f"Playlist import job {job_id} completed: {result.imported_count} imported, "

@@ -2,8 +2,9 @@
 
 import os
 import re
+import time
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import yt_dlp
 from loguru import logger
@@ -16,6 +17,65 @@ from .exceptions import (
     VideoUnavailableError,
     YouTubeError,
 )
+
+# Type alias for playlist progress callback
+PlaylistProgressCallback = Callable[
+    [int, str, int, dict | None], None
+]  # (current, step, progress, failure)
+
+# Type alias for download progress callback
+DownloadProgressCallback = Callable[[int], None]  # (percent: 0-100)
+
+
+def _make_progress_hook(
+    callback: Optional[DownloadProgressCallback],
+    throttle_ms: int = 500,
+) -> Callable[[dict], None]:
+    """Create yt-dlp progress hook with throttling.
+
+    Args:
+        callback: Optional callback receiving download progress (0-100)
+        throttle_ms: Minimum time between updates in milliseconds
+
+    Returns:
+        Progress hook function for yt-dlp
+    """
+    if callback is None:
+        return lambda d: None
+
+    state = {"last_update": 0.0, "last_percent": 0}
+
+    def hook(d: dict) -> None:
+        if d.get("status") != "downloading":
+            return
+
+        # Throttle updates to avoid lock contention
+        now = time.time()
+        if now - state["last_update"] < throttle_ms / 1000:
+            return
+
+        # Calculate progress
+        total = d.get("total_bytes") or d.get("total_bytes_estimate")
+        downloaded = d.get("downloaded_bytes", 0)
+
+        if total and total > 0:
+            percent = int((downloaded / total) * 100)
+        else:
+            # Fallback: estimate from elapsed time (~50s to reach 95%)
+            elapsed = d.get("elapsed", 0)
+            percent = min(95, int(elapsed * 2))
+
+        percent = min(95, max(0, percent))  # Cap at 95, reserve 100 for completion
+
+        if percent != state["last_percent"]:
+            state["last_update"] = now
+            state["last_percent"] = percent
+            try:
+                callback(percent)
+            except Exception:
+                pass  # Don't fail download on callback error
+
+    return hook
 
 
 def sanitize_filename(title: str, extension: str = ".mp4") -> str:
@@ -130,7 +190,11 @@ def check_available_space(
     return True
 
 
-def download_video(url: str, output_dir: Path) -> tuple[Path, dict]:
+def download_video(
+    url: str,
+    output_dir: Path,
+    progress_callback: Optional[DownloadProgressCallback] = None,
+) -> tuple[Path, dict]:
     """Download YouTube video with audio using yt-dlp.
 
     Downloads video+audio in mp4/webm format and extracts metadata.
@@ -139,6 +203,7 @@ def download_video(url: str, output_dir: Path) -> tuple[Path, dict]:
     Args:
         url: YouTube video URL
         output_dir: Directory to save downloaded file
+        progress_callback: Optional callback receiving download progress (0-100)
 
     Returns:
         Tuple of (file_path, metadata_dict)
@@ -154,12 +219,16 @@ def download_video(url: str, output_dir: Path) -> tuple[Path, dict]:
         # Extract video ID first
         video_id = extract_video_id(url)
 
+        # Create progress hook
+        progress_hook = _make_progress_hook(progress_callback)
+
         # Configure yt-dlp options
         ydl_opts = {
             "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
             "outtmpl": str(output_dir / "%(title)s.%(ext)s"),
             "quiet": True,
             "no_warnings": True,
+            "progress_hooks": [progress_hook],
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -188,7 +257,7 @@ def download_video(url: str, output_dir: Path) -> tuple[Path, dict]:
 
             # Update output template with sanitized name
             final_path = output_dir / sanitized_name
-            ydl_opts["outtmpl"] = str(output_dir / sanitized_name.rsplit(".", 1)[0] + ".%(ext)s")
+            ydl_opts["outtmpl"] = str(output_dir / (sanitized_name.rsplit(".", 1)[0] + ".%(ext)s"))
 
             # Download the video
             with yt_dlp.YoutubeDL(ydl_opts) as ydl_download:
@@ -290,6 +359,7 @@ def download_playlist_videos(
     playlist_id: str,
     output_dir: Path,
     skip_ids: Optional[set[str]] = None,
+    progress_callback: Optional[PlaylistProgressCallback] = None,
 ) -> tuple[list[tuple[Path, dict]], list[tuple[str, Exception]]]:
     """Download videos from a YouTube playlist.
 
@@ -297,6 +367,7 @@ def download_playlist_videos(
         playlist_id: YouTube playlist ID
         output_dir: Directory to save videos
         skip_ids: Set of video IDs to skip (for duplicate prevention)
+        progress_callback: Optional callback for progress updates
 
     Returns:
         Tuple of (successes, failures):
@@ -312,32 +383,52 @@ def download_playlist_videos(
     successes = []
     failures = []
 
+    def report(current: int, step: str, progress: int, failure: dict | None = None) -> None:
+        if progress_callback:
+            progress_callback(current, step, progress, failure)
+
     try:
         # Get playlist info first
         playlist_info = get_playlist_info(playlist_id)
         videos = playlist_info["videos"]
 
+        # Filter to only videos we'll actually download
+        videos_to_download = [v for v in videos if v["id"] not in skip_ids]
+        total = len(videos_to_download)
+
         logger.info(
-            f"Downloading playlist: {playlist_info['title']} ({len(videos)} videos)"
+            f"Downloading playlist: {playlist_info['title']} ({total} videos to download)"
         )
 
-        for video in videos:
+        for idx, video in enumerate(videos_to_download, start=1):
             video_id = video["id"]
+            video_title = video.get("title", "Unknown")
 
-            # Skip if in skip_ids
-            if video_id in skip_ids:
-                logger.info(f"Skipping duplicate video: {video['title']} ({video_id})")
-                continue
+            # Create per-video progress callback (capture idx by value via default arg)
+            def per_video_progress(percent: int, current_idx: int = idx) -> None:
+                report(current_idx, "downloading", percent)
+
+            report(idx, "downloading", 0)
 
             try:
                 video_url = f"https://www.youtube.com/watch?v={video_id}"
-                file_path, metadata = download_video(video_url, output_dir)
+                file_path, metadata = download_video(
+                    video_url, output_dir, progress_callback=per_video_progress
+                )
                 successes.append((file_path, metadata))
-                logger.info(f"✓ Downloaded: {video['title']}")
+                report(idx, "downloading", 100)
+                logger.info(f"✓ Downloaded: {video_title}")
 
             except Exception as e:
-                logger.warning(f"✗ Failed to download {video['title']}: {e}")
+                logger.warning(f"✗ Failed to download {video_title}: {e}")
                 failures.append((video_id, e))
+                # Report failure with video info
+                report(
+                    idx,
+                    "downloading",
+                    100,
+                    failure={"video_id": video_id, "title": video_title, "error": str(e)},
+                )
 
         logger.info(
             f"Playlist download complete: {len(successes)} succeeded, {len(failures)} failed"
@@ -345,7 +436,7 @@ def download_playlist_videos(
 
         return successes, failures
 
-    except YouTubeError as e:
+    except YouTubeError:
         # If we can't get playlist info at all, fail completely
         logger.exception("Failed to access playlist")
         raise
