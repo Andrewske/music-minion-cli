@@ -15,7 +15,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 29
+SCHEMA_VERSION = 30
 
 
 def get_database_path() -> Path:
@@ -940,9 +940,9 @@ def migrate_database(conn, current_version: int) -> None:
         logger.info("Migration to schema version 26 complete")
         conn.commit()
 
-    if current_version < 27:
-        # Migration from v26 to v27: Add personal radio station tables
-        logger.info("Migrating database to schema version 27 (Personal Radio)...")
+    if current_version < 28:
+        # Migration from v27 to v28: Add personal radio station tables
+        logger.info("Migrating database to schema version 28 (Personal Radio)...")
 
         # Stations table - links to existing playlists with radio-specific metadata
         conn.execute("""
@@ -1032,12 +1032,12 @@ def migrate_database(conn, current_version: int) -> None:
             "CREATE INDEX IF NOT EXISTS idx_radio_skipped_station_date ON radio_skipped(station_id, skip_date)"
         )
 
-        logger.info("Migration to schema version 27 complete")
+        logger.info("Migration to schema version 28 complete")
         conn.commit()
 
-    if current_version < 28:
-        # Migration from v27 to v28: Add source_url for streaming tracks
-        logger.info("Migrating database to schema version 28 (SoundCloud streaming)...")
+    if current_version < 29:
+        # Migration from v28 to v29: Add source_url for streaming tracks
+        logger.info("Migrating database to schema version 29 (SoundCloud streaming)...")
 
         # Add source_url column to tracks table for streaming permalink URLs
         conn.execute("""
@@ -1050,12 +1050,12 @@ def migrate_database(conn, current_version: int) -> None:
             ON tracks(source_url) WHERE source_url IS NOT NULL
         """)
 
-        logger.info("Migration to schema version 28 complete")
+        logger.info("Migration to schema version 29 complete")
         conn.commit()
 
-    if current_version < 29:
-        # Migration from v28 to v29: Add source_filter to stations
-        logger.info("Migrating database to schema version 29 (Station Source Filter)...")
+    if current_version < 30:
+        # Migration from v29 to v30: Add source_filter to stations
+        logger.info("Migrating database to schema version 30 (Station Source Filter)...")
 
         try:
             conn.execute(
@@ -1072,7 +1072,7 @@ def migrate_database(conn, current_version: int) -> None:
             WHERE name LIKE '%YouTube%' OR name LIKE '%youtube%'
         """)
 
-        logger.info("Migration to schema version 29 complete")
+        logger.info("Migration to schema version 30 complete")
         conn.commit()
 
 
