@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ProgressBar } from './ProgressBar';
 
 interface ImportVideoFormProps {
   onSuccess: () => void;
@@ -7,6 +8,8 @@ interface ImportVideoFormProps {
 interface JobStatus {
   job_id: string;
   status: 'pending' | 'running' | 'completed' | 'failed';
+  progress?: number;
+  current_step?: 'downloading' | 'processing' | null;
   result?: {
     id: number;
     title: string;
@@ -25,17 +28,24 @@ export function ImportVideoForm({ onSuccess }: ImportVideoFormProps) {
   const [title, setTitle] = useState('');
   const [album, setAlbum] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const pollJobStatus = async (jobId: string): Promise<JobStatus> => {
-    while (true) {
+    const MAX_POLLS = 300; // 5 minutes max (300 * 1 second)
+    let polls = 0;
+
+    while (polls < MAX_POLLS) {
       const response = await fetch(`/api/youtube/import/${jobId}`);
       if (!response.ok) {
         throw new Error('Failed to fetch job status');
       }
 
       const status: JobStatus = await response.json();
+
+      // Update progress state for UI
+      setJobStatus(status);
 
       if (status.status === 'completed') {
         return status;
@@ -45,13 +55,17 @@ export function ImportVideoForm({ onSuccess }: ImportVideoFormProps) {
 
       // Poll every 1 second
       await new Promise((resolve) => setTimeout(resolve, 1000));
+      polls++;
     }
+
+    throw new Error('Import timed out after 5 minutes. The job may still be running in the background.');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccessMessage(null);
+    setJobStatus(null);
     setIsLoading(true);
 
     try {
@@ -163,40 +177,49 @@ export function ImportVideoForm({ onSuccess }: ImportVideoFormProps) {
         />
       </div>
 
-      {/* Submit Button */}
-      <button
-        type="submit"
-        disabled={isLoading || !url}
-        className="w-full px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
-      >
-        {isLoading ? (
-          <>
-            <svg
-              className="animate-spin h-5 w-5 text-white"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              ></circle>
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
-            <span>Importing...</span>
-          </>
-        ) : (
-          'Import Video'
-        )}
-      </button>
+      {/* Submit Button or Progress Bar */}
+      {isLoading && jobStatus ? (
+        <div className="p-4 bg-slate-800/50 border border-slate-700 rounded-lg">
+          <ProgressBar
+            progress={jobStatus.progress ?? 0}
+            currentStep={jobStatus.current_step}
+          />
+        </div>
+      ) : (
+        <button
+          type="submit"
+          disabled={isLoading || !url}
+          className="w-full px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
+        >
+          {isLoading ? (
+            <>
+              <svg
+                className="animate-spin h-5 w-5 text-white"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                ></circle>
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
+              </svg>
+              <span>Starting...</span>
+            </>
+          ) : (
+            'Import Video'
+          )}
+        </button>
+      )}
 
       {/* Success Message */}
       {successMessage && (

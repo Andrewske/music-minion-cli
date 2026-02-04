@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ProgressBar, type FailureInfo } from './ProgressBar';
 
 interface ImportPlaylistFormProps {
   onSuccess: () => void;
@@ -10,15 +11,30 @@ interface PlaylistPreview {
   videos: Array<{ id: string; title: string; duration: number }>;
 }
 
+interface ImportedTrack {
+  id: number;
+  title: string;
+  artist: string | null;
+  album: string | null;
+  youtube_id: string;
+  local_path: string;
+  duration: number;
+}
+
 interface JobStatus {
   job_id: string;
   status: 'pending' | 'running' | 'completed' | 'failed';
+  progress?: number;
+  current_step?: 'downloading' | 'processing' | null;
+  current_item?: number | null;
+  total_items?: number | null;
+  failures?: FailureInfo[];
   result?: {
     imported_count: number;
     skipped_count: number;
     failed_count: number;
     failures: Array<{ video_id: string; error: string }>;
-    tracks: Array<any>;
+    tracks: Array<ImportedTrack>;
   };
   error?: string;
 }
@@ -28,6 +44,7 @@ export function ImportPlaylistForm({ onSuccess }: ImportPlaylistFormProps) {
   const [preview, setPreview] = useState<PlaylistPreview | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<JobStatus['result'] | null>(null);
 
@@ -61,13 +78,19 @@ export function ImportPlaylistForm({ onSuccess }: ImportPlaylistFormProps) {
   };
 
   const pollJobStatus = async (jobId: string): Promise<JobStatus> => {
-    while (true) {
+    const MAX_POLLS = 900; // 30 minutes max (900 * 2 seconds) - playlists can be large
+    let polls = 0;
+
+    while (polls < MAX_POLLS) {
       const response = await fetch(`/api/youtube/import/${jobId}`);
       if (!response.ok) {
         throw new Error('Failed to fetch job status');
       }
 
       const status: JobStatus = await response.json();
+
+      // Update progress state for UI
+      setJobStatus(status);
 
       if (status.status === 'completed') {
         return status;
@@ -77,12 +100,16 @@ export function ImportPlaylistForm({ onSuccess }: ImportPlaylistFormProps) {
 
       // Poll every 2 seconds (playlist imports take longer)
       await new Promise((resolve) => setTimeout(resolve, 2000));
+      polls++;
     }
+
+    throw new Error('Import timed out after 30 minutes. The job may still be running in the background.');
   };
 
   const handleImport = async () => {
     setError(null);
     setResult(null);
+    setJobStatus(null);
     setIsImporting(true);
 
     try {
@@ -155,42 +182,54 @@ export function ImportPlaylistForm({ onSuccess }: ImportPlaylistFormProps) {
         </div>
       )}
 
-      {/* Import Button */}
+      {/* Import Button or Progress Bar */}
       {preview && (
-        <button
-          type="button"
-          onClick={handleImport}
-          disabled={isImporting}
-          className="w-full px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
-        >
-          {isImporting ? (
-            <>
-              <svg
-                className="animate-spin h-5 w-5 text-white"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                ></circle>
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                ></path>
-              </svg>
-              <span>Importing Playlist...</span>
-            </>
-          ) : (
-            'Import Playlist'
-          )}
-        </button>
+        isImporting && jobStatus ? (
+          <div className="p-4 bg-slate-800/50 border border-slate-700 rounded-lg">
+            <ProgressBar
+              progress={jobStatus.progress ?? 0}
+              currentStep={jobStatus.current_step}
+              currentItem={jobStatus.current_item}
+              totalItems={jobStatus.total_items}
+              failures={jobStatus.failures}
+            />
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={handleImport}
+            disabled={isImporting}
+            className="w-full px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
+          >
+            {isImporting ? (
+              <>
+                <svg
+                  className="animate-spin h-5 w-5 text-white"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
+                </svg>
+                <span>Starting...</span>
+              </>
+            ) : (
+              'Import Playlist'
+            )}
+          </button>
+        )
       )}
 
       {/* Result */}
