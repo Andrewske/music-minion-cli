@@ -128,7 +128,8 @@ def handle_playlist_deletion(
         return ctx, ui_state
 
     # Check if it's the active playlist
-    is_active = ctx.active_playlist_id == pl["id"]
+    active_playlist = playlists.get_active_playlist()
+    is_active = active_playlist is not None and active_playlist["id"] == pl["id"]
 
     # Delete the playlist
     try:
@@ -136,7 +137,7 @@ def handle_playlist_deletion(
 
         # Clear active playlist if it was deleted
         if is_active:
-            ctx = ctx.with_active_playlist(None)
+            playlists.clear_active_playlist()
 
         ui_state = add_history_line(
             ui_state, f"✅ Deleted playlist: {playlist_name}", "green"
