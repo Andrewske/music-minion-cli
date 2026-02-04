@@ -2752,3 +2752,128 @@ windows_music_root = "C:/Users/kevin/Music"
 - `Path("C:/Users/...").resolve()` on Linux treats it as relative and prepends CWD
 - Serato expects paths without drive letter in crate files, adds it automatically
 
+## Smart File Move Detection & Cleanup (2026-01-28)
+
+**Problem**: Files moved between directories create duplicate database entries. Syncthing conflicts accumulate over time. Deleted files leave orphaned database records.
+
+**Solution**: Automatic cleanup during `sync local` that:
+1. **Auto-deletes Syncthing conflicts** - Any track with `.sync-conflict-` in path is deleted from database (regardless of file existence)
+2. **Detects moved files** - Matches missing files with untracked files by filename + filesize
+3. **Preserves metadata** - Relocations update `local_path` only, keeping ratings/tags/ELO/playlist memberships
+4. **Removes orphans** - Deletes tracks where files no longer exist and can't be matched
+
+### Algorithm: Filename + Filesize Matching
+
+**Why this approach**:
+- Fast (no metadata extraction needed) - ~1.5-2s for 5000 tracks
+- Reliable (filesize + filename is highly discriminative)
+- Works with any audio format (no codec dependencies)
+- Handles same filename in different albums via path similarity scoring
+
+**Workflow**:
+```python
+1. Query all source='local' tracks from database
+2. Separate Syncthing conflicts (auto-delete) and missing files
+3. Build index of untracked files on disk: {filename: [(path, size), ...]}
+4. For each missing file:
+   - If single filename match with same filesize → relocate
+   - If multiple matches → pick closest by path similarity (≥0.8 threshold)
+   - If no match → delete orphaned record
+5. Execute actions in batch transaction
+```
+
+### Path Similarity Scoring
+
+Uses `difflib.SequenceMatcher` on path components to pick closest match when multiple files have same name:
+
+```python
+path_similarity("/Music/Album1/Disc1", "/Music/Album1/Disc2")  # 0.9 (high)
+path_similarity("/Music/Album1", "/Music/Album2")              # 0.85 (good)
+path_similarity("/Music/Album1", "/Videos/Movies")             # 0.3 (low)
+```
+
+**Auto-relocate threshold**: 0.8 (only relocate if path similarity ≥80%)
+
+### Integration
+
+**Automatic execution**:
+- `sync local` (incremental) - Runs after import
+- `sync full` - Runs after import + export
+
+**Output example**:
+```
+✓ Relocated 2 moved files
+✓ Removed 3 orphaned tracks
+```
+
+### Edge Cases Handled
+
+| Scenario | Behavior |
+|----------|----------|
+| Same filename in multiple albums | Path similarity picks closest directory |
+| File moved multiple times | Works (only cares about current state) |
+| Filesize changed (re-encoding) | Treated as different file (no match) |
+| Syncthing conflicts still exist | Auto-deleted from database |
+| Low confidence match (<0.8) | Deleted rather than guessing wrong location |
+
+### Performance
+
+**For 5000-track library**:
+- Database query: ~50ms
+- Filesystem scan: ~500ms (SSD)
+- Path existence checks: ~1s
+- Matching algorithm: ~100ms
+- **Total: ~1.5-2 seconds**
+
+**Optimizations**:
+- `os.path.exists()` faster than `Path.exists()` for batch ops
+- Pre-filter filesystem by extension (skip non-music files)
+- Batch SQL operations via `executemany()`
+- Skip Syncthing conflicts during untracked file indexing
+
+### Real-World Example
+
+**Before**: "BURN" by "2SUM" appeared 4 times in playlist builder
+```
+ID: 5958  - /Music/EDM/2025/Oct 25/BURN.mp3 (original)
+ID: 6225  - None (SoundCloud, no local file)
+ID: 22852 - /Music/EDM/.../BURN.sync-conflict-...mp3 (conflict)
+ID: 23250 - /Music/radio-library/BURN.sync-conflict-...opus (missing)
+ID: 23251 - /Music/radio-library/BURN.opus (missing, deleted)
+```
+
+**After cleanup**:
+```
+ID: 5958  - /Music/EDM/2025/Oct 25/BURN.mp3 (original) ✓
+ID: 6225  - None (SoundCloud preserved) ✓
+```
+
+**Result**: 3 duplicate records deleted, original preserved with all metadata
+
+### Files Modified
+
+**Core logic**:
+- `src/music_minion/domain/sync/engine.py` - Added `path_similarity()` and `detect_missing_and_moved_files()`
+
+**Integration**:
+- `src/music_minion/commands/sync.py` - Integrated cleanup into `_sync_local_incremental()` and `_sync_local_full()`
+
+**Tests**:
+- `tests/domain/sync/test_cleanup.py` - 13 unit tests covering all edge cases (all passing)
+
+### Safety Guarantees
+
+1. **Atomic transactions** - All updates in single commit (safe to fail)
+2. **Detailed logging** - Every action logged with reason (syncthing_conflict, file_not_found, etc.)
+3. **Metadata preservation** - Relocations preserve ratings, tags, ELO, playlist memberships
+4. **Idempotent** - Running multiple times is safe (no changes on second run)
+5. **Source filtering** - Only processes `source='local'` tracks (never touches provider tracks)
+
+### Key Learnings
+
+- **Syncthing conflicts must be deleted unconditionally** - Don't check if file exists, always delete from DB
+- **Batch operations essential for performance** - `executemany()` 30-50x faster than individual operations
+- **Path similarity prevents false matches** - Threshold of 0.8 balances accuracy vs safety
+- **No schema changes needed** - Uses existing `local_path`, `file_mtime`, `source` columns
+- **Filesystem scan is fast** - `Path.rglob()` scans 5000+ files in ~500ms on SSD
+

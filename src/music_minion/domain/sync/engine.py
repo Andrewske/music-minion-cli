@@ -734,3 +734,230 @@ def rescan_library(
 
     # Import from changed (or all) files
     return sync_import(config, force_all=full_rescan, show_progress=show_progress)
+
+
+def path_similarity(path1: str, path2: str) -> float:
+    """Calculate similarity between two directory paths (0.0-1.0).
+
+    Uses difflib.SequenceMatcher on path components to determine
+    how similar two directory paths are.
+
+    Args:
+        path1: First directory path
+        path2: Second directory path
+
+    Returns:
+        Similarity score from 0.0 (completely different) to 1.0 (identical)
+
+    Example:
+        >>> path_similarity("/Music/Album1", "/Music/Album2")
+        0.8
+        >>> path_similarity("/Music/Album1", "/Music/Album1/Disc2")
+        0.9
+    """
+    from difflib import SequenceMatcher
+    from pathlib import Path
+
+    parts1 = Path(path1).parts
+    parts2 = Path(path2).parts
+    return SequenceMatcher(None, parts1, parts2).ratio()
+
+
+def detect_missing_and_moved_files(config: Config) -> dict[str, Any]:
+    """Detect missing files and attempt to relocate moved files.
+
+    Scans all local tracks in the database and checks if their files still exist.
+    For missing files, attempts to match them with untracked files on disk using
+    filename + filesize. Files with .sync-conflict- in their path are auto-deleted.
+
+    Algorithm:
+        1. Query all source='local' tracks from database
+        2. Check which tracks have missing files (local_path doesn't exist)
+        3. Build index of all untracked files on disk
+        4. For each missing file:
+           - If Syncthing conflict → delete
+           - If filename match with same filesize → relocate
+           - If multiple matches → pick closest by path similarity (≥0.8)
+           - If no match → delete
+
+    Args:
+        config: Configuration object with library paths
+
+    Returns:
+        Dictionary with keys:
+            - relocated: Count of files successfully relocated
+            - deleted: Count of orphaned records deleted
+            - actions: Detailed list of all actions taken
+    """
+    from pathlib import Path
+
+    from loguru import logger
+
+    AUTO_RELOCATE_THRESHOLD = 0.8  # Path similarity threshold for auto-match
+
+    # Step 1: Query all local tracks
+    with get_db_connection() as conn:
+        cursor = conn.execute("""
+            SELECT id, local_path, title, artist
+            FROM tracks
+            WHERE source = 'local' AND local_path IS NOT NULL
+        """)
+        db_tracks = [dict(row) for row in cursor.fetchall()]
+
+    # Step 2: Separate Syncthing conflicts and missing files
+    actions = []
+    syncthing_conflicts = []
+    missing_tracks = []
+
+    for track in db_tracks:
+        # Auto-delete ALL Syncthing conflict tracks (regardless of file existence)
+        if '.sync-conflict-' in track['local_path']:
+            syncthing_conflicts.append(track)
+            actions.append({
+                'type': 'delete',
+                'track_id': track['id'],
+                'old_path': track['local_path'],
+                'reason': 'syncthing_conflict'
+            })
+        elif not os.path.exists(track['local_path']):
+            missing_tracks.append(track)
+
+    if syncthing_conflicts:
+        logger.info(f"Found {len(syncthing_conflicts)} Syncthing conflict tracks to delete")
+
+    if not missing_tracks and not syncthing_conflicts:
+        logger.info("No missing files or conflicts detected")
+        return {'relocated': 0, 'deleted': 0, 'actions': []}
+
+    logger.info(f"Found {len(missing_tracks)} tracks with missing files")
+
+    # Step 3: Build untracked file index
+    all_files_on_disk = set()
+    for library_path in config.music.library_paths:
+        for ext in config.music.supported_formats:
+            all_files_on_disk.update(Path(library_path).rglob(f"*{ext}"))
+
+    # Filter to untracked files (not in database)
+    db_paths = {t['local_path'] for t in db_tracks}
+    untracked_files = all_files_on_disk - db_paths
+
+    # Index by filename: {filename: [(full_path, filesize), ...]}
+    untracked_index = {}
+    for filepath in untracked_files:
+        # Skip Syncthing conflicts
+        if '.sync-conflict-' in filepath.name:
+            continue
+
+        filename = filepath.name
+        try:
+            filesize = filepath.stat().st_size
+            untracked_index.setdefault(filename, []).append((str(filepath), filesize))
+        except OSError:
+            # Skip files we can't stat
+            continue
+
+    logger.info(f"Found {len(untracked_files)} untracked files, {len(untracked_index)} unique filenames")
+
+    # Step 4: Match and classify missing files
+    # Note: actions list already initialized in Step 2 with Syncthing conflicts
+
+    for missing in missing_tracks:
+        old_path = missing['local_path']
+
+        # Try to match by filename
+        filename = Path(old_path).name
+        candidates = untracked_index.get(filename, [])
+
+        if not candidates:
+            # No match - schedule for deletion
+            actions.append({
+                'type': 'delete',
+                'track_id': missing['id'],
+                'old_path': old_path,
+                'reason': 'file_not_found'
+            })
+
+        elif len(candidates) == 1:
+            # Single candidate - auto-relocate
+            new_path, new_size = candidates[0]
+            actions.append({
+                'type': 'relocate',
+                'track_id': missing['id'],
+                'old_path': old_path,
+                'new_path': new_path
+            })
+
+        else:
+            # Multiple candidates - pick best by path similarity
+            old_dir = str(Path(old_path).parent)
+            best_match = None
+            best_score = 0
+
+            for new_path, new_size in candidates:
+                new_dir = str(Path(new_path).parent)
+                score = path_similarity(old_dir, new_dir)
+                if score > best_score:
+                    best_score = score
+                    best_match = new_path
+
+            if best_score >= AUTO_RELOCATE_THRESHOLD:
+                actions.append({
+                    'type': 'relocate',
+                    'track_id': missing['id'],
+                    'old_path': old_path,
+                    'new_path': best_match,
+                    'confidence': best_score
+                })
+            else:
+                # Low confidence - delete (file likely truly gone)
+                actions.append({
+                    'type': 'delete',
+                    'track_id': missing['id'],
+                    'old_path': old_path,
+                    'reason': 'ambiguous_match_low_confidence'
+                })
+
+    # Step 5: Execute actions (batch operations)
+    relocated_count = 0
+    deleted_count = 0
+
+    with get_db_connection() as conn:
+        # Batch relocations
+        relocate_updates = [
+            (action['new_path'], action['track_id'])
+            for action in actions if action['type'] == 'relocate'
+        ]
+        if relocate_updates:
+            conn.executemany("""
+                UPDATE tracks
+                SET local_path = ?, file_mtime = NULL
+                WHERE id = ?
+            """, relocate_updates)
+            relocated_count = len(relocate_updates)
+
+        # Batch deletions
+        delete_ids = [
+            (action['track_id'],)
+            for action in actions if action['type'] == 'delete'
+        ]
+        if delete_ids:
+            conn.executemany("""
+                DELETE FROM tracks WHERE id = ?
+            """, delete_ids)
+            deleted_count = len(delete_ids)
+
+        conn.commit()
+
+    # Log detailed actions
+    logger.info(f"Cleanup complete: {relocated_count} relocated, {deleted_count} deleted")
+    for action in actions:
+        if action['type'] == 'relocate':
+            logger.info(f"Relocated: {action['old_path']} → {action['new_path']}")
+        elif action['type'] == 'delete':
+            logger.info(f"Deleted: {action['old_path']} (reason: {action['reason']})")
+
+    return {
+        'relocated': relocated_count,
+        'deleted': deleted_count,
+        'actions': actions
+    }

@@ -19,6 +19,8 @@ from .engine import (
     sync_elo_export,
     get_sync_status,
     rescan_library,
+    path_similarity,
+    detect_missing_and_moved_files,
 )
 
 __all__ = [
@@ -32,4 +34,6 @@ __all__ = [
     "sync_elo_export",
     "get_sync_status",
     "rescan_library",
+    "path_similarity",
+    "detect_missing_and_moved_files",
 ]

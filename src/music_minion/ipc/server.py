@@ -421,6 +421,10 @@ def process_ipc_command(
     args_str = " ".join(args) if args else ""
     history_entry = f"[IPC] {command} {args_str}".strip()
 
+    # Commands that are internal coordination and shouldn't clutter history
+    silent_commands = {"set-web-mode"}
+    is_silent = command in silent_commands
+
     try:
         # Check if it's a web control command
         # web-winner and web-archive are context-aware - route through router
@@ -521,21 +525,22 @@ def process_ipc_command(
         # so we construct a generic success message
         message = f"Executed: {command} {args_str}".strip()
 
-        # Add to history
-        add_to_history(f"{history_entry} → Success")
+        # Add to history (skip for silent internal commands)
+        if not is_silent:
+            add_to_history(f"{history_entry} → Success")
 
-        # Send notification if enabled
-        if (
-            ctx.config.notifications.enabled
-            if hasattr(ctx.config, "notifications")
-            else True
-        ):
+            # Send notification if enabled
             if (
-                ctx.config.notifications.show_success
-                if hasattr(ctx.config.notifications, "show_success")
+                ctx.config.notifications.enabled
+                if hasattr(ctx.config, "notifications")
                 else True
             ):
-                notifications.notify_success(message)
+                if (
+                    ctx.config.notifications.show_success
+                    if hasattr(ctx.config.notifications, "show_success")
+                    else True
+                ):
+                    notifications.notify_success(message)
 
         return ctx, True, message
 

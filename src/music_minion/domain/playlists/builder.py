@@ -168,7 +168,8 @@ def get_candidate_tracks(
             FROM tracks t
             LEFT JOIN elo_ratings er ON t.id = er.track_id
             WHERE {filter_where}
-                NOT EXISTS (
+                t.local_path IS NOT NULL AND t.local_path != ''
+                AND NOT EXISTS (
                     SELECT 1 FROM playlist_tracks
                     WHERE playlist_id = ? AND track_id = t.id
                 )
@@ -198,7 +199,8 @@ def get_candidate_tracks(
             FROM tracks t
             LEFT JOIN elo_ratings er ON t.id = er.track_id
             WHERE {filter_where}
-                NOT EXISTS (
+                t.local_path IS NOT NULL AND t.local_path != ''
+                AND NOT EXISTS (
                     SELECT 1 FROM playlist_tracks
                     WHERE playlist_id = ? AND track_id = t.id
                 )

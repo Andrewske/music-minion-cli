@@ -5,6 +5,7 @@ import {
   flexRender,
   type SortingState,
   type ColumnDef,
+  type Column,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Track } from '../../api/builder';
@@ -35,20 +36,24 @@ export const TrackQueueTable = ({
   const parentRef = useRef<HTMLDivElement>(null);
 
   // Column definitions
+  // Fixed columns: exact pixel width (flex: 0 0 Xpx)
+  // Flexible columns: grow to fill space (flex: X 1 0)
   const columns: ColumnDef<Track>[] = [
     {
       id: 'title',
       accessorKey: 'title',
       header: 'Title',
       cell: (info) => info.getValue() ?? '-',
-      size: 180,
+      size: 3,
+      meta: { flexible: true },
     },
     {
       id: 'artist',
       accessorKey: 'artist',
       header: 'Artist',
       cell: (info) => info.getValue() ?? '-',
-      size: 150,
+      size: 2,
+      meta: { flexible: true },
     },
     {
       id: 'bpm',
@@ -58,14 +63,16 @@ export const TrackQueueTable = ({
         const val = info.getValue() as number | undefined;
         return val ? Math.round(val) : '-';
       },
-      size: 60,
+      size: 50,
+      meta: { fixed: true },
     },
     {
       id: 'genre',
       accessorKey: 'genre',
       header: 'Genre',
       cell: (info) => info.getValue() ?? '-',
-      size: 100,
+      size: 1,
+      meta: { flexible: true },
     },
     {
       id: 'key_signature',
@@ -73,13 +80,15 @@ export const TrackQueueTable = ({
       header: 'Key',
       cell: (info) => info.getValue() ?? '-',
       size: 60,
+      meta: { fixed: true },
     },
     {
       id: 'year',
       accessorKey: 'year',
       header: 'Year',
       cell: (info) => info.getValue() ?? '-',
-      size: 60,
+      size: 65,
+      meta: { fixed: true },
     },
     {
       id: 'elo_rating',
@@ -90,8 +99,20 @@ export const TrackQueueTable = ({
         return val ? Math.round(val) : '-';
       },
       size: 70,
+      meta: { fixed: true },
     },
   ];
+
+  // Helper to get flex style for fixed vs flexible columns
+  const getColumnFlex = (column: Column<Track>): React.CSSProperties => {
+    const meta = column.columnDef.meta as { fixed?: boolean; flexible?: boolean } | undefined;
+    const size = column.getSize();
+
+    if (meta?.fixed) {
+      return { flex: `0 0 ${size}px`, minWidth: 0 };
+    }
+    return { flex: `${size} 1 0`, minWidth: 0 };
+  };
 
   // TanStack Table setup with manual sorting
   const table = useReactTable({
@@ -162,15 +183,15 @@ export const TrackQueueTable = ({
         className="overflow-auto"
         style={{ maxHeight: '50vh' }}
       >
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-slate-700 z-10">
+        <table className="w-full text-sm" style={{ display: 'grid' }}>
+          <thead className="bg-slate-700" style={{ display: 'grid', position: 'sticky', top: 0, zIndex: 1 }}>
             {table.getHeaderGroups().map((headerGroup) => (
-              <tr key={headerGroup.id}>
+              <tr key={headerGroup.id} style={{ display: 'flex', width: '100%' }}>
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
                     className="px-3 py-2 text-left cursor-pointer hover:bg-slate-600 select-none"
-                    style={{ width: header.column.getSize() }}
+                    style={getColumnFlex(header.column)}
                     onClick={header.column.getToggleSortingHandler()}
                   >
                     <div className="flex items-center">
@@ -187,6 +208,7 @@ export const TrackQueueTable = ({
           </thead>
           <tbody
             style={{
+              display: 'grid',
               height: `${virtualizer.getTotalSize()}px`,
               position: 'relative',
             }}
@@ -201,24 +223,25 @@ export const TrackQueueTable = ({
                   className={getRowClasses(virtualRow.index, track.id)}
                   onClick={() => onTrackClick(track)}
                   style={{
+                    display: 'flex',
                     position: 'absolute',
-                    top: 0,
-                    left: 0,
+                    transform: `translateY(${virtualRow.start}px)`,
                     width: '100%',
                     height: `${virtualRow.size}px`,
-                    transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <td
                       key={cell.id}
-                      className="px-3 py-2 border-b border-slate-700"
-                      style={{ width: cell.column.getSize() }}
+                      className="px-3 py-2 border-b border-slate-700 overflow-hidden"
+                      style={getColumnFlex(cell.column)}
                     >
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext()
-                      )}
+                      <div className="truncate" title={String(cell.getValue() ?? '')}>
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
+                      </div>
                     </td>
                   ))}
                 </tr>

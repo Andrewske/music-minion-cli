@@ -829,6 +829,8 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
     last_state_hash = None
     needs_full_redraw = True
     last_input_text = ""
+    # Focus event filter: tracks pending '[' that might be part of focus sequence
+    pending_bracket_key = None
     last_palette_state = (
         False,  # palette_visible
         0,  # palette_selected
@@ -1479,7 +1481,67 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
             # Wait for input (with timeout for background updates)
             key = term.inkey(timeout=0.1)
 
+            # Flush pending bracket on timeout (user typed '[' but nothing followed)
+            if not key and pending_bracket_key is not None:
+                # No key received - flush the pending bracket as a normal key
+                palette_height = layout["palette_height"] if layout else 10
+                analytics_viewer_height = (
+                    layout["analytics_viewer_height"] if layout else 30
+                )
+                ui_state, command_line = handle_key(
+                    ui_state, pending_bracket_key, palette_height, analytics_viewer_height
+                )
+                pending_bracket_key = None
+
+                if command_line:
+                    with ui_state_lock:
+                        ctx, ui_state, should_quit = execute_command(
+                            ctx, ui_state, command_line
+                        )
+                    needs_full_redraw = True
+                    last_position = ctx.player_state.current_position
+                    last_poll_time = time.time()
+
             if key:
+                # Filter terminal focus event sequences (\x1b[I and \x1b[O)
+                # These are sent by terminals like Kitty when the window gains/loses focus.
+                # After blessed consumes the ESC byte, the remaining [O or [I appears as
+                # separate printable characters that would pollute the input field.
+                key_str = str(key)
+
+                # If we have a pending '[' and this is 'O' or 'I', it's a focus event - discard both
+                if pending_bracket_key is not None and key_str in ("O", "I"):
+                    pending_bracket_key = None
+                    # Skip processing this key entirely - it's the second half of focus event
+                    continue
+
+                # If previous key was '[' but this isn't O/I, process the bracket first
+                if pending_bracket_key is not None:
+                    # Process the pending bracket as a normal key
+                    palette_height = layout["palette_height"] if layout else 10
+                    analytics_viewer_height = (
+                        layout["analytics_viewer_height"] if layout else 30
+                    )
+                    ui_state, command_line = handle_key(
+                        ui_state, pending_bracket_key, palette_height, analytics_viewer_height
+                    )
+                    pending_bracket_key = None
+
+                    if command_line:
+                        with ui_state_lock:
+                            ctx, ui_state, should_quit = execute_command(
+                                ctx, ui_state, command_line
+                            )
+                        needs_full_redraw = True
+                        last_position = ctx.player_state.current_position
+                        last_poll_time = time.time()
+
+                # Check if current key is '[' - might be start of focus sequence
+                if key_str == "[" and key.isprintable():
+                    # Hold this key - wait to see if next is 'O' or 'I'
+                    pending_bracket_key = key
+                    continue
+
                 # Handle keyboard input
                 palette_height = layout["palette_height"] if layout else 10
                 analytics_viewer_height = (
