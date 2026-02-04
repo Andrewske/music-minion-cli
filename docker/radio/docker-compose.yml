@@ -14,7 +14,8 @@ services:
     depends_on:
       - icecast
     volumes:
-      - ~/Music/radio-library:/home/kevin/Music/radio-library:ro  # Must match DB paths
+      - ~/Music:/home/kevin/Music:ro  # Mount entire Music dir so all paths work
+      - ~/music:/home/kevin/music:ro  # Mount lowercase music dir (YouTube downloads)
       - ./liquidsoap/radio.liq:/etc/liquidsoap/radio.liq:ro
     ports:
       - "1234:1234"  # Telnet control port
