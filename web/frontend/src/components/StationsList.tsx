@@ -5,15 +5,19 @@ import {
   activateStation,
   deactivateStation,
   createStation,
+  updateStation,
   deleteStation,
 } from '../api/radio';
-import type { Station } from '../api/radio';
+import type { Station, SourceFilter } from '../api/radio';
 import { ScheduleEditorModal } from './ScheduleEditorModal';
+import { usePlaylists } from '../hooks/usePlaylists';
+import type { Playlist } from '../types';
 
 interface StationItemProps {
   station: Station;
   onActivate: (id: number) => void;
   onDeactivate: () => void;
+  onEdit: (station: Station) => void;
   onDelete: (id: number) => void;
   onEditSchedule?: (id: number, name: string) => void;
   isActivating: boolean;
@@ -24,6 +28,7 @@ function StationItem({
   station,
   onActivate,
   onDeactivate,
+  onEdit,
   onDelete,
   onEditSchedule,
   isActivating,
@@ -36,6 +41,11 @@ function StationItem({
     } else {
       onActivate(station.id);
     }
+  };
+
+  const handleEdit = (e: React.MouseEvent): void => {
+    e.stopPropagation();
+    onEdit(station);
   };
 
   const handleDelete = (e: React.MouseEvent): void => {
@@ -78,7 +88,12 @@ function StationItem({
           >
             {station.name}
           </p>
-          <p className="text-xs text-slate-500 capitalize">{station.mode}</p>
+          <p className="text-xs text-slate-500 capitalize">
+            {station.mode}
+            {station.source_filter !== 'all' && (
+              <span className="ml-1 text-slate-600">• {station.source_filter}</span>
+            )}
+          </p>
         </div>
       </div>
       <div className="flex items-center gap-2">
@@ -103,6 +118,21 @@ function StationItem({
           </button>
         )}
         <button
+          onClick={handleEdit}
+          className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-blue-400 transition-opacity"
+          aria-label="Edit station"
+          title="Edit Station"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+            />
+          </svg>
+        </button>
+        <button
           onClick={handleDelete}
           disabled={isDeleting}
           className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-red-400 transition-opacity disabled:opacity-50"
@@ -118,22 +148,29 @@ function StationItem({
 }
 
 interface CreateStationFormProps {
-  onSubmit: (name: string) => void;
+  onSubmit: (name: string, playlistId?: number, mode?: 'shuffle' | 'queue', sourceFilter?: SourceFilter) => void;
   onCancel: () => void;
   isCreating: boolean;
+  playlists: Playlist[];
+  playlistsLoading: boolean;
 }
 
 function CreateStationForm({
   onSubmit,
   onCancel,
   isCreating,
+  playlists,
+  playlistsLoading,
 }: CreateStationFormProps): JSX.Element {
   const [name, setName] = useState('');
+  const [playlistId, setPlaylistId] = useState<number | undefined>(undefined);
+  const [mode, setMode] = useState<'shuffle' | 'queue'>('shuffle');
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
 
   const handleSubmit = (e: React.FormEvent): void => {
     e.preventDefault();
     if (name.trim()) {
-      onSubmit(name.trim());
+      onSubmit(name.trim(), playlistId, mode, sourceFilter);
     }
   };
 
@@ -148,6 +185,72 @@ function CreateStationForm({
         autoFocus
         disabled={isCreating}
       />
+
+      <div className="space-y-1">
+        <label className="text-xs text-slate-400">Playlist (optional)</label>
+        <select
+          value={playlistId ?? ''}
+          onChange={(e) => setPlaylistId(e.target.value ? Number(e.target.value) : undefined)}
+          className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+          disabled={isCreating || playlistsLoading}
+        >
+          <option value="">Meta-station (no playlist)</option>
+          {playlists.map((playlist) => (
+            <option key={playlist.id} value={playlist.id}>
+              {playlist.name} ({playlist.track_count} tracks)
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-xs text-slate-400">Mode</label>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setMode('shuffle')}
+            className={
+              'flex-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ' +
+              (mode === 'shuffle'
+                ? 'bg-emerald-600 text-white'
+                : 'bg-slate-800 text-slate-400 hover:bg-slate-700')
+            }
+            disabled={isCreating}
+          >
+            Shuffle
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('queue')}
+            className={
+              'flex-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ' +
+              (mode === 'queue'
+                ? 'bg-emerald-600 text-white'
+                : 'bg-slate-800 text-slate-400 hover:bg-slate-700')
+            }
+            disabled={isCreating}
+          >
+            Queue
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-xs text-slate-400">Source Filter</label>
+        <select
+          value={sourceFilter}
+          onChange={(e) => setSourceFilter(e.target.value as SourceFilter)}
+          className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+          disabled={isCreating}
+        >
+          <option value="all">All Sources</option>
+          <option value="local">Local Files Only</option>
+          <option value="youtube">YouTube Only</option>
+          <option value="soundcloud">SoundCloud Only</option>
+          <option value="spotify">Spotify Only</option>
+        </select>
+      </div>
+
       <div className="flex gap-2">
         <button
           type="submit"
@@ -169,8 +272,155 @@ function CreateStationForm({
   );
 }
 
+interface EditStationModalProps {
+  station: Station;
+  onSubmit: (updates: { name?: string; playlist_id?: number | null; mode?: 'shuffle' | 'queue'; source_filter?: SourceFilter }) => void;
+  onClose: () => void;
+  isUpdating: boolean;
+  playlists: Playlist[];
+  playlistsLoading: boolean;
+}
+
+function EditStationModal({
+  station,
+  onSubmit,
+  onClose,
+  isUpdating,
+  playlists,
+  playlistsLoading,
+}: EditStationModalProps): JSX.Element {
+  const [name, setName] = useState(station.name);
+  const [playlistId, setPlaylistId] = useState<number | null>(station.playlist_id);
+  const [mode, setMode] = useState<'shuffle' | 'queue'>(station.mode);
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(station.source_filter);
+
+  const handleSubmit = (e: React.FormEvent): void => {
+    e.preventDefault();
+    const updates: { name?: string; playlist_id?: number | null; mode?: 'shuffle' | 'queue'; source_filter?: SourceFilter } = {};
+    if (name.trim() !== station.name) updates.name = name.trim();
+    if (playlistId !== station.playlist_id) updates.playlist_id = playlistId;
+    if (mode !== station.mode) updates.mode = mode;
+    if (sourceFilter !== station.source_filter) updates.source_filter = sourceFilter;
+
+    if (Object.keys(updates).length > 0) {
+      onSubmit(updates);
+    } else {
+      onClose();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+      <div
+        className="bg-slate-900 rounded-lg p-6 w-full max-w-md mx-4 border border-slate-700"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-lg font-semibold text-white mb-4">Edit Station</h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1">
+            <label className="text-xs text-slate-400">Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Station name"
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+              autoFocus
+              disabled={isUpdating}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs text-slate-400">Playlist</label>
+            <select
+              value={playlistId ?? ''}
+              onChange={(e) => setPlaylistId(e.target.value ? Number(e.target.value) : null)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+              disabled={isUpdating || playlistsLoading}
+            >
+              <option value="">Meta-station (no playlist)</option>
+              {playlists.map((playlist) => (
+                <option key={playlist.id} value={playlist.id}>
+                  {playlist.name} ({playlist.track_count} tracks)
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs text-slate-400">Mode</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setMode('shuffle')}
+                className={
+                  'flex-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ' +
+                  (mode === 'shuffle'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-800 text-slate-400 hover:bg-slate-700')
+                }
+                disabled={isUpdating}
+              >
+                Shuffle
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('queue')}
+                className={
+                  'flex-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ' +
+                  (mode === 'queue'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-800 text-slate-400 hover:bg-slate-700')
+                }
+                disabled={isUpdating}
+              >
+                Queue
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs text-slate-400">Source Filter</label>
+            <select
+              value={sourceFilter}
+              onChange={(e) => setSourceFilter(e.target.value as SourceFilter)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+              disabled={isUpdating}
+            >
+              <option value="all">All Sources</option>
+              <option value="local">Local Files Only</option>
+              <option value="youtube">YouTube Only</option>
+              <option value="soundcloud">SoundCloud Only</option>
+              <option value="spotify">Spotify Only</option>
+            </select>
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <button
+              type="submit"
+              disabled={!name.trim() || isUpdating}
+              className="flex-1 bg-emerald-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {isUpdating ? 'Saving...' : 'Save'}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isUpdating}
+              className="px-4 py-2 bg-slate-800 text-slate-300 rounded-lg text-sm font-medium hover:bg-slate-700 disabled:opacity-50 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export function StationsList(): JSX.Element {
   const [isCreating, setIsCreating] = useState(false);
+  const [editingStation, setEditingStation] = useState<Station | null>(null);
   const [editingSchedule, setEditingSchedule] = useState<{
     stationId: number;
     stationName: string;
@@ -181,6 +431,8 @@ export function StationsList(): JSX.Element {
     queryKey: ['stations'],
     queryFn: getStations,
   });
+
+  const { data: playlists, isLoading: playlistsLoading } = usePlaylists();
 
   const activateMutation = useMutation({
     mutationFn: activateStation,
@@ -199,10 +451,21 @@ export function StationsList(): JSX.Element {
   });
 
   const createMutation = useMutation({
-    mutationFn: (name: string) => createStation(name),
+    mutationFn: ({ name, playlistId, mode, sourceFilter }: { name: string; playlistId?: number; mode?: 'shuffle' | 'queue'; sourceFilter?: SourceFilter }) =>
+      createStation(name, playlistId, mode, sourceFilter),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['stations'] });
       setIsCreating(false);
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ stationId, updates }: { stationId: number; updates: { name?: string; playlist_id?: number | null; mode?: 'shuffle' | 'queue'; source_filter?: SourceFilter } }) =>
+      updateStation(stationId, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['stations'] });
+      queryClient.invalidateQueries({ queryKey: ['nowPlaying'] });
+      setEditingStation(null);
     },
   });
 
@@ -257,9 +520,11 @@ export function StationsList(): JSX.Element {
         {isCreating && (
           <div className="mb-4">
             <CreateStationForm
-              onSubmit={(name) => createMutation.mutate(name)}
+              onSubmit={(name, playlistId, mode, sourceFilter) => createMutation.mutate({ name, playlistId, mode, sourceFilter })}
               onCancel={() => setIsCreating(false)}
               isCreating={createMutation.isPending}
+              playlists={playlists ?? []}
+              playlistsLoading={playlistsLoading}
             />
           </div>
         )}
@@ -274,6 +539,7 @@ export function StationsList(): JSX.Element {
                 station={station}
                 onActivate={(id) => activateMutation.mutate(id)}
                 onDeactivate={() => deactivateMutation.mutate()}
+                onEdit={(s) => setEditingStation(s)}
                 onDelete={(id) => deleteMutation.mutate(id)}
                 onEditSchedule={(id, name) => setEditingSchedule({ stationId: id, stationName: name })}
                 isActivating={activateMutation.isPending}
@@ -290,6 +556,17 @@ export function StationsList(): JSX.Element {
           onClose={() => setEditingSchedule(null)}
           stationId={editingSchedule.stationId}
           stationName={editingSchedule.stationName}
+        />
+      )}
+
+      {editingStation && (
+        <EditStationModal
+          station={editingStation}
+          onSubmit={(updates) => updateMutation.mutate({ stationId: editingStation.id, updates })}
+          onClose={() => setEditingStation(null)}
+          isUpdating={updateMutation.isPending}
+          playlists={playlists ?? []}
+          playlistsLoading={playlistsLoading}
         />
       )}
     </>

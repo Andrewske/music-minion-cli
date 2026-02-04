@@ -2,11 +2,14 @@ import { apiRequest } from './client';
 
 // === Types ===
 
+export type SourceFilter = 'all' | 'local' | 'youtube' | 'soundcloud' | 'spotify';
+
 export interface Station {
   id: number;
   name: string;
   playlist_id: number | null;
   mode: 'shuffle' | 'queue';
+  source_filter: SourceFilter;
   is_active: boolean;
 }
 
@@ -41,6 +44,7 @@ export interface CreateStationRequest {
   name: string;
   playlist_id?: number;
   mode?: 'shuffle' | 'queue';
+  source_filter?: SourceFilter;
 }
 
 export interface HistoryEntry {
@@ -86,15 +90,31 @@ export async function getStation(stationId: number): Promise<Station> {
 export async function createStation(
   name: string,
   playlistId?: number,
-  mode: 'shuffle' | 'queue' = 'shuffle'
+  mode: 'shuffle' | 'queue' = 'shuffle',
+  sourceFilter: SourceFilter = 'all'
 ): Promise<Station> {
-  const body: CreateStationRequest = { name, mode };
+  const body: CreateStationRequest = { name, mode, source_filter: sourceFilter };
   if (playlistId !== undefined) {
     body.playlist_id = playlistId;
   }
   return apiRequest<Station>('/radio/stations', {
     method: 'POST',
     body: JSON.stringify(body),
+  });
+}
+
+export async function updateStation(
+  stationId: number,
+  updates: {
+    name?: string;
+    playlist_id?: number | null;
+    mode?: 'shuffle' | 'queue';
+    source_filter?: SourceFilter;
+  }
+): Promise<Station> {
+  return apiRequest<Station>(`/radio/stations/${stationId}`, {
+    method: 'PUT',
+    body: JSON.stringify(updates),
   });
 }
 
