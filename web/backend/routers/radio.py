@@ -4,7 +4,7 @@ Radio station API endpoints.
 Provides endpoints for Liquidsoap integration and station management.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -25,6 +25,7 @@ class StationResponse(BaseModel):
     name: str
     playlist_id: Optional[int]
     mode: str
+    source_filter: str
     is_active: bool
 
 
@@ -67,6 +68,7 @@ class CreateStationRequest(BaseModel):
     name: str
     playlist_id: Optional[int] = None
     mode: str = "shuffle"
+    source_filter: str = "all"
 
 
 class UpdateStationRequest(BaseModel):
@@ -75,6 +77,7 @@ class UpdateStationRequest(BaseModel):
     name: Optional[str] = None
     playlist_id: Optional[int] = None
     mode: Optional[str] = None
+    source_filter: Optional[str] = None
 
 
 class CreateScheduleRequest(BaseModel):
@@ -136,6 +139,7 @@ def _station_to_response(station) -> StationResponse:
         name=station.name,
         playlist_id=station.playlist_id,
         mode=station.mode,
+        source_filter=station.source_filter,
         is_active=station.is_active,
     )
 
@@ -199,6 +203,37 @@ def _track_play_stats_to_response(stats) -> TrackPlayStatsResponse:
     )
 
 
+# === Stream Proxy ===
+
+
+@router.get("/stream")
+def stream_proxy():
+    """Proxy the Icecast stream to avoid CORS issues.
+
+    Streams audio from Icecast (localhost:8001/stream) to the client.
+    """
+    import requests
+    from fastapi.responses import StreamingResponse
+
+    ICECAST_URL = "http://localhost:8001/stream"
+
+    def stream_generator():
+        with requests.get(ICECAST_URL, stream=True) as response:
+            response.raise_for_status()
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    yield chunk
+
+    return StreamingResponse(
+        stream_generator(),
+        media_type="audio/ogg",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
+
+
 # === Liquidsoap Integration ===
 
 
@@ -208,11 +243,12 @@ def get_next_track() -> Response:
     Get next track path for Liquidsoap.
 
     Returns plain text file path for direct consumption by Liquidsoap.
-    Note: This queues the track - actual playback is reported via /track-started.
+    Also updates radio_state so /now-playing reflects the queued track.
     """
     from music_minion.domain.radio import (
         get_active_station,
         get_next_track as _get_next_track,
+        record_now_playing,
     )
 
     station = get_active_station()
@@ -228,6 +264,9 @@ def get_next_track() -> Response:
     if not track.local_path:
         logger.warning(f"Track {track.id} has no local path")
         raise HTTPException(status_code=404, detail="Track has no local path")
+
+    # Update radio_state so /now-playing shows this track
+    record_now_playing(station.id, track.id)
 
     logger.info(f"Queuing track for Liquidsoap: {track.local_path}")
     return Response(content=track.local_path, media_type="text/plain")
@@ -271,7 +310,11 @@ async def track_started(request: Request) -> Response:
     tracks ahead of time. This callback fires when playback begins.
     """
     from music_minion.core.db_adapter import get_radio_db_connection
-    from music_minion.domain.radio import get_active_station, record_now_playing
+    from music_minion.domain.radio import (
+        get_active_station,
+        record_now_playing,
+        record_track_history,
+    )
 
     # Get the file path from request body
     body = await request.body()
@@ -284,16 +327,40 @@ async def track_started(request: Request) -> Response:
     if not station:
         return Response(content="No active station", status_code=404)
 
-    # Look up track by path
+    # Look up track by path with source info for history recording
     with get_radio_db_connection() as conn:
         cursor = conn.execute(
-            "SELECT id FROM tracks WHERE local_path = ?",
+            "SELECT id, source_url FROM tracks WHERE local_path = ?",
             (file_path,),
         )
         row = cursor.fetchone()
 
     if row:
         record_now_playing(station.id, row["id"])
+
+        # Detect source type from source_url
+        source_type = "local"
+        if row["source_url"]:
+            source_url = row["source_url"]
+            if "youtube" in source_url or "youtu.be" in source_url:
+                source_type = "youtube"
+            elif "soundcloud" in source_url:
+                source_type = "soundcloud"
+            elif "spotify" in source_url:
+                source_type = "spotify"
+
+        # Record to history when track actually starts
+        try:
+            record_track_history(
+                station_id=station.id,
+                track_id=row["id"],
+                source_type=source_type,
+                position_ms=0,
+            )
+        except Exception as e:
+            logger.exception(f"Failed to record history for track {row['id']}: {e}")
+            # Don't fail the request if history recording fails
+
         logger.info(f"Track started playing: {file_path} (id={row['id']})")
         return Response(content="OK", status_code=200)
     else:
@@ -352,7 +419,10 @@ def get_now_playing() -> NowPlayingResponse:
             )
 
             # Calculate position based on when track started
-            elapsed_ms = int((datetime.now() - started_at).total_seconds() * 1000)
+            # Use UTC since SQLite CURRENT_TIMESTAMP stores UTC
+            now_utc = datetime.now(timezone.utc)
+            started_at_utc = started_at.replace(tzinfo=timezone.utc)
+            elapsed_ms = int((now_utc - started_at_utc).total_seconds() * 1000)
             # Cap at track duration to avoid showing > 100%
             duration_ms = int((track.duration or 0) * 1000)
             position_ms = min(elapsed_ms, duration_ms) if duration_ms > 0 else elapsed_ms
@@ -404,7 +474,7 @@ def create_station(req: CreateStationRequest) -> StationResponse:
     from music_minion.domain.radio import create_station as _create_station
 
     try:
-        station = _create_station(req.name, req.playlist_id, req.mode)
+        station = _create_station(req.name, req.playlist_id, req.mode, req.source_filter)
         return _station_to_response(station)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

@@ -4,7 +4,7 @@ Station management for radio.
 CRUD operations for radio stations using functional patterns.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from loguru import logger
@@ -15,10 +15,21 @@ from .models import Station
 
 
 def _parse_datetime(val: Any) -> datetime:
-    """Parse datetime from either string (SQLite) or datetime object (PostgreSQL)."""
+    """Parse datetime from either string (SQLite) or datetime object (PostgreSQL).
+
+    Returns UTC-aware datetime since SQLite CURRENT_TIMESTAMP stores UTC.
+    """
     if isinstance(val, datetime):
+        if val.tzinfo is None:
+            return val.replace(tzinfo=timezone.utc)
         return val
-    return datetime.fromisoformat(val)
+    dt = datetime.fromisoformat(val)
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+VALID_SOURCE_FILTERS = ("all", "local", "youtube", "soundcloud", "spotify")
 
 
 def _row_to_station(row: dict[str, Any]) -> Station:
@@ -28,6 +39,7 @@ def _row_to_station(row: dict[str, Any]) -> Station:
         name=row["name"],
         playlist_id=row["playlist_id"],
         mode=row["mode"],
+        source_filter=row.get("source_filter", "all"),
         is_active=bool(row["is_active"]),
         created_at=_parse_datetime(row["created_at"]),
         updated_at=_parse_datetime(row["updated_at"]),
@@ -38,6 +50,7 @@ def create_station(
     name: str,
     playlist_id: Optional[int] = None,
     mode: str = "shuffle",
+    source_filter: str = "all",
 ) -> Station:
     """Create a new radio station.
 
@@ -45,24 +58,30 @@ def create_station(
         name: Unique station name
         playlist_id: Optional playlist to associate with this station
         mode: Playback mode - 'shuffle' or 'queue'
+        source_filter: Filter tracks by source - 'all', 'local', 'youtube', 'soundcloud', 'spotify'
 
     Returns:
         The created Station
 
     Raises:
-        ValueError: If name already exists or mode is invalid
+        ValueError: If name already exists, mode is invalid, or source_filter is invalid
     """
     if mode not in ("shuffle", "queue"):
         raise ValueError(f"Invalid mode: {mode}. Must be 'shuffle' or 'queue'")
+
+    if source_filter not in VALID_SOURCE_FILTERS:
+        raise ValueError(
+            f"Invalid source_filter: {source_filter}. Must be one of {VALID_SOURCE_FILTERS}"
+        )
 
     with get_radio_db_connection() as conn:
         try:
             cursor = conn.execute(
                 """
-                INSERT INTO stations (name, playlist_id, mode, is_active)
-                VALUES (?, ?, ?, FALSE)
+                INSERT INTO stations (name, playlist_id, mode, source_filter, is_active)
+                VALUES (?, ?, ?, ?, FALSE)
                 """,
-                (name, playlist_id, mode),
+                (name, playlist_id, mode, source_filter),
             )
             conn.commit()
             station_id = cursor.lastrowid
@@ -240,6 +259,7 @@ def update_station(
     name: Optional[str] = None,
     playlist_id: Optional[int] = None,
     mode: Optional[str] = None,
+    source_filter: Optional[str] = None,
 ) -> bool:
     """Update a station's properties.
 
@@ -248,15 +268,21 @@ def update_station(
         name: New name (optional)
         playlist_id: New playlist ID (optional, use -1 to clear)
         mode: New mode - 'shuffle' or 'queue' (optional)
+        source_filter: New source filter (optional)
 
     Returns:
         True if updated successfully, False if station not found
 
     Raises:
-        ValueError: If name already exists or mode is invalid
+        ValueError: If name already exists, mode is invalid, or source_filter is invalid
     """
     if mode is not None and mode not in ("shuffle", "queue"):
         raise ValueError(f"Invalid mode: {mode}. Must be 'shuffle' or 'queue'")
+
+    if source_filter is not None and source_filter not in VALID_SOURCE_FILTERS:
+        raise ValueError(
+            f"Invalid source_filter: {source_filter}. Must be one of {VALID_SOURCE_FILTERS}"
+        )
 
     updates: list[str] = []
     params: list[Any] = []
@@ -270,6 +296,9 @@ def update_station(
     if mode is not None:
         updates.append("mode = ?")
         params.append(mode)
+    if source_filter is not None:
+        updates.append("source_filter = ?")
+        params.append(source_filter)
 
     if not updates:
         return True  # Nothing to update
@@ -344,6 +373,34 @@ def record_now_playing(station_id: int, track_id: int) -> None:
         logger.debug(f"Recorded now playing: station={station_id}, track={track_id}")
 
 
+def record_track_history(
+    station_id: int,
+    track_id: int,
+    source_type: str = "local",
+    position_ms: int = 0,
+) -> None:
+    """Record track playback to radio_history table.
+
+    Args:
+        station_id: Station ID
+        track_id: Track ID being played
+        source_type: Source type ('local' | 'youtube' | 'spotify' | 'soundcloud')
+        position_ms: Starting position in track (default: 0)
+    """
+    with get_radio_db_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO radio_history (station_id, track_id, source_type, started_at, position_ms)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)
+            """,
+            (station_id, track_id, source_type, position_ms),
+        )
+        conn.commit()
+        logger.debug(
+            f"Recorded history: station={station_id}, track={track_id}, source={source_type}"
+        )
+
+
 def get_actual_now_playing() -> Optional[tuple[int, datetime]]:
     """Get the track ID and start time of what's actually playing.
 
@@ -360,8 +417,6 @@ def get_actual_now_playing() -> Optional[tuple[int, datetime]]:
         )
         row = cursor.fetchone()
         if row and row["last_track_id"]:
-            updated_at = row["updated_at"]
-            if isinstance(updated_at, str):
-                updated_at = datetime.fromisoformat(updated_at)
+            updated_at = _parse_datetime(row["updated_at"])
             return (row["last_track_id"], updated_at)
         return None
