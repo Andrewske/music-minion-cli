@@ -27,7 +27,7 @@ declare module '@tanstack/react-router' {
   }
 }
 
-function App() {
+function App(): JSX.Element {
   return (
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
