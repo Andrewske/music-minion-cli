@@ -134,7 +134,9 @@ radio_history (
     station_id      INTEGER REFERENCES stations,
     track_id        INTEGER REFERENCES tracks,
     source_type     TEXT,                   -- 'local' | 'youtube' | 'spotify' | 'soundcloud'
-    source_url      TEXT,                   -- For non-local sources
+    source_url      TEXT,                   -- Permanent URL/ID, NOT ephemeral stream URL
+                                            -- e.g., 'https://youtube.com/watch?v=ID' or '/music/file.opus'
+                                            -- Liquidsoap resolves to stream via youtube-dl at playback time
     started_at      TIMESTAMP,
     ended_at        TIMESTAMP,
     position_ms     INTEGER                 -- Where in track we started (for mid-track joins)
@@ -147,6 +149,21 @@ radio_state (
     started_at      TIMESTAMP,
     last_track_id   INTEGER,
     last_position   INTEGER                 -- ms into current track
+)
+
+-- Pre-computed daily schedule (built nightly, boundary-aware)
+daily_schedule (
+    id              INTEGER PRIMARY KEY,
+    station_id      INTEGER REFERENCES stations,  -- The meta-station (e.g., Main)
+    date            DATE NOT NULL,
+    track_id        INTEGER REFERENCES tracks,
+    source_type     TEXT,                   -- 'local' | 'youtube' | 'spotify' | 'soundcloud'
+    source_url      TEXT,                   -- Permanent URL/ID
+    scheduled_start TIMESTAMP NOT NULL,     -- When this track should start
+    scheduled_end   TIMESTAMP NOT NULL,     -- When this track should end
+    position        INTEGER NOT NULL,       -- Order in day's schedule
+    time_range_id   INTEGER REFERENCES station_schedule,  -- Which time range this belongs to
+    UNIQUE(station_id, date, position)
 )
 
 -- Session-level skipped tracks (for fallback handling)
@@ -168,18 +185,30 @@ radio_skipped (
 The algorithm that makes "tune in mid-stream" work:
 
 ```python
-def calculate_now_playing(station_id: int, current_time: datetime) -> NowPlaying:
+def calculate_now_playing(
+    station_id: int,
+    current_time: datetime,
+    range_start: datetime | None = None
+) -> NowPlaying:
     """
     Given a station and time, calculate exactly what track
     and position should be playing.
+
+    Args:
+        station_id: The station to calculate for
+        current_time: The current time
+        range_start: When this station's time range began (passed from parent
+                     meta-station). None means top-level call, defaults to midnight.
     """
     station = get_station(station_id)
 
     # 1. If this is a meta-station (has schedule), find the active target station
     schedule = get_schedule_for_time(station_id, current_time)
     if schedule:
-        # Recursive: calculate what the target station would be playing
-        return calculate_now_playing(schedule.target_station, current_time)
+        # Recursive: pass the schedule's start time so content station knows
+        # when its range began
+        schedule_start = parse_time_today(schedule.start_time, current_time)
+        return calculate_now_playing(schedule.target_station, current_time, schedule_start)
 
     # 2. Get playlist tracks, excluding any skipped this session
     skipped_ids = get_skipped_tracks(station_id, current_time.date())
@@ -190,8 +219,9 @@ def calculate_now_playing(station_id: int, current_time: datetime) -> NowPlaying
         seed = f"{station_id}-{current_time.date()}"
         tracks = deterministic_shuffle(tracks, seed)
 
-    # 4. Find the time range start for this station
-    range_start = find_range_start(station_id, current_time)
+    # 4. Determine range start (passed from parent, or midnight for direct access)
+    if range_start is None:
+        range_start = current_time.replace(hour=0, minute=0, second=0, microsecond=0)
 
     # 5. Calculate position in the playlist
     total_duration = sum(t.duration_ms for t in tracks)
@@ -214,15 +244,49 @@ def calculate_now_playing(station_id: int, current_time: datetime) -> NowPlaying
 def get_next_track_with_fallback(station_id: int, current_time: datetime) -> Track:
     """
     Get next track, handling unavailable sources gracefully.
+
+    Uses bounded retry with caching to prevent:
+    - Stack overflow from recursive calls
+    - Hammering remote APIs (YouTube, SoundCloud) on cascading failures
+    - Infinite loops when many tracks are unavailable
     """
-    now_playing = calculate_now_playing(station_id, current_time)
+    max_remote_checks = 3  # Limit expensive network calls per request
+    remote_checks_done = 0
 
-    if not is_available(now_playing.track):
-        # Mark as skipped, recalculate
-        mark_skipped(station_id, now_playing.track, reason='unavailable')
-        return get_next_track_with_fallback(station_id, current_time)
+    while True:
+        now_playing = calculate_now_playing(station_id, current_time)
 
-    return now_playing.track
+        if now_playing is None:
+            # All tracks skipped - fall back to emergency station
+            return get_emergency_track()
+
+        track = now_playing.track
+
+        # Check if already known to be unavailable (cached in radio_skipped)
+        if is_known_skipped(station_id, track, current_time.date()):
+            # Already in skip cache, recalculate excludes it automatically
+            continue
+
+        # For local files, availability check is instant (file exists?)
+        # For remote sources, this is an expensive network call
+        if track.source_type == 'local':
+            if is_available(track):
+                return track
+            mark_skipped(station_id, track, reason='unavailable')
+            continue
+
+        # Remote source - count against limit
+        if remote_checks_done >= max_remote_checks:
+            # Too many remote failures, fall back to emergency
+            logger.warning(f"Hit max remote checks ({max_remote_checks}), using emergency station")
+            return get_emergency_track()
+
+        remote_checks_done += 1
+        if is_available(track):
+            return track
+
+        # Mark as skipped (persists to radio_skipped table, excluded from future calcs today)
+        mark_skipped(station_id, track, reason='unavailable')
 ```
 
 ### Edge Cases
@@ -234,6 +298,94 @@ def get_next_track_with_fallback(station_id: int, current_time: datetime) -> Tra
 - **Circular station references**: Depth check prevents Main → DnB → Main loops
 - **Unavailable source**: Skip and recalculate, shuffle order preserved minus skipped tracks
 - **All tracks unavailable**: Fall back to a designated "emergency" local-only station
+
+---
+
+## Daily Schedule Builder
+
+Pre-computes the full day's schedule nightly, with boundary-aware track selection to avoid cutting long content at station transitions.
+
+### Build Process (runs nightly at midnight)
+
+```python
+def build_daily_schedule(station_id: int, date: date) -> list[ScheduledTrack]:
+    """
+    Build boundary-aware schedule for the day.
+
+    Walks through each time range, shuffles content, and swaps in shorter
+    tracks when approaching boundaries to avoid >5 minute overshoot.
+    """
+    schedule = []
+    position = 0
+
+    for time_range in get_time_ranges(station_id, date):
+        target = get_station(time_range.target_station)
+        tracks = get_shuffled_playlist(target.playlist_id, date)
+        remaining = list(tracks)
+        current_time = time_range.start
+
+        while current_time < time_range.end and remaining:
+            track = remaining.pop(0)
+            track_duration = timedelta(milliseconds=track.duration_ms)
+            end_time = current_time + track_duration
+            overshoot = (end_time - time_range.end).total_seconds()
+
+            if overshoot > 300:  # >5 min overshoot
+                # Find a track that fits better
+                max_duration_sec = (time_range.end - current_time).total_seconds() + 300
+                better = next(
+                    (t for t in remaining if t.duration_ms / 1000 < max_duration_sec),
+                    None
+                )
+                if better:
+                    remaining.remove(better)
+                    remaining.insert(0, track)  # Put long track back for next range
+                    track = better
+                    track_duration = timedelta(milliseconds=track.duration_ms)
+                    end_time = current_time + track_duration
+
+            # Add load gap padding for remote sources (YouTube/SoundCloud need ~3s to buffer)
+            if track.source_type in ('youtube', 'soundcloud'):
+                end_time += timedelta(seconds=3)
+
+            schedule.append(ScheduledTrack(
+                track=track,
+                scheduled_start=current_time,
+                scheduled_end=end_time,
+                position=position,
+                time_range_id=time_range.id
+            ))
+            position += 1
+            current_time = end_time
+
+    # Store in daily_schedule table
+    save_daily_schedule(station_id, date, schedule)
+    return schedule
+```
+
+### Runtime Lookup
+
+With pre-computed schedule, runtime is simple:
+
+```python
+def get_now_playing(station_id: int, current_time: datetime) -> ScheduledTrack:
+    """Look up what should be playing from pre-computed schedule."""
+    return query_one("""
+        SELECT * FROM daily_schedule
+        WHERE station_id = ? AND date = ?
+          AND scheduled_start <= ? AND scheduled_end > ?
+        ORDER BY position
+        LIMIT 1
+    """, station_id, current_time.date(), current_time, current_time)
+```
+
+### Rebuild Triggers
+
+Schedule is rebuilt when:
+- Nightly cron (midnight)
+- Schedule time ranges modified via web UI (debounced 2s to batch rapid edits)
+- Manual "rebuild today" action
+- Playlist content significantly changed
 
 ---
 
@@ -262,6 +414,32 @@ output.icecast(
 )
 ```
 
+### Scheduler-Liquidsoap Contract
+
+The scheduler exposes `GET /api/radio/next-track` which returns:
+
+```json
+{
+  "uri": "/music/artist/track.opus",
+  "seek_ms": 213000,
+  "duration_ms": 285000,
+  "track_id": 1234
+}
+```
+
+**Seeking strategy:** When `seek_ms > 0`, the scheduler pre-processes via ffmpeg before returning the URI:
+
+```bash
+ffmpeg -ss 213 -i /music/original.opus -c copy /tmp/seeked_12345.opus
+```
+
+This happens only on:
+- Initial tune-in (listener joins mid-track)
+- Schedule boundary transitions
+- After unavailable track skips
+
+Normal track-to-track transitions have `seek_ms: 0` and use the original file directly. Temp files are cleaned up after Liquidsoap confirms playback started.
+
 ### Source Handling
 
 | Source | How Liquidsoap plays it |
@@ -269,7 +447,7 @@ output.icecast(
 | Local Opus file | Direct file path |
 | YouTube | `yt-dlp -o - URL` piped as stream |
 | Spotify | librespot outputs to FIFO, Liquidsoap reads it |
-| SoundCloud | Direct HTTPS stream URL |
+| SoundCloud | `yt-dlp -o - URL` (same as YouTube - handles auth/extraction) |
 
 ### Mid-Track Seeking
 
@@ -343,8 +521,8 @@ Full playback history with filtering:
 Standalone YouTube player that:
 - Calculates what YouTube video should be playing (same deterministic logic)
 - Embeds YouTube player at calculated position with its own audio
-- Preloads next video ~30 seconds before transition for smooth advancement
 - Shows "Audio Only" card when non-YouTube content is playing
+- Load gap (~3s) is built into schedule padding, so transitions feel intentional
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -357,8 +535,6 @@ Standalone YouTube player that:
 │  │                                                       │  │
 │  └───────────────────────────────────────────────────────┘  │
 │  Up next: Evening Chill playlist (audio only)              │
-│                                                             │
-│  [Preloading next YouTube video in background]             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -431,6 +607,7 @@ version: '3.8'
 services:
   icecast:
     image: infiniteproject/icecast
+    restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
@@ -438,6 +615,7 @@ services:
 
   liquidsoap:
     build: ./liquidsoap
+    restart: unless-stopped
     depends_on:
       - icecast
     volumes:
@@ -446,6 +624,7 @@ services:
 
   backend:
     build: ./backend
+    restart: unless-stopped
     depends_on:
       - liquidsoap
     volumes:
@@ -455,11 +634,13 @@ services:
 
   frontend:
     build: ./frontend
+    restart: unless-stopped
     depends_on:
       - backend
 
   caddy:
     image: caddy:2
+    restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
@@ -467,6 +648,8 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
 ```
+
+**Recovery strategy:** All services have `restart: unless-stopped` to handle crashes. For silent failures, Home Assistant can monitor the stream URL and alert. Manual `docker compose restart` if needed - acceptable for personal project.
 
 ---
 
@@ -505,6 +688,41 @@ For wake-up alarm and casting to Google speakers:
 ---
 
 ## Integration with music-minion
+
+### Deployment Model
+
+Radio is a module within music-minion, not a standalone service. Both Desktop CLI and Pi share a hosted PostgreSQL database:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Hosted PostgreSQL                             │
+│  (tracks, ratings, elo_ratings, playlists, stations, radio_*)       │
+└─────────────────────────────────────────────────────────────────────┘
+                    ▲                           ▲
+                    │                           │
+       ┌────────────┴────────────┐   ┌─────────┴──────────┐
+       │    Desktop (CLI)         │   │   Raspberry Pi      │
+       │  - Local playback (MPV)  │   │  - Web UI           │
+       │  - Track comparison      │   │  - Radio streaming  │
+       │  - Metadata editing      │   │  - Track comparison │
+       └──────────────────────────┘   └─────────────────────┘
+                    │                           │
+                    ▼                           ▼
+       ┌──────────────────────────────────────────────────────────────┐
+       │                    Syncthing                                  │
+       │              (Opus audio files with embedded metadata)        │
+       └──────────────────────────────────────────────────────────────┘
+```
+
+**Data flow:**
+- PostgreSQL: All structured data (ratings, ELO, playlists, radio schedules)
+- Syncthing: Audio files (Opus) with embedded metadata (Vorbis comments)
+- Both instances run full music-minion codebase with radio module
+
+**Prerequisites for radio implementation:**
+- [ ] Migrate database.py from SQLite to PostgreSQL (separate task)
+- [ ] Add `DATABASE_URL` environment variable support
+- [ ] Test bidirectional sync (Desktop edits visible on Pi and vice versa)
 
 ### File Structure
 

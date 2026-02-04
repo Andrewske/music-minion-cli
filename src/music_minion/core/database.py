@@ -940,6 +940,64 @@ def migrate_database(conn, current_version: int) -> None:
         logger.info("Migration to schema version 26 complete")
         conn.commit()
 
+    if current_version < 27:
+        # Migration from v26 to v27: Add playlist builder tables
+        logger.info("Migrating database to schema version 27 (Playlist Builder)...")
+
+        # Playlist builder filters (separate from smart playlist filters)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS playlist_builder_filters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                playlist_id INTEGER NOT NULL,
+                field TEXT NOT NULL,
+                operator TEXT NOT NULL,
+                value TEXT NOT NULL,
+                conjunction TEXT NOT NULL DEFAULT 'AND',
+                FOREIGN KEY (playlist_id) REFERENCES playlists (id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_builder_filters_playlist
+            ON playlist_builder_filters(playlist_id)
+        """)
+
+        # Permanently skipped tracks per playlist
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS playlist_builder_skipped (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                playlist_id INTEGER NOT NULL,
+                track_id INTEGER NOT NULL,
+                skipped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (playlist_id) REFERENCES playlists (id) ON DELETE CASCADE,
+                FOREIGN KEY (track_id) REFERENCES tracks (id) ON DELETE CASCADE,
+                UNIQUE (playlist_id, track_id)
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_builder_skipped_playlist
+            ON playlist_builder_skipped(playlist_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_builder_skipped_track
+            ON playlist_builder_skipped(track_id)
+        """)
+
+        # Active builder sessions
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS playlist_builder_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                playlist_id INTEGER UNIQUE NOT NULL,
+                last_processed_track_id INTEGER,
+                started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (playlist_id) REFERENCES playlists (id) ON DELETE CASCADE,
+                FOREIGN KEY (last_processed_track_id) REFERENCES tracks (id) ON DELETE SET NULL
+            )
+        """)
+
+        logger.info("Migration to schema version 27 complete")
+        conn.commit()
+
     if current_version < 28:
         # Migration from v27 to v28: Add personal radio station tables
         logger.info("Migrating database to schema version 28 (Personal Radio)...")

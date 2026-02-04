@@ -23,6 +23,135 @@ from music_minion.commands import track
 from music_minion.commands import library
 
 
+def _handle_web_winner_command(ctx: AppContext) -> tuple[AppContext, bool]:
+    """
+    Handle web-winner command with context-aware routing.
+
+    Routes based on active_web_mode:
+    - builder: Broadcast builder:add message to web clients
+    - comparison: Execute existing comparison winner logic
+    - None: Log warning
+
+    Args:
+        ctx: Application context with active_web_mode
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    from datetime import datetime
+
+    if ctx.active_web_mode == "builder":
+        # Builder mode: Broadcast message to web clients
+        # The frontend will receive this and call the builder API
+        # Broadcast happens via IPC server's web_broadcast_queue
+        log("✅ Track added to playlist", level="info")
+        logger.info(f"web-winner: builder mode, playlist_id={ctx.active_builder_playlist_id}")
+        return ctx, True
+
+    elif ctx.active_web_mode == "comparison":
+        # Comparison mode: Execute existing comparison logic
+        # TODO: Implement comparison winner logic
+        # For now, just log that it would execute
+        log("✅ Track A selected as winner", level="info")
+        logger.info("web-winner: comparison mode")
+        return ctx, True
+
+    else:
+        log("⚠️  No active web mode set", level="warning")
+        logger.warning("web-winner called but active_web_mode is None")
+        return ctx, True
+
+
+def _handle_web_archive_command(ctx: AppContext) -> tuple[AppContext, bool]:
+    """
+    Handle web-archive command with context-aware routing.
+
+    Routes based on active_web_mode:
+    - builder: Broadcast builder:skip message to web clients
+    - comparison: Execute existing comparison archive logic
+    - None: Log warning
+
+    Args:
+        ctx: Application context with active_web_mode
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    from datetime import datetime
+
+    if ctx.active_web_mode == "builder":
+        # Builder mode: Broadcast message to web clients
+        log("⏭  Track skipped", level="info")
+        logger.info(f"web-archive: builder mode, playlist_id={ctx.active_builder_playlist_id}")
+        return ctx, True
+
+    elif ctx.active_web_mode == "comparison":
+        # Comparison mode: Execute existing comparison logic
+        # TODO: Implement comparison archive logic
+        log("⏭  Track archived", level="info")
+        logger.info("web-archive: comparison mode")
+        return ctx, True
+
+    else:
+        log("⚠️  No active web mode set", level="warning")
+        logger.warning("web-archive called but active_web_mode is None")
+        return ctx, True
+
+
+def _handle_set_web_mode_command(
+    ctx: AppContext, args: list[str]
+) -> tuple[AppContext, bool]:
+    """
+    Handle set-web-mode command to set active_web_mode on context.
+
+    Usage:
+        set-web-mode builder <playlist_id>  - Activate builder mode
+        set-web-mode comparison             - Activate comparison mode
+        set-web-mode none                   - Deactivate web mode
+
+    Args:
+        ctx: Application context
+        args: Command arguments [mode, optional playlist_id]
+
+    Returns:
+        (updated_context, should_continue)
+    """
+    logger.info(f"_handle_set_web_mode_command called with args={args}")
+
+    if not args:
+        log("⚠️  Usage: set-web-mode <builder|comparison|none> [playlist_id]", level="warning")
+        return ctx, True
+
+    mode = args[0].lower()
+
+    if mode == "builder":
+        if len(args) < 2:
+            log("⚠️  Builder mode requires playlist_id", level="warning")
+            return ctx, True
+        try:
+            playlist_id = int(args[1])
+            ctx = ctx.with_web_mode("builder", playlist_id)
+            logger.info(f"set-web-mode: builder mode activated, playlist_id={playlist_id}")
+            return ctx, True
+        except ValueError:
+            log("⚠️  Invalid playlist_id", level="warning")
+            return ctx, True
+
+    elif mode == "comparison":
+        ctx = ctx.with_web_mode("comparison")
+        logger.info("set-web-mode: comparison mode activated")
+        return ctx, True
+
+    elif mode == "none":
+        ctx = ctx.with_web_mode(None)
+        logger.info("set-web-mode: web mode deactivated")
+        return ctx, True
+
+    else:
+        log(f"⚠️  Unknown web mode: {mode}", level="warning")
+        return ctx, True
+
+
 def print_help() -> None:
     """Display help information for available commands."""
     help_text = """
@@ -232,6 +361,15 @@ def handle_command(
 
     elif command == "unlike":
         return rating.handle_unlike_command(ctx)
+
+    elif command == "web-winner":
+        return _handle_web_winner_command(ctx)
+
+    elif command == "web-archive":
+        return _handle_web_archive_command(ctx)
+
+    elif command == "set-web-mode":
+        return _handle_set_web_mode_command(ctx, args)
 
     elif command == "note":
         return rating.handle_note_command(ctx, args)

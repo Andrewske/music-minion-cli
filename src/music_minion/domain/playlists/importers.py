@@ -13,6 +13,11 @@ from music_minion.core.database import get_db_connection
 
 from .crud import add_track_to_playlist, create_playlist
 
+# CSV import security limits
+MAX_CSV_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_CSV_ROWS = 10000
+MAX_FIELD_LENGTH = 1000
+
 # Valid metadata fields for CSV import
 VALID_CSV_METADATA_FIELDS = {
     "title",
@@ -399,7 +404,10 @@ def _validate_csv_rows(
             )
             continue
 
-        track_metadata = {"local_path": str(track_path)}
+        track_metadata = {
+            "local_path": str(track_path),
+            "source": "csv"  # Track ownership for data loss prevention
+        }
 
         for field_name, value in row.items():
             if (
@@ -575,6 +583,14 @@ def import_playlist_metadata_csv(
     if not local_path.exists():
         raise FileNotFoundError(f"CSV file not found: {local_path}")
 
+    # Security check: file size limit
+    file_size = local_path.stat().st_size
+    if file_size > MAX_CSV_SIZE:
+        raise ValueError(
+            f"CSV file too large: {file_size / 1024 / 1024:.1f}MB "
+            f"(max {MAX_CSV_SIZE / 1024 / 1024}MB)"
+        )
+
     # Read and parse CSV
     try:
         with open(local_path, "r", encoding="utf-8") as csvfile:
@@ -635,6 +651,13 @@ def import_playlist_metadata_csv(
             for row_num, row in enumerate(
                 reader, start=2
             ):  # Start at 2 since row 1 is header
+                # Security check: row count limit
+                if row_num > MAX_CSV_ROWS + 2:  # +2 for header row offset
+                    error_messages.append(
+                        f"CSV file too large: exceeded {MAX_CSV_ROWS} rows"
+                    )
+                    break
+
                 # Extract identifier
                 identifier = None
                 identifier_type = None
@@ -684,6 +707,15 @@ def import_playlist_metadata_csv(
 
                     value = value.strip() if value else ""
                     if value:  # Only validate non-empty values
+                        # Security check: field length limit
+                        if len(value) > MAX_FIELD_LENGTH:
+                            error_messages.append(
+                                f"Row {row_num}, {field_name}: "
+                                f"Value too long ({len(value)} chars, max {MAX_FIELD_LENGTH})"
+                            )
+                            validation_errors += 1
+                            continue
+
                         is_valid, error_msg = validate_csv_metadata_field(
                             field_name, value
                         )

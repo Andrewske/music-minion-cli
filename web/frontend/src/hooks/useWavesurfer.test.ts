@@ -54,14 +54,13 @@ describe('useWavesurfer', () => {
     const { result } = renderHook(() =>
       useWavesurfer({
         trackId: 1,
+        isPlaying: false,
         onFinish,
-        isActive: false, // Don't try to initialize WaveSurfer
       })
     );
 
     // Verify the hook returns the expected interface
     expect(result.current).toHaveProperty('containerRef');
-    expect(result.current).toHaveProperty('isPlaying');
     expect(result.current).toHaveProperty('currentTime');
     expect(result.current).toHaveProperty('duration');
     expect(result.current).toHaveProperty('error');

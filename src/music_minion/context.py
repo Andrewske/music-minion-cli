@@ -54,6 +54,8 @@ class AppContext:
     update_ui_state: Optional[Callable[[dict[str, Any]], None]] = field(
         default=None
     )  # Thread-safe UIState updater
+    active_web_mode: Optional[str] = None  # 'comparison' | 'builder'
+    active_builder_playlist_id: Optional[int] = None
 
     @classmethod
     def create(cls, config: Config, console: Optional[Console] = None) -> "AppContext":
@@ -76,6 +78,8 @@ class AppContext:
             ui_action=None,
             ui_mode="cli",
             update_ui_state=None,
+            active_web_mode=None,
+            active_builder_playlist_id=None,
         )
 
     def with_tracks(self, tracks: list[Track]) -> "AppContext":
@@ -97,6 +101,8 @@ class AppContext:
             ui_action=self.ui_action,
             ui_mode=self.ui_mode,
             update_ui_state=self.update_ui_state,
+            active_web_mode=self.active_web_mode,
+            active_builder_playlist_id=self.active_builder_playlist_id,
         )
 
     def with_player_state(self, state: PlayerState) -> "AppContext":
@@ -118,6 +124,8 @@ class AppContext:
             ui_action=self.ui_action,
             ui_mode=self.ui_mode,
             update_ui_state=self.update_ui_state,
+            active_web_mode=self.active_web_mode,
+            active_builder_playlist_id=self.active_builder_playlist_id,
         )
 
     def with_config(self, config: Config) -> "AppContext":
@@ -139,6 +147,8 @@ class AppContext:
             ui_action=self.ui_action,
             ui_mode=self.ui_mode,
             update_ui_state=self.update_ui_state,
+            active_web_mode=self.active_web_mode,
+            active_builder_playlist_id=self.active_builder_playlist_id,
         )
 
     def with_provider_states(self, provider_states: dict[str, Any]) -> "AppContext":
@@ -160,6 +170,8 @@ class AppContext:
             ui_action=self.ui_action,
             ui_mode=self.ui_mode,
             update_ui_state=self.update_ui_state,
+            active_web_mode=self.active_web_mode,
+            active_builder_playlist_id=self.active_builder_playlist_id,
         )
 
     def with_ui_action(self, action: Optional[dict[str, Any]]) -> "AppContext":
@@ -181,4 +193,30 @@ class AppContext:
             ui_action=action,
             ui_mode=self.ui_mode,
             update_ui_state=self.update_ui_state,
+            active_web_mode=self.active_web_mode,
+            active_builder_playlist_id=self.active_builder_playlist_id,
+        )
+
+    def with_web_mode(self, mode: Optional[str], playlist_id: Optional[int] = None) -> "AppContext":
+        """Return new context with updated web mode.
+
+        Args:
+            mode: Web mode ('comparison', 'builder', or None)
+            playlist_id: Active builder playlist ID (required if mode='builder')
+
+        Returns:
+            New AppContext with updated web mode fields
+        """
+        return AppContext(
+            config=self.config,
+            music_tracks=self.music_tracks,
+            player_state=self.player_state,
+            provider_states=self.provider_states,
+            spotify_player=self.spotify_player,
+            console=self.console,
+            ui_action=self.ui_action,
+            ui_mode=self.ui_mode,
+            update_ui_state=self.update_ui_state,
+            active_web_mode=mode,
+            active_builder_playlist_id=playlist_id,
         )

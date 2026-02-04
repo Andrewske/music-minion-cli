@@ -1,7 +1,12 @@
 from fastapi import APIRouter, HTTPException
 from typing import List, Optional
 from ..deps import get_db
-from ..schemas import PlaylistStatsResponse, PlaylistTrackEntry, PlaylistTracksResponse
+from ..schemas import (
+    CreatePlaylistRequest,
+    PlaylistStatsResponse,
+    PlaylistTrackEntry,
+    PlaylistTracksResponse,
+)
 
 router = APIRouter()
 
@@ -60,6 +65,39 @@ async def get_playlists():
         raise HTTPException(
             status_code=500, detail=f"Failed to get playlists: {str(e)}"
         )
+
+
+@router.post("/playlists")
+async def create_playlist(request: CreatePlaylistRequest):
+    """Create a new manual playlist."""
+    try:
+        from music_minion.domain.playlists.crud import create_playlist as create_playlist_fn
+
+        # Create playlist in active library
+        playlist_id = create_playlist_fn(
+            name=request.name,
+            playlist_type="manual",
+            description=request.description
+        )
+
+        # Get created playlist data
+        from music_minion.core.database import get_db_connection
+        with get_db_connection() as conn:
+            cursor = conn.execute(
+                "SELECT id, name, type, description, track_count, library FROM playlists WHERE id = ?",
+                (playlist_id,)
+            )
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=500, detail="Created playlist but failed to fetch")
+            playlist = dict(row)
+
+        return playlist
+    except ValueError as e:
+        # Handle duplicate name error
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create playlist: {str(e)}")
 
 
 @router.get("/playlists/{playlist_id}/stats", response_model=PlaylistStatsResponse)

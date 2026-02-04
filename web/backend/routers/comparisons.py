@@ -10,6 +10,7 @@ from ..schemas import (
     ComparisonPair,
     TrackInfo,
 )
+from music_minion.ipc import send_command
 from music_minion.domain.rating.database import (
     get_filtered_tracks,
     get_or_create_rating,
@@ -74,17 +75,17 @@ def _select_pair(
 
     logger = logging.getLogger(__name__)
 
-    logger.info(
+    logger.debug(
         f"_select_pair called with {len(tracks)} tracks, ratings_cache keys: {list(ratings_cache.keys())[:5]}..."
     )
 
     if exclude_track_ids:
-        logger.info(f"Excluding track IDs: {exclude_track_ids}")
+        logger.debug(f"Excluding track IDs: {exclude_track_ids}")
         tracks = [t for t in tracks if t["id"] not in exclude_track_ids]
         ratings_cache = {
             k: v for k, v in ratings_cache.items() if k not in exclude_track_ids
         }
-        logger.info(f"After exclusion: {len(tracks)} tracks remaining")
+        logger.debug(f"After exclusion: {len(tracks)} tracks remaining")
 
     if len(tracks) < 2:
         logger.error("Not enough tracks for comparison")
@@ -97,14 +98,14 @@ def _select_pair(
             if t.get("local_path", "").startswith(priority_path_prefix)
         ]
         if priority_tracks:
-            logger.info(
+            logger.debug(
                 f"Using weighted pairing with {len(priority_tracks)} priority tracks"
             )
             return select_weighted_pair(tracks, priority_tracks, ratings_cache)
 
-    logger.info("Using strategic pairing")
+    logger.debug("Using strategic pairing")
     result = select_strategic_pair(tracks, ratings_cache)
-    logger.info(f"Selected pair: {result[0]['title']} vs {result[1]['title']}")
+    logger.debug(f"Selected pair: {result[0]['title']} vs {result[1]['title']}")
     return result
 
 
@@ -259,6 +260,12 @@ async def start_comparison_session(
                 )
             except ValueError:
                 pass  # Not enough tracks for prefetch, that's fine
+
+        # Activate comparison mode in CLI context for web-winner hotkey
+        logger.info("Activating comparison mode in CLI context")
+        ipc_success, ipc_message = send_command("set-web-mode", ["comparison"])
+        if not ipc_success:
+            logger.warning(f"Failed to activate comparison mode: {ipc_message}")
 
         logger.info(
             f"Returning StartSessionResponse with session_id={session_id}, total_tracks={len(tracks)}"
