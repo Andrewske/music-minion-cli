@@ -181,7 +181,7 @@ def stop_web_processes(
     uvicorn_proc: subprocess.Popen, vite_proc: subprocess.Popen
 ) -> None:
     """
-    Immediately stop both web processes.
+    Stop both web processes gracefully, then force kill if needed.
 
     Args:
         uvicorn_proc: FastAPI backend process
@@ -189,11 +189,24 @@ def stop_web_processes(
     """
     processes = [uvicorn_proc, vite_proc]
 
-    # Kill processes immediately
+    # First try graceful termination (SIGTERM)
     for proc in processes:
         try:
-            proc.kill()
-            proc.wait(timeout=2.0)
+            if proc.poll() is None:  # Still running
+                proc.terminate()
         except Exception:
-            # Process already terminated or couldn't be killed
+            pass
+
+    # Wait for graceful shutdown
+    for proc in processes:
+        try:
+            proc.wait(timeout=3.0)
+        except subprocess.TimeoutExpired:
+            # Graceful shutdown timed out, force kill
+            try:
+                proc.kill()
+                proc.wait(timeout=2.0)
+            except Exception:
+                pass
+        except Exception:
             pass

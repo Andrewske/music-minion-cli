@@ -157,9 +157,15 @@ class IPCServer:
             import logging as std_logging
 
             # Suppress benign handshake/connection error logs
-            # Set to ERROR to suppress DEBUG/INFO noise while preserving real error visibility
+            # Set to CRITICAL to suppress ERROR-level "opening handshake failed" messages
+            # that appear when non-WebSocket requests hit the port (dev tools, preflight, etc.)
             websockets_logger = std_logging.getLogger("websockets")
-            websockets_logger.setLevel(std_logging.ERROR)
+            websockets_logger.setLevel(std_logging.CRITICAL)
+
+            # Also suppress websockets.server logger for defense in depth
+            # This logger emits the "opening handshake failed" message at ERROR level
+            server_logger = std_logging.getLogger("websockets.server")
+            server_logger.setLevel(std_logging.CRITICAL)
 
             # CRITICAL: Suppress asyncio logger to prevent stderr output in blessed UI
             # Why suppression is safe:
@@ -201,6 +207,8 @@ class IPCServer:
                 pass  # Normal closure
             except websockets.InvalidHandshake:
                 pass  # Handshake failed - benign (HMR, refresh, etc.)
+            except websockets.exceptions.InvalidMessage:
+                pass  # Invalid HTTP request - benign (dev tools, preflight, etc.)
             except OSError as e:
                 if "Connection reset" in str(e) or "Broken pipe" in str(e):
                     pass  # Benign network error

@@ -2,7 +2,9 @@
 Music Minion CLI - Main entry point and interactive loop
 """
 
+import atexit
 import os
+import signal
 import sys
 import threading
 from pathlib import Path
@@ -693,12 +695,17 @@ def interactive_mode() -> None:
         current_config = config.load_config()
 
         # Initialize logging from config
-        from music_minion.core.config import get_data_dir
+        from music_minion.core.config import get_data_dir, get_project_root
 
+        project_root = get_project_root()
         log_file = (
             Path(current_config.logging.log_file)
             if current_config.logging.log_file
-            else (get_data_dir() / "music-minion.log")
+            else (
+                project_root / "music-minion.log"
+                if project_root
+                else get_data_dir() / "music-minion.log"
+            )
         )
         setup_loguru(log_file, level=current_config.logging.level)
 
@@ -712,6 +719,22 @@ def interactive_mode() -> None:
         dev_result = setup_dev_mode()
         if dev_result:
             file_watcher_observer, file_watcher_handler = dev_result
+
+        # Register cleanup handlers as backup (in case finally block doesn't run)
+        def emergency_cleanup() -> None:
+            cleanup_web_processes_safe(web_processes)
+            cleanup_file_watcher_safe(file_watcher_observer)
+
+        atexit.register(emergency_cleanup)
+
+        def signal_handler(sig: int, frame: Any) -> None:
+            logger.info(f"Received signal {sig}, cleaning up...")
+            emergency_cleanup()
+            sys.exit(0)
+
+        signal.signal(signal.SIGTERM, signal_handler)
+        # Note: SIGINT is handled by KeyboardInterrupt, but add as backup
+        signal.signal(signal.SIGINT, signal_handler)
 
         # Check if dashboard is enabled
         if current_config.ui.enable_dashboard:
