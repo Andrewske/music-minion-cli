@@ -1,6 +1,7 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getNowPlaying } from '../api/radio';
 import type { NowPlaying, TrackInfo } from '../api/radio';
+import { EmojiTrackActions } from './EmojiTrackActions';
 
 function formatDuration(seconds: number | null): string {
   if (seconds === null || seconds === undefined) return '--:--';
@@ -12,9 +13,10 @@ function formatDuration(seconds: number | null): string {
 interface UpNextTrackProps {
   track: TrackInfo;
   index: number;
+  onUpdate: (updatedTrack: { id: number; emojis?: string[] }) => void;
 }
 
-function UpNextTrack({ track, index }: UpNextTrackProps): JSX.Element {
+function UpNextTrack({ track, index, onUpdate }: UpNextTrackProps): JSX.Element {
   return (
     <div className="flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-slate-800/50 transition-colors">
       <span className="text-slate-600 text-sm font-mono w-5">{index + 1}</span>
@@ -26,6 +28,7 @@ function UpNextTrack({ track, index }: UpNextTrackProps): JSX.Element {
           {track.artist ?? 'Unknown Artist'}
         </p>
       </div>
+      <EmojiTrackActions track={track} onUpdate={onUpdate} compact />
       <span className="text-slate-500 text-xs shrink-0">
         {formatDuration(track.duration)}
       </span>
@@ -34,12 +37,17 @@ function UpNextTrack({ track, index }: UpNextTrackProps): JSX.Element {
 }
 
 export function UpNext(): JSX.Element {
+  const queryClient = useQueryClient();
   const { data: nowPlaying, isLoading, error } = useQuery<NowPlaying>({
     queryKey: ['nowPlaying'],
     queryFn: getNowPlaying,
     refetchInterval: 5000,
     retry: 1,
   });
+
+  const handleTrackUpdate = (): void => {
+    void queryClient.invalidateQueries({ queryKey: ['nowPlaying'] });
+  };
 
   if (isLoading) {
     return (
@@ -92,7 +100,7 @@ export function UpNext(): JSX.Element {
       </h3>
       <div className="space-y-1">
         {upcomingTracks.map((track, index) => (
-          <UpNextTrack key={track.id} track={track} index={index} />
+          <UpNextTrack key={track.id} track={track} index={index} onUpdate={handleTrackUpdate} />
         ))}
       </div>
     </div>
