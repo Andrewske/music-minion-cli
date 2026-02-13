@@ -772,11 +772,25 @@ def get_top_tracks_endpoint(
     Returns:
         List of tracks with play counts, ordered by play count DESC
     """
+    from music_minion.core.db_adapter import get_radio_db_connection
     from music_minion.domain.radio import get_most_played_tracks
 
     try:
         stats = get_most_played_tracks(station_id, limit, days)
-        return [_track_play_stats_to_response(s) for s in stats]
+
+        # Batch fetch emojis for all tracks
+        track_ids = [s.track.id for s in stats if s.track.id]
+        with get_radio_db_connection() as conn:
+            emojis_map = get_emojis_for_tracks_batch(track_ids, conn)
+
+        return [
+            TrackPlayStatsResponse(
+                track=_track_to_response(s.track, emojis_map.get(s.track.id, [])),
+                play_count=s.play_count,
+                total_duration_seconds=s.total_duration_seconds,
+            )
+            for s in stats
+        ]
     except Exception as e:
         logger.exception("Failed to fetch top tracks")
         raise HTTPException(status_code=500, detail=str(e))
