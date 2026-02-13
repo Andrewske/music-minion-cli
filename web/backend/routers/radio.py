@@ -51,6 +51,7 @@ class TrackResponse(BaseModel):
     album: Optional[str]
     duration: Optional[float]
     local_path: Optional[str]
+    emojis: list[str] = []  # List of emoji unicode strings
 
 
 class NowPlayingResponse(BaseModel):
@@ -158,8 +159,46 @@ def _schedule_entry_to_response(entry) -> ScheduleEntryResponse:
     )
 
 
-def _track_to_response(track) -> TrackResponse:
-    """Convert Track NamedTuple to response model."""
+def get_emojis_for_tracks_batch(track_ids: list[int], db_conn) -> dict[int, list[str]]:
+    """Batch fetch emojis for multiple tracks.
+
+    Args:
+        track_ids: List of track database IDs
+        db_conn: Database connection
+
+    Returns:
+        Dict mapping track_id -> list of emoji unicode strings
+    """
+    if not track_ids:
+        return {}
+
+    placeholders = ','.join('?' * len(track_ids))
+    cursor = db_conn.execute(
+        f"SELECT track_id, emoji_id FROM track_emojis WHERE track_id IN ({placeholders}) ORDER BY track_id, added_at ASC",
+        track_ids
+    )
+
+    result: dict[int, list[str]] = {}
+    for row in cursor.fetchall():
+        track_id = row['track_id']
+        emoji_id = row['emoji_id']
+        if track_id not in result:
+            result[track_id] = []
+        result[track_id].append(emoji_id)
+
+    return result
+
+
+def _track_to_response(track, emojis: list[str] | None = None) -> TrackResponse:
+    """Convert Track NamedTuple to response model.
+
+    Args:
+        track: Track object with id, title, artist, album, duration, local_path
+        emojis: Pre-fetched list of emoji unicode strings (use batch fetch for efficiency)
+
+    Returns:
+        TrackResponse with emoji data
+    """
     return TrackResponse(
         id=track.id or 0,
         title=track.title,
@@ -167,6 +206,7 @@ def _track_to_response(track) -> TrackResponse:
         album=track.album,
         duration=track.duration,
         local_path=track.local_path,
+        emojis=emojis or [],
     )
 
 
@@ -424,7 +464,7 @@ def get_now_playing() -> NowPlayingResponse:
     actual = get_actual_now_playing()
     if actual:
         track_id, started_at = actual
-        # Get track details from database
+        # Get track details and emojis from database
         with get_radio_db_connection() as conn:
             cursor = conn.execute(
                 """
@@ -434,6 +474,14 @@ def get_now_playing() -> NowPlayingResponse:
                 (track_id,),
             )
             row = cursor.fetchone()
+
+            # Get upcoming from timeline calculation (need IDs for batch emoji fetch)
+            now_playing_calc = calculate_now_playing(station.id, datetime.now())
+            upcoming = now_playing_calc.upcoming if now_playing_calc else []
+
+            # Batch fetch emojis for current track + upcoming
+            all_track_ids = [track_id] + [t.id for t in upcoming if t.id]
+            emojis_map = get_emojis_for_tracks_batch(all_track_ids, conn)
 
         if row:
             from music_minion.domain.library.models import Track
@@ -456,17 +504,13 @@ def get_now_playing() -> NowPlayingResponse:
             duration_ms = int((track.duration or 0) * 1000)
             position_ms = min(elapsed_ms, duration_ms) if duration_ms > 0 else elapsed_ms
 
-            # Get upcoming from timeline calculation
-            now_playing = calculate_now_playing(station.id, datetime.now())
-            upcoming = now_playing.upcoming if now_playing else []
-
             return NowPlayingResponse(
-                track=_track_to_response(track),
+                track=_track_to_response(track, emojis_map.get(track.id, [])),
                 position_ms=position_ms,
                 station_id=station.id,
                 station_name=station.name,
                 source_type="local",
-                upcoming=[_track_to_response(t) for t in upcoming],
+                upcoming=[_track_to_response(t, emojis_map.get(t.id, [])) for t in upcoming],
             )
 
     # Fallback to timeline calculation
@@ -476,13 +520,18 @@ def get_now_playing() -> NowPlayingResponse:
 
     resolved_station = get_station(now_playing.station_id)
 
+    # Batch fetch emojis for current track + upcoming
+    all_track_ids = [now_playing.track.id] + [t.id for t in now_playing.upcoming if t.id]
+    with get_radio_db_connection() as conn:
+        emojis_map = get_emojis_for_tracks_batch(all_track_ids, conn)
+
     return NowPlayingResponse(
-        track=_track_to_response(now_playing.track),
+        track=_track_to_response(now_playing.track, emojis_map.get(now_playing.track.id, [])),
         position_ms=now_playing.position_ms,
         station_id=now_playing.station_id,
         station_name=resolved_station.name if resolved_station else "Unknown",
         source_type=now_playing.source_type,
-        upcoming=[_track_to_response(t) for t in now_playing.upcoming],
+        upcoming=[_track_to_response(t, emojis_map.get(t.id, [])) for t in now_playing.upcoming],
     )
 
 

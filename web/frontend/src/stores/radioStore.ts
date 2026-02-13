@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { NowPlaying } from '../api/radio';
+import type { NowPlaying, TrackInfo } from '../api/radio';
 
 interface RadioState {
   isMuted: boolean;
@@ -12,6 +12,7 @@ interface RadioActions {
   setMuted: (muted: boolean) => void;
   toggleMute: () => void;
   setNowPlaying: (data: NowPlaying | null) => void;
+  updateNowPlayingTrack: (track: TrackInfo) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
 }
@@ -43,6 +44,19 @@ export const useRadioStore = create<RadioStore>((set) => ({
 
   setNowPlaying: (data: NowPlaying | null) => {
     set({ nowPlaying: data, error: data === null ? null : undefined });
+  },
+
+  updateNowPlayingTrack: (track: TrackInfo) => {
+    set((state) => {
+      if (!state.nowPlaying) return state;
+      return {
+        ...state,
+        nowPlaying: {
+          ...state.nowPlaying,
+          track,
+        },
+      };
+    });
   },
 
   setLoading: (loading: boolean) => {
