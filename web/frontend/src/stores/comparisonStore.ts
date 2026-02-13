@@ -17,6 +17,7 @@ interface ComparisonState {
 
 interface ComparisonActions {
   setSession: (sessionId: string, pair: ComparisonPair, prefetched?: ComparisonPair, priorityPathPrefix?: string, rankingMode?: 'global' | 'playlist', selectedPlaylistId?: number | null) => void;
+  joinSession: (sessionId: string, pair: ComparisonPair, prefetched?: ComparisonPair) => void;  // Join existing session from another device
   setCurrentTrack: (track: TrackInfo | null) => void;
   setIsPlaying: (playing: boolean) => void;
   togglePlaying: () => void;
@@ -25,7 +26,7 @@ interface ComparisonActions {
   reset: () => void;
   setCurrentPair: (pair: ComparisonPair, prefetched?: ComparisonPair) => void;
   advanceToNextPair: (nextPair: ComparisonPair, prefetched?: ComparisonPair) => void;
-  setNextPairForComparison: (nextPair: ComparisonPair, prefetched?: ComparisonPair) => void;  // Update pair for comparison but keep current track playing
+  setNextPairForComparison: (nextPair: ComparisonPair, prefetched?: ComparisonPair, sessionId?: string) => void;  // Update pair for comparison but keep current track playing
   setPriorityPath: (priorityPathPrefix: string | null) => void;
   setAutoplay: (enabled: boolean) => void;
 }
@@ -62,6 +63,29 @@ export const useComparisonStore = create<ComparisonStore>((set, get) => ({
       selectedPlaylistId: selectedPlaylistId ?? null,
       isComparisonMode: true,
     });
+  },
+
+  joinSession: (sessionId, pair, prefetched) => {
+    // Join existing session from another device (e.g., phone joining desktop)
+    // Only update if we don't already have an active session
+    const current = get();
+    if (current.sessionId && current.isComparisonMode) {
+      // Already in a session, just update the pair
+      set({
+        currentPair: pair,
+        prefetchedPair: prefetched ?? null,
+      });
+    } else {
+      // No active session, join this one
+      set({
+        sessionId,
+        currentPair: pair,
+        prefetchedPair: prefetched ?? null,
+        currentTrack: pair.track_a,
+        isPlaying: false,
+        isComparisonMode: true,
+      });
+    }
   },
 
   togglePlaying: () => {
@@ -122,7 +146,7 @@ export const useComparisonStore = create<ComparisonStore>((set, get) => ({
     set({ autoplay: enabled });
   },
 
-  setNextPairForComparison: (nextPair: ComparisonPair, prefetched?: ComparisonPair) => {
+  setNextPairForComparison: (nextPair: ComparisonPair, prefetched?: ComparisonPair, sessionId?: string) => {
     const { autoplay } = get();
     // Update pair for comparison but keep current track and playing state unless autoplay is enabled
     set({
@@ -130,6 +154,7 @@ export const useComparisonStore = create<ComparisonStore>((set, get) => ({
       prefetchedPair: prefetched ?? null,
       isComparisonMode: true, // Keep comparison mode active
       ...(autoplay && { currentTrack: nextPair.track_a }), // Auto-select track A when autoplay enabled
+      ...(sessionId && { sessionId }), // Update session ID if provided (for joining sessions)
     });
   },
 }));

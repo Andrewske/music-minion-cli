@@ -25,9 +25,14 @@ class SyncManager:
         if ws in self.connections:
             self.connections.remove(ws)
 
-    def set_comparison_state(self, pair: dict, prefetched: dict | None = None) -> None:
+    def set_comparison_state(
+        self, pair: dict, prefetched: dict | None = None, session_id: str | None = None
+    ) -> None:
         """Update stored comparison state (called after verdict)."""
-        self.current_comparison = {"pair": pair, "prefetched": prefetched}
+        if session_id is None and self.current_comparison:
+            # Preserve existing session_id if not provided
+            session_id = self.current_comparison.get("session_id")
+        self.current_comparison = {"pair": pair, "prefetched": prefetched, "session_id": session_id}
 
     def set_radio_state(self, now_playing: dict) -> None:
         """Update stored radio state (called on track start)."""

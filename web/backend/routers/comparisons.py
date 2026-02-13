@@ -272,6 +272,14 @@ async def start_comparison_session(
         logger.info(
             f"Returning StartSessionResponse with session_id={session_id}, total_tracks={len(tracks)}"
         )
+
+        # Store initial state for reconnecting clients (e.g., phone joining desktop session)
+        sync_manager.set_comparison_state(
+            current_pair.dict(),
+            prefetched_pair.dict() if prefetched_pair else None,
+            session_id=session_id,
+        )
+
         return StartSessionResponse(
             session_id=session_id,
             total_tracks=len(tracks),
@@ -550,13 +558,15 @@ async def record_comparison_result(
         # Update stored state for reconnecting clients
         sync_manager.set_comparison_state(
             next_pair.dict(),
-            prefetched_pair.dict() if prefetched_pair else None
+            prefetched_pair.dict() if prefetched_pair else None,
+            session_id=request.session_id,
         )
 
         # Broadcast to all connected clients
         await sync_manager.broadcast("comparison:advanced", {
             "pair": next_pair.dict(),
             "prefetched": prefetched_pair.dict() if prefetched_pair else None,
+            "session_id": request.session_id,
         })
 
         return RecordComparisonResponse(
