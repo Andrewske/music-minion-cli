@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
 import uuid
 from ..deps import get_db
+from ..sync_manager import sync_manager
 from ..schemas import (
     StartSessionRequest,
     StartSessionResponse,
@@ -544,6 +545,18 @@ async def record_comparison_result(
                 request.priority_path_prefix,
                 exclude_track_ids={request.track_a_id, request.track_b_id},
             )
+
+        # Update stored state for reconnecting clients
+        sync_manager.set_comparison_state(
+            next_pair.dict(),
+            prefetched_pair.dict() if prefetched_pair else None
+        )
+
+        # Broadcast to all connected clients
+        await sync_manager.broadcast("comparison:advanced", {
+            "pair": next_pair.dict(),
+            "prefetched": prefetched_pair.dict() if prefetched_pair else None,
+        })
 
         return RecordComparisonResponse(
             success=True,
