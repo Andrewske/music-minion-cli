@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useRadioStore } from '../stores/radioStore'
 import { getNowPlaying } from '../api/radio'
 import type { NowPlaying } from '../api/radio'
+import { useSyncWebSocket } from '../hooks/useSyncWebSocket'
 
 function NavButton({
   to,
@@ -34,12 +35,13 @@ function NavButton({
 function RootComponent(): JSX.Element {
   const { isMuted, setNowPlaying, toggleMute, nowPlaying } = useRadioStore()
   const audioRef = useRef<HTMLAudioElement>(null)
+  const { isConnected: isSyncConnected } = useSyncWebSocket()
 
-  // Poll now-playing data
+  // Poll now-playing data (fallback only - WebSocket handles real-time updates)
   const { data: nowPlayingData } = useQuery<NowPlaying>({
     queryKey: ['nowPlaying'],
     queryFn: getNowPlaying,
-    refetchInterval: 5000,
+    refetchInterval: 30000,
     retry: 1,
   })
 
@@ -74,6 +76,7 @@ function RootComponent(): JSX.Element {
             <NavButton to="/">Radio</NavButton>
             <NavButton to="/history">History</NavButton>
             <NavButton to="/comparison">Ranking</NavButton>
+            <NavButton to="/playlist-builder">Playlists</NavButton>
             <NavButton to="/youtube">YouTube</NavButton>
           </div>
 
