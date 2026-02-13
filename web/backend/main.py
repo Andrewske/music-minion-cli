@@ -1,7 +1,10 @@
 import os
 import logging
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, StreamingResponse
 
 # Configure logging for web backend
 logging.basicConfig(
@@ -27,7 +30,7 @@ app.add_middleware(
 )
 
 # Include routers
-from .routers import comparisons, tracks, stats, radio, youtube, soundcloud, builder
+from .routers import comparisons, tracks, stats, radio, youtube, soundcloud, builder, sync, live
 from .routers.playlists import router as playlists_router
 
 app.include_router(comparisons.router, prefix="/api", tags=["comparisons"])
@@ -38,6 +41,8 @@ app.include_router(builder.router, prefix="/api/builder", tags=["builder"])
 app.include_router(radio.router, prefix="/api", tags=["radio"])
 app.include_router(youtube.router, prefix="/api/youtube", tags=["youtube"])
 app.include_router(soundcloud.router, prefix="/api/soundcloud", tags=["soundcloud"])
+app.include_router(sync.router, prefix="/api", tags=["sync"])
+app.include_router(live.router, tags=["live"])
 
 
 @app.on_event("startup")
@@ -57,3 +62,36 @@ async def startup_event():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+
+# Stream proxy for radio (works in Docker where icecast is on same network)
+ICECAST_URL = os.getenv("ICECAST_URL", "http://localhost:8001/stream")
+
+
+@app.get("/stream")
+async def proxy_radio_stream():
+    """Proxy Icecast stream to avoid CORS/port issues."""
+    import httpx
+
+    async def stream_generator():
+        async with httpx.AsyncClient() as client:
+            async with client.stream("GET", ICECAST_URL, timeout=None) as response:
+                async for chunk in response.aiter_bytes():
+                    yield chunk
+
+    return StreamingResponse(stream_generator(), media_type="audio/ogg")
+
+
+# Static file serving for production (must come after all API routes)
+FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
+
+if FRONTEND_DIST.exists():
+    logging.info(f"Serving frontend from {FRONTEND_DIST}")
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
+
+    @app.get("/{path:path}")
+    async def serve_spa(path: str = "") -> FileResponse:
+        """Serve React SPA for all non-API routes."""
+        return FileResponse(FRONTEND_DIST / "index.html")
+else:
+    logging.info(f"Frontend dist not found at {FRONTEND_DIST}, skipping static file serving")
