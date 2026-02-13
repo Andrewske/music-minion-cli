@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
 import uuid
+from pydantic import BaseModel
 from ..deps import get_db
 from ..sync_manager import sync_manager
 from ..schemas import (
@@ -567,3 +568,48 @@ async def record_comparison_result(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class TrackSelectionRequest(BaseModel):
+    track_id: int | str  # int from frontend, "track_a"/"track_b" from CLI
+    is_playing: bool
+
+
+@router.post("/comparisons/select-track")
+async def select_track(request: TrackSelectionRequest):
+    """Broadcast track selection to all clients."""
+    track_id = request.track_id
+
+    # Resolve CLI aliases to actual track IDs
+    if isinstance(track_id, str):
+        current = sync_manager.current_comparison
+        if not current or not current.get("pair"):
+            return {"status": "error", "message": "No active comparison"}
+        if track_id == "track_a":
+            track_id = current["pair"]["track_a"]["id"]
+            track_info = current["pair"]["track_a"]
+        elif track_id == "track_b":
+            track_id = current["pair"]["track_b"]["id"]
+            track_info = current["pair"]["track_b"]
+        else:
+            return {"status": "error", "message": f"Unknown track alias: {track_id}"}
+    else:
+        # Look up track info from current comparison pair
+        current = sync_manager.current_comparison
+        if current and current.get("pair"):
+            pair = current["pair"]
+            if pair["track_a"]["id"] == track_id:
+                track_info = pair["track_a"]
+            elif pair["track_b"]["id"] == track_id:
+                track_info = pair["track_b"]
+            else:
+                track_info = {"id": track_id}  # Fallback
+        else:
+            track_info = {"id": track_id}
+
+    # Broadcast full track object (not just ID)
+    await sync_manager.broadcast("comparison:track_selected", {
+        "track": track_info,
+        "isPlaying": request.is_playing,
+    })
+    return {"status": "ok"}
