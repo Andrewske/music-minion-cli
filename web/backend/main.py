@@ -6,12 +6,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 
+from music_minion.core.config import get_data_dir
+
 # Configure logging for web backend
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
 app = FastAPI(title="Music Minion Web API", version="1.0.0")
+
+# Mount custom emojis static files
+custom_emojis_dir = get_data_dir() / "custom_emojis"
+custom_emojis_dir.mkdir(exist_ok=True)
+app.mount(
+    "/custom_emojis",
+    StaticFiles(directory=str(custom_emojis_dir)),
+    name="custom_emojis"
+)
 
 # CORS: Allow environment override for production
 allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
@@ -30,7 +41,7 @@ app.add_middleware(
 )
 
 # Include routers
-from .routers import comparisons, tracks, stats, radio, youtube, soundcloud, builder, sync, live
+from .routers import comparisons, tracks, stats, radio, youtube, soundcloud, builder, sync, live, emojis
 from .routers.playlists import router as playlists_router
 
 app.include_router(comparisons.router, prefix="/api", tags=["comparisons"])
@@ -39,6 +50,7 @@ app.include_router(stats.router, prefix="/api", tags=["stats"])
 app.include_router(playlists_router, prefix="/api", tags=["playlists"])
 app.include_router(builder.router, prefix="/api/builder", tags=["builder"])
 app.include_router(radio.router, prefix="/api", tags=["radio"])
+app.include_router(emojis.router, prefix="/api", tags=["emojis"])
 app.include_router(youtube.router, prefix="/api/youtube", tags=["youtube"])
 app.include_router(soundcloud.router, prefix="/api/soundcloud", tags=["soundcloud"])
 app.include_router(sync.router, prefix="/api", tags=["sync"])

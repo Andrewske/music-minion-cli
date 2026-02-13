@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRadioStore } from '../stores/radioStore';
+import { EmojiTrackActions } from './EmojiTrackActions';
 
 function formatDuration(seconds: number | null): string {
   if (seconds === null || seconds === undefined) return '--:--';
@@ -18,7 +19,7 @@ function formatPosition(ms: number): string {
 }
 
 export function RadioPlayer(): JSX.Element {
-  const { isMuted, nowPlaying, isLoading, error, toggleMute } = useRadioStore();
+  const { isMuted, nowPlaying, isLoading, error, toggleMute, updateNowPlayingTrack } = useRadioStore();
   const [localPosition, setLocalPosition] = useState<number>(0);
   const lastFetchTime = useRef<number>(Date.now());
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -150,6 +151,14 @@ export function RadioPlayer(): JSX.Element {
             {track.artist ?? 'Unknown Artist'}
           </p>
         </div>
+      </div>
+
+      {/* Emoji Actions */}
+      <div className="mt-3">
+        <EmojiTrackActions
+          track={track}
+          onUpdate={(updated) => updateNowPlayingTrack(updated as typeof track)}
+        />
       </div>
 
       {/* Progress Bar */}

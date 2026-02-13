@@ -20,6 +20,7 @@ export interface TrackInfo {
   album: string | null;
   duration: number | null;
   local_path: string | null;
+  emojis?: string[];
 }
 
 export interface NowPlaying {

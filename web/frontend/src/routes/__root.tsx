@@ -4,8 +4,9 @@ import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 import { useQuery } from '@tanstack/react-query'
 import { useRadioStore } from '../stores/radioStore'
 import { getNowPlaying } from '../api/radio'
-import type { NowPlaying } from '../api/radio'
+import type { NowPlaying, TrackInfo } from '../api/radio'
 import { useSyncWebSocket } from '../hooks/useSyncWebSocket'
+import { EmojiTrackActions } from '../components/EmojiTrackActions'
 
 function NavButton({
   to,
@@ -33,7 +34,7 @@ function NavButton({
 }
 
 function RootComponent(): JSX.Element {
-  const { isMuted, setNowPlaying, toggleMute, nowPlaying } = useRadioStore()
+  const { isMuted, setNowPlaying, toggleMute, nowPlaying, updateNowPlayingTrack } = useRadioStore()
   const audioRef = useRef<HTMLAudioElement>(null)
   useSyncWebSocket() // Connect to sync WebSocket for real-time updates
 
@@ -78,6 +79,7 @@ function RootComponent(): JSX.Element {
             <NavButton to="/comparison">Ranking</NavButton>
             <NavButton to="/playlist-builder">Playlists</NavButton>
             <NavButton to="/youtube">YouTube</NavButton>
+            <NavButton to="/emoji-settings">Emojis</NavButton>
           </div>
 
           {/* Radio mini-display */}
@@ -110,6 +112,11 @@ function RootComponent(): JSX.Element {
                 </span>
                 <span className="text-xs text-slate-500">• {nowPlaying.station_name}</span>
               </Link>
+              <EmojiTrackActions
+                track={nowPlaying.track}
+                onUpdate={(updated) => updateNowPlayingTrack(updated as TrackInfo)}
+                compact
+              />
             </div>
           )}
         </div>
