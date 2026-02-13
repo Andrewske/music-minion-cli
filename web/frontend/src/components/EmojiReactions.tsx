@@ -10,7 +10,6 @@ interface EmojiReactionsProps {
   compact?: boolean;  // For tables/mini-displays - smaller badges, no "+ Add" button
   className?: string; // Allow parent to control layout
   isAdding?: boolean;  // Disable "+ Add" while adding
-  isRemoving?: boolean;  // Visual feedback while removing
 }
 
 /**
