@@ -19,8 +19,9 @@ export function useSyncWebSocket() {
 
       switch (type) {
         case 'sync:full':
-          if (data.comparison?.pair) {
-            useComparisonStore.getState().setCurrentPair(
+          if (data.comparison?.pair && data.comparison?.session_id) {
+            useComparisonStore.getState().joinSession(
+              data.comparison.session_id,
               data.comparison.pair,
               data.comparison.prefetched
             );
@@ -33,7 +34,8 @@ export function useSyncWebSocket() {
         case 'comparison:advanced':
           useComparisonStore.getState().setNextPairForComparison(
             data.pair,
-            data.prefetched
+            data.prefetched,
+            data.session_id
           );
           break;
 
