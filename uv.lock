@@ -388,6 +388,7 @@ source = { editable = "." }
 dependencies = [
     { name = "blessed" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "loguru" },
     { name = "mutagen" },
     { name = "openai" },
@@ -425,6 +426,7 @@ dev = [
 requires-dist = [
     { name = "blessed", specifier = ">=1.20.0" },
     { name = "fastapi", specifier = ">=0.109.0" },
+    { name = "httpx", specifier = ">=0.27.0" },
     { name = "loguru", specifier = ">=0.7.0" },
     { name = "mutagen", specifier = ">=1.47.0" },
     { name = "openai", specifier = ">=1.0.0" },

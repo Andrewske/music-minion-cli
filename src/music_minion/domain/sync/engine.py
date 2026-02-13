@@ -150,9 +150,13 @@ def read_tags_from_file(local_path: str, config: Config) -> list[str]:
         if isinstance(audio, MP4):
             # M4A file
             comment_text = audio.get("\xa9cmt", [""])[0]
-        else:
-            # MP3 file - read ID3 COMM frame
-            if hasattr(audio, "tags") and audio.tags:
+        elif hasattr(audio, "tags") and audio.tags:
+            # Check for VorbisComment (Opus, Ogg Vorbis, FLAC)
+            if hasattr(audio.tags, "get"):
+                # VorbisComment uses dictionary-like access
+                comment_text = audio.tags.get("COMMENT", [""])[0] if "COMMENT" in audio.tags else ""
+            elif hasattr(audio.tags, "getall"):
+                # ID3 tags (MP3) - read COMM frame
                 comm_frames = audio.tags.getall("COMM")
                 if comm_frames:
                     comment_text = comm_frames[0].text[0] if comm_frames[0].text else ""

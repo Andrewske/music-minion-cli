@@ -27,4 +27,4 @@ services:
       - ICECAST_PORT=8000
       - ICECAST_PASSWORD=hackme
       - ICECAST_MOUNT=/stream
-      - SCHEDULER_URL=http://host.docker.internal:8888/api/radio/next-track
+      - SCHEDULER_URL=http://host.docker.internal:8642/api/radio/next-track

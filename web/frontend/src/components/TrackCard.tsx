@@ -8,9 +8,10 @@ interface TrackCardProps {
   onArchive?: () => void;
   onWinner?: () => void;
   isLoading?: boolean;
+  rankingMode?: 'global' | 'playlist';
 }
 
-export function TrackCard({ track, isPlaying, className = '', onArchive, onWinner, onClick, isLoading }: TrackCardProps) {
+export function TrackCard({ track, isPlaying, className = '', onArchive, onWinner, onClick, isLoading, rankingMode = 'global' }: TrackCardProps) {
   const renderRatingBadge = (rating: number, wins: number, losses: number, comparisonCount: number) => {
     const isBootstrap = comparisonCount < 10;
 
@@ -113,7 +114,7 @@ export function TrackCard({ track, isPlaying, className = '', onArchive, onWinne
             disabled={isLoading}
             className="flex-1 py-2 text-sm font-medium text-rose-400/70 hover:text-rose-400 hover:bg-rose-500/10 transition-colors border-r border-slate-800 disabled:opacity-50"
           >
-            🗂️ Remove from playlist
+            {rankingMode === 'playlist' ? '🗂️ Remove from playlist' : '🗂️ Archive'}
           </button>
           <button
             type="button"

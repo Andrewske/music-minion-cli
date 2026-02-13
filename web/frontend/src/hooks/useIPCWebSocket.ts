@@ -8,6 +8,10 @@ interface IPCWebSocketHandlers {
   onBuilderSkip?: () => void;
 }
 
+// IPC WebSocket is only used when running alongside the CLI (dev mode)
+// In standalone web mode (production), skip connection attempts entirely
+const IPC_ENABLED = import.meta.env.DEV || import.meta.env.VITE_IPC_ENABLED === 'true';
+
 export function useIPCWebSocket(handlers?: IPCWebSocketHandlers) {
   // Mutation hooks are stable references from React Query
   const recordComparison = useRecordComparison();
@@ -113,6 +117,11 @@ export function useIPCWebSocket(handlers?: IPCWebSocketHandlers) {
   }, [recordComparison, archiveTrack]);
 
   const connect = useCallback(() => {
+    // Skip WebSocket in standalone web mode (production)
+    if (!IPC_ENABLED) {
+      return;
+    }
+
     // Prevent duplicate connections
     if (wsRef.current?.readyState === WebSocket.OPEN || wsRef.current?.readyState === WebSocket.CONNECTING) {
       return; // Already connected or connecting
