@@ -21,6 +21,27 @@ export function RadioPlayer(): JSX.Element {
   const { isMuted, nowPlaying, isLoading, error, toggleMute } = useRadioStore();
   const [localPosition, setLocalPosition] = useState<number>(0);
   const lastFetchTime = useRef<number>(Date.now());
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const wasPlayingRef = useRef(false);
+
+  // Control audio playback based on mute state only (not nowPlaying updates)
+  useEffect(() => {
+    if (!audioRef.current) return;
+
+    if (isMuted) {
+      if (wasPlayingRef.current) {
+        audioRef.current.pause();
+        wasPlayingRef.current = false;
+      }
+    } else if (nowPlaying && !wasPlayingRef.current) {
+      // Only start playing when unmuting, not on every nowPlaying update
+      audioRef.current.load();
+      audioRef.current.play().catch((e) => {
+        console.log('Audio play blocked:', e);
+      });
+      wasPlayingRef.current = true;
+    }
+  }, [isMuted, nowPlaying]);
 
   // Sync local position when we get fresh data from server
   useEffect(() => {
@@ -81,6 +102,16 @@ export function RadioPlayer(): JSX.Element {
 
   return (
     <div className="bg-slate-900 rounded-lg p-6">
+      {/* Hidden audio element for stream playback */}
+      <audio
+        ref={audioRef}
+        preload="none"
+        style={{ display: 'none' }}
+        onError={(e) => console.error('Audio error:', e.currentTarget.error)}
+      >
+        <source src="/stream" type="audio/ogg; codecs=opus" />
+      </audio>
+
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <span className="text-xs font-semibold text-emerald-500 uppercase tracking-wider">

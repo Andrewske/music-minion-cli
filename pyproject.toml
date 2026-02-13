@@ -29,6 +29,7 @@ dependencies = [
     "pydub>=0.25.1", # Audio waveform (requires ffmpeg runtime)
     "psycopg2-binary>=2.9.9", # PostgreSQL adapter
     "yt-dlp>=2024.1.0", # YouTube video downloads
+    "httpx>=0.27.0", # Async HTTP client for stream proxy
 ]
 
 [project.optional-dependencies]

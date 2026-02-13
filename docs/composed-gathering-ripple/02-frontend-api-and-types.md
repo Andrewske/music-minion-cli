@@ -6,36 +6,29 @@
 
 ## Implementation Details
 
-### Types (`web/frontend/src/types.ts`)
+### Types (`web/frontend/src/types/index.ts`)
 
-Ensure `Playlist` type includes the `type` field:
+Narrow the `Playlist.type` field from `string` to union type:
 
 ```typescript
 export interface Playlist {
   id: number;
   name: string;
-  type: 'manual' | 'smart';  // Ensure this exists
+  type: 'manual' | 'smart';  // Changed from string
   description?: string;
   track_count: number;
   library: string;
-  // ... other fields
 }
 ```
 
 ### API Functions (`web/frontend/src/api/playlists.ts`)
 
-Add smart playlist filter API functions:
+Add smart playlist filter API functions. **Reuse existing `Filter` type from `api/builder.ts`** (no new type needed):
 
 ```typescript
-export interface SmartFilter {
-  id?: number;  // Optional for new filters
-  field: string;
-  operator: string;
-  value: string;
-  conjunction: 'AND' | 'OR';
-}
+import type { Filter } from './builder';
 
-export const getSmartFilters = async (playlistId: number): Promise<SmartFilter[]> => {
+export const getSmartFilters = async (playlistId: number): Promise<Filter[]> => {
   const response = await fetch(`${API_BASE}/playlists/${playlistId}/filters`);
   if (!response.ok) throw new Error('Failed to fetch filters');
   const data = await response.json();
@@ -44,8 +37,8 @@ export const getSmartFilters = async (playlistId: number): Promise<SmartFilter[]
 
 export const updateSmartFilters = async (
   playlistId: number,
-  filters: SmartFilter[]
-): Promise<SmartFilter[]> => {
+  filters: Filter[]
+): Promise<Filter[]> => {
   const response = await fetch(`${API_BASE}/playlists/${playlistId}/filters`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -58,8 +51,8 @@ export const updateSmartFilters = async (
 ```
 
 ## Acceptance Criteria
-- [ ] `Playlist` type includes `type: 'manual' | 'smart'`
-- [ ] `SmartFilter` interface defined with all required fields
+- [ ] `Playlist.type` narrowed from `string` to `'manual' | 'smart'`
+- [ ] Reuse existing `Filter` type from `api/builder.ts` (no `SmartFilter` duplication)
 - [ ] `getSmartFilters()` function fetches filters from backend
 - [ ] `updateSmartFilters()` function sends filter updates to backend
 - [ ] Error handling for failed API calls

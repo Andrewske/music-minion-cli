@@ -24,10 +24,17 @@ interface SmartPlaylistEditorProps {
 }
 
 export function SmartPlaylistEditor({ playlistId, playlistName }: SmartPlaylistEditorProps) {
-  const { filters, tracks, updateFilters, isLoading, isUpdatingFilters } = useSmartPlaylistEditor(playlistId);
+  const {
+    filters,
+    tracks,
+    updateFilters,
+    isLoading,
+    isUpdatingFilters,
+    sorting,
+    setSorting,
+  } = useSmartPlaylistEditor(playlistId);
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [sorting, setSorting] = useState<SortingState>([{ id: 'artist', desc: false }]);
 
   // Select first track when tracks load
   useEffect(() => {
@@ -139,8 +146,17 @@ export function SmartPlaylistEditor({ playlistId, playlistName }: SmartPlaylistE
             </div>
           ) : (
             <div className="bg-slate-900 rounded-lg p-8 text-center">
-              <h3 className="text-2xl font-bold mb-2">No tracks match filters</h3>
-              <p className="text-gray-400">Add or adjust filters to see matching tracks</p>
+              {filters.length === 0 ? (
+                <>
+                  <h3 className="text-2xl font-bold mb-2">Add filters to define your smart playlist</h3>
+                  <p className="text-gray-400">Use the filter panel to specify which tracks belong in this playlist</p>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-2xl font-bold mb-2">No tracks match your criteria</h3>
+                  <p className="text-gray-400">Try adjusting or removing some filters</p>
+                </>
+              )}
             </div>
           )}
         </main>
@@ -181,6 +197,8 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType }: Play
 - [ ] Header shows "[Smart]" badge and track count
 - [ ] PlaylistBuilder routes to SmartPlaylistEditor when `playlistType === 'smart'`
 - [ ] Keyboard shortcuts work (space = play/pause, 0-9 = seek)
+- [ ] Column sorting works (server-side via hook)
+- [ ] Empty state differentiates "no filters" vs "no matches"
 
 ## Dependencies
 - Task 03: useSmartPlaylistEditor hook must exist

@@ -12,6 +12,7 @@ interface SwipeableTrackProps {
   onArchive?: () => void;
   onWinner?: () => void;
   isLoading?: boolean;
+  rankingMode?: 'global' | 'playlist';
 }
 
 export function SwipeableTrack({
@@ -22,7 +23,8 @@ export function SwipeableTrack({
   onTap,
   onArchive,
   onWinner,
-  isLoading
+  isLoading,
+  rankingMode = 'global'
 }: SwipeableTrackProps) {
   const { bind, style, isDragging } = useSwipeGesture({
     onSwipeRight,
@@ -38,7 +40,7 @@ export function SwipeableTrack({
           <div className="w-16 h-16 rounded-full bg-rose-500/20 flex items-center justify-center border-2 border-rose-500 shadow-[0_0_20px_rgba(244,63,94,0.3)]">
             <span className="text-3xl">🗂️</span>
           </div>
-           <span className="text-rose-500 font-bold mt-2 uppercase tracking-wider text-sm">Remove from playlist</span>
+           <span className="text-rose-500 font-bold mt-2 uppercase tracking-wider text-sm">{rankingMode === 'playlist' ? 'Remove from playlist' : 'Archive'}</span>
         </div>
 
         {/* Winner Indicator (Right) */}
@@ -67,6 +69,7 @@ export function SwipeableTrack({
           onWinner={onWinner}
           onClick={onTap}
           isLoading={isLoading}
+          rankingMode={rankingMode}
         />
       </animated.div>
     </div>

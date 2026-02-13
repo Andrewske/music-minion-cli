@@ -30,8 +30,7 @@ export function SessionProgress({
   const folders = foldersData?.folders || [];
 
   // Determine current display text and dropdown options based on mode
-  const currentFolderName = priorityPath?.split('/').filter(Boolean).pop() ||
-    (folders.includes('2025') ? '2025' : 'All');
+  const currentFolderName = priorityPath?.split('/').filter(Boolean).pop() || 'Full Library';
 
   const selectedPlaylist = playlists.find(p => p.id === selectedPlaylistId);
   const currentDisplayText = rankingMode === 'playlist'

@@ -245,6 +245,7 @@ def generate_preview_data(state: UIState) -> UIState:
     playlist_name = wizard_data.get("name", "")
 
     # Create temporary playlist to evaluate filters
+    playlist_id = None
     try:
         # Create playlist with unique temporary name to avoid collisions
         temp_name = f"{playlist_name}_temp_{uuid.uuid4().hex[:8]}"
@@ -263,9 +264,6 @@ def generate_preview_data(state: UIState) -> UIState:
         # Evaluate filters
         matching_tracks = playlist_filters.evaluate_filters(playlist_id)
 
-        # Delete temporary playlist
-        playlists.delete_playlist(playlist_id)
-
         # Store preview data
         wizard_data["matching_count"] = len(matching_tracks)
         wizard_data["preview_tracks"] = matching_tracks[:5]  # First 5 tracks
@@ -274,5 +272,9 @@ def generate_preview_data(state: UIState) -> UIState:
         # On error, set empty preview
         wizard_data["matching_count"] = 0
         wizard_data["preview_tracks"] = []
+    finally:
+        # Always delete temporary playlist if it was created
+        if playlist_id is not None:
+            playlists.delete_playlist(playlist_id)
 
     return update_wizard_data(state, wizard_data)

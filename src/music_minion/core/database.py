@@ -1098,9 +1098,13 @@ def migrate_database(conn, current_version: int) -> None:
         logger.info("Migrating database to schema version 29 (SoundCloud streaming)...")
 
         # Add source_url column to tracks table for streaming permalink URLs
-        conn.execute("""
-            ALTER TABLE tracks ADD COLUMN source_url TEXT
-        """)
+        try:
+            conn.execute("""
+                ALTER TABLE tracks ADD COLUMN source_url TEXT
+            """)
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
 
         # Index for source_url lookups (partial index, only non-null values)
         conn.execute("""
