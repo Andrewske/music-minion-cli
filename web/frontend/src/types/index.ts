@@ -12,6 +12,7 @@ export interface TrackInfo {
   losses: number;
   duration?: number;
   has_waveform: boolean;
+  emojis?: string[];
   // Playlist ranking fields
   playlist_rating?: number;
   playlist_comparison_count?: number;
@@ -164,6 +165,7 @@ export interface PlaylistTrackEntry {
   wins: number;
   losses: number;
   comparison_count: number;
+  emojis?: string[];
 }
 
 export interface PlaylistTracksResponse {
