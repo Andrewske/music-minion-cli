@@ -1,4 +1,5 @@
 import type { TrackInfo } from '../types';
+import { EmojiTrackActions } from './EmojiTrackActions';
 
 interface TrackCardProps {
   onClick?: () => void;
@@ -9,9 +10,10 @@ interface TrackCardProps {
   onWinner?: () => void;
   isLoading?: boolean;
   rankingMode?: 'global' | 'playlist';
+  onTrackUpdate?: (track: TrackInfo) => void;
 }
 
-export function TrackCard({ track, isPlaying, className = '', onArchive, onWinner, onClick, isLoading, rankingMode = 'global' }: TrackCardProps) {
+export function TrackCard({ track, isPlaying, className = '', onArchive, onWinner, onClick, isLoading, rankingMode = 'global', onTrackUpdate }: TrackCardProps) {
   const renderRatingBadge = (rating: number, wins: number, losses: number, comparisonCount: number) => {
     const isBootstrap = comparisonCount < 10;
 
@@ -99,11 +101,21 @@ export function TrackCard({ track, isPlaying, className = '', onArchive, onWinne
           </div>
 
           {/* Stats / Badges */}
-          <div className="pt-4 border-t border-slate-800 w-full flex justify-center">
+          <div className="pt-4 border-t border-slate-800 w-full flex flex-col items-center gap-3">
             {renderRatingBadge(track.rating, track.wins, track.losses, track.comparison_count)}
           </div>
         </div>
       </button>
+
+      {/* Emoji Tags - outside clickable area */}
+      {onTrackUpdate && (
+        <div className="px-4 pb-3" onClick={(e) => e.stopPropagation()}>
+          <EmojiTrackActions
+            track={track}
+            onUpdate={(updated) => onTrackUpdate({ ...track, emojis: updated.emojis })}
+          />
+        </div>
+      )}
 
       {/* Action Buttons - separate from clickable area */}
       {(onArchive && onWinner) && (

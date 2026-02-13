@@ -29,6 +29,7 @@ interface ComparisonActions {
   setNextPairForComparison: (nextPair: ComparisonPair, prefetched?: ComparisonPair, sessionId?: string) => void;  // Update pair for comparison but keep current track playing
   setPriorityPath: (priorityPathPrefix: string | null) => void;
   setAutoplay: (enabled: boolean) => void;
+  updateTrackInPair: (track: TrackInfo) => void;  // Update track data (e.g., emojis) while keeping pair
 }
 
 type ComparisonStore = ComparisonState & ComparisonActions;
@@ -155,6 +156,26 @@ export const useComparisonStore = create<ComparisonStore>((set, get) => ({
       isComparisonMode: true, // Keep comparison mode active
       ...(autoplay && { currentTrack: nextPair.track_a }), // Auto-select track A when autoplay enabled
       ...(sessionId && { sessionId }), // Update session ID if provided (for joining sessions)
+    });
+  },
+
+  updateTrackInPair: (track: TrackInfo) => {
+    const { currentPair, currentTrack } = get();
+    if (!currentPair) return;
+
+    // Update track in pair (track_a or track_b)
+    const updatedPair = {
+      ...currentPair,
+      track_a: currentPair.track_a.id === track.id ? track : currentPair.track_a,
+      track_b: currentPair.track_b.id === track.id ? track : currentPair.track_b,
+    };
+
+    // Also update currentTrack if it matches
+    const updatedCurrentTrack = currentTrack?.id === track.id ? track : currentTrack;
+
+    set({
+      currentPair: updatedPair,
+      currentTrack: updatedCurrentTrack,
     });
   },
 }));

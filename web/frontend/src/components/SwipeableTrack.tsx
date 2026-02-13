@@ -13,6 +13,7 @@ interface SwipeableTrackProps {
   onWinner?: () => void;
   isLoading?: boolean;
   rankingMode?: 'global' | 'playlist';
+  onTrackUpdate?: (track: TrackInfo) => void;
 }
 
 export function SwipeableTrack({
@@ -24,7 +25,8 @@ export function SwipeableTrack({
   onArchive,
   onWinner,
   isLoading,
-  rankingMode = 'global'
+  rankingMode = 'global',
+  onTrackUpdate
 }: SwipeableTrackProps) {
   const { bind, style, isDragging } = useSwipeGesture({
     onSwipeRight,
@@ -70,6 +72,7 @@ export function SwipeableTrack({
           onClick={onTap}
           isLoading={isLoading}
           rankingMode={rankingMode}
+          onTrackUpdate={onTrackUpdate}
         />
       </animated.div>
     </div>
