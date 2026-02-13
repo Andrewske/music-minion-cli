@@ -201,6 +201,6 @@ Sync API:
 
 ## Files
 
-- Database: SQLite v22 in `core/database.py`
+- Database: SQLite v31 in `core/database.py`
 - Learnings: `ai-learnings.md`
 - Future roadmap: `docs/incomplete-items.md`
