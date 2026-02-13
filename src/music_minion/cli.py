@@ -186,6 +186,40 @@ def run_locate_opus(folder: str, apply: bool = False) -> int:
         return 1
 
 
+def send_web_command_remote_or_ipc(command: str, endpoint: str, data: dict) -> int:
+    """
+    Send web command to remote server if configured, otherwise use IPC.
+
+    Args:
+        command: IPC command name (fallback)
+        endpoint: Remote API endpoint path
+        data: JSON data for remote POST
+
+    Returns:
+        Exit code (0 for success, 1 for failure)
+    """
+    from music_minion.core.config import load_config
+
+    config = load_config()
+    remote_server = config.web.remote_server
+
+    if remote_server:
+        try:
+            import requests
+
+            url = f"{remote_server}{endpoint}"
+            response = requests.post(url, json=data, timeout=5)
+            response.raise_for_status()
+            print(f"Command sent to remote server")
+            return 0
+        except Exception as e:
+            print(f"Failed to send command to remote server: {e}", file=sys.stderr)
+            return 1
+    else:
+        # Fallback to local IPC
+        return send_ipc_command(command, [])
+
+
 def send_ipc_command(command: str, args: list) -> int:
     """
     Send a command to running Music Minion instance via IPC.
@@ -309,16 +343,26 @@ def main() -> None:
             sys.exit(send_ipc_command("web-playpause", []))
 
         elif args.subcommand == "web-winner":
+            # Note: This needs session context to determine winner_id, track IDs, etc.
+            # For now, just use IPC as remote comparison verdict needs full session state
             sys.exit(send_ipc_command("web-winner", []))
 
         elif args.subcommand == "web-archive":
             sys.exit(send_ipc_command("web-archive", []))
 
         elif args.subcommand == "web-play1":
-            sys.exit(send_ipc_command("web-play1", []))
+            sys.exit(send_web_command_remote_or_ipc(
+                "web-play1",
+                "/api/comparisons/select-track",
+                {"track_id": "track_a", "is_playing": True}
+            ))
 
         elif args.subcommand == "web-play2":
-            sys.exit(send_ipc_command("web-play2", []))
+            sys.exit(send_web_command_remote_or_ipc(
+                "web-play2",
+                "/api/comparisons/select-track",
+                {"track_id": "track_b", "is_playing": True}
+            ))
 
         elif args.subcommand == "web-seek-pos":
             sys.exit(send_ipc_command("web-seek-pos", []))

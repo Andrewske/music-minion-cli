@@ -195,6 +195,7 @@ class WebConfig:
     backend_port: int = 8642
     frontend_port: int = 5173
     auto_reload: bool = True  # For uvicorn --reload flag
+    remote_server: Optional[str] = None  # Remote server URL for CLI commands (e.g., "https://music.piserver:8443")
 
 
 @dataclass
@@ -474,6 +475,10 @@ frontend_port = 5173
 
 # Enable auto-reload for backend during development
 auto_reload = true
+
+# Remote server URL for CLI commands (e.g., "https://music.piserver:8443")
+# When set, CLI commands will POST to this remote server instead of using local IPC
+# remote_server = "https://music.piserver:8443"
 """.strip()
 
 
@@ -707,6 +712,7 @@ def load_config() -> Config:
                 backend_port=web_data.get("backend_port", config.web.backend_port),
                 frontend_port=web_data.get("frontend_port", config.web.frontend_port),
                 auto_reload=web_data.get("auto_reload", config.web.auto_reload),
+                remote_server=web_data.get("remote_server", config.web.remote_server),
             )
 
         return config
@@ -827,8 +833,12 @@ sync_playlists = {config.spotify.sync_playlists!r}"""
 backend_host = "{config.web.backend_host}"
 backend_port = {config.web.backend_port}
 frontend_port = {config.web.frontend_port}
-auto_reload = {config.web.auto_reload!r}
-"""
+auto_reload = {config.web.auto_reload!r}"""
+
+        if config.web.remote_server:
+            toml_content += f'\nremote_server = "{config.web.remote_server}"'
+
+        toml_content += "\n"
 
         toml_content += "\n"
 
