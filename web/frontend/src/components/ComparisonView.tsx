@@ -14,6 +14,7 @@ import { ErrorState } from './ErrorState';
 import { ErrorBoundary } from './ErrorBoundary';
 import { StatsModal } from './StatsModal';
 import { getFolders } from '../api/tracks';
+import { selectTrack } from '../api/comparisons';
 
 export function ComparisonView() {
   const {
@@ -95,8 +96,10 @@ export function ComparisonView() {
   const handleTrackTap = (track: TrackInfo) => {
     if (currentTrack?.id === track.id) {
       setIsPlaying(!isPlaying);  // Toggle play/pause for same track
+      selectTrack(track.id, !isPlaying); // Broadcast play/pause state
     } else {
       selectAndPlay(track);       // Switch track and play
+      selectTrack(track.id, true); // Broadcast track selection
     }
   };
 
@@ -323,6 +326,7 @@ export function ComparisonView() {
                 onArchive={swipeLeftA}
                 onWinner={swipeRightA}
                 isLoading={isArchiving || isSubmitting}
+                rankingMode={sessionRankingMode ?? 'global'}
               />
             </div>
           </ErrorBoundary>
@@ -348,6 +352,7 @@ export function ComparisonView() {
                 onArchive={swipeLeftB}
                 onWinner={swipeRightB}
                 isLoading={isArchiving || isSubmitting}
+                rankingMode={sessionRankingMode ?? 'global'}
               />
             </div>
           </ErrorBoundary>
