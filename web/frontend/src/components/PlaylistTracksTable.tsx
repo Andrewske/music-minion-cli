@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import type { PlaylistTrackEntry } from '../types';
+import { EmojiTrackActions } from './EmojiTrackActions';
 
 interface PlaylistTracksTableProps {
   tracks: PlaylistTrackEntry[];
@@ -8,12 +9,19 @@ interface PlaylistTracksTableProps {
 type SortField = 'rating' | 'title' | 'artist' | 'wins' | 'losses' | 'comparison_count';
 type SortDirection = 'asc' | 'desc';
 
-export function PlaylistTracksTable({ tracks }: PlaylistTracksTableProps) {
+export function PlaylistTracksTable({ tracks }: PlaylistTracksTableProps): JSX.Element {
   const [sortField, setSortField] = useState<SortField>('rating');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  // Local state for tracks to allow emoji updates
+  const [localTracks, setLocalTracks] = useState<PlaylistTrackEntry[]>(tracks);
+
+  // Sync local state when tracks prop changes (e.g., on refetch)
+  useEffect(() => {
+    setLocalTracks(tracks);
+  }, [tracks]);
 
   const sortedTracks = useMemo(() => {
-    return [...tracks].sort((a, b) => {
+    return [...localTracks].sort((a, b) => {
       let aValue: string | number;
       let bValue: string | number;
 
@@ -54,9 +62,9 @@ export function PlaylistTracksTable({ tracks }: PlaylistTracksTableProps) {
       }
       return 0;
     });
-  }, [tracks, sortField, sortDirection]);
+  }, [localTracks, sortField, sortDirection]);
 
-  const handleSort = (field: SortField) => {
+  const handleSort = (field: SortField): void => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
@@ -65,12 +73,22 @@ export function PlaylistTracksTable({ tracks }: PlaylistTracksTableProps) {
     }
   };
 
-  const getSortIcon = (field: SortField) => {
+  const getSortIcon = (field: SortField): string => {
     if (sortField !== field) {
       return '↕️';
     }
     return sortDirection === 'asc' ? '↑' : '↓';
   };
+
+  const handleTrackUpdate = useCallback((updatedTrack: { id: number; emojis?: string[] }): void => {
+    setLocalTracks((prev) =>
+      prev.map((track) =>
+        track.id === updatedTrack.id
+          ? { ...track, emojis: updatedTrack.emojis }
+          : track
+      )
+    );
+  }, []);
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
@@ -98,6 +116,7 @@ export function PlaylistTracksTable({ tracks }: PlaylistTracksTableProps) {
                   Title {getSortIcon('title')}
                 </button>
               </th>
+              <th className="text-left py-3 px-2 text-slate-400 font-medium">Emojis</th>
               <th className="text-left py-3 px-2 text-slate-400 font-medium">
                 <button
                   type="button"
@@ -144,6 +163,13 @@ export function PlaylistTracksTable({ tracks }: PlaylistTracksTableProps) {
                 </td>
                 <td className="py-3 px-2 text-slate-200 max-w-xs truncate" title={track.title}>
                   {track.title}
+                </td>
+                <td className="py-3 px-2">
+                  <EmojiTrackActions
+                    track={{ id: track.id, emojis: track.emojis }}
+                    onUpdate={handleTrackUpdate}
+                    compact
+                  />
                 </td>
                 <td className="py-3 px-2 text-slate-400 max-w-xs truncate" title={track.artist}>
                   {track.artist || 'Unknown Artist'}

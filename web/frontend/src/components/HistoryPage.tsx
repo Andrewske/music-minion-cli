@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { getHistory, getStations, getStationStats, getTopTracks } from '../api/radio';
 import { StatCard } from './StatCard';
-import type { HistoryEntry } from '../api/radio';
+import { EmojiTrackActions } from './EmojiTrackActions';
+import type { HistoryEntry, TrackPlayStats } from '../api/radio';
 
 type DatePreset = 'last7' | 'last30' | 'all';
 
@@ -127,7 +128,7 @@ export function HistoryPage(): JSX.Element {
 
   // Fetch top tracks (only when a station is selected)
   const {
-    data: topTracks,
+    data: topTracksData,
     isLoading: isTopTracksLoading,
     isError: isTopTracksError,
     refetch: refetchTopTracks,
@@ -136,6 +137,27 @@ export function HistoryPage(): JSX.Element {
     queryFn: () => getTopTracks(selectedStationId ?? undefined, 10, days ?? 30),
     enabled: selectedStationId !== null,
   });
+
+  // Local state for top tracks to handle emoji updates
+  const [topTracks, setTopTracks] = useState<TrackPlayStats[]>([]);
+
+  // Sync local state with query data
+  useEffect(() => {
+    if (topTracksData) {
+      setTopTracks(topTracksData);
+    }
+  }, [topTracksData]);
+
+  // Handle track emoji updates
+  const handleTopTrackUpdate = (trackIndex: number) => (updatedTrack: { id: number; emojis?: string[] }): void => {
+    setTopTracks((prev) =>
+      prev.map((trackStat, idx) =>
+        idx === trackIndex
+          ? { ...trackStat, track: { ...trackStat.track, emojis: updatedTrack.emojis } }
+          : trackStat
+      )
+    );
+  };
 
   const allHistoryEntries = historyData?.pages.flat() ?? [];
 
@@ -272,9 +294,16 @@ export function HistoryPage(): JSX.Element {
                         </div>
                       </div>
                     </div>
-                    <span className="text-slate-400 text-sm ml-2 whitespace-nowrap">
-                      {trackStat.play_count} plays
-                    </span>
+                    <div className="flex items-center gap-2 ml-2">
+                      <EmojiTrackActions
+                        track={trackStat.track}
+                        onUpdate={handleTopTrackUpdate(index)}
+                        compact
+                      />
+                      <span className="text-slate-400 text-sm whitespace-nowrap">
+                        {trackStat.play_count} plays
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>

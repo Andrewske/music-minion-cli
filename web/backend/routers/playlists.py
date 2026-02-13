@@ -14,12 +14,42 @@ from ..schemas import (
 router = APIRouter()
 
 
+def _batch_fetch_emojis(track_ids: List[int], db_conn) -> dict[int, List[str]]:
+    """Batch-fetch emojis for multiple tracks efficiently.
+
+    Args:
+        track_ids: List of track database IDs
+        db_conn: Database connection
+
+    Returns:
+        Dict mapping track_id -> list of emoji unicode strings
+    """
+    if not track_ids:
+        return {}
+
+    placeholders = ','.join('?' * len(track_ids))
+    cursor = db_conn.execute(
+        f"SELECT track_id, emoji_id FROM track_emojis WHERE track_id IN ({placeholders}) ORDER BY track_id, added_at ASC",
+        track_ids
+    )
+
+    result: dict[int, List[str]] = {}
+    for row in cursor.fetchall():
+        track_id = row['track_id']
+        emoji_id = row['emoji_id']
+        if track_id not in result:
+            result[track_id] = []
+        result[track_id].append(emoji_id)
+
+    return result
+
+
 def get_playlist_tracks_with_ratings(
     playlist_id: int,
     sort_field: str = "artist",
     sort_direction: str = "asc"
 ) -> List[dict]:
-    """Get all tracks in a playlist with their ratings, wins, and losses.
+    """Get all tracks in a playlist with their ratings, wins, losses, and emojis.
 
     Handles both manual playlists (from playlist_tracks table) and
     smart playlists (dynamically evaluated from filters).
@@ -76,6 +106,14 @@ def get_playlist_tracks_with_ratings(
             for t in tracks
         ]
 
+        # Batch-fetch emojis for all tracks
+        if result:
+            with get_db_connection() as conn:
+                track_ids = [t["id"] for t in result]
+                emojis_map = _batch_fetch_emojis(track_ids, conn)
+                for track in result:
+                    track["emojis"] = emojis_map.get(track["id"], [])
+
         # Apply sorting (Python-side since evaluate_filters returns all tracks)
         result.sort(
             key=lambda x: (x.get(sort_field) or "", x.get("artist") or ""),
@@ -109,7 +147,16 @@ def get_playlist_tracks_with_ratings(
             ORDER BY {column} {direction}, t.title ASC
         """
         cursor = conn.execute(query, (playlist_id,))
-        return [dict(row) for row in cursor.fetchall()]
+        tracks = [dict(row) for row in cursor.fetchall()]
+
+        # Batch-fetch emojis for all tracks
+        if tracks:
+            track_ids = [t["id"] for t in tracks]
+            emojis_map = _batch_fetch_emojis(track_ids, conn)
+            for track in tracks:
+                track["emojis"] = emojis_map.get(track["id"], [])
+
+        return tracks
 
 
 def get_playlist_name(playlist_id: int) -> Optional[str]:
