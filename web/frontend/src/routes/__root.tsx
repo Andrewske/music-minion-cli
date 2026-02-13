@@ -35,7 +35,7 @@ function NavButton({
 function RootComponent(): JSX.Element {
   const { isMuted, setNowPlaying, toggleMute, nowPlaying } = useRadioStore()
   const audioRef = useRef<HTMLAudioElement>(null)
-  const { isConnected: isSyncConnected } = useSyncWebSocket()
+  useSyncWebSocket() // Connect to sync WebSocket for real-time updates
 
   // Poll now-playing data (fallback only - WebSocket handles real-time updates)
   const { data: nowPlayingData } = useQuery<NowPlaying>({
