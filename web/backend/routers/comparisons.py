@@ -33,6 +33,18 @@ from music_minion.domain.rating.elo import (
 router = APIRouter()
 
 
+def _get_track_emojis(track_id: int) -> list[str]:
+    """Fetch emojis for a track from the database."""
+    from music_minion.core.database import get_db_connection
+
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            "SELECT emoji_id FROM track_emojis WHERE track_id = ? ORDER BY added_at DESC",
+            (track_id,),
+        )
+        return [row[0] for row in cursor.fetchall()]
+
+
 def _track_to_info(track: dict) -> TrackInfo:
     """Convert a track dict to TrackInfo schema."""
     import logging
@@ -41,6 +53,7 @@ def _track_to_info(track: dict) -> TrackInfo:
 
     try:
         wins = track.get("wins", 0) or 0
+        emojis = _get_track_emojis(track["id"])
         track_info = TrackInfo(
             id=track["id"],
             title=track["title"],
@@ -55,6 +68,7 @@ def _track_to_info(track: dict) -> TrackInfo:
             losses=int(track["comparison_count"]) - int(wins),
             duration=track.get("duration"),
             has_waveform=False,  # TODO: implement waveform check
+            emojis=emojis,
             playlist_rating=track.get("playlist_rating"),
             playlist_comparison_count=track.get("playlist_comparison_count"),
             global_rating=track.get("global_rating"),

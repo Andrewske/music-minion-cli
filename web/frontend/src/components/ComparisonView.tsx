@@ -28,7 +28,8 @@ export function ComparisonView() {
     setPriorityPath,
     selectAndPlay,
     setIsPlaying,
-    isComparisonMode
+    isComparisonMode,
+    updateTrackInPair,
   } = useComparisonStore();
   const startSession = useStartSession();
   const recordComparison = useRecordComparison();
@@ -327,6 +328,7 @@ export function ComparisonView() {
                 onWinner={swipeRightA}
                 isLoading={isArchiving || isSubmitting}
                 rankingMode={sessionRankingMode ?? 'global'}
+                onTrackUpdate={updateTrackInPair}
               />
             </div>
           </ErrorBoundary>
@@ -353,6 +355,7 @@ export function ComparisonView() {
                 onWinner={swipeRightB}
                 isLoading={isArchiving || isSubmitting}
                 rankingMode={sessionRankingMode ?? 'global'}
+                onTrackUpdate={updateTrackInPair}
               />
             </div>
           </ErrorBoundary>

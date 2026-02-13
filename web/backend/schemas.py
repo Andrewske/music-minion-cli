@@ -16,6 +16,7 @@ class TrackInfo(BaseModel):
     losses: int
     duration: Optional[float] = None
     has_waveform: bool
+    emojis: list[str] = []
     # Playlist ranking fields
     playlist_rating: Optional[float] = None
     playlist_comparison_count: Optional[int] = None
