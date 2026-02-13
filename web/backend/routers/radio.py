@@ -11,6 +11,8 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from loguru import logger
 from pydantic import BaseModel
 
+from ..sync_manager import sync_manager
+
 
 router = APIRouter(prefix="/radio", tags=["radio"])
 
@@ -327,10 +329,10 @@ async def track_started(request: Request) -> Response:
     if not station:
         return Response(content="No active station", status_code=404)
 
-    # Look up track by path with source info for history recording
+    # Look up track by path with full details for broadcast
     with get_radio_db_connection() as conn:
         cursor = conn.execute(
-            "SELECT id, source_url FROM tracks WHERE local_path = ?",
+            "SELECT id, title, artist, album, duration, local_path, source_url FROM tracks WHERE local_path = ?",
             (file_path,),
         )
         row = cursor.fetchone()
@@ -360,6 +362,33 @@ async def track_started(request: Request) -> Response:
         except Exception as e:
             logger.exception(f"Failed to record history for track {row['id']}: {e}")
             # Don't fail the request if history recording fails
+
+        # Build full NowPlaying response for broadcast
+        from music_minion.domain.library.models import Track
+
+        track = Track(
+            id=row["id"],
+            title=row["title"],
+            artist=row["artist"],
+            album=row["album"],
+            duration=row["duration"],
+            local_path=row["local_path"],
+        )
+
+        now_playing_data = {
+            "track": _track_to_response(track).dict(),
+            "position_ms": 0,
+            "station_id": station.id,
+            "station_name": station.name,
+            "source_type": source_type,
+            "upcoming": [],  # Could populate if needed
+        }
+
+        # Update stored state for reconnecting clients
+        sync_manager.set_radio_state(now_playing_data)
+
+        # Broadcast to all connected clients
+        await sync_manager.broadcast("radio:now_playing", now_playing_data)
 
         logger.info(f"Track started playing: {file_path} (id={row['id']})")
         return Response(content="OK", status_code=200)
