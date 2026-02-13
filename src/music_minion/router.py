@@ -8,6 +8,7 @@ from loguru import logger
 
 from music_minion.context import AppContext
 from music_minion.core.output import log
+from music_minion.core.config import load_config
 from music_minion.ipc.server import process_ipc_command
 from music_minion.domain import playback as playback_domain
 from music_minion import actions
@@ -21,6 +22,40 @@ from music_minion.commands import sync
 from music_minion.commands import playlist
 from music_minion.commands import track
 from music_minion.commands import library
+
+
+def _post_to_remote_server(endpoint: str, data: dict) -> bool:
+    """
+    POST data to remote server if configured.
+
+    Args:
+        endpoint: API endpoint path (e.g., "/api/comparisons/select-track")
+        data: JSON data to send
+
+    Returns:
+        True if successful, False otherwise
+    """
+    config = load_config()
+    remote_server = config.web.remote_server
+
+    if not remote_server:
+        return False
+
+    try:
+        import requests
+
+        url = f"{remote_server}{endpoint}"
+        response = requests.post(
+            url,
+            json=data,
+            timeout=5,
+        )
+        response.raise_for_status()
+        logger.info(f"Remote command sent to {url}: {response.status_code}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send remote command to {endpoint}: {e}")
+        return False
 
 
 def _handle_web_winner_command(ctx: AppContext) -> tuple[AppContext, bool]:
