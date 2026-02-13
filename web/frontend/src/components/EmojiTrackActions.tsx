@@ -25,7 +25,7 @@ export function EmojiTrackActions({
 }: EmojiTrackActionsProps): JSX.Element {
   const [showPicker, setShowPicker] = useState(false);
 
-  const { addEmoji, removeEmoji, isAdding, isRemoving } = useTrackEmojis(track, onUpdate);
+  const { addEmoji, removeEmoji, isAdding } = useTrackEmojis(track, onUpdate);
 
   const handleAddEmoji = async (emoji: string): Promise<void> => {
     await addEmoji(emoji);
@@ -42,7 +42,6 @@ export function EmojiTrackActions({
         compact={compact}
         className={className}
         isAdding={isAdding}
-        isRemoving={isRemoving}
       />
 
       {showPicker && (
