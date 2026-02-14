@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from loguru import logger
 from pydantic import BaseModel
 
+from ..queries.emojis import batch_fetch_track_emojis
 from ..sync_manager import sync_manager
 
 
@@ -157,36 +158,6 @@ def _schedule_entry_to_response(entry) -> ScheduleEntryResponse:
         target_station_id=entry.target_station_id,
         position=entry.position,
     )
-
-
-def get_emojis_for_tracks_batch(track_ids: list[int], db_conn) -> dict[int, list[str]]:
-    """Batch fetch emojis for multiple tracks.
-
-    Args:
-        track_ids: List of track database IDs
-        db_conn: Database connection
-
-    Returns:
-        Dict mapping track_id -> list of emoji unicode strings
-    """
-    if not track_ids:
-        return {}
-
-    placeholders = ','.join('?' * len(track_ids))
-    cursor = db_conn.execute(
-        f"SELECT track_id, emoji_id FROM track_emojis WHERE track_id IN ({placeholders}) ORDER BY track_id, added_at ASC",
-        track_ids
-    )
-
-    result: dict[int, list[str]] = {}
-    for row in cursor.fetchall():
-        track_id = row['track_id']
-        emoji_id = row['emoji_id']
-        if track_id not in result:
-            result[track_id] = []
-        result[track_id].append(emoji_id)
-
-    return result
 
 
 def _track_to_response(track, emojis: list[str] | None = None) -> TrackResponse:
@@ -481,7 +452,7 @@ def get_now_playing() -> NowPlayingResponse:
 
             # Batch fetch emojis for current track + upcoming
             all_track_ids = [track_id] + [t.id for t in upcoming if t.id]
-            emojis_map = get_emojis_for_tracks_batch(all_track_ids, conn)
+            emojis_map = batch_fetch_track_emojis(all_track_ids, conn)
 
         if row:
             from music_minion.domain.library.models import Track
@@ -523,7 +494,7 @@ def get_now_playing() -> NowPlayingResponse:
     # Batch fetch emojis for current track + upcoming
     all_track_ids = [now_playing.track.id] + [t.id for t in now_playing.upcoming if t.id]
     with get_radio_db_connection() as conn:
-        emojis_map = get_emojis_for_tracks_batch(all_track_ids, conn)
+        emojis_map = batch_fetch_track_emojis(all_track_ids, conn)
 
     return NowPlayingResponse(
         track=_track_to_response(now_playing.track, emojis_map.get(now_playing.track.id, [])),
@@ -781,7 +752,7 @@ def get_top_tracks_endpoint(
         # Batch fetch emojis for all tracks
         track_ids = [s.track.id for s in stats if s.track.id]
         with get_radio_db_connection() as conn:
-            emojis_map = get_emojis_for_tracks_batch(track_ids, conn)
+            emojis_map = batch_fetch_track_emojis(track_ids, conn)
 
         return [
             TrackPlayStatsResponse(
