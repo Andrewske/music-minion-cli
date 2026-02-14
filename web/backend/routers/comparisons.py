@@ -12,6 +12,7 @@ from ..schemas import (
     ComparisonPair,
     TrackInfo,
 )
+from ..queries.emojis import batch_fetch_track_emojis
 from music_minion.ipc import send_command
 from music_minion.domain.rating.database import (
     get_filtered_tracks,
@@ -33,27 +34,19 @@ from music_minion.domain.rating.elo import (
 router = APIRouter()
 
 
-def _get_track_emojis(track_id: int) -> list[str]:
-    """Fetch emojis for a track from the database."""
-    from music_minion.core.database import get_db_connection
+def _track_to_info(track: dict, emojis: list[str] | None = None) -> TrackInfo:
+    """Convert a track dict to TrackInfo schema.
 
-    with get_db_connection() as conn:
-        cursor = conn.execute(
-            "SELECT emoji_id FROM track_emojis WHERE track_id = ? ORDER BY added_at DESC",
-            (track_id,),
-        )
-        return [row[0] for row in cursor.fetchall()]
-
-
-def _track_to_info(track: dict) -> TrackInfo:
-    """Convert a track dict to TrackInfo schema."""
+    Args:
+        track: Track dictionary from database
+        emojis: Pre-fetched emojis (use batch_fetch_track_emojis for efficiency)
+    """
     import logging
 
     logger = logging.getLogger(__name__)
 
     try:
         wins = track.get("wins", 0) or 0
-        emojis = _get_track_emojis(track["id"])
         track_info = TrackInfo(
             id=track["id"],
             title=track["title"],
@@ -68,7 +61,7 @@ def _track_to_info(track: dict) -> TrackInfo:
             losses=int(track["comparison_count"]) - int(wins),
             duration=track.get("duration"),
             has_waveform=False,  # TODO: implement waveform check
-            emojis=emojis,
+            emojis=emojis or [],
             playlist_rating=track.get("playlist_rating"),
             playlist_comparison_count=track.get("playlist_comparison_count"),
             global_rating=track.get("global_rating"),
@@ -78,6 +71,29 @@ def _track_to_info(track: dict) -> TrackInfo:
     except Exception as e:
         logger.error(f"Failed to convert track to TrackInfo: {e}, track data: {track}")
         raise
+
+
+def _make_pair(track_a: dict, track_b: dict, session_id: str) -> ComparisonPair:
+    """Create a ComparisonPair with batch-fetched emojis.
+
+    Args:
+        track_a: First track dictionary
+        track_b: Second track dictionary
+        session_id: Session identifier
+
+    Returns:
+        ComparisonPair with emojis populated for both tracks
+    """
+    from music_minion.core.database import get_db_connection
+
+    with get_db_connection() as conn:
+        emojis_map = batch_fetch_track_emojis([track_a["id"], track_b["id"]], conn)
+
+    return ComparisonPair(
+        track_a=_track_to_info(track_a, emojis_map.get(track_a["id"], [])),
+        track_b=_track_to_info(track_b, emojis_map.get(track_b["id"], [])),
+        session_id=session_id,
+    )
 
 
 def _select_pair(
@@ -253,11 +269,7 @@ async def start_comparison_session(
             f"Pair selected successfully: {track_a['title']} vs {track_b['title']}"
         )
 
-        current_pair = ComparisonPair(
-            track_a=_track_to_info(track_a),
-            track_b=_track_to_info(track_b),
-            session_id=session_id,
-        )
+        current_pair = _make_pair(track_a, track_b, session_id)
 
         logger.info("ComparisonPair created successfully")
 
@@ -269,11 +281,7 @@ async def start_comparison_session(
                 pf_a, pf_b = _select_pair(
                     tracks, ratings_cache, request.priority_path_prefix, exclude_ids
                 )
-                prefetched_pair = ComparisonPair(
-                    track_a=_track_to_info(pf_a),
-                    track_b=_track_to_info(pf_b),
-                    session_id=session_id,
-                )
+                prefetched_pair = _make_pair(pf_a, pf_b, session_id)
             except ValueError:
                 pass  # Not enough tracks for prefetch, that's fine
 
@@ -328,11 +336,7 @@ def _get_pair_with_prefetch(
     track_a, track_b = _select_pair(
         tracks, ratings_cache, priority_path_prefix, exclude_track_ids
     )
-    current_pair = ComparisonPair(
-        track_a=_track_to_info(track_a),
-        track_b=_track_to_info(track_b),
-        session_id=session_id,
-    )
+    current_pair = _make_pair(track_a, track_b, session_id)
 
     # Prefetch next pair
     prefetched_pair = None
@@ -343,11 +347,7 @@ def _get_pair_with_prefetch(
             pf_a, pf_b = _select_pair(
                 tracks, ratings_cache, priority_path_prefix, next_exclude
             )
-            prefetched_pair = ComparisonPair(
-                track_a=_track_to_info(pf_a),
-                track_b=_track_to_info(pf_b),
-                session_id=session_id,
-            )
+            prefetched_pair = _make_pair(pf_a, pf_b, session_id)
         except ValueError:
             pass
 
@@ -410,11 +410,7 @@ def _get_playlist_pair_with_prefetch(
     track_a, track_b = _select_pair(
         tracks, ratings_cache, priority_path_prefix, exclude_track_ids
     )
-    current_pair = ComparisonPair(
-        track_a=_track_to_info(track_a),
-        track_b=_track_to_info(track_b),
-        session_id=session_id,
-    )
+    current_pair = _make_pair(track_a, track_b, session_id)
 
     # Prefetch next pair
     prefetched_pair = None
@@ -425,11 +421,7 @@ def _get_playlist_pair_with_prefetch(
             pf_a, pf_b = _select_pair(
                 tracks, ratings_cache, priority_path_prefix, next_exclude
             )
-            prefetched_pair = ComparisonPair(
-                track_a=_track_to_info(pf_a),
-                track_b=_track_to_info(pf_b),
-                session_id=session_id,
-            )
+            prefetched_pair = _make_pair(pf_a, pf_b, session_id)
         except ValueError:
             # Not enough tracks for prefetch, that's OK
             pass
