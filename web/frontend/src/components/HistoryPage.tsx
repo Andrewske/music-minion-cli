@@ -141,12 +141,22 @@ export function HistoryPage(): JSX.Element {
   // Local state for top tracks to handle emoji updates
   const [topTracks, setTopTracks] = useState<TrackPlayStats[]>([]);
 
+  // Local state for history entries to handle emoji updates
+  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
+
   // Sync local state with query data
   useEffect(() => {
     if (topTracksData) {
       setTopTracks(topTracksData);
     }
   }, [topTracksData]);
+
+  // Sync history entries with infinite query data
+  useEffect(() => {
+    if (historyData?.pages) {
+      setHistoryEntries(historyData.pages.flat());
+    }
+  }, [historyData]);
 
   // Handle track emoji updates
   const handleTopTrackUpdate = (trackIndex: number) => (updatedTrack: { id: number; emojis?: string[] }): void => {
@@ -159,7 +169,16 @@ export function HistoryPage(): JSX.Element {
     );
   };
 
-  const allHistoryEntries = historyData?.pages.flat() ?? [];
+  // Handle history entry emoji updates
+  const handleHistoryEntryUpdate = (entryId: number) => (updatedTrack: { id: number; emojis?: string[] }): void => {
+    setHistoryEntries((prev) =>
+      prev.map((entry) =>
+        entry.id === entryId
+          ? { ...entry, track: { ...entry.track, emojis: updatedTrack.emojis } }
+          : entry
+      )
+    );
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6">
@@ -331,11 +350,11 @@ export function HistoryPage(): JSX.Element {
               ))}
             </div>
           </div>
-        ) : allHistoryEntries.length > 0 ? (
+        ) : historyEntries.length > 0 ? (
           <>
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
               <div className="space-y-4">
-                {allHistoryEntries.map((entry: HistoryEntry) => (
+                {historyEntries.map((entry: HistoryEntry) => (
                   <div
                     key={entry.id}
                     className="flex justify-between items-start py-3 border-b border-slate-800/50 last:border-0"
@@ -351,8 +370,15 @@ export function HistoryPage(): JSX.Element {
                         {entry.station_name} • {entry.source_type}
                       </div>
                     </div>
-                    <div className="text-slate-400 text-sm whitespace-nowrap">
-                      {new Date(entry.started_at).toLocaleString()}
+                    <div className="flex items-center gap-2">
+                      <EmojiTrackActions
+                        track={entry.track}
+                        onUpdate={handleHistoryEntryUpdate(entry.id)}
+                        compact
+                      />
+                      <div className="text-slate-400 text-sm whitespace-nowrap">
+                        {new Date(entry.started_at).toLocaleString()}
+                      </div>
                     </div>
                   </div>
                 ))}

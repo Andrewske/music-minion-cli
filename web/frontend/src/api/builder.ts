@@ -1,6 +1,6 @@
 // web/frontend/src/api/builder.ts
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8642/api';
+const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 export interface Filter {
   field: string;
