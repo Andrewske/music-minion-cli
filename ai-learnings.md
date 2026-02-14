@@ -2877,3 +2877,148 @@ ID: 6225  - None (SoundCloud preserved) ✓
 - **No schema changes needed** - Uses existing `local_path`, `file_mtime`, `source` columns
 - **Filesystem scan is fast** - `Path.rglob()` scans 5000+ files in ~500ms on SSD
 
+## Live WebSocket Sync Implementation (2026-02-12)
+
+### Stateful WebSocket Broadcasting Pattern
+
+**Problem**: Multi-device sync needs reconnecting clients to receive current state, not just future events.
+
+**Solution**: SyncManager stores current state alongside connection management:
+```python
+class SyncManager:
+    connections: set[WebSocket]
+    current_comparison: dict | None  # {pair, prefetched}
+    current_radio: dict | None       # {track, position, station}
+
+    def set_comparison_state(self, pair, prefetched):
+        self.current_comparison = {"pair": pair, "prefetched": prefetched}
+
+    async def connect(self, ws):
+        await ws.accept()
+        self.connections.add(ws)
+        # Client receives sync:full immediately with current state
+```
+
+**Benefits**:
+- ✅ Reconnecting clients get current state immediately
+- ✅ No need to re-query database on reconnect
+- ✅ State persists in memory (no database writes)
+
+### WebSocket Reconnection with Exponential Backoff
+
+**Pattern**: Client-side auto-reconnect with capped exponential backoff:
+```typescript
+const reconnectDelay = Math.min(1000 * Math.pow(2, attempts - 1), 60000);
+setTimeout(connect, reconnectDelay);
+```
+
+**Max attempts**: 20 (prevents infinite loops on persistent failures)
+
+### CLI Remote Command Pattern
+
+**Problem**: Desktop CLI needs to control remote Pi server when `remote_server` is configured.
+
+**Solution**: Check config and dispatch accordingly:
+```python
+def send_web_command_remote_or_ipc(command, endpoint, data):
+    config = load_config()
+    if config.web.remote_server:
+        return requests.post(f"{config.web.remote_server}{endpoint}", json=data)
+    else:
+        return send_ipc_command(command, [])
+```
+
+**Key**: Track aliases ("track_a", "track_b") resolved server-side using stored comparison state.
+
+### anyio vs pytest-asyncio
+
+**Issue**: Backend tests failed with `@pytest.mark.asyncio` - pytest-asyncio not installed.
+
+**Solution**: Use `@pytest.mark.anyio` (anyio is already a dependency via FastAPI/Starlette):
+```python
+@pytest.mark.anyio
+async def test_broadcast_sends_to_all():
+    # Works without pytest-asyncio
+```
+
+**Learning**: Check available pytest plugins before adding dependencies.
+
+## Emoji Reaction System (2026-02-13)
+
+### Architecture Decisions
+
+**emoji-mart vs custom picker**: Used `@emoji-mart/react` library instead of custom implementation. Benefits:
+- 3,600+ emojis with proper rendering (ZWJ sequences, skin tones, flags)
+- Built-in search, keyboard navigation, accessibility
+- Custom emoji category support
+- ~300 lines of code saved
+
+**FTS5 for emoji search**: SQLite Full-Text Search enables scalable emoji name search:
+```sql
+CREATE VIRTUAL TABLE emoji_metadata_fts USING fts5(
+    emoji_id UNINDEXED, custom_name, default_name,
+    content=emoji_metadata, content_rowid=rowid
+);
+```
+Triggers keep FTS index synchronized automatically.
+
+**Shared hook pattern**: `useTrackEmojis` hook provides consistent behavior across all track displays:
+```typescript
+const { addEmoji, removeEmoji, isAdding } = useTrackEmojis(track, updateTrack);
+```
+- Optimistic updates with rollback on error
+- Toast notifications via sonner
+- Works with any component having track data
+
+### Key Implementation Patterns
+
+**Atomic emoji operations**: Use UPSERT pattern to prevent race conditions:
+```python
+db_conn.execute("BEGIN IMMEDIATE")
+cursor = db_conn.execute("INSERT OR IGNORE INTO track_emojis ...")
+if cursor.rowcount > 0:  # Only increment if actually inserted
+    db_conn.execute("UPDATE emoji_metadata SET use_count = use_count + 1 ...")
+```
+
+**Batch emoji fetching**: Prevent N+1 queries when loading track lists:
+```python
+def get_emojis_for_tracks_batch(track_ids: list[int], db_conn) -> dict[int, list[str]]:
+    placeholders = ','.join('?' * len(track_ids))
+    cursor = db_conn.execute(f"SELECT track_id, emoji_id FROM track_emojis WHERE track_id IN ({placeholders})", track_ids)
+```
+
+**Emoji normalization**: Always normalize Unicode before database operations:
+```python
+def normalize_emoji_id(emoji_str: str) -> str:
+    emoji_str = emoji_str.replace('\ufe0e', '').replace('\ufe0f', '')  # Strip variation selectors
+    return unicodedata.normalize('NFC', emoji_str)
+```
+
+### Files Structure
+
+```
+web/backend/routers/emojis.py     # CRUD endpoints
+web/frontend/src/
+├── api/emojis.ts                 # API client
+├── hooks/useTrackEmojis.ts       # Shared hook
+├── components/
+│   ├── EmojiReactions.tsx        # Badge display
+│   ├── EmojiPicker.tsx           # emoji-mart wrapper
+│   ├── EmojiTrackActions.tsx     # Container component
+│   └── EmojiSettings.tsx         # Settings page
+```
+
+### SQLite Threading with FastAPI
+
+**Issue**: `sqlite3.ProgrammingError: SQLite objects created in a thread can only be used in that same thread`
+
+**Cause**: FastAPI async dependency `async def get_db()` creates connection in different thread than handler.
+
+**Solution**: Use synchronous handlers with inline connection management:
+```python
+@router.get("/emojis/top")
+def get_top_emojis(limit: int = 50) -> list[EmojiInfo]:  # Note: def not async def
+    with get_db_connection() as conn:
+        return get_top_emojis_query(conn, limit)
+```
+
