@@ -1,6 +1,6 @@
 ---
 task: 03-player-components
-status: pending
+status: done
 depends: [02-frontend-player-store]
 files:
   - path: web/frontend/src/components/player/PlayerBar.tsx

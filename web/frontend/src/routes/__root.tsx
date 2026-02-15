@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { createRootRoute, Link, Outlet, useRouterState } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 import { useQuery } from '@tanstack/react-query'
@@ -7,6 +7,7 @@ import { getNowPlaying } from '../api/radio'
 import type { NowPlaying, TrackInfo } from '../api/radio'
 import { useSyncWebSocket } from '../hooks/useSyncWebSocket'
 import { EmojiTrackActions } from '../components/EmojiTrackActions'
+import { PlayerBar } from '../components/player/PlayerBar'
 
 function NavButton({
   to,
@@ -35,7 +36,6 @@ function NavButton({
 
 function RootComponent(): JSX.Element {
   const { isMuted, setNowPlaying, toggleMute, nowPlaying, updateNowPlayingTrack } = useRadioStore()
-  const audioRef = useRef<HTMLAudioElement>(null)
   useSyncWebSocket() // Connect to sync WebSocket for real-time updates
 
   // Poll now-playing data (fallback only - WebSocket handles real-time updates)
@@ -51,24 +51,8 @@ function RootComponent(): JSX.Element {
     setNowPlaying(nowPlayingData ?? null)
   }, [nowPlayingData, setNowPlaying])
 
-  // Start playing when component mounts (muted initially)
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.play().catch(() => {
-        // Autoplay blocked - user will need to click to start
-      })
-    }
-  }, [])
-
   return (
-    <div className="min-h-screen bg-black">
-      {/* Global audio element - never unmounts */}
-      <audio
-        ref={audioRef}
-        src="/api/radio/stream"
-        muted={isMuted}
-        onError={(e) => console.error('Audio error:', e)}
-      />
+    <div className="min-h-screen bg-black pb-20">{/* Account for 64px player bar + margin */}
 
       {/* Navigation */}
       <nav className="border-b border-obsidian-border px-6 py-3">
@@ -124,6 +108,9 @@ function RootComponent(): JSX.Element {
 
       {/* Content */}
       <Outlet />
+
+      {/* Player bar - persists across all pages */}
+      <PlayerBar />
 
       {/* Dev tools */}
       {import.meta.env.DEV && <TanStackRouterDevtools />}
