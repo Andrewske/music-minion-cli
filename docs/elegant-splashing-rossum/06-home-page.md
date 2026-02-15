@@ -1,6 +1,6 @@
 ---
 task: 06-home-page
-status: pending
+status: done
 depends: [05-stations-and-schedule]
 files:
   - path: web/frontend/src/routes/index.tsx
