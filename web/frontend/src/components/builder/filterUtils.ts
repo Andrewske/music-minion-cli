@@ -3,15 +3,17 @@
 
 export const TEXT_OPERATORS = ['contains', 'starts_with', 'ends_with', 'equals', 'not_equals'] as const;
 export const NUMERIC_OPERATORS = ['equals', 'not_equals', 'gt', 'gte', 'lt', 'lte'] as const;
+export const EMOJI_OPERATORS = ['has', 'not_has'] as const;
 export const NUMERIC_FIELDS = ['year', 'bpm'] as const;
 export const TEXT_FIELDS = ['title', 'artist', 'album', 'genre', 'key'] as const;
 
 export type TextOperator = typeof TEXT_OPERATORS[number];
 export type NumericOperator = typeof NUMERIC_OPERATORS[number];
+export type EmojiOperator = typeof EMOJI_OPERATORS[number];
 export type NumericField = typeof NUMERIC_FIELDS[number];
 export type TextField = typeof TEXT_FIELDS[number];
-export type FilterField = NumericField | TextField;
-export type FilterOperator = TextOperator | NumericOperator;
+export type FilterField = NumericField | TextField | 'emoji';
+export type FilterOperator = TextOperator | NumericOperator | EmojiOperator;
 
 /**
  * Validates a filter configuration
@@ -24,6 +26,18 @@ export function validateFilter(field: string, operator: string, value: string): 
   // Required fields check
   if (!field || !operator || !value) {
     return "All fields are required";
+  }
+
+  // Emoji field validation - must come before other checks
+  if (field === 'emoji') {
+    if (!EMOJI_OPERATORS.includes(operator as EmojiOperator)) {
+      return `Operator '${operator}' is not valid for emoji field`;
+    }
+    // Value should be a single emoji (or emoji sequence)
+    if (value.trim() === '') {
+      return "Emoji is required";
+    }
+    return null;
   }
 
   // Numeric field validation
@@ -76,6 +90,8 @@ export function getOperatorSymbol(operator: string): string {
     gte: '≥',
     lt: '<',
     lte: '≤',
+    has: '∈',
+    not_has: '∉',
   };
   return symbols[operator] || operator;
 }
@@ -87,6 +103,9 @@ export function getOperatorSymbol(operator: string): string {
  * @returns Placeholder text for the input field
  */
 export function getPlaceholder(field: string, operator: string): string {
+  if (field === 'emoji') {
+    return 'Select an emoji';
+  }
   if (field === 'year') {
     return operator === 'equals' ? '2025' : '2020';
   }
