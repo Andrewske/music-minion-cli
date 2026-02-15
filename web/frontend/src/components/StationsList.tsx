@@ -1,46 +1,35 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Play } from 'lucide-react';
 import {
   getStations,
-  activateStation,
-  deactivateStation,
   createStation,
   updateStation,
   deleteStation,
 } from '../api/radio';
-import type { Station, SourceFilter } from '../api/radio';
-import { ScheduleEditorModal } from './ScheduleEditorModal';
+import type { Station } from '../api/radio';
+import { getPlaylistTracks } from '../api/playlists';
 import { usePlaylists } from '../hooks/usePlaylists';
+import { usePlayer } from '../hooks/usePlayer';
 import type { Playlist } from '../types';
 
 interface StationItemProps {
   station: Station;
-  onActivate: (id: number) => void;
-  onDeactivate: () => void;
+  onPlay: (station: Station) => void;
   onEdit: (station: Station) => void;
   onDelete: (id: number) => void;
-  onEditSchedule?: (id: number, name: string) => void;
-  isActivating: boolean;
   isDeleting: boolean;
 }
 
 function StationItem({
   station,
-  onActivate,
-  onDeactivate,
+  onPlay,
   onEdit,
   onDelete,
-  onEditSchedule,
-  isActivating,
   isDeleting,
 }: StationItemProps): JSX.Element {
   const handleClick = (): void => {
-    if (isActivating) return; // Prevent double-clicks while activating
-    if (station.is_active) {
-      onDeactivate();
-    } else {
-      onActivate(station.id);
-    }
+    onPlay(station);
   };
 
   const handleEdit = (e: React.MouseEvent): void => {
@@ -55,68 +44,22 @@ function StationItem({
     }
   };
 
-  const handleEditSchedule = (e: React.MouseEvent): void => {
-    e.stopPropagation();
-    onEditSchedule?.(station.id, station.name);
-  };
-
-  const isMetaStation = station.playlist_id === null;
-
   return (
     <div
-      className={
-        'group flex items-center justify-between p-3 cursor-pointer transition-colors border ' +
-        (station.is_active
-          ? 'bg-obsidian-accent/10 border-obsidian-accent/30'
-          : 'bg-obsidian-surface border-obsidian-border hover:bg-white/5 hover:border-obsidian-accent/30')
-      }
+      className="group flex items-center justify-between p-3 cursor-pointer transition-colors border bg-obsidian-surface border-obsidian-border hover:bg-white/5 hover:border-obsidian-accent/30"
       onClick={handleClick}
     >
       <div className="flex items-center gap-3 min-w-0">
-        <div
-          className={
-            'w-2 h-2 rounded-full shrink-0 ' +
-            (station.is_active ? 'bg-obsidian-accent animate-pulse' : 'bg-white/30')
-          }
-        />
         <div className="min-w-0">
-          <p
-            className={
-              'text-sm font-medium truncate ' +
-              (station.is_active ? 'text-obsidian-accent' : 'text-white/90')
-            }
-          >
+          <p className="text-sm font-medium truncate text-white/90">
             {station.name}
           </p>
-          <p className="text-xs text-white/50 font-sf-mono capitalize">
-            {station.mode}
-            {station.source_filter !== 'all' && (
-              <span className="ml-1 text-white/40">• {station.source_filter}</span>
-            )}
+          <p className="text-xs text-white/50 font-sf-mono">
+            {station.shuffle_enabled ? 'Shuffle' : 'Sequential'}
           </p>
         </div>
       </div>
       <div className="flex items-center gap-2">
-        {station.is_active && (
-          <span className="text-xs text-obsidian-accent font-medium font-sf-mono">LIVE</span>
-        )}
-        {isMetaStation && onEditSchedule && (
-          <button
-            onClick={handleEditSchedule}
-            className="opacity-0 group-hover:opacity-100 p-1 text-white/50 hover:text-obsidian-accent transition-opacity"
-            aria-label="Edit schedule"
-            title="Edit Schedule"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-              />
-            </svg>
-          </button>
-        )}
         <button
           onClick={handleEdit}
           className="opacity-0 group-hover:opacity-100 p-1 text-white/50 hover:text-obsidian-accent transition-opacity"
@@ -142,13 +85,14 @@ function StationItem({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
+        <Play className="h-4 w-4 text-white/50" />
       </div>
     </div>
   );
 }
 
 interface CreateStationFormProps {
-  onSubmit: (name: string, playlistId?: number, mode?: 'shuffle' | 'queue', sourceFilter?: SourceFilter) => void;
+  onSubmit: (name: string, playlistId: number, shuffleEnabled: boolean) => void;
   onCancel: () => void;
   isCreating: boolean;
   playlists: Playlist[];
@@ -164,13 +108,12 @@ function CreateStationForm({
 }: CreateStationFormProps): JSX.Element {
   const [name, setName] = useState('');
   const [playlistId, setPlaylistId] = useState<number | undefined>(undefined);
-  const [mode, setMode] = useState<'shuffle' | 'queue'>('shuffle');
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
+  const [shuffleEnabled, setShuffleEnabled] = useState(true);
 
   const handleSubmit = (e: React.FormEvent): void => {
     e.preventDefault();
-    if (name.trim()) {
-      onSubmit(name.trim(), playlistId, mode, sourceFilter);
+    if (name.trim() && playlistId) {
+      onSubmit(name.trim(), playlistId, shuffleEnabled);
     }
   };
 
@@ -187,14 +130,14 @@ function CreateStationForm({
       />
 
       <div className="space-y-1">
-        <label className="text-xs text-white/60 font-sf-mono">Playlist (optional)</label>
+        <label className="text-xs text-white/60 font-sf-mono">Playlist</label>
         <select
           value={playlistId ?? ''}
           onChange={(e) => setPlaylistId(e.target.value ? Number(e.target.value) : undefined)}
           className="w-full bg-transparent border border-obsidian-border px-3 py-2 text-sm text-white focus:outline-none focus:border-obsidian-accent/50"
           disabled={isCreating || playlistsLoading}
         >
-          <option value="">Meta-station (no playlist)</option>
+          <option value="">Select playlist</option>
           {playlists.map((playlist) => (
             <option key={playlist.id} value={playlist.id}>
               {playlist.name} ({playlist.track_count} tracks)
@@ -208,10 +151,10 @@ function CreateStationForm({
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => setMode('shuffle')}
+            onClick={() => setShuffleEnabled(true)}
             className={
               'flex-1 px-3 py-1.5 text-sm tracking-wider transition-colors border ' +
-              (mode === 'shuffle'
+              (shuffleEnabled
                 ? 'border-obsidian-accent text-obsidian-accent bg-obsidian-accent/10'
                 : 'border-obsidian-border text-white/60 hover:bg-white/5')
             }
@@ -221,40 +164,24 @@ function CreateStationForm({
           </button>
           <button
             type="button"
-            onClick={() => setMode('queue')}
+            onClick={() => setShuffleEnabled(false)}
             className={
               'flex-1 px-3 py-1.5 text-sm tracking-wider transition-colors border ' +
-              (mode === 'queue'
+              (!shuffleEnabled
                 ? 'border-obsidian-accent text-obsidian-accent bg-obsidian-accent/10'
                 : 'border-obsidian-border text-white/60 hover:bg-white/5')
             }
             disabled={isCreating}
           >
-            Queue
+            Sequential
           </button>
         </div>
-      </div>
-
-      <div className="space-y-1">
-        <label className="text-xs text-white/60 font-sf-mono">Source Filter</label>
-        <select
-          value={sourceFilter}
-          onChange={(e) => setSourceFilter(e.target.value as SourceFilter)}
-          className="w-full bg-transparent border border-obsidian-border px-3 py-2 text-sm text-white focus:outline-none focus:border-obsidian-accent/50"
-          disabled={isCreating}
-        >
-          <option value="all">All Sources</option>
-          <option value="local">Local Files Only</option>
-          <option value="youtube">YouTube Only</option>
-          <option value="soundcloud">SoundCloud Only</option>
-          <option value="spotify">Spotify Only</option>
-        </select>
       </div>
 
       <div className="flex gap-2">
         <button
           type="submit"
-          disabled={!name.trim() || isCreating}
+          disabled={!name.trim() || !playlistId || isCreating}
           className="flex-1 border border-obsidian-accent/30 text-obsidian-accent px-3 py-1.5 text-sm tracking-wider hover:bg-obsidian-accent/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {isCreating ? 'Creating...' : 'Create'}
@@ -274,7 +201,7 @@ function CreateStationForm({
 
 interface EditStationModalProps {
   station: Station;
-  onSubmit: (updates: { name?: string; playlist_id?: number | null; mode?: 'shuffle' | 'queue'; source_filter?: SourceFilter }) => void;
+  onSubmit: (updates: { name?: string; playlist_id?: number; shuffle_enabled?: boolean }) => void;
   onClose: () => void;
   isUpdating: boolean;
   playlists: Playlist[];
@@ -290,17 +217,15 @@ function EditStationModal({
   playlistsLoading,
 }: EditStationModalProps): JSX.Element {
   const [name, setName] = useState(station.name);
-  const [playlistId, setPlaylistId] = useState<number | null>(station.playlist_id);
-  const [mode, setMode] = useState<'shuffle' | 'queue'>(station.mode);
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(station.source_filter);
+  const [playlistId, setPlaylistId] = useState<number>(station.playlist_id);
+  const [shuffleEnabled, setShuffleEnabled] = useState(station.shuffle_enabled);
 
   const handleSubmit = (e: React.FormEvent): void => {
     e.preventDefault();
-    const updates: { name?: string; playlist_id?: number | null; mode?: 'shuffle' | 'queue'; source_filter?: SourceFilter } = {};
+    const updates: { name?: string; playlist_id?: number; shuffle_enabled?: boolean } = {};
     if (name.trim() !== station.name) updates.name = name.trim();
     if (playlistId !== station.playlist_id) updates.playlist_id = playlistId;
-    if (mode !== station.mode) updates.mode = mode;
-    if (sourceFilter !== station.source_filter) updates.source_filter = sourceFilter;
+    if (shuffleEnabled !== station.shuffle_enabled) updates.shuffle_enabled = shuffleEnabled;
 
     if (Object.keys(updates).length > 0) {
       onSubmit(updates);
@@ -333,12 +258,11 @@ function EditStationModal({
           <div className="space-y-1">
             <label className="text-xs text-white/60 font-sf-mono">Playlist</label>
             <select
-              value={playlistId ?? ''}
-              onChange={(e) => setPlaylistId(e.target.value ? Number(e.target.value) : null)}
+              value={playlistId}
+              onChange={(e) => setPlaylistId(Number(e.target.value))}
               className="w-full bg-transparent border border-obsidian-border px-3 py-2 text-sm text-white focus:outline-none focus:border-obsidian-accent/50"
               disabled={isUpdating || playlistsLoading}
             >
-              <option value="">Meta-station (no playlist)</option>
               {playlists.map((playlist) => (
                 <option key={playlist.id} value={playlist.id}>
                   {playlist.name} ({playlist.track_count} tracks)
@@ -352,10 +276,10 @@ function EditStationModal({
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setMode('shuffle')}
+                onClick={() => setShuffleEnabled(true)}
                 className={
                   'flex-1 px-3 py-1.5 text-sm tracking-wider transition-colors border ' +
-                  (mode === 'shuffle'
+                  (shuffleEnabled
                     ? 'border-obsidian-accent text-obsidian-accent bg-obsidian-accent/10'
                     : 'border-obsidian-border text-white/60 hover:bg-white/5')
                 }
@@ -365,34 +289,18 @@ function EditStationModal({
               </button>
               <button
                 type="button"
-                onClick={() => setMode('queue')}
+                onClick={() => setShuffleEnabled(false)}
                 className={
                   'flex-1 px-3 py-1.5 text-sm tracking-wider transition-colors border ' +
-                  (mode === 'queue'
+                  (!shuffleEnabled
                     ? 'border-obsidian-accent text-obsidian-accent bg-obsidian-accent/10'
                     : 'border-obsidian-border text-white/60 hover:bg-white/5')
                 }
                 disabled={isUpdating}
               >
-                Queue
+                Sequential
               </button>
             </div>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-xs text-white/60 font-sf-mono">Source Filter</label>
-            <select
-              value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value as SourceFilter)}
-              className="w-full bg-transparent border border-obsidian-border px-3 py-2 text-sm text-white focus:outline-none focus:border-obsidian-accent/50"
-              disabled={isUpdating}
-            >
-              <option value="all">All Sources</option>
-              <option value="local">Local Files Only</option>
-              <option value="youtube">YouTube Only</option>
-              <option value="soundcloud">SoundCloud Only</option>
-              <option value="spotify">Spotify Only</option>
-            </select>
           </div>
 
           <div className="flex gap-2 pt-2">
@@ -421,11 +329,8 @@ function EditStationModal({
 export function StationsList(): JSX.Element {
   const [isCreating, setIsCreating] = useState(false);
   const [editingStation, setEditingStation] = useState<Station | null>(null);
-  const [editingSchedule, setEditingSchedule] = useState<{
-    stationId: number;
-    stationName: string;
-  } | null>(null);
   const queryClient = useQueryClient();
+  const { play } = usePlayer();
 
   const { data: stations, isLoading, error } = useQuery<Station[]>({
     queryKey: ['stations'],
@@ -434,25 +339,34 @@ export function StationsList(): JSX.Element {
 
   const { data: playlists, isLoading: playlistsLoading } = usePlaylists();
 
-  const activateMutation = useMutation({
-    mutationFn: activateStation,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['stations'] });
-      queryClient.invalidateQueries({ queryKey: ['nowPlaying'] });
-    },
-  });
+  const handlePlayStation = async (station: Station): Promise<void> => {
+    try {
+      // Fetch playlist tracks
+      const playlistData = await getPlaylistTracks(station.playlist_id);
 
-  const deactivateMutation = useMutation({
-    mutationFn: deactivateStation,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['stations'] });
-      queryClient.invalidateQueries({ queryKey: ['nowPlaying'] });
-    },
-  });
+      if (playlistData.tracks && playlistData.tracks.length > 0) {
+        // Play first track with playlist context
+        const firstTrack = playlistData.tracks[0];
+        // Convert PlaylistTrackEntry to Track (fill in required fields)
+        const track = {
+          ...firstTrack,
+          artist: firstTrack.artist ?? 'Unknown Artist',
+        };
+        await play(track, {
+          type: 'playlist',
+          playlist_id: station.playlist_id,
+          start_index: 0,
+          shuffle: station.shuffle_enabled,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to play station:', error);
+    }
+  };
 
   const createMutation = useMutation({
-    mutationFn: ({ name, playlistId, mode, sourceFilter }: { name: string; playlistId?: number; mode?: 'shuffle' | 'queue'; sourceFilter?: SourceFilter }) =>
-      createStation(name, playlistId, mode, sourceFilter),
+    mutationFn: ({ name, playlistId, shuffleEnabled }: { name: string; playlistId: number; shuffleEnabled: boolean }) =>
+      createStation(name, playlistId, shuffleEnabled ? 'shuffle' : 'queue', 'all'),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['stations'] });
       setIsCreating(false);
@@ -460,11 +374,17 @@ export function StationsList(): JSX.Element {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ stationId, updates }: { stationId: number; updates: { name?: string; playlist_id?: number | null; mode?: 'shuffle' | 'queue'; source_filter?: SourceFilter } }) =>
-      updateStation(stationId, updates),
+    mutationFn: ({ stationId, updates }: { stationId: number; updates: { name?: string; playlist_id?: number; shuffle_enabled?: boolean } }) => {
+      const apiUpdates: { name?: string; playlist_id?: number; mode?: 'shuffle' | 'queue' } = {};
+      if (updates.name) apiUpdates.name = updates.name;
+      if (updates.playlist_id) apiUpdates.playlist_id = updates.playlist_id;
+      if (updates.shuffle_enabled !== undefined) {
+        apiUpdates.mode = updates.shuffle_enabled ? 'shuffle' : 'queue';
+      }
+      return updateStation(stationId, apiUpdates);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['stations'] });
-      queryClient.invalidateQueries({ queryKey: ['nowPlaying'] });
       setEditingStation(null);
     },
   });
@@ -520,7 +440,9 @@ export function StationsList(): JSX.Element {
         {isCreating && (
           <div className="mb-4">
             <CreateStationForm
-              onSubmit={(name, playlistId, mode, sourceFilter) => createMutation.mutate({ name, playlistId, mode, sourceFilter })}
+              onSubmit={(name, playlistId, shuffleEnabled) =>
+                createMutation.mutate({ name, playlistId, shuffleEnabled })
+              }
               onCancel={() => setIsCreating(false)}
               isCreating={createMutation.isPending}
               playlists={playlists ?? []}
@@ -537,27 +459,15 @@ export function StationsList(): JSX.Element {
               <StationItem
                 key={station.id}
                 station={station}
-                onActivate={(id) => activateMutation.mutate(id)}
-                onDeactivate={() => deactivateMutation.mutate()}
+                onPlay={handlePlayStation}
                 onEdit={(s) => setEditingStation(s)}
                 onDelete={(id) => deleteMutation.mutate(id)}
-                onEditSchedule={(id, name) => setEditingSchedule({ stationId: id, stationName: name })}
-                isActivating={activateMutation.isPending}
                 isDeleting={deleteMutation.isPending}
               />
             ))}
           </div>
         )}
       </div>
-
-      {editingSchedule && (
-        <ScheduleEditorModal
-          isOpen={true}
-          onClose={() => setEditingSchedule(null)}
-          stationId={editingSchedule.stationId}
-          stationName={editingSchedule.stationName}
-        />
-      )}
 
       {editingStation && (
         <EditStationModal

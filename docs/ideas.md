@@ -4,6 +4,7 @@
 2. Genre settings page for mass rename/merge operations
 3. SoundCloud + AI metadata enrichment with field-by-field approval
 4. Android browser notification shows current playing track metadata
+5. Keypad shortcuts for playlist-builder mode
 
 ## 1. Clickable Genre Tags with Popularity Overlay
 
@@ -88,3 +89,9 @@
 **Questions**:
 - Should notification controls (play/pause/skip) trigger API calls or use existing frontend state?
 - How to handle artwork for tracks without album art? (fallback image?)
+
+## 5. Keypad Shortcuts for Playlist-Builder Mode - 2026-02-15
+
+Add numeric keypad shortcuts for common playlist-builder operations to speed up curation workflow.
+
+**Context**: Blessed UI, playlist-builder keyboard event handlers (`ui/blessed/events/keys/builder.py`)
