@@ -12,13 +12,16 @@ from music_minion.core.database import get_db_connection
 
 
 # Valid filter fields (must match tracks table columns)
-VALID_FIELDS = {"title", "artist", "album", "genre", "year", "bpm", "key", "local_path"}
+VALID_FIELDS = {"title", "artist", "album", "genre", "year", "bpm", "key", "local_path", "emoji"}
 
 # Text operators for string fields
 TEXT_OPERATORS = {"contains", "starts_with", "ends_with", "equals", "not_equals"}
 
 # Numeric operators for integer/float fields
 NUMERIC_OPERATORS = {"equals", "not_equals", "gt", "lt", "gte", "lte"}
+
+# Emoji operators for tag filtering
+EMOJI_OPERATORS = {"has", "not_has"}
 
 # Field type mapping
 NUMERIC_FIELDS = {"year", "bpm"}
@@ -51,6 +54,16 @@ def validate_filter(field: str, operator: str, value: str) -> None:
     """
     if field not in VALID_FIELDS:
         raise ValueError(f"Invalid field: {field}. Must be one of {VALID_FIELDS}")
+
+    # Emoji field validation
+    if field == "emoji":
+        if operator not in EMOJI_OPERATORS:
+            raise ValueError(
+                f"Operator '{operator}' not valid for emoji field. "
+                f"Use one of: {EMOJI_OPERATORS}"
+            )
+        # Value should be an emoji string (no additional validation needed)
+        return
 
     # Check operator compatibility with field type
     if field in NUMERIC_FIELDS:
@@ -263,6 +276,19 @@ def build_filter_query(filters: list[dict[str, Any]]) -> tuple[str, list[str]]:
         field = f["field"]
         operator = f["operator"]
         value = f["value"]
+
+        # Handle emoji filters with subquery
+        if field == "emoji":
+            if operator == "has":
+                where_parts.append(
+                    "EXISTS (SELECT 1 FROM track_emojis te WHERE te.track_id = t.id AND te.emoji_id = ?)"
+                )
+            else:  # not_has
+                where_parts.append(
+                    "NOT EXISTS (SELECT 1 FROM track_emojis te WHERE te.track_id = t.id AND te.emoji_id = ?)"
+                )
+            params.append(value)
+            continue  # Skip the rest of the loop for emoji filters
 
         # Map field name to actual column name (SQL injection prevention)
         column_name = FIELD_TO_COLUMN.get(field)
