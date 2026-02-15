@@ -5,6 +5,7 @@
 3. SoundCloud + AI metadata enrichment with field-by-field approval
 4. Android browser notification shows current playing track metadata
 5. Keypad shortcuts for playlist-builder mode
+6. SoundCloud reposts sync and playlist-builder integration
 
 ## 1. Clickable Genre Tags with Popularity Overlay
 
@@ -95,3 +96,15 @@
 Add numeric keypad shortcuts for common playlist-builder operations to speed up curation workflow.
 
 **Context**: Blessed UI, playlist-builder keyboard event handlers (`ui/blessed/events/keys/builder.py`)
+
+## 6. SoundCloud Reposts Sync and Playlist-Builder Integration - 2026-02-15
+
+Auto-sync SoundCloud reposts (like `~/coding/soundcloud-discovery`) to keep an up-to-date list. Use playlist-builder to filter and curate monthly playlists (e.g., "Feb 26") from these reposts.
+
+**Context**: SoundCloud provider, playlist-builder mode, cron job/sync system
+
+**Components**:
+- Cron job for periodic reposts sync
+- SoundCloud track source in playlist-builder
+- Filter/view for SoundCloud-only tracks
+- Integration with existing playlist-builder UI

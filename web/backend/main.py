@@ -41,7 +41,7 @@ app.add_middleware(
 )
 
 # Include routers
-from .routers import comparisons, tracks, stats, radio, youtube, soundcloud, builder, sync, live, emojis, player
+from .routers import comparisons, tracks, stats, youtube, soundcloud, builder, sync, live, emojis, player
 from .routers.playlists import router as playlists_router
 
 app.include_router(comparisons.router, prefix="/api", tags=["comparisons"])
@@ -49,7 +49,6 @@ app.include_router(tracks.router, prefix="/api", tags=["tracks"])
 app.include_router(stats.router, prefix="/api", tags=["stats"])
 app.include_router(playlists_router, prefix="/api", tags=["playlists"])
 app.include_router(builder.router, prefix="/api/builder", tags=["builder"])
-app.include_router(radio.router, prefix="/api", tags=["radio"])
 app.include_router(emojis.router, prefix="/api", tags=["emojis"])
 app.include_router(youtube.router, prefix="/api/youtube", tags=["youtube"])
 app.include_router(soundcloud.router, prefix="/api/soundcloud", tags=["soundcloud"])
@@ -75,24 +74,6 @@ async def startup_event():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
-
-
-# Stream proxy for radio (works in Docker where icecast is on same network)
-ICECAST_URL = os.getenv("ICECAST_URL", "http://localhost:8001/stream")
-
-
-@app.get("/stream")
-async def proxy_radio_stream():
-    """Proxy Icecast stream to avoid CORS/port issues."""
-    import httpx
-
-    async def stream_generator():
-        async with httpx.AsyncClient() as client:
-            async with client.stream("GET", ICECAST_URL, timeout=None) as response:
-                async for chunk in response.aiter_bytes():
-                    yield chunk
-
-    return StreamingResponse(stream_generator(), media_type="audio/ogg")
 
 
 # Static file serving for production (must come after all API routes)

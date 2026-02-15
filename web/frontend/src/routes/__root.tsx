@@ -1,12 +1,6 @@
-import { useEffect } from 'react'
 import { createRootRoute, Link, Outlet, useRouterState } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
-import { useQuery } from '@tanstack/react-query'
-import { useRadioStore } from '../stores/radioStore'
-import { getNowPlaying } from '../api/radio'
-import type { NowPlaying, TrackInfo } from '../api/radio'
 import { useSyncWebSocket } from '../hooks/useSyncWebSocket'
-import { EmojiTrackActions } from '../components/EmojiTrackActions'
 import { PlayerBar } from '../components/player/PlayerBar'
 
 function NavButton({
@@ -35,74 +29,20 @@ function NavButton({
 }
 
 function RootComponent(): JSX.Element {
-  const { isMuted, setNowPlaying, toggleMute, nowPlaying, updateNowPlayingTrack } = useRadioStore()
   useSyncWebSocket() // Connect to sync WebSocket for real-time updates
-
-  // Poll now-playing data (fallback only - WebSocket handles real-time updates)
-  const { data: nowPlayingData } = useQuery<NowPlaying>({
-    queryKey: ['nowPlaying'],
-    queryFn: getNowPlaying,
-    refetchInterval: 30000,
-    retry: 1,
-  })
-
-  // Sync poll results to store
-  useEffect(() => {
-    setNowPlaying(nowPlayingData ?? null)
-  }, [nowPlayingData, setNowPlaying])
 
   return (
     <div className="min-h-screen bg-black pb-20">{/* Account for 64px player bar + margin */}
 
       {/* Navigation */}
       <nav className="border-b border-obsidian-border px-6 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <NavButton to="/">Radio</NavButton>
-            <NavButton to="/history">History</NavButton>
-            <NavButton to="/comparison">Ranking</NavButton>
-            <NavButton to="/playlist-builder">Playlists</NavButton>
-            <NavButton to="/youtube">YouTube</NavButton>
-            <NavButton to="/emoji-settings">Emojis</NavButton>
-          </div>
-
-          {/* Radio mini-display */}
-          {nowPlaying && (
-            <div className="flex items-center gap-3">
-              <button
-                onClick={toggleMute}
-                className="text-white/60 hover:text-white/90 transition-colors"
-                aria-label={isMuted ? 'Unmute' : 'Mute'}
-              >
-                {isMuted ? (
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
-                  </svg>
-                ) : (
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
-                  </svg>
-                )}
-              </button>
-              <Link
-                to="/"
-                className={
-                  'flex items-center gap-2 text-sm font-sf-mono hover:text-white/90 transition-colors ' +
-                  (isMuted ? 'text-white/30' : 'text-white/60')
-                }
-              >
-                <span className="max-w-[200px] truncate">
-                  {nowPlaying.track.artist} - {nowPlaying.track.title}
-                </span>
-                <span className="text-xs text-white/40">• {nowPlaying.station_name}</span>
-              </Link>
-              <EmojiTrackActions
-                track={nowPlaying.track}
-                onUpdate={(updated) => updateNowPlayingTrack(updated as TrackInfo)}
-                compact
-              />
-            </div>
-          )}
+        <div className="flex items-center gap-2">
+          <NavButton to="/">Home</NavButton>
+          <NavButton to="/history">History</NavButton>
+          <NavButton to="/comparison">Ranking</NavButton>
+          <NavButton to="/playlist-builder">Playlists</NavButton>
+          <NavButton to="/youtube">YouTube</NavButton>
+          <NavButton to="/emoji-settings">Emojis</NavButton>
         </div>
       </nav>
 
