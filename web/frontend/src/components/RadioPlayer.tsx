@@ -52,6 +52,47 @@ export function RadioPlayer(): JSX.Element {
     }
   }, [nowPlaying]);
 
+  // Update Media Session for phone notifications
+  const updateMediaSession = useCallback(() => {
+    if (!('mediaSession' in navigator) || !nowPlaying) return;
+
+    const track = nowPlaying.track;
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: track.title ?? 'Unknown Title',
+      artist: track.artist ?? 'Unknown Artist',
+      album: track.album ?? nowPlaying.station_name,
+    });
+    navigator.mediaSession.playbackState = 'playing';
+  }, [nowPlaying]);
+
+  // Set up Media Session action handlers once
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+
+    navigator.mediaSession.setActionHandler('play', () => {
+      if (audioRef.current) {
+        audioRef.current.play();
+      }
+    });
+    navigator.mediaSession.setActionHandler('pause', () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+    });
+
+    return () => {
+      navigator.mediaSession.setActionHandler('play', null);
+      navigator.mediaSession.setActionHandler('pause', null);
+    };
+  }, []);
+
+  // Update metadata when track changes (and audio is playing)
+  useEffect(() => {
+    if (!isMuted && nowPlaying) {
+      updateMediaSession();
+    }
+  }, [nowPlaying, isMuted, updateMediaSession]);
+
   // Increment local position between polls for smooth progress bar
   useEffect(() => {
     const interval = setInterval(() => {
@@ -73,23 +114,23 @@ export function RadioPlayer(): JSX.Element {
 
   if (isLoading) {
     return (
-      <div className="bg-slate-900 rounded-lg p-6 animate-pulse">
+      <div className="bg-obsidian-surface border border-obsidian-border p-6 animate-pulse">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 bg-slate-800 rounded-lg" />
+          <div className="w-16 h-16 bg-obsidian-border" />
           <div className="flex-1 space-y-2">
-            <div className="h-6 bg-slate-800 rounded w-48" />
-            <div className="h-4 bg-slate-800 rounded w-32" />
+            <div className="h-6 bg-obsidian-border w-48" />
+            <div className="h-4 bg-obsidian-border w-32" />
           </div>
         </div>
-        <div className="mt-4 h-2 bg-slate-800 rounded" />
+        <div className="mt-4 h-2 bg-obsidian-border" />
       </div>
     );
   }
 
   if (error || !nowPlaying) {
     return (
-      <div className="bg-slate-900 rounded-lg p-6">
-        <div className="text-center text-slate-400">
+      <div className="bg-obsidian-surface border border-obsidian-border p-6">
+        <div className="text-center text-white/60 font-sf-mono">
           <p className="text-lg font-medium">No station active</p>
           <p className="text-sm mt-1">Activate a station to start listening</p>
         </div>
@@ -102,12 +143,13 @@ export function RadioPlayer(): JSX.Element {
   const progressPercent = durationMs > 0 ? Math.max(0, Math.min(100, (localPosition / durationMs) * 100)) : 0;
 
   return (
-    <div className="bg-slate-900 rounded-lg p-6">
+    <div className="bg-obsidian-surface border border-obsidian-border p-6">
       {/* Hidden audio element for stream playback */}
       <audio
         ref={audioRef}
         preload="none"
         style={{ display: 'none' }}
+        onPlay={updateMediaSession}
         onError={(e) => console.error('Audio error:', e.currentTarget.error)}
       >
         <source src="/stream" type="audio/ogg; codecs=opus" />
@@ -115,10 +157,10 @@ export function RadioPlayer(): JSX.Element {
 
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <span className="text-xs font-semibold text-emerald-500 uppercase tracking-wider">
+        <span className="text-xs font-semibold text-obsidian-accent uppercase tracking-wider font-sf-mono">
           Now Playing
         </span>
-        <span className="text-xs text-slate-500 bg-slate-800 px-2 py-1 rounded">
+        <span className="text-xs text-white/50 bg-obsidian-surface border border-obsidian-border px-2 py-1 font-sf-mono">
           {nowPlaying.station_name}
         </span>
       </div>
@@ -128,15 +170,15 @@ export function RadioPlayer(): JSX.Element {
         {/* Mute/Unmute Button */}
         <button
           onClick={handleMuteToggle}
-          className="w-16 h-16 bg-gradient-to-br from-emerald-600 to-emerald-800 rounded-lg flex items-center justify-center shrink-0 hover:from-emerald-500 hover:to-emerald-700 transition-all"
+          className="w-16 h-16 border border-obsidian-accent/30 flex items-center justify-center shrink-0 hover:bg-obsidian-accent/10 transition-all"
           aria-label={isMuted ? 'Unmute' : 'Mute'}
         >
           {isMuted ? (
-            <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
+            <svg className="w-8 h-8 text-white/60" fill="currentColor" viewBox="0 0 24 24">
               <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
             </svg>
           ) : (
-            <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
+            <svg className="w-8 h-8 text-obsidian-accent" fill="currentColor" viewBox="0 0 24 24">
               <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
             </svg>
           )}
@@ -144,10 +186,10 @@ export function RadioPlayer(): JSX.Element {
 
         {/* Track Details */}
         <div className="flex-1 min-w-0">
-          <h2 className="text-lg font-semibold text-white truncate">
+          <h2 className="text-lg font-semibold text-white/90 truncate">
             {track.title ?? 'Unknown Title'}
           </h2>
-          <p className="text-slate-400 truncate">
+          <p className="text-obsidian-accent truncate">
             {track.artist ?? 'Unknown Artist'}
           </p>
         </div>
@@ -163,13 +205,13 @@ export function RadioPlayer(): JSX.Element {
 
       {/* Progress Bar */}
       <div className="mt-4">
-        <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+        <div className="h-1.5 bg-obsidian-border overflow-hidden">
           <div
-            className="h-full bg-emerald-500 transition-all duration-200"
+            className="h-full bg-obsidian-accent transition-all duration-200"
             style={{ width: progressPercent + '%' }}
           />
         </div>
-        <div className="flex justify-between mt-1 text-xs text-slate-500">
+        <div className="flex justify-between mt-1 text-xs text-white/50 font-sf-mono">
           <span>{formatPosition(localPosition)}</span>
           <span>{formatDuration(track.duration)}</span>
         </div>

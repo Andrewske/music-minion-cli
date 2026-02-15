@@ -48,15 +48,15 @@ interface InlineErrorStateProps {
 
 function InlineErrorState({ title, message, onRetry }: InlineErrorStateProps) {
   return (
-    <div className="bg-slate-900 border border-red-900/50 rounded-xl p-6">
+    <div className="bg-obsidian-surface border border-red-900/50 p-6">
       <div className="text-center">
         <div className="text-4xl mb-3">⚠️</div>
         <h3 className="text-lg font-semibold text-red-400 mb-2">{title}</h3>
-        <p className="text-slate-400 text-sm mb-4">{message}</p>
+        <p className="text-white/60 text-sm mb-4">{message}</p>
         {onRetry && (
           <button
             onClick={onRetry}
-            className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            className="bg-obsidian-border hover:bg-white/5 text-white px-4 py-2 text-sm font-medium transition-colors"
           >
             Retry
           </button>
@@ -68,9 +68,9 @@ function InlineErrorState({ title, message, onRetry }: InlineErrorStateProps) {
 
 function EmptyState({ message }: { message: string }) {
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 text-center">
+    <div className="bg-obsidian-surface border border-obsidian-border p-8 text-center">
       <div className="text-4xl mb-3">📊</div>
-      <p className="text-slate-400">{message}</p>
+      <p className="text-white/60">{message}</p>
     </div>
   );
 }
@@ -181,18 +181,18 @@ export function HistoryPage(): JSX.Element {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white p-6">
+    <div className="min-h-screen bg-black text-white p-6">
       <h1 className="text-2xl font-bold mb-6">Listening History</h1>
 
       {/* Filters */}
       <div className="mb-6 flex flex-wrap gap-4">
         {/* Station Dropdown */}
         <div>
-          <label className="block text-sm text-slate-400 mb-2">Station</label>
+          <label className="block text-sm text-white/60 mb-2">Station</label>
           <select
             value={selectedStationId ?? ''}
             onChange={(e) => setSelectedStationId(e.target.value ? Number(e.target.value) : null)}
-            className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-emerald-500"
+            className="bg-obsidian-border border border-obsidian-border px-4 py-2 text-white focus:outline-none focus:border-obsidian-accent"
             disabled={isStationsLoading}
           >
             <option value="">All Stations</option>
@@ -206,7 +206,7 @@ export function HistoryPage(): JSX.Element {
 
         {/* Date Preset Buttons */}
         <div>
-          <label className="block text-sm text-slate-400 mb-2">Time Period</label>
+          <label className="block text-sm text-white/60 mb-2">Time Period</label>
           <div className="flex gap-2">
             {(['last7', 'last30', 'all'] as DatePreset[]).map((preset) => {
               const labels: Record<DatePreset, string> = {
@@ -218,10 +218,10 @@ export function HistoryPage(): JSX.Element {
                 <button
                   key={preset}
                   onClick={() => setDatePreset(preset)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={`px-4 py-2 text-sm font-medium transition-colors ${
                     datePreset === preset
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                      ? 'bg-obsidian-accent text-white'
+                      : 'bg-obsidian-border text-white/60 hover:bg-white/5'
                   }`}
                 >
                   {labels[preset]}
@@ -234,8 +234,8 @@ export function HistoryPage(): JSX.Element {
 
       {/* Stats Cards - Only show when a station is selected */}
       {selectedStationId === null ? (
-        <div className="mb-6 bg-slate-900 border border-slate-800 rounded-xl p-6 text-center">
-          <p className="text-slate-400">Select a station to view statistics</p>
+        <div className="mb-6 bg-obsidian-surface border border-obsidian-border p-6 text-center">
+          <p className="text-white/60">Select a station to view statistics</p>
         </div>
       ) : isStatsError ? (
         <div className="mb-6">
@@ -248,7 +248,7 @@ export function HistoryPage(): JSX.Element {
       ) : isStatsLoading ? (
         <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {[...Array(3)].map((_, i) => (
-            <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl p-6 animate-pulse">
+            <div key={i} className="bg-obsidian-surface border border-obsidian-border p-6 animate-pulse">
               <div className="h-20"></div>
             </div>
           ))}
@@ -287,7 +287,7 @@ export function HistoryPage(): JSX.Element {
               onRetry={refetchTopTracks}
             />
           ) : isTopTracksLoading ? (
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 animate-pulse">
+            <div className="bg-obsidian-surface border border-obsidian-border p-6 animate-pulse">
               <div className="space-y-3">
                 {[...Array(5)].map((_, i) => (
                   <div key={i} className="h-12"></div>
@@ -295,20 +295,20 @@ export function HistoryPage(): JSX.Element {
               </div>
             </div>
           ) : topTracks && topTracks.length > 0 ? (
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+            <div className="bg-obsidian-surface border border-obsidian-border p-6">
               <div className="space-y-3">
                 {topTracks.map((trackStat, index) => (
                   <div
                     key={`${trackStat.track.id}-${index}`}
-                    className="flex justify-between items-center py-2 border-b border-slate-800/50 last:border-0"
+                    className="flex justify-between items-center py-2 border-b border-obsidian-border/50 last:border-0"
                   >
                     <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <span className="text-slate-400 text-sm w-6">#{index + 1}</span>
+                      <span className="text-white/60 text-sm w-6">#{index + 1}</span>
                       <div className="min-w-0 flex-1">
-                        <div className="text-slate-200 font-medium truncate">
+                        <div className="text-white/90 font-medium truncate">
                           {trackStat.track.title || 'Unknown Track'}
                         </div>
-                        <div className="text-slate-400 text-sm truncate">
+                        <div className="text-white/60 text-sm truncate">
                           {trackStat.track.artist || 'Unknown Artist'}
                         </div>
                       </div>
@@ -319,7 +319,7 @@ export function HistoryPage(): JSX.Element {
                         onUpdate={handleTopTrackUpdate(index)}
                         compact
                       />
-                      <span className="text-slate-400 text-sm whitespace-nowrap">
+                      <span className="text-white/60 text-sm whitespace-nowrap">
                         {trackStat.play_count} plays
                       </span>
                     </div>
@@ -343,7 +343,7 @@ export function HistoryPage(): JSX.Element {
             onRetry={refetchHistory}
           />
         ) : isHistoryLoading ? (
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 animate-pulse">
+          <div className="bg-obsidian-surface border border-obsidian-border p-6 animate-pulse">
             <div className="space-y-4">
               {[...Array(10)].map((_, i) => (
                 <div key={i} className="h-16"></div>
@@ -352,21 +352,21 @@ export function HistoryPage(): JSX.Element {
           </div>
         ) : historyEntries.length > 0 ? (
           <>
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+            <div className="bg-obsidian-surface border border-obsidian-border p-6">
               <div className="space-y-4">
                 {historyEntries.map((entry: HistoryEntry) => (
                   <div
                     key={entry.id}
-                    className="flex justify-between items-start py-3 border-b border-slate-800/50 last:border-0"
+                    className="flex justify-between items-start py-3 border-b border-obsidian-border/50 last:border-0"
                   >
                     <div className="flex-1 min-w-0 mr-4">
-                      <div className="text-slate-200 font-medium truncate">
+                      <div className="text-white/90 font-medium truncate">
                         {entry.track.title || 'Unknown Track'}
                       </div>
-                      <div className="text-slate-400 text-sm truncate">
+                      <div className="text-white/60 text-sm truncate">
                         {entry.track.artist || 'Unknown Artist'}
                       </div>
-                      <div className="text-slate-500 text-xs mt-1">
+                      <div className="text-white/50 text-xs mt-1">
                         {entry.station_name} • {entry.source_type}
                       </div>
                     </div>
@@ -376,7 +376,7 @@ export function HistoryPage(): JSX.Element {
                         onUpdate={handleHistoryEntryUpdate(entry.id)}
                         compact
                       />
-                      <div className="text-slate-400 text-sm whitespace-nowrap">
+                      <div className="text-white/60 text-sm whitespace-nowrap">
                         {new Date(entry.started_at).toLocaleString()}
                       </div>
                     </div>
@@ -391,7 +391,7 @@ export function HistoryPage(): JSX.Element {
                 <button
                   onClick={() => fetchNextPage()}
                   disabled={isFetchingNextPage}
-                  className="bg-slate-800 hover:bg-slate-700 text-white px-6 py-3 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="bg-obsidian-border hover:bg-white/5 text-white px-6 py-3 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isFetchingNextPage ? 'Loading...' : 'Load More'}
                 </button>

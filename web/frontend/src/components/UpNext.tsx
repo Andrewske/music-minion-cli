@@ -18,18 +18,18 @@ interface UpNextTrackProps {
 
 function UpNextTrack({ track, index, onUpdate }: UpNextTrackProps): JSX.Element {
   return (
-    <div className="flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-slate-800/50 transition-colors">
-      <span className="text-slate-600 text-sm font-mono w-5">{index + 1}</span>
+    <div className="flex items-center gap-3 py-2 px-3 hover:bg-white/5 transition-colors border-l border-transparent hover:border-obsidian-accent/30">
+      <span className="text-white/40 text-sm font-sf-mono w-5">{index + 1}</span>
       <div className="flex-1 min-w-0">
-        <p className="text-slate-200 text-sm truncate">
+        <p className="text-white/90 text-sm truncate">
           {track.title ?? 'Unknown Title'}
         </p>
-        <p className="text-slate-500 text-xs truncate">
+        <p className="text-white/50 font-sf-mono text-xs truncate">
           {track.artist ?? 'Unknown Artist'}
         </p>
       </div>
       <EmojiTrackActions track={track} onUpdate={onUpdate} compact />
-      <span className="text-slate-500 text-xs shrink-0">
+      <span className="text-white/50 font-sf-mono text-xs shrink-0">
         {formatDuration(track.duration)}
       </span>
     </div>
@@ -51,17 +51,17 @@ export function UpNext(): JSX.Element {
 
   if (isLoading) {
     return (
-      <div className="bg-slate-900 rounded-lg p-4 animate-pulse">
-        <div className="h-4 bg-slate-800 rounded w-24 mb-4" />
+      <div className="bg-obsidian-surface border border-obsidian-border p-4 animate-pulse">
+        <div className="h-4 bg-obsidian-border w-24 mb-4" />
         <div className="space-y-3">
           {[1, 2, 3, 4, 5].map((i) => (
             <div key={i} className="flex items-center gap-3 py-2">
-              <div className="w-5 h-4 bg-slate-800 rounded" />
+              <div className="w-5 h-4 bg-obsidian-border" />
               <div className="flex-1 space-y-1">
-                <div className="h-4 bg-slate-800 rounded w-3/4" />
-                <div className="h-3 bg-slate-800 rounded w-1/2" />
+                <div className="h-4 bg-obsidian-border w-3/4" />
+                <div className="h-3 bg-obsidian-border w-1/2" />
               </div>
-              <div className="w-10 h-4 bg-slate-800 rounded" />
+              <div className="w-10 h-4 bg-obsidian-border" />
             </div>
           ))}
         </div>
@@ -71,11 +71,11 @@ export function UpNext(): JSX.Element {
 
   if (error || !nowPlaying) {
     return (
-      <div className="bg-slate-900 rounded-lg p-4">
-        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">
+      <div className="bg-obsidian-surface border border-obsidian-border p-4">
+        <h3 className="text-sm font-semibold text-white/60 uppercase tracking-wider mb-3 font-sf-mono">
           Up Next
         </h3>
-        <p className="text-slate-500 text-sm">No upcoming tracks</p>
+        <p className="text-white/40 text-sm font-sf-mono">No upcoming tracks</p>
       </div>
     );
   }
@@ -84,18 +84,18 @@ export function UpNext(): JSX.Element {
 
   if (upcomingTracks.length === 0) {
     return (
-      <div className="bg-slate-900 rounded-lg p-4">
-        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">
+      <div className="bg-obsidian-surface border border-obsidian-border p-4">
+        <h3 className="text-sm font-semibold text-white/60 uppercase tracking-wider mb-3 font-sf-mono">
           Up Next
         </h3>
-        <p className="text-slate-500 text-sm">No upcoming tracks</p>
+        <p className="text-white/40 text-sm font-sf-mono">No upcoming tracks</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-slate-900 rounded-lg p-4">
-      <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">
+    <div className="bg-obsidian-surface border border-obsidian-border p-4">
+      <h3 className="text-sm font-semibold text-white/60 uppercase tracking-wider mb-3 font-sf-mono">
         Up Next
       </h3>
       <div className="space-y-1">

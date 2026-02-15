@@ -22,10 +22,10 @@ function NavButton({
     <Link
       to={to}
       className={
-        'px-4 py-2 text-sm font-medium rounded-lg transition-colors ' +
+        'px-4 py-2 text-sm font-medium tracking-wider transition-colors border-b-2 ' +
         (isActive
-          ? 'bg-emerald-600 text-white'
-          : 'text-slate-400 hover:text-white hover:bg-slate-800')
+          ? 'border-obsidian-accent text-obsidian-accent'
+          : 'border-transparent text-white/60 hover:text-white/90')
       }
     >
       {children}
@@ -61,7 +61,7 @@ function RootComponent(): JSX.Element {
   }, [])
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen bg-black">
       {/* Global audio element - never unmounts */}
       <audio
         ref={audioRef}
@@ -71,7 +71,7 @@ function RootComponent(): JSX.Element {
       />
 
       {/* Navigation */}
-      <nav className="border-b border-slate-800 px-6 py-3">
+      <nav className="border-b border-obsidian-border px-6 py-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <NavButton to="/">Radio</NavButton>
@@ -87,7 +87,7 @@ function RootComponent(): JSX.Element {
             <div className="flex items-center gap-3">
               <button
                 onClick={toggleMute}
-                className="text-slate-400 hover:text-white transition-colors"
+                className="text-white/60 hover:text-white/90 transition-colors"
                 aria-label={isMuted ? 'Unmute' : 'Mute'}
               >
                 {isMuted ? (
@@ -103,14 +103,14 @@ function RootComponent(): JSX.Element {
               <Link
                 to="/"
                 className={
-                  'flex items-center gap-2 text-sm hover:text-white transition-colors ' +
-                  (isMuted ? 'text-slate-500' : 'text-slate-300')
+                  'flex items-center gap-2 text-sm font-sf-mono hover:text-white/90 transition-colors ' +
+                  (isMuted ? 'text-white/30' : 'text-white/60')
                 }
               >
                 <span className="max-w-[200px] truncate">
                   {nowPlaying.track.artist} - {nowPlaying.track.title}
                 </span>
-                <span className="text-xs text-slate-500">• {nowPlaying.station_name}</span>
+                <span className="text-xs text-white/40">• {nowPlaying.station_name}</span>
               </Link>
               <EmojiTrackActions
                 track={nowPlaying.track}

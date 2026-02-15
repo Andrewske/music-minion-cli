@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useComparisonStore } from '../stores/comparisonStore';
 import { useRadioStore } from '../stores/radioStore';
+import { usePlayerStore } from '../stores/playerStore';
 
 const WS_URL = import.meta.env.PROD
   ? `wss://${window.location.host}/ws/sync`
@@ -50,6 +51,14 @@ export function useSyncWebSocket() {
           useRadioStore.getState().setNowPlaying(data);
           break;
 
+        case 'playback:state':
+          usePlayerStore.getState().syncState(data);
+          break;
+
+        case 'devices:updated':
+          usePlayerStore.getState().syncDevices(data);
+          break;
+
         case 'ping':
           break;
 
@@ -77,6 +86,14 @@ export function useSyncWebSocket() {
         console.log('Connected to sync WebSocket');
         setIsConnected(true);
         reconnectAttemptsRef.current = 0;
+
+        // Register device
+        const playerState = usePlayerStore.getState();
+        ws.send(JSON.stringify({
+          type: 'device:register',
+          id: playerState.thisDeviceId,
+          name: playerState.thisDeviceName,
+        }));
       };
 
       ws.onmessage = handleMessage;

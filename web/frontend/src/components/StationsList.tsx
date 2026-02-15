@@ -65,10 +65,10 @@ function StationItem({
   return (
     <div
       className={
-        'group flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors ' +
+        'group flex items-center justify-between p-3 cursor-pointer transition-colors border ' +
         (station.is_active
-          ? 'bg-emerald-500/20 border border-emerald-500/30'
-          : 'bg-slate-800/50 hover:bg-slate-800 border border-transparent')
+          ? 'bg-obsidian-accent/10 border-obsidian-accent/30'
+          : 'bg-obsidian-surface border-obsidian-border hover:bg-white/5 hover:border-obsidian-accent/30')
       }
       onClick={handleClick}
     >
@@ -76,34 +76,34 @@ function StationItem({
         <div
           className={
             'w-2 h-2 rounded-full shrink-0 ' +
-            (station.is_active ? 'bg-emerald-500 animate-pulse' : 'bg-slate-600')
+            (station.is_active ? 'bg-obsidian-accent animate-pulse' : 'bg-white/30')
           }
         />
         <div className="min-w-0">
           <p
             className={
               'text-sm font-medium truncate ' +
-              (station.is_active ? 'text-emerald-400' : 'text-slate-200')
+              (station.is_active ? 'text-obsidian-accent' : 'text-white/90')
             }
           >
             {station.name}
           </p>
-          <p className="text-xs text-slate-500 capitalize">
+          <p className="text-xs text-white/50 font-sf-mono capitalize">
             {station.mode}
             {station.source_filter !== 'all' && (
-              <span className="ml-1 text-slate-600">• {station.source_filter}</span>
+              <span className="ml-1 text-white/40">• {station.source_filter}</span>
             )}
           </p>
         </div>
       </div>
       <div className="flex items-center gap-2">
         {station.is_active && (
-          <span className="text-xs text-emerald-500 font-medium">LIVE</span>
+          <span className="text-xs text-obsidian-accent font-medium font-sf-mono">LIVE</span>
         )}
         {isMetaStation && onEditSchedule && (
           <button
             onClick={handleEditSchedule}
-            className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-emerald-400 transition-opacity"
+            className="opacity-0 group-hover:opacity-100 p-1 text-white/50 hover:text-obsidian-accent transition-opacity"
             aria-label="Edit schedule"
             title="Edit Schedule"
           >
@@ -119,7 +119,7 @@ function StationItem({
         )}
         <button
           onClick={handleEdit}
-          className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-blue-400 transition-opacity"
+          className="opacity-0 group-hover:opacity-100 p-1 text-white/50 hover:text-obsidian-accent transition-opacity"
           aria-label="Edit station"
           title="Edit Station"
         >
@@ -135,7 +135,7 @@ function StationItem({
         <button
           onClick={handleDelete}
           disabled={isDeleting}
-          className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-red-400 transition-opacity disabled:opacity-50"
+          className="opacity-0 group-hover:opacity-100 p-1 text-white/50 hover:text-rose-400 transition-opacity disabled:opacity-50"
           aria-label="Delete station"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -181,17 +181,17 @@ function CreateStationForm({
         value={name}
         onChange={(e) => setName(e.target.value)}
         placeholder="Station name"
-        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+        className="w-full bg-transparent border border-obsidian-border px-3 py-2 text-sm text-white placeholder-white/40 focus:outline-none focus:border-obsidian-accent/50"
         autoFocus
         disabled={isCreating}
       />
 
       <div className="space-y-1">
-        <label className="text-xs text-slate-400">Playlist (optional)</label>
+        <label className="text-xs text-white/60 font-sf-mono">Playlist (optional)</label>
         <select
           value={playlistId ?? ''}
           onChange={(e) => setPlaylistId(e.target.value ? Number(e.target.value) : undefined)}
-          className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+          className="w-full bg-transparent border border-obsidian-border px-3 py-2 text-sm text-white focus:outline-none focus:border-obsidian-accent/50"
           disabled={isCreating || playlistsLoading}
         >
           <option value="">Meta-station (no playlist)</option>
@@ -204,16 +204,16 @@ function CreateStationForm({
       </div>
 
       <div className="space-y-1">
-        <label className="text-xs text-slate-400">Mode</label>
+        <label className="text-xs text-white/60 font-sf-mono">Mode</label>
         <div className="flex gap-2">
           <button
             type="button"
             onClick={() => setMode('shuffle')}
             className={
-              'flex-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ' +
+              'flex-1 px-3 py-1.5 text-sm tracking-wider transition-colors border ' +
               (mode === 'shuffle'
-                ? 'bg-emerald-600 text-white'
-                : 'bg-slate-800 text-slate-400 hover:bg-slate-700')
+                ? 'border-obsidian-accent text-obsidian-accent bg-obsidian-accent/10'
+                : 'border-obsidian-border text-white/60 hover:bg-white/5')
             }
             disabled={isCreating}
           >
@@ -223,10 +223,10 @@ function CreateStationForm({
             type="button"
             onClick={() => setMode('queue')}
             className={
-              'flex-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ' +
+              'flex-1 px-3 py-1.5 text-sm tracking-wider transition-colors border ' +
               (mode === 'queue'
-                ? 'bg-emerald-600 text-white'
-                : 'bg-slate-800 text-slate-400 hover:bg-slate-700')
+                ? 'border-obsidian-accent text-obsidian-accent bg-obsidian-accent/10'
+                : 'border-obsidian-border text-white/60 hover:bg-white/5')
             }
             disabled={isCreating}
           >
@@ -236,11 +236,11 @@ function CreateStationForm({
       </div>
 
       <div className="space-y-1">
-        <label className="text-xs text-slate-400">Source Filter</label>
+        <label className="text-xs text-white/60 font-sf-mono">Source Filter</label>
         <select
           value={sourceFilter}
           onChange={(e) => setSourceFilter(e.target.value as SourceFilter)}
-          className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+          className="w-full bg-transparent border border-obsidian-border px-3 py-2 text-sm text-white focus:outline-none focus:border-obsidian-accent/50"
           disabled={isCreating}
         >
           <option value="all">All Sources</option>
@@ -255,7 +255,7 @@ function CreateStationForm({
         <button
           type="submit"
           disabled={!name.trim() || isCreating}
-          className="flex-1 bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="flex-1 border border-obsidian-accent/30 text-obsidian-accent px-3 py-1.5 text-sm tracking-wider hover:bg-obsidian-accent/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {isCreating ? 'Creating...' : 'Create'}
         </button>
@@ -263,7 +263,7 @@ function CreateStationForm({
           type="button"
           onClick={onCancel}
           disabled={isCreating}
-          className="px-3 py-1.5 bg-slate-800 text-slate-300 rounded-lg text-sm font-medium hover:bg-slate-700 disabled:opacity-50 transition-colors"
+          className="px-3 py-1.5 border border-obsidian-border text-white/60 text-sm tracking-wider hover:bg-white/5 disabled:opacity-50 transition-colors"
         >
           Cancel
         </button>
@@ -310,32 +310,32 @@ function EditStationModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50" onClick={onClose}>
       <div
-        className="bg-slate-900 rounded-lg p-6 w-full max-w-md mx-4 border border-slate-700"
+        className="bg-obsidian-surface p-6 w-full max-w-md mx-4 border border-obsidian-accent/30"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-lg font-semibold text-white mb-4">Edit Station</h2>
+        <h2 className="text-lg font-semibold text-white/90 mb-4">Edit Station</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
-            <label className="text-xs text-slate-400">Name</label>
+            <label className="text-xs text-white/60 font-sf-mono">Name</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Station name"
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+              className="w-full bg-transparent border border-obsidian-border px-3 py-2 text-sm text-white placeholder-white/40 focus:outline-none focus:border-obsidian-accent/50"
               autoFocus
               disabled={isUpdating}
             />
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs text-slate-400">Playlist</label>
+            <label className="text-xs text-white/60 font-sf-mono">Playlist</label>
             <select
               value={playlistId ?? ''}
               onChange={(e) => setPlaylistId(e.target.value ? Number(e.target.value) : null)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+              className="w-full bg-transparent border border-obsidian-border px-3 py-2 text-sm text-white focus:outline-none focus:border-obsidian-accent/50"
               disabled={isUpdating || playlistsLoading}
             >
               <option value="">Meta-station (no playlist)</option>
@@ -348,16 +348,16 @@ function EditStationModal({
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs text-slate-400">Mode</label>
+            <label className="text-xs text-white/60 font-sf-mono">Mode</label>
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => setMode('shuffle')}
                 className={
-                  'flex-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ' +
+                  'flex-1 px-3 py-1.5 text-sm tracking-wider transition-colors border ' +
                   (mode === 'shuffle'
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-slate-800 text-slate-400 hover:bg-slate-700')
+                    ? 'border-obsidian-accent text-obsidian-accent bg-obsidian-accent/10'
+                    : 'border-obsidian-border text-white/60 hover:bg-white/5')
                 }
                 disabled={isUpdating}
               >
@@ -367,10 +367,10 @@ function EditStationModal({
                 type="button"
                 onClick={() => setMode('queue')}
                 className={
-                  'flex-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ' +
+                  'flex-1 px-3 py-1.5 text-sm tracking-wider transition-colors border ' +
                   (mode === 'queue'
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-slate-800 text-slate-400 hover:bg-slate-700')
+                    ? 'border-obsidian-accent text-obsidian-accent bg-obsidian-accent/10'
+                    : 'border-obsidian-border text-white/60 hover:bg-white/5')
                 }
                 disabled={isUpdating}
               >
@@ -380,11 +380,11 @@ function EditStationModal({
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs text-slate-400">Source Filter</label>
+            <label className="text-xs text-white/60 font-sf-mono">Source Filter</label>
             <select
               value={sourceFilter}
               onChange={(e) => setSourceFilter(e.target.value as SourceFilter)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+              className="w-full bg-transparent border border-obsidian-border px-3 py-2 text-sm text-white focus:outline-none focus:border-obsidian-accent/50"
               disabled={isUpdating}
             >
               <option value="all">All Sources</option>
@@ -399,7 +399,7 @@ function EditStationModal({
             <button
               type="submit"
               disabled={!name.trim() || isUpdating}
-              className="flex-1 bg-emerald-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex-1 border border-obsidian-accent/30 text-obsidian-accent px-3 py-2 text-sm tracking-wider hover:bg-obsidian-accent/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {isUpdating ? 'Saving...' : 'Save'}
             </button>
@@ -407,7 +407,7 @@ function EditStationModal({
               type="button"
               onClick={onClose}
               disabled={isUpdating}
-              className="px-4 py-2 bg-slate-800 text-slate-300 rounded-lg text-sm font-medium hover:bg-slate-700 disabled:opacity-50 transition-colors"
+              className="px-4 py-2 border border-obsidian-border text-white/60 text-sm tracking-wider hover:bg-white/5 disabled:opacity-50 transition-colors"
             >
               Cancel
             </button>
@@ -478,11 +478,11 @@ export function StationsList(): JSX.Element {
 
   if (isLoading) {
     return (
-      <div className="bg-slate-900 rounded-lg p-4 animate-pulse">
-        <div className="h-4 bg-slate-800 rounded w-20 mb-4" />
+      <div className="bg-obsidian-surface border border-obsidian-border p-4 animate-pulse">
+        <div className="h-4 bg-obsidian-border w-20 mb-4" />
         <div className="space-y-2">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-14 bg-slate-800 rounded-lg" />
+            <div key={i} className="h-14 bg-obsidian-border" />
           ))}
         </div>
       </div>
@@ -491,26 +491,26 @@ export function StationsList(): JSX.Element {
 
   if (error) {
     return (
-      <div className="bg-slate-900 rounded-lg p-4">
-        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">
+      <div className="bg-obsidian-surface border border-obsidian-border p-4">
+        <h3 className="text-sm font-semibold text-white/60 uppercase tracking-wider mb-3 font-sf-mono">
           Stations
         </h3>
-        <p className="text-red-400 text-sm">Failed to load stations</p>
+        <p className="text-rose-400 text-sm font-sf-mono">Failed to load stations</p>
       </div>
     );
   }
 
   return (
     <>
-      <div className="bg-slate-900 rounded-lg p-4">
+      <div className="bg-obsidian-surface border border-obsidian-border p-4">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
+          <h3 className="text-sm font-semibold text-white/60 uppercase tracking-wider font-sf-mono">
             Stations
           </h3>
           {!isCreating && (
             <button
               onClick={() => setIsCreating(true)}
-              className="text-xs text-emerald-500 hover:text-emerald-400 font-medium transition-colors"
+              className="text-xs text-obsidian-accent hover:text-obsidian-accent/80 font-medium font-sf-mono transition-colors"
             >
               + Add
             </button>
@@ -530,7 +530,7 @@ export function StationsList(): JSX.Element {
         )}
 
         {!stations || stations.length === 0 ? (
-          <p className="text-slate-500 text-sm">No stations created</p>
+          <p className="text-white/40 text-sm font-sf-mono">No stations created</p>
         ) : (
           <div className="space-y-2">
             {stations.map((station) => (

@@ -1,3 +1,4 @@
+import { useEffect, useCallback } from 'react';
 import { useWavesurfer } from '../hooks/useWavesurfer';
 import type { TrackInfo } from '../types';
 
@@ -14,6 +15,56 @@ export function WaveformPlayer({ track, isPlaying, onTogglePlayPause, onFinish }
     isPlaying,
     onFinish,
   });
+
+  // Update Media Session for phone notifications
+  const updateMediaSession = useCallback(() => {
+    if (!('mediaSession' in navigator)) return;
+
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: track.title ?? 'Unknown Title',
+      artist: track.artist ?? 'Unknown Artist',
+      album: track.album ?? undefined,
+    });
+    navigator.mediaSession.playbackState = 'playing';
+  }, [track]);
+
+  // Set up Media Session action handlers
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+
+    const handlePlay = () => {
+      if (onTogglePlayPause && !isPlaying) {
+        onTogglePlayPause();
+      } else if (!isPlaying) {
+        togglePlayPause();
+      }
+    };
+
+    const handlePause = () => {
+      if (onTogglePlayPause && isPlaying) {
+        onTogglePlayPause();
+      } else if (isPlaying) {
+        togglePlayPause();
+      }
+    };
+
+    navigator.mediaSession.setActionHandler('play', handlePlay);
+    navigator.mediaSession.setActionHandler('pause', handlePause);
+
+    return () => {
+      navigator.mediaSession.setActionHandler('play', null);
+      navigator.mediaSession.setActionHandler('pause', null);
+    };
+  }, [isPlaying, onTogglePlayPause, togglePlayPause]);
+
+  // Update metadata when track changes or playback starts
+  useEffect(() => {
+    if (isPlaying) {
+      updateMediaSession();
+    } else if ('mediaSession' in navigator) {
+      navigator.mediaSession.playbackState = 'paused';
+    }
+  }, [isPlaying, updateMediaSession]);
 
   const formatTime = (time: number) => {
     const minutes = Math.floor(time / 60);
