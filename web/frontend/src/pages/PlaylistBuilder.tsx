@@ -9,6 +9,7 @@ import { TrackQueueTable } from '../components/builder/TrackQueueTable';
 import FilterPanel from '../components/builder/FilterPanel';
 import { WaveformPlayer } from '../components/WaveformPlayer';
 import { SmartPlaylistEditor } from './SmartPlaylistEditor';
+import { EmojiTrackActions } from '../components/EmojiTrackActions';
 
 interface PlaylistBuilderProps {
   playlistId: number;
@@ -27,6 +28,21 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType }: Play
   const [nowPlayingTrack, setNowPlayingTrack] = useState<Track | null>(null);
   const [isPlaying, setIsPlaying] = useState(true); // Auto-play by default
   const [loopEnabled, setLoopEnabled] = useState(true);
+
+  const [localTrackOverrides, setLocalTrackOverrides] = useState<Record<number, { emojis?: string[] }>>({});
+
+  // Merge local overrides with candidates for display
+  const getTrackWithOverrides = (track: Track): Track => ({
+    ...track,
+    ...localTrackOverrides[track.id],
+  });
+
+  const handleTrackEmojiUpdate = (updatedTrack: { id: number; emojis?: string[] }): void => {
+    setLocalTrackOverrides(prev => ({
+      ...prev,
+      [updatedTrack.id]: { emojis: updatedTrack.emojis },
+    }));
+  };
 
   // Sorting state - controls server-side sort via API params
   const [sorting, setSorting] = useState<SortingState>([
@@ -217,7 +233,10 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType }: Play
         <main className="md:col-span-3">
           {currentTrack && queueIndex < candidates.length ? (
             <div className="bg-slate-900 rounded-lg p-8">
-              <TrackDisplay track={currentTrack} />
+              <TrackDisplay
+                track={getTrackWithOverrides(currentTrack)}
+                onEmojiUpdate={handleTrackEmojiUpdate}
+              />
 
               {currentTrack && (
                 <div className="h-20 mb-6">
@@ -317,17 +336,21 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType }: Play
 
 // Supporting Components
 
-function TrackDisplay({ track }: { track: Track }) {
+function TrackDisplay({ track, onEmojiUpdate }: { track: Track; onEmojiUpdate: (t: { id: number; emojis?: string[] }) => void }) {
   return (
     <div className="text-center">
       <h2 className="text-4xl font-bold mb-2">{track.title}</h2>
       <p className="text-2xl text-gray-300 mb-4">{track.artist}</p>
       {track.album && <p className="text-xl text-gray-400 mb-6">{track.album}</p>}
-      <div className="flex gap-4 justify-center flex-wrap">
+      <div className="flex gap-4 justify-center flex-wrap items-center">
         {track.genre && <span className="px-3 py-1 bg-purple-600 rounded-full">{track.genre}</span>}
         {track.year && <span className="px-3 py-1 bg-blue-600 rounded-full">{track.year}</span>}
         {track.bpm && <span className="px-3 py-1 bg-orange-600 rounded-full">{track.bpm} BPM</span>}
         {track.key_signature && <span className="px-3 py-1 bg-green-600 rounded-full">{track.key_signature}</span>}
+        <EmojiTrackActions
+          track={{ id: track.id, emojis: track.emojis }}
+          onUpdate={onEmojiUpdate}
+        />
       </div>
     </div>
   );
