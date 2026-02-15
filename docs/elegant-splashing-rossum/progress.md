@@ -13,8 +13,8 @@
 | 03-player-components | ✅ Done | 2026-02-15T18:44:00Z | 2026-02-15T18:47:00Z | 3m |
 | 04-queue-and-context | ✅ Done | 2026-02-15T18:47:00Z | 2026-02-15T18:49:00Z | 2m |
 | 05-stations-and-schedule | ✅ Done | 2026-02-15T18:49:00Z | 2026-02-15T18:51:00Z | 2m |
-| 06-home-page | Running | 2026-02-15T18:51:00Z | - | - |
-| 07-archive-and-cleanup | Pending | - | - | - |
+| 06-home-page | ✅ Done | 2026-02-15T18:51:00Z | 2026-02-15T18:53:00Z | 2m |
+| 07-archive-and-cleanup | Running | 2026-02-15T18:53:00Z | - | - |
 
 ## Execution Log
 
@@ -58,3 +58,10 @@ Spawning task-implementer agent for 05-stations-and-schedule...
 - Tasks: 06-home-page
 
 Spawning task-implementer agent for 06-home-page...
+✅ Completed: New home page with Now Playing and quick access
+
+### Batch 7
+- Started: 2026-02-15T18:53:00Z
+- Tasks: 07-archive-and-cleanup
+
+Spawning task-implementer agent for 07-archive-and-cleanup...

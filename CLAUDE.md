@@ -149,55 +149,25 @@ Logs are captured to `music-minion-{uvicorn,vite}.log` in the project root for e
 - Removes orphaned records when files deleted
 - Performance: ~1.5-2s for 5000-track library
 
-**Personal Radio** (Docker):
-- Config: `docker/radio/docker-compose.yml`
-- Components: Icecast (stream server) + Liquidsoap (audio player)
-- **Critical**: `SCHEDULER_URL` env var must match backend port (8642)
-- Liquidsoap requests tracks from `/api/radio/next-track`, reports playback via `/api/radio/track-started`
-- Stream proxied through FastAPI at `/api/radio/stream` to avoid CORS
-- Debugging: Check `docker logs radio-liquidsoap` for HTTP errors (523 = can't reach backend)
-- Restart after config changes: `cd docker/radio && docker compose up -d --force-recreate liquidsoap`
-
-**Pi Server Deployment** (Docker):
-- URL: `https://music.piserver:8443` (via Tailscale)
-- Config: `docker/pi-deployment/docker-compose.yml`
-- Components: music-minion (FastAPI + static frontend), Icecast (arm64 build), Liquidsoap
-- Deploy: `./scripts/deploy-to-pi.sh` (builds frontend, rsyncs, rebuilds containers)
+**Global Player**:
+Frontend-driven player with cross-device control (Spotify Connect style):
+- **playerStore**: Zustand store for playback state (current track, queue, playback status)
+- **PlayerBar**: Persistent bottom bar with controls across all pages
+- **Cross-device sync**: WebSocket broadcasts state to all connected devices
+- **State management**: Pure functional updates, no mutations
 
 Key files:
-- `Dockerfile` - Python container with uv, includes `config.toml` for library paths
-- `docker/pi-deployment/docker-compose.yml` - All 3 services for Pi
-- `docker/radio/icecast-arm64/Dockerfile` - Native arm64 icecast build
-- `scripts/deploy-to-pi.sh` - Deployment script
+- `web/frontend/src/stores/playerStore.ts` - Zustand store for player state
+- `web/frontend/src/components/player/PlayerBar.tsx` - Persistent player controls
+- `web/backend/routers/player.py` - Backend API for player state sync
 
-Database sync (Syncthing):
-- Folder: `~/.local/share/music-minion/` (Send & Receive both sides)
-- `.stignore`: `*.db-journal`, `*.db-wal`, `*.db-shm`
-- WAL mode enabled for better concurrent access
-- Run `sync local` on desktop to clean conflict files
-
-Commands:
-```bash
-# Deploy
-./scripts/deploy-to-pi.sh
-
-# Logs
-ssh piserver 'cd ~/music-minion/docker/pi-deployment && docker compose logs -f'
-
-# Restart
-ssh piserver 'cd ~/music-minion/docker/pi-deployment && docker compose restart'
-
-# Stop
-ssh piserver 'cd ~/music-minion/docker/pi-deployment && docker compose down'
-
-# Setup daily 3am sync (run once on Pi)
-ssh piserver '~/music-minion/scripts/setup-pi-cron.sh'
-```
-
-Sync API:
-- `POST /api/sync` - Trigger incremental sync (changed files only)
-- `POST /api/sync/full` - Full filesystem scan + export
-- `GET /api/sync/status` - Check sync status
+API endpoints:
+- `GET /api/player/devices` - List all connected devices
+- `GET /api/player/state` - Get current player state
+- `POST /api/player/play` - Start playback
+- `POST /api/player/pause` - Pause playback
+- `POST /api/player/skip` - Skip to next track
+- `POST /api/player/queue` - Add to queue
 
 ## Files
 

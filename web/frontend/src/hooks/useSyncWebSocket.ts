@@ -1,6 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useComparisonStore } from '../stores/comparisonStore';
-import { useRadioStore } from '../stores/radioStore';
 import { usePlayerStore } from '../stores/playerStore';
 
 const WS_URL = import.meta.env.PROD
@@ -27,9 +26,6 @@ export function useSyncWebSocket() {
               data.comparison.prefetched
             );
           }
-          if (data.radio?.nowPlaying) {
-            useRadioStore.getState().setNowPlaying(data.radio.nowPlaying);
-          }
           break;
 
         case 'comparison:advanced':
@@ -45,10 +41,6 @@ export function useSyncWebSocket() {
             useComparisonStore.getState().setCurrentTrack(data.track);
           }
           useComparisonStore.getState().setIsPlaying(data.isPlaying);
-          break;
-
-        case 'radio:now_playing':
-          useRadioStore.getState().setNowPlaying(data);
           break;
 
         case 'playback:state':

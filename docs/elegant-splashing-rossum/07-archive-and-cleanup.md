@@ -1,6 +1,6 @@
 ---
 task: 07-archive-and-cleanup
-status: pending
+status: done
 depends: [06-home-page]
 files:
   - path: docs/archive/radio-stack/README.md
