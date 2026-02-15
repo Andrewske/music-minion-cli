@@ -41,7 +41,7 @@ app.add_middleware(
 )
 
 # Include routers
-from .routers import comparisons, tracks, stats, radio, youtube, soundcloud, builder, sync, live, emojis
+from .routers import comparisons, tracks, stats, radio, youtube, soundcloud, builder, sync, live, emojis, player
 from .routers.playlists import router as playlists_router
 
 app.include_router(comparisons.router, prefix="/api", tags=["comparisons"])
@@ -54,6 +54,7 @@ app.include_router(emojis.router, prefix="/api", tags=["emojis"])
 app.include_router(youtube.router, prefix="/api/youtube", tags=["youtube"])
 app.include_router(soundcloud.router, prefix="/api/soundcloud", tags=["soundcloud"])
 app.include_router(sync.router, prefix="/api", tags=["sync"])
+app.include_router(player.router, prefix="/api/player", tags=["player"])
 app.include_router(live.router, tags=["live"])
 
 
