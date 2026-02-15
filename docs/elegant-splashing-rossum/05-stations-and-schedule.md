@@ -1,6 +1,6 @@
 ---
 task: 05-stations-and-schedule
-status: pending
+status: done
 depends: [04-queue-and-context]
 files:
   - path: web/frontend/src/components/StationsList.tsx

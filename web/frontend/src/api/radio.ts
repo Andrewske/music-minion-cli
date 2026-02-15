@@ -7,10 +7,8 @@ export type SourceFilter = 'all' | 'local' | 'youtube' | 'soundcloud' | 'spotify
 export interface Station {
   id: number;
   name: string;
-  playlist_id: number | null;
-  mode: 'shuffle' | 'queue';
-  source_filter: SourceFilter;
-  is_active: boolean;
+  playlist_id: number;
+  shuffle_enabled: boolean;
 }
 
 export interface TrackInfo {
