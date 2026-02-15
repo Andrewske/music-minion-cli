@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from loguru import logger
 import mimetypes
 import json
@@ -44,6 +44,17 @@ def get_mime_type(file_path: Path) -> str:
 async def stream_audio(
     track_id: int, db=Depends(get_db), config: Config = Depends(get_config)
 ):
+    # Check for multi-source support (SoundCloud redirect)
+    cursor = db.execute(
+        "SELECT source, source_url FROM tracks WHERE id = ?",
+        (track_id,)
+    )
+    row = cursor.fetchone()
+    if row and row["source"] == "soundcloud" and row["source_url"]:
+        logger.info(f"Redirecting to SoundCloud stream for track {track_id}")
+        return RedirectResponse(row["source_url"])
+
+    # Local file handling (existing logic)
     file_path = get_track_path(track_id, db)
     if not file_path:
         raise HTTPException(404, "Track not found")
