@@ -591,25 +591,25 @@ function ObsidianEmojiActions({ track, onUpdate }: ObsidianEmojiActionsProps) {
   const { addEmoji, removeEmoji, isAdding, isRemoving } = useTrackEmojis(track, onUpdate);
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1.5">
       {track.emojis?.map((emoji, index) => (
         <button
           key={`${emoji}-${index}`}
           onClick={() => removeEmoji(emoji)}
           disabled={isRemoving}
-          className="relative group text-xs leading-none hover:opacity-70 disabled:opacity-30 transition-opacity"
+          className="relative group text-sm leading-none hover:opacity-70 disabled:opacity-30 transition-opacity"
           title="Click to remove"
         >
           <span className="block">{emoji}</span>
           <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-            <span className="text-obsidian-accent text-[10px] font-bold">×</span>
+            <span className="text-obsidian-accent text-xs font-bold">×</span>
           </span>
         </button>
       ))}
       <button
         onClick={() => setShowPicker(true)}
         disabled={isAdding}
-        className="text-xs font-bold text-green-500 hover:text-green-400
+        className="text-sm font-bold text-green-500 hover:text-green-400
           disabled:opacity-30 transition-colors cursor-pointer"
       >
         {isAdding ? '...' : '+'}
