@@ -1,7 +1,5 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getNowPlaying } from '../api/radio';
-import type { NowPlaying, TrackInfo } from '../api/radio';
-import { EmojiTrackActions } from './EmojiTrackActions';
+import { usePlayer } from '../hooks/usePlayer';
+import type { Track } from '../api/builder';
 
 function formatDuration(seconds: number | null): string {
   if (seconds === null || seconds === undefined) return '--:--';
@@ -11,12 +9,11 @@ function formatDuration(seconds: number | null): string {
 }
 
 interface UpNextTrackProps {
-  track: TrackInfo;
+  track: Track;
   index: number;
-  onUpdate: (updatedTrack: { id: number; emojis?: string[] }) => void;
 }
 
-function UpNextTrack({ track, index, onUpdate }: UpNextTrackProps): JSX.Element {
+function UpNextTrack({ track, index }: UpNextTrackProps): JSX.Element {
   return (
     <div className="flex items-center gap-3 py-2 px-3 hover:bg-white/5 transition-colors border-l border-transparent hover:border-obsidian-accent/30">
       <span className="text-white/40 text-sm font-sf-mono w-5">{index + 1}</span>
@@ -28,81 +25,33 @@ function UpNextTrack({ track, index, onUpdate }: UpNextTrackProps): JSX.Element 
           {track.artist ?? 'Unknown Artist'}
         </p>
       </div>
-      <EmojiTrackActions track={track} onUpdate={onUpdate} compact />
       <span className="text-white/50 font-sf-mono text-xs shrink-0">
-        {formatDuration(track.duration)}
+        {formatDuration(track.duration ?? null)}
       </span>
     </div>
   );
 }
 
 export function UpNext(): JSX.Element {
-  const queryClient = useQueryClient();
-  const { data: nowPlaying, isLoading, error } = useQuery<NowPlaying>({
-    queryKey: ['nowPlaying'],
-    queryFn: getNowPlaying,
-    refetchInterval: 5000,
-    retry: 1,
-  });
+  const { queue, queueIndex } = usePlayer();
 
-  const handleTrackUpdate = (): void => {
-    void queryClient.invalidateQueries({ queryKey: ['nowPlaying'] });
-  };
-
-  if (isLoading) {
-    return (
-      <div className="bg-obsidian-surface border border-obsidian-border p-4 animate-pulse">
-        <div className="h-4 bg-obsidian-border w-24 mb-4" />
-        <div className="space-y-3">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="flex items-center gap-3 py-2">
-              <div className="w-5 h-4 bg-obsidian-border" />
-              <div className="flex-1 space-y-1">
-                <div className="h-4 bg-obsidian-border w-3/4" />
-                <div className="h-3 bg-obsidian-border w-1/2" />
-              </div>
-              <div className="w-10 h-4 bg-obsidian-border" />
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (error || !nowPlaying) {
-    return (
-      <div className="bg-obsidian-surface border border-obsidian-border p-4">
-        <h3 className="text-sm font-semibold text-white/60 uppercase tracking-wider mb-3 font-sf-mono">
-          Up Next
-        </h3>
-        <p className="text-white/40 text-sm font-sf-mono">No upcoming tracks</p>
-      </div>
-    );
-  }
-
-  const upcomingTracks = nowPlaying.upcoming.slice(0, 5);
-
-  if (upcomingTracks.length === 0) {
-    return (
-      <div className="bg-obsidian-surface border border-obsidian-border p-4">
-        <h3 className="text-sm font-semibold text-white/60 uppercase tracking-wider mb-3 font-sf-mono">
-          Up Next
-        </h3>
-        <p className="text-white/40 text-sm font-sf-mono">No upcoming tracks</p>
-      </div>
-    );
-  }
+  // Get upcoming tracks (next 5 after current)
+  const upcoming = queue.slice(queueIndex + 1, queueIndex + 6);
 
   return (
     <div className="bg-obsidian-surface border border-obsidian-border p-4">
       <h3 className="text-sm font-semibold text-white/60 uppercase tracking-wider mb-3 font-sf-mono">
         Up Next
       </h3>
-      <div className="space-y-1">
-        {upcomingTracks.map((track, index) => (
-          <UpNextTrack key={track.id} track={track} index={index} onUpdate={handleTrackUpdate} />
-        ))}
-      </div>
+      {upcoming.length > 0 ? (
+        <div className="space-y-1">
+          {upcoming.map((track, i) => (
+            <UpNextTrack key={track.id} track={track} index={i} />
+          ))}
+        </div>
+      ) : (
+        <p className="text-white/40 text-sm font-sf-mono">Queue is empty</p>
+      )}
     </div>
   );
 }

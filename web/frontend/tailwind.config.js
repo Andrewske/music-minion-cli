@@ -60,6 +60,36 @@ export default {
           border: '#262626',
           teal: '#14B8A6',
         },
+        // Shadcn UI colors (using obsidian theme as base)
+        background: '#000000',
+        foreground: '#ffffff',
+        primary: {
+          DEFAULT: '#1DB954',
+          foreground: '#ffffff',
+        },
+        secondary: {
+          DEFAULT: '#1a1a1a',
+          foreground: '#ffffff',
+        },
+        destructive: {
+          DEFAULT: '#ef4444',
+          foreground: '#ffffff',
+        },
+        muted: {
+          DEFAULT: '#1a1a1a',
+          foreground: '#a3a3a3',
+        },
+        accent: {
+          DEFAULT: '#1DB954',
+          foreground: '#ffffff',
+        },
+        popover: {
+          DEFAULT: '#0a0a0a',
+          foreground: '#ffffff',
+        },
+        border: '#1a1a1a',
+        input: '#1a1a1a',
+        ring: '#1DB954',
       },
       animation: {
         'fade-in': 'fadeIn 0.3s ease-out',
