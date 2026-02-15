@@ -29,6 +29,8 @@ from music_minion.domain.playlists import builder
 from music_minion.core.database import get_db_connection
 from music_minion.ipc import send_command
 
+from ..queries.emojis import batch_fetch_track_emojis
+
 
 router = APIRouter()
 
@@ -270,19 +272,10 @@ async def get_candidates(
     sort_field: str = "artist",
     sort_direction: str = "asc",
 ):
-    """Get paginated list of candidate tracks with server-side sorting.
-
-    Query params:
-        limit: Tracks per page (default 100)
-        offset: Number of tracks to skip
-        sort_field: Column to sort by (artist, title, year, bpm, genre, key_signature, elo_rating)
-        sort_direction: 'asc' or 'desc'
-    """
+    """Get paginated list of candidate tracks with server-side sorting."""
     try:
-        # Validate playlist
         _validate_manual_playlist(playlist_id)
 
-        # Get candidates with server-side sorting and pagination
         candidates, total = builder.get_candidate_tracks(
             playlist_id,
             sort_field=sort_field,
@@ -290,6 +283,16 @@ async def get_candidates(
             limit=limit,
             offset=offset,
         )
+
+        # Batch-fetch emojis for all candidates
+        if candidates:
+            track_ids = [c["id"] for c in candidates]
+            with get_db_connection() as conn:
+                emojis_map = batch_fetch_track_emojis(track_ids, conn)
+
+            # Attach emojis to each candidate
+            for candidate in candidates:
+                candidate["emojis"] = emojis_map.get(candidate["id"], [])
 
         return CandidatesResponse(
             candidates=candidates,
