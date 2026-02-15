@@ -1,5 +1,7 @@
 import type { TrackInfo } from '../types';
 import { EmojiTrackActions } from './EmojiTrackActions';
+import { usePlayer } from '../hooks/usePlayer';
+import type { PlayContext } from '../stores/playerStore';
 
 interface TrackCardProps {
   onClick?: () => void;
@@ -11,9 +13,30 @@ interface TrackCardProps {
   isLoading?: boolean;
   rankingMode?: 'global' | 'playlist';
   onTrackUpdate?: (track: TrackInfo) => void;
+  context?: PlayContext;
 }
 
-export function TrackCard({ track, isPlaying, className = '', onArchive, onWinner, onClick, isLoading, rankingMode = 'global', onTrackUpdate }: TrackCardProps) {
+export function TrackCard({ track, isPlaying, className = '', onArchive, onWinner, onClick, isLoading, rankingMode = 'global', onTrackUpdate, context }: TrackCardProps) {
+  const { play } = usePlayer();
+
+  const handleClick = () => {
+    if (onClick) {
+      onClick();
+    } else if (context) {
+      // Convert TrackInfo to Track format for player
+      play({
+        id: track.id,
+        title: track.title,
+        artist: track.artist ?? 'Unknown Artist',
+        album: track.album,
+        genre: track.genre,
+        year: track.year,
+        bpm: track.bpm,
+        duration: track.duration,
+      }, context);
+    }
+  };
+
   const renderRatingBadge = (rating: number, wins: number, losses: number, comparisonCount: number) => {
     const isBootstrap = comparisonCount < 10;
 
@@ -79,7 +102,7 @@ export function TrackCard({ track, isPlaying, className = '', onArchive, onWinne
       {/* Clickable content area */}
       <button
         type="button"
-        onClick={onClick}
+        onClick={handleClick}
         className="cursor-pointer flex flex-col w-full text-left"
       >
         <div className="p-4 flex flex-col items-center justify-center text-center relative z-10">
