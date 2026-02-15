@@ -609,10 +609,10 @@ function ObsidianEmojiActions({ track, onUpdate }: ObsidianEmojiActionsProps) {
       <button
         onClick={() => setShowPicker(true)}
         disabled={isAdding}
-        className="text-xs font-sf-mono text-white/40 hover:text-obsidian-accent
+        className="text-base font-bold text-green-500 hover:text-green-400
           disabled:opacity-30 transition-colors cursor-pointer"
       >
-        {isAdding ? '...' : '+ Emoji'}
+        {isAdding ? '...' : '+'}
       </button>
       {showPicker && (
         <EmojiPicker
