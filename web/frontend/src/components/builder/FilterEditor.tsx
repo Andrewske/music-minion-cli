@@ -3,6 +3,29 @@ import { useQuery } from '@tanstack/react-query';
 import type { Filter } from '../../api/builder';
 import { validateFilter, getPlaceholder } from './filterUtils';
 import { builderApi } from '../../api/builder';
+import { EmojiPicker } from '../EmojiPicker';
+
+function EmojiValuePicker({ value, onChange }: { value: string; onChange: (v: string) => void }): JSX.Element {
+  const [showPicker, setShowPicker] = useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setShowPicker(true)}
+        className="w-full bg-slate-700 rounded px-3 py-2 text-white text-left"
+      >
+        {value || 'Select emoji...'}
+      </button>
+      {showPicker && (
+        <EmojiPicker
+          onSelect={(emoji) => { onChange(emoji); setShowPicker(false); }}
+          onClose={() => setShowPicker(false)}
+        />
+      )}
+    </div>
+  );
+}
 
 interface FilterEditorProps {
   initialFilter?: Filter;
@@ -51,12 +74,16 @@ export default function FilterEditor({
     // Clear operator if it's incompatible with the new field
     if (newField && operator) {
       const isNumericField = ['year', 'bpm'].includes(newField);
+      const isEmojiField = newField === 'emoji';
       const isNumericOperator = ['equals', 'not_equals', 'gt', 'gte', 'lt', 'lte'].includes(operator);
       const isTextOperator = ['contains', 'equals', 'not_equals', 'starts_with', 'ends_with'].includes(operator);
+      const isEmojiOperator = ['has', 'not_has'].includes(operator);
 
-      if (isNumericField && !isNumericOperator) {
+      if (isEmojiField && !isEmojiOperator) {
+        setOperator('');
+      } else if (isNumericField && !isNumericOperator) {
         setOperator(''); // Clear incompatible operator
-      } else if (!isNumericField && !isTextOperator) {
+      } else if (!isNumericField && !isEmojiField && !isTextOperator) {
         setOperator('');
       }
     }
@@ -108,6 +135,7 @@ export default function FilterEditor({
           <option value="year">Year</option>
           <option value="bpm">BPM</option>
           <option value="key">Key</option>
+          <option value="emoji">Emoji</option>
         </select>
       </div>
 
@@ -157,6 +185,25 @@ export default function FilterEditor({
         </div>
       )}
 
+      {field === 'emoji' && (
+        <div className="bg-slate-800 rounded-lg p-3 mt-2">
+          <label htmlFor="emoji-operator-select" className="text-xs text-gray-400 block mb-2">Condition</label>
+          <select
+            id="emoji-operator-select"
+            value={operator}
+            onChange={(e) => {
+              setOperator(e.target.value);
+              resetValidationError();
+            }}
+            className="w-full bg-slate-700 rounded px-3 py-2 text-white"
+          >
+            <option value="">Choose condition...</option>
+            <option value="has">has emoji</option>
+            <option value="not_has">does not have emoji</option>
+          </select>
+        </div>
+      )}
+
       {/* Step 3: Value Input (Conditional) */}
       {field === 'genre' && operator === 'equals' && (
         <div className="bg-slate-800 rounded-lg p-3 mt-2">
@@ -178,7 +225,14 @@ export default function FilterEditor({
         </div>
       )}
 
-      {field && operator && !(field === 'genre' && operator === 'equals') && (
+      {field === 'emoji' && operator && (
+        <div className="bg-slate-800 rounded-lg p-3 mt-2">
+          <label className="text-xs text-gray-400 block mb-2">Emoji</label>
+          <EmojiValuePicker value={value} onChange={(v) => { setValue(v); resetValidationError(); }} />
+        </div>
+      )}
+
+      {field && operator && field !== 'emoji' && !(field === 'genre' && operator === 'equals') && (
         <div className="bg-slate-800 rounded-lg p-3 mt-2">
           <label htmlFor="value-input" className="text-xs text-gray-400 block mb-2">Value</label>
           <input
