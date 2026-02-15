@@ -90,14 +90,14 @@ export function EmojiReactions({
         <button
           onClick={onAddClick}
           disabled={isAdding}
-          className={`px-3 py-1 rounded-md text-sm font-medium text-white transition-colors ${
+          className={`text-2xl font-normal transition-colors ${
             isAdding
-              ? 'bg-emerald-700 opacity-50 cursor-not-allowed'
-              : 'bg-emerald-600 hover:bg-emerald-500'
+              ? 'text-emerald-500 opacity-50 cursor-not-allowed'
+              : 'text-emerald-500 hover:text-emerald-400'
           }`}
           aria-label="Add emoji"
         >
-          {isAdding ? 'Adding...' : '+ Add'}
+          +
         </button>
       )}
     </div>

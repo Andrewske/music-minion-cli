@@ -1,14 +1,17 @@
-import { useState, useEffect, Fragment } from 'react';
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import type { SortingState } from '@tanstack/react-table';
 import { useBuilderSession } from '../../hooks/useBuilderSession';
 import { useIPCWebSocket } from '../../hooks/useIPCWebSocket';
 import { builderApi } from '../../api/builder';
-import type { Track, Filter } from '../../api/builder';
+import type { Track } from '../../api/builder';
 import { useWavesurfer } from '../../hooks/useWavesurfer';
 import { usePlaylists } from '../../hooks/usePlaylists';
 import { useTrackEmojis } from '../../hooks/useTrackEmojis';
 import { EmojiPicker } from '../EmojiPicker';
+import { MobileHeader } from '../playlist-builder/MobileHeader';
+import { FilterSidebar } from '../playlist-builder/FilterSidebar';
+import { TrackQueueCard } from '../playlist-builder/TrackQueueCard';
 
 // Obsidian Minimal Playlist Builder
 // Pure black (#000) background, single amber accent, hairline borders, extreme reduction
@@ -173,8 +176,18 @@ export function ObsidianBuilderMain({ playlistId, playlistName, onBack }: Builde
 
   return (
     <div className="min-h-screen bg-black font-inter text-white">
-      {/* Minimal Header */}
-      <header className="border-b border-obsidian-border px-8 py-4">
+      {/* Mobile Header - only visible on mobile */}
+      <MobileHeader
+        playlistName={playlistName}
+        onBack={onBack}
+        filters={filters || []}
+        onUpdateFilters={(f) => updateFilters.mutate(f)}
+        isUpdatingFilters={updateFilters.isPending}
+        playlistId={playlistId}
+      />
+
+      {/* Desktop Header - hidden on mobile */}
+      <header className="hidden md:block border-b border-obsidian-border px-8 py-4">
         <div className="flex items-center justify-between max-w-6xl mx-auto">
           <button onClick={onBack} className="text-white/40 hover:text-obsidian-accent transition-colors text-sm">
             ← Back
@@ -184,11 +197,12 @@ export function ObsidianBuilderMain({ playlistId, playlistName, onBack }: Builde
         </div>
       </header>
 
-      <div className="max-w-6xl mx-auto px-8 py-8">
-        <div className="grid grid-cols-12 gap-12">
-          {/* Filters - Minimal sidebar */}
-          <aside className="col-span-3">
-            <ObsidianFilterPanel
+      {/* Main container - add top padding on mobile for fixed header */}
+      <div className="max-w-6xl mx-auto px-4 md:px-8 py-4 md:py-8 pt-14 md:pt-8">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-12">
+          {/* Filters - Minimal sidebar, hidden on mobile (in sheet instead) */}
+          <aside className="hidden md:block md:col-span-3">
+            <FilterSidebar
               filters={filters || []}
               onUpdate={(f) => updateFilters.mutate(f)}
               isUpdating={updateFilters.isPending}
@@ -197,19 +211,21 @@ export function ObsidianBuilderMain({ playlistId, playlistName, onBack }: Builde
           </aside>
 
           {/* Main */}
-          <main className="col-span-9">
+          <main className="col-span-1 md:col-span-9">
             {currentTrack && queueIndex < candidates.length ? (
-              <div className="space-y-12">
-                {/* Track Display - Ultra minimal */}
-                <div className="py-8">
-                  <p className="text-obsidian-accent text-sm font-sf-mono mb-2">{currentTrack.artist}</p>
-                  <h2 className="text-4xl font-light text-white mb-4">{currentTrack.title}</h2>
+              <div className="space-y-6 md:space-y-12">
+                {/* Player section - sticky on mobile */}
+                <div className="sticky top-10 md:static z-10 bg-black pb-4 md:pb-0">
+                  {/* Track Display - Ultra minimal */}
+                  <div className="py-4 md:py-8">
+                    <p className="text-obsidian-accent text-sm font-sf-mono mb-2">{currentTrack.artist}</p>
+                    <h2 className="text-2xl md:text-4xl font-light text-white mb-2 md:mb-4">{currentTrack.title}</h2>
                   {currentTrack.album && (
                     <p className="text-white/30 text-sm">{currentTrack.album}</p>
                   )}
 
                   {/* Metadata pills */}
-                  <div className="flex gap-4 mt-6">
+                  <div className="flex flex-wrap items-center gap-2 md:gap-4 mt-4 md:mt-6">
                     {currentTrack.bpm && (
                       <span className="text-white/40 text-xs font-sf-mono">{Math.round(currentTrack.bpm)} BPM</span>
                     )}
@@ -236,53 +252,55 @@ export function ObsidianBuilderMain({ playlistId, playlistName, onBack }: Builde
                   </div>
                 </div>
 
-                {/* Waveform */}
-                <div className="h-16 border-t border-b border-obsidian-border">
-                  <ObsidianWaveform
-                    track={currentTrack}
-                    isPlaying={isPlaying}
-                    onTogglePlayPause={() => setIsPlaying(!isPlaying)}
-                    onFinish={() => {
-                      if (loopEnabled) { setIsPlaying(false); setTimeout(() => setIsPlaying(true), 100); }
-                      else { handleSkip(); }
-                    }}
-                  />
-                </div>
-
-                {/* Loop toggle */}
-                <div className="flex justify-center">
-                  <label className="flex items-center gap-3 text-white/30 text-sm cursor-pointer hover:text-white/50 transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={loopEnabled}
-                      onChange={(e) => setLoopEnabled(e.target.checked)}
-                      className="w-3 h-3 accent-obsidian-accent"
+                  {/* Waveform */}
+                  <div className="h-16 border-t border-b border-obsidian-border">
+                    <ObsidianWaveform
+                      track={currentTrack}
+                      isPlaying={isPlaying}
+                      onTogglePlayPause={() => setIsPlaying(!isPlaying)}
+                      onFinish={() => {
+                        if (loopEnabled) { setIsPlaying(false); setTimeout(() => setIsPlaying(true), 100); }
+                        else { handleSkip(); }
+                      }}
                     />
-                    Loop
-                  </label>
-                </div>
+                  </div>
 
-                {/* Actions */}
-                <div className="flex gap-4 justify-center">
-                  <button
-                    onClick={handleAdd}
-                    disabled={isAddingTrack || isSkippingTrack}
-                    className="px-12 py-3 border border-obsidian-accent text-obsidian-accent
-                      hover:bg-obsidian-accent hover:text-black disabled:opacity-30
-                      transition-all text-sm tracking-wider"
-                  >
-                    {isAddingTrack ? '...' : 'Add'}
-                  </button>
-                  <button
-                    onClick={handleSkip}
-                    disabled={isAddingTrack || isSkippingTrack}
-                    className="px-12 py-3 border border-white/20 text-white/60
-                      hover:border-white/40 hover:text-white disabled:opacity-30
-                      transition-all text-sm tracking-wider"
-                  >
-                    {isSkippingTrack ? '...' : 'Skip'}
-                  </button>
+                  {/* Loop toggle */}
+                  <div className="flex justify-center">
+                    <label className="flex items-center gap-3 text-white/30 text-sm cursor-pointer hover:text-white/50 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={loopEnabled}
+                        onChange={(e) => setLoopEnabled(e.target.checked)}
+                        className="w-3 h-3 accent-obsidian-accent"
+                      />
+                      Loop
+                    </label>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex gap-4 justify-center">
+                    <button
+                      onClick={handleAdd}
+                      disabled={isAddingTrack || isSkippingTrack}
+                      className="px-8 md:px-12 py-3 border border-obsidian-accent text-obsidian-accent
+                        hover:bg-obsidian-accent hover:text-black disabled:opacity-30
+                        transition-all text-sm tracking-wider"
+                    >
+                      {isAddingTrack ? '...' : 'Add'}
+                    </button>
+                    <button
+                      onClick={handleSkip}
+                      disabled={isAddingTrack || isSkippingTrack}
+                      className="px-8 md:px-12 py-3 border border-white/20 text-white/60
+                        hover:border-white/40 hover:text-white disabled:opacity-30
+                        transition-all text-sm tracking-wider"
+                    >
+                      {isSkippingTrack ? '...' : 'Skip'}
+                    </button>
+                  </div>
                 </div>
+                {/* End sticky section */}
 
                 {/* Track Queue */}
                 <ObsidianTrackQueue
@@ -352,167 +370,6 @@ function ObsidianWaveform({ track, isPlaying, onTogglePlayPause, onFinish }: {
   );
 }
 
-// Filter Panel
-function ObsidianFilterPanel({ filters, onUpdate, isUpdating, playlistId }: {
-  filters: Filter[]; onUpdate: (f: Filter[]) => void; isUpdating: boolean; playlistId: number;
-}) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [editingFilter, setEditingFilter] = useState<Filter | undefined>(undefined);
-
-  const startAdding = () => { setIsEditing(true); setEditingIndex(null); setEditingFilter(undefined); };
-  const startEditing = (idx: number) => { setIsEditing(true); setEditingIndex(idx); setEditingFilter(filters[idx]); };
-  const handleCancel = () => { setIsEditing(false); setEditingIndex(null); setEditingFilter(undefined); };
-
-  const handleSave = (filter: Filter) => {
-    const updated = editingIndex !== null
-      ? filters.map((f, i) => i === editingIndex ? filter : f)
-      : [...filters, filter];
-    onUpdate(updated);
-    handleCancel();
-  };
-
-  const handleDelete = (idx: number) => onUpdate(filters.filter((_, i) => i !== idx));
-  const toggleConjunction = (idx: number) => {
-    onUpdate(filters.map((f, i) => i === idx ? { ...f, conjunction: f.conjunction === 'AND' ? 'OR' as const : 'AND' as const } : f));
-  };
-
-  return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
-        <span className="text-obsidian-accent text-xs tracking-[0.2em] uppercase">Filters</span>
-        {filters.length > 0 && (
-          <button onClick={() => confirm('Clear?') && onUpdate([])} className="text-white/30 hover:text-white/60 text-xs">
-            Clear
-          </button>
-        )}
-      </div>
-
-      <div className="space-y-2 mb-6">
-        {filters.map((filter, idx) => (
-          <Fragment key={`${filter.field}-${idx}`}>
-            {idx > 0 && (
-              <button onClick={() => toggleConjunction(idx)} disabled={isUpdating}
-                className="w-full py-1 text-white/20 hover:text-white/40 text-xs transition-colors">
-                {filter.conjunction}
-              </button>
-            )}
-            <div className="group py-2 border-b border-obsidian-border hover:border-obsidian-accent/30 transition-colors">
-              <div className="flex justify-between text-sm">
-                <span className="text-white/60">
-                  <span className="text-white/30">{filter.field}</span>
-                  <span className="text-white/20 mx-2">{filter.operator}</span>
-                  <span className="text-white">{filter.value}</span>
-                </span>
-                <div className="flex gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => startEditing(idx)} className="text-white/40 hover:text-obsidian-accent text-xs">Edit</button>
-                  <button onClick={() => handleDelete(idx)} className="text-white/40 hover:text-red-400 text-xs">×</button>
-                </div>
-              </div>
-            </div>
-          </Fragment>
-        ))}
-      </div>
-
-      {isEditing ? (
-        <ObsidianFilterEditor initialFilter={editingFilter} playlistId={playlistId} onSave={handleSave} onCancel={handleCancel} />
-      ) : (
-        <button onClick={startAdding} disabled={isUpdating}
-          className="w-full py-2 border border-dashed border-obsidian-border hover:border-obsidian-accent/50
-            text-white/30 hover:text-obsidian-accent transition-colors text-xs">
-          + Add
-        </button>
-      )}
-    </div>
-  );
-}
-
-// Filter Editor
-function ObsidianFilterEditor({ initialFilter, playlistId, onSave, onCancel }: {
-  initialFilter?: Filter; playlistId: number; onSave: (f: Filter) => void; onCancel: () => void;
-}) {
-  const [field, setField] = useState(initialFilter?.field || '');
-  const [operator, setOperator] = useState(initialFilter?.operator || '');
-  const [value, setValue] = useState(initialFilter?.value || '');
-
-  const { data: candidates } = useQuery({
-    queryKey: ['builder-candidates', playlistId],
-    queryFn: () => builderApi.getCandidates(playlistId, 1000),
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const genres = candidates?.candidates ? [...new Set(candidates.candidates.map(t => t.genre).filter(Boolean))].sort() : [];
-  const isNumeric = ['year', 'bpm'].includes(field);
-
-  const inputClass = "w-full bg-black border border-obsidian-border px-3 py-2 text-white text-sm \
-    focus:border-obsidian-accent/50 focus:outline-none transition-colors";
-
-  const handleSave = () => {
-    if (field && operator && value) {
-      onSave({ field, operator, value, conjunction: initialFilter?.conjunction || 'AND' });
-    }
-  };
-
-  return (
-    <div className="space-y-4 py-4 border-t border-obsidian-border">
-      <select value={field} onChange={(e) => { setField(e.target.value); setOperator(''); }} className={inputClass}>
-        <option value="">Field</option>
-        <option value="title">Title</option>
-        <option value="artist">Artist</option>
-        <option value="album">Album</option>
-        <option value="genre">Genre</option>
-        <option value="year">Year</option>
-        <option value="bpm">BPM</option>
-        <option value="key">Key</option>
-      </select>
-
-      {field && !isNumeric && (
-        <select value={operator} onChange={(e) => setOperator(e.target.value)} className={inputClass}>
-          <option value="">Condition</option>
-          <option value="contains">contains</option>
-          <option value="equals">equals</option>
-          <option value="not_equals">≠</option>
-          <option value="starts_with">starts with</option>
-          <option value="ends_with">ends with</option>
-        </select>
-      )}
-
-      {field && isNumeric && (
-        <select value={operator} onChange={(e) => setOperator(e.target.value)} className={inputClass}>
-          <option value="">Condition</option>
-          <option value="equals">=</option>
-          <option value="not_equals">≠</option>
-          <option value="gt">&gt;</option>
-          <option value="gte">≥</option>
-          <option value="lt">&lt;</option>
-          <option value="lte">≤</option>
-        </select>
-      )}
-
-      {field === 'genre' && operator === 'equals' ? (
-        <select value={value} onChange={(e) => setValue(e.target.value)} className={inputClass}>
-          <option value="">Genre</option>
-          {genres.map(g => <option key={g} value={g ?? ''}>{g}</option>)}
-        </select>
-      ) : field && operator && (
-        <input type={isNumeric ? 'number' : 'text'} value={value} onChange={(e) => setValue(e.target.value)}
-          placeholder="Value" className={inputClass} />
-      )}
-
-      <div className="flex gap-2">
-        <button onClick={handleSave} disabled={!field || !operator || !value}
-          className="flex-1 py-2 border border-obsidian-accent text-obsidian-accent text-xs
-            hover:bg-obsidian-accent hover:text-black disabled:opacity-30 transition-all">
-          {initialFilter ? 'Update' : 'Add'}
-        </button>
-        <button onClick={onCancel}
-          className="flex-1 py-2 border border-obsidian-border text-white/40 text-xs hover:text-white transition-colors">
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-}
 
 // Track Queue
 export function ObsidianTrackQueue({ tracks, queueIndex, nowPlayingId, onTrackClick, sorting, onSortingChange, onLoadMore, hasMore, isLoadingMore }: {
@@ -528,46 +385,90 @@ export function ObsidianTrackQueue({ tracks, queueIndex, nowPlayingId, onTrackCl
     { id: 'year', label: 'Year', flex: 1 },
   ];
 
-  const handleSort = (id: string) => {
+  const handleSort = (id: string): void => {
     const current = sorting[0];
     onSortingChange([{ id, desc: current?.id === id ? !current.desc : false }]);
   };
 
   return (
     <div className="border-t border-obsidian-border">
-      {/* Header */}
-      <div className="flex border-b border-obsidian-border">
-        {cols.map(col => (
-          <button key={col.id} onClick={() => handleSort(col.id)}
-            style={{ flex: col.flex }}
-            className={`px-3 py-2 text-left text-xs tracking-wider uppercase transition-colors
-              ${sorting[0]?.id === col.id ? 'text-obsidian-accent' : 'text-white/30 hover:text-white/60'}`}>
-            {col.label}
-            {sorting[0]?.id === col.id && <span className="ml-1">{sorting[0].desc ? '↓' : '↑'}</span>}
-          </button>
-        ))}
+      {/* Desktop: Table view */}
+      <div className="hidden md:block">
+        {/* Header */}
+        <div className="flex border-b border-obsidian-border">
+          {cols.map(col => (
+            <button key={col.id} onClick={() => handleSort(col.id)}
+              style={{ flex: col.flex }}
+              className={`px-3 py-2 text-left text-xs tracking-wider uppercase transition-colors
+                ${sorting[0]?.id === col.id ? 'text-obsidian-accent' : 'text-white/30 hover:text-white/60'}`}>
+              {col.label}
+              {sorting[0]?.id === col.id && <span className="ml-1">{sorting[0].desc ? '↓' : '↑'}</span>}
+            </button>
+          ))}
+        </div>
+
+        {/* Rows */}
+        <div className="max-h-[35vh] overflow-y-auto">
+          {tracks.map((track, idx) => {
+            const isQueue = idx === queueIndex;
+            const isPlaying = track.id === nowPlayingId;
+
+            return (
+              <button key={track.id} onClick={() => onTrackClick(track)}
+                className={`w-full flex text-left text-sm border-b border-obsidian-border/50
+                  hover:bg-white/5 transition-colors
+                  ${isPlaying ? 'bg-obsidian-accent/10 border-l-2 border-l-obsidian-accent' : ''}
+                  ${isQueue && !isPlaying ? 'bg-white/5' : ''}`}>
+                <div style={{ flex: 3 }} className="px-3 py-2 truncate text-white">{track.title}</div>
+                <div style={{ flex: 2 }} className="px-3 py-2 truncate text-white/50">{track.artist}</div>
+                <div style={{ flex: 1 }} className="px-3 py-2 text-white/30 font-sf-mono text-xs">{track.bpm ? Math.round(track.bpm) : '-'}</div>
+                <div style={{ flex: 1 }} className="px-3 py-2 truncate text-white/30">{track.genre || '-'}</div>
+                <div style={{ flex: 1 }} className="px-3 py-2 text-white/30 font-sf-mono text-xs">{track.year || '-'}</div>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Rows */}
-      <div className="max-h-[35vh] overflow-y-auto">
-        {tracks.map((track, idx) => {
-          const isQueue = idx === queueIndex;
-          const isPlaying = track.id === nowPlayingId;
+      {/* Mobile: Card view */}
+      <div className="md:hidden">
+        {/* Sort selector for mobile */}
+        <div className="flex items-center gap-2 py-2 border-b border-obsidian-border">
+          <span className="text-white/30 text-xs">Sort:</span>
+          <select
+            value={sorting[0]?.id || 'artist'}
+            onChange={(e) => handleSort(e.target.value)}
+            className="bg-black border border-obsidian-border px-2 py-1 text-white text-xs rounded"
+          >
+            {cols.map(col => (
+              <option key={col.id} value={col.id}>{col.label}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => onSortingChange([{ id: sorting[0]?.id || 'artist', desc: !sorting[0]?.desc }])}
+            className="text-obsidian-accent text-xs"
+          >
+            {sorting[0]?.desc ? '↓' : '↑'}
+          </button>
+        </div>
 
-          return (
-            <button key={track.id} onClick={() => onTrackClick(track)}
-              className={`w-full flex text-left text-sm border-b border-obsidian-border/50
-                hover:bg-white/5 transition-colors
-                ${isPlaying ? 'bg-obsidian-accent/10 border-l-2 border-l-obsidian-accent' : ''}
-                ${isQueue && !isPlaying ? 'bg-white/5' : ''}`}>
-              <div style={{ flex: 3 }} className="px-3 py-2 truncate text-white">{track.title}</div>
-              <div style={{ flex: 2 }} className="px-3 py-2 truncate text-white/50">{track.artist}</div>
-              <div style={{ flex: 1 }} className="px-3 py-2 text-white/30 font-sf-mono text-xs">{track.bpm ? Math.round(track.bpm) : '-'}</div>
-              <div style={{ flex: 1 }} className="px-3 py-2 truncate text-white/30">{track.genre || '-'}</div>
-              <div style={{ flex: 1 }} className="px-3 py-2 text-white/30 font-sf-mono text-xs">{track.year || '-'}</div>
-            </button>
-          );
-        })}
+        {/* Cards */}
+        <div className="max-h-[40vh] overflow-y-auto">
+          {tracks.map((track, idx) => {
+            const isQueue = idx === queueIndex;
+            const isPlaying = track.id === nowPlayingId;
+
+            return (
+              <TrackQueueCard
+                key={track.id}
+                track={track}
+                isQueue={isQueue}
+                isPlaying={isPlaying}
+                onClick={() => onTrackClick(track)}
+              />
+            );
+          })}
+        </div>
       </div>
 
       {hasMore && (

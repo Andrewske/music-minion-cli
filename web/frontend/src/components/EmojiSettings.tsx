@@ -90,7 +90,7 @@ export function EmojiSettings(): JSX.Element {
     return (
       <div className="max-w-4xl mx-auto p-6">
         <h1 className="text-2xl font-bold text-white mb-6">Emoji Settings</h1>
-        <div className="text-slate-400">Loading emojis...</div>
+        <div className="text-white/60">Loading emojis...</div>
       </div>
     );
   }
@@ -105,15 +105,15 @@ export function EmojiSettings(): JSX.Element {
       {/* Custom Emojis Section */}
       <div className="mb-8">
         <h2 className="text-lg font-semibold text-white mb-3">Your Custom Emojis</h2>
-        <p className="text-sm text-slate-400 mb-4">
+        <p className="text-sm text-white/60 mb-4">
           To add custom emojis, use the CLI script:{' '}
-          <code className="bg-slate-800 px-2 py-1 rounded text-xs">
+          <code className="bg-obsidian-border px-2 py-1 text-xs">
             uv run scripts/add-custom-emoji.py --image path/to/emoji.png --name "my emoji"
           </code>
         </p>
 
         {customEmojis.length === 0 ? (
-          <div className="bg-slate-900 rounded-lg p-6 text-center text-slate-500">
+          <div className="bg-obsidian-surface p-6 text-center text-white/50">
             No custom emojis yet. Use the CLI script above to add some!
           </div>
         ) : (
@@ -121,7 +121,7 @@ export function EmojiSettings(): JSX.Element {
             {customEmojis.map((emoji) => (
               <div
                 key={emoji.emoji_id}
-                className="relative bg-slate-800 rounded-lg p-3 group"
+                className="relative bg-obsidian-border p-3 group"
               >
                 <div className="flex justify-center">
                   <img
@@ -130,7 +130,7 @@ export function EmojiSettings(): JSX.Element {
                     className="w-16 h-16 object-contain"
                   />
                 </div>
-                <p className="text-xs text-slate-400 text-center mt-2 truncate">
+                <p className="text-xs text-white/60 text-center mt-2 truncate">
                   {emoji.custom_name || emoji.default_name}
                 </p>
 
@@ -138,7 +138,7 @@ export function EmojiSettings(): JSX.Element {
                 <button
                   onClick={() => handleDeleteCustom(emoji.emoji_id)}
                   disabled={deletingId === emoji.emoji_id}
-                  className="absolute top-1 right-1 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute top-1 right-1 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                   aria-label="Delete"
                 >
                   {deletingId === emoji.emoji_id ? '...' : '\u00d7'}
@@ -152,28 +152,28 @@ export function EmojiSettings(): JSX.Element {
       {/* Unicode Emojis Table */}
       <div>
         <h2 className="text-lg font-semibold text-white mb-3">Unicode Emojis</h2>
-        <p className="text-slate-400 mb-4">
+        <p className="text-white/60 mb-4">
           Customize emoji names for better searchability. These names appear in search results.
         </p>
 
-        <div className="bg-slate-900 rounded-lg overflow-hidden">
+        <div className="bg-obsidian-surface overflow-hidden">
           <table className="w-full">
-            <thead className="bg-slate-800">
+            <thead className="bg-obsidian-border">
               <tr>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">Emoji</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">Default Name</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">Custom Name</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">Uses</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-slate-300">Actions</th>
+                <th className="px-4 py-3 text-left text-sm font-semibold text-white/60">Emoji</th>
+                <th className="px-4 py-3 text-left text-sm font-semibold text-white/60">Default Name</th>
+                <th className="px-4 py-3 text-left text-sm font-semibold text-white/60">Custom Name</th>
+                <th className="px-4 py-3 text-left text-sm font-semibold text-white/60">Uses</th>
+                <th className="px-4 py-3 text-left text-sm font-semibold text-white/60">Actions</th>
               </tr>
             </thead>
             <tbody>
               {unicodeEmojis.map((emoji) => (
-                <tr key={emoji.emoji_id} className="border-t border-slate-800">
+                <tr key={emoji.emoji_id} className="border-t border-obsidian-border">
                   <td className="px-4 py-3 text-2xl">
                     <EmojiDisplay emojiId={emoji.emoji_id} emojiData={emoji} size="md" />
                   </td>
-                  <td className="px-4 py-3 text-sm text-slate-400">{emoji.default_name}</td>
+                  <td className="px-4 py-3 text-sm text-white/60">{emoji.default_name}</td>
                   <td className="px-4 py-3">
                     {editingEmoji === emoji.emoji_id ? (
                       <input
@@ -181,31 +181,31 @@ export function EmojiSettings(): JSX.Element {
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, emoji.emoji_id)}
-                        className="w-full px-2 py-1 bg-slate-800 text-white rounded border border-slate-600 focus:border-emerald-500 focus:outline-none"
+                        className="w-full px-2 py-1 bg-obsidian-border text-white border border-slate-600 focus:border-obsidian-accent focus:outline-none"
                         placeholder="Enter custom name..."
                         autoFocus
                       />
                     ) : (
                       <span className="text-white">
-                        {emoji.custom_name || <span className="text-slate-500 italic">None</span>}
+                        {emoji.custom_name || <span className="text-white/50 italic">None</span>}
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-sm text-slate-400">{emoji.use_count}</td>
+                  <td className="px-4 py-3 text-sm text-white/60">{emoji.use_count}</td>
                   <td className="px-4 py-3">
                     {editingEmoji === emoji.emoji_id ? (
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleSave(emoji.emoji_id)}
                           disabled={isSaving}
-                          className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded text-sm text-white"
+                          className="px-3 py-1 bg-obsidian-accent hover:bg-obsidian-accent disabled:opacity-50 text-sm text-white"
                         >
                           {isSaving ? 'Saving...' : 'Save'}
                         </button>
                         <button
                           onClick={handleCancel}
                           disabled={isSaving}
-                          className="px-3 py-1 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded text-sm text-white"
+                          className="px-3 py-1 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-sm text-white"
                         >
                           Cancel
                         </button>
@@ -213,7 +213,7 @@ export function EmojiSettings(): JSX.Element {
                     ) : (
                       <button
                         onClick={() => handleEdit(emoji)}
-                        className="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-sm text-white"
+                        className="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-sm text-white"
                       >
                         Edit
                       </button>

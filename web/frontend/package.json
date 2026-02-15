@@ -12,6 +12,7 @@
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",
     "@emoji-mart/react": "^1.1.1",
+    "@radix-ui/react-dialog": "^1.1.15",
     "@react-spring/web": "^9.7.0",
     "@tanstack/react-query": "^5.51.0",
     "@tanstack/react-router": "^1.153.2",
@@ -22,6 +23,7 @@
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "sonner": "^2.0.7",
+    "tailwindcss-animate": "^1.0.7",
     "wavesurfer.js": "^7.8.0",
     "zustand": "^4.5.0"
   },

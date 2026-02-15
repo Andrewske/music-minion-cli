@@ -4,7 +4,7 @@ import { StationsList } from './StationsList';
 
 export function RadioPage(): JSX.Element {
   return (
-    <div className="min-h-screen bg-slate-950 text-white p-6">
+    <div className="min-h-screen bg-black text-white p-6">
       <h1 className="text-2xl font-bold mb-6">Personal Radio</h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

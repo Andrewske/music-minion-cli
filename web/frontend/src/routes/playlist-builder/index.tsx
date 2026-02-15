@@ -12,6 +12,7 @@ export const Route = createFileRoute('/playlist-builder/')({
 function PlaylistSelection() {
   const [newPlaylistName, setNewPlaylistName] = useState('')
   const [error, setError] = useState('')
+  const [showCreateForm, setShowCreateForm] = useState(false)
   const navigate = useNavigate()
 
   const { data: playlistsData, isLoading, isError, refetch } = usePlaylists()
@@ -20,13 +21,10 @@ function PlaylistSelection() {
   const createMutation = useMutation({
     mutationFn: (name: string) => createPlaylist(name),
     onSuccess: (playlist) => {
-      // Optimistically update cache with proper typing
-      // Note: queryFn returns data.playlists (array), so cache expects array not object
       queryClient.setQueryData<Playlist[]>(
         ['playlists'],
         (old) => [...(old || []), playlist]
       )
-      // Navigate to builder with type-safe routing (using ID instead of name)
       navigate({
         to: '/playlist-builder/$playlistId',
         params: { playlistId: playlist.id.toString() },
@@ -60,19 +58,20 @@ function PlaylistSelection() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-slate-400">Loading playlists...</div>
+      <div className="min-h-screen bg-black font-inter flex items-center justify-center">
+        <div className="text-white/40 text-sm font-sf-mono">Loading...</div>
       </div>
     );
   }
 
   if (isError) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen gap-4">
-        <div className="text-rose-400">Failed to load playlists</div>
+      <div className="min-h-screen bg-black font-inter flex flex-col items-center justify-center gap-6">
+        <div className="text-white/60 text-sm">Failed to load playlists</div>
         <button
           onClick={() => refetch()}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500"
+          className="px-6 py-2 border border-obsidian-accent text-obsidian-accent
+            hover:bg-obsidian-accent hover:text-black transition-colors text-sm tracking-wider"
         >
           Retry
         </button>
@@ -81,79 +80,100 @@ function PlaylistSelection() {
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-6xl">
-      <h1 className="text-3xl font-bold text-slate-100 mb-8">Select Playlist</h1>
+    <div className="min-h-screen bg-black font-inter">
+      <div className="max-w-lg mx-auto pt-24 px-6">
+        <h1 className="text-sm font-medium text-obsidian-accent tracking-[0.2em] uppercase mb-12">
+          Select Playlist
+        </h1>
 
-      {/* Create New Playlist */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 mb-8">
-        <h2 className="text-xl font-semibold text-slate-100 mb-4">Create New Playlist</h2>
-        <div className="flex gap-3">
-          <input
-            type="text"
-            value={newPlaylistName}
-            onChange={(e) => {
-              setNewPlaylistName(e.target.value)
-              setError('')
-            }}
-            onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-            placeholder="Enter playlist name..."
-            className="flex-1 px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg
-              text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2
-              focus:ring-indigo-500 focus:border-transparent"
-            disabled={createMutation.isPending}
-          />
-          <button
-            onClick={handleCreate}
-            disabled={createMutation.isPending || !newPlaylistName.trim()}
-            className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-medium
-              hover:bg-indigo-500 disabled:bg-slate-700 disabled:cursor-not-allowed
-              disabled:text-slate-500 transition-colors"
-          >
-            {createMutation.isPending ? 'Creating...' : 'Create'}
-          </button>
+        {/* Playlist List */}
+        <div className="space-y-px mb-12">
+          {playlists.length === 0 ? (
+            <p className="text-white/30 text-sm py-4">No playlists found</p>
+          ) : (
+            playlists.map((playlist: Playlist) => (
+              <button
+                key={playlist.id}
+                onClick={() => handleSelectPlaylist(playlist.id)}
+                className="w-full group text-left"
+              >
+                <div className="flex items-center justify-between py-4 border-b border-obsidian-border
+                  hover:border-obsidian-accent/50 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <span className="text-white/90 group-hover:text-obsidian-accent transition-colors">
+                      {playlist.name}
+                    </span>
+                    {playlist.type === 'smart' && (
+                      <span className="text-[10px] text-obsidian-accent/60 tracking-wider uppercase">
+                        Smart
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-white/20 text-sm font-sf-mono">
+                    {playlist.track_count}
+                  </span>
+                </div>
+              </button>
+            ))
+          )}
         </div>
-        {error && (
-          <p className="mt-2 text-rose-400 text-sm">{error}</p>
-        )}
-      </div>
 
-      {/* Playlist Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {playlists.length === 0 ? (
-          <div className="col-span-full text-center py-12 text-slate-400">
-            No playlists found. Create one to get started!
+        {/* Create New Playlist */}
+        {showCreateForm ? (
+          <div className="border-t border-obsidian-border pt-8">
+            <h2 className="text-xs text-white/40 tracking-[0.2em] uppercase mb-6">New Playlist</h2>
+            <div className="space-y-4">
+              <input
+                type="text"
+                value={newPlaylistName}
+                onChange={(e) => {
+                  setNewPlaylistName(e.target.value)
+                  setError('')
+                }}
+                onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+                placeholder="Name"
+                autoFocus
+                className="w-full bg-black border border-obsidian-border px-4 py-3
+                  text-white placeholder-white/20 text-sm
+                  focus:border-obsidian-accent/50 focus:outline-none transition-colors"
+                disabled={createMutation.isPending}
+              />
+              {error && (
+                <p className="text-red-400/80 text-xs">{error}</p>
+              )}
+              <div className="flex gap-3">
+                <button
+                  onClick={handleCreate}
+                  disabled={createMutation.isPending || !newPlaylistName.trim()}
+                  className="flex-1 py-2 border border-obsidian-accent text-obsidian-accent text-sm
+                    hover:bg-obsidian-accent hover:text-black disabled:opacity-30
+                    transition-all tracking-wider"
+                >
+                  {createMutation.isPending ? '...' : 'Create'}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowCreateForm(false)
+                    setNewPlaylistName('')
+                    setError('')
+                  }}
+                  className="flex-1 py-2 border border-obsidian-border text-white/40 text-sm
+                    hover:text-white transition-colors tracking-wider"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
           </div>
         ) : (
-          playlists.map((playlist: Playlist) => (
-            <button
-              key={playlist.id}
-              onClick={() => handleSelectPlaylist(playlist.id)}
-              className="bg-slate-900 border border-slate-800 rounded-xl p-6
-                hover:border-indigo-500 hover:bg-slate-800/80 transition-all
-                text-left group"
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <h3 className="text-lg font-semibold text-slate-100
-                  group-hover:text-indigo-400 transition-colors">
-                  {playlist.name}
-                </h3>
-                {/* Type badge */}
-                <span className={`text-xs px-2 py-0.5 rounded-full ${
-                  playlist.type === 'smart'
-                    ? 'bg-purple-600 text-purple-100'
-                    : 'bg-slate-700 text-slate-300'
-                }`}>
-                  {playlist.type === 'smart' ? 'Smart' : 'Manual'}
-                </span>
-              </div>
-              <p className="text-slate-400 text-sm">
-                {playlist.track_count} {playlist.track_count === 1 ? 'track' : 'tracks'}
-              </p>
-              {playlist.description && (
-                <p className="text-slate-500 text-sm mt-2">{playlist.description}</p>
-              )}
-            </button>
-          ))
+          <button
+            onClick={() => setShowCreateForm(true)}
+            className="w-full py-3 border border-dashed border-obsidian-border
+              text-white/30 hover:text-obsidian-accent hover:border-obsidian-accent/50
+              transition-colors text-sm tracking-wider"
+          >
+            + New Playlist
+          </button>
         )}
       </div>
     </div>
