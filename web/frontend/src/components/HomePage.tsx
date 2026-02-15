@@ -7,7 +7,7 @@ import type { Playlist } from '../types';
 import type { Track } from '../api/builder';
 
 export function HomePage(): JSX.Element {
-  const { currentTrack, queue, queueIndex, isPlaying } = usePlayerStore();
+  const { currentTrack, queue, queueIndex } = usePlayerStore();
   const { data: playlistsData } = usePlaylists();
   const { data: stations } = useQuery({
     queryKey: ['stations'],
