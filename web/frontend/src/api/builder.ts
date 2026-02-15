@@ -21,6 +21,7 @@ export interface Track {
   duration?: number;
   local_path?: string;
   elo_rating?: number;
+  emojis?: string[];
 }
 
 export interface SessionResponse {
