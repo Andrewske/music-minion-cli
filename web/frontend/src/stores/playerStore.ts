@@ -10,7 +10,7 @@ interface Device {
   isActive: boolean;
 }
 
-interface PlayContext {
+export interface PlayContext {
   type: 'playlist' | 'track' | 'builder' | 'search' | 'comparison';
   track_ids?: number[];
   playlist_id?: number;
@@ -66,6 +66,9 @@ interface PlayerState {
 
   // Mobile constraints
   needsUserGesture: boolean;
+
+  // Context tracking
+  currentContext: PlayContext | null;
 }
 
 interface PlayerActions {
@@ -137,7 +140,7 @@ const initialState: PlayerState = {
   isPlaying: false,
   isMuted: JSON.parse(localStorage.getItem('music-minion-player-muted') ?? 'false'),
   volume: initialVolume,
-  shuffleEnabled: true,
+  shuffleEnabled: JSON.parse(localStorage.getItem('music-minion-shuffle') ?? 'true'),
   clockOffset: 0,
   scrobbledThisPlaythrough: false,
   thisDeviceId: generateDeviceId(),
@@ -148,28 +151,37 @@ const initialState: PlayerState = {
   playbackError: null,
   nextTrackPreloadUrl: null,
   needsUserGesture: false,
+  currentContext: null,
 };
 
 export const usePlayerStore = create<PlayerStore>((set, get) => ({
   ...initialState,
 
   play: async (track: Track, context: PlayContext) => {
+    const { shuffleEnabled, thisDeviceId, activeDeviceId } = get();
+
+    // Show loading state while waiting for backend
+    set({ playbackError: null });
+
     try {
+      // Call backend to resolve context to queue (shuffle handled server-side)
       const response = await fetch(`${API_BASE}/player/play`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           trackId: track.id,
-          context,
-          targetDeviceId: get().thisDeviceId,
+          context: { ...context, shuffle: shuffleEnabled },
+          targetDeviceId: activeDeviceId ?? thisDeviceId,
         }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to start playback');
+        throw new Error(`Play failed: ${response.statusText}`);
       }
 
-      // State will be updated via WebSocket syncState
+      // Store context for shuffle toggle re-fetch
+      // Actual playback state comes via WebSocket broadcast - no optimistic update
+      set({ currentContext: context });
     } catch (error) {
       set({ playbackError: error instanceof Error ? error.message : 'Playback failed' });
     }
@@ -258,9 +270,27 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   },
 
   toggleShuffle: () => {
-    const newShuffle = !get().shuffleEnabled;
-    set({ shuffleEnabled: newShuffle });
-    // Note: Client should call play() again with new shuffle value to re-fetch queue
+    const { shuffleEnabled, currentContext, currentTrack } = get();
+    const newShuffleEnabled = !shuffleEnabled;
+
+    // Persist preference
+    localStorage.setItem('music-minion-shuffle', JSON.stringify(newShuffleEnabled));
+    set({ shuffleEnabled: newShuffleEnabled });
+
+    // Re-fetch queue with new shuffle setting
+    // NOTE: This resets position to 0 - known v1 limitation
+    // Future: Add /api/player/toggle-shuffle endpoint to reorder without interruption
+    if (currentContext && currentTrack) {
+      fetch(`${API_BASE}/player/play`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          trackId: currentTrack.id,
+          context: { ...currentContext, shuffle: newShuffleEnabled },
+        }),
+      });
+      // State will be updated via WebSocket broadcast
+    }
   },
 
   setActiveDevice: (deviceId: string) => {

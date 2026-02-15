@@ -1,6 +1,6 @@
 ---
 task: 04-queue-and-context
-status: pending
+status: done
 depends: [03-player-components]
 files:
   - path: web/frontend/src/components/TrackCard.tsx
