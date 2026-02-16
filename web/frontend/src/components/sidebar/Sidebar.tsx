@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Children, isValidElement, cloneElement, type ReactElement } from 'react';
 import { SidebarNav } from './SidebarNav';
 import { SidebarToggle } from './SidebarToggle';
 import { SidebarSection } from './SidebarSection';
@@ -8,6 +8,10 @@ interface SidebarProps {
   isExpanded?: boolean;
   isMobile?: boolean;
   onNavigate?: () => void;
+}
+
+interface SidebarChildProps {
+  sidebarExpanded: boolean;
 }
 
 export function Sidebar({ children, isExpanded: controlledExpanded, isMobile = false, onNavigate }: SidebarProps): JSX.Element {
@@ -53,7 +57,15 @@ export function Sidebar({ children, isExpanded: controlledExpanded, isMobile = f
       {children && <div className="border-t border-obsidian-border" />}
 
       {/* Route-aware context section */}
-      {children && <div className="flex-1 overflow-y-auto">{children}</div>}
+      {children && (
+        <div className="flex-1 overflow-y-auto">
+          {Children.map(children, (child) =>
+            isValidElement(child)
+              ? cloneElement(child as ReactElement<SidebarChildProps>, { sidebarExpanded: isExpanded })
+              : child
+          )}
+        </div>
+      )}
 
       {/* Collapsed state toggle at bottom */}
       {!isExpanded && !isMobile && (

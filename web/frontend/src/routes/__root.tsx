@@ -4,6 +4,8 @@ import { useSyncWebSocket } from '../hooks/useSyncWebSocket'
 import { PlayerBar } from '../components/player/PlayerBar'
 import { Sidebar } from '../components/sidebar/Sidebar'
 import { MobileHeader } from '../components/sidebar/MobileHeader'
+import { SidebarPlaylists } from '../components/sidebar/SidebarPlaylists'
+import { SidebarFilters } from '../components/sidebar/SidebarFilters'
 
 function RootComponent(): JSX.Element {
   useSyncWebSocket() // Connect to sync WebSocket for real-time updates
@@ -16,7 +18,8 @@ function RootComponent(): JSX.Element {
       {/* Desktop sidebar - only on md+ */}
       <div className="hidden md:flex">
         <Sidebar>
-          {/* SidebarPlaylists and SidebarFilters will be added in future tasks */}
+          <SidebarPlaylists sidebarExpanded={true} />
+          <SidebarFilters sidebarExpanded={true} />
         </Sidebar>
       </div>
 
