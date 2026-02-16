@@ -1,6 +1,6 @@
 ---
 task: 05-add-mobile-card-view
-status: pending
+status: done
 depends: [04-restyle-track-queue-table]
 files:
   - path: web/frontend/src/components/builder/TrackQueueTable.tsx
