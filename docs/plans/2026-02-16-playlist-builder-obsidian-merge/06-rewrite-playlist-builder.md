@@ -1,6 +1,6 @@
 ---
 task: 06-rewrite-playlist-builder
-status: pending
+status: done
 depends: [02-restyle-emoji-reactions, 03-restyle-waveform-player, 05-add-mobile-card-view]
 files:
   - path: web/frontend/src/pages/PlaylistBuilder.tsx

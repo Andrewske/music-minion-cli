@@ -6,7 +6,6 @@ import { useIPCWebSocket } from '../hooks/useIPCWebSocket';
 import { builderApi } from '../api/builder';
 import type { Track } from '../api/builder';
 import { TrackQueueTable } from '../components/builder/TrackQueueTable';
-import FilterPanel from '../components/builder/FilterPanel';
 import { WaveformPlayer } from '../components/WaveformPlayer';
 import { SmartPlaylistEditor } from './SmartPlaylistEditor';
 import { EmojiTrackActions } from '../components/EmojiTrackActions';
@@ -57,8 +56,6 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType }: Play
     session,
     addTrack,
     skipTrack,
-    filters,
-    updateFilters,
     startSession,
     isAddingTrack,
     isSkippingTrack,
@@ -192,54 +189,60 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType }: Play
 
   if (!session) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-slate-950">
+      <div className="min-h-screen bg-black font-inter flex items-center justify-center">
         <div className="text-center">
-          <h2 className="text-2xl font-bold text-white mb-4">Start Building Playlist</h2>
+          <p className="text-white/40 text-sm mb-8 font-sf-mono">{playlistName}</p>
           <button
             onClick={() => startSession.mutate(playlistId)}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="px-8 py-3 text-obsidian-accent border border-obsidian-accent/30
+              hover:bg-obsidian-accent/10 transition-colors text-sm tracking-wider"
           >
-            Start Session
+            Begin
           </button>
         </div>
       </div>
     );
   }
 
-  const stats = session ? {
-    startedAt: session.started_at,
-    updatedAt: session.updated_at
-  } : null;
-
   return (
-    <div className="min-h-screen bg-slate-950 text-white">
-      {/* Header with playlist name */}
-      <div className="flex justify-between items-center mb-4 px-6 pt-6">
-        <h2 className="text-xl font-semibold">Building: {playlistName}</h2>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 px-6 pb-6">
-        {/* Left Panel: Filters */}
-        <aside className="md:col-span-1 bg-slate-900 rounded-lg p-4">
-          <FilterPanel
-            filters={filters || []}
-            onUpdate={(newFilters) => updateFilters.mutate(newFilters)}
-            isUpdating={updateFilters.isPending}
-            playlistId={playlistId}
-          />
-        </aside>
-
-        {/* Center: Track Player */}
-        <main className="md:col-span-3">
+    <div className="min-h-screen bg-black font-inter text-white">
+      <div className="max-w-6xl mx-auto px-4 md:px-8 py-4 md:py-8">
+        <main>
           {currentTrack && queueIndex < candidates.length ? (
-            <div className="bg-slate-900 rounded-lg p-8">
-              <TrackDisplay
-                track={getTrackWithOverrides(currentTrack)}
-                onEmojiUpdate={handleTrackEmojiUpdate}
-              />
+            <div className="space-y-6 md:space-y-12">
+              {/* Player section - sticky on mobile */}
+              <div className="sticky top-10 md:static z-10 bg-black pb-4 md:pb-0">
+                {/* Track Display */}
+                <div className="py-4 md:py-8">
+                  <p className="text-obsidian-accent text-sm font-sf-mono mb-2">{currentTrack.artist}</p>
+                  <h2 className="text-2xl md:text-4xl font-light text-white mb-2 md:mb-4">{currentTrack.title}</h2>
+                  {currentTrack.album && (
+                    <p className="text-white/30 text-sm">{currentTrack.album}</p>
+                  )}
 
-              {currentTrack && (
-                <div className="h-20 mb-6">
+                  {/* Metadata pills */}
+                  <div className="flex flex-wrap items-center gap-2 md:gap-4 mt-4 md:mt-6">
+                    {currentTrack.bpm && (
+                      <span className="text-white/40 text-xs font-sf-mono">{Math.round(currentTrack.bpm)} BPM</span>
+                    )}
+                    {currentTrack.key_signature && (
+                      <span className="text-white/40 text-xs font-sf-mono">{currentTrack.key_signature}</span>
+                    )}
+                    {currentTrack.genre && (
+                      <span className="text-white/40 text-xs font-sf-mono">{currentTrack.genre}</span>
+                    )}
+                    {currentTrack.year && (
+                      <span className="text-white/40 text-xs font-sf-mono">{currentTrack.year}</span>
+                    )}
+                    <EmojiTrackActions
+                      track={{ id: currentTrack.id, emojis: getTrackWithOverrides(currentTrack).emojis }}
+                      onUpdate={handleTrackEmojiUpdate}
+                    />
+                  </div>
+                </div>
+
+                {/* Waveform */}
+                <div className="h-16 border-t border-b border-obsidian-border">
                   <WaveformPlayer
                     track={{
                       id: currentTrack.id,
@@ -253,78 +256,72 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType }: Play
                     }}
                     isPlaying={isPlaying}
                     onTogglePlayPause={() => setIsPlaying(!isPlaying)}
-                     onFinish={() => {
-                       if (loopEnabled) {
-                         setIsPlaying(false);
-                         setTimeout(() => setIsPlaying(true), 100);
-                       } else {
-                         handleSkip();
-                       }
-                     }}
+                    onFinish={() => {
+                      if (loopEnabled) {
+                        setIsPlaying(false);
+                        setTimeout(() => setIsPlaying(true), 100);
+                      } else {
+                        handleSkip();
+                      }
+                    }}
                   />
-                 </div>
-               )}
+                </div>
 
-               <div className="flex justify-center mb-4">
-                 <label className="flex items-center gap-2 text-sm text-slate-400">
-                   <input
-                     type="checkbox"
-                     checked={loopEnabled}
-                     onChange={(e) => setLoopEnabled(e.target.checked)}
-                     className="rounded"
-                   />
-                   Loop track
-                 </label>
-               </div>
+                {/* Loop toggle */}
+                <div className="flex justify-center">
+                  <label className="flex items-center gap-3 text-white/30 text-sm cursor-pointer hover:text-white/50 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={loopEnabled}
+                      onChange={(e) => setLoopEnabled(e.target.checked)}
+                      className="w-3 h-3 accent-obsidian-accent"
+                    />
+                    Loop
+                  </label>
+                </div>
 
-               <div className="flex gap-4 mt-8 justify-center">
-                <button
-                  onClick={handleAdd}
-                  disabled={isAddingTrack || isSkippingTrack}
-                  className="px-8 py-4 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-lg font-semibold"
-                >
-                  {isAddingTrack ? 'Adding...' : 'Add to Playlist'}
-                </button>
-                <button
-                  onClick={handleSkip}
-                  disabled={isAddingTrack || isSkippingTrack}
-                  className="px-8 py-4 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-lg font-semibold"
-                >
-                  {isSkippingTrack ? 'Skipping...' : 'Skip'}
-                </button>
+                {/* Actions */}
+                <div className="flex gap-4 justify-center">
+                  <button
+                    onClick={handleAdd}
+                    disabled={isAddingTrack || isSkippingTrack}
+                    className="px-8 md:px-12 py-3 border border-obsidian-accent text-obsidian-accent
+                      hover:bg-obsidian-accent hover:text-black disabled:opacity-30
+                      transition-all text-sm tracking-wider"
+                  >
+                    {isAddingTrack ? '...' : 'Add'}
+                  </button>
+                  <button
+                    onClick={handleSkip}
+                    disabled={isAddingTrack || isSkippingTrack}
+                    className="px-8 md:px-12 py-3 border border-white/20 text-white/60
+                      hover:border-white/40 hover:text-white disabled:opacity-30
+                      transition-all text-sm tracking-wider"
+                  >
+                    {isSkippingTrack ? '...' : 'Skip'}
+                  </button>
+                </div>
               </div>
 
-              {/* Track Queue Table */}
-              <div className="mt-8">
-                <TrackQueueTable
-                  tracks={candidates}
-                  queueIndex={queueIndex >= 0 ? queueIndex : 0}
-                  nowPlayingId={nowPlayingTrack?.id ?? null}
-                  onTrackClick={(track) => {
-                    // No-op if clicking already-playing track
-                    if (track.id === nowPlayingTrack?.id) return;
-                    setNowPlayingTrack(track);
-                  }}
-                  sorting={sorting}
-                  onSortingChange={setSorting}
-                  onLoadMore={() => fetchNextPage()}
-                  hasMore={hasNextPage ?? false}
-                  isLoadingMore={isFetchingNextPage}
-                />
-              </div>
-
-              <StatsPanel stats={stats} />
+              {/* Track Queue */}
+              <TrackQueueTable
+                tracks={candidates}
+                queueIndex={queueIndex >= 0 ? queueIndex : 0}
+                nowPlayingId={nowPlayingTrack?.id ?? null}
+                onTrackClick={(track) => {
+                  if (track.id !== nowPlayingTrack?.id) setNowPlayingTrack(track);
+                }}
+                sorting={sorting}
+                onSortingChange={setSorting}
+                onLoadMore={() => fetchNextPage()}
+                hasMore={hasNextPage ?? false}
+                isLoadingMore={isFetchingNextPage}
+              />
             </div>
           ) : (
-            <div className="bg-slate-900 rounded-lg p-8 text-center">
-              <h3 className="text-2xl font-bold mb-2">
-                {queueIndex >= candidates.length ? 'No more candidates' : 'Loading candidates...'}
-              </h3>
-              <p className="text-gray-400">
-                {queueIndex >= candidates.length
-                  ? 'Adjust your filters or review skipped tracks'
-                  : 'Fetching tracks that match your criteria'
-                }
+            <div className="py-20 text-center">
+              <p className="text-white/40 text-sm">
+                {queueIndex >= candidates.length ? 'No more tracks' : 'Loading...'}
               </p>
             </div>
           )}
@@ -333,45 +330,4 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType }: Play
     </div>
   );
 }
-
-// Supporting Components
-
-function TrackDisplay({ track, onEmojiUpdate }: { track: Track; onEmojiUpdate: (t: { id: number; emojis?: string[] }) => void }) {
-  console.log('[TrackDisplay] Rendering track:', track.id, track.title);
-  console.log('[TrackDisplay] Track emojis:', track.emojis);
-  console.log('[TrackDisplay] Passing to EmojiTrackActions:', { id: track.id, emojis: track.emojis });
-
-  return (
-    <div className="text-center">
-      <h2 className="text-4xl font-bold mb-2">{track.title}</h2>
-      <p className="text-2xl text-gray-300 mb-4">{track.artist}</p>
-      {track.album && <p className="text-xl text-gray-400 mb-6">{track.album}</p>}
-      <div className="flex gap-4 justify-center flex-wrap items-center">
-        {track.genre && <span className="px-3 py-1 bg-purple-600 rounded-full">{track.genre}</span>}
-        {track.year && <span className="px-3 py-1 bg-blue-600 rounded-full">{track.year}</span>}
-        {track.bpm && <span className="px-3 py-1 bg-orange-600 rounded-full">{track.bpm} BPM</span>}
-        {track.key_signature && <span className="px-3 py-1 bg-green-600 rounded-full">{track.key_signature}</span>}
-        <EmojiTrackActions
-          track={{ id: track.id, emojis: track.emojis }}
-          onUpdate={onEmojiUpdate}
-        />
-      </div>
-    </div>
-  );
-}
-
-function StatsPanel({ stats }: { stats: { startedAt: string; updatedAt: string } | null }) {
-  if (!stats) return null;
-
-  return (
-    <div className="mt-8 p-4 bg-slate-800 rounded-lg">
-      <h4 className="text-lg font-semibold mb-2">Session Stats</h4>
-      <ul className="text-gray-300 space-y-1">
-        <li>Started: {new Date(stats.startedAt).toLocaleString()}</li>
-        <li>Last updated: {new Date(stats.updatedAt).toLocaleString()}</li>
-      </ul>
-    </div>
-  );
-}
-
 
