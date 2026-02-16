@@ -1,6 +1,6 @@
 ---
 task: 04-sidebar-playlists
-status: pending
+status: done
 depends: [01-create-sidebar-components, 03-integrate-root-layout]
 files:
   - path: web/frontend/src/components/sidebar/SidebarPlaylists.tsx

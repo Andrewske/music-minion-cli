@@ -1,20 +1,15 @@
 import { Music } from 'lucide-react';
 import { usePlayerStore } from '../stores/playerStore';
-import { usePlaylists } from '../hooks/usePlaylists';
 import { useQuery } from '@tanstack/react-query';
 import { getStations, type Station } from '../api/radio';
-import type { Playlist } from '../types';
 import type { Track } from '../api/builder';
 
 export function HomePage(): JSX.Element {
   const { currentTrack, queue, queueIndex } = usePlayerStore();
-  const { data: playlistsData } = usePlaylists();
   const { data: stations } = useQuery({
     queryKey: ['stations'],
     queryFn: getStations,
   });
-
-  const playlists = playlistsData || [];
 
   return (
     <div className="container mx-auto p-6 space-y-8">
@@ -66,16 +61,6 @@ export function HomePage(): JSX.Element {
         </section>
       )}
 
-      {/* Playlists grid */}
-      <section>
-        <h2 className="text-lg font-semibold mb-4">Playlists</h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {playlists.map((playlist) => (
-            <PlaylistCard key={playlist.id} playlist={playlist} />
-          ))}
-        </div>
-      </section>
-
       {/* Stations quick access */}
       {stations && stations.length > 0 && (
         <section>
@@ -87,50 +72,6 @@ export function HomePage(): JSX.Element {
           </div>
         </section>
       )}
-    </div>
-  );
-}
-
-function PlaylistCard({ playlist }: { playlist: Playlist }): JSX.Element {
-  const { play } = usePlayerStore();
-
-  const handleClick = async (): Promise<void> => {
-    try {
-      // Fetch playlist tracks to get the first track
-      const response = await fetch(`/api/playlists/${playlist.id}/tracks`);
-      if (!response.ok) {
-        console.error('Failed to fetch playlist tracks:', response.status, response.statusText);
-        return;
-      }
-      const data = await response.json();
-      const tracks: Track[] = data.tracks;
-
-      console.log(`Playing playlist ${playlist.id} with ${tracks.length} tracks`);
-
-      if (tracks.length > 0) {
-        await play(tracks[0], {
-          type: 'playlist',
-          playlist_id: playlist.id,
-          start_index: 0,
-        });
-      } else {
-        console.warn('Playlist has no tracks');
-      }
-    } catch (error) {
-      console.error('Error playing playlist:', error);
-    }
-  };
-
-  return (
-    <div
-      onClick={handleClick}
-      className="bg-card rounded-lg p-4 cursor-pointer hover:bg-accent transition-colors"
-    >
-      <div className="w-full aspect-square bg-muted rounded mb-3 flex items-center justify-center">
-        <Music className="h-8 w-8 text-muted-foreground" />
-      </div>
-      <h3 className="font-medium truncate">{playlist.name}</h3>
-      <p className="text-sm text-muted-foreground">{playlist.track_count} tracks</p>
     </div>
   );
 }
