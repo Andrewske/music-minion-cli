@@ -59,3 +59,32 @@ export async function updateSmartFilters(
   const data = await response.json();
   return data.filters;
 }
+
+export async function pinPlaylist(playlistId: number): Promise<{ playlist: Playlist }> {
+  const response = await fetch(`${API_BASE}/playlists/${playlistId}/pin`, {
+    method: 'POST',
+  });
+  if (!response.ok) throw new Error('Failed to pin playlist');
+  return response.json();
+}
+
+export async function unpinPlaylist(playlistId: number): Promise<{ playlist: Playlist }> {
+  const response = await fetch(`${API_BASE}/playlists/${playlistId}/pin`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) throw new Error('Failed to unpin playlist');
+  return response.json();
+}
+
+export async function reorderPinnedPlaylist(
+  playlistId: number,
+  position: number
+): Promise<{ playlist: Playlist }> {
+  const response = await fetch(`${API_BASE}/playlists/${playlistId}/pin`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ position }),
+  });
+  if (!response.ok) throw new Error('Failed to reorder playlist');
+  return response.json();
+}

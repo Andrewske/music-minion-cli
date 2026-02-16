@@ -26,6 +26,7 @@ export interface Playlist {
   description?: string;
   track_count: number;
   library: string;
+  pin_order: number | null;
 }
 
 export interface ComparisonPair {
