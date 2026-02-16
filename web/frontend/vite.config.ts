@@ -19,6 +19,10 @@ export default defineConfig({
         target: 'http://localhost:8642',
         changeOrigin: true
       },
+      '/custom_emojis': {
+        target: 'http://localhost:8642',
+        changeOrigin: true
+      },
       '/stream': {
         target: 'http://localhost:8001',
         changeOrigin: true

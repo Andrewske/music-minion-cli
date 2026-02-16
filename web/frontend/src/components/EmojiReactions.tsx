@@ -72,8 +72,8 @@ export function EmojiReactions({
             key={emojiId}
             onClick={() => onRemove(emojiId)}
             className={`
-              ${compact ? 'px-1.5 py-0.5' : 'px-2 py-1'}
-              bg-slate-800 hover:bg-red-600 rounded-md transition-colors flex items-center justify-center
+              relative group ${compact ? 'text-sm' : 'text-base'}
+              leading-none hover:opacity-70 disabled:opacity-30 transition-opacity
             `}
             aria-label={`Remove emoji`}
           >
@@ -82,6 +82,9 @@ export function EmojiReactions({
               emojiData={metadata}
               size={compact ? 'sm' : 'md'}
             />
+            <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+              <span className="text-obsidian-accent text-xs font-bold">×</span>
+            </span>
           </button>
         );
       })}
@@ -91,10 +94,10 @@ export function EmojiReactions({
         <button
           onClick={onAddClick}
           disabled={isAdding}
-          className={`text-2xl font-normal transition-colors ${
+          className={`text-sm font-bold transition-colors ${
             isAdding
-              ? 'text-emerald-500 opacity-50 cursor-not-allowed'
-              : 'text-emerald-500 hover:text-emerald-400'
+              ? 'text-green-500 opacity-30 cursor-not-allowed'
+              : 'text-green-500 hover:text-green-400'
           }`}
           aria-label="Add emoji"
         >

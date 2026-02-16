@@ -337,6 +337,10 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType }: Play
 // Supporting Components
 
 function TrackDisplay({ track, onEmojiUpdate }: { track: Track; onEmojiUpdate: (t: { id: number; emojis?: string[] }) => void }) {
+  console.log('[TrackDisplay] Rendering track:', track.id, track.title);
+  console.log('[TrackDisplay] Track emojis:', track.emojis);
+  console.log('[TrackDisplay] Passing to EmojiTrackActions:', { id: track.id, emojis: track.emojis });
+
   return (
     <div className="text-center">
       <h2 className="text-4xl font-bold mb-2">{track.title}</h2>

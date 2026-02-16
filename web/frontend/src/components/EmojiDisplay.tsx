@@ -26,6 +26,11 @@ export function EmojiDisplay({
   // Check if custom emoji via type field
   const isCustom = emojiData?.type === 'custom';
 
+  // Debug logging for custom emojis
+  if (emojiId.length === 36 && emojiId.split('-').length === 5) {
+    console.log('[EmojiDisplay] UUID detected:', emojiId, 'emojiData:', emojiData);
+  }
+
   if (isCustom && emojiData?.file_path) {
     return (
       <img
@@ -34,6 +39,7 @@ export function EmojiDisplay({
         className={`${imageSizeClass} object-contain ${className}`}
         onError={(e) => {
           // Fallback if image fails to load - hide the broken image
+          console.error('[EmojiDisplay] Image failed to load:', emojiData.file_path);
           e.currentTarget.style.display = 'none';
         }}
       />
