@@ -52,6 +52,7 @@ export function EmojiReactions({
 }: EmojiReactionsProps): JSX.Element {
   // Fetch custom emoji metadata if any UUIDs are present
   const hasCustomEmojis = emojis.some(isUuidPattern);
+
   const { data: customMetadata = {} } = useQuery({
     queryKey: ['custom-emoji-metadata', emojis.filter(isUuidPattern)],
     queryFn: () => fetchCustomEmojiMetadata(emojis),
