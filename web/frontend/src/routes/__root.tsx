@@ -1,55 +1,31 @@
-import { createRootRoute, Link, Outlet, useRouterState } from '@tanstack/react-router'
+import { createRootRoute, Outlet } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 import { useSyncWebSocket } from '../hooks/useSyncWebSocket'
 import { PlayerBar } from '../components/player/PlayerBar'
-
-function NavButton({
-  to,
-  children,
-}: {
-  to: string
-  children: React.ReactNode
-}): JSX.Element {
-  const routerState = useRouterState()
-  const isActive = routerState.location.pathname === to
-
-  return (
-    <Link
-      to={to}
-      className={
-        'px-4 py-2 text-sm font-medium tracking-wider transition-colors border-b-2 ' +
-        (isActive
-          ? 'border-obsidian-accent text-obsidian-accent'
-          : 'border-transparent text-white/60 hover:text-white/90')
-      }
-    >
-      {children}
-    </Link>
-  )
-}
+import { Sidebar } from '../components/sidebar/Sidebar'
+import { MobileHeader } from '../components/sidebar/MobileHeader'
 
 function RootComponent(): JSX.Element {
   useSyncWebSocket() // Connect to sync WebSocket for real-time updates
 
   return (
-    <div className="min-h-screen bg-black pb-20">{/* Account for 64px player bar + margin */}
+    <div className="flex h-screen bg-black">
+      {/* Mobile header - only on small screens */}
+      <MobileHeader />
 
-      {/* Navigation */}
-      <nav className="border-b border-obsidian-border px-6 py-3">
-        <div className="flex items-center gap-2">
-          <NavButton to="/">Home</NavButton>
-          <NavButton to="/history">History</NavButton>
-          <NavButton to="/comparison">Ranking</NavButton>
-          <NavButton to="/playlist-builder">Playlists</NavButton>
-          <NavButton to="/youtube">YouTube</NavButton>
-          <NavButton to="/emoji-settings">Emojis</NavButton>
-        </div>
-      </nav>
+      {/* Desktop sidebar - only on md+ */}
+      <div className="hidden md:flex">
+        <Sidebar>
+          {/* SidebarPlaylists and SidebarFilters will be added in future tasks */}
+        </Sidebar>
+      </div>
 
-      {/* Content */}
-      <Outlet />
+      {/* Main content area */}
+      <main className="flex-1 min-w-0 overflow-y-auto pt-12 md:pt-0 pb-16">
+        <Outlet />
+      </main>
 
-      {/* Player bar - persists across all pages */}
+      {/* Player bar - fixed bottom */}
       <PlayerBar />
 
       {/* Dev tools */}
