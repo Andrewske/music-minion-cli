@@ -1,6 +1,6 @@
 ---
 task: 07-cleanup-and-verify
-status: pending
+status: done
 depends: [06-rewrite-playlist-builder]
 files:
   - path: web/frontend/src/components/designs/ObsidianMinimalBuilder.tsx
