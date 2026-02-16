@@ -2,15 +2,10 @@ import { useState, Fragment } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { builderApi } from '../../api/builder';
 import type { Filter } from '../../api/builder';
+import { useFilterStore } from '../../stores/filterStore';
 
-interface FilterSidebarProps {
-  filters: Filter[];
-  onUpdate: (filters: Filter[]) => void;
-  isUpdating: boolean;
-  playlistId: number;
-}
-
-export function FilterSidebar({ filters, onUpdate, isUpdating, playlistId }: FilterSidebarProps): JSX.Element {
+export function FilterSidebar(): JSX.Element {
+  const { filters, setFilters, removeFilter, updateFilter, clearFilters, toggleConjunction } = useFilterStore();
   const [isEditing, setIsEditing] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingFilter, setEditingFilter] = useState<Filter | undefined>(undefined);
@@ -34,21 +29,20 @@ export function FilterSidebar({ filters, onUpdate, isUpdating, playlistId }: Fil
   };
 
   const handleSave = (filter: Filter): void => {
-    const updated = editingIndex !== null
-      ? filters.map((f, i) => i === editingIndex ? filter : f)
-      : [...filters, filter];
-    onUpdate(updated);
+    if (editingIndex !== null) {
+      updateFilter(editingIndex, filter);
+    } else {
+      setFilters([...filters, filter]);
+    }
     handleCancel();
   };
 
   const handleDelete = (idx: number): void => {
-    onUpdate(filters.filter((_, i) => i !== idx));
+    removeFilter(idx);
   };
 
-  const toggleConjunction = (idx: number): void => {
-    onUpdate(filters.map((f, i) =>
-      i === idx ? { ...f, conjunction: f.conjunction === 'AND' ? 'OR' as const : 'AND' as const } : f
-    ));
+  const handleToggleConjunction = (idx: number): void => {
+    toggleConjunction(idx);
   };
 
   return (
@@ -57,7 +51,7 @@ export function FilterSidebar({ filters, onUpdate, isUpdating, playlistId }: Fil
         <span className="text-obsidian-accent text-xs tracking-[0.2em] uppercase">Filters</span>
         {filters.length > 0 && (
           <button
-            onClick={() => confirm('Clear?') && onUpdate([])}
+            onClick={() => confirm('Clear?') && clearFilters()}
             className="text-white/30 hover:text-white/60 text-xs"
           >
             Clear
@@ -70,8 +64,7 @@ export function FilterSidebar({ filters, onUpdate, isUpdating, playlistId }: Fil
           <Fragment key={`${filter.field}-${idx}`}>
             {idx > 0 && (
               <button
-                onClick={() => toggleConjunction(idx)}
-                disabled={isUpdating}
+                onClick={() => handleToggleConjunction(idx)}
                 className="w-full py-1 text-white/20 hover:text-white/40 text-xs transition-colors"
               >
                 {filter.conjunction}
