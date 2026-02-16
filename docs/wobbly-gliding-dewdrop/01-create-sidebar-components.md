@@ -1,6 +1,6 @@
 ---
 task: 01-create-sidebar-components
-status: pending
+status: done
 depends: [00-create-filter-store]
 files:
   - path: web/frontend/src/components/sidebar/Sidebar.tsx
