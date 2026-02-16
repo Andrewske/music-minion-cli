@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from typing import List, Optional
+from pydantic import BaseModel
 from ..deps import get_db
 from ..queries.emojis import batch_fetch_track_emojis
 from ..schemas import (
@@ -380,3 +381,43 @@ async def update_smart_filters(playlist_id: int, filters: List[Filter]):
         raise HTTPException(
             status_code=500, detail=f"Failed to update filters: {str(e)}"
         )
+
+
+class ReorderPinRequest(BaseModel):
+    position: int
+
+
+@router.post("/playlists/{playlist_id}/pin")
+async def pin_playlist_endpoint(playlist_id: int):
+    """Pin a playlist to the top of the sidebar."""
+    from music_minion.domain.playlists import crud
+
+    success = crud.pin_playlist(playlist_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    playlist = crud.get_playlist_by_id(playlist_id)
+    return {"playlist": playlist}
+
+
+@router.delete("/playlists/{playlist_id}/pin")
+async def unpin_playlist_endpoint(playlist_id: int):
+    """Unpin a playlist."""
+    from music_minion.domain.playlists import crud
+
+    success = crud.unpin_playlist(playlist_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Playlist not found or not pinned")
+    playlist = crud.get_playlist_by_id(playlist_id)
+    return {"playlist": playlist}
+
+
+@router.patch("/playlists/{playlist_id}/pin")
+async def reorder_pinned_playlist_endpoint(playlist_id: int, request: ReorderPinRequest):
+    """Reorder a pinned playlist to a new position."""
+    from music_minion.domain.playlists import crud
+
+    success = crud.reorder_pinned_playlist(playlist_id, request.position)
+    if not success:
+        raise HTTPException(status_code=404, detail="Playlist not found or not pinned")
+    playlist = crud.get_playlist_by_id(playlist_id)
+    return {"playlist": playlist}
