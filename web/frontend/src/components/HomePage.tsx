@@ -95,21 +95,29 @@ function PlaylistCard({ playlist }: { playlist: Playlist }): JSX.Element {
   const { play } = usePlayerStore();
 
   const handleClick = async (): Promise<void> => {
-    // Fetch playlist tracks to get the first track
-    const response = await fetch(`/api/playlists/${playlist.id}/tracks`);
-    if (!response.ok) {
-      console.error('Failed to fetch playlist tracks');
-      return;
-    }
-    const data = await response.json();
-    const tracks: Track[] = data.tracks;
+    try {
+      // Fetch playlist tracks to get the first track
+      const response = await fetch(`/api/playlists/${playlist.id}/tracks`);
+      if (!response.ok) {
+        console.error('Failed to fetch playlist tracks:', response.status, response.statusText);
+        return;
+      }
+      const data = await response.json();
+      const tracks: Track[] = data.tracks;
 
-    if (tracks.length > 0) {
-      await play(tracks[0], {
-        type: 'playlist',
-        playlist_id: playlist.id,
-        start_index: 0,
-      });
+      console.log(`Playing playlist ${playlist.id} with ${tracks.length} tracks`);
+
+      if (tracks.length > 0) {
+        await play(tracks[0], {
+          type: 'playlist',
+          playlist_id: playlist.id,
+          start_index: 0,
+        });
+      } else {
+        console.warn('Playlist has no tracks');
+      }
+    } catch (error) {
+      console.error('Error playing playlist:', error);
     }
   };
 

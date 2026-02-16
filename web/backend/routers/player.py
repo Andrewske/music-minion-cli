@@ -3,7 +3,8 @@
 import time
 from typing import Optional, Literal
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
 
 from ..deps import get_db
 
@@ -13,6 +14,8 @@ router = APIRouter()
 # Pydantic models
 class PlayContext(BaseModel):
     """Playback context for queue generation."""
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
     type: Literal["playlist", "track", "builder", "search", "comparison"]
     track_ids: Optional[list[int]] = None  # For comparison context
     playlist_id: Optional[int] = None
@@ -24,6 +27,8 @@ class PlayContext(BaseModel):
 
 class PlayRequest(BaseModel):
     """Request to start playback."""
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
     track_id: int
     context: PlayContext
     target_device_id: Optional[str] = None
@@ -31,6 +36,8 @@ class PlayRequest(BaseModel):
 
 class SeekRequest(BaseModel):
     """Request to seek to a specific position."""
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
     position_ms: int
 
 
@@ -44,6 +51,8 @@ class DeviceInfo(BaseModel):
 
 class PlaybackState(BaseModel):
     """Current playback state."""
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
     current_track: Optional[dict] = None
     queue: list[dict] = []
     queue_index: int = 0
@@ -61,8 +70,8 @@ _playback_state = PlaybackState()
 
 def get_playback_state() -> dict:
     """Get current playback state with server time for clock sync."""
-    state = _playback_state.model_dump()
-    state["server_time"] = time.time()
+    state = _playback_state.model_dump(by_alias=True)
+    state["serverTime"] = time.time()
     return state
 
 
@@ -80,15 +89,29 @@ def resolve_queue(context: PlayContext, db_conn) -> list[dict]:
         if not context.playlist_id:
             raise HTTPException(400, "playlist_id required for playlist context")
 
-        cursor = db_conn.execute(
-            """
-            SELECT track_id FROM playlist_tracks
-            WHERE playlist_id = ?
-            ORDER BY position
-            """,
-            (context.playlist_id,)
-        )
-        track_ids = [row["track_id"] for row in cursor.fetchall()]
+        # Check if it's a smart playlist
+        from music_minion.domain.playlists import get_playlist_by_id
+        from music_minion.domain.playlists.filters import evaluate_filters
+
+        playlist = get_playlist_by_id(context.playlist_id)
+        if not playlist:
+            raise HTTPException(404, f"Playlist {context.playlist_id} not found")
+
+        if playlist["type"] == "smart":
+            # Smart playlist - evaluate filters dynamically
+            tracks = evaluate_filters(context.playlist_id)
+            track_ids = [t["id"] for t in tracks]
+        else:
+            # Manual playlist - query from playlist_tracks table
+            cursor = db_conn.execute(
+                """
+                SELECT track_id FROM playlist_tracks
+                WHERE playlist_id = ?
+                ORDER BY position
+                """,
+                (context.playlist_id,)
+            )
+            track_ids = [row["track_id"] for row in cursor.fetchall()]
 
     elif context.type == "builder":
         if not context.builder_id:
@@ -148,11 +171,16 @@ def resolve_queue(context: PlayContext, db_conn) -> list[dict]:
 async def play(request: PlayRequest, db=Depends(get_db)):
     """Initialize queue and start playback."""
     global _playback_state
+    import logging
+    logger = logging.getLogger(__name__)
 
     from ..sync_manager import sync_manager
 
+    logger.info(f"Play request: track_id={request.track_id}, context={request.context}")
+
     # Resolve context to queue
     queue = resolve_queue(request.context, db)
+    logger.info(f"Resolved queue with {len(queue)} tracks")
 
     if not queue:
         raise HTTPException(400, "No tracks in queue")
