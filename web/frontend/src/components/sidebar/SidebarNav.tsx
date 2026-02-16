@@ -1,5 +1,5 @@
 import { Link, useRouterState } from '@tanstack/react-router';
-import { House, Clock, Trophy, ListMusic, Youtube, Smile } from 'lucide-react';
+import { House, Clock, Trophy, ListMusic, Video, Smile } from 'lucide-react';
 
 interface NavItem {
   href: string;
@@ -12,15 +12,16 @@ const navItems: NavItem[] = [
   { href: '/history', label: 'History', icon: Clock },
   { href: '/comparison', label: 'Comparison', icon: Trophy },
   { href: '/playlist-builder', label: 'Playlist Builder', icon: ListMusic },
-  { href: '/youtube', label: 'YouTube', icon: Youtube },
+  { href: '/youtube', label: 'YouTube', icon: Video },
   { href: '/emoji-settings', label: 'Emoji Settings', icon: Smile },
 ];
 
 interface SidebarNavProps {
   isExpanded: boolean;
+  onNavigate?: () => void;
 }
 
-export function SidebarNav({ isExpanded }: SidebarNavProps): JSX.Element {
+export function SidebarNav({ isExpanded, onNavigate }: SidebarNavProps): JSX.Element {
   const routerState = useRouterState();
 
   return (
@@ -34,6 +35,7 @@ export function SidebarNav({ isExpanded }: SidebarNavProps): JSX.Element {
             <Link
               to={item.href}
               aria-label={item.label}
+              onClick={onNavigate}
               className={`flex items-center gap-3 px-3 py-2 rounded transition-colors ${
                 isActive
                   ? 'bg-obsidian-accent/10 border-l-2 border-l-obsidian-accent text-obsidian-accent'
