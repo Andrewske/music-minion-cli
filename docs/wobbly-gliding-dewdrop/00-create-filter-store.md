@@ -1,6 +1,6 @@
 ---
 task: 00-create-filter-store
-status: pending
+status: done
 depends: []
 files:
   - path: web/frontend/src/stores/filterStore.ts

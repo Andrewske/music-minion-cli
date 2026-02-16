@@ -31,7 +31,6 @@ ssh piserver "cd ~/music-minion/docker/pi-deployment && docker compose up -d --b
 
 echo ""
 echo "Done! Access at: https://music.piserver:8443"
-echo "Radio stream: https://music.piserver:8443/stream"
 echo ""
 echo "Commands:"
 echo "  Logs:     ssh piserver 'cd ~/music-minion/docker/pi-deployment && docker compose logs -f'"

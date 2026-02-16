@@ -62,6 +62,20 @@ export function usePlayer() {
     }
   }, [store.isThisDeviceActive, store.currentTrack?.id, store.isPlaying]);
 
+  // Sync audio position on seek operations
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !store.isThisDeviceActive || !store.currentTrack) return;
+
+    const expectedPosition = getCurrentPosition(store) / 1000;
+    const actualPosition = audio.currentTime;
+
+    // If difference > 1s, sync (likely a seek operation, not natural drift)
+    if (Math.abs(expectedPosition - actualPosition) > 1) {
+      audio.currentTime = expectedPosition;
+    }
+  }, [store.positionMs, store.trackStartedAt, store.isThisDeviceActive, store.currentTrack]);
+
   // Scrobble tracking - fire onTrackPlayed at 50% or 30s (once per playthrough)
   useEffect(() => {
     if (!store.isPlaying || !store.isThisDeviceActive || !store.currentTrack) return;
@@ -130,6 +144,20 @@ export function usePlayer() {
     audio.addEventListener('error', onError);
     return () => audio.removeEventListener('error', onError);
   }, [store.currentTrack?.id]);
+
+  // Track ended - advance to next track
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (!store.isThisDeviceActive) return;
+
+    const onEnded = () => {
+      store.next();
+    };
+
+    audio.addEventListener('ended', onEnded);
+    return () => audio.removeEventListener('ended', onEnded);
+  }, [store.currentTrack?.id, store.isThisDeviceActive]);
 
   return store;
 }

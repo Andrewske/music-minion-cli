@@ -82,7 +82,7 @@ interface PlayerActions {
   setVolume: (volume: number) => void;
   toggleShuffle: () => void;
   setActiveDevice: (deviceId: string) => void;
-  syncState: (state: PlaybackState & { server_time: number }) => void;
+  syncState: (state: PlaybackState & { serverTime: number }) => void;
   syncDevices: (devices: Device[]) => void;
   setPlaybackError: (error: string | null) => void;
   retryPlayback: () => void;
@@ -176,7 +176,9 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       });
 
       if (!response.ok) {
-        throw new Error(`Play failed: ${response.statusText}`);
+        const errorBody = await response.json().catch(() => ({}));
+        const detail = errorBody.detail || response.statusText;
+        throw new Error(`Play failed: ${detail}`);
       }
 
       // Store context for shuffle toggle re-fetch
@@ -248,7 +250,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       const response = await fetch(`${API_BASE}/player/seek`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ position_ms: positionMs }),
+        body: JSON.stringify({ positionMs: Math.round(positionMs) }),
       });
 
       if (!response.ok) {
@@ -298,7 +300,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     set({ activeDeviceId: deviceId });
   },
 
-  syncState: (state: PlaybackState & { server_time: number }) => {
+  syncState: (state: PlaybackState & { serverTime: number }) => {
     const prevTrackId = get().currentTrack?.id;
     const newTrackId = state.currentTrack?.id;
 
@@ -306,7 +308,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     const scrobbledThisPlaythrough = prevTrackId === newTrackId ? get().scrobbledThisPlaythrough : false;
 
     // Compute clock offset
-    const clockOffset = state.server_time - Date.now();
+    const clockOffset = state.serverTime - Date.now();
 
     set({
       currentTrack: state.currentTrack,
