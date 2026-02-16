@@ -2,6 +2,22 @@ import { useLocation, useNavigate, useParams } from '@tanstack/react-router';
 import { ListMusic, Pin } from 'lucide-react';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import type { DragEndEvent } from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { getPlaylistTracks, pinPlaylist, unpinPlaylist, reorderPinnedPlaylist } from '../../api/playlists';
 import { usePlaylists } from '../../hooks/usePlaylists';
 import { usePlayerStore } from '../../stores/playerStore';
@@ -35,6 +51,17 @@ export function SidebarPlaylists({ sidebarExpanded }: SidebarPlaylistsProps): JS
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['playlists'] }),
   });
 
+  const reorderMutation = useMutation({
+    mutationFn: ({ id, position }: { id: number; position: number }) =>
+      reorderPinnedPlaylist(id, position),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['playlists'] }),
+  });
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
   const pinnedPlaylists = playlists?.filter(p => p.pin_order !== null) ?? [];
   const unpinnedPlaylists = playlists?.filter(p => p.pin_order === null) ?? [];
 
@@ -55,6 +82,31 @@ export function SidebarPlaylists({ sidebarExpanded }: SidebarPlaylistsProps): JS
       // Navigate to builder
       navigate({ to: '/playlist-builder/$playlistId', params: { playlistId: String(playlistId) } });
     }
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const newIndex = pinnedPlaylists.findIndex(p => p.id === over.id);
+      reorderMutation.mutate({ id: active.id as number, position: newIndex + 1 });
+    }
+  };
+
+  const SortablePlaylistItem = ({ playlist }: { playlist: Playlist }) => {
+    const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
+      id: playlist.id,
+    });
+
+    const style = {
+      transform: CSS.Transform.toString(transform),
+      transition,
+    };
+
+    return (
+      <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+        <PlaylistItem playlist={playlist} isPinned />
+      </div>
+    );
   };
 
   const PlaylistItem = ({ playlist, isPinned }: { playlist: Playlist; isPinned: boolean }) => {
@@ -109,9 +161,15 @@ export function SidebarPlaylists({ sidebarExpanded }: SidebarPlaylistsProps): JS
         {isLoading && (
           <div className="px-3 py-2 text-white/30 text-sm">Loading...</div>
         )}
-        {pinnedPlaylists.map(playlist => (
-          <PlaylistItem key={playlist.id} playlist={playlist} isPinned />
-        ))}
+        {pinnedPlaylists.length > 0 && (
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={pinnedPlaylists.map(p => p.id)} strategy={verticalListSortingStrategy}>
+              {pinnedPlaylists.map(playlist => (
+                <SortablePlaylistItem key={playlist.id} playlist={playlist} />
+              ))}
+            </SortableContext>
+          </DndContext>
+        )}
         {unpinnedPlaylists.map(playlist => (
           <PlaylistItem key={playlist.id} playlist={playlist} isPinned={false} />
         ))}
