@@ -9,6 +9,7 @@ import {
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Track } from '../../api/builder';
+import { TrackQueueCard } from '../playlist-builder/TrackQueueCard';
 
 interface TrackQueueTableProps {
   tracks: Track[];
@@ -178,11 +179,13 @@ export const TrackQueueTable = ({
 
   return (
     <div className="border-t border-obsidian-border">
-      <div
-        ref={parentRef}
-        className="overflow-auto"
-        style={{ maxHeight: '50vh' }}
-      >
+      {/* Desktop: Table view */}
+      <div className="hidden md:block">
+        <div
+          ref={parentRef}
+          className="overflow-auto"
+          style={{ maxHeight: '50vh' }}
+        >
         <table className="w-full text-sm" style={{ display: 'grid' }}>
           <thead className="border-b border-obsidian-border" style={{ display: 'grid', position: 'sticky', top: 0, zIndex: 1 }}>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -250,6 +253,46 @@ export const TrackQueueTable = ({
             })}
           </tbody>
         </table>
+        </div>
+      </div>
+
+      {/* Mobile: Card view */}
+      <div className="md:hidden">
+        {/* Sort selector */}
+        <div className="flex items-center gap-2 py-2 border-b border-obsidian-border">
+          <span className="text-white/30 text-xs">Sort:</span>
+          <select
+            value={sorting[0]?.id || 'artist'}
+            onChange={(e) => {
+              const newSorting = [{ id: e.target.value, desc: sorting[0]?.desc ?? false }];
+              onSortingChange(newSorting);
+            }}
+            className="bg-black border border-obsidian-border px-2 py-1 text-white text-xs rounded"
+          >
+            {columns.map(col => (
+              <option key={col.id} value={col.id}>{String(col.header)}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => onSortingChange([{ id: sorting[0]?.id || 'artist', desc: !sorting[0]?.desc }])}
+            className="text-obsidian-accent text-xs"
+          >
+            {sorting[0]?.desc ? '↓' : '↑'}
+          </button>
+        </div>
+
+        {/* Cards */}
+        <div className="max-h-[40vh] overflow-y-auto">
+          {tracks.map((track, idx) => (
+            <TrackQueueCard
+              key={track.id}
+              track={track}
+              isQueue={idx === queueIndex}
+              isPlaying={track.id === nowPlayingId}
+              onClick={() => onTrackClick(track)}
+            />
+          ))}
+        </div>
       </div>
 
       {/* Loading indicator */}
