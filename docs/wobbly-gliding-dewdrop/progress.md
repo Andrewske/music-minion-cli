@@ -8,7 +8,7 @@
 
 | Task | Status | Started | Completed | Duration |
 |------|--------|---------|-----------|----------|
-| 00-create-filter-store | Pending | - | - | - |
+| 00-create-filter-store | ✅ Done | 2026-02-16 | 2026-02-16 | ~1min |
 | 01-create-sidebar-components | Pending | - | - | - |
 | 02-mobile-sidebar | Pending | - | - | - |
 | 03-integrate-root-layout | Pending | - | - | - |
@@ -19,4 +19,8 @@
 
 ### Batch 1
 - Tasks: 00-create-filter-store
-- Status: Pending
+- Status: ✅ Complete
+
+### Batch 2
+- Tasks: 01-create-sidebar-components
+- Status: Running
