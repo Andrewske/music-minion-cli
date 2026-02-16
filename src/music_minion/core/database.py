@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 31
+SCHEMA_VERSION = 32
 
 
 # Initial top 50 curated emojis for music reactions
@@ -1294,6 +1294,21 @@ def migrate_database(conn, current_version: int) -> None:
         seed_initial_emojis(conn)
 
         logger.info("Migration to schema version 31 complete")
+
+    if current_version < 32:
+        # Migration from v31 to v32: Playlist pinning
+        print("  Migrating to v32: Adding playlist pinning support...")
+
+        try:
+            conn.execute("ALTER TABLE playlists ADD COLUMN pin_order INTEGER DEFAULT NULL")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_playlists_pin_order ON playlists(pin_order)")
+
+        print("  ✓ Migration to v32 complete: Playlist pinning support added")
+        conn.commit()
 
 
 def init_database() -> None:
