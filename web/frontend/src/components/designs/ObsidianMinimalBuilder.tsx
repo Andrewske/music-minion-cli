@@ -9,7 +9,6 @@ import { useWavesurfer } from '../../hooks/useWavesurfer';
 import { usePlaylists } from '../../hooks/usePlaylists';
 import { useTrackEmojis } from '../../hooks/useTrackEmojis';
 import { EmojiPicker } from '../EmojiPicker';
-import { FilterSidebar } from '../playlist-builder/FilterSidebar';
 import { TrackQueueCard } from '../playlist-builder/TrackQueueCard';
 
 // Obsidian Minimal Playlist Builder
@@ -68,7 +67,7 @@ interface BuilderMainProps {
   onBack: () => void;
 }
 
-export function ObsidianBuilderMain({ playlistId, playlistName, onBack }: BuilderMainProps) {
+export function ObsidianBuilderMain({ playlistId, playlistName }: BuilderMainProps) {
   const [queueTrackId, setQueueTrackId] = useState<number | null>(null);
   const [nowPlayingTrack, setNowPlayingTrack] = useState<Track | null>(null);
   const [isPlaying, setIsPlaying] = useState(true);
@@ -79,7 +78,7 @@ export function ObsidianBuilderMain({ playlistId, playlistName, onBack }: Builde
   const sortDirection = sorting[0]?.desc ? 'desc' : 'asc';
 
   const {
-    session, addTrack, skipTrack, filters, updateFilters, startSession, isAddingTrack, isSkippingTrack,
+    session, addTrack, skipTrack, startSession, isAddingTrack, isSkippingTrack,
   } = useBuilderSession(playlistId);
 
   const PAGE_SIZE = 100;
@@ -175,34 +174,11 @@ export function ObsidianBuilderMain({ playlistId, playlistName, onBack }: Builde
 
   return (
     <div className="min-h-screen bg-black font-inter text-white">
-      {/* Mobile Header - handled globally by root layout */}
-
-      {/* Desktop Header - hidden on mobile */}
-      <header className="hidden md:block border-b border-obsidian-border px-8 py-4">
-        <div className="flex items-center justify-between max-w-6xl mx-auto">
-          <button onClick={onBack} className="text-white/40 hover:text-obsidian-accent transition-colors text-sm">
-            ← Back
-          </button>
-          <span className="text-white/60 text-sm font-sf-mono">{playlistName}</span>
-          <div className="w-12" />
-        </div>
-      </header>
-
-      {/* Main container - add top padding on mobile for fixed header */}
-      <div className="max-w-6xl mx-auto px-4 md:px-8 py-4 md:py-8 pt-14 md:pt-8">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-12">
-          {/* Filters - Minimal sidebar, hidden on mobile (in sheet instead) */}
-          <aside className="hidden md:block md:col-span-3">
-            <FilterSidebar
-              filters={filters || []}
-              onUpdate={(f) => updateFilters.mutate(f)}
-              isUpdating={updateFilters.isPending}
-              playlistId={playlistId}
-            />
-          </aside>
-
-          {/* Main */}
-          <main className="col-span-1 md:col-span-9">
+      {/* Main container - full width */}
+      <div className="max-w-6xl mx-auto px-4 md:px-8 py-4 md:py-8">
+        <div>
+          {/* Main content - full width */}
+          <main>
             {currentTrack && queueIndex < candidates.length ? (
               <div className="space-y-6 md:space-y-12">
                 {/* Player section - sticky on mobile */}
