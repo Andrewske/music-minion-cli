@@ -5,18 +5,26 @@ import { SidebarSection } from './SidebarSection';
 
 interface SidebarProps {
   children?: React.ReactNode;
+  isExpanded?: boolean;
+  isMobile?: boolean;
+  onNavigate?: () => void;
 }
 
-export function Sidebar({ children }: SidebarProps): JSX.Element {
-  const [isExpanded, setIsExpanded] = useState(() => {
+export function Sidebar({ children, isExpanded: controlledExpanded, isMobile = false, onNavigate }: SidebarProps): JSX.Element {
+  const [internalExpanded, setInternalExpanded] = useState(() => {
     const stored = localStorage.getItem('music-minion-sidebar-expanded');
     return stored !== null ? JSON.parse(stored) : true;
   });
 
-  // Persist to localStorage
+  // Use controlled state if provided (mobile), otherwise use internal state (desktop)
+  const isExpanded = controlledExpanded !== undefined ? controlledExpanded : internalExpanded;
+
+  // Persist to localStorage (desktop only)
   useEffect(() => {
-    localStorage.setItem('music-minion-sidebar-expanded', JSON.stringify(isExpanded));
-  }, [isExpanded]);
+    if (!isMobile && controlledExpanded === undefined) {
+      localStorage.setItem('music-minion-sidebar-expanded', JSON.stringify(internalExpanded));
+    }
+  }, [internalExpanded, isMobile, controlledExpanded]);
 
   return (
     <aside
@@ -35,11 +43,11 @@ export function Sidebar({ children }: SidebarProps): JSX.Element {
             <span className="text-lg font-bold text-obsidian-accent">M</span>
           </div>
         )}
-        {isExpanded && <SidebarToggle isExpanded={isExpanded} onToggle={() => setIsExpanded(!isExpanded)} />}
+        {isExpanded && !isMobile && <SidebarToggle isExpanded={isExpanded} onToggle={() => setInternalExpanded(!internalExpanded)} />}
       </div>
 
       {/* Navigation */}
-      <SidebarNav isExpanded={isExpanded} />
+      <SidebarNav isExpanded={isExpanded} onNavigate={onNavigate} />
 
       {/* Divider */}
       {children && <div className="border-t border-obsidian-border" />}
@@ -48,9 +56,9 @@ export function Sidebar({ children }: SidebarProps): JSX.Element {
       {children && <div className="flex-1 overflow-y-auto">{children}</div>}
 
       {/* Collapsed state toggle at bottom */}
-      {!isExpanded && (
+      {!isExpanded && !isMobile && (
         <div className="border-t border-obsidian-border p-2 flex justify-center">
-          <SidebarToggle isExpanded={isExpanded} onToggle={() => setIsExpanded(!isExpanded)} />
+          <SidebarToggle isExpanded={isExpanded} onToggle={() => setInternalExpanded(!internalExpanded)} />
         </div>
       )}
     </aside>

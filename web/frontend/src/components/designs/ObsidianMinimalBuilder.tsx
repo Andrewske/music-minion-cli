@@ -9,7 +9,7 @@ import { useWavesurfer } from '../../hooks/useWavesurfer';
 import { usePlaylists } from '../../hooks/usePlaylists';
 import { useTrackEmojis } from '../../hooks/useTrackEmojis';
 import { EmojiPicker } from '../EmojiPicker';
-import { MobileHeader } from '../playlist-builder/MobileHeader';
+import { MobileHeader } from '../sidebar/MobileHeader';
 import { FilterSidebar } from '../playlist-builder/FilterSidebar';
 import { TrackQueueCard } from '../playlist-builder/TrackQueueCard';
 

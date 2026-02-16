@@ -1,6 +1,6 @@
 ---
 task: 02-mobile-sidebar
-status: pending
+status: done
 depends: [01-create-sidebar-components]
 files:
   - path: web/frontend/src/components/sidebar/MobileHeader.tsx
