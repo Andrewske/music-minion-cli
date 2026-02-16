@@ -1,6 +1,4 @@
 import { useState, Fragment } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { builderApi } from '../../api/builder';
 import type { Filter } from '../../api/builder';
 import { useFilterStore } from '../../stores/filterStore';
 
@@ -94,14 +92,12 @@ export function FilterSidebar(): JSX.Element {
       {isEditing ? (
         <FilterEditor
           initialFilter={editingFilter}
-          playlistId={playlistId}
           onSave={handleSave}
           onCancel={handleCancel}
         />
       ) : (
         <button
           onClick={startAdding}
-          disabled={isUpdating}
           className="w-full py-2 border border-dashed border-obsidian-border hover:border-obsidian-accent/50
             text-white/30 hover:text-obsidian-accent transition-colors text-xs"
         >
@@ -114,25 +110,18 @@ export function FilterSidebar(): JSX.Element {
 
 interface FilterEditorProps {
   initialFilter?: Filter;
-  playlistId: number;
   onSave: (filter: Filter) => void;
   onCancel: () => void;
 }
 
-function FilterEditor({ initialFilter, playlistId, onSave, onCancel }: FilterEditorProps): JSX.Element {
+function FilterEditor({ initialFilter, onSave, onCancel }: FilterEditorProps): JSX.Element {
   const [field, setField] = useState(initialFilter?.field || '');
   const [operator, setOperator] = useState(initialFilter?.operator || '');
   const [value, setValue] = useState(initialFilter?.value || '');
 
-  const { data: candidates } = useQuery({
-    queryKey: ['builder-candidates', playlistId],
-    queryFn: () => builderApi.getCandidates(playlistId, 1000),
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const genres = candidates?.candidates
-    ? [...new Set(candidates.candidates.map(t => t.genre).filter(Boolean))].sort()
-    : [];
+  // For genre autocomplete, we'll use a placeholder empty array for now
+  // In the future, this could fetch from a global genres endpoint
+  const genres: string[] = [];
   const isNumeric = ['year', 'bpm'].includes(field);
 
   const inputClass = `w-full bg-black border border-obsidian-border px-3 py-2 text-white text-sm

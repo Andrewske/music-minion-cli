@@ -1,6 +1,6 @@
 ---
 task: 05-integrate-filter-sidebar
-status: pending
+status: done
 depends: [00-create-filter-store, 03-integrate-root-layout]
 files:
   - path: web/frontend/src/components/sidebar/SidebarFilters.tsx
