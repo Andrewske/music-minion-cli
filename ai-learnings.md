@@ -169,3 +169,34 @@ def get_emojis_for_tracks_batch(track_ids: list[int], db_conn) -> dict[int, list
 - Single source of truth for emoji batch queries
 
 **Rule**: When adding same data to multiple endpoints, create shared query utility immediately.
+
+### 2026-02-16 - Global state for cross-route UI patterns
+
+**Pattern**: When sidebar content needs to affect multiple routes, use Zustand store instead of props drilling:
+```typescript
+// stores/filterStore.ts - Global state
+export const useFilterStore = create<FilterState>((set) => ({
+  filters: [],
+  setFilters: (filters) => set({ filters }),
+  // ... other actions
+}));
+
+// Sidebar component reads/writes store
+function FilterSidebar() {
+  const { filters, setFilters } = useFilterStore();
+}
+
+// Route components consume store
+function SomePage() {
+  const { filters } = useFilterStore();
+  // Apply filters to track list
+}
+```
+
+**Why it matters**: Initial plan had route-aware sidebar content switching (playlists on home, filters on builder). This required complex props drilling through root layout. Global store allows:
+- Sidebar sections always present, independently collapsible
+- Filter state persists across route changes
+- No props threading through TanStack Router
+- Simpler mental model: sidebar is UI chrome, routes consume state
+
+**Rule**: Persistent sidebar/nav content that affects page behavior → use global store, not route-aware rendering.

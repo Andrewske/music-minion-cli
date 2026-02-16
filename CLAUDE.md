@@ -169,6 +169,23 @@ API endpoints:
 - `POST /api/player/skip` - Skip to next track
 - `POST /api/player/queue` - Add to queue
 
+**Global Sidebar Navigation**:
+Frontend collapsible sidebar with persistent state:
+- **Sidebar**: Collapsible between icons-only (72px) and expanded (280px) modes
+- **filterStore**: Zustand store for global track filtering across routes
+- **SidebarPlaylists**: Collapsible playlist list with active state highlighting
+- **SidebarFilters**: Collapsible filter section using global store
+- **Mobile**: Hamburger menu with slide-out sheet (Radix Dialog)
+- **State persistence**: Sidebar expand/collapse state saved to localStorage
+
+Key files:
+- `web/frontend/src/stores/filterStore.ts` - Global filter state
+- `web/frontend/src/components/sidebar/Sidebar.tsx` - Main sidebar container
+- `web/frontend/src/components/sidebar/MobileHeader.tsx` - Mobile hamburger menu
+- `web/frontend/src/routes/__root.tsx` - Layout integration
+
+Pattern: Sidebar content affects multiple routes via Zustand stores, not props drilling.
+
 ## Files
 
 - Database: SQLite v31 in `core/database.py`
