@@ -12,7 +12,7 @@ from music_minion.core.config import get_data_dir
 
 MAX_SIZE = 128  # Max width/height in pixels
 MAX_FILE_SIZE = 1 * 1024 * 1024  # 1MB (prevents blocking)
-MAX_FRAMES = 20  # Max GIF frames (prevents blocking)
+MAX_FRAMES = None  # No frame limit, rely on file size
 ALLOWED_FORMATS = {'PNG', 'JPEG', 'GIF'}
 
 
@@ -61,7 +61,7 @@ def process_emoji_image(file_content: bytes, original_filename: str) -> Tuple[st
     if img.format == 'GIF' and getattr(img, 'is_animated', False):
         # Check frame count
         frame_count = getattr(img, 'n_frames', 1)
-        if frame_count > MAX_FRAMES:
+        if MAX_FRAMES and frame_count > MAX_FRAMES:
             raise ValueError(f"Too many frames ({frame_count}). Max: {MAX_FRAMES}")
 
         # Preserve GIF animation

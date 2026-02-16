@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import type { SortingState } from '@tanstack/react-table';
 import { useBuilderSession } from '../../hooks/useBuilderSession';
 import { useIPCWebSocket } from '../../hooks/useIPCWebSocket';
@@ -9,6 +9,8 @@ import { useWavesurfer } from '../../hooks/useWavesurfer';
 import { usePlaylists } from '../../hooks/usePlaylists';
 import { useTrackEmojis } from '../../hooks/useTrackEmojis';
 import { EmojiPicker } from '../EmojiPicker';
+import { EmojiDisplay } from '../EmojiDisplay';
+import type { EmojiInfo } from '../../api/emojis';
 import { TrackQueueCard } from '../playlist-builder/TrackQueueCard';
 
 // Obsidian Minimal Playlist Builder
@@ -454,26 +456,66 @@ interface ObsidianEmojiActionsProps {
   onUpdate: (updatedTrack: Track) => void;
 }
 
+/** Check if emoji_id is a UUID (custom emoji pattern). */
+function isUuidPattern(emojiId: string): boolean {
+  return emojiId.length === 36 && emojiId.split('-').length === 5;
+}
+
+/** Fetch metadata for custom emojis (UUID patterns). */
+async function fetchCustomEmojiMetadata(emojiIds: string[]): Promise<Record<string, EmojiInfo>> {
+  const uuids = emojiIds.filter(isUuidPattern);
+  if (uuids.length === 0) return {};
+
+  const res = await fetch('/api/emojis/all?limit=200');
+  if (!res.ok) return {};
+
+  const allEmojis: EmojiInfo[] = await res.json();
+  const customMap: Record<string, EmojiInfo> = {};
+
+  for (const emoji of allEmojis) {
+    if (emoji.type === 'custom' && uuids.includes(emoji.emoji_id)) {
+      customMap[emoji.emoji_id] = emoji;
+    }
+  }
+
+  return customMap;
+}
+
 function ObsidianEmojiActions({ track, onUpdate }: ObsidianEmojiActionsProps) {
   const [showPicker, setShowPicker] = useState(false);
   const { addEmoji, removeEmoji, isAdding, isRemoving } = useTrackEmojis(track, onUpdate);
 
+  // Fetch custom emoji metadata if any UUIDs are present
+  const emojis = track.emojis ?? [];
+  const hasCustomEmojis = emojis.some(isUuidPattern);
+  const { data: customMetadata = {} } = useQuery({
+    queryKey: ['custom-emoji-metadata', emojis.filter(isUuidPattern)],
+    queryFn: () => fetchCustomEmojiMetadata(emojis),
+    enabled: hasCustomEmojis,
+    staleTime: 5 * 60 * 1000,
+  });
+
   return (
     <div className="flex items-center gap-1.5">
-      {track.emojis?.map((emoji, index) => (
-        <button
-          key={`${emoji}-${index}`}
-          onClick={() => removeEmoji(emoji)}
-          disabled={isRemoving}
-          className="relative group text-sm leading-none hover:opacity-70 disabled:opacity-30 transition-opacity"
-          title="Click to remove"
-        >
-          <span className="block">{emoji}</span>
-          <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-            <span className="text-obsidian-accent text-xs font-bold">×</span>
-          </span>
-        </button>
-      ))}
+      {emojis.map((emojiId, index) => {
+        const isCustom = isUuidPattern(emojiId);
+        const metadata = isCustom ? customMetadata[emojiId] : undefined;
+
+        return (
+          <button
+            key={`${emojiId}-${index}`}
+            onClick={() => removeEmoji(emojiId)}
+            disabled={isRemoving}
+            className="relative group text-sm leading-none hover:opacity-70 disabled:opacity-30 transition-opacity"
+            title="Click to remove"
+          >
+            <EmojiDisplay emojiId={emojiId} emojiData={metadata} size="sm" />
+            <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+              <span className="text-obsidian-accent text-xs font-bold">×</span>
+            </span>
+          </button>
+        );
+      })}
       <button
         onClick={() => setShowPicker(true)}
         disabled={isAdding}
