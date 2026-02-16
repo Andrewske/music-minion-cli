@@ -1,6 +1,6 @@
 ---
 task: 03-integrate-root-layout
-status: pending
+status: done
 depends: [01-create-sidebar-components, 02-mobile-sidebar]
 files:
   - path: web/frontend/src/routes/__root.tsx

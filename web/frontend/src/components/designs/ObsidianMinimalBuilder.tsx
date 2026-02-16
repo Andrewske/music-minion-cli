@@ -9,7 +9,6 @@ import { useWavesurfer } from '../../hooks/useWavesurfer';
 import { usePlaylists } from '../../hooks/usePlaylists';
 import { useTrackEmojis } from '../../hooks/useTrackEmojis';
 import { EmojiPicker } from '../EmojiPicker';
-import { MobileHeader } from '../sidebar/MobileHeader';
 import { FilterSidebar } from '../playlist-builder/FilterSidebar';
 import { TrackQueueCard } from '../playlist-builder/TrackQueueCard';
 
@@ -176,15 +175,7 @@ export function ObsidianBuilderMain({ playlistId, playlistName, onBack }: Builde
 
   return (
     <div className="min-h-screen bg-black font-inter text-white">
-      {/* Mobile Header - only visible on mobile */}
-      <MobileHeader
-        playlistName={playlistName}
-        onBack={onBack}
-        filters={filters || []}
-        onUpdateFilters={(f) => updateFilters.mutate(f)}
-        isUpdatingFilters={updateFilters.isPending}
-        playlistId={playlistId}
-      />
+      {/* Mobile Header - handled globally by root layout */}
 
       {/* Desktop Header - hidden on mobile */}
       <header className="hidden md:block border-b border-obsidian-border px-8 py-4">
