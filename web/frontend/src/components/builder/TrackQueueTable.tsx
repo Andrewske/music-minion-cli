@@ -153,12 +153,12 @@ export const TrackQueueTable = ({
     const isQueue = index === queueIndex;
     const isPlaying = trackId === nowPlayingId;
 
-    let classes = 'cursor-pointer hover:bg-slate-700 ';
+    let classes = 'cursor-pointer hover:bg-white/5 transition-colors ';
 
     if (isPlaying) {
-      classes += 'bg-green-900/30 border-l-2 border-green-500 ';
+      classes += 'bg-obsidian-accent/10 border-l-2 border-l-obsidian-accent ';
     } else if (isQueue) {
-      classes += 'bg-blue-900/30 border-l-2 border-blue-500 ';
+      classes += 'bg-white/5 ';
     }
 
     return classes;
@@ -177,20 +177,21 @@ export const TrackQueueTable = ({
   };
 
   return (
-    <div className="bg-slate-800 rounded-lg overflow-hidden">
+    <div className="border-t border-obsidian-border">
       <div
         ref={parentRef}
         className="overflow-auto"
         style={{ maxHeight: '50vh' }}
       >
         <table className="w-full text-sm" style={{ display: 'grid' }}>
-          <thead className="bg-slate-700" style={{ display: 'grid', position: 'sticky', top: 0, zIndex: 1 }}>
+          <thead className="border-b border-obsidian-border" style={{ display: 'grid', position: 'sticky', top: 0, zIndex: 1 }}>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id} style={{ display: 'flex', width: '100%' }}>
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
-                    className="px-3 py-2 text-left cursor-pointer hover:bg-slate-600 select-none"
+                    className={`px-3 py-2 text-left cursor-pointer select-none text-xs tracking-wider uppercase transition-colors
+  ${sorting.find(s => s.id === header.id) ? 'text-obsidian-accent' : 'text-white/30 hover:text-white/60'}`}
                     style={getColumnFlex(header.column)}
                     onClick={header.column.getToggleSortingHandler()}
                   >
@@ -233,7 +234,7 @@ export const TrackQueueTable = ({
                   {row.getVisibleCells().map((cell) => (
                     <td
                       key={cell.id}
-                      className="px-3 py-2 border-b border-slate-700 overflow-hidden"
+                      className="px-3 py-2 border-b border-obsidian-border/50 overflow-hidden text-white/50"
                       style={getColumnFlex(cell.column)}
                     >
                       <div className="truncate" title={String(cell.getValue() ?? '')}>
@@ -253,7 +254,7 @@ export const TrackQueueTable = ({
 
       {/* Loading indicator */}
       {isLoadingMore && (
-        <div className="text-center py-2 text-slate-400 text-sm">
+        <div className="w-full py-2 text-white/30 text-xs text-center">
           Loading more tracks...
         </div>
       )}
