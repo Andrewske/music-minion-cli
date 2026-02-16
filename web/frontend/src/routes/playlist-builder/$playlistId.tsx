@@ -1,7 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { usePlaylists } from '../../hooks/usePlaylists'
-import { ObsidianBuilderMain } from '../../components/designs/ObsidianMinimalBuilder'
-import { SmartPlaylistEditor } from '../../pages/SmartPlaylistEditor'
+import { PlaylistBuilder as PlaylistBuilderPage } from '../../pages/PlaylistBuilder'
 
 export const Route = createFileRoute('/playlist-builder/$playlistId')({
   component: PlaylistBuilder,
@@ -59,33 +58,12 @@ function PlaylistBuilder() {
     )
   }
 
-  // Route smart playlists to their editor
-  if (playlist.type === 'smart') {
-    return (
-      <div className="min-h-screen bg-black font-inter">
-        <header className="border-b border-obsidian-border px-8 py-4">
-          <div className="flex items-center justify-between max-w-6xl mx-auto">
-            <button
-              onClick={() => navigate({ to: '/playlist-builder' })}
-              className="text-white/40 hover:text-obsidian-accent transition-colors text-sm"
-            >
-              &larr; Back
-            </button>
-            <span className="text-white/60 text-sm font-sf-mono">{playlist.name}</span>
-            <div className="w-12" />
-          </div>
-        </header>
-        <SmartPlaylistEditor playlistId={playlist.id} playlistName={playlist.name} />
-      </div>
-    )
-  }
-
-  // Render the Obsidian builder for manual playlists
+  // Render the merged PlaylistBuilder (handles both manual and smart playlists)
   return (
-    <ObsidianBuilderMain
+    <PlaylistBuilderPage
       playlistId={playlist.id}
       playlistName={playlist.name}
-      onBack={() => navigate({ to: '/playlist-builder' })}
+      playlistType={playlist.type}
     />
   )
 }
