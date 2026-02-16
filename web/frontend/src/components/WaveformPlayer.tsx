@@ -73,25 +73,26 @@ export function WaveformPlayer({ track, isPlaying, onTogglePlayPause, onFinish }
   };
 
   return (
-    <div className="flex items-center w-full h-full">
-      {/* Play/Pause Button (Left Side) */}
+    <div className="flex items-center w-full h-full gap-4">
+      {/* Play/Pause Button */}
       <button
         onClick={onTogglePlayPause || togglePlayPause}
-        className="flex-shrink-0 w-10 h-10 ml-3 mr-2 bg-emerald-500 text-white rounded-full flex items-center justify-center hover:bg-emerald-400 shadow-lg transition-colors"
+        className="w-8 h-8 flex items-center justify-center text-obsidian-accent hover:text-white transition-colors"
         aria-label={isPlaying ? 'Pause' : 'Play'}
       >
         {isPlaying ? (
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
             <path fillRule="evenodd" d="M6.75 5.25a.75.75 0 01.75-.75H9a.75.75 0 01.75.75v13.5a.75.75 0 01-.75.75H7.5a.75.75 0 01-.75-.75V5.25zm7.5 0A.75.75 0 0115 4.5h1.5a.75.75 0 01.75.75v13.5a.75.75 0 01-.75.75H15a.75.75 0 01-.75-.75V5.25z" clipRule="evenodd" />
           </svg>
         ) : (
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 ml-0.5">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 ml-0.5">
             <path fillRule="evenodd" d="M4.5 5.653c0-1.426 1.529-2.33 2.779-1.643l11.54 6.348c1.295.712 1.295 2.573 0 3.285L7.28 19.991c-1.25.687-2.779-.217-2.779-1.643V5.653z" clipRule="evenodd" />
           </svg>
         )}
       </button>
 
-      <div className="relative flex-1 h-full flex flex-col justify-center min-w-0">
+      {/* Waveform container */}
+      <div className="flex-1 h-full relative">
         {/* Error UI */}
         {error && (
           <div role="alert" aria-live="polite" className="absolute inset-0 z-20 bg-rose-950/90 flex flex-col items-center justify-center p-2 rounded-r-lg">
@@ -106,15 +107,13 @@ export function WaveformPlayer({ track, isPlaying, onTogglePlayPause, onFinish }
         )}
 
         {/* Waveform visualization */}
-        <div className={`w-full h-full ${error ? 'opacity-0' : 'opacity-100'} transition-opacity`}>
-          <div ref={containerRef} className="w-full h-full" />
-        </div>
-
-        {/* Time Display (Bottom Right) */}
-        <div className="absolute bottom-1 right-2 z-10 text-[10px] font-mono text-emerald-400/80 bg-slate-900/80 px-1 rounded pointer-events-none">
-          {formatTime(currentTime)} / {formatTime(duration)}
-        </div>
+        <div ref={containerRef} className="w-full h-full" />
       </div>
+
+      {/* Time display */}
+      <span className="text-white/30 text-xs font-sf-mono w-20 text-right">
+        {formatTime(currentTime)} / {formatTime(duration)}
+      </span>
     </div>
   );
 }
