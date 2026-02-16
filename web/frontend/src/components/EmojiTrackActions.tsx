@@ -32,11 +32,13 @@ export function EmojiTrackActions({
     setShowPicker(false);
   };
 
+  const emojisArray = track.emojis || [];
+
   return (
     <>
       <EmojiReactions
         trackId={track.id}
-        emojis={track.emojis || []}
+        emojis={emojisArray}
         onRemove={removeEmoji}
         onAddClick={() => setShowPicker(true)}
         compact={compact}
