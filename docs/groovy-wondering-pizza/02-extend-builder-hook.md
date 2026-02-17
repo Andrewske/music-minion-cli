@@ -1,6 +1,6 @@
 ---
 task: 02-extend-builder-hook
-status: pending
+status: done
 depends:
   - 00-backend-pagination
 files:
