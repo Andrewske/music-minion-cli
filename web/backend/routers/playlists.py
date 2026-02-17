@@ -223,16 +223,20 @@ async def get_playlist_stats(playlist_id: int):
 @router.get("/playlists/{playlist_id}/tracks")
 async def get_playlist_tracks(
     playlist_id: int,
+    limit: int = 100,
+    offset: int = 0,
     sort_field: str = "artist",
     sort_direction: str = "asc"
 ):
-    """Get all tracks in a playlist with their ratings, wins, and losses.
+    """Get tracks in a playlist with pagination, ratings, wins, and losses.
 
     For smart playlists, returns full track metadata including:
     album, genre, year, bpm, key_signature, elo_rating
 
     Args:
         playlist_id: ID of the playlist
+        limit: Maximum number of tracks to return (default 100)
+        offset: Number of tracks to skip (default 0)
         sort_field: Field to sort by (artist, title, album, year, bpm, key, rating)
         sort_direction: Sort direction ('asc' or 'desc')
     """
@@ -242,17 +246,23 @@ async def get_playlist_tracks(
         if not playlist_name:
             raise HTTPException(status_code=404, detail="Playlist not found")
 
-        # Get tracks with ratings (with sorting)
-        tracks_data = get_playlist_tracks_with_ratings(
+        # Get all tracks with ratings (with sorting)
+        all_tracks = get_playlist_tracks_with_ratings(
             playlist_id,
             sort_field=sort_field,
             sort_direction=sort_direction
         )
 
-        # Return raw track data (includes all fields for smart playlists)
+        # Apply pagination
+        total = len(all_tracks)
+        tracks_data = all_tracks[offset:offset + limit]
+
+        # Return paginated track data with metadata
         return {
             "playlist_name": playlist_name,
             "tracks": tracks_data,
+            "total": total,
+            "hasMore": offset + len(tracks_data) < total,
         }
     except HTTPException:
         raise
