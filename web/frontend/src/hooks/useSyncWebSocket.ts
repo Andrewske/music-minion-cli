@@ -36,13 +36,6 @@ export function useSyncWebSocket() {
           );
           break;
 
-        case 'comparison:track_selected':
-          if (data.track) {
-            useComparisonStore.getState().setCurrentTrack(data.track);
-          }
-          useComparisonStore.getState().setIsPlaying(data.isPlaying);
-          break;
-
         case 'playback:state':
           usePlayerStore.getState().syncState(data);
           break;

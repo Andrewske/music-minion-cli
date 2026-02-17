@@ -27,16 +27,7 @@ export function WaveformSection({
       {/* Waveform */}
       <div className="h-16 border-t border-b border-obsidian-border">
         <WaveformPlayer
-          track={{
-            id: track.id,
-            title: track.title,
-            artist: track.artist,
-            rating: track.elo_rating || 0,
-            comparison_count: 0,
-            wins: 0,
-            losses: 0,
-            has_waveform: true,
-          }}
+          track={track}
           isPlaying={isPlaying}
           onTogglePlayPause={onTogglePlayPause}
           onFinish={onFinish}

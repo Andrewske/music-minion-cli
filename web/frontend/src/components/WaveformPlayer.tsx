@@ -2,10 +2,18 @@ import { useEffect, useCallback } from 'react';
 import { useWavesurfer } from '../hooks/useWavesurfer';
 import { useAudioElement } from '../contexts/AudioElementContext';
 import { usePlayerStore } from '../stores/playerStore';
-import type { TrackInfo } from '../types';
+
+/** Minimal track interface - both Track and TrackInfo satisfy this */
+interface WaveformTrack {
+  id: number;
+  title: string;
+  artist?: string;
+  album?: string;
+  duration?: number;
+}
 
 interface WaveformPlayerProps {
-  track: TrackInfo;
+  track: WaveformTrack;
   isPlaying: boolean;
   onTogglePlayPause?: () => void;
   onFinish?: () => void;
