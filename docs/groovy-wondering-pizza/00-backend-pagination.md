@@ -1,6 +1,6 @@
 ---
 task: 00-backend-pagination
-status: pending
+status: done
 depends: []
 files:
   - path: web/backend/routers/playlists.py

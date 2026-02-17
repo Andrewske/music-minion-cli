@@ -127,3 +127,21 @@ export async function getSmartPlaylistSkippedTracks(
   const data = await response.json();
   return data.skipped;
 }
+
+export async function getSmartPlaylistTracks(
+  playlistId: number,
+  limit: number = 100,
+  offset: number = 0,
+  sortField: string = 'artist',
+  sortDirection: string = 'asc'
+): Promise<{ tracks: Track[]; total: number; hasMore: boolean }> {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+    sort_field: sortField,
+    sort_direction: sortDirection,
+  });
+  const response = await fetch(`${API_BASE}/playlists/${playlistId}/tracks?${params}`);
+  if (!response.ok) throw new Error('Failed to fetch tracks');
+  return response.json();
+}
