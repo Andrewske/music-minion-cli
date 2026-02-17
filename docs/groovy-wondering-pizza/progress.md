@@ -12,8 +12,8 @@
 | 01-extract-shared-components | ✅ Done | 2026-02-17T12:01:00Z | 2026-02-17T12:02:00Z | ~1m |
 | 02-extend-builder-hook | ✅ Done | 2026-02-17T12:01:00Z | 2026-02-17T12:02:00Z | ~1m |
 | 03-unify-playlist-builder | ✅ Done | 2026-02-17T12:02:00Z | 2026-02-17T12:03:00Z | ~1m |
-| 04-restyle-filter-panel | Pending | - | - | - |
-| 05-cleanup-old-files | Pending | - | - | - |
+| 04-restyle-filter-panel | ✅ Done | 2026-02-17T12:03:00Z | 2026-02-17T12:04:00Z | ~1m |
+| 05-cleanup-old-files | ✅ Done | 2026-02-17T12:04:00Z | 2026-02-17T12:05:00Z | ~1m |
 
 ## Execution Log
 
@@ -36,4 +36,15 @@
 ### Batch 4: [04-restyle-filter-panel]
 - Started: 2026-02-17T12:03:00Z
 - Tasks: 04-restyle-filter-panel
+- ✅ 04-restyle-filter-panel: Done - Applied obsidian theme to FilterPanel, FilterEditor, FilterItem, ConjunctionToggle
+
+### Batch 5: [05-cleanup-old-files]
+- Started: 2026-02-17T12:04:00Z
+- Tasks: 05-cleanup-old-files
+- ✅ 05-cleanup-old-files: Done - Deleted SmartPlaylistEditor, useSmartPlaylistEditor, useBuilderSession, cleaned imports
+
+## Completion
+
+**Status:** ✅ All tasks completed successfully
+**Build:** ✅ npm run build succeeded
 
