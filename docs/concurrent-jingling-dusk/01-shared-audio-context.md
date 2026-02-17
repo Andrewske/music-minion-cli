@@ -1,6 +1,6 @@
 ---
 task: 01-shared-audio-context
-status: pending
+status: done
 depends: []
 files:
   - path: web/frontend/src/contexts/AudioElementContext.tsx
