@@ -1,6 +1,6 @@
 ---
 task: 06-cli-refactor
-status: pending
+status: done
 depends: [03-database-layer-refactor]
 files:
   - path: src/music_minion/ui/blessed/state.py
