@@ -24,50 +24,12 @@ export interface Track {
   emojis?: string[];
 }
 
-export interface SessionResponse {
-  session_id: number;
-  playlist_id: number;
-  started_at: string;
-  updated_at: string;
-  // Note: No current_track - call getNextCandidate() separately
-}
-
 export interface TrackActionResponse {
   success: boolean;
   // Note: No next_track - call getNextCandidate() separately
 }
 
 export const builderApi = {
-  // Session Management
-  startSession: async (playlistId: number): Promise<SessionResponse> => {
-    const res = await fetch(`${API_BASE}/builder/session/start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playlist_id: playlistId })
-    });
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.detail || 'Failed to start session');
-    }
-    return res.json();
-  },
-
-  getSession: async (playlistId: number): Promise<SessionResponse | null> => {
-    const res = await fetch(`${API_BASE}/builder/session/${playlistId}`);
-    if (!res.ok) {
-      if (res.status === 404) return null;
-      throw new Error('Failed to get session');
-    }
-    return res.json();
-  },
-
-  endSession: async (playlistId: number): Promise<void> => {
-    const res = await fetch(`${API_BASE}/builder/session/${playlistId}`, {
-      method: 'DELETE'
-    });
-    if (!res.ok) throw new Error('Failed to end session');
-  },
-
   // Context Activation
   activateBuilderMode: async (playlistId: number): Promise<void> => {
     const res = await fetch(`${API_BASE}/builder/activate/${playlistId}`, {
