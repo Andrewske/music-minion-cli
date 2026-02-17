@@ -95,14 +95,12 @@ class ComparisonState:
     track_a: Optional[dict[str, Any]] = None
     track_b: Optional[dict[str, Any]] = None
     highlighted: str = "a"  # "a" or "b" - which track is selected
-    session_id: str = ""
+
+    # KEEP: Always playlist-based now
+    playlist_id: Optional[int] = None  # Required when active=True
+
+    # KEEP: Local UI state
     comparisons_done: int = 0
-    playlist_id: Optional[int] = None
-    genre_filter: Optional[str] = None
-    year_filter: Optional[int] = None
-    source_filter: Optional[str] = None  # 'local', 'spotify', 'soundcloud', etc.
-    session_start: Optional[datetime] = None
-    saved_player_state: Optional[Any] = None  # PlayerState saved before session
     filtered_tracks: list[dict[str, Any]] = field(
         default_factory=list
     )  # Tracks for session
@@ -111,11 +109,8 @@ class ComparisonState:
     )
     coverage_library_stats: Optional[RatingCoverageStats] = None
     coverage_filter_stats: Optional[RatingCoverageStats] = None
-    coverage_library_filters: Optional[RatingCoverageFilters] = None
-    coverage_filter_filters: Optional[RatingCoverageFilters] = None
     last_autoplay_track_id: Optional[int] = None
     last_autoplay_time: Optional[float] = None
-    playlist_ranking_mode: bool = False  # True when ranking tracks within a playlist
 
 
 @dataclass

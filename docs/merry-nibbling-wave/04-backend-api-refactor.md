@@ -1,6 +1,6 @@
 ---
 task: 04-backend-api-refactor
-status: pending
+status: done
 depends: [03-database-layer-refactor]
 files:
   - path: web/backend/routers/comparisons.py

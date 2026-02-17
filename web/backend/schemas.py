@@ -26,40 +26,30 @@ class TrackInfo(BaseModel):
 class ComparisonPair(BaseModel):
     track_a: TrackInfo
     track_b: TrackInfo
-    session_id: str
 
 
-class StartSessionRequest(BaseModel):
-    source_filter: Optional[str] = None
-    genre_filter: Optional[str] = None
-    year_filter: Optional[str] = None
-    playlist_id: Optional[int] = None
-    ranking_mode: Optional[str] = None  # "playlist" for playlist-specific ranking
-    priority_path_prefix: Optional[str] = None  # e.g., "/music/2025" to prioritize
-
-
-class StartSessionResponse(BaseModel):
-    session_id: str
-    total_tracks: int
-    pair: ComparisonPair
-    prefetched_pair: Optional[ComparisonPair] = None  # Next pair pre-calculated
+class ComparisonRequest(BaseModel):
+    """Unified request schema for comparison operations."""
+    playlist_id: int  # REQUIRED - no optional modes
 
 
 class RecordComparisonRequest(BaseModel):
-    session_id: str
+    playlist_id: int
     track_a_id: int
     track_b_id: int
     winner_id: int
-    ranking_mode: Optional[str] = None  # "playlist" for playlist-specific ranking
-    playlist_id: Optional[int] = None  # Required when ranking_mode is "playlist"
-    priority_path_prefix: Optional[str] = None  # Continue weighted pairing
 
 
-class RecordComparisonResponse(BaseModel):
-    success: bool
-    comparisons_done: int
-    next_pair: Optional[ComparisonPair] = None
-    prefetched_pair: Optional[ComparisonPair] = None  # Pair after next, pre-calculated
+class ComparisonProgress(BaseModel):
+    compared: int
+    total: int
+    percentage: float
+
+
+class ComparisonResponse(BaseModel):
+    """Unified response schema for comparison operations."""
+    pair: Optional[ComparisonPair]  # None when ranking complete
+    progress: ComparisonProgress
 
 
 class WaveformData(BaseModel):

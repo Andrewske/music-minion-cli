@@ -13,9 +13,6 @@ class SyncManager:
 
     def __init__(self):
         self.connections: list[WebSocket] = []
-        # Stateful: store last-known state for reconnecting clients
-        self.current_comparison: dict[str, Any] | None = None
-        self.current_radio: dict[str, Any] | None = None
         # Device registry: {device_id: {id, name, connected_at, ws}}
         self.devices: dict[str, dict[str, Any]] = {}
         # Disconnect grace timers: {device_id: asyncio.Task}
@@ -31,25 +28,16 @@ class SyncManager:
         if ws in self.connections:
             self.connections.remove(ws)
 
-    def set_comparison_state(
-        self, pair: dict, prefetched: dict | None = None, session_id: str | None = None
-    ) -> None:
-        """Update stored comparison state (called after verdict)."""
-        if session_id is None and self.current_comparison:
-            # Preserve existing session_id if not provided
-            session_id = self.current_comparison.get("session_id")
-        self.current_comparison = {"pair": pair, "prefetched": prefetched, "session_id": session_id}
+    async def broadcast_comparison_update(self, playlist_id: int, progress: dict) -> None:
+        """Broadcast comparison update to all connected devices.
 
-    def set_radio_state(self, now_playing: dict) -> None:
-        """Update stored radio state (called on track start)."""
-        self.current_radio = now_playing
-
-    def get_current_state(self) -> dict:
-        """Get current state for new/reconnecting clients."""
-        return {
-            "comparison": self.current_comparison,
-            "radio": self.current_radio,
-        }
+        No caching - just notifies devices that a comparison happened.
+        Devices re-query for next pair themselves.
+        """
+        await self.broadcast("comparison:update", {
+            "playlist_id": playlist_id,
+            "progress": progress,
+        })
 
     async def register_device(self, device_id: str, device_name: str, ws: WebSocket) -> None:
         """Register a device or reconnect existing device (cancels grace timer)."""

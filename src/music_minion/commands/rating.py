@@ -989,11 +989,11 @@ def handle_playlist_ranking_command(
     Returns:
         (updated_context, should_continue)
     """
-    import threading
     from music_minion.domain.playlists.crud import get_playlist_by_id
     from music_minion.domain.rating.database import (
-        get_playlist_ranking_session,
-        create_playlist_ranking_session,
+        RankingComplete,
+        get_next_playlist_pair,
+        get_playlist_comparison_progress,
     )
     from music_minion.ui.blessed.state import ComparisonState
 
@@ -1003,71 +1003,36 @@ def handle_playlist_ranking_command(
         log(f"❌ Playlist with ID {playlist_id} not found", level="error")
         return ctx, True
 
-    # Check for existing session
-    existing_session = get_playlist_ranking_session(playlist_id)
-    if existing_session:
-        log(
-            f"📋 Resuming playlist ranking session for '{playlist['name']}'",
-            level="info",
-        )
-        session_id = existing_session["session_id"]
-        # Parse progress from existing session
-        import json
-
-        progress_stats = json.loads(existing_session["progress_stats"])
-        comparisons_done = progress_stats.get("compared", 0)
-    else:
-        log(f"🎯 Starting playlist ranking for '{playlist['name']}'", level="info")
-        session_id = str(uuid.uuid4())
-        comparisons_done = 0
-
-    # Get tracks for ranking
-    tracks = get_playlist_tracks_for_ranking(playlist_id)
-    if not tracks:
-        log(f"❌ No tracks found in playlist '{playlist['name']}'", level="error")
-        return ctx, True
-
-    # Create or resume session
-    if not existing_session:
-        create_playlist_ranking_session(playlist_id, session_id, len(tracks))
-
-    logger.info(f"Playlist ranking session: {session_id} for playlist {playlist_id}")
+    # Get progress stats (stateless)
+    progress = get_playlist_comparison_progress(playlist_id)
+    comparisons_done = progress["compared"]
 
     # If in blessed UI mode, start comparison interface
     if ctx.ui_mode == "blessed" and ctx.update_ui_state:
-        # Save current playback state
-        saved_state = ctx.player_state
+        # Get first pair (stateless)
+        try:
+            track_a, track_b = get_next_playlist_pair(playlist_id)
+        except RankingComplete:
+            log("Playlist ranking already complete!", level="info")
+            return ctx, True
+        except ValueError as e:
+            log(str(e), level="error")
+            return ctx, True
 
         # Create comparison state for playlist ranking
         comparison = ComparisonState(
             active=True,
             loading=False,
             highlighted="a",
-            session_id=session_id,
             comparisons_done=comparisons_done,
             playlist_id=playlist_id,
-            genre_filter=None,
-            year_filter=None,
-            source_filter=None,
-            session_start=datetime.now(),
-            saved_player_state=saved_state,
-            coverage_library_filters={},
-            coverage_filter_filters={},
-        )
-
-        # Load initial track pair
-        track_a, track_b = select_playlist_ranking_pair(tracks, session_id)
-
-        # Update comparison with tracks and ratings
-        comparison = comparison._replace(
             track_a=track_a,
             track_b=track_b,
-            track_a_rating=track_a.playlist_rating,
-            track_b_rating=track_b.playlist_rating,
         )
 
         log(
-            f"🎵 Starting playlist ranking: {len(tracks)} tracks in '{playlist['name']}'",
+            f"🎵 Starting playlist ranking for '{playlist['name']}' "
+            f"({comparisons_done}/{progress['total']} comparisons done)",
             level="info",
         )
 
