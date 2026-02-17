@@ -1,6 +1,6 @@
 ---
 task: 05-frontend-review-mode-ui
-status: pending
+status: done
 depends: [04-frontend-hook-mutations]
 files:
   - path: web/frontend/src/pages/SmartPlaylistEditor.tsx
