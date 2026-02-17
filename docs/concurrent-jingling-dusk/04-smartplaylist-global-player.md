@@ -1,9 +1,9 @@
 ---
 task: 04-smartplaylist-global-player
-status: pending
+status: done
 depends: [02-integrate-useplayer, 03-wavesurfer-external-audio]
 files:
-  - path: web/frontend/src/pages/SmartPlaylistEditor.tsx
+  - path: web/frontend/src/pages/PlaylistBuilder.tsx
     action: modify
 ---
 
