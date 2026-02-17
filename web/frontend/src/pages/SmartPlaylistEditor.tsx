@@ -3,6 +3,7 @@ import { useSmartPlaylistEditor } from '../hooks/useSmartPlaylistEditor';
 import FilterPanel from '../components/builder/FilterPanel';
 import { TrackQueueTable } from '../components/builder/TrackQueueTable';
 import { WaveformPlayer } from '../components/WaveformPlayer';
+import { SkippedTracksDialog } from '../components/builder/SkippedTracksDialog';
 import type { Track } from '../api/builder';
 
 interface SmartPlaylistEditorProps {
@@ -20,6 +21,7 @@ export function SmartPlaylistEditor({ playlistId, playlistName }: SmartPlaylistE
     sorting,
     setSorting,
     skipTrack,
+    unskipTrack,
     skippedTracks,
     currentTrack,
     currentTrackIndex,
@@ -30,6 +32,7 @@ export function SmartPlaylistEditor({ playlistId, playlistName }: SmartPlaylistE
   } = useSmartPlaylistEditor(playlistId);
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isSkippedDialogOpen, setIsSkippedDialogOpen] = useState(false);
 
   // Select first track when tracks load (filter mode only)
   useEffect(() => {
@@ -205,19 +208,15 @@ export function SmartPlaylistEditor({ playlistId, playlistName }: SmartPlaylistE
             />
 
             {/* View Skipped button */}
-            {skippedTracks.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-slate-700">
-                <button
-                  onClick={() => {
-                    // TODO: Task 06 will implement SkippedTracksDialog
-                    alert(`${skippedTracks.length} skipped tracks (dialog coming in Task 06)`);
-                  }}
-                  className="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded transition-colors text-sm"
-                >
-                  View Skipped ({skippedTracks.length})
-                </button>
-              </div>
-            )}
+            <div className="mt-4 pt-4 border-t border-slate-700">
+              <button
+                onClick={() => setIsSkippedDialogOpen(true)}
+                disabled={skippedTracks.length === 0}
+                className="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:text-slate-600 rounded transition-colors text-sm"
+              >
+                View Skipped ({skippedTracks.length})
+              </button>
+            </div>
           </aside>
 
           {/* Center: Track display and player */}
@@ -292,6 +291,15 @@ export function SmartPlaylistEditor({ playlistId, playlistName }: SmartPlaylistE
           </main>
         </div>
       )}
+
+      {/* Skipped Tracks Dialog */}
+      <SkippedTracksDialog
+        open={isSkippedDialogOpen}
+        onClose={() => setIsSkippedDialogOpen(false)}
+        tracks={skippedTracks}
+        onUnskip={(trackId) => unskipTrack.mutate(trackId)}
+        isUnskipping={unskipTrack.isPending}
+      />
     </div>
   );
 }

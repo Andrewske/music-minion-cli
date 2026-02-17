@@ -12,8 +12,8 @@
 | 02-backend-skip-endpoints | ✅ Done | 2026-02-16T00:01:00Z | 2026-02-16T00:02:00Z | ~1m |
 | 03-frontend-api-functions | ✅ Done | 2026-02-16T00:02:00Z | 2026-02-16T00:03:00Z | ~1m |
 | 04-frontend-hook-mutations | ✅ Done | 2026-02-16T00:03:00Z | 2026-02-16T00:04:00Z | ~1m |
-| 05-frontend-review-mode-ui | Running | 2026-02-16T00:04:00Z | - | - |
-| 06-frontend-skipped-dialog | Pending | - | - | - |
+| 05-frontend-review-mode-ui | ✅ Done | 2026-02-16T00:04:00Z | 2026-02-16T00:05:00Z | ~1m |
+| 06-frontend-skipped-dialog | Running | 2026-02-16T00:05:00Z | - | - |
 
 ## Dependency Graph
 
