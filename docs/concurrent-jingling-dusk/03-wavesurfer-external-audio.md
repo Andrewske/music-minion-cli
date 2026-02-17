@@ -1,6 +1,6 @@
 ---
 task: 03-wavesurfer-external-audio
-status: pending
+status: done
 depends: [01-shared-audio-context]
 files:
   - path: web/frontend/src/hooks/useWavesurfer.ts
