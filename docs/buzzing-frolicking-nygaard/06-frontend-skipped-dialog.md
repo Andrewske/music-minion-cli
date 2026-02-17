@@ -1,6 +1,6 @@
 ---
 task: 06-frontend-skipped-dialog
-status: pending
+status: done
 depends: [05-frontend-review-mode-ui]
 files:
   - path: web/frontend/src/components/builder/SkippedTracksDialog.tsx
