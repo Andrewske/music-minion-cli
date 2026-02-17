@@ -10,10 +10,33 @@ interface UseWavesurferOptions {
   onReady?: (duration: number) => void;
   onSeek?: (progress: number) => void;
   onTimeUpdate?: (currentTime: number) => void;
+  externalAudio?: HTMLAudioElement | null;  // Use shared audio element instead of creating internal one
+  trackDuration?: number;  // Required when using externalAudio with peaks
 }
 
-function createWavesurferConfig(container: HTMLDivElement) {
-  return {
+interface WavesurferConfig {
+  container: HTMLDivElement;
+  waveColor: string;
+  progressColor: string;
+  cursorColor: string;
+  barWidth: number;
+  barGap: number;
+  barRadius: number;
+  height: number;
+  normalize: boolean;
+  backend?: 'MediaElement';
+  media?: HTMLAudioElement;
+  peaks?: number[][];
+  duration?: number;
+}
+
+function createWavesurferConfig(
+  container: HTMLDivElement,
+  externalAudio?: HTMLAudioElement | null,
+  peaks?: number[],
+  duration?: number
+): WavesurferConfig {
+  const baseConfig: WavesurferConfig = {
     container,
     waveColor: '#475569', // slate-600
     progressColor: '#10b981', // emerald-500
@@ -23,11 +46,18 @@ function createWavesurferConfig(container: HTMLDivElement) {
     barRadius: 2,
     height: 64,
     normalize: true,
-    backend: 'MediaElement' as const,
   };
+
+  // External audio: pass media + peaks + duration in config (no load() needed)
+  if (externalAudio && peaks && duration) {
+    return { ...baseConfig, media: externalAudio, peaks: [peaks], duration };
+  }
+
+  // Internal audio: use MediaElement backend (will call load() later)
+  return { ...baseConfig, backend: 'MediaElement' as const };
 }
 
-export function useWavesurfer({ trackId, isPlaying, onFinish, onReady, onSeek, onTimeUpdate }: UseWavesurferOptions) {
+export function useWavesurfer({ trackId, isPlaying, onFinish, onReady, onSeek, onTimeUpdate, externalAudio, trackDuration }: UseWavesurferOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -109,14 +139,24 @@ export function useWavesurfer({ trackId, isPlaying, onFinish, onReady, onSeek, o
       if (abortSignal.aborted) return;
 
       // Create WaveSurfer instance
-      const wavesurfer = WaveSurfer.create(createWavesurferConfig(containerRef.current));
+      const wavesurfer = WaveSurfer.create(
+        createWavesurferConfig(
+          containerRef.current,
+          externalAudio,
+          waveformData?.peaks,
+          trackDuration
+        )
+      );
 
-      // Load audio with or without waveform
-      const streamUrl = getStreamUrl(trackId);
-      if (waveformData?.peaks) {
-        wavesurfer.load(streamUrl, [waveformData.peaks]);
-      } else {
-        wavesurfer.load(streamUrl); // Basic playback without visualization
+      // Only call load() for internal audio mode (no external element)
+      // External audio mode: WaveSurfer auto-initializes from config, no load() needed
+      if (!externalAudio) {
+        const streamUrl = getStreamUrl(trackId);
+        if (waveformData?.peaks) {
+          wavesurfer.load(streamUrl, [waveformData.peaks]);
+        } else {
+          wavesurfer.load(streamUrl); // Basic playback without visualization
+        }
       }
 
       // Set up event listeners
@@ -165,7 +205,7 @@ export function useWavesurfer({ trackId, isPlaying, onFinish, onReady, onSeek, o
       // Audio loading failed - show error to user
       setError(formatError(error));
     }
-  }, [trackId, handleReady, handleSeek, handleFinish]);
+  }, [trackId, handleReady, handleSeek, handleFinish, externalAudio, trackDuration]);
 
   useEffect(() => {
     if (!containerRef.current || !trackId) return;

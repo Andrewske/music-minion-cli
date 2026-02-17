@@ -1,5 +1,7 @@
 import { useEffect, useCallback } from 'react';
 import { useWavesurfer } from '../hooks/useWavesurfer';
+import { useAudioElement } from '../contexts/AudioElementContext';
+import { usePlayerStore } from '../stores/playerStore';
 import type { TrackInfo } from '../types';
 
 interface WaveformPlayerProps {
@@ -10,10 +12,28 @@ interface WaveformPlayerProps {
 }
 
 export function WaveformPlayer({ track, isPlaying, onTogglePlayPause, onFinish }: WaveformPlayerProps) {
+  const sharedAudio = useAudioElement();
+  const globalTrackId = usePlayerStore(state => state.currentTrack?.id);
+  const { seek } = usePlayerStore();
+
+  // Only use shared audio if this track is the global current track
+  const audioElement = track.id === globalTrackId ? sharedAudio : null;
+
+  // When using external audio, route waveform seeks through the store
+  // This ensures WebSocket sync to other devices
+  const handleSeekViaStore = useCallback((progress: number) => {
+    if (!track.duration) return;
+    const positionMs = progress * track.duration * 1000;
+    seek(positionMs);
+  }, [seek, track.duration]);
+
   const { containerRef, currentTime, duration, error, retryLoad, togglePlayPause } = useWavesurfer({
     trackId: track.id,
     isPlaying,
     onFinish,
+    externalAudio: audioElement,
+    trackDuration: track.duration,
+    onSeek: audioElement ? handleSeekViaStore : undefined,  // Route through store when external
   });
 
   // Update Media Session for phone notifications
