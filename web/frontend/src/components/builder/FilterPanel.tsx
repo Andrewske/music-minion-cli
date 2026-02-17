@@ -6,7 +6,7 @@ import FilterEditor from './FilterEditor';
 
 interface FilterPanelProps {
   filters: Filter[];
-  onUpdate: (filters: Filter[]) => void;
+  onUpdate: (filters: Filter[]) => void | Promise<void>;
   isUpdating: boolean;
   playlistId: number;
 }
