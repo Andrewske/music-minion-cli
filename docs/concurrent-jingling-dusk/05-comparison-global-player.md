@@ -1,6 +1,6 @@
 ---
 task: 05-comparison-global-player
-status: pending
+status: done
 depends: [02-integrate-useplayer, 03-wavesurfer-external-audio]
 files:
   - path: web/frontend/src/components/ComparisonView.tsx
