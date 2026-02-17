@@ -1,6 +1,6 @@
 ---
 task: 05-cleanup-old-files
-status: pending
+status: done
 depends:
   - 03-unify-playlist-builder
   - 04-restyle-filter-panel
