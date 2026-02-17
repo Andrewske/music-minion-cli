@@ -10,8 +10,8 @@
 | Task | Status | Started | Completed | Duration |
 |------|--------|---------|-----------|----------|
 | 01-database-migration | ✅ Done | 2026-02-17T00:00:00Z | 2026-02-17 | ~2min |
-| 02-config-cache-playlist-id | 🔄 Running | 2026-02-17 | - | - |
-| 03-database-layer-refactor | ⏳ Pending | - | - | - |
+| 02-config-cache-playlist-id | ✅ Done | 2026-02-17 | 2026-02-17 | ~1min |
+| 03-database-layer-refactor | 🔄 Running | 2026-02-17 | - | - |
 | 04-backend-api-refactor | ⏳ Pending | - | - | - |
 | 05-frontend-refactor | ⏳ Pending | - | - | - |
 | 06-cli-refactor | ⏳ Pending | - | - | - |
@@ -34,6 +34,11 @@
 ### Batch 2
 - Started: 2026-02-17
 - Tasks: 02-config-cache-playlist-id
+- ✅ 02-config-cache-playlist-id: Added `get_all_playlist_id()` with lazy caching in config.py
+
+### Batch 3
+- Started: 2026-02-17
+- Tasks: 03-database-layer-refactor
 
 ## Notes
 
