@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { usePlaylistBuilder } from '../hooks/usePlaylistBuilder';
 import { useIPCWebSocket } from '../hooks/useIPCWebSocket';
+import { usePlayerStore } from '../stores/playerStore';
 import { builderApi } from '../api/builder';
 import type { Track } from '../api/builder';
 import { TrackQueueTable } from '../components/builder/TrackQueueTable';
@@ -18,12 +19,13 @@ interface PlaylistBuilderProps {
 
 export function PlaylistBuilder({ playlistId, playlistName, playlistType }: PlaylistBuilderProps) {
   const [queueTrackId, setQueueTrackId] = useState<number | null>(null);
-  const [nowPlayingTrack, setNowPlayingTrack] = useState<Track | null>(null);
-  const [isPlaying, setIsPlaying] = useState(true); // Auto-play by default
   const [loopEnabled, setLoopEnabled] = useState(true);
   const [isSkippedDialogOpen, setIsSkippedDialogOpen] = useState(false);
 
   const [localTrackOverrides, setLocalTrackOverrides] = useState<Record<number, { emojis?: string[] }>>({});
+
+  // Global player state
+  const { currentTrack: globalCurrentTrack, isPlaying, play, pause, resume } = usePlayerStore();
 
   // Unified hook for both playlist types
   const builder = usePlaylistBuilder(playlistId, playlistType);
@@ -53,8 +55,10 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType }: Play
     }
   }, [builder.tracks, queueTrackId, queueIndex]);
 
-  // Current track for display = nowPlayingTrack ?? tracks[queueIndex]
-  const currentTrack = nowPlayingTrack ?? builder.tracks[queueIndex] ?? null;
+  // Current track for display: prefer global player track if it matches this builder's context,
+  // otherwise fall back to the local queue position
+  const localCurrentTrack = builder.tracks[queueIndex] ?? null;
+  const currentTrack = globalCurrentTrack ?? localCurrentTrack;
 
   // Activate builder mode on mount, deactivate on unmount
   useEffect(() => {
@@ -71,7 +75,6 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType }: Play
   useEffect(() => {
     if (builder.tracks.length > 0) {
       setQueueTrackId(builder.tracks[0].id);
-      setNowPlayingTrack(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [builder.sorting]);
@@ -90,16 +93,25 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType }: Play
     }
   });
 
-  // Auto-play new tracks
+  // Auto-play when queue track changes (initial load or queue advancement)
   useEffect(() => {
-    if (currentTrack) {
-      setIsPlaying(true);
+    if (localCurrentTrack && !globalCurrentTrack) {
+      play(localCurrentTrack, { type: 'builder', playlist_id: playlistId });
     }
-  }, [currentTrack]);
+  }, [localCurrentTrack, globalCurrentTrack, play, playlistId]);
+
+  // Handle play/pause toggle via global player
+  const handleTogglePlayPause = useCallback((): void => {
+    if (isPlaying) {
+      pause();
+    } else {
+      resume();
+    }
+  }, [isPlaying, pause, resume]);
 
   // Keyboard shortcuts for waveform control
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const handleKeyDown = (e: KeyboardEvent): void => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key >= '0' && e.key <= '9') {
         const percent = parseInt(e.key) * 10;
@@ -107,48 +119,51 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType }: Play
       }
       if (e.key === ' ') {
         e.preventDefault();
-        setIsPlaying(prev => !prev);
+        handleTogglePlayPause();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [handleTogglePlayPause]);
 
   // Handle add track (manual playlists only)
-  const handleAdd = async () => {
-    const trackToAdd = nowPlayingTrack ?? builder.tracks[queueIndex];
+  const handleAdd = async (): Promise<void> => {
+    const trackToAdd = currentTrack;
     if (!trackToAdd || builder.isAddingTrack || builder.isSkippingTrack) return;
 
     await builder.addTrack.mutateAsync(trackToAdd.id);
 
-    // Advance queue to next track by ID
+    // Advance queue to next track by ID and play it
     const nextIndex = queueIndex + 1;
     if (nextIndex < builder.tracks.length) {
-      setQueueTrackId(builder.tracks[nextIndex].id);
+      const nextTrack = builder.tracks[nextIndex];
+      setQueueTrackId(nextTrack.id);
+      play(nextTrack, { type: 'builder', playlist_id: playlistId });
     }
-    setNowPlayingTrack(null); // Clear preview state
   };
 
   // Handle skip track (both playlist types)
-  const handleSkip = async () => {
-    const trackToSkip = nowPlayingTrack ?? builder.tracks[queueIndex];
+  const handleSkip = async (): Promise<void> => {
+    const trackToSkip = currentTrack;
     if (!trackToSkip || builder.isAddingTrack || builder.isSkippingTrack) return;
 
     await builder.skipTrack.mutateAsync(trackToSkip.id);
 
-    // Advance queue to next track by ID
+    // Advance queue to next track by ID and play it
     const nextIndex = queueIndex + 1;
     if (nextIndex < builder.tracks.length) {
-      setQueueTrackId(builder.tracks[nextIndex].id);
+      const nextTrack = builder.tracks[nextIndex];
+      setQueueTrackId(nextTrack.id);
+      play(nextTrack, { type: 'builder', playlist_id: playlistId });
     }
-    setNowPlayingTrack(null); // Clear preview state
   };
 
   // Handle waveform finish (loop or skip)
-  const handleWaveformFinish = () => {
+  const handleWaveformFinish = (): void => {
     if (loopEnabled) {
-      setIsPlaying(false);
-      setTimeout(() => setIsPlaying(true), 100);
+      // For looping in builder, pause then resume to restart
+      pause();
+      setTimeout(() => resume(), 100);
     } else {
       handleSkip();
     }
@@ -181,7 +196,7 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType }: Play
               track={currentTrack}
               isPlaying={isPlaying}
               loopEnabled={loopEnabled}
-              onTogglePlayPause={() => setIsPlaying(!isPlaying)}
+              onTogglePlayPause={handleTogglePlayPause}
               onLoopChange={setLoopEnabled}
               onFinish={handleWaveformFinish}
             />
@@ -200,9 +215,9 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType }: Play
           <TrackQueueTable
             tracks={builder.tracks}
             queueIndex={queueIndex >= 0 ? queueIndex : 0}
-            nowPlayingId={nowPlayingTrack?.id ?? null}
+            nowPlayingId={globalCurrentTrack?.id ?? null}
             onTrackClick={(track) => {
-              if (track.id !== nowPlayingTrack?.id) setNowPlayingTrack(track);
+              play(track, { type: 'builder', playlist_id: playlistId });
             }}
             sorting={builder.sorting}
             onSortingChange={builder.setSorting}
