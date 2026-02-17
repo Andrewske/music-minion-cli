@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { usePlaylists } from '../../hooks/usePlaylists'
-import { createPlaylist } from '../../api/playlists'
+import { createPlaylist, deletePlaylist } from '../../api/playlists'
 import type { Playlist } from '../../types'
 
 export const Route = createFileRoute('/playlist-builder/')({
@@ -13,6 +13,7 @@ function PlaylistSelection() {
   const [newPlaylistName, setNewPlaylistName] = useState('')
   const [error, setError] = useState('')
   const [showCreateForm, setShowCreateForm] = useState(false)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
   const navigate = useNavigate()
 
   const { data: playlistsData, isLoading, isError, refetch } = usePlaylists()
@@ -32,6 +33,21 @@ function PlaylistSelection() {
     },
     onError: (error: Error) => {
       setError(error.message)
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (playlistId: number) => deletePlaylist(playlistId),
+    onSuccess: (_, deletedId) => {
+      queryClient.setQueryData<Playlist[]>(
+        ['playlists'],
+        (old) => (old || []).filter((p) => p.id !== deletedId)
+      )
+      setConfirmDeleteId(null)
+    },
+    onError: (error: Error) => {
+      setError(error.message)
+      setConfirmDeleteId(null)
     },
   })
 
@@ -92,28 +108,67 @@ function PlaylistSelection() {
             <p className="text-white/30 text-sm py-4">No playlists found</p>
           ) : (
             playlists.map((playlist: Playlist) => (
-              <button
+              <div
                 key={playlist.id}
-                onClick={() => handleSelectPlaylist(playlist.id)}
-                className="w-full group text-left"
+                className="group border-b border-obsidian-border hover:border-obsidian-accent/50 transition-colors"
               >
-                <div className="flex items-center justify-between py-4 border-b border-obsidian-border
-                  hover:border-obsidian-accent/50 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <span className="text-white/90 group-hover:text-obsidian-accent transition-colors">
-                      {playlist.name}
+                {confirmDeleteId === playlist.id ? (
+                  <div className="flex items-center justify-between py-4 px-2 bg-red-900/20">
+                    <span className="text-white/70 text-sm">
+                      Delete "{playlist.name}"?
                     </span>
-                    {playlist.type === 'smart' && (
-                      <span className="text-[10px] text-obsidian-accent/60 tracking-wider uppercase">
-                        Smart
-                      </span>
-                    )}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => deleteMutation.mutate(playlist.id)}
+                        disabled={deleteMutation.isPending}
+                        className="px-3 py-1 text-xs bg-red-600 text-white hover:bg-red-500
+                          disabled:opacity-50 transition-colors"
+                      >
+                        {deleteMutation.isPending ? '...' : 'Delete'}
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteId(null)}
+                        className="px-3 py-1 text-xs border border-obsidian-border text-white/50
+                          hover:text-white transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
-                  <span className="text-white/20 text-sm font-sf-mono">
-                    {playlist.track_count}
-                  </span>
-                </div>
-              </button>
+                ) : (
+                  <div className="flex items-center justify-between py-4">
+                    <button
+                      onClick={() => handleSelectPlaylist(playlist.id)}
+                      className="flex-1 text-left flex items-center gap-3"
+                    >
+                      <span className="text-white/90 group-hover:text-obsidian-accent transition-colors">
+                        {playlist.name}
+                      </span>
+                      {playlist.type === 'smart' && (
+                        <span className="text-[10px] text-obsidian-accent/60 tracking-wider uppercase">
+                          Smart
+                        </span>
+                      )}
+                    </button>
+                    <div className="flex items-center gap-4">
+                      <span className="text-white/20 text-sm font-sf-mono">
+                        {playlist.track_count}
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setConfirmDeleteId(playlist.id)
+                        }}
+                        className="opacity-0 group-hover:opacity-100 text-white/30 hover:text-red-400
+                          transition-all text-sm px-2"
+                        title="Delete playlist"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             ))
           )}
         </div>

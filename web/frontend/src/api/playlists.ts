@@ -88,3 +88,13 @@ export async function reorderPinnedPlaylist(
   if (!response.ok) throw new Error('Failed to reorder playlist');
   return response.json();
 }
+
+export async function deletePlaylist(
+  playlistId: number
+): Promise<{ deleted: boolean; playlist_id: number }> {
+  const response = await fetch(`${API_BASE}/playlists/${playlistId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) throw new Error('Failed to delete playlist');
+  return response.json();
+}
