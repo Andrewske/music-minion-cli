@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from pydantic import BaseModel
 from ..deps import get_db
 from ..queries.emojis import batch_fetch_track_emojis
@@ -19,9 +19,11 @@ router = APIRouter()
 def get_playlist_tracks_with_ratings(
     playlist_id: int,
     sort_field: str = "artist",
-    sort_direction: str = "asc"
-) -> List[dict]:
-    """Get all tracks in a playlist with their ratings, wins, losses, and emojis.
+    sort_direction: str = "asc",
+    limit: Optional[int] = None,
+    offset: int = 0
+) -> Tuple[List[dict], int]:
+    """Get tracks in a playlist with their ratings, wins, losses, and emojis.
 
     Handles both manual playlists (from playlist_tracks table) and
     smart playlists (dynamically evaluated from filters).
@@ -30,6 +32,11 @@ def get_playlist_tracks_with_ratings(
         playlist_id: ID of the playlist
         sort_field: Field to sort by (artist, title, album, year, bpm, etc.)
         sort_direction: Sort direction ('asc' or 'desc')
+        limit: Maximum tracks to return (None = all)
+        offset: Number of tracks to skip
+
+    Returns:
+        Tuple of (tracks, total_count)
     """
     from music_minion.core.database import get_db_connection
     from music_minion.domain.playlists import get_playlist_by_id
@@ -91,11 +98,24 @@ def get_playlist_tracks_with_ratings(
             key=lambda x: (x.get(sort_field) or "", x.get("artist") or ""),
             reverse=(direction == "DESC")
         )
-        return result
+
+        # Apply pagination
+        total = len(result)
+        if limit is not None:
+            result = result[offset:offset + limit]
+
+        return result, total
 
     # Manual playlist - query from playlist_tracks table
     with get_db_connection() as conn:
         # SQL injection safe: column and direction validated via whitelist above
+        # Use COUNT(*) OVER() window function for total count with pagination
+        pagination_clause = ""
+        params: list = [playlist_id]
+        if limit is not None:
+            pagination_clause = "LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
+
         query = f"""
             SELECT
                 t.id,
@@ -110,25 +130,34 @@ def get_playlist_tracks_with_ratings(
                 COALESCE(per.rating, 1500.0) as elo_rating,
                 COALESCE(per.comparison_count, 0) as comparison_count,
                 COALESCE(per.wins, 0) as wins,
-                COALESCE(per.comparison_count - per.wins, 0) as losses
+                COALESCE(per.comparison_count - per.wins, 0) as losses,
+                COUNT(*) OVER() as total_count
             FROM playlist_tracks pt
             JOIN tracks t ON pt.track_id = t.id
             LEFT JOIN playlist_elo_ratings per ON pt.track_id = per.track_id
                 AND per.playlist_id = pt.playlist_id
             WHERE pt.playlist_id = ?
             ORDER BY {column} {direction}, t.title ASC
+            {pagination_clause}
         """
-        cursor = conn.execute(query, (playlist_id,))
-        tracks = [dict(row) for row in cursor.fetchall()]
+        cursor = conn.execute(query, params)
+        rows = cursor.fetchall()
 
-        # Batch-fetch emojis for all tracks
+        # Extract total from first row (window function), or 0 if no rows
+        total = rows[0]["total_count"] if rows else 0
+        tracks = [
+            {k: v for k, v in dict(row).items() if k != "total_count"}
+            for row in rows
+        ]
+
+        # Batch-fetch emojis for paginated tracks only
         if tracks:
             track_ids = [t["id"] for t in tracks]
             emojis_map = batch_fetch_track_emojis(track_ids, conn)
             for track in tracks:
                 track["emojis"] = emojis_map.get(track["id"], [])
 
-        return tracks
+        return tracks, total
 
 
 def get_playlist_name(playlist_id: int) -> Optional[str]:
@@ -246,16 +275,14 @@ async def get_playlist_tracks(
         if not playlist_name:
             raise HTTPException(status_code=404, detail="Playlist not found")
 
-        # Get all tracks with ratings (with sorting)
-        all_tracks = get_playlist_tracks_with_ratings(
+        # Get paginated tracks with ratings (pagination pushed to DB for manual playlists)
+        tracks_data, total = get_playlist_tracks_with_ratings(
             playlist_id,
             sort_field=sort_field,
-            sort_direction=sort_direction
+            sort_direction=sort_direction,
+            limit=limit,
+            offset=offset
         )
-
-        # Apply pagination
-        total = len(all_tracks)
-        tracks_data = all_tracks[offset:offset + limit]
 
         # Return paginated track data with metadata
         return {
