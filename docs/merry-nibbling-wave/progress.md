@@ -11,10 +11,10 @@
 |------|--------|---------|-----------|----------|
 | 01-database-migration | ✅ Done | 2026-02-17T00:00:00Z | 2026-02-17 | ~2min |
 | 02-config-cache-playlist-id | ✅ Done | 2026-02-17 | 2026-02-17 | ~1min |
-| 03-database-layer-refactor | 🔄 Running | 2026-02-17 | - | - |
-| 04-backend-api-refactor | ⏳ Pending | - | - | - |
+| 03-database-layer-refactor | ✅ Done | 2026-02-17 | 2026-02-17 | ~3min |
+| 04-backend-api-refactor | 🔄 Running | 2026-02-17 | - | - |
 | 05-frontend-refactor | ⏳ Pending | - | - | - |
-| 06-cli-refactor | ⏳ Pending | - | - | - |
+| 06-cli-refactor | 🔄 Running | 2026-02-17 | - | - |
 
 ## Execution Batches
 
@@ -39,6 +39,11 @@
 ### Batch 3
 - Started: 2026-02-17
 - Tasks: 03-database-layer-refactor
+- ✅ 03-database-layer-refactor: Removed 650 lines (global/session functions), added stateless playlist queries (72ms avg)
+
+### Batch 4 (PARALLEL)
+- Started: 2026-02-17
+- Tasks: 04-backend-api-refactor, 06-cli-refactor
 
 ## Notes
 
