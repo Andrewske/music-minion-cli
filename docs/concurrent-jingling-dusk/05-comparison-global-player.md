@@ -81,15 +81,19 @@ const handleTrackTap = (track: TrackInfo) => {
 
 **UPDATE A/B looping (onFinish callback):**
 ```typescript
+const { isComparisonMode } = useComparisonStore();
+
 const handleTrackFinish = useCallback(() => {
-  if (!currentPair || !currentTrack) return;
+  // Guard: only do A/B switching if still in comparison mode
+  // (user may have navigated away while track was playing)
+  if (!currentPair || !currentTrack || !isComparisonMode) return;
 
   const otherTrack = currentTrack.id === currentPair.track_a.id
     ? currentPair.track_b
     : currentPair.track_a;
 
   play(otherTrack, { type: 'comparison' });
-}, [currentPair, currentTrack, play]);
+}, [currentPair, currentTrack, isComparisonMode, play]);
 ```
 
 ### 3. Modify usePlayer.ts for comparison context
@@ -113,9 +117,12 @@ This hook is now redundant - components use playerStore directly.
 
 ```bash
 rm web/frontend/src/hooks/useAudioPlayer.ts
+rm web/frontend/src/hooks/useAudioPlayer.test.ts
 ```
 
-Update any imports that reference it.
+**Files that import useAudioPlayer (must update):**
+- `web/frontend/src/components/ComparisonView.tsx` - remove import, use playerStore directly
+- `web/frontend/src/components/ComparisonView.test.tsx` - update test mocks
 
 ## Verification
 - Tap track in comparison → plays via global player

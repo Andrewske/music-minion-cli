@@ -18,3 +18,7 @@ created: 2025-02-17
 | 06 | cleanup-and-verify | pending | - |
 
 ## Notes
+
+### Parallelization Opportunities
+- Tasks 02 and 03 both depend only on 01 → can run in parallel
+- Tasks 04 and 05 both depend on 02+03 → can run in parallel after 02+03 complete

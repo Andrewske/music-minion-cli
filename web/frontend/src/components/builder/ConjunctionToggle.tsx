@@ -11,10 +11,10 @@ function ConjunctionToggle({ conjunction, onChange, disabled }: ConjunctionToggl
         type="button"
         onClick={onChange}
         disabled={disabled}
-        className={`px-3 py-1 text-xs rounded-full font-medium transition-colors ${
+        className={`px-3 py-1 text-xs border font-medium transition-colors ${
           conjunction === 'AND'
-            ? 'bg-slate-700 hover:bg-slate-600 text-gray-300'
-            : 'bg-blue-600 hover:bg-blue-700 text-white'
+            ? 'border-obsidian-border text-white/40 hover:border-white/40 hover:text-white/60'
+            : 'border-obsidian-accent text-obsidian-accent hover:bg-obsidian-accent/10'
         } disabled:opacity-50 disabled:cursor-not-allowed`}
       >
         {conjunction}

@@ -1,6 +1,6 @@
 ---
 task: 04-restyle-filter-panel
-status: pending
+status: done
 depends:
   - 03-unify-playlist-builder
 files:

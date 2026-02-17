@@ -93,8 +93,8 @@ function FilterPanel({ filters, onUpdate, isUpdating, playlistId }: FilterPanelP
 
   return (
     <>
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold">Filters</h3>
+      <div className="flex justify-between items-center mb-2">
+        <h3 className="text-xs font-medium text-white/60 tracking-wider uppercase">Filters</h3>
         {filters.length > 0 && (
           <button
             type="button"
@@ -106,7 +106,7 @@ function FilterPanel({ filters, onUpdate, isUpdating, playlistId }: FilterPanelP
         )}
       </div>
 
-      <div className="space-y-2 mb-4">
+      <div className="space-y-1 mb-2">
         {filters.map((filter, idx) => (
           <Fragment key={`${filter.field}-${filter.operator}-${filter.value}-${idx}`}>
             {idx > 0 && (
@@ -139,15 +139,15 @@ function FilterPanel({ filters, onUpdate, isUpdating, playlistId }: FilterPanelP
           type="button"
           onClick={startAdding}
           disabled={isUpdating}
-          className="w-full py-2 border-2 border-dashed border-slate-700 rounded-lg hover:border-blue-500 text-sm text-gray-400 hover:text-blue-400 disabled:opacity-50"
+          className="w-full py-2 border border-dashed border-obsidian-border hover:border-obsidian-accent text-sm text-white/40 hover:text-obsidian-accent disabled:opacity-50 transition-colors"
         >
           + Add Filter
         </button>
       )}
 
       {filters.length === 0 && !isEditing && (
-        <div className="text-center py-8 text-gray-500">
-          <p className="text-sm mb-3">No filters active</p>
+        <div className="text-center py-6 text-white/30">
+          <p className="text-sm mb-2">No filters active</p>
           <p className="text-xs">All tracks are candidates</p>
         </div>
       )}

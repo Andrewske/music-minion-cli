@@ -39,7 +39,9 @@ interface UseWavesurferOptions {
 ```typescript
 function createWavesurferConfig(
   container: HTMLDivElement,
-  externalAudio?: HTMLAudioElement | null
+  externalAudio?: HTMLAudioElement | null,
+  peaks?: number[],
+  duration?: number
 ) {
   const baseConfig = {
     container,
@@ -53,26 +55,27 @@ function createWavesurferConfig(
     normalize: true,
   };
 
-  if (externalAudio) {
-    return { ...baseConfig, media: externalAudio };
+  // External audio: pass media + peaks + duration in config (no load() needed)
+  if (externalAudio && peaks && duration) {
+    return { ...baseConfig, media: externalAudio, peaks: [peaks], duration };
   }
-  return { ...baseConfig, backend: 'MediaElement' as const };
+  return baseConfig;
 }
 ```
 
 **In initWavesurfer, conditionally load audio:**
 ```typescript
 const wavesurfer = WaveSurfer.create(
-  createWavesurferConfig(containerRef.current, externalAudio)
+  createWavesurferConfig(
+    containerRef.current,
+    externalAudio,
+    waveformData?.peaks,
+    trackDuration  // Pass track duration from props/store
+  )
 );
 
-if (externalAudio) {
-  // External audio: just load peaks for visualization
-  if (waveformData?.peaks) {
-    wavesurfer.load('', [waveformData.peaks]);
-  }
-} else {
-  // Internal audio: load stream URL
+// Only call load() for internal audio mode (no external element)
+if (!externalAudio) {
   const streamUrl = getStreamUrl(trackId);
   if (waveformData?.peaks) {
     wavesurfer.load(streamUrl, [waveformData.peaks]);
@@ -80,6 +83,7 @@ if (externalAudio) {
     wavesurfer.load(streamUrl);
   }
 }
+// External audio mode: WaveSurfer auto-initializes from config, no load() needed
 ```
 
 ### 2. Modify WaveformPlayer.tsx
@@ -103,7 +107,21 @@ const { containerRef, currentTime, duration, error, retryLoad } = useWavesurfer(
   isPlaying,
   onFinish,
   externalAudio: audioElement,  // Pass shared audio when applicable
+  onSeek: audioElement ? handleSeekViaStore : undefined,  // Route through store when external
 });
+```
+
+**Route seeks through playerStore (avoids dual control conflicts):**
+```typescript
+const { seek } = usePlayerStore();
+
+// When using external audio, route waveform seeks through the store
+// This ensures WebSocket sync to other devices
+const handleSeekViaStore = useCallback((progress: number) => {
+  if (!track.duration) return;
+  const positionMs = progress * track.duration * 1000;
+  seek(positionMs);
+}, [seek, track.duration]);
 ```
 
 ## Verification
@@ -111,3 +129,4 @@ const { containerRef, currentTime, duration, error, retryLoad } = useWavesurfer(
 - Seeking on waveform seeks the audio
 - Time updates correctly during playback
 - Finish callback fires when track ends
+- Waveform seek syncs to other devices via WebSocket (routes through playerStore.seek)
