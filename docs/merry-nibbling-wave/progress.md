@@ -12,9 +12,9 @@
 | 01-database-migration | ✅ Done | 2026-02-17T00:00:00Z | 2026-02-17 | ~2min |
 | 02-config-cache-playlist-id | ✅ Done | 2026-02-17 | 2026-02-17 | ~1min |
 | 03-database-layer-refactor | ✅ Done | 2026-02-17 | 2026-02-17 | ~3min |
-| 04-backend-api-refactor | 🔄 Running | 2026-02-17 | - | - |
-| 05-frontend-refactor | ⏳ Pending | - | - | - |
-| 06-cli-refactor | 🔄 Running | 2026-02-17 | - | - |
+| 04-backend-api-refactor | ✅ Done | 2026-02-17 | 2026-02-17 | ~3min |
+| 05-frontend-refactor | 🔄 Running | 2026-02-17 | - | - |
+| 06-cli-refactor | ✅ Done | 2026-02-17 | 2026-02-17 | ~3min |
 
 ## Execution Batches
 
@@ -44,6 +44,12 @@
 ### Batch 4 (PARALLEL)
 - Started: 2026-02-17
 - Tasks: 04-backend-api-refactor, 06-cli-refactor
+- ✅ 04-backend-api-refactor: Removed session/caching, stateless API (-470 net lines)
+- ✅ 06-cli-refactor: Removed filters/session from state, stateless comparison handlers
+
+### Batch 5
+- Started: 2026-02-17
+- Tasks: 05-frontend-refactor
 
 ## Notes
 

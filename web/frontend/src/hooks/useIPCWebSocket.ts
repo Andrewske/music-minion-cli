@@ -75,22 +75,20 @@ export function useIPCWebSocket(handlers?: IPCWebSocketHandlers) {
 
        case 'winner':
          if (currentPair) {
-           // Read current ranking mode and playlist ID from store
-           const { rankingMode, selectedPlaylistId } = useComparisonStore.getState();
+           // Read playlist ID from store
+           const { selectedPlaylistId } = useComparisonStore.getState();
+
+           if (!selectedPlaylistId) {
+             console.log('Winner command received but no playlist selected');
+             return;
+           }
 
            const request: RecordComparisonRequest = {
-             session_id: currentPair.session_id,
+             playlist_id: selectedPlaylistId,
              track_a_id: currentPair.track_a.id,
              track_b_id: currentPair.track_b.id,
              winner_id: currentPair.track_a.id,
-             priority_path_prefix: undefined,
            };
-
-           // Include ranking mode info if in playlist mode (same as UI clicks)
-           if (rankingMode === 'playlist' && selectedPlaylistId) {
-             request.ranking_mode = 'playlist';
-             request.playlist_id = selectedPlaylistId;
-           }
 
            recordComparison.mutate(request);
          } else {

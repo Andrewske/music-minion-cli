@@ -32,40 +32,28 @@ export interface Playlist {
 export interface ComparisonPair {
   track_a: TrackInfo;
   track_b: TrackInfo;
-  session_id: string;
 }
 
-export interface StartSessionRequest {
-  source_filter?: string;
-  genre_filter?: string;
-  year_filter?: string;
-  playlist_id?: number;
-  ranking_mode?: string;
-  priority_path_prefix?: string;
+export interface ComparisonProgress {
+  compared: number;
+  total: number;
+  percentage: number;
 }
 
-export interface StartSessionResponse {
-  session_id: string;
-  total_tracks: number;
-  pair: ComparisonPair;
-  prefetched_pair?: ComparisonPair;
+export interface ComparisonRequest {
+  playlist_id: number;
 }
 
 export interface RecordComparisonRequest {
-  session_id: string;
+  playlist_id: number;
   track_a_id: number;
   track_b_id: number;
   winner_id: number;
-  ranking_mode?: string;
-  playlist_id?: number;
-  priority_path_prefix?: string;
 }
 
-export interface RecordComparisonResponse {
-  success: boolean;
-  comparisons_done: number;
-  next_pair?: ComparisonPair;
-  prefetched_pair?: ComparisonPair;
+export interface ComparisonResponse {
+  pair: ComparisonPair | null;
+  progress: ComparisonProgress;
 }
 
 export interface WaveformData {

@@ -1,19 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useComparisonStore } from '../stores/comparisonStore';
 import { usePlayerStore } from '../stores/playerStore';
-import { useStartSession, useRecordComparison, useArchiveTrack } from '../hooks/useComparison';
+import { useStartComparison, useRecordComparison, useArchiveTrack } from '../hooks/useComparison';
 import { usePlaylists } from '../hooks/usePlaylists';
-import type { TrackInfo, FoldersResponse, RecordComparisonRequest, StartSessionRequest } from '../types';
+import type { TrackInfo, RecordComparisonRequest } from '../types';
 import { useIPCWebSocket } from '../hooks/useIPCWebSocket';
 import { SwipeableTrack } from './SwipeableTrack';
-import { SessionProgress } from './SessionProgress';
 import { WaveformPlayer } from './WaveformPlayer';
 import { AutoplayToggle } from './AutoplayToggle';
 
 import { ErrorState } from './ErrorState';
 import { ErrorBoundary } from './ErrorBoundary';
 import { StatsModal } from './StatsModal';
-import { getFolders } from '../api/tracks';
 import { selectTrack } from '../api/comparisons';
 
 export function ComparisonView() {
@@ -24,46 +22,25 @@ export function ComparisonView() {
   const {
     currentPair,
     comparisonsCompleted,
-    priorityPathPrefix,
-    rankingMode: sessionRankingMode,
-    selectedPlaylistId: sessionSelectedPlaylistId,
-    setPriorityPath,
+    selectedPlaylistId,
     isComparisonMode,
     updateTrackInPair,
+    progress,
   } = useComparisonStore();
-  const startSession = useStartSession();
+  const startComparison = useStartComparison();
   const recordComparison = useRecordComparison();
   const archiveTrack = useArchiveTrack();
 
   // Connect to IPC WebSocket for remote control
   useIPCWebSocket();
 
-  // Handle priority folder change during active session
-  const handlePriorityChange = (newPriorityPath: string | null) => {
-    if (!currentPair) return;
-
-    // Update priority path in store without restarting session
-    setPriorityPath(newPriorityPath);
-  };
-
-  // Folder selection state
   // Playlist selection state
   const playlistsQuery = usePlaylists();
   const playlists = playlistsQuery.data;
-  const [setupRankingMode, setSetupRankingMode] = useState<'global' | 'playlist'>('global');
   const [setupSelectedPlaylistId, setSetupSelectedPlaylistId] = useState<number | null>(null);
-  const [foldersData, setFoldersData] = useState<FoldersResponse | null>(null);
-  const [selectedFolder, setSelectedFolder] = useState<string>('');
 
   // Stats modal state
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
-
-  // Fetch folders on mount
-  useEffect(() => {
-    getFolders()
-      .then(setFoldersData)
-      .catch((err) => console.error('Failed to load folders:', err));
-  }, []);
 
   // Ref for currentTrack to avoid dependency in handleTrackFinish
   const currentTrackRef = useRef(currentTrack);
@@ -71,26 +48,13 @@ export function ComparisonView() {
     currentTrackRef.current = currentTrack;
   }, [currentTrack]);
 
-  const handleStartSession = () => {
-    const priorityPath = selectedFolder && foldersData
-      ? `${foldersData.root}/${selectedFolder}`
-      : undefined;
-
-    if (setupRankingMode === 'playlist' && !setupSelectedPlaylistId) {
-      alert('Please select a playlist for playlist ranking mode');
+  const handleStartComparison = () => {
+    if (!setupSelectedPlaylistId) {
+      alert('Please select a playlist to rank');
       return;
     }
 
-    const sessionRequest: StartSessionRequest = {
-      priority_path_prefix: priorityPath,
-    };
-
-    if (setupRankingMode === 'playlist' && setupSelectedPlaylistId) {
-      sessionRequest.ranking_mode = 'playlist';
-      sessionRequest.playlist_id = setupSelectedPlaylistId;
-    }
-
-    startSession.mutate(sessionRequest);
+    startComparison.mutate(setupSelectedPlaylistId);
   }
 
   const handleTrackTap = (track: TrackInfo) => {
@@ -110,24 +74,17 @@ export function ComparisonView() {
   };
 
   const handleSwipeRight = useCallback((trackId: number) => {
-    if (!currentPair) return;
+    if (!currentPair || !selectedPlaylistId) return;
 
     const request: RecordComparisonRequest = {
-      session_id: currentPair.session_id,
+      playlist_id: selectedPlaylistId,
       track_a_id: currentPair.track_a.id,
       track_b_id: currentPair.track_b.id,
       winner_id: trackId,
-      priority_path_prefix: priorityPathPrefix ?? undefined,
     };
 
-    // Include ranking mode info if in playlist mode
-    if (sessionRankingMode === 'playlist' && sessionSelectedPlaylistId) {
-      request.ranking_mode = 'playlist';
-      request.playlist_id = sessionSelectedPlaylistId;
-    }
-
     recordComparison.mutate(request);
-  }, [currentPair, sessionRankingMode, sessionSelectedPlaylistId, priorityPathPrefix, recordComparison]);
+  }, [currentPair, selectedPlaylistId, recordComparison]);
 
   const handleSwipeLeft = useCallback((trackId: number) => {
     archiveTrack.mutate(trackId);
@@ -171,13 +128,42 @@ export function ComparisonView() {
     play(otherTrack, { type: 'comparison' });
   }, [currentPair, isComparisonMode, play]); // currentTrack removed from deps
 
-  if (startSession.isError) {
+  if (startComparison.isError) {
     return (
       <ErrorState
-        title="Failed to Start Session"
+        title="Failed to Start Comparison"
         message="Unable to load tracks for comparison. Please check your music library."
-        onRetry={handleStartSession}
+        onRetry={handleStartComparison}
       />
+    );
+  }
+
+  if (!currentPair && isComparisonMode) {
+    // Ranking complete
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center p-4">
+        <div className="text-center max-w-md w-full">
+          <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-indigo-500 mb-4">
+            Ranking Complete
+          </h1>
+          <p className="text-white/60 mb-8 text-lg">
+            All tracks have been compared
+          </p>
+          {progress && (
+            <div className="mb-6 text-white/80">
+              <p className="text-lg font-mono">
+                {progress.compared} / {progress.total} comparisons ({progress.percentage.toFixed(1)}%)
+              </p>
+            </div>
+          )}
+          <button
+            onClick={() => useComparisonStore.getState().reset()}
+            className="w-full bg-indigo-600 text-white px-6 py-4 font-bold text-lg hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-900/50"
+          >
+            Start New Comparison
+          </button>
+        </div>
+      </div>
     );
   }
 
@@ -189,39 +175,11 @@ export function ComparisonView() {
             Music Minion
           </h1>
           <p className="text-white/60 mb-8 text-lg">
-          {/* Ranking mode selector */}
-          <div className="mb-6">
-            <label className="block text-white/60 text-sm mb-3 text-left">
-              Ranking Mode
-            </label>
-            <div className="flex gap-4">
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  name="rankingMode"
-                  value="global"
-                  checked={setupRankingMode === 'global'}
-                  onChange={(e) => setSetupRankingMode(e.target.value as 'global' | 'playlist')}
-                  className="mr-2 text-indigo-500"
-                />
-                Global Ranking
-              </label>
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  name="rankingMode"
-                  value="playlist"
-                  checked={setupRankingMode === 'playlist'}
-                  onChange={(e) => setSetupRankingMode(e.target.value as 'global' | 'playlist')}
-                  className="mr-2 text-indigo-500"
-                />
-                Playlist Ranking
-              </label>
-            </div>
-          </div>
+            Select a playlist to rank
+          </p>
 
           {/* Playlist selector */}
-          {setupRankingMode === 'playlist' && playlists && playlists.length > 0 && (
+          {playlists && playlists.length > 0 && (
             <div className="mb-6">
               <label className="block text-white/60 text-sm mb-2 text-left">
                 Select Playlist
@@ -245,40 +203,13 @@ export function ComparisonView() {
               )}
             </div>
           )}
-          </p>
-
-          {/* Priority folder selector */}
-          {foldersData && foldersData.folders.length > 0 && (
-            <div className="mb-6">
-              <label className="block text-white/60 text-sm mb-2 text-left">
-                Priority Folder (optional)
-              </label>
-              <select
-                value={selectedFolder}
-                onChange={(e) => setSelectedFolder(e.target.value)}
-                className="w-full bg-obsidian-border border border-obsidian-border text-white/90 px-4 py-3 focus:outline-none focus:border-indigo-500 transition-colors"
-              >
-                <option value="">All folders (no priority)</option>
-                {foldersData.folders.map((folder) => (
-                  <option key={folder} value={folder}>
-                    {folder}
-                  </option>
-                ))}
-              </select>
-              {selectedFolder && (
-                <p className="text-obsidian-accent text-xs mt-2 text-left font-mono">
-                  Tracks from {selectedFolder} will appear in every comparison
-                </p>
-              )}
-            </div>
-          )}
 
           <button
-            onClick={handleStartSession}
-            disabled={startSession.isPending}
+            onClick={handleStartComparison}
+            disabled={startComparison.isPending || !setupSelectedPlaylistId}
             className="w-full bg-indigo-600 text-white px-6 py-4 font-bold text-lg hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-indigo-900/50"
           >
-            {startSession.isPending ? 'Starting...' : 'Start Session'}
+            {startComparison.isPending ? 'Starting...' : 'Start Comparison'}
           </button>
         </div>
       </div>
@@ -296,15 +227,16 @@ export function ComparisonView() {
       <div className="bg-obsidian-surface/50 backdrop-blur-md border-b border-obsidian-border sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 py-2">
           <div className="flex items-center justify-between">
-              <SessionProgress
-                completed={comparisonsCompleted}
-                priorityPath={priorityPathPrefix ?? undefined}
-                onPriorityChange={handlePriorityChange}
-                folders={foldersData ?? undefined}
-                rankingMode={sessionRankingMode ?? 'global'}
-                playlists={playlists ?? []}
-                selectedPlaylistId={sessionSelectedPlaylistId}
-              />
+              <div className="flex items-center gap-4">
+                <div className="text-white/90 font-mono text-sm">
+                  {progress && (
+                    <span>Progress: {progress.compared} / {progress.total} ({progress.percentage.toFixed(1)}%)</span>
+                  )}
+                </div>
+                <div className="text-white/60 text-xs">
+                  Session: {comparisonsCompleted} comparisons
+                </div>
+              </div>
               <div className="flex items-center gap-4">
                 <AutoplayToggle />
                 <button
@@ -334,7 +266,7 @@ export function ComparisonView() {
                 onArchive={swipeLeftA}
                 onWinner={swipeRightA}
                 isLoading={isArchiving || isSubmitting}
-                rankingMode={sessionRankingMode ?? 'global'}
+                rankingMode="playlist"
                 onTrackUpdate={updateTrackInPair}
               />
             </div>
@@ -361,7 +293,7 @@ export function ComparisonView() {
                 onArchive={swipeLeftB}
                 onWinner={swipeRightB}
                 isLoading={isArchiving || isSubmitting}
-                rankingMode={sessionRankingMode ?? 'global'}
+                rankingMode="playlist"
                 onTrackUpdate={updateTrackInPair}
               />
             </div>
@@ -407,7 +339,7 @@ export function ComparisonView() {
       <StatsModal
         isOpen={isStatsModalOpen}
         onClose={() => setIsStatsModalOpen(false)}
-        playlistId={sessionRankingMode === 'playlist' ? sessionSelectedPlaylistId : null}
+        playlistId={selectedPlaylistId}
       />
     </div>
   );

@@ -1,28 +1,20 @@
 import { apiRequest } from './client';
 import type {
-  StartSessionRequest,
-  StartSessionResponse,
+  ComparisonRequest,
+  ComparisonResponse,
   RecordComparisonRequest,
-  RecordComparisonResponse,
-  ComparisonPair,
 } from '../types';
 
-export async function startSession(
-  request: StartSessionRequest
-): Promise<StartSessionResponse> {
-  return apiRequest('/comparisons/session', {
+export async function startComparison(playlistId: number): Promise<ComparisonResponse> {
+  return apiRequest('/comparisons/start', {
     method: 'POST',
-    body: JSON.stringify(request),
+    body: JSON.stringify({ playlist_id: playlistId } as ComparisonRequest),
   });
-}
-
-export async function getNextPair(sessionId: string): Promise<ComparisonPair> {
-  return apiRequest(`/comparisons/next-pair?session_id=${sessionId}`);
 }
 
 export async function recordComparison(
   request: RecordComparisonRequest
-): Promise<RecordComparisonResponse> {
+): Promise<ComparisonResponse> {
   return apiRequest('/comparisons/record', {
     method: 'POST',
     body: JSON.stringify(request),
