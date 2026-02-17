@@ -47,11 +47,27 @@ const audio = useAudioElement();
 
 4. **Remove the cleanup effect** (lines 23-29) - context manages lifecycle now
 
-5. **Add early return if no audio:**
+5. **Guard individual effects instead of early return:**
 ```typescript
 const audio = useAudioElement();
-if (!audio) return store; // Context not ready yet
+
+// DON'T do early return - it skips all effect setup
+// if (!audio) return store;  // BAD
+
+// Instead, guard each effect individually:
+useEffect(() => {
+  if (!audio) return;  // Skip this effect until audio ready
+  audio.volume = store.volume;
+}, [audio, store.volume]);
+
+useEffect(() => {
+  if (!audio) return;
+  audio.muted = store.isMuted;
+}, [audio, store.isMuted]);
+
+// ... same pattern for all effects
 ```
+This ensures effects run once audio becomes available, rather than never running.
 
 ## Verification
 - Global PlayerBar play/pause still works

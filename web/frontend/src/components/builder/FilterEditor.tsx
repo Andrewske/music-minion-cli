@@ -13,7 +13,7 @@ function EmojiValuePicker({ value, onChange }: { value: string; onChange: (v: st
       <button
         type="button"
         onClick={() => setShowPicker(true)}
-        className="w-full bg-slate-700 rounded px-3 py-2 text-white text-left"
+        className="w-full bg-black border border-obsidian-border px-3 py-2 text-white text-left hover:border-obsidian-accent/50 transition-colors"
       >
         {value || 'Select emoji...'}
       </button>
@@ -116,8 +116,8 @@ export default function FilterEditor({
   return (
     <div className="space-y-3">
       {/* Step 1: Field Selection */}
-      <div className="bg-slate-800 rounded-lg p-3">
-        <label htmlFor="field-select" className="text-xs text-gray-400 block mb-2">Field</label>
+      <div className="bg-white/5 p-3">
+        <label htmlFor="field-select" className="text-xs text-white/40 block mb-2">Field</label>
         <select
           id="field-select"
           value={field}
@@ -125,7 +125,7 @@ export default function FilterEditor({
             handleFieldChange(e.target.value);
             resetValidationError();
           }}
-          className="w-full bg-slate-700 rounded px-3 py-2 text-white"
+          className="w-full bg-black border border-obsidian-border px-3 py-2 text-white focus:border-obsidian-accent/50 focus:outline-none transition-colors"
         >
           <option value="">Choose field...</option>
           <option value="title">Title</option>
@@ -141,8 +141,8 @@ export default function FilterEditor({
 
       {/* Step 2: Operator Selection (Conditional) */}
       {field && ['title', 'artist', 'album', 'genre', 'key'].includes(field) && (
-        <div className="bg-slate-800 rounded-lg p-3 mt-2">
-          <label htmlFor="text-operator-select" className="text-xs text-gray-400 block mb-2">Condition</label>
+        <div className="bg-white/5 p-3 mt-2">
+          <label htmlFor="text-operator-select" className="text-xs text-white/40 block mb-2">Condition</label>
           <select
             id="text-operator-select"
             value={operator}
@@ -150,7 +150,7 @@ export default function FilterEditor({
               setOperator(e.target.value);
               resetValidationError();
             }}
-            className="w-full bg-slate-700 rounded px-3 py-2 text-white"
+            className="w-full bg-black border border-obsidian-border px-3 py-2 text-white focus:border-obsidian-accent/50 focus:outline-none transition-colors"
           >
             <option value="">Choose condition...</option>
             <option value="contains">contains (~)</option>
@@ -163,8 +163,8 @@ export default function FilterEditor({
       )}
 
       {field && ['year', 'bpm'].includes(field) && (
-        <div className="bg-slate-800 rounded-lg p-3 mt-2">
-          <label htmlFor="numeric-operator-select" className="text-xs text-gray-400 block mb-2">Condition</label>
+        <div className="bg-white/5 p-3 mt-2">
+          <label htmlFor="numeric-operator-select" className="text-xs text-white/40 block mb-2">Condition</label>
           <select
             id="numeric-operator-select"
             value={operator}
@@ -172,7 +172,7 @@ export default function FilterEditor({
               setOperator(e.target.value);
               resetValidationError();
             }}
-            className="w-full bg-slate-700 rounded px-3 py-2 text-white"
+            className="w-full bg-black border border-obsidian-border px-3 py-2 text-white focus:border-obsidian-accent/50 focus:outline-none transition-colors"
           >
             <option value="">Choose condition...</option>
             <option value="equals">equals (=)</option>
@@ -186,8 +186,8 @@ export default function FilterEditor({
       )}
 
       {field === 'emoji' && (
-        <div className="bg-slate-800 rounded-lg p-3 mt-2">
-          <label htmlFor="emoji-operator-select" className="text-xs text-gray-400 block mb-2">Condition</label>
+        <div className="bg-white/5 p-3 mt-2">
+          <label htmlFor="emoji-operator-select" className="text-xs text-white/40 block mb-2">Condition</label>
           <select
             id="emoji-operator-select"
             value={operator}
@@ -195,7 +195,7 @@ export default function FilterEditor({
               setOperator(e.target.value);
               resetValidationError();
             }}
-            className="w-full bg-slate-700 rounded px-3 py-2 text-white"
+            className="w-full bg-black border border-obsidian-border px-3 py-2 text-white focus:border-obsidian-accent/50 focus:outline-none transition-colors"
           >
             <option value="">Choose condition...</option>
             <option value="has">has emoji</option>
@@ -206,8 +206,8 @@ export default function FilterEditor({
 
       {/* Step 3: Value Input (Conditional) */}
       {field === 'genre' && operator === 'equals' && (
-        <div className="bg-slate-800 rounded-lg p-3 mt-2">
-          <label htmlFor="genre-select" className="text-xs text-gray-400 block mb-2">Genre</label>
+        <div className="bg-white/5 p-3 mt-2">
+          <label htmlFor="genre-select" className="text-xs text-white/40 block mb-2">Genre</label>
           <select
             id="genre-select"
             value={value}
@@ -215,7 +215,7 @@ export default function FilterEditor({
               setValue(e.target.value);
               resetValidationError();
             }}
-            className="w-full bg-slate-700 rounded px-3 py-2 text-white"
+            className="w-full bg-black border border-obsidian-border px-3 py-2 text-white focus:border-obsidian-accent/50 focus:outline-none transition-colors"
           >
             <option value="">Choose genre...</option>
             {uniqueGenres.map(({ name, count }) => (
@@ -226,15 +226,15 @@ export default function FilterEditor({
       )}
 
       {field === 'emoji' && operator && (
-        <div className="bg-slate-800 rounded-lg p-3 mt-2">
-          <label className="text-xs text-gray-400 block mb-2">Emoji</label>
+        <div className="bg-white/5 p-3 mt-2">
+          <label className="text-xs text-white/40 block mb-2">Emoji</label>
           <EmojiValuePicker value={value} onChange={(v) => { setValue(v); resetValidationError(); }} />
         </div>
       )}
 
       {field && operator && field !== 'emoji' && !(field === 'genre' && operator === 'equals') && (
-        <div className="bg-slate-800 rounded-lg p-3 mt-2">
-          <label htmlFor="value-input" className="text-xs text-gray-400 block mb-2">Value</label>
+        <div className="bg-white/5 p-3 mt-2">
+          <label htmlFor="value-input" className="text-xs text-white/40 block mb-2">Value</label>
           <input
             id="value-input"
             type={['year', 'bpm'].includes(field) ? 'number' : 'text'}
@@ -244,7 +244,7 @@ export default function FilterEditor({
               resetValidationError();
             }}
             placeholder={getPlaceholder(field, operator)}
-            className="w-full bg-slate-700 rounded px-3 py-2 text-white"
+            className="w-full bg-black border border-obsidian-border px-3 py-2 text-white focus:border-obsidian-accent/50 focus:outline-none transition-colors"
           />
         </div>
       )}
@@ -255,14 +255,14 @@ export default function FilterEditor({
           type="button"
           onClick={handleSave}
           disabled={!isValid}
-          className="flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded text-sm font-medium transition-colors"
+          className="flex-1 px-3 py-2 border border-obsidian-accent text-obsidian-accent hover:bg-obsidian-accent hover:text-black disabled:border-white/20 disabled:text-white/20 disabled:cursor-not-allowed text-sm font-medium transition-colors"
         >
           {editingIndex !== null ? 'Update' : 'Add Filter'}
         </button>
         <button
           type="button"
           onClick={onCancel}
-          className="flex-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded text-sm font-medium transition-colors"
+          className="flex-1 px-3 py-2 border border-obsidian-border text-white/60 hover:border-white/40 hover:text-white text-sm font-medium transition-colors"
         >
           Cancel
         </button>

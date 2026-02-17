@@ -10,8 +10,8 @@
 |------|--------|---------|-----------|----------|
 | 00-backend-pagination | ✅ Done | 2026-02-17T12:00:00Z | 2026-02-17T12:01:00Z | ~1m |
 | 01-extract-shared-components | ✅ Done | 2026-02-17T12:01:00Z | 2026-02-17T12:02:00Z | ~1m |
-| 02-extend-builder-hook | Pending | - | - | - |
-| 03-unify-playlist-builder | Pending | - | - | - |
+| 02-extend-builder-hook | ✅ Done | 2026-02-17T12:01:00Z | 2026-02-17T12:02:00Z | ~1m |
+| 03-unify-playlist-builder | ✅ Done | 2026-02-17T12:02:00Z | 2026-02-17T12:03:00Z | ~1m |
 | 04-restyle-filter-panel | Pending | - | - | - |
 | 05-cleanup-old-files | Pending | - | - | - |
 
@@ -26,4 +26,14 @@
 - Started: 2026-02-17T12:01:00Z
 - Tasks: 01-extract-shared-components, 02-extend-builder-hook (parallel)
 - ✅ 01-extract-shared-components: Done - Created TrackDisplay, WaveformSection, BuilderActions components
+- ✅ 02-extend-builder-hook: Done - Created unified usePlaylistBuilder hook
+
+### Batch 3: [03-unify-playlist-builder]
+- Started: 2026-02-17T12:02:00Z
+- Tasks: 03-unify-playlist-builder
+- ✅ 03-unify-playlist-builder: Done - Unified PlaylistBuilder to handle both manual and smart playlists inline
+
+### Batch 4: [04-restyle-filter-panel]
+- Started: 2026-02-17T12:03:00Z
+- Tasks: 04-restyle-filter-panel
 
