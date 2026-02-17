@@ -2,6 +2,7 @@ import { useState, useEffect, Children, isValidElement, cloneElement, type React
 import { SidebarNav } from './SidebarNav';
 import { SidebarToggle } from './SidebarToggle';
 import { SidebarSection } from './SidebarSection';
+import { SidebarSettingsLink } from './SidebarSettingsLink';
 
 interface SidebarProps {
   children?: React.ReactNode;
@@ -66,6 +67,11 @@ export function Sidebar({ children, isExpanded: controlledExpanded, isMobile = f
           )}
         </div>
       )}
+
+      {/* Settings footer */}
+      <div className="mt-auto border-t border-obsidian-border">
+        <SidebarSettingsLink isExpanded={isExpanded} onNavigate={onNavigate} />
+      </div>
 
       {/* Collapsed state toggle at bottom */}
       {!isExpanded && !isMobile && (

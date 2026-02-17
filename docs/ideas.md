@@ -108,3 +108,9 @@ Auto-sync SoundCloud reposts (like `~/coding/soundcloud-discovery`) to keep an u
 - SoundCloud track source in playlist-builder
 - Filter/view for SoundCloud-only tracks
 - Integration with existing playlist-builder UI
+
+## 7. Fix Mobile Comparison Emoji Picker - 2026-02-17
+
+Mobile comparison view: clicking emoji button stops the song, then emoji picker glitches (can't select emoji or close it). Likely interaction between swipe gestures and emoji picker popup.
+
+**Context**: `web/frontend/src/components/ComparisonView.tsx`, `web/frontend/src/components/EmojiPicker.tsx`, `web/frontend/src/hooks/useSwipeGesture.ts`
