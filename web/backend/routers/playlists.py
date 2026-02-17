@@ -432,3 +432,87 @@ async def delete_playlist_endpoint(playlist_id: int):
     if not success:
         raise HTTPException(status_code=404, detail="Playlist not found")
     return {"deleted": True, "playlist_id": playlist_id}
+
+
+@router.post("/playlists/{playlist_id}/skip/{track_id}")
+async def skip_track_endpoint(playlist_id: int, track_id: int):
+    """Skip a track from a smart playlist."""
+    from music_minion.domain.playlists import get_playlist_by_id
+    from music_minion.domain.playlists import builder
+
+    # Validate playlist exists and is smart type
+    playlist = get_playlist_by_id(playlist_id)
+    if not playlist:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+
+    if playlist["type"] != "smart":
+        raise HTTPException(
+            status_code=400,
+            detail="Can only skip tracks from smart playlists"
+        )
+
+    # Skip the track
+    result = builder.skip_track(playlist_id, track_id)
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to skip track {track_id}"
+        )
+
+    return {"skipped": True, "track_id": track_id}
+
+
+@router.delete("/playlists/{playlist_id}/skip/{track_id}")
+async def unskip_track_endpoint(playlist_id: int, track_id: int):
+    """Unskip a track from a smart playlist."""
+    from music_minion.domain.playlists import get_playlist_by_id
+    from music_minion.domain.playlists import builder
+
+    # Validate playlist exists and is smart type
+    playlist = get_playlist_by_id(playlist_id)
+    if not playlist:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+
+    if playlist["type"] != "smart":
+        raise HTTPException(
+            status_code=400,
+            detail="Can only unskip tracks from smart playlists"
+        )
+
+    # Unskip the track
+    try:
+        builder.unskip_track(playlist_id, track_id)
+        return {"unskipped": True, "track_id": track_id}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to unskip track {track_id}: {str(e)}"
+        )
+
+
+@router.get("/playlists/{playlist_id}/skipped")
+async def get_skipped_tracks_endpoint(playlist_id: int):
+    """List all skipped tracks for a smart playlist."""
+    from music_minion.domain.playlists import get_playlist_by_id
+    from music_minion.domain.playlists import builder
+
+    # Validate playlist exists and is smart type
+    playlist = get_playlist_by_id(playlist_id)
+    if not playlist:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+
+    if playlist["type"] != "smart":
+        raise HTTPException(
+            status_code=400,
+            detail="Can only get skipped tracks from smart playlists"
+        )
+
+    # Get skipped tracks
+    try:
+        skipped_tracks = builder.get_skipped_tracks(playlist_id)
+        return {"tracks": skipped_tracks}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get skipped tracks: {str(e)}"
+        )

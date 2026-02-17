@@ -1,6 +1,6 @@
 ---
 task: 02-backend-skip-endpoints
-status: pending
+status: done
 depends: [01-backend-exclusion-filter]
 files:
   - path: web/backend/routers/playlists.py
