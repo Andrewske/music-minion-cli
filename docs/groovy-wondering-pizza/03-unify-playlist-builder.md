@@ -1,6 +1,6 @@
 ---
 task: 03-unify-playlist-builder
-status: pending
+status: done
 depends:
   - 01-extract-shared-components
   - 02-extend-builder-hook

@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
-import { useInfiniteQuery } from '@tanstack/react-query';
-import type { SortingState } from '@tanstack/react-table';
-import { useBuilderSession } from '../hooks/useBuilderSession';
+import { usePlaylistBuilder } from '../hooks/usePlaylistBuilder';
 import { useIPCWebSocket } from '../hooks/useIPCWebSocket';
 import { builderApi } from '../api/builder';
 import type { Track } from '../api/builder';
 import { TrackQueueTable } from '../components/builder/TrackQueueTable';
-import { WaveformPlayer } from '../components/WaveformPlayer';
-import { SmartPlaylistEditor } from './SmartPlaylistEditor';
-import { EmojiTrackActions } from '../components/EmojiTrackActions';
+import { TrackDisplay } from '../components/builder/TrackDisplay';
+import { WaveformSection } from '../components/builder/WaveformSection';
+import { BuilderActions } from '../components/builder/BuilderActions';
+import FilterPanel from '../components/builder/FilterPanel';
+import { SkippedTracksDialog } from '../components/builder/SkippedTracksDialog';
 
 interface PlaylistBuilderProps {
   playlistId: number;
@@ -17,20 +17,18 @@ interface PlaylistBuilderProps {
 }
 
 export function PlaylistBuilder({ playlistId, playlistName, playlistType }: PlaylistBuilderProps) {
-  // Route to smart editor for smart playlists
-  if (playlistType === 'smart') {
-    return <SmartPlaylistEditor playlistId={playlistId} playlistName={playlistName} />;
-  }
-
-  // Existing manual builder code continues below...
   const [queueTrackId, setQueueTrackId] = useState<number | null>(null);
   const [nowPlayingTrack, setNowPlayingTrack] = useState<Track | null>(null);
   const [isPlaying, setIsPlaying] = useState(true); // Auto-play by default
   const [loopEnabled, setLoopEnabled] = useState(true);
+  const [isSkippedDialogOpen, setIsSkippedDialogOpen] = useState(false);
 
   const [localTrackOverrides, setLocalTrackOverrides] = useState<Record<number, { emojis?: string[] }>>({});
 
-  // Merge local overrides with candidates for display
+  // Unified hook for both playlist types
+  const builder = usePlaylistBuilder(playlistId, playlistType);
+
+  // Merge local overrides with tracks for display
   const getTrackWithOverrides = (track: Track): Track => ({
     ...track,
     ...localTrackOverrides[track.id],
@@ -43,61 +41,20 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType }: Play
     }));
   };
 
-  // Sorting state - controls server-side sort via API params
-  const [sorting, setSorting] = useState<SortingState>([
-    { id: 'artist', desc: false }
-  ]);
-
-  // Derive sort params from TanStack state
-  const sortField = sorting[0]?.id ?? 'artist';
-  const sortDirection = sorting[0]?.desc ? 'desc' : 'asc';
-
-  const {
-    session,
-    addTrack,
-    skipTrack,
-    startSession,
-    isAddingTrack,
-    isSkippingTrack,
-  } = useBuilderSession(playlistId);
-
-  const PAGE_SIZE = 100;
-
-  // Fetch candidates with server-side sorting and pagination
-  const {
-    data: candidatesData,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-  } = useInfiniteQuery({
-    queryKey: ['builder-candidates', playlistId, sortField, sortDirection],
-    queryFn: ({ pageParam = 0 }) =>
-      builderApi.getCandidates(playlistId, PAGE_SIZE, pageParam, sortField, sortDirection),
-    initialPageParam: 0,
-    getNextPageParam: (lastPage, allPages) =>
-      lastPage.hasMore ? allPages.length * PAGE_SIZE : undefined,
-    enabled: !!playlistId && !!session,
-  });
-
-  // Flatten pages into single array for table display
-  const candidates = candidatesData?.pages.flatMap(p => p.candidates) ?? [];
-
   // Derive queue index from ID
   const queueIndex = queueTrackId
-    ? candidates.findIndex(t => t.id === queueTrackId)
+    ? builder.tracks.findIndex(t => t.id === queueTrackId)
     : 0;
 
   // If queueTrackId not found (filtered out), reset to first track
   useEffect(() => {
-    if (candidates.length > 0 && (queueTrackId === null || queueIndex === -1)) {
-      setQueueTrackId(candidates[0].id);
+    if (builder.tracks.length > 0 && (queueTrackId === null || queueIndex === -1)) {
+      setQueueTrackId(builder.tracks[0].id);
     }
-  }, [candidates, queueTrackId, queueIndex]);
+  }, [builder.tracks, queueTrackId, queueIndex]);
 
-  // Current track for display = nowPlayingTrack ?? candidates[queueIndex]
-  const currentTrack = nowPlayingTrack ?? candidates[queueIndex] ?? null;
-
-
+  // Current track for display = nowPlayingTrack ?? tracks[queueIndex]
+  const currentTrack = nowPlayingTrack ?? builder.tracks[queueIndex] ?? null;
 
   // Activate builder mode on mount, deactivate on unmount
   useEffect(() => {
@@ -110,24 +67,24 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType }: Play
     }
   }, [playlistId]);
 
-  // Reset queue to first track when session starts or sorting changes
+  // Reset queue to first track when sorting changes
   useEffect(() => {
-    if (session && candidates.length > 0) {
-      setQueueTrackId(candidates[0].id);
+    if (builder.tracks.length > 0) {
+      setQueueTrackId(builder.tracks[0].id);
       setNowPlayingTrack(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, sortField, sortDirection]);
+  }, [builder.sorting]);
 
   // Handle keyboard shortcuts via WebSocket (useRef pattern)
   useIPCWebSocket({
     onBuilderAdd: () => {
-      if (currentTrack && !isAddingTrack && !isSkippingTrack) {
+      if (playlistType === 'manual' && currentTrack && !builder.isAddingTrack && !builder.isSkippingTrack) {
         handleAdd();
       }
     },
     onBuilderSkip: () => {
-      if (currentTrack && !isAddingTrack && !isSkippingTrack) {
+      if (currentTrack && !builder.isAddingTrack && !builder.isSkippingTrack) {
         handleSkip();
       }
     }
@@ -157,177 +114,170 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType }: Play
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Handle add track
+  // Handle add track (manual playlists only)
   const handleAdd = async () => {
-    const trackToAdd = nowPlayingTrack ?? candidates[queueIndex];
-    if (!trackToAdd || isAddingTrack || isSkippingTrack) return;
+    const trackToAdd = nowPlayingTrack ?? builder.tracks[queueIndex];
+    if (!trackToAdd || builder.isAddingTrack || builder.isSkippingTrack) return;
 
-    await addTrack.mutateAsync(trackToAdd.id);
+    await builder.addTrack.mutateAsync(trackToAdd.id);
 
     // Advance queue to next track by ID
     const nextIndex = queueIndex + 1;
-    if (nextIndex < candidates.length) {
-      setQueueTrackId(candidates[nextIndex].id);
+    if (nextIndex < builder.tracks.length) {
+      setQueueTrackId(builder.tracks[nextIndex].id);
     }
     setNowPlayingTrack(null); // Clear preview state
   };
 
-  // Handle skip track
+  // Handle skip track (both playlist types)
   const handleSkip = async () => {
-    const trackToSkip = nowPlayingTrack ?? candidates[queueIndex];
-    if (!trackToSkip || isAddingTrack || isSkippingTrack) return;
+    const trackToSkip = nowPlayingTrack ?? builder.tracks[queueIndex];
+    if (!trackToSkip || builder.isAddingTrack || builder.isSkippingTrack) return;
 
-    await skipTrack.mutateAsync(trackToSkip.id);
+    await builder.skipTrack.mutateAsync(trackToSkip.id);
 
     // Advance queue to next track by ID
     const nextIndex = queueIndex + 1;
-    if (nextIndex < candidates.length) {
-      setQueueTrackId(candidates[nextIndex].id);
+    if (nextIndex < builder.tracks.length) {
+      setQueueTrackId(builder.tracks[nextIndex].id);
     }
     setNowPlayingTrack(null); // Clear preview state
   };
 
-  if (!session) {
+  // Handle waveform finish (loop or skip)
+  const handleWaveformFinish = () => {
+    if (loopEnabled) {
+      setIsPlaying(false);
+      setTimeout(() => setIsPlaying(true), 100);
+    } else {
+      handleSkip();
+    }
+  };
+
+  // Loading state
+  if (builder.isLoading) {
     return (
       <div className="min-h-screen bg-black font-inter flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-white/40 text-sm mb-8 font-sf-mono">{playlistName}</p>
-          <button
-            onClick={() => startSession.mutate(playlistId)}
-            className="px-8 py-3 text-obsidian-accent border border-obsidian-accent/30
-              hover:bg-obsidian-accent/10 transition-colors text-sm tracking-wider"
-          >
-            Begin
-          </button>
-        </div>
+        <div className="text-white/40 text-sm">Loading...</div>
       </div>
     );
   }
 
+  // Main content (track display, waveform, actions)
+  const renderMainContent = () => (
+    <>
+      {currentTrack && queueIndex < builder.tracks.length ? (
+        <div className="space-y-6 md:space-y-12">
+          {/* Player section - sticky on mobile */}
+          <div className="sticky top-10 md:static z-10 bg-black pb-4 md:pb-0">
+            {/* Track Display */}
+            <TrackDisplay
+              track={getTrackWithOverrides(currentTrack)}
+              onEmojiUpdate={handleTrackEmojiUpdate}
+            />
+
+            {/* Waveform */}
+            <WaveformSection
+              track={currentTrack}
+              isPlaying={isPlaying}
+              loopEnabled={loopEnabled}
+              onTogglePlayPause={() => setIsPlaying(!isPlaying)}
+              onLoopChange={setLoopEnabled}
+              onFinish={handleWaveformFinish}
+            />
+
+            {/* Actions */}
+            <BuilderActions
+              playlistType={playlistType}
+              onAdd={playlistType === 'manual' ? handleAdd : undefined}
+              onSkip={handleSkip}
+              isAddingTrack={builder.isAddingTrack}
+              isSkippingTrack={builder.isSkippingTrack}
+            />
+          </div>
+
+          {/* Track Queue */}
+          <TrackQueueTable
+            tracks={builder.tracks}
+            queueIndex={queueIndex >= 0 ? queueIndex : 0}
+            nowPlayingId={nowPlayingTrack?.id ?? null}
+            onTrackClick={(track) => {
+              if (track.id !== nowPlayingTrack?.id) setNowPlayingTrack(track);
+            }}
+            sorting={builder.sorting}
+            onSortingChange={builder.setSorting}
+            onLoadMore={() => builder.fetchNextPage()}
+            hasMore={builder.hasNextPage ?? false}
+            isLoadingMore={builder.isFetchingNextPage}
+          />
+        </div>
+      ) : (
+        <div className="py-20 text-center">
+          <p className="text-white/40 text-sm">
+            {queueIndex >= builder.tracks.length ? 'No more tracks' : 'Loading...'}
+          </p>
+        </div>
+      )}
+    </>
+  );
+
   return (
     <div className="min-h-screen bg-black font-inter text-white">
       <div className="max-w-6xl mx-auto px-4 md:px-8 py-4 md:py-8">
-        <main>
-          {currentTrack && queueIndex < candidates.length ? (
-            <div className="space-y-6 md:space-y-12">
-              {/* Player section - sticky on mobile */}
-              <div className="sticky top-10 md:static z-10 bg-black pb-4 md:pb-0">
-                {/* Track Display */}
-                <div className="py-4 md:py-8">
-                  <p className="text-obsidian-accent text-sm font-sf-mono mb-2">{currentTrack.artist}</p>
-                  <h2 className="text-2xl md:text-4xl font-light text-white mb-2 md:mb-4">{currentTrack.title}</h2>
-                  {currentTrack.album && (
-                    <p className="text-white/30 text-sm">{currentTrack.album}</p>
-                  )}
+        {/* Header with playlist name and track count */}
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <p className="text-white/40 text-sm font-sf-mono mb-1">
+              {playlistType === 'smart' ? '[Smart]' : '[Manual]'}
+            </p>
+            <h1 className="text-xl text-white/60">{playlistName}</h1>
+          </div>
+          <div className="flex items-center gap-4">
+            <span className="text-white/40 text-sm">{builder.tracks.length} tracks</span>
+            <button
+              onClick={() => setIsSkippedDialogOpen(true)}
+              className="px-4 py-2 text-white/40 hover:text-white/60 text-sm transition-colors"
+            >
+              Skipped ({builder.skippedTracks?.length ?? 0})
+            </button>
+          </div>
+        </div>
 
-                  {/* Metadata pills */}
-                  <div className="flex flex-wrap items-center gap-2 md:gap-4 mt-4 md:mt-6">
-                    {currentTrack.bpm && (
-                      <span className="text-white/40 text-xs font-sf-mono">{Math.round(currentTrack.bpm)} BPM</span>
-                    )}
-                    {currentTrack.key_signature && (
-                      <span className="text-white/40 text-xs font-sf-mono">{currentTrack.key_signature}</span>
-                    )}
-                    {currentTrack.genre && (
-                      <span className="text-white/40 text-xs font-sf-mono">{currentTrack.genre}</span>
-                    )}
-                    {currentTrack.year && (
-                      <span className="text-white/40 text-xs font-sf-mono">{currentTrack.year}</span>
-                    )}
-                    <EmojiTrackActions
-                      track={{ id: currentTrack.id, emojis: getTrackWithOverrides(currentTrack).emojis }}
-                      onUpdate={handleTrackEmojiUpdate}
-                    />
-                  </div>
-                </div>
-
-                {/* Waveform */}
-                <div className="h-16 border-t border-b border-obsidian-border">
-                  <WaveformPlayer
-                    track={{
-                      id: currentTrack.id,
-                      title: currentTrack.title,
-                      artist: currentTrack.artist,
-                      rating: currentTrack.elo_rating || 0,
-                      comparison_count: 0,
-                      wins: 0,
-                      losses: 0,
-                      has_waveform: true,
-                    }}
-                    isPlaying={isPlaying}
-                    onTogglePlayPause={() => setIsPlaying(!isPlaying)}
-                    onFinish={() => {
-                      if (loopEnabled) {
-                        setIsPlaying(false);
-                        setTimeout(() => setIsPlaying(true), 100);
-                      } else {
-                        handleSkip();
-                      }
-                    }}
-                  />
-                </div>
-
-                {/* Loop toggle */}
-                <div className="flex justify-center">
-                  <label className="flex items-center gap-3 text-white/30 text-sm cursor-pointer hover:text-white/50 transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={loopEnabled}
-                      onChange={(e) => setLoopEnabled(e.target.checked)}
-                      className="w-3 h-3 accent-obsidian-accent"
-                    />
-                    Loop
-                  </label>
-                </div>
-
-                {/* Actions */}
-                <div className="flex gap-4 justify-center">
-                  <button
-                    onClick={handleAdd}
-                    disabled={isAddingTrack || isSkippingTrack}
-                    className="px-8 md:px-12 py-3 border border-obsidian-accent text-obsidian-accent
-                      hover:bg-obsidian-accent hover:text-black disabled:opacity-30
-                      transition-all text-sm tracking-wider"
-                  >
-                    {isAddingTrack ? '...' : 'Add'}
-                  </button>
-                  <button
-                    onClick={handleSkip}
-                    disabled={isAddingTrack || isSkippingTrack}
-                    className="px-8 md:px-12 py-3 border border-white/20 text-white/60
-                      hover:border-white/40 hover:text-white disabled:opacity-30
-                      transition-all text-sm tracking-wider"
-                  >
-                    {isSkippingTrack ? '...' : 'Skip'}
-                  </button>
-                </div>
+        {playlistType === 'smart' ? (
+          // Smart playlist: two-column layout with sidebar
+          <div className="flex gap-8">
+            {/* Sidebar */}
+            <aside className="w-64 shrink-0">
+              <div className="bg-black/50 border border-obsidian-border rounded-lg p-4">
+                <FilterPanel
+                  filters={builder.filters}
+                  onUpdate={(newFilters) => builder.updateFilters.mutate(newFilters)}
+                  isUpdating={builder.updateFilters.isPending}
+                  playlistId={playlistId}
+                />
               </div>
-
-              {/* Track Queue */}
-              <TrackQueueTable
-                tracks={candidates}
-                queueIndex={queueIndex >= 0 ? queueIndex : 0}
-                nowPlayingId={nowPlayingTrack?.id ?? null}
-                onTrackClick={(track) => {
-                  if (track.id !== nowPlayingTrack?.id) setNowPlayingTrack(track);
-                }}
-                sorting={sorting}
-                onSortingChange={setSorting}
-                onLoadMore={() => fetchNextPage()}
-                hasMore={hasNextPage ?? false}
-                isLoadingMore={isFetchingNextPage}
-              />
-            </div>
-          ) : (
-            <div className="py-20 text-center">
-              <p className="text-white/40 text-sm">
-                {queueIndex >= candidates.length ? 'No more tracks' : 'Loading...'}
-              </p>
-            </div>
-          )}
-        </main>
+            </aside>
+            {/* Main content */}
+            <main className="flex-1">
+              {renderMainContent()}
+            </main>
+          </div>
+        ) : (
+          // Manual playlist: full width
+          <main>
+            {renderMainContent()}
+          </main>
+        )}
       </div>
+
+      {/* Skipped Tracks Dialog (both playlist types) */}
+      <SkippedTracksDialog
+        open={isSkippedDialogOpen}
+        onClose={() => setIsSkippedDialogOpen(false)}
+        tracks={builder.skippedTracks ?? []}
+        onUnskip={(trackId) => builder.unskipTrack.mutate(trackId)}
+        isUnskipping={builder.unskipTrack.isPending}
+      />
     </div>
   );
 }
-
