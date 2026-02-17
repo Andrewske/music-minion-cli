@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useComparisonStore } from '../stores/comparisonStore';
+import { usePlayerStore } from '../stores/playerStore';
 import { useRecordComparison, useArchiveTrack } from './useComparison';
 import type { RecordComparisonRequest } from '../types';
 
@@ -33,37 +34,41 @@ export function useIPCWebSocket(handlers?: IPCWebSocketHandlers) {
 
   const handleCommand = useCallback((command: string, args: string[]) => {
     // Read FRESH state when command is received (avoids stale closure)
-    const { currentPair, togglePlaying } = useComparisonStore.getState();
+    const { currentPair } = useComparisonStore.getState();
+    const { currentTrack, isPlaying, play, pause, resume } = usePlayerStore.getState();
 
     console.log('Received IPC command:', command, args);
 
     switch (command) {
       case 'playpause':
-        togglePlaying();  // Simple toggle, remembers current track
+        // Simple toggle using global player
+        if (isPlaying) {
+          pause();
+        } else {
+          resume();
+        }
         break;
 
       case 'play1':
         if (currentPair) {
-          const { currentTrack, isPlaying, selectAndPlay, setIsPlaying } = useComparisonStore.getState();
           if (currentTrack?.id === currentPair.track_a.id && isPlaying) {
             // Track1 is already playing, pause it
-            setIsPlaying(false);
+            pause();
           } else {
             // Track1 is not playing, start playing it
-            selectAndPlay(currentPair.track_a);
+            play(currentPair.track_a, { type: 'comparison' });
           }
         }
         break;
 
       case 'play2':
         if (currentPair) {
-          const { currentTrack, isPlaying, selectAndPlay, setIsPlaying } = useComparisonStore.getState();
           if (currentTrack?.id === currentPair.track_b.id && isPlaying) {
             // Track2 is already playing, pause it
-            setIsPlaying(false);
+            pause();
           } else {
             // Track2 is not playing, start playing it
-            selectAndPlay(currentPair.track_b);
+            play(currentPair.track_b, { type: 'comparison' });
           }
         }
         break;
@@ -159,8 +164,8 @@ export function useIPCWebSocket(handlers?: IPCWebSocketHandlers) {
           } else if (data.type === 'shutdown') {
             // Backend is shutting down - pause all playback immediately
             console.log('Backend shutdown detected - pausing and reloading page');
-            const { setIsPlaying } = useComparisonStore.getState();
-            setIsPlaying(false);  // Pause playback
+            const { pause } = usePlayerStore.getState();
+            pause();  // Pause playback
 
             // Reload page after brief delay to clear all state and stop any lingering audio
             setTimeout(() => {
@@ -179,8 +184,8 @@ export function useIPCWebSocket(handlers?: IPCWebSocketHandlers) {
         // Only pause playback if we were previously connected
         // This prevents pausing when initial connection fails
         if (wasConnectedRef.current) {
-          const { setIsPlaying } = useComparisonStore.getState();
-          setIsPlaying(false);
+          const { pause } = usePlayerStore.getState();
+          pause();
         }
 
         // Exponential backoff reconnection with max attempts

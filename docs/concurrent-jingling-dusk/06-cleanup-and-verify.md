@@ -1,6 +1,6 @@
 ---
 task: 06-cleanup-and-verify
-status: pending
+status: done
 depends: [04-smartplaylist-global-player, 05-comparison-global-player]
 files: []
 ---
