@@ -12,7 +12,7 @@ files:
 # Unify PlaylistBuilder Component
 
 ## Context
-PlaylistBuilder currently delegates to SmartPlaylistEditor for smart playlists. Modify it to handle both playlist types inline, using the extracted shared components and extended hook.
+PlaylistBuilder currently delegates to SmartPlaylistEditor for smart playlists. Modify it to handle both playlist types inline, using the extracted shared components and unified hook. Sessions are removed - no "Begin" screen.
 
 ## Files to Modify/Create
 - `web/frontend/src/pages/PlaylistBuilder.tsx` (modify)
@@ -28,18 +28,14 @@ if (playlistType === 'smart') {
 }
 ```
 
-### Use Extended Hook
+### Use Unified Hook
 ```typescript
-const builder = useBuilderSession(playlistId, playlistType);
+const builder = usePlaylistBuilder(playlistId, playlistType);
 ```
 
-### Conditional "Begin" Screen
-Only show for manual playlists:
-```typescript
-if (playlistType === 'manual' && builder.needsSession) {
-  return <BeginScreen ... />;
-}
-```
+### No "Begin" Screen
+Sessions are removed. Both playlist types render the builder immediately.
+Delete the entire "Begin" screen conditional block.
 
 ### Layout: Smart Playlist with Sidebar
 For smart playlists, use a two-column layout:
@@ -76,29 +72,63 @@ Use BuilderActions component:
 />
 ```
 
-### Add Skipped Dialog for Smart Playlists
-Import and render SkippedTracksDialog:
+### Skipped Dialog for Both Types
+Both manual and smart playlists have permanent skips, so both need the dialog:
 ```typescript
-{playlistType === 'smart' && (
-  <SkippedTracksDialog
-    open={isSkippedDialogOpen}
-    onClose={() => setIsSkippedDialogOpen(false)}
-    tracks={builder.skippedTracks ?? []}
-    onUnskip={(trackId) => builder.unskipTrack?.mutate(trackId)}
-    isUnskipping={builder.unskipTrack?.isPending}
-  />
-)}
+<SkippedTracksDialog
+  open={isSkippedDialogOpen}
+  onClose={() => setIsSkippedDialogOpen(false)}
+  tracks={builder.skippedTracks ?? []}
+  onUnskip={(trackId) => builder.unskipTrack.mutate(trackId)}
+  isUnskipping={builder.unskipTrack.isPending}
+/>
+```
+
+### IPC WebSocket for Both Types
+Both playlist types get hotkey support:
+```typescript
+useIPCWebSocket({
+  onBuilderAdd: () => {
+    if (playlistType === 'manual' && currentTrack && !builder.isAddingTrack && !builder.isSkippingTrack) {
+      handleAdd();
+    }
+  },
+  onBuilderSkip: () => {
+    if (currentTrack && !builder.isAddingTrack && !builder.isSkippingTrack) {
+      handleSkip();
+    }
+  }
+});
 ```
 
 ### Use Extracted Components
 Replace inline JSX with:
 - `<TrackDisplay track={currentTrack} onEmojiUpdate={handleTrackEmojiUpdate} />`
-- `<WaveformSection track={currentTrack} isPlaying={isPlaying} ... />`
+- `<WaveformSection track={currentTrack} isPlaying={isPlaying} loopEnabled={loopEnabled} ... />`
 - `<BuilderActions playlistType={playlistType} ... />`
 
+### Table Navigation
+Both types use TrackQueueTable for navigation. Clicking a row previews that track:
+```typescript
+<TrackQueueTable
+  tracks={builder.tracks}
+  queueIndex={queueIndex}
+  nowPlayingId={nowPlayingTrack?.id ?? null}
+  onTrackClick={(track) => setNowPlayingTrack(track)}
+  sorting={builder.sorting}
+  onSortingChange={builder.setSorting}
+  onLoadMore={() => builder.fetchNextPage()}
+  hasMore={builder.hasNextPage}
+  isLoadingMore={builder.isFetchingNextPage}
+/>
+```
+
 ## Verification
-1. Manual playlist flow works exactly as before (no regression)
+1. Both playlist types render immediately (no "Begin" screen)
 2. Smart playlist renders with filter sidebar
 3. Smart playlist shows Skip button only (no Add)
-4. View Skipped dialog opens and allows restoring tracks
-5. Visual styling matches (obsidian theme throughout)
+4. Manual playlist shows Add + Skip buttons
+5. View Skipped dialog works for both types
+6. IPC hotkeys work for both types
+7. Table navigation works for both types
+8. Visual styling matches (obsidian theme throughout)
