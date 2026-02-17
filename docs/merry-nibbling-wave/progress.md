@@ -9,8 +9,8 @@
 
 | Task | Status | Started | Completed | Duration |
 |------|--------|---------|-----------|----------|
-| 01-database-migration | 🔄 Running | 2026-02-17T00:00:00Z | - | - |
-| 02-config-cache-playlist-id | ⏳ Pending | - | - | - |
+| 01-database-migration | ✅ Done | 2026-02-17T00:00:00Z | 2026-02-17 | ~2min |
+| 02-config-cache-playlist-id | 🔄 Running | 2026-02-17 | - | - |
 | 03-database-layer-refactor | ⏳ Pending | - | - | - |
 | 04-backend-api-refactor | ⏳ Pending | - | - | - |
 | 05-frontend-refactor | ⏳ Pending | - | - | - |
@@ -29,6 +29,11 @@
 ### Batch 1
 - Started: 2026-02-17T00:00:00Z
 - Tasks: 01-database-migration
+- ✅ 01-database-migration: Migrated 22,102 ELO ratings + 1,430 comparisons to "All" playlist, added indexes, schema v33. Commit: ea575cf
+
+### Batch 2
+- Started: 2026-02-17
+- Tasks: 02-config-cache-playlist-id
 
 ## Notes
 
