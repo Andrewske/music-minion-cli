@@ -421,3 +421,14 @@ async def reorder_pinned_playlist_endpoint(playlist_id: int, request: ReorderPin
         raise HTTPException(status_code=404, detail="Playlist not found or not pinned")
     playlist = crud.get_playlist_by_id(playlist_id)
     return {"playlist": playlist}
+
+
+@router.delete("/playlists/{playlist_id}")
+async def delete_playlist_endpoint(playlist_id: int):
+    """Delete a playlist and all associated data."""
+    from music_minion.domain.playlists import crud
+
+    success = crud.delete_playlist(playlist_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    return {"deleted": True, "playlist_id": playlist_id}

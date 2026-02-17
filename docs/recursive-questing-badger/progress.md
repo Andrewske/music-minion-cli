@@ -13,7 +13,7 @@
 | 03-backend-api | ✅ Done | 13:17 | 13:18 | 1m |
 | 04-frontend-types-api | ✅ Done | 13:18 | 13:19 | 1m |
 | 05-sidebar-ui | ✅ Done | 13:19 | 13:21 | 2m |
-| 06-drag-reorder | Pending | - | - | - |
+| 06-drag-reorder | ✅ Done | 13:21 | 13:23 | 2m |
 
 ## Execution Log
 

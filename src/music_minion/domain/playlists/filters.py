@@ -361,7 +361,10 @@ def evaluate_filters(playlist_id: int) -> list[dict[str, Any]]:
             LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
             LEFT JOIN elo_ratings er ON t.id = er.track_id
             WHERE {where_clause}
+            AND t.id NOT IN (
+                SELECT track_id FROM playlist_builder_skipped WHERE playlist_id = ?
+            )
             ORDER BY artist, album, title
         """
-        cursor = conn.execute(query, (playlist_id,) + tuple(params))
+        cursor = conn.execute(query, (playlist_id,) + tuple(params) + (playlist_id,))
         return [dict(row) for row in cursor.fetchall()]
