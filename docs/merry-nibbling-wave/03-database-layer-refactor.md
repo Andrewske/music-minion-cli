@@ -1,6 +1,6 @@
 ---
 task: 03-database-layer-refactor
-status: pending
+status: done
 depends: [01-database-migration, 02-config-cache-playlist-id]
 files:
   - path: src/music_minion/domain/rating/database.py
