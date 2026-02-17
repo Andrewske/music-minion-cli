@@ -1,6 +1,6 @@
 ---
 task: 04-frontend-hook-mutations
-status: pending
+status: done
 depends: [03-frontend-api-functions]
 files:
   - path: web/frontend/src/hooks/useSmartPlaylistEditor.ts
