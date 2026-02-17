@@ -13,10 +13,10 @@ model: Sonnet
 | # | Task | Status | Started | Completed | Duration |
 |---|------|--------|---------|-----------|----------|
 | 01 | shared-audio-context | ✅ Done | 12:15 | 12:16 | 1m |
-| 02 | integrate-useplayer | Running | 12:16 | - | - |
-| 03 | wavesurfer-external-audio | Running | 12:16 | - | - |
-| 04 | smartplaylist-global-player | Pending | - | - | - |
-| 05 | comparison-global-player | Pending | - | - | - |
+| 02 | integrate-useplayer | ✅ Done | 12:16 | 12:18 | 2m |
+| 03 | wavesurfer-external-audio | ✅ Done | 12:16 | 12:18 | 2m |
+| 04 | smartplaylist-global-player | Running | 12:18 | - | - |
+| 05 | comparison-global-player | Running | 12:18 | - | - |
 | 06 | cleanup-and-verify | Pending | - | - | - |
 
 ## Execution Batches
@@ -38,4 +38,10 @@ Batch 4: [06-cleanup-and-verify]
 ### Batch 2
 - Started: 12:16
 - Tasks: 02-integrate-useplayer, 03-wavesurfer-external-audio (parallel)
+- ✅ 02-integrate-useplayer: Done
+- ✅ 03-wavesurfer-external-audio: Done
+
+### Batch 3
+- Started: 12:18
+- Tasks: 04-smartplaylist-global-player, 05-comparison-global-player (parallel)
 

@@ -125,18 +125,21 @@ export function usePlayer() {
     return () => audio.removeEventListener('error', onError);
   }, [audio, store.currentTrack?.id]);
 
-  // Track ended - advance to next track
+  // Track ended - advance to next track (unless in comparison mode)
   useEffect(() => {
     if (!audio) return;
     if (!store.isThisDeviceActive) return;
 
     const onEnded = () => {
+      // Comparison mode handles A/B switching via onFinish callback in ComparisonView
+      // Don't auto-advance queue - let the component decide what to play next
+      if (store.currentContext?.type === 'comparison') return;
       store.next();
     };
 
     audio.addEventListener('ended', onEnded);
     return () => audio.removeEventListener('ended', onEnded);
-  }, [audio, store.currentTrack?.id, store.isThisDeviceActive]);
+  }, [audio, store.currentTrack?.id, store.isThisDeviceActive, store.currentContext?.type]);
 
   return store;
 }

@@ -9,14 +9,14 @@ vi.mock('../stores/comparisonStore', () => ({
   useComparisonStore: vi.fn(),
 }));
 
+vi.mock('../stores/playerStore', () => ({
+  usePlayerStore: vi.fn(),
+}));
+
 vi.mock('../hooks/useComparison', () => ({
   useStartSession: vi.fn(),
   useRecordComparison: vi.fn(),
   useArchiveTrack: vi.fn(),
-}));
-
-vi.mock('../hooks/useAudioPlayer', () => ({
-  useAudioPlayer: vi.fn(),
 }));
 
 vi.mock('../api/tracks', () => ({
@@ -28,20 +28,31 @@ vi.mock('./WaveformPlayer', () => ({
 }));
 
 import { useComparisonStore } from '../stores/comparisonStore';
+import { usePlayerStore } from '../stores/playerStore';
 import { useStartSession, useRecordComparison, useArchiveTrack } from '../hooks/useComparison';
-import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import { getFolders } from '../api/tracks';
 import { WaveformPlayer } from './WaveformPlayer';
 
 // Create type-safe mocks
 type MockComparisonStore = ReturnType<typeof useComparisonStore>;
+type MockPlayerStore = ReturnType<typeof usePlayerStore>;
 
 describe('ComparisonView', () => {
   const mockUseComparisonStore = useComparisonStore as unknown as Mock<[], MockComparisonStore>;
+  const mockUsePlayerStore = usePlayerStore as unknown as Mock<[], MockPlayerStore>;
   const mockUseStartSession = useStartSession as unknown as Mock;
   const mockUseRecordComparison = useRecordComparison as unknown as Mock;
   const mockUseArchiveTrack = useArchiveTrack as unknown as Mock;
-  const mockUseAudioPlayer = useAudioPlayer as unknown as Mock;
+
+  // Helper to create default player store mock
+  const createPlayerStoreMock = (overrides = {}) => ({
+    currentTrack: null,
+    isPlaying: false,
+    play: vi.fn(),
+    pause: vi.fn(),
+    resume: vi.fn(),
+    ...overrides,
+  });
 
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -109,10 +120,8 @@ describe('ComparisonView', () => {
       isPending: false,
     });
 
-    mockUseAudioPlayer.mockReturnValue({
-      playTrack: vi.fn(),
-      pauseTrack: vi.fn(),
-    });
+    // Default playerStore mock
+    mockUsePlayerStore.mockReturnValue(createPlayerStoreMock());
 
     vi.mocked(getFolders).mockResolvedValue({
       root: '/music',
@@ -128,14 +137,19 @@ describe('ComparisonView', () => {
     );
 
   it('shows playing track info in player bar even when track is not in current pair', () => {
-    // Mock store to return current pair with tracks A and B, but playing track is different
+    // Mock playerStore to return playing track
+    mockUsePlayerStore.mockReturnValue(createPlayerStoreMock({
+      currentTrack: mockPlayingTrack,
+      isPlaying: true,
+    }));
+
+    // Mock comparisonStore with current pair
     mockUseComparisonStore.mockReturnValue({
       currentPair: {
         session_id: 1,
         track_a: mockTrackA,
         track_b: mockTrackB,
       },
-      playingTrack: mockPlayingTrack,
       comparisonsCompleted: 5,
     });
 
@@ -147,13 +161,18 @@ describe('ComparisonView', () => {
   });
 
   it('shows PAUSED when no track is playing', () => {
+    // Mock playerStore with no track playing
+    mockUsePlayerStore.mockReturnValue(createPlayerStoreMock({
+      currentTrack: null,
+      isPlaying: false,
+    }));
+
     mockUseComparisonStore.mockReturnValue({
       currentPair: {
         session_id: 1,
         track_a: mockTrackA,
         track_b: mockTrackB,
       },
-      playingTrack: null,
       comparisonsCompleted: 5,
     });
 
@@ -167,12 +186,13 @@ describe('ComparisonView', () => {
 
   describe('handleTrackFinish', () => {
     it('does not switch tracks when not in comparison mode', () => {
-      const mockPlayTrack = vi.fn();
+      const mockPlay = vi.fn();
 
-      mockUseAudioPlayer.mockReturnValue({
-        playTrack: mockPlayTrack,
-        pauseTrack: vi.fn(),
-      });
+      mockUsePlayerStore.mockReturnValue(createPlayerStoreMock({
+        currentTrack: mockTrackA,
+        isPlaying: true,
+        play: mockPlay,
+      }));
 
       mockUseComparisonStore.mockReturnValue({
         currentPair: {
@@ -180,19 +200,18 @@ describe('ComparisonView', () => {
           track_a: mockTrackA,
           track_b: mockTrackB,
         },
-        playingTrack: mockTrackA,
         comparisonsCompleted: 5,
         isComparisonMode: false, // Not in comparison mode
       });
 
       renderComponent();
 
-      // Verify that playTrack was not called during render
-      expect(mockPlayTrack).not.toHaveBeenCalled();
+      // Verify that play was not called during render
+      expect(mockPlay).not.toHaveBeenCalled();
     });
 
     it('switches from track A to track B when track A finishes', () => {
-      const mockPlayTrack = vi.fn();
+      const mockPlay = vi.fn();
       let capturedOnFinish: (() => void) | undefined;
 
       // Mock WaveformPlayer to capture the onFinish callback
@@ -202,10 +221,11 @@ describe('ComparisonView', () => {
       });
       vi.mocked(WaveformPlayer).mockImplementation(MockWaveformPlayer);
 
-      mockUseAudioPlayer.mockReturnValue({
-        playTrack: mockPlayTrack,
-        pauseTrack: vi.fn(),
-      });
+      mockUsePlayerStore.mockReturnValue(createPlayerStoreMock({
+        currentTrack: mockTrackA,
+        isPlaying: true,
+        play: mockPlay,
+      }));
 
       mockUseComparisonStore.mockReturnValue({
         currentPair: {
@@ -213,7 +233,6 @@ describe('ComparisonView', () => {
           track_a: mockTrackA,
           track_b: mockTrackB,
         },
-        playingTrack: mockTrackA,
         comparisonsCompleted: 5,
         isComparisonMode: true,
       });
@@ -224,12 +243,12 @@ describe('ComparisonView', () => {
       expect(capturedOnFinish).toBeDefined();
       capturedOnFinish!();
 
-      // Should switch to track B
-      expect(mockPlayTrack).toHaveBeenCalledWith(mockTrackB);
+      // Should switch to track B via global player
+      expect(mockPlay).toHaveBeenCalledWith(mockTrackB, { type: 'comparison' });
     });
 
     it('switches from track B to track A when track B finishes', () => {
-      const mockPlayTrack = vi.fn();
+      const mockPlay = vi.fn();
       let capturedOnFinish: (() => void) | undefined;
 
       // Mock WaveformPlayer to capture the onFinish callback
@@ -239,10 +258,11 @@ describe('ComparisonView', () => {
       });
       vi.mocked(WaveformPlayer).mockImplementation(MockWaveformPlayer);
 
-      mockUseAudioPlayer.mockReturnValue({
-        playTrack: mockPlayTrack,
-        pauseTrack: vi.fn(),
-      });
+      mockUsePlayerStore.mockReturnValue(createPlayerStoreMock({
+        currentTrack: mockTrackB,
+        isPlaying: true,
+        play: mockPlay,
+      }));
 
       mockUseComparisonStore.mockReturnValue({
         currentPair: {
@@ -250,7 +270,6 @@ describe('ComparisonView', () => {
           track_a: mockTrackA,
           track_b: mockTrackB,
         },
-        playingTrack: mockTrackB,
         comparisonsCompleted: 5,
         isComparisonMode: true,
       });
@@ -261,34 +280,34 @@ describe('ComparisonView', () => {
       expect(capturedOnFinish).toBeDefined();
       capturedOnFinish!();
 
-      // Should switch to track A
-      expect(mockPlayTrack).toHaveBeenCalledWith(mockTrackA);
+      // Should switch to track A via global player
+      expect(mockPlay).toHaveBeenCalledWith(mockTrackA, { type: 'comparison' });
     });
 
     it('does nothing when no current pair exists', () => {
-      const mockPlayTrack = vi.fn();
+      const mockPlay = vi.fn();
 
-      mockUseAudioPlayer.mockReturnValue({
-        playTrack: mockPlayTrack,
-        pauseTrack: vi.fn(),
-      });
+      mockUsePlayerStore.mockReturnValue(createPlayerStoreMock({
+        currentTrack: null,
+        isPlaying: false,
+        play: mockPlay,
+      }));
 
       mockUseComparisonStore.mockReturnValue({
         currentPair: null,
-        playingTrack: null,
         comparisonsCompleted: 5,
         isComparisonMode: true,
       });
 
       renderComponent();
 
-      // Verify that playTrack was not called during render
-      expect(mockPlayTrack).not.toHaveBeenCalled();
+      // Verify that play was not called during render
+      expect(mockPlay).not.toHaveBeenCalled();
     });
 
     it('handles pause and resume correctly during looping', () => {
-      const mockPlayTrack = vi.fn();
-      const mockPauseTrack = vi.fn();
+      const mockPlay = vi.fn();
+      const mockPause = vi.fn();
       let capturedOnFinish: (() => void) | undefined;
 
       // Mock WaveformPlayer to capture the onFinish callback
@@ -298,10 +317,12 @@ describe('ComparisonView', () => {
       });
       vi.mocked(WaveformPlayer).mockImplementation(MockWaveformPlayer);
 
-      mockUseAudioPlayer.mockReturnValue({
-        playTrack: mockPlayTrack,
-        pauseTrack: mockPauseTrack,
-      });
+      mockUsePlayerStore.mockReturnValue(createPlayerStoreMock({
+        currentTrack: mockTrackA,
+        isPlaying: true,
+        play: mockPlay,
+        pause: mockPause,
+      }));
 
       mockUseComparisonStore.mockReturnValue({
         currentPair: {
@@ -309,7 +330,6 @@ describe('ComparisonView', () => {
           track_a: mockTrackA,
           track_b: mockTrackB,
         },
-        playingTrack: mockTrackA,
         comparisonsCompleted: 5,
         isComparisonMode: true,
       });
@@ -319,12 +339,12 @@ describe('ComparisonView', () => {
       // Simulate track A finishing - should switch to track B
       expect(capturedOnFinish).toBeDefined();
       capturedOnFinish!();
-      expect(mockPlayTrack).toHaveBeenCalledWith(mockTrackB);
+      expect(mockPlay).toHaveBeenCalledWith(mockTrackB, { type: 'comparison' });
 
       // Simulate pausing track B
       const trackBElement = screen.getAllByText('Track B')[0];
       expect(trackBElement).toBeInTheDocument();
-      // The pause functionality is tested through the useAudioPlayer hook
+      // The pause functionality is tested through the playerStore
     });
 
     it('keeps current track playing when winner is selected', () => {
@@ -335,32 +355,29 @@ describe('ComparisonView', () => {
         isPending: false,
       });
 
+      mockUsePlayerStore.mockReturnValue(createPlayerStoreMock({
+        currentTrack: mockTrackA,
+        isPlaying: true,
+      }));
+
       mockUseComparisonStore.mockReturnValue({
         currentPair: {
           session_id: 1,
           track_a: mockTrackA,
           track_b: mockTrackB,
         },
-        currentTrack: mockTrackA,
-        isPlaying: true,
         comparisonsCompleted: 5,
         priorityPathPrefix: null,
         setPriorityPath: vi.fn(),
-        selectAndPlay: vi.fn(),
-        setIsPlaying: vi.fn(),
-        loadPendingPair: vi.fn(),
         isComparisonMode: true,
-        pendingNextPair: null,
         sessionId: '1',
         prefetchedPair: null,
-        togglePlaying: vi.fn(),
         incrementCompleted: vi.fn(),
         reset: vi.fn(),
         setCurrentPair: vi.fn(),
         advanceToNextPair: vi.fn(),
-        setPendingNextPair: vi.fn(),
-        setCurrentTrack: vi.fn(),
         setSession: vi.fn(),
+        updateTrackInPair: vi.fn(),
       });
 
       renderComponent();

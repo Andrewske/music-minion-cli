@@ -1,9 +1,9 @@
- import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useComparisonStore } from '../stores/comparisonStore';
+import { usePlayerStore } from '../stores/playerStore';
 import { useStartSession, useRecordComparison, useArchiveTrack } from '../hooks/useComparison';
 import { usePlaylists } from '../hooks/usePlaylists';
 import type { TrackInfo, FoldersResponse, RecordComparisonRequest, StartSessionRequest } from '../types';
-import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import { useIPCWebSocket } from '../hooks/useIPCWebSocket';
 import { SwipeableTrack } from './SwipeableTrack';
 import { SessionProgress } from './SessionProgress';
@@ -17,24 +17,23 @@ import { getFolders } from '../api/tracks';
 import { selectTrack } from '../api/comparisons';
 
 export function ComparisonView() {
+  // Player state from global playerStore
+  const { currentTrack, isPlaying, play, pause, resume } = usePlayerStore();
+
+  // Comparison session state from comparisonStore
   const {
-    currentTrack,
-    isPlaying,
     currentPair,
     comparisonsCompleted,
     priorityPathPrefix,
     rankingMode: sessionRankingMode,
     selectedPlaylistId: sessionSelectedPlaylistId,
     setPriorityPath,
-    selectAndPlay,
-    setIsPlaying,
     isComparisonMode,
     updateTrackInPair,
   } = useComparisonStore();
   const startSession = useStartSession();
   const recordComparison = useRecordComparison();
   const archiveTrack = useArchiveTrack();
-  const { playTrack } = useAudioPlayer(currentTrack);
 
   // Connect to IPC WebSocket for remote control
   useIPCWebSocket();
@@ -96,10 +95,16 @@ export function ComparisonView() {
 
   const handleTrackTap = (track: TrackInfo) => {
     if (currentTrack?.id === track.id) {
-      setIsPlaying(!isPlaying);  // Toggle play/pause for same track
+      // Toggle play/pause for same track
+      if (isPlaying) {
+        pause();
+      } else {
+        resume();
+      }
       selectTrack(track.id, !isPlaying); // Broadcast play/pause state
     } else {
-      selectAndPlay(track);       // Switch track and play
+      // Switch track and play via global player
+      play(track, { type: 'comparison' });
       selectTrack(track.id, true); // Broadcast track selection
     }
   };
@@ -153,6 +158,8 @@ export function ComparisonView() {
    * and vice versa, allowing for uninterrupted A/B comparison during ELO rating sessions.
    */
   const handleTrackFinish = useCallback(() => {
+    // Guard: only do A/B switching if still in comparison mode
+    // (user may have navigated away while track was playing)
     if (!currentPair || !currentTrackRef.current || !isComparisonMode) return;
 
     // Determine which track just finished and play the other one
@@ -160,9 +167,9 @@ export function ComparisonView() {
       ? currentPair.track_b
       : currentPair.track_a;
 
-    // Automatically play the other track
-    playTrack(otherTrack);
-  }, [currentPair, isComparisonMode, playTrack]); // currentTrack removed from deps
+    // Automatically play the other track via global player
+    play(otherTrack, { type: 'comparison' });
+  }, [currentPair, isComparisonMode, play]); // currentTrack removed from deps
 
   if (startSession.isError) {
     return (
