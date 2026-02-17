@@ -8,8 +8,8 @@
 
 | Task | Status | Started | Completed | Duration |
 |------|--------|---------|-----------|----------|
-| 01-backend-exclusion-filter | Running | 2026-02-16T00:00:00Z | - | - |
-| 02-backend-skip-endpoints | Pending | - | - | - |
+| 01-backend-exclusion-filter | ✅ Done | 2026-02-16T00:00:00Z | 2026-02-16T00:01:00Z | ~1m |
+| 02-backend-skip-endpoints | Running | 2026-02-16T00:01:00Z | - | - |
 | 03-frontend-api-functions | Pending | - | - | - |
 | 04-frontend-hook-mutations | Pending | - | - | - |
 | 05-frontend-review-mode-ui | Pending | - | - | - |
