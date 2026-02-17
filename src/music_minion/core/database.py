@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 32
+SCHEMA_VERSION = 33
 
 
 # Initial top 50 curated emojis for music reactions
@@ -1308,6 +1308,116 @@ def migrate_database(conn, current_version: int) -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_playlists_pin_order ON playlists(pin_order)")
 
         print("  ✓ Migration to v32 complete: Playlist pinning support added")
+        conn.commit()
+
+    if current_version < 33:
+        # Migration from v32 to v33: Consolidate global ELO to "All" playlist
+        print("  Migrating to v33: Consolidating ELO rankings to playlist-based system...")
+
+        # Add performance indexes first
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_playlist_comparison_track_a
+            ON playlist_comparison_history(playlist_id, track_a_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_playlist_comparison_track_b
+            ON playlist_comparison_history(playlist_id, track_b_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_playlist_elo_comparison_count
+            ON playlist_elo_ratings(playlist_id, comparison_count)
+        """)
+
+        # Find "All" playlist ID
+        cursor = conn.execute("SELECT id FROM playlists WHERE name = 'All' LIMIT 1")
+        all_playlist = cursor.fetchone()
+
+        if all_playlist:
+            all_id = all_playlist['id']
+
+            # Count data before migration
+            cursor = conn.execute("SELECT COUNT(*) FROM elo_ratings")
+            old_ratings = cursor.fetchone()[0]
+
+            cursor = conn.execute("SELECT COUNT(*) FROM comparison_history")
+            old_comparisons = cursor.fetchone()[0]
+
+            # Migrate global ELO ratings to "All" playlist
+            conn.execute("""
+                INSERT OR REPLACE INTO playlist_elo_ratings (track_id, playlist_id, rating, comparison_count, wins)
+                SELECT
+                    er.track_id,
+                    ? as playlist_id,
+                    er.rating,
+                    er.comparison_count,
+                    er.wins
+                FROM elo_ratings er
+            """, (all_id,))
+
+            # Migrate global comparison history to "All" playlist
+            # Map old global ratings to both playlist and global columns
+            conn.execute("""
+                INSERT INTO playlist_comparison_history (
+                    playlist_id, track_a_id, track_b_id, winner_id, affects_global,
+                    track_a_playlist_rating_before, track_a_playlist_rating_after,
+                    track_b_playlist_rating_before, track_b_playlist_rating_after,
+                    track_a_global_rating_before, track_a_global_rating_after,
+                    track_b_global_rating_before, track_b_global_rating_after,
+                    session_id, timestamp
+                )
+                SELECT
+                    ? as playlist_id,
+                    ch.track_a_id, ch.track_b_id, ch.winner_id,
+                    1 as affects_global,
+                    ch.track_a_rating_before, ch.track_a_rating_after,
+                    ch.track_b_rating_before, ch.track_b_rating_after,
+                    ch.track_a_rating_before, ch.track_a_rating_after,
+                    ch.track_b_rating_before, ch.track_b_rating_after,
+                    ch.session_id, ch.timestamp
+                FROM comparison_history ch
+            """, (all_id,))
+
+            # Count data after migration
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM playlist_elo_ratings WHERE playlist_id = ?",
+                (all_id,)
+            )
+            new_ratings = cursor.fetchone()[0]
+
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM playlist_comparison_history WHERE playlist_id = ?",
+                (all_id,)
+            )
+            new_comparisons = cursor.fetchone()[0]
+
+            # Log migration results
+            logger.info("✅ Migration to v33 complete:")
+            logger.info(f"  - Ratings: {new_ratings} / {old_ratings} migrated to All playlist")
+            logger.info(f"  - Comparisons: {new_comparisons} / {old_comparisons} migrated to All playlist")
+
+            if new_ratings != old_ratings or new_comparisons != old_comparisons:
+                logger.warning("⚠️  Migration mismatch detected - check for data issues")
+
+        # Backup old tables (can be removed in future migration if all is well)
+        try:
+            conn.execute("ALTER TABLE comparison_history RENAME TO _backup_comparison_history")
+        except sqlite3.OperationalError as e:
+            if "no such table" not in str(e).lower() and "already exists" not in str(e).lower():
+                raise
+
+        try:
+            conn.execute("ALTER TABLE elo_ratings RENAME TO _backup_elo_ratings")
+        except sqlite3.OperationalError as e:
+            if "no such table" not in str(e).lower() and "already exists" not in str(e).lower():
+                raise
+
+        try:
+            conn.execute("ALTER TABLE playlist_ranking_sessions RENAME TO _backup_playlist_ranking_sessions")
+        except sqlite3.OperationalError as e:
+            if "no such table" not in str(e).lower() and "already exists" not in str(e).lower():
+                raise
+
+        print("  ✓ Migration to v33 complete: ELO rankings consolidated to playlist-based system")
         conn.commit()
 
 

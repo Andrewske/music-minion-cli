@@ -12,7 +12,7 @@ export interface Filter {
 export interface Track {
   id: number;
   title: string;
-  artist: string;
+  artist?: string;
   album?: string;
   genre?: string;
   year?: number;
