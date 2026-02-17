@@ -1,6 +1,6 @@
 ---
 task: 05-frontend-refactor
-status: pending
+status: done
 depends: [04-backend-api-refactor]
 files:
   - path: web/frontend/src/stores/comparisonStore.ts

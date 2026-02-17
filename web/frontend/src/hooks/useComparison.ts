@@ -1,31 +1,22 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { startSession, recordComparison } from '../api/comparisons';
+import { startComparison, recordComparison } from '../api/comparisons';
 import { archiveTrack, prefetchWaveform } from '../api/tracks';
 import { useComparisonStore } from '../stores/comparisonStore';
-import type { StartSessionRequest, RecordComparisonRequest } from '../types';
+import type { RecordComparisonRequest } from '../types';
 
-export function useStartSession() {
+export function useStartComparison() {
   const queryClient = useQueryClient();
-  const { setSession } = useComparisonStore();
+  const { startComparison: setComparisonState } = useComparisonStore();
 
   return useMutation({
-    mutationFn: (request: StartSessionRequest) => startSession(request),
-    onSuccess: (response, request) => {
-      setSession(
-        response.session_id,
-        response.pair,
-        response.prefetched_pair,
-        request.priority_path_prefix,
-        request.ranking_mode === 'playlist' ? 'playlist' : 'global',
-        request.playlist_id ?? null
-      );
+    mutationFn: (playlistId: number) => startComparison(playlistId),
+    onSuccess: (response, playlistId) => {
+      setComparisonState(playlistId, response.pair, response.progress);
 
-      // Prefetch waveforms for current and prefetched pairs
-      prefetchWaveform(response.pair.track_a.id);
-      prefetchWaveform(response.pair.track_b.id);
-      if (response.prefetched_pair) {
-        prefetchWaveform(response.prefetched_pair.track_a.id);
-        prefetchWaveform(response.prefetched_pair.track_b.id);
+      // Prefetch waveforms for current pair
+      if (response.pair) {
+        prefetchWaveform(response.pair.track_a.id);
+        prefetchWaveform(response.pair.track_b.id);
       }
 
       queryClient.invalidateQueries({ queryKey: ['comparisons'] });
@@ -34,26 +25,17 @@ export function useStartSession() {
 }
 
 export function useRecordComparison() {
-  const { incrementCompleted, setNextPairForComparison } = useComparisonStore();
+  const { recordComparison: updateComparisonState } = useComparisonStore();
 
   return useMutation({
     mutationFn: (request: RecordComparisonRequest) => recordComparison(request),
     onSuccess: (response) => {
-      if (response.success) {
-        incrementCompleted();
+      updateComparisonState(response.pair, response.progress);
 
-        // Update pair for comparison but keep current track playing
-        if (response.next_pair) {
-          setNextPairForComparison(response.next_pair, response.prefetched_pair);
-
-          // Prefetch waveforms for the new pair
-          prefetchWaveform(response.next_pair.track_a.id);
-          prefetchWaveform(response.next_pair.track_b.id);
-          if (response.prefetched_pair) {
-            prefetchWaveform(response.prefetched_pair.track_a.id);
-            prefetchWaveform(response.prefetched_pair.track_b.id);
-          }
-        }
+      // Prefetch waveforms for the new pair
+      if (response.pair) {
+        prefetchWaveform(response.pair.track_a.id);
+        prefetchWaveform(response.pair.track_b.id);
       }
     },
   });

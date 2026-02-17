@@ -19,21 +19,21 @@ export function useSyncWebSocket() {
 
       switch (type) {
         case 'sync:full':
-          if (data.comparison?.pair && data.comparison?.session_id) {
-            useComparisonStore.getState().joinSession(
-              data.comparison.session_id,
+          // Sync full comparison state (when joining from another device)
+          if (data.comparison?.pair && data.comparison?.playlist_id && data.comparison?.progress) {
+            useComparisonStore.getState().startComparison(
+              data.comparison.playlist_id,
               data.comparison.pair,
-              data.comparison.prefetched
+              data.comparison.progress
             );
           }
           break;
 
         case 'comparison:advanced':
-          useComparisonStore.getState().setNextPairForComparison(
-            data.pair,
-            data.prefetched,
-            data.session_id
-          );
+          // Another device recorded a comparison
+          if (data.pair !== undefined && data.progress) {
+            useComparisonStore.getState().recordComparison(data.pair, data.progress);
+          }
           break;
 
         case 'playback:state':
