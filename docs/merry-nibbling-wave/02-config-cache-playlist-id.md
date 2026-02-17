@@ -1,6 +1,6 @@
 ---
 task: 02-config-cache-playlist-id
-status: pending
+status: done
 depends: [01-database-migration]
 files:
   - path: src/music_minion/core/config.py
