@@ -1,51 +1,37 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { usePlayerStore, getCurrentPosition } from '../stores/playerStore';
+import { useAudioElement } from '../contexts/AudioElementContext';
 
 export function usePlayer() {
   const store = usePlayerStore();
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audio = useAudioElement();
 
   // Initialize device on mount
   useEffect(() => {
     store.registerDevice();
   }, [store]);
 
-  // Audio element - persist across device switches, never destroy
+  // Initialize audio volume/mute when audio becomes available
   useEffect(() => {
-    // Create audio element once on mount
-    if (!audioRef.current) {
-      audioRef.current = new Audio();
-      audioRef.current.volume = store.volume;
-      audioRef.current.muted = store.isMuted;
-    }
-
-    // Cleanup on unmount only
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.src = '';
-        audioRef.current = null;
-      }
-    };
-  }, []);
+    if (!audio) return;
+    audio.volume = store.volume;
+    audio.muted = store.isMuted;
+  }, [audio]);
 
   // Update volume when store changes
   useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = store.volume;
-    }
-  }, [store.volume]);
+    if (!audio) return;
+    audio.volume = store.volume;
+  }, [audio, store.volume]);
 
   // Update mute when store changes
   useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.muted = store.isMuted;
-    }
-  }, [store.isMuted]);
+    if (!audio) return;
+    audio.muted = store.isMuted;
+  }, [audio, store.isMuted]);
 
   // Control playback based on device state and track
   useEffect(() => {
-    const audio = audioRef.current;
     if (!audio) return;
 
     if (!store.isThisDeviceActive) {
@@ -60,11 +46,10 @@ export function usePlayer() {
         audio.currentTime = getCurrentPosition(store) / 1000;
       }
     }
-  }, [store.isThisDeviceActive, store.currentTrack?.id, store.isPlaying]);
+  }, [audio, store.isThisDeviceActive, store.currentTrack?.id, store.isPlaying]);
 
   // Sync audio position on seek operations
   useEffect(() => {
-    const audio = audioRef.current;
     if (!audio || !store.isThisDeviceActive || !store.currentTrack) return;
 
     const expectedPosition = getCurrentPosition(store) / 1000;
@@ -74,7 +59,7 @@ export function usePlayer() {
     if (Math.abs(expectedPosition - actualPosition) > 1) {
       audio.currentTime = expectedPosition;
     }
-  }, [store.positionMs, store.trackStartedAt, store.isThisDeviceActive, store.currentTrack]);
+  }, [audio, store.positionMs, store.trackStartedAt, store.isThisDeviceActive, store.currentTrack]);
 
   // Scrobble tracking - fire onTrackPlayed at 50% or 30s (once per playthrough)
   useEffect(() => {
@@ -97,10 +82,8 @@ export function usePlayer() {
 
   // Gapless playback - preload next track 5s before end
   useEffect(() => {
-    if (!store.isThisDeviceActive || !store.currentTrack) return;
-
-    const audio = audioRef.current;
     if (!audio) return;
+    if (!store.isThisDeviceActive || !store.currentTrack) return;
 
     const onTimeUpdate = () => {
       if (audio.duration - audio.currentTime < 5) {
@@ -110,15 +93,13 @@ export function usePlayer() {
 
     audio.addEventListener('timeupdate', onTimeUpdate);
     return () => audio.removeEventListener('timeupdate', onTimeUpdate);
-  }, [store.currentTrack?.id]);
+  }, [audio, store.currentTrack?.id]);
 
   // Mobile audio constraints - iOS Safari requires user gesture
   useEffect(() => {
+    if (!audio) return;
     if (!store.isThisDeviceActive) return;
     if (!store.currentTrack || !store.isPlaying) return;
-
-    const audio = audioRef.current;
-    if (!audio) return;
 
     audio.play().catch((err) => {
       if (err.name === 'NotAllowedError') {
@@ -128,11 +109,10 @@ export function usePlayer() {
         store.setPlaybackError(err.message);
       }
     });
-  }, [store.isThisDeviceActive, store.currentTrack, store.isPlaying]);
+  }, [audio, store.isThisDeviceActive, store.currentTrack, store.isPlaying]);
 
   // Error handling - retry or skip on audio load failure
   useEffect(() => {
-    const audio = audioRef.current;
     if (!audio) return;
 
     const onError = () => {
@@ -143,11 +123,10 @@ export function usePlayer() {
 
     audio.addEventListener('error', onError);
     return () => audio.removeEventListener('error', onError);
-  }, [store.currentTrack?.id]);
+  }, [audio, store.currentTrack?.id]);
 
   // Track ended - advance to next track
   useEffect(() => {
-    const audio = audioRef.current;
     if (!audio) return;
     if (!store.isThisDeviceActive) return;
 
@@ -157,7 +136,7 @@ export function usePlayer() {
 
     audio.addEventListener('ended', onEnded);
     return () => audio.removeEventListener('ended', onEnded);
-  }, [store.currentTrack?.id, store.isThisDeviceActive]);
+  }, [audio, store.currentTrack?.id, store.isThisDeviceActive]);
 
   return store;
 }

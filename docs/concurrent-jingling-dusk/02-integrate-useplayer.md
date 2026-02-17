@@ -1,6 +1,6 @@
 ---
 task: 02-integrate-useplayer
-status: pending
+status: done
 depends: [01-shared-audio-context]
 files:
   - path: web/frontend/src/hooks/usePlayer.ts
