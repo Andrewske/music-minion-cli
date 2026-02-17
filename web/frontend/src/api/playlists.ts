@@ -1,5 +1,5 @@
 import type { Playlist, PlaylistStatsResponse, PlaylistTracksResponse } from '../types';
-import type { Filter } from './builder';
+import type { Filter, Track } from './builder';
 
 import { apiRequest } from './client';
 
@@ -97,4 +97,33 @@ export async function deletePlaylist(
   });
   if (!response.ok) throw new Error('Failed to delete playlist');
   return response.json();
+}
+
+export async function skipSmartPlaylistTrack(
+  playlistId: number,
+  trackId: number
+): Promise<void> {
+  const response = await fetch(`${API_BASE}/playlists/${playlistId}/skip/${trackId}`, {
+    method: 'POST',
+  });
+  if (!response.ok) throw new Error('Failed to skip track');
+}
+
+export async function unskipSmartPlaylistTrack(
+  playlistId: number,
+  trackId: number
+): Promise<void> {
+  const response = await fetch(`${API_BASE}/playlists/${playlistId}/skip/${trackId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) throw new Error('Failed to unskip track');
+}
+
+export async function getSmartPlaylistSkippedTracks(
+  playlistId: number
+): Promise<Track[]> {
+  const response = await fetch(`${API_BASE}/playlists/${playlistId}/skipped`);
+  if (!response.ok) throw new Error('Failed to fetch skipped tracks');
+  const data = await response.json();
+  return data.skipped;
 }

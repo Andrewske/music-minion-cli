@@ -1,6 +1,6 @@
 ---
 task: 03-frontend-api-functions
-status: pending
+status: done
 depends: [02-backend-skip-endpoints]
 files:
   - path: web/frontend/src/api/playlists.ts
