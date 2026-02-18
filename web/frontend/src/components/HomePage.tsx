@@ -6,7 +6,7 @@ import { getStations, type Station } from '../api/radio';
 import type { Track } from '../api/builder';
 import type { SortingState } from '@tanstack/react-table';
 import { TrackDisplay } from './builder/TrackDisplay';
-import { WaveformSection } from './builder/WaveformSection';
+import { WaveformPlayer } from './WaveformPlayer';
 import { TrackQueueTable } from './builder/TrackQueueTable';
 import { usePlaylists } from '../hooks/usePlaylists';
 
@@ -114,14 +114,14 @@ export function HomePage(): JSX.Element {
             {/* Sticky player section on mobile */}
             <div className="sticky top-10 md:static z-10 bg-black pb-4 md:pb-0">
               <TrackDisplay track={currentTrack} />
-              <WaveformSection
-                track={currentTrack}
-                isPlaying={isPlaying}
-                loopEnabled={false}
-                onTogglePlayPause={() => isPlaying ? pause() : resume()}
-                onLoopChange={() => {}} // no-op - loop disabled on home page
-                onFinish={handleWaveformFinish}
-              />
+              <div className="h-16 border-t border-b border-obsidian-border">
+                <WaveformPlayer
+                  track={currentTrack}
+                  isPlaying={isPlaying}
+                  onTogglePlayPause={() => isPlaying ? pause() : resume()}
+                  onFinish={handleWaveformFinish}
+                />
+              </div>
             </div>
 
             {/* Queue Table */}
