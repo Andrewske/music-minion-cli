@@ -1,6 +1,6 @@
 ---
 task: 02-fix-get-playlist-comparison-progress
-status: pending
+status: done
 depends:
   - 01-fix-get-next-playlist-pair
 files:
