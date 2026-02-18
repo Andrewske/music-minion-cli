@@ -43,6 +43,10 @@ interface PlayerState {
   volume: number;
   shuffleEnabled: boolean;
 
+  // Sort state
+  sortField: string | null;
+  sortDirection: 'asc' | 'desc' | null;
+
   // Clock sync
   clockOffset: number;
 
@@ -81,6 +85,8 @@ interface PlayerActions {
   setMuted: (muted: boolean) => void;
   setVolume: (volume: number) => void;
   toggleShuffle: () => void;
+  toggleShuffleSmooth: () => Promise<void>;
+  setSortOrder: (field: string, direction: 'asc' | 'desc') => Promise<void>;
   setActiveDevice: (deviceId: string) => void;
   syncState: (state: PlaybackState & { serverTime: number }) => void;
   syncDevices: (devices: Device[]) => void;
@@ -141,6 +147,8 @@ const initialState: PlayerState = {
   isMuted: JSON.parse(localStorage.getItem('music-minion-player-muted') ?? 'false'),
   volume: initialVolume,
   shuffleEnabled: JSON.parse(localStorage.getItem('music-minion-shuffle') ?? 'true'),
+  sortField: null,
+  sortDirection: null,
   clockOffset: 0,
   scrobbledThisPlaythrough: false,
   thisDeviceId: generateDeviceId(),
@@ -295,12 +303,71 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     }
   },
 
+  toggleShuffleSmooth: async () => {
+    try {
+      const response = await fetch(`${API_BASE}/player/toggle-shuffle`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to toggle shuffle');
+      }
+
+      const data = await response.json();
+
+      // Optimistic update (will be confirmed via WebSocket)
+      set({
+        shuffleEnabled: data.shuffle_enabled,
+        sortField: null,
+        sortDirection: null,
+      });
+
+      console.log(`Shuffle ${data.shuffle_enabled ? 'enabled' : 'disabled'} (smooth toggle)`);
+    } catch (error) {
+      console.error('Error toggling shuffle:', error);
+      set({ playbackError: (error as Error).message });
+    }
+  },
+
+  setSortOrder: async (field: string, direction: 'asc' | 'desc') => {
+    try {
+      const response = await fetch(`${API_BASE}/player/set-sort`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ field, direction }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to set sort order');
+      }
+
+      await response.json();
+
+      // Optimistic update
+      set({
+        sortField: field,
+        sortDirection: direction,
+        shuffleEnabled: false, // Sort disables shuffle
+      });
+
+      console.log(`Queue sorted by ${field} ${direction}`);
+    } catch (error) {
+      console.error('Error setting sort order:', error);
+      set({ playbackError: (error as Error).message });
+    }
+  },
+
   setActiveDevice: (deviceId: string) => {
     // Simplified: just update active device preference
     set({ activeDeviceId: deviceId });
   },
 
-  syncState: (state: PlaybackState & { serverTime: number }) => {
+  syncState: (state: PlaybackState & { serverTime: number; sortSpec?: { field: string; direction: 'asc' | 'desc' } | null }) => {
     const prevTrackId = get().currentTrack?.id;
     const newTrackId = state.currentTrack?.id;
 
@@ -309,6 +376,10 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
 
     // Compute clock offset
     const clockOffset = state.serverTime - Date.now();
+
+    // Extract sort spec from backend state
+    const sortField = state.sortSpec?.field ?? null;
+    const sortDirection = state.sortSpec?.direction ?? null;
 
     set({
       currentTrack: state.currentTrack,
@@ -319,6 +390,8 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       isPlaying: state.isPlaying,
       activeDeviceId: state.activeDeviceId,
       shuffleEnabled: state.shuffleEnabled,
+      sortField,
+      sortDirection,
       clockOffset,
       scrobbledThisPlaythrough,
       isThisDeviceActive: state.activeDeviceId === get().thisDeviceId,
