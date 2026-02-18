@@ -146,34 +146,12 @@ def resolve_queue(context: PlayContext, db_conn) -> list[dict]:
     # Limit to 50 tracks
     track_ids = track_ids[:50]
 
-    # Fetch track data
+    # Fetch tracks with full metadata and emojis
     if not track_ids:
         return []
 
-    placeholders = ",".join("?" * len(track_ids))
-    cursor = db_conn.execute(
-        f"""
-        SELECT id, title, artist, album, genre, year, bpm, key_signature,
-               duration, source, source_url, local_path
-        FROM tracks
-        WHERE id IN ({placeholders})
-        """,
-        track_ids
-    )
-
-    # Preserve order from track_ids
-    tracks_by_id = {row["id"]: dict(row) for row in cursor.fetchall()}
-    tracks = [tracks_by_id[tid] for tid in track_ids if tid in tracks_by_id]
-
-    # Batch-fetch emojis for all tracks
-    from ..queries.emojis import batch_fetch_track_emojis
-    emojis_by_track = batch_fetch_track_emojis([t["id"] for t in tracks], db_conn)
-
-    # Add emojis to each track
-    for track in tracks:
-        track["emojis"] = emojis_by_track.get(track["id"], [])
-
-    return tracks
+    from ..queries.tracks import batch_fetch_tracks_with_metadata
+    return batch_fetch_tracks_with_metadata(track_ids, db_conn, preserve_order=True)
 
 
 @router.post("/play")
