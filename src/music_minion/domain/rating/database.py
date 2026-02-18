@@ -8,8 +8,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, TypedDict
 
-from loguru import logger
-
 from music_minion.core.database import get_db_connection
 
 
@@ -105,19 +103,7 @@ def get_playlist_leaderboard(
 # Playlist-specific rating functions
 
 
-@dataclass
-class PlaylistEloRating:
-    """Immutable playlist-specific Elo rating data."""
-
-    track_id: str
-    playlist_id: int
-    rating: float
-    comparison_count: int
-    wins: int
-    last_compared: Optional[datetime]
-
-
-def get_playlist_elo_rating(track_id: str, playlist_id: int) -> float:
+def get_playlist_elo_rating(track_id: int, playlist_id: int) -> float:
     """Get playlist-specific ELO rating for a track.
 
     Args:
@@ -142,9 +128,9 @@ def get_playlist_elo_rating(track_id: str, playlist_id: int) -> float:
 
 def record_playlist_comparison(
     playlist_id: int,
-    track_a_id: str,
-    track_b_id: str,
-    winner_id: str,
+    track_a_id: int,
+    track_b_id: int,
+    winner_id: int,
     track_a_rating_before: float,
     track_b_rating_before: float,
     track_a_rating_after: float,

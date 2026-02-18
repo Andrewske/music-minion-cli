@@ -12,7 +12,6 @@ import { AutoplayToggle } from './AutoplayToggle';
 import { ErrorState } from './ErrorState';
 import { ErrorBoundary } from './ErrorBoundary';
 import { StatsModal } from './StatsModal';
-import { selectTrack } from '../api/comparisons';
 
 export function ComparisonView() {
   // Player state from global playerStore
@@ -65,11 +64,11 @@ export function ComparisonView() {
       } else {
         resume();
       }
-      selectTrack(track.id, !isPlaying); // Broadcast play/pause state
+      // Play/pause state synced via global playerStore broadcasts
     } else {
       // Switch track and play via global player
       play(track, { type: 'comparison' });
-      selectTrack(track.id, true); // Broadcast track selection
+      // Track selection synced via global playerStore broadcasts
     }
   };
 
