@@ -1143,15 +1143,11 @@ def get_elo_analysis(playlist_id: int) -> dict[str, Any]:
                 COALESCE(AVG(per.rating), 0) as avg_playlist_rating,
                 COALESCE(MIN(per.rating), 0) as min_playlist_rating,
                 COALESCE(MAX(per.rating), 0) as max_playlist_rating,
-                COALESCE(AVG(er.rating), 0) as avg_global_rating,
-                COALESCE(MIN(er.rating), 0) as min_global_rating,
-                COALESCE(MAX(er.rating), 0) as max_global_rating,
                 COALESCE(AVG(per.comparison_count), 0) as avg_playlist_comparisons,
                 COALESCE(SUM(per.comparison_count), 0) as total_playlist_comparisons
             FROM playlist_tracks pt
             LEFT JOIN playlist_elo_ratings per ON pt.track_id = per.track_id
                 AND per.playlist_id = ?
-            LEFT JOIN elo_ratings er ON pt.track_id = er.track_id
             WHERE pt.playlist_id = ?
         """,
             (playlist_id, playlist_id),
@@ -1168,9 +1164,6 @@ def get_elo_analysis(playlist_id: int) -> dict[str, Any]:
                 "avg_playlist_rating": 0.0,
                 "min_playlist_rating": 0.0,
                 "max_playlist_rating": 0.0,
-                "avg_global_rating": 0.0,
-                "min_global_rating": 0.0,
-                "max_global_rating": 0.0,
                 "avg_playlist_comparisons": 0.0,
                 "total_playlist_comparisons": 0,
             }
@@ -1189,9 +1182,6 @@ def get_elo_analysis(playlist_id: int) -> dict[str, Any]:
             "avg_playlist_rating": round(row["avg_playlist_rating"], 1),
             "min_playlist_rating": round(row["min_playlist_rating"], 1),
             "max_playlist_rating": round(row["max_playlist_rating"], 1),
-            "avg_global_rating": round(row["avg_global_rating"], 1),
-            "min_global_rating": round(row["min_global_rating"], 1),
-            "max_global_rating": round(row["max_global_rating"], 1),
             "avg_playlist_comparisons": round(row["avg_playlist_comparisons"], 1),
             "total_playlist_comparisons": row["total_playlist_comparisons"],
         }

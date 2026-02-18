@@ -426,14 +426,10 @@ def get_playlist_tracks(playlist_id: int) -> list[dict[str, Any]]:
                     pt.added_at,
                     COALESCE(per.rating, 1500.0) as playlist_elo_rating,
                     COALESCE(per.comparison_count, 0) as playlist_elo_comparison_count,
-                    COALESCE(per.wins, 0) as playlist_elo_wins,
-                    COALESCE(er.rating, 1500.0) as global_elo_rating,
-                    COALESCE(er.comparison_count, 0) as global_elo_comparison_count,
-                    COALESCE(er.wins, 0) as global_elo_wins
+                    COALESCE(per.wins, 0) as playlist_elo_wins
                 FROM tracks t
                 JOIN playlist_tracks pt ON t.id = pt.track_id
                 LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
-                LEFT JOIN elo_ratings er ON t.id = er.track_id
                 WHERE pt.playlist_id = ?
                 ORDER BY pt.position
             """,

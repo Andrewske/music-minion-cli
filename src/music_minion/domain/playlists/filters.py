@@ -352,14 +352,10 @@ def evaluate_filters(playlist_id: int) -> list[dict[str, Any]]:
                 COALESCE(per.rating, 1500.0) as playlist_elo_rating,
                 COALESCE(per.comparison_count, 0) as playlist_elo_comparison_count,
                 COALESCE(per.wins, 0) as playlist_elo_wins,
-                COALESCE(er.rating, 1500.0) as global_elo_rating,
-                COALESCE(er.comparison_count, 0) as global_elo_comparison_count,
-                COALESCE(er.wins, 0) as global_elo_wins,
                 NULL as position,  -- Smart playlists don't have fixed positions
                 NULL as added_at   -- Smart playlists don't have added_at timestamps
             FROM tracks t
             LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
-            LEFT JOIN elo_ratings er ON t.id = er.track_id
             WHERE {where_clause}
             AND t.id NOT IN (
                 SELECT track_id FROM playlist_builder_skipped WHERE playlist_id = ?
