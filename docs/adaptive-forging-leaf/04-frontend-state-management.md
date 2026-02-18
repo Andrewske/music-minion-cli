@@ -1,6 +1,6 @@
 ---
 task: 04-frontend-state-management
-status: pending
+status: done
 depends: [03-backend-player-integration]
 files:
   - path: web/frontend/src/stores/playerStore.ts
