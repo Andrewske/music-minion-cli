@@ -114,3 +114,9 @@ Auto-sync SoundCloud reposts (like `~/coding/soundcloud-discovery`) to keep an u
 Mobile comparison view: clicking emoji button stops the song, then emoji picker glitches (can't select emoji or close it). Likely interaction between swipe gestures and emoji picker popup.
 
 **Context**: `web/frontend/src/components/ComparisonView.tsx`, `web/frontend/src/components/EmojiPicker.tsx`, `web/frontend/src/hooks/useSwipeGesture.ts`
+
+## 8. True Shuffle with Rolling 100-Track Window - 2026-02-18
+
+Implement proper shuffle that maintains a rolling window of ~100 tracks to avoid repeating recently played songs. Current shuffle likely picks randomly each time without history awareness.
+
+**Context**: `domain/playback/` shuffle logic, playerStore, queue management

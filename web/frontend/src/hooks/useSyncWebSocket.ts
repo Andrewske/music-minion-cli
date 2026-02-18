@@ -27,6 +27,10 @@ export function useSyncWebSocket() {
               data.comparison.progress
             );
           }
+          // Sync playback state if present
+          if (data.playback) {
+            usePlayerStore.getState().syncState(data.playback);
+          }
           break;
 
         case 'comparison:advanced':

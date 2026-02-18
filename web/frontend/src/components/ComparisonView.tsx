@@ -8,6 +8,7 @@ import { useIPCWebSocket } from '../hooks/useIPCWebSocket';
 import { SwipeableTrack } from './SwipeableTrack';
 import { WaveformPlayer } from './WaveformPlayer';
 import { AutoplayToggle } from './AutoplayToggle';
+import { PlaylistPicker } from './PlaylistPicker';
 
 import { ErrorState } from './ErrorState';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -36,7 +37,6 @@ export function ComparisonView() {
   // Playlist selection state
   const playlistsQuery = usePlaylists();
   const playlists = playlistsQuery.data;
-  const [setupSelectedPlaylistId, setSetupSelectedPlaylistId] = useState<number | null>(null);
 
   // Stats modal state
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
@@ -47,14 +47,9 @@ export function ComparisonView() {
     currentTrackRef.current = currentTrack;
   }, [currentTrack]);
 
-  const handleStartComparison = () => {
-    if (!setupSelectedPlaylistId) {
-      alert('Please select a playlist to rank');
-      return;
-    }
-
-    startComparison.mutate(setupSelectedPlaylistId);
-  }
+  const handleSelectPlaylist = (playlistId: number) => {
+    startComparison.mutate(playlistId);
+  };
 
   const handleTrackTap = (track: TrackInfo) => {
     if (currentTrack?.id === track.id) {
@@ -67,7 +62,9 @@ export function ComparisonView() {
       // Play/pause state synced via global playerStore broadcasts
     } else {
       // Switch track and play via global player
-      play(track, { type: 'comparison' });
+      // Include both track IDs for comparison queue context (no shuffle in comparison mode)
+      const trackIds = currentPair ? [currentPair.track_a.id, currentPair.track_b.id] : [];
+      play(track, { type: 'comparison', track_ids: trackIds, shuffle: false });
       // Track selection synced via global playerStore broadcasts
     }
   };
@@ -123,16 +120,18 @@ export function ComparisonView() {
       ? currentPair.track_b
       : currentPair.track_a;
 
+    // Include both track IDs for comparison queue context (no shuffle in comparison mode)
+    const trackIds = [currentPair.track_a.id, currentPair.track_b.id];
+
     // Automatically play the other track via global player
-    play(otherTrack, { type: 'comparison' });
+    play(otherTrack, { type: 'comparison', track_ids: trackIds, shuffle: false });
   }, [currentPair, isComparisonMode, play]); // currentTrack removed from deps
 
   if (startComparison.isError) {
     return (
       <ErrorState
         title="Failed to Start Comparison"
-        message="Unable to load tracks for comparison. Please check your music library."
-        onRetry={handleStartComparison}
+        message="Unable to load tracks for comparison. Please select a playlist to try again."
       />
     );
   }
@@ -169,7 +168,7 @@ export function ComparisonView() {
   if (!currentPair) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center p-4">
-        <div className="text-center max-w-md w-full">
+        <div className="text-center max-w-lg w-full">
           <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-indigo-500 mb-4">
             Music Minion
           </h1>
@@ -178,38 +177,21 @@ export function ComparisonView() {
           </p>
 
           {/* Playlist selector */}
-          {playlists && playlists.length > 0 && (
-            <div className="mb-6">
-              <label className="block text-white/60 text-sm mb-2 text-left">
+          {playlists && playlists.length > 0 ? (
+            <div>
+              <label className="block text-white/60 text-sm mb-4 text-left">
                 Select Playlist
               </label>
-              <select
-                value={setupSelectedPlaylistId ?? ''}
-                onChange={(e) => setSetupSelectedPlaylistId(e.target.value ? Number(e.target.value) : null)}
-                className="w-full bg-obsidian-border border border-obsidian-border text-white/90 px-4 py-3 focus:outline-none focus:border-indigo-500 transition-colors"
-              >
-                <option value="">Choose a playlist...</option>
-                {playlists.map((playlist) => (
-                  <option key={playlist.id} value={playlist.id}>
-                    {playlist.name}
-                  </option>
-                ))}
-              </select>
-              {setupSelectedPlaylistId && (
-                <p className="text-obsidian-accent text-xs mt-2 text-left font-mono">
-                  Only tracks from this playlist will be ranked
-                </p>
-              )}
+              <PlaylistPicker
+                playlists={playlists.filter((p) => p.library === 'local')}
+                selectedPlaylistId={null}
+                onSelect={handleSelectPlaylist}
+                isLoading={startComparison.isPending}
+              />
             </div>
+          ) : (
+            <p className="text-white/40 text-sm">No playlists found</p>
           )}
-
-          <button
-            onClick={handleStartComparison}
-            disabled={startComparison.isPending || !setupSelectedPlaylistId}
-            className="w-full bg-indigo-600 text-white px-6 py-4 font-bold text-lg hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-indigo-900/50"
-          >
-            {startComparison.isPending ? 'Starting...' : 'Start Comparison'}
-          </button>
         </div>
       </div>
     );

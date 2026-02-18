@@ -170,7 +170,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           trackId: track.id,
-          context: { ...context, shuffle: shuffleEnabled },
+          context: { ...context, shuffle: context.shuffle ?? shuffleEnabled },
           targetDeviceId: activeDeviceId ?? thisDeviceId,
         }),
       });
