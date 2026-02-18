@@ -153,7 +153,8 @@ def resolve_queue(context: PlayContext, db_conn) -> list[dict]:
     placeholders = ",".join("?" * len(track_ids))
     cursor = db_conn.execute(
         f"""
-        SELECT id, title, artist, album, duration, source, source_url, local_path
+        SELECT id, title, artist, album, genre, year, bpm, key_signature,
+               duration, source, source_url, local_path, elo_rating
         FROM tracks
         WHERE id IN ({placeholders})
         """,
@@ -163,6 +164,14 @@ def resolve_queue(context: PlayContext, db_conn) -> list[dict]:
     # Preserve order from track_ids
     tracks_by_id = {row["id"]: dict(row) for row in cursor.fetchall()}
     tracks = [tracks_by_id[tid] for tid in track_ids if tid in tracks_by_id]
+
+    # Batch-fetch emojis for all tracks
+    from ..queries.emojis import batch_fetch_track_emojis
+    emojis_by_track = batch_fetch_track_emojis([t["id"] for t in tracks], db_conn)
+
+    # Add emojis to each track
+    for track in tracks:
+        track["emojis"] = emojis_by_track.get(track["id"], [])
 
     return tracks
 
