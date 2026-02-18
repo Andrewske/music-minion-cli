@@ -11,12 +11,6 @@ import { TrackQueueTable } from './builder/TrackQueueTable';
 import { usePlaylists } from '../hooks/usePlaylists';
 
 export function HomePage(): JSX.Element {
-  const [loopEnabled, setLoopEnabled] = useState(() => {
-    // Persist loop state to localStorage
-    const saved = localStorage.getItem('music-minion-home-loop');
-    return saved ? JSON.parse(saved) : false;
-  });
-
   const [sorting, setSorting] = useState<SortingState>([]);
   const [isLoadingPlayback, setIsLoadingPlayback] = useState(false);
 
@@ -57,15 +51,9 @@ export function HomePage(): JSX.Element {
   }
 
   const handleWaveformFinish = useCallback((_targetDeviceId?: string): void => {
-    if (loopEnabled) {
-      // Restart current track
-      pause();
-      setTimeout(() => resume(), 100);
-    } else {
-      // Auto-advance to next track
-      next();
-    }
-  }, [loopEnabled, pause, resume, next]);
+    // Auto-advance to next track
+    next();
+  }, [next]);
 
   const handleTrackClick = useCallback((track: Track, _targetDeviceId?: string): void => {
     if (!currentContext) return;
@@ -79,11 +67,6 @@ export function HomePage(): JSX.Element {
       });
     }
   }, [queue, currentContext, play]);
-
-  // Persist loop state to localStorage
-  useEffect(() => {
-    localStorage.setItem('music-minion-home-loop', JSON.stringify(loopEnabled));
-  }, [loopEnabled]);
 
   // Spacebar play/pause keyboard shortcut
   useEffect(() => {
@@ -134,9 +117,9 @@ export function HomePage(): JSX.Element {
               <WaveformSection
                 track={currentTrack}
                 isPlaying={isPlaying}
-                loopEnabled={loopEnabled}
+                loopEnabled={false}
                 onTogglePlayPause={() => isPlaying ? pause() : resume()}
-                onLoopChange={setLoopEnabled}
+                onLoopChange={() => {}} // no-op - loop disabled on home page
                 onFinish={handleWaveformFinish}
               />
             </div>
