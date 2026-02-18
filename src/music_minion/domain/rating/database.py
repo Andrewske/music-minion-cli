@@ -126,6 +126,43 @@ def get_playlist_elo_rating(track_id: int, playlist_id: int) -> float:
         return row["rating"] if row else 1500.0
 
 
+def get_or_create_playlist_rating(track_id: int, playlist_id: int) -> EloRating:
+    """Get playlist-specific ELO rating for a track, creating default if needed.
+
+    Args:
+        track_id: Track ID
+        playlist_id: Playlist ID
+
+    Returns:
+        EloRating with current rating and comparison stats
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT rating, comparison_count, wins, last_compared
+            FROM playlist_elo_ratings
+            WHERE track_id = ? AND playlist_id = ?
+            """,
+            (track_id, playlist_id),
+        )
+        row = cursor.fetchone()
+        if row:
+            return EloRating(
+                track_id=track_id,
+                rating=row["rating"],
+                comparison_count=row["comparison_count"],
+                wins=row["wins"],
+                last_compared=row["last_compared"],
+            )
+        return EloRating(
+            track_id=track_id,
+            rating=1500.0,
+            comparison_count=0,
+            wins=0,
+            last_compared=None,
+        )
+
+
 def record_playlist_comparison(
     playlist_id: int,
     track_a_id: int,
