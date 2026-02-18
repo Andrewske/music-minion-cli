@@ -6,6 +6,7 @@ shuffle toggling, and state persistence.
 
 import pytest
 import sqlite3
+from unittest import mock
 
 # Import queue_manager - conftest.py handles the circular import setup
 from backend import queue_manager
@@ -419,3 +420,622 @@ def test_save_queue_state_updates_existing(test_db, mock_context):
     assert state["queue_ids"] == [4, 5, 6]
     assert state["queue_index"] == 1
     assert state["shuffle_enabled"] == False
+
+
+# Test: Different context types
+
+def test_initialize_queue_comparison_context(test_db):
+    """Should handle comparison context with track_ids."""
+    context = MockPlayContext(
+        type="comparison",
+        track_ids=[1, 2, 3, 4, 5]
+    )
+
+    queue = queue_manager.initialize_queue(context, test_db, window_size=10, shuffle=True)
+
+    # Should return tracks from track_ids list
+    assert len(queue) == 5
+    assert all(tid in [1, 2, 3, 4, 5] for tid in queue)
+
+
+def test_initialize_queue_builder_context(test_db):
+    """Should handle builder context."""
+    # Create builder playlist
+    test_db.execute("INSERT INTO playlists VALUES (99, 'Builder', 'manual')")
+    for i in range(1, 11):
+        test_db.execute("INSERT INTO playlist_tracks VALUES (99, ?, ?)", (i, i))
+    test_db.commit()
+
+    context = MockPlayContext(
+        type="builder",
+        playlist_id=None,
+        builder_id=99
+    )
+
+    queue = queue_manager.initialize_queue(context, test_db, window_size=10, shuffle=True)
+
+    assert len(queue) == 10
+
+
+def test_get_next_track_builder_context(test_db):
+    """Should get next track from builder context."""
+    # Create builder playlist
+    test_db.execute("INSERT INTO playlists VALUES (99, 'Builder', 'manual')")
+    for i in range(1, 21):
+        test_db.execute("INSERT INTO playlist_tracks VALUES (99, ?, ?)", (i, i))
+    test_db.commit()
+
+    context = MockPlayContext(
+        type="builder",
+        playlist_id=None,
+        builder_id=99
+    )
+
+    track_id = queue_manager.get_next_track(context, [1, 2, 3], test_db, shuffle=True)
+
+    assert track_id is not None
+    assert track_id not in [1, 2, 3]
+    assert 4 <= track_id <= 20
+
+
+def test_get_next_track_comparison_context(test_db):
+    """Should get next track from comparison context track_ids."""
+    context = MockPlayContext(
+        type="comparison",
+        track_ids=[10, 20, 30, 40, 50]
+    )
+
+    track_id = queue_manager.get_next_track(context, [10, 20], test_db, shuffle=True)
+
+    assert track_id is not None
+    assert track_id in [30, 40, 50]
+
+
+def test_get_next_track_sorted_builder(test_db):
+    """Should get sorted tracks from builder context."""
+    # Create builder playlist with varied BPMs
+    test_db.execute("INSERT INTO playlists VALUES (99, 'Builder', 'manual')")
+    for i in range(1, 11):
+        test_db.execute("INSERT INTO playlist_tracks VALUES (99, ?, ?)", (i, i))
+    test_db.commit()
+
+    context = MockPlayContext(
+        type="builder",
+        playlist_id=None,
+        builder_id=99
+    )
+
+    sort_spec = {"field": "bpm", "direction": "asc"}
+    track_id = queue_manager.get_next_track(
+        context, [], test_db,
+        shuffle=False,
+        sort_spec=sort_spec,
+        position_in_sorted=0
+    )
+
+    assert track_id is not None
+
+
+def test_initialize_queue_sorted_with_elo_rating(test_db, mock_context):
+    """Should sort by ELO rating when specified."""
+    # Add some ratings
+    for i in range(1, 11):
+        test_db.execute("INSERT INTO track_ratings VALUES (?, ?)", (i, 1500 + i * 10))
+    test_db.commit()
+
+    sort_spec = {"field": "elo_rating", "direction": "desc"}
+    queue = queue_manager.initialize_queue(mock_context, test_db, window_size=5, shuffle=False, sort_spec=sort_spec)
+
+    # Verify descending ELO order
+    ratings = [test_db.execute("SELECT elo_rating FROM track_ratings WHERE track_id = ?", (tid,)).fetchone()["elo_rating"] for tid in queue]
+    assert ratings == sorted(ratings, reverse=True)
+
+
+def test_rebuild_queue_sorted_mode(test_db, mock_context):
+    """Should rebuild queue in sorted mode with sort spec."""
+    original_queue = list(range(1, 101))
+    queue_index = 50
+
+    sort_spec = {"field": "bpm", "direction": "asc"}
+    new_queue = queue_manager.rebuild_queue(
+        mock_context, 51, original_queue, queue_index,
+        test_db, shuffle=False, sort_spec=sort_spec
+    )
+
+    # History preserved
+    assert new_queue[0:51] == original_queue[0:51]
+    # Should have new tracks added
+    assert len(new_queue) >= 100
+
+
+def test_get_next_track_sequential_without_sort_spec(test_db, mock_context):
+    """Should use sequential playback without sort spec in sorted mode."""
+    track_id = queue_manager.get_next_track(
+        mock_context, [1, 2, 3], test_db,
+        shuffle=False,
+        sort_spec=None
+    )
+
+    # Should get first non-excluded track
+    assert track_id == 4
+
+
+def test_load_queue_state_with_builder_context(test_db):
+    """Should restore builder context from database."""
+    # Create table and builder playlist
+    test_db.execute("""
+        CREATE TABLE player_queue_state (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            context_type TEXT,
+            context_id INTEGER,
+            shuffle_enabled BOOLEAN,
+            sort_field TEXT,
+            sort_direction TEXT,
+            queue_track_ids TEXT,
+            queue_index INTEGER,
+            position_in_playlist INTEGER,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    test_db.execute("INSERT INTO playlists VALUES (99, 'Builder', 'manual')")
+    test_db.commit()
+
+    context = MockPlayContext(type="builder", builder_id=99, playlist_id=None)
+    queue_manager.save_queue_state(context, [1, 2, 3], 0, True, None, test_db)
+
+    state = queue_manager.load_queue_state(test_db)
+    assert state is not None
+    assert state["context"].type == "builder"
+    assert state["context"].builder_id == 99
+
+
+def test_initialize_queue_when_window_larger_than_playlist_shuffle(test_db, mock_context):
+    """Should shuffle and return all tracks when playlist smaller than window."""
+    # Create small playlist
+    test_db.execute("DELETE FROM playlist_tracks WHERE playlist_id = 1")
+    for i in range(1, 6):  # Only 5 tracks
+        test_db.execute("INSERT INTO playlist_tracks VALUES (1, ?, ?)", (i, i))
+    test_db.commit()
+
+    queue = queue_manager.initialize_queue(mock_context, test_db, window_size=100, shuffle=True)
+
+    # Should return all 5 tracks
+    assert len(queue) == 5
+    # Should be shuffled (unique)
+    assert len(set(queue)) == 5
+
+
+def test_get_next_track_comparison_all_excluded(test_db):
+    """Should return None when all comparison tracks are excluded."""
+    context = MockPlayContext(
+        type="comparison",
+        track_ids=[1, 2, 3]
+    )
+
+    track_id = queue_manager.get_next_track(context, [1, 2, 3], test_db, shuffle=True)
+    assert track_id is None
+
+
+def test_rebuild_queue_with_full_history(test_db, mock_context):
+    """Should handle rebuild when history fills entire window."""
+    # Queue index at position 99 means we've played 100 tracks
+    original_queue = list(range(1, 101))
+    queue_index = 99
+
+    new_queue = queue_manager.rebuild_queue(
+        mock_context, 100, original_queue, queue_index,
+        test_db, shuffle=True, sort_spec=None
+    )
+
+    # Should preserve all 100 tracks (no room for new ones with window_size=100)
+    assert new_queue == original_queue
+
+
+def test_get_next_track_sorted_comparison_context(test_db):
+    """Should handle sorted mode with comparison context."""
+    context = MockPlayContext(
+        type="comparison",
+        track_ids=[5, 15, 25, 35, 45]
+    )
+
+    sort_spec = {"field": "bpm", "direction": "asc"}
+    track_id = queue_manager.get_next_track(
+        context, [], test_db,
+        shuffle=False,
+        sort_spec=sort_spec,
+        position_in_sorted=0
+    )
+
+    assert track_id is not None
+    assert track_id in [5, 15, 25, 35, 45]
+
+
+def test_save_queue_state_with_none_sort_spec(test_db, mock_context):
+    """Should handle None sort_spec correctly."""
+    test_db.execute("""
+        CREATE TABLE player_queue_state (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            context_type TEXT,
+            context_id INTEGER,
+            shuffle_enabled BOOLEAN,
+            sort_field TEXT,
+            sort_direction TEXT,
+            queue_track_ids TEXT,
+            queue_index INTEGER,
+            position_in_playlist INTEGER,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    queue_manager.save_queue_state(mock_context, [1, 2, 3], 0, True, None, test_db)
+
+    cursor = test_db.execute("SELECT sort_field, sort_direction FROM player_queue_state WHERE id = 1")
+    row = cursor.fetchone()
+    assert row["sort_field"] is None
+    assert row["sort_direction"] is None
+
+
+def test_initialize_queue_sorted_by_artist(test_db, mock_context):
+    """Should sort by artist field."""
+    sort_spec = {"field": "artist", "direction": "asc"}
+    queue = queue_manager.initialize_queue(mock_context, test_db, window_size=10, shuffle=False, sort_spec=sort_spec)
+
+    # Verify sorted order
+    artists = [test_db.execute("SELECT artist FROM tracks WHERE id = ?", (tid,)).fetchone()["artist"] for tid in queue]
+    assert artists == sorted(artists)
+
+
+def test_initialize_queue_sorted_by_title(test_db, mock_context):
+    """Should sort by title field."""
+    sort_spec = {"field": "title", "direction": "asc"}
+    queue = queue_manager.initialize_queue(mock_context, test_db, window_size=10, shuffle=False, sort_spec=sort_spec)
+
+    # Verify sorted order
+    titles = [test_db.execute("SELECT title FROM tracks WHERE id = ?", (tid,)).fetchone()["title"] for tid in queue]
+    assert titles == sorted(titles)
+
+
+def test_load_queue_state_with_comparison_context(test_db):
+    """Should restore comparison context (with empty track_ids)."""
+    test_db.execute("""
+        CREATE TABLE player_queue_state (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            context_type TEXT,
+            context_id INTEGER,
+            shuffle_enabled BOOLEAN,
+            sort_field TEXT,
+            sort_direction TEXT,
+            queue_track_ids TEXT,
+            queue_index INTEGER,
+            position_in_playlist INTEGER,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # Insert a comparison context state
+    test_db.execute("""
+        INSERT INTO player_queue_state VALUES
+        (1, 'comparison', NULL, 1, NULL, NULL, '[1, 2, 3]', 0, NULL, CURRENT_TIMESTAMP)
+    """)
+
+    state = queue_manager.load_queue_state(test_db)
+    assert state is not None
+    assert state["context"].type == "comparison"
+    # Note: track_ids will be empty, needs to be refreshed
+    assert state["context"].track_ids == []
+
+
+def test_load_queue_state_unknown_context_type(test_db):
+    """Should default to playlist context for unknown types."""
+    test_db.execute("""
+        CREATE TABLE player_queue_state (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            context_type TEXT,
+            context_id INTEGER,
+            shuffle_enabled BOOLEAN,
+            sort_field TEXT,
+            sort_direction TEXT,
+            queue_track_ids TEXT,
+            queue_index INTEGER,
+            position_in_playlist INTEGER,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # Insert an unknown context type
+    test_db.execute("""
+        INSERT INTO player_queue_state VALUES
+        (1, 'unknown_type', 42, 1, NULL, NULL, '[1, 2, 3]', 0, NULL, CURRENT_TIMESTAMP)
+    """)
+
+    state = queue_manager.load_queue_state(test_db)
+    assert state is not None
+    # Should default to playlist
+    assert state["context"].type == "playlist"
+
+
+def test_initialize_queue_small_playlist_sorted_without_spec(test_db, mock_context):
+    """Should handle small playlist in sorted mode without sort spec."""
+    # Create small playlist
+    test_db.execute("DELETE FROM playlist_tracks WHERE playlist_id = 1")
+    for i in range(1, 11):  # Only 10 tracks
+        test_db.execute("INSERT INTO playlist_tracks VALUES (1, ?, ?)", (i, i))
+    test_db.commit()
+
+    queue = queue_manager.initialize_queue(mock_context, test_db, window_size=100, shuffle=False, sort_spec=None)
+
+    # Should return all 10 tracks in order
+    assert queue == list(range(1, 11))
+
+
+def test_get_next_track_nonexistent_playlist(test_db):
+    """Should handle nonexistent playlist gracefully."""
+    context = MockPlayContext(playlist_id=999)  # Doesn't exist
+
+    track_id = queue_manager.get_next_track(context, [], test_db, shuffle=True)
+    # Should return None due to empty playlist
+    assert track_id is None
+
+
+def test_initialize_queue_nonexistent_playlist(test_db):
+    """Should handle nonexistent playlist gracefully."""
+    context = MockPlayContext(playlist_id=999)  # Doesn't exist
+
+    queue = queue_manager.initialize_queue(context, test_db, window_size=100, shuffle=True)
+    # Should return empty queue
+    assert queue == []
+
+
+def test_rebuild_queue_nonexistent_playlist(test_db):
+    """Should handle errors gracefully and return preserved tracks."""
+    context = MockPlayContext(playlist_id=999)  # Doesn't exist
+
+    original_queue = list(range(1, 51))
+    queue_index = 25
+
+    new_queue = queue_manager.rebuild_queue(
+        context, 26, original_queue, queue_index,
+        test_db, shuffle=True, sort_spec=None
+    )
+
+    # Should return preserved tracks on error
+    assert new_queue == original_queue[0:26]
+
+
+def test_initialize_queue_track_context(test_db):
+    """Should handle single track context."""
+    context = MockPlayContext(
+        type="track",
+        track_ids=[42]
+    )
+
+    queue = queue_manager.initialize_queue(context, test_db, window_size=100, shuffle=True)
+
+    # Should return single track
+    assert queue == [42]
+
+
+def test_get_next_track_sorted_mode_with_exclusions_sequential(test_db, mock_context):
+    """Should filter exclusions in sequential sorted mode."""
+    # All tracks 1-3 are excluded, so should get track 4
+    track_id = queue_manager.get_next_track(
+        mock_context, [1, 2, 3], test_db,
+        shuffle=False,
+        sort_spec=None
+    )
+
+    assert track_id == 4
+
+
+def test_rebuild_queue_no_available_tracks(test_db, mock_context):
+    """Should handle case where no new tracks available."""
+    # Create small playlist with only 10 tracks
+    test_db.execute("DELETE FROM playlist_tracks WHERE playlist_id = 1")
+    for i in range(1, 11):
+        test_db.execute("INSERT INTO playlist_tracks VALUES (1, ?, ?)", (i, i))
+    test_db.commit()
+
+    # Queue contains all available tracks
+    original_queue = list(range(1, 11))
+    queue_index = 5
+
+    new_queue = queue_manager.rebuild_queue(
+        mock_context, 6, original_queue, queue_index,
+        test_db, shuffle=True, sort_spec=None
+    )
+
+    # Should preserve history, but can't add new tracks (all are in history)
+    assert new_queue[0:6] == original_queue[0:6]
+    # Length might be just the history if no new tracks available
+    assert len(new_queue) >= 6
+
+
+def test_get_next_track_builder_sorted_by_title(test_db):
+    """Should sort builder tracks by title."""
+    test_db.execute("INSERT INTO playlists VALUES (99, 'Builder', 'manual')")
+    for i in range(1, 11):
+        test_db.execute("INSERT INTO playlist_tracks VALUES (99, ?, ?)", (i, i))
+    test_db.commit()
+
+    context = MockPlayContext(
+        type="builder",
+        playlist_id=None,
+        builder_id=99
+    )
+
+    sort_spec = {"field": "title", "direction": "asc"}
+    track_id = queue_manager.get_next_track(
+        context, [], test_db,
+        shuffle=False,
+        sort_spec=sort_spec,
+        position_in_sorted=0
+    )
+
+    assert track_id is not None
+
+
+def test_save_queue_state_with_position_in_playlist(test_db, mock_context):
+    """Should save position_in_playlist when shuffle is False."""
+    test_db.execute("""
+        CREATE TABLE player_queue_state (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            context_type TEXT,
+            context_id INTEGER,
+            shuffle_enabled BOOLEAN,
+            sort_field TEXT,
+            sort_direction TEXT,
+            queue_track_ids TEXT,
+            queue_index INTEGER,
+            position_in_playlist INTEGER,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # Save with shuffle=False
+    queue_manager.save_queue_state(mock_context, [1, 2, 3], 2, False, None, test_db)
+
+    cursor = test_db.execute("SELECT position_in_playlist FROM player_queue_state WHERE id = 1")
+    row = cursor.fetchone()
+    # When shuffle=False, position_in_playlist should equal queue_index
+    assert row["position_in_playlist"] == 2
+
+
+def test_load_queue_state_with_sort_direction_none(test_db):
+    """Should handle None sort_direction by defaulting to asc."""
+    test_db.execute("""
+        CREATE TABLE player_queue_state (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            context_type TEXT,
+            context_id INTEGER,
+            shuffle_enabled BOOLEAN,
+            sort_field TEXT,
+            sort_direction TEXT,
+            queue_track_ids TEXT,
+            queue_index INTEGER,
+            position_in_playlist INTEGER,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # Insert state with sort_field but NULL sort_direction
+    test_db.execute("""
+        INSERT INTO player_queue_state VALUES
+        (1, 'playlist', 1, 0, 'bpm', NULL, '[1, 2, 3]', 0, 0, CURRENT_TIMESTAMP)
+    """)
+
+    state = queue_manager.load_queue_state(test_db)
+    assert state is not None
+    assert state["sort_spec"]["field"] == "bpm"
+    assert state["sort_spec"]["direction"] == "asc"  # Default
+
+
+# Test: Smart playlist handling (mocked)
+
+@mock.patch('music_minion.domain.playlists.filters.evaluate_filters')
+def test_get_next_track_smart_playlist(mock_evaluate, test_db):
+    """Should handle smart playlist by evaluating filters."""
+    # Create smart playlist
+    test_db.execute("INSERT INTO playlists VALUES (88, 'Smart Test', 'smart')")
+    test_db.commit()
+
+    # Mock evaluate_filters to return some tracks
+    mock_evaluate.return_value = [
+        {"id": 10}, {"id": 20}, {"id": 30}, {"id": 40}
+    ]
+
+    context = MockPlayContext(playlist_id=88)
+
+    track_id = queue_manager.get_next_track(context, [10], test_db, shuffle=True)
+
+    assert track_id is not None
+    assert track_id in [20, 30, 40]  # Not 10 (excluded)
+    mock_evaluate.assert_called_once_with(88)
+
+
+@mock.patch('music_minion.domain.playlists.filters.evaluate_filters')
+def test_initialize_queue_smart_playlist(mock_evaluate, test_db):
+    """Should initialize queue from smart playlist."""
+    # Create smart playlist
+    test_db.execute("INSERT INTO playlists VALUES (88, 'Smart Test', 'smart')")
+    test_db.commit()
+
+    # Mock evaluate_filters to return tracks
+    mock_evaluate.return_value = [{"id": i} for i in range(1, 51)]
+
+    context = MockPlayContext(playlist_id=88)
+
+    queue = queue_manager.initialize_queue(context, test_db, window_size=20, shuffle=True)
+
+    assert len(queue) == 20
+    mock_evaluate.assert_called_once_with(88)
+
+
+@mock.patch('music_minion.domain.playlists.filters.evaluate_filters')
+def test_get_sorted_tracks_smart_playlist(mock_evaluate, test_db):
+    """Should sort smart playlist tracks."""
+    # Create smart playlist
+    test_db.execute("INSERT INTO playlists VALUES (88, 'Smart Test', 'smart')")
+    test_db.commit()
+
+    # Mock evaluate_filters
+    mock_evaluate.return_value = [{"id": i} for i in range(1, 21)]
+
+    context = MockPlayContext(playlist_id=88)
+
+    sort_spec = {"field": "bpm", "direction": "asc"}
+    queue = queue_manager.initialize_queue(context, test_db, window_size=10, shuffle=False, sort_spec=sort_spec)
+
+    assert len(queue) == 10
+    # Verify sorted order
+    bpms = [test_db.execute("SELECT bpm FROM tracks WHERE id = ?", (tid,)).fetchone()["bpm"] for tid in queue]
+    assert bpms == sorted(bpms)
+
+
+@mock.patch('music_minion.domain.playlists.filters.evaluate_filters')
+def test_get_next_track_smart_playlist_sorted(mock_evaluate, test_db):
+    """Should get next track from sorted smart playlist."""
+    # Create smart playlist
+    test_db.execute("INSERT INTO playlists VALUES (88, 'Smart Test', 'smart')")
+    test_db.commit()
+
+    # Mock evaluate_filters
+    mock_evaluate.return_value = [{"id": i} for i in range(1, 21)]
+
+    context = MockPlayContext(playlist_id=88)
+
+    sort_spec = {"field": "bpm", "direction": "asc"}
+    track_id = queue_manager.get_next_track(
+        context, [], test_db,
+        shuffle=False,
+        sort_spec=sort_spec,
+        position_in_sorted=0
+    )
+
+    assert track_id is not None
+
+
+@mock.patch('music_minion.domain.playlists.filters.evaluate_filters')
+def test_rebuild_queue_smart_playlist(mock_evaluate, test_db):
+    """Should rebuild queue for smart playlist."""
+    # Create smart playlist
+    test_db.execute("INSERT INTO playlists VALUES (88, 'Smart Test', 'smart')")
+    test_db.commit()
+
+    # Mock evaluate_filters
+    mock_evaluate.return_value = [{"id": i} for i in range(1, 101)]
+
+    context = MockPlayContext(playlist_id=88)
+
+    original_queue = list(range(1, 51))
+    queue_index = 25
+
+    new_queue = queue_manager.rebuild_queue(
+        context, 26, original_queue, queue_index,
+        test_db, shuffle=True, sort_spec=None
+    )
+
+    # History preserved
+    assert new_queue[0:26] == original_queue[0:26]
+    # New tracks added
+    assert len(new_queue) >= 50
