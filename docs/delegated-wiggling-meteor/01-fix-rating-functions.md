@@ -1,6 +1,6 @@
 ---
 task: 01-fix-get-next-playlist-pair
-status: pending
+status: done
 depends:
   - 00-delete-dead-leaderboard-code
 files:
@@ -18,10 +18,11 @@ files:
 
 ## Implementation Details
 
-### Step 1: Add import at top of module
+### Step 1: Add imports at top of module
 
 Add with other imports at top of file:
 ```python
+from loguru import logger
 from music_minion.domain.playlists.crud import get_playlist_tracks
 ```
 
@@ -35,6 +36,10 @@ if len(tracks) < 2:
         f"Playlist {playlist_id} has {len(tracks)} tracks - need at least 2 for comparison"
     )
 track_ids = [t["id"] for t in tracks]
+
+# Warn if playlist is large (SQLite IN clause has parameter limits)
+if len(track_ids) > 500:
+    logger.warning(f"Large playlist {playlist_id} with {len(track_ids)} tracks - may hit SQLite parameter limits")
 ```
 
 ### Step 3: Replace Step 1 query (lines 303-317)
