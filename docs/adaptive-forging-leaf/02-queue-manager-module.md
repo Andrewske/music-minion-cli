@@ -161,13 +161,15 @@ def _get_sorted_tracks_from_playlist(
     """Apply sort spec (field + direction), return track IDs."""
 ```
 
-Sort field mapping:
-- `title` → `tracks.title`
-- `artist` → `tracks.artist`
-- `bpm` → `tracks.bpm`
-- `year` → `tracks.year`
-- `elo_rating` → `track_ratings.elo_rating`
+Sort field mapping with NULL handling:
+- `title` → `tracks.title` (use COALESCE for empty titles: `COALESCE(tracks.title, '')`)
+- `artist` → `tracks.artist` (use COALESCE: `COALESCE(tracks.artist, '')`)
+- `bpm` → `tracks.bpm` (use COALESCE: `COALESCE(tracks.bpm, 120)`)
+- `year` → `tracks.year` (use COALESCE: `COALESCE(tracks.year, 0)`)
+- `elo_rating` → `track_ratings.elo_rating` (use COALESCE: `COALESCE(track_ratings.elo_rating, 1500)`)
 - `track_number` → `tracks.track_number` (default for shuffle OFF)
+
+**Important**: Use COALESCE to provide default values for NULL fields. This ensures consistent sort order and prevents unrated/incomplete tracks from appearing unpredictably.
 
 #### _build_exclusion_list()
 ```python
@@ -199,6 +201,45 @@ def _resolve_context_to_track_ids(
 3. **Type hints**: All params and returns have type annotations
 4. **Error handling**: Catch SQL errors, return None/empty list on failure
 5. **Logging**: Use `logger.info()` for queue operations, `logger.exception()` for errors
+
+### Error Handling Examples
+
+All public functions should wrap database operations in try/except blocks:
+
+```python
+def save_queue_state(...) -> None:
+    """Persist queue state to database."""
+    try:
+        conn.execute("INSERT OR REPLACE INTO player_queue_state ...")
+        conn.commit()
+        logger.info(f"Saved queue state: {len(queue_ids)} tracks")
+    except sqlite3.Error as e:
+        logger.exception("Failed to save queue state")
+        # Don't raise - persistence failing shouldn't crash playback
+
+def get_next_track(...) -> Optional[int]:
+    """Pull 1 track from playlist."""
+    try:
+        cursor = db_conn.execute("SELECT id FROM tracks WHERE ...")
+        row = cursor.fetchone()
+        return row[0] if row else None
+    except sqlite3.Error as e:
+        logger.exception("Error fetching next track")
+        return None
+```
+
+**Defensive checks for batch operations:**
+
+```python
+# In caller (player.py)
+new_track_id = get_next_track(...)
+if new_track_id:
+    new_tracks = batch_fetch_tracks_with_metadata([new_track_id], db)
+    if new_tracks:  # Check for empty result
+        _playback_state.queue.append(new_tracks[0])
+    else:
+        logger.warning(f"Track {new_track_id} metadata not found")
+```
 
 ## Verification
 

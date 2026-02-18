@@ -44,11 +44,24 @@ CREATE TABLE IF NOT EXISTS player_queue_state (
 
 ### Add Schema Upgrade Function
 
-Create migration function:
+**Step 1: Update SCHEMA_VERSION constant**
+
+In `database.py`, change:
+```python
+SCHEMA_VERSION = 33  # Current version
+```
+To:
+```python
+SCHEMA_VERSION = 34  # Add player_queue_state table
+```
+
+**Step 2: Add migration to migrate_database() function**
+
+Add this block to the `migrate_database()` function:
 
 ```python
-def upgrade_schema_to_v32(conn):
-    """Add player_queue_state table for rolling window persistence."""
+if current_version < 34:
+    logger.info("Migrating to v34: Add player_queue_state table")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS player_queue_state (
             id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -59,14 +72,14 @@ def upgrade_schema_to_v32(conn):
             sort_direction TEXT,
             queue_track_ids TEXT NOT NULL,
             queue_index INTEGER NOT NULL,
-            position_in_sorted INTEGER,
+            position_in_playlist INTEGER,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     conn.commit()
 ```
 
-Add this to the schema version chain (update `SCHEMA_VERSION` constant and migration logic).
+**Note**: Renamed `position_in_sorted` to `position_in_playlist` for clarity (tracks position in global playlist during sorted/sequential playback).
 
 ## Verification
 
