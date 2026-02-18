@@ -91,6 +91,25 @@ class SyncManager:
         # Start grace timer
         self.disconnect_timers[device_id] = asyncio.create_task(remove_after_grace())
 
+    def get_current_state(self) -> dict:
+        """Get current application state for new connections."""
+        from .routers.player import _playback_state
+
+        return {
+            "comparison": None,  # No global comparison state - per-device
+            "playback": {
+                "current_track": _playback_state.current_track,
+                "queue": _playback_state.queue,
+                "queue_index": _playback_state.queue_index,
+                "position_ms": _playback_state.position_ms,
+                "track_started_at": _playback_state.track_started_at,
+                "is_playing": _playback_state.is_playing,
+                "active_device_id": _playback_state.active_device_id,
+                "shuffle_enabled": _playback_state.shuffle_enabled,
+                "server_time": time.time(),
+            }
+        }
+
     async def broadcast_device_list(self) -> None:
         """Broadcast updated device list to all clients."""
         devices = [

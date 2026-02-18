@@ -21,6 +21,8 @@ import { CSS } from '@dnd-kit/utilities';
 import { getPlaylistTracks, pinPlaylist, unpinPlaylist, reorderPinnedPlaylist } from '../../api/playlists';
 import { usePlaylists } from '../../hooks/usePlaylists';
 import { usePlayerStore } from '../../stores/playerStore';
+import { useComparisonStore } from '../../stores/comparisonStore';
+import { useStartComparison } from '../../hooks/useComparison';
 import { SidebarSection } from './SidebarSection';
 import type { Playlist } from '../../types';
 
@@ -31,12 +33,19 @@ interface SidebarPlaylistsProps {
 export function SidebarPlaylists({ sidebarExpanded }: SidebarPlaylistsProps): JSX.Element {
   const { data: playlists, isLoading } = usePlaylists();
   const params = useParams({ strict: false });
-  const activePlaylistId = params.playlistId ? parseInt(params.playlistId, 10) : null;
   const location = useLocation();
   const navigate = useNavigate();
   const play = usePlayerStore((s) => s.play);
 
   const isOnHome = location.pathname === '/';
+  const isOnComparison = location.pathname === '/comparison';
+
+  const startComparisonMutation = useStartComparison();
+  const { selectedPlaylistId: comparisonPlaylistId, isComparisonMode } = useComparisonStore();
+
+  const activePlaylistId = isOnComparison && isComparisonMode
+    ? comparisonPlaylistId
+    : (params.playlistId ? parseInt(params.playlistId, 10) : null);
 
   const queryClient = useQueryClient();
   const [hoveredId, setHoveredId] = useState<number | null>(null);
@@ -78,6 +87,9 @@ export function SidebarPlaylists({ sidebarExpanded }: SidebarPlaylistsProps): JS
         };
         play(track, { type: 'playlist', playlist_id: playlistId });
       }
+    } else if (isOnComparison) {
+      // Start comparison with this playlist
+      startComparisonMutation.mutate(playlistId);
     } else {
       // Navigate to builder
       navigate({ to: '/playlist-builder/$playlistId', params: { playlistId: String(playlistId) } });
@@ -140,14 +152,13 @@ export function SidebarPlaylists({ sidebarExpanded }: SidebarPlaylistsProps): JS
         <span className="truncate text-sm">{playlist.name}</span>
         <span className="ml-auto text-xs text-white/40 flex items-center gap-1">
           {isHovered && (
-            <button
-              type="button"
+            <span
               onClick={handlePinToggle}
-              className="p-0.5 hover:bg-white/10 rounded"
+              className="p-0.5 hover:bg-white/10 rounded cursor-pointer"
               title={isPinned ? 'Unpin' : 'Pin to top'}
             >
               <Pin className={`w-3 h-3 ${isPinned ? 'text-obsidian-accent' : 'text-white/40'}`} />
-            </button>
+            </span>
           )}
           {playlist.track_count}
         </span>

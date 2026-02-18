@@ -1,101 +1,213 @@
+import { useState, useCallback, useEffect } from 'react';
 import { Music } from 'lucide-react';
-import { usePlayerStore } from '../stores/playerStore';
+import { usePlayerStore, type PlayContext } from '../stores/playerStore';
 import { useQuery } from '@tanstack/react-query';
 import { getStations, type Station } from '../api/radio';
 import type { Track } from '../api/builder';
+import type { SortingState } from '@tanstack/react-table';
+import { TrackDisplay } from './builder/TrackDisplay';
+import { WaveformSection } from './builder/WaveformSection';
+import { TrackQueueTable } from './builder/TrackQueueTable';
+import { usePlaylists } from '../hooks/usePlaylists';
 
 export function HomePage(): JSX.Element {
-  const { currentTrack, queue, queueIndex } = usePlayerStore();
+  const [loopEnabled, setLoopEnabled] = useState(() => {
+    // Persist loop state to localStorage
+    const saved = localStorage.getItem('music-minion-home-loop');
+    return saved ? JSON.parse(saved) : false;
+  });
+
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [isLoadingPlayback, setIsLoadingPlayback] = useState(false);
+
+  const {
+    currentTrack,
+    queue,
+    queueIndex,
+    isPlaying,
+    currentContext,
+    pause,
+    resume,
+    next,
+    play
+  } = usePlayerStore();
+
+  const { data: playlistsData } = usePlaylists();
+
   const { data: stations } = useQuery({
     queryKey: ['stations'],
     queryFn: getStations,
   });
 
+  function getContextTitle(context: PlayContext | null): string {
+    if (!context) return 'Queue';
+
+    if (context.type === 'playlist' && context.playlist_id) {
+      const playlist = playlistsData?.find(p => p.id === context.playlist_id);
+      return playlist?.name || `Playlist #${context.playlist_id}`;
+    }
+
+    switch (context.type) {
+      case 'builder': return 'Builder';
+      case 'search': return `Search: ${context.query}`;
+      case 'comparison': return 'Comparison';
+      case 'track': return 'Track';
+      default: return 'Queue';
+    }
+  }
+
+  const handleWaveformFinish = useCallback((_targetDeviceId?: string): void => {
+    if (loopEnabled) {
+      // Restart current track
+      pause();
+      setTimeout(() => resume(), 100);
+    } else {
+      // Auto-advance to next track
+      next();
+    }
+  }, [loopEnabled, pause, resume, next]);
+
+  const handleTrackClick = useCallback((track: Track, _targetDeviceId?: string): void => {
+    if (!currentContext) return;
+
+    const trackIndex = queue.findIndex(t => t.id === track.id);
+    if (trackIndex >= 0) {
+      // Play from clicked position, preserve context
+      play(track, {
+        ...currentContext,
+        start_index: trackIndex
+      });
+    }
+  }, [queue, currentContext, play]);
+
+  // Persist loop state to localStorage
+  useEffect(() => {
+    localStorage.setItem('music-minion-home-loop', JSON.stringify(loopEnabled));
+  }, [loopEnabled]);
+
+  // Spacebar play/pause keyboard shortcut
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent): void => {
+      // Only trigger if not typing in an input/textarea
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (currentTrack) {
+          isPlaying ? pause() : resume();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentTrack, isPlaying, pause, resume]);
+
   return (
-    <div className="container mx-auto p-6 space-y-8">
-      {/* Now Playing - prominent section */}
-      {currentTrack ? (
-        <section className="bg-card rounded-lg p-6">
-          <h2 className="text-sm font-medium text-muted-foreground mb-4">Now Playing</h2>
-          <div className="flex gap-6">
-            {/* Large album art */}
-            <div className="w-48 h-48 bg-muted rounded-lg overflow-hidden flex-shrink-0">
-              {currentTrack.album && (
-                <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                  <Music className="h-16 w-16" />
-                </div>
-              )}
+    <div className="min-h-screen bg-black font-inter text-white">
+      <div className="max-w-6xl mx-auto px-4 md:px-8 py-4 md:py-8">
+        {/* Header with context info and queue position */}
+        <div className="mb-6">
+          <p className="text-white/40 text-sm font-sf-mono mb-1">Now Playing</p>
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl text-white/60">{getContextTitle(currentContext)}</h1>
+            {currentTrack && queue.length > 0 && (
+              <span className="text-white/40 text-sm font-sf-mono">
+                Track {queueIndex + 1} of {queue.length}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {isLoadingPlayback ? (
+          <div className="py-20 text-center">
+            <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-obsidian-accent border-r-transparent mb-4"></div>
+            <p className="text-white/40 text-sm">Loading playback...</p>
+          </div>
+        ) : currentTrack ? (
+          <div className="space-y-6 md:space-y-12">
+            {/* Sticky player section on mobile */}
+            <div className="sticky top-10 md:static z-10 bg-black pb-4 md:pb-0">
+              <TrackDisplay track={currentTrack} />
+              <WaveformSection
+                track={currentTrack}
+                isPlaying={isPlaying}
+                loopEnabled={loopEnabled}
+                onTogglePlayPause={() => isPlaying ? pause() : resume()}
+                onLoopChange={setLoopEnabled}
+                onFinish={handleWaveformFinish}
+              />
             </div>
 
-            {/* Track info + queue preview */}
-            <div className="flex-1 min-w-0">
-              <h1 className="text-2xl font-bold truncate">{currentTrack.title}</h1>
-              <p className="text-lg text-muted-foreground truncate">{currentTrack.artist}</p>
-              {currentTrack.album && (
-                <p className="text-sm text-muted-foreground truncate">{currentTrack.album}</p>
-              )}
+            {/* Queue Table */}
+            {queue.length > 0 ? (
+              <TrackQueueTable
+                tracks={queue}
+                queueIndex={queueIndex}
+                nowPlayingId={currentTrack?.id ?? null}
+                onTrackClick={handleTrackClick}
+                sorting={sorting}
+                onSortingChange={setSorting}
+                onLoadMore={() => {}} // no-op - queue is fully loaded
+                hasMore={false}
+                isLoadingMore={false}
+              />
+            ) : (
+              <div className="border-t border-obsidian-border py-8 text-center">
+                <p className="text-white/40 text-sm">No tracks in queue</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <section className="py-20 text-center">
+            <Music className="h-12 w-12 mx-auto text-white/20 mb-4" />
+            <h2 className="text-lg font-medium text-white/60 mb-2">Nothing playing</h2>
+            <p className="text-white/40 text-sm">Select a playlist or station to start</p>
 
-              {/* Mini queue preview */}
-              {queue.length > queueIndex + 1 && (
-                <div className="mt-6">
-                  <h3 className="text-sm font-medium text-muted-foreground mb-2">Up Next</h3>
-                  <div className="space-y-1">
-                    {queue.slice(queueIndex + 1, queueIndex + 4).map((track, i) => (
-                      <div key={track.id} className="text-sm flex items-center gap-2">
-                        <span className="text-muted-foreground">{i + 1}.</span>
-                        <span className="truncate">{track.title}</span>
-                        <span className="text-muted-foreground truncate">- {track.artist}</span>
-                      </div>
-                    ))}
-                  </div>
+            {/* Station quick access */}
+            {stations && stations.length > 0 && (
+              <div className="mt-8">
+                <h3 className="text-sm text-white/40 mb-4">Quick Start</h3>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {stations.map(station => <StationChip key={station.id} station={station} setIsLoadingPlayback={setIsLoadingPlayback} />)}
                 </div>
-              )}
-            </div>
-          </div>
-        </section>
-      ) : (
-        <section className="text-center py-12">
-          <Music className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-          <h2 className="text-lg font-medium">Nothing playing</h2>
-          <p className="text-muted-foreground">Select a playlist or station to start</p>
-        </section>
-      )}
-
-      {/* Stations quick access */}
-      {stations && stations.length > 0 && (
-        <section>
-          <h2 className="text-lg font-semibold mb-4">Stations</h2>
-          <div className="flex flex-wrap gap-2">
-            {stations.map((station) => (
-              <StationChip key={station.id} station={station} />
-            ))}
-          </div>
-        </section>
-      )}
+              </div>
+            )}
+          </section>
+        )}
+      </div>
     </div>
   );
 }
 
-function StationChip({ station }: { station: Station }): JSX.Element {
+function StationChip({ station, setIsLoadingPlayback }: { station: Station; setIsLoadingPlayback: (loading: boolean) => void }): JSX.Element {
   const { play } = usePlayerStore();
 
   const handleClick = async (): Promise<void> => {
-    // Fetch playlist tracks to get the first track
-    const response = await fetch(`/api/playlists/${station.playlist_id}/tracks`);
-    if (!response.ok) {
-      console.error('Failed to fetch station playlist tracks');
-      return;
-    }
-    const data = await response.json();
-    const tracks: Track[] = data.tracks;
+    setIsLoadingPlayback(true);
 
-    if (tracks.length > 0) {
-      await play(tracks[0], {
-        type: 'playlist',
-        playlist_id: station.playlist_id,
-        start_index: 0,
-        shuffle: station.shuffle_enabled,
-      });
+    try {
+      const response = await fetch(`/api/playlists/${station.playlist_id}/tracks`);
+      if (!response.ok) {
+        console.error('Failed to fetch station playlist tracks');
+        return;
+      }
+      const data = await response.json();
+      const tracks: Track[] = data.tracks;
+
+      if (tracks.length > 0) {
+        await play(tracks[0], {
+          type: 'playlist',
+          playlist_id: station.playlist_id,
+          start_index: 0,
+          shuffle: station.shuffle_enabled,
+        });
+      }
+    } finally {
+      // Reset loading after a delay to prevent flashing
+      setTimeout(() => setIsLoadingPlayback(false), 500);
     }
   };
 
