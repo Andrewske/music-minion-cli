@@ -1,9 +1,11 @@
 ---
 task: 06-test-coverage
-status: pending
+status: done
 depends: [02-queue-manager-module]
 files:
   - path: web/backend/tests/test_queue_manager.py
+    action: create
+  - path: web/backend/tests/conftest.py
     action: create
 ---
 
