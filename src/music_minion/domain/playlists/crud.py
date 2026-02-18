@@ -75,50 +75,23 @@ def create_playlist(
 
 
 def update_playlist_track_count(playlist_id: int) -> None:
-    """
-    Update the track_count field for a playlist.
-    For manual playlists, counts rows in playlist_tracks.
-    For smart playlists, evaluates filters and counts matching tracks.
-
-    Args:
-        playlist_id: ID of playlist to update
-    """
-    playlist = get_playlist_by_id(playlist_id)
-    if not playlist:
-        return
-
+    """Update the track_count field for a playlist (works for both types)."""
     with get_db_connection() as conn:
-        # Begin explicit transaction for atomicity
-        conn.execute("BEGIN")
-        try:
-            if playlist["type"] == "manual":
-                # Count tracks in playlist_tracks table
-                cursor = conn.execute(
-                    """
-                    SELECT COUNT(*) as count
-                    FROM playlist_tracks
-                    WHERE playlist_id = ?
-                """,
-                    (playlist_id,),
-                )
-                count = cursor.fetchone()["count"]
-            else:
-                # Smart playlist - evaluate filters
-                matching_tracks = filters.evaluate_filters(playlist_id)
-                count = len(matching_tracks)
+        cursor = conn.execute(
+            "SELECT COUNT(*) as count FROM playlist_tracks WHERE playlist_id = ?",
+            (playlist_id,),
+        )
+        count = cursor.fetchone()["count"]
 
-            conn.execute(
-                """
-                UPDATE playlists
-                SET track_count = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
+        conn.execute(
+            """
+            UPDATE playlists
+            SET track_count = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
             """,
-                (count, playlist_id),
-            )
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
+            (count, playlist_id),
+        )
+        conn.commit()
 
 
 def delete_playlist(playlist_id: int) -> bool:
@@ -400,80 +373,37 @@ def get_playlist_by_id(playlist_id: int) -> Optional[dict[str, Any]]:
 
 
 def get_playlist_tracks(playlist_id: int) -> list[dict[str, Any]]:
-    """
-    Get all tracks in a playlist.
-    For manual playlists, returns tracks in order.
-    For smart playlists, evaluates filters and returns matching tracks.
-
-    Args:
-        playlist_id: Playlist ID
-
-    Returns:
-        List of track dicts with metadata
-    """
-    playlist = get_playlist_by_id(playlist_id)
-    if not playlist:
-        return []
-
+    """Get all tracks in a playlist (works for both manual and smart)."""
     with get_db_connection() as conn:
-        if playlist["type"] == "manual":
-            # Get tracks from playlist_tracks table in order
-            cursor = conn.execute(
-                """
-                SELECT
-                    t.*,
-                    pt.position,
-                    pt.added_at,
-                    COALESCE(per.rating, 1500.0) as playlist_elo_rating,
-                    COALESCE(per.comparison_count, 0) as playlist_elo_comparison_count,
-                    COALESCE(per.wins, 0) as playlist_elo_wins
-                FROM tracks t
-                JOIN playlist_tracks pt ON t.id = pt.track_id
-                LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
-                WHERE pt.playlist_id = ?
-                ORDER BY pt.position
+        cursor = conn.execute(
+            """
+            SELECT
+                t.*,
+                pt.position,
+                pt.added_at,
+                COALESCE(per.rating, 1500.0) as playlist_elo_rating,
+                COALESCE(per.comparison_count, 0) as playlist_elo_comparison_count,
+                COALESCE(per.wins, 0) as playlist_elo_wins
+            FROM tracks t
+            JOIN playlist_tracks pt ON t.id = pt.track_id
+            LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
+            WHERE pt.playlist_id = ?
+            ORDER BY pt.position
             """,
-                (playlist_id, playlist_id),
-            )
-            return [dict(row) for row in cursor.fetchall()]
-        else:
-            # Smart playlist - evaluate filters
-            return filters.evaluate_filters(playlist_id)
+            (playlist_id, playlist_id),
+        )
+        return [dict(row) for row in cursor.fetchall()]
 
 
 def get_playlist_track_count(playlist_id: int) -> int:
-    """
-    Get the number of tracks in a playlist (optimized - doesn't fetch full track data).
-    For manual playlists, counts tracks in playlist_tracks table.
-    For smart playlists, evaluates filters and counts matching tracks.
-
-    Args:
-        playlist_id: Playlist ID
-
-    Returns:
-        Number of tracks in playlist
-    """
-    playlist = get_playlist_by_id(playlist_id)
-    if not playlist:
-        return 0
-
+    """Get the number of tracks in a playlist (works for both types)."""
     with get_db_connection() as conn:
-        if playlist["type"] == "manual":
-            # Count tracks directly without fetching data
-            cursor = conn.execute(
-                """
-                SELECT COUNT(*) as count
-                FROM playlist_tracks
-                WHERE playlist_id = ?
-            """,
-                (playlist_id,),
-            )
-            row = cursor.fetchone()
-            return row["count"] if row else 0
-        else:
-            # Smart playlist - need to evaluate filters (no way to optimize without duplicating filter logic)
-            tracks = filters.evaluate_filters(playlist_id)
-            return len(tracks)
+        cursor = conn.execute(
+            "SELECT COUNT(*) as count FROM playlist_tracks WHERE playlist_id = ?",
+            (playlist_id,),
+        )
+        row = cursor.fetchone()
+        return row["count"] if row else 0
 
 
 def add_track_to_playlist(playlist_id: int, track_id: int) -> bool:
@@ -853,58 +783,22 @@ def clear_active_playlist(library: Optional[str] = None) -> bool:
 
 
 def get_available_playlist_tracks(playlist_id: int) -> list[str]:
+    """Get file paths of tracks in a playlist (for playback integration).
+    Excludes archived tracks. Works for both manual and smart playlists.
     """
-    Get file paths of tracks in a playlist (for playback integration).
-    Excludes archived tracks.
-    Handles both manual and smart playlists.
-
-    Args:
-        playlist_id: Playlist ID
-
-    Returns:
-        List of file paths
-    """
-    playlist = get_playlist_by_id(playlist_id)
-    if not playlist:
-        return []
-
     with get_db_connection() as conn:
-        if playlist["type"] == "manual":
-            # Manual playlist - get from playlist_tracks
-            cursor = conn.execute(
-                """
-                SELECT DISTINCT t.local_path
-                FROM tracks t
-                JOIN playlist_tracks pt ON t.id = pt.track_id
-                LEFT JOIN ratings r ON t.id = r.track_id AND r.rating_type = 'archive'
-                WHERE pt.playlist_id = ? AND r.id IS NULL
-                ORDER BY pt.position
+        cursor = conn.execute(
+            """
+            SELECT DISTINCT t.local_path
+            FROM tracks t
+            JOIN playlist_tracks pt ON t.id = pt.track_id
+            LEFT JOIN ratings r ON t.id = r.track_id AND r.rating_type = 'archive'
+            WHERE pt.playlist_id = ? AND r.id IS NULL
+            ORDER BY pt.position
             """,
-                (playlist_id,),
-            )
-            return [row["local_path"] for row in cursor.fetchall()]
-        else:
-            # Smart playlist - evaluate filters
-            playlist_filters = filters.get_playlist_filters(playlist_id)
-            if not playlist_filters:
-                return []
-
-            where_clause, params = filters.build_filter_query(playlist_filters)
-
-            # Query with filter and exclude archived tracks
-            # Note: f-string is safe here because build_filter_query() validates column names
-            # via FIELD_TO_COLUMN whitelist and returns parameterized WHERE clause with ? placeholders
-            cursor = conn.execute(
-                f"""
-                SELECT DISTINCT t.local_path
-                FROM tracks t
-                LEFT JOIN ratings r ON t.id = r.track_id AND r.rating_type = 'archive'
-                WHERE ({where_clause}) AND r.id IS NULL
-                ORDER BY t.artist, t.album, t.title
-            """,
-                params,
-            )
-            return [row["local_path"] for row in cursor.fetchall()]
+            (playlist_id,),
+        )
+        return [row["local_path"] for row in cursor.fetchall()]
 
 
 # Playlist Pinning Functions
