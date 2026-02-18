@@ -1,6 +1,6 @@
 ---
 task: 04-cleanup-dead-code
-status: pending
+status: done
 depends: [03-frontend-stats-modal]
 files:
   - path: web/frontend/src/api/stats.ts

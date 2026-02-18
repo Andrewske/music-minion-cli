@@ -83,20 +83,6 @@ export interface LeaderboardEntry {
   losses: number;
 }
 
-export interface StatsResponse {
-  total_comparisons: number;
-  compared_tracks: number;
-  total_tracks: number;
-  coverage_percent: number;
-  average_comparisons_per_day: number;
-  estimated_days_to_coverage: number | null;
-  prioritized_tracks?: number | null;
-  prioritized_coverage_percent?: number | null;
-  prioritized_estimated_days?: number | null;
-  top_genres: GenreStat[];
-  leaderboard: LeaderboardEntry[];
-}
-
 export interface FoldersResponse {
   root: string;
   folders: string[];

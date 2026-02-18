@@ -81,20 +81,6 @@ class LeaderboardEntry(BaseModel):
     losses: int
 
 
-class StatsResponse(BaseModel):
-    total_comparisons: int
-    compared_tracks: int
-    total_tracks: int
-    coverage_percent: float
-    average_comparisons_per_day: float
-    estimated_days_to_coverage: Optional[float]
-    prioritized_tracks: Optional[int] = None
-    prioritized_coverage_percent: Optional[float] = None
-    prioritized_estimated_days: Optional[float] = None
-    top_genres: list[GenreStat]
-    leaderboard: list[LeaderboardEntry]
-
-
 class PlaylistBasicStats(BaseModel):
     total_tracks: int
     total_duration: float
