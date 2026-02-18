@@ -5,8 +5,17 @@ from typing import Optional, Literal
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
+from loguru import logger
 
 from ..deps import get_db
+from ..queue_manager import (
+    initialize_queue,
+    get_next_track,
+    rebuild_queue,
+    save_queue_state,
+    load_queue_state,
+    _resolve_context_to_track_ids,
+)
 
 router = APIRouter()
 
@@ -41,6 +50,14 @@ class SeekRequest(BaseModel):
     position_ms: int
 
 
+class SetSortRequest(BaseModel):
+    """Request to set manual sort order."""
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    field: str  # 'title', 'artist', 'bpm', 'year', 'elo_rating'
+    direction: Literal["asc", "desc"]
+
+
 class DeviceInfo(BaseModel):
     """Device information."""
     id: str
@@ -61,6 +78,9 @@ class PlaybackState(BaseModel):
     is_playing: bool = False
     active_device_id: Optional[str] = None
     shuffle_enabled: bool = True
+    sort_spec: Optional[dict] = None  # NEW: dict with 'field' and 'direction'
+    current_context: Optional[PlayContext] = None  # NEW: track playback context
+    position_in_playlist: int = 0  # NEW: position tracker for sorted mode
     server_time: float = 0  # For client clock sync
 
 
@@ -72,6 +92,7 @@ def get_playback_state() -> dict:
     """Get current playback state with server time for clock sync."""
     state = _playback_state.model_dump(by_alias=True)
     state["serverTime"] = time.time()
+    state["sortSpec"] = _playback_state.sort_spec  # Ensure sort_spec is included
     return state
 
 
@@ -158,23 +179,30 @@ def resolve_queue(context: PlayContext, db_conn) -> list[dict]:
 async def play(request: PlayRequest, db=Depends(get_db)):
     """Initialize queue and start playback."""
     global _playback_state
-    import logging
-    logger = logging.getLogger(__name__)
 
     from ..sync_manager import sync_manager
+    from ..queries.tracks import batch_fetch_tracks_with_metadata
 
     logger.info(f"Play request: track_id={request.track_id}, context={request.context}")
 
-    # Resolve context to queue
-    queue = resolve_queue(request.context, db)
-    logger.info(f"Resolved queue with {len(queue)} tracks")
+    # 1. Initialize queue using queue_manager (not resolve_queue)
+    queue_ids = initialize_queue(
+        context=request.context,
+        db_conn=db,
+        window_size=100,  # Changed from 50
+        shuffle=request.context.shuffle if hasattr(request.context, 'shuffle') else True,
+        sort_spec=None
+    )
 
-    if not queue:
+    # 2. Fetch full track metadata
+    queue_tracks = batch_fetch_tracks_with_metadata(queue_ids, db, preserve_order=True)
+
+    if not queue_tracks:
         raise HTTPException(400, "No tracks in queue")
 
-    # Find requested track in queue
+    # 3. Find requested track in queue
     queue_index = 0
-    for i, track in enumerate(queue):
+    for i, track in enumerate(queue_tracks):
         if track["id"] == request.track_id:
             queue_index = i
             break
@@ -184,22 +212,35 @@ async def play(request: PlayRequest, db=Depends(get_db)):
     if not active_device_id and sync_manager.devices:
         active_device_id = next(iter(sync_manager.devices.keys()))
 
-    # Update state
+    # 4. Update global state
     now = time.time()
-    _playback_state.current_track = queue[queue_index]
-    _playback_state.queue = queue
+    _playback_state.current_track = queue_tracks[queue_index]
+    _playback_state.queue = queue_tracks
     _playback_state.queue_index = queue_index
     _playback_state.position_ms = 0
     _playback_state.track_started_at = now
     _playback_state.is_playing = True
     _playback_state.active_device_id = active_device_id
-    _playback_state.shuffle_enabled = request.context.shuffle
+    _playback_state.current_context = request.context
+    _playback_state.shuffle_enabled = request.context.shuffle if hasattr(request.context, 'shuffle') else True
+    _playback_state.sort_spec = None
+    _playback_state.position_in_playlist = 0
 
-    # Broadcast state to all devices
+    # 5. Persist queue state
+    save_queue_state(
+        context=request.context,
+        queue_ids=queue_ids,
+        queue_index=queue_index,
+        shuffle=_playback_state.shuffle_enabled,
+        sort_spec=None,
+        db_conn=db
+    )
+
+    # 6. Broadcast to all devices
     await sync_manager.broadcast("playback:state", get_playback_state())
 
     return {
-        "queue": queue,
+        "queue": queue_tracks,
         "queue_index": queue_index,
         "active_device_id": active_device_id,
     }
@@ -251,33 +292,83 @@ async def resume():
 
 
 @router.post("/next")
-async def next_track():
+async def next_track(db=Depends(get_db)):
     """Skip to next track."""
     global _playback_state
 
     from ..sync_manager import sync_manager
+    from ..queries.tracks import batch_fetch_tracks_with_metadata
 
     if not _playback_state.queue:
         raise HTTPException(400, "No queue")
 
-    # Move to next track
+    # Advance queue index
     _playback_state.queue_index += 1
 
     if _playback_state.queue_index >= len(_playback_state.queue):
-        # End of queue - stop playback
+        # End of queue
         _playback_state.is_playing = False
         _playback_state.current_track = None
-        _playback_state.track_started_at = None
-        _playback_state.position_ms = 0
     else:
-        # Start next track
+        # Update current track
         _playback_state.current_track = _playback_state.queue[_playback_state.queue_index]
         _playback_state.position_ms = 0
-        _playback_state.track_started_at = time.time() if _playback_state.is_playing else None
+        _playback_state.track_started_at = time.time()
 
+        # NEW: Check lookahead buffer and refill
+        tracks_ahead = len(_playback_state.queue) - _playback_state.queue_index
+
+        if tracks_ahead < 50:  # Lookahead threshold
+            # Build exclusion list: all tracks ahead + current
+            exclusion_ids = [
+                t["id"] for t in _playback_state.queue[_playback_state.queue_index:]
+            ]
+
+            # Pull 1 new track
+            new_track_id = get_next_track(
+                context=_playback_state.current_context,
+                exclusion_ids=exclusion_ids,
+                db_conn=db,
+                shuffle=_playback_state.shuffle_enabled,
+                sort_spec=_playback_state.sort_spec,
+                position_in_sorted=_playback_state.position_in_playlist
+            )
+
+            if new_track_id:
+                # Fetch full metadata
+                new_tracks = batch_fetch_tracks_with_metadata([new_track_id], db)
+                if new_tracks:  # Defensive check
+                    _playback_state.queue.append(new_tracks[0])
+
+                    # Update position for sorted mode
+                    if not _playback_state.shuffle_enabled:
+                        # Get total playlist size for modulo
+                        total_size = len(_resolve_context_to_track_ids(_playback_state.current_context, db))
+                        _playback_state.position_in_playlist = (_playback_state.position_in_playlist + 100) % total_size
+
+                    # Save updated state
+                    queue_ids = [t["id"] for t in _playback_state.queue]
+                    save_queue_state(
+                        context=_playback_state.current_context,
+                        queue_ids=queue_ids,
+                        queue_index=_playback_state.queue_index,
+                        shuffle=_playback_state.shuffle_enabled,
+                        sort_spec=_playback_state.sort_spec,
+                        db_conn=db
+                    )
+
+        # NEW: Queue trimming - prune old metadata to prevent unbounded growth
+        if _playback_state.queue_index > 10:
+            # Keep last 10 played tracks with full metadata for UI display
+            # Trim older tracks to just ID for exclusion tracking
+            old_index = _playback_state.queue_index - 10
+            if "title" in _playback_state.queue[old_index]:  # Check if not already pruned
+                _playback_state.queue[old_index] = {"id": _playback_state.queue[old_index]["id"]}
+
+    # Broadcast updated state
     await sync_manager.broadcast("playback:state", get_playback_state())
 
-    return {"message": "Next track"}
+    return {"status": "next"}
 
 
 @router.post("/prev")
@@ -324,6 +415,117 @@ async def seek(request: SeekRequest):
     return {"message": "Seeked"}
 
 
+@router.post("/toggle-shuffle")
+async def toggle_shuffle(db=Depends(get_db)):
+    """Toggle shuffle without interrupting playback."""
+    global _playback_state
+
+    from ..sync_manager import sync_manager
+    from ..queries.tracks import batch_fetch_tracks_with_metadata
+
+    if not _playback_state.current_track:
+        raise HTTPException(400, "No active playback")
+
+    # Toggle shuffle state
+    new_shuffle = not _playback_state.shuffle_enabled
+    _playback_state.shuffle_enabled = new_shuffle
+
+    # Clear sort spec if enabling shuffle
+    sort_spec = None if new_shuffle else _playback_state.sort_spec
+
+    # Rebuild queue preserving current track
+    queue_ids = [t["id"] for t in _playback_state.queue]
+    new_queue_ids = rebuild_queue(
+        context=_playback_state.current_context,
+        current_track_id=_playback_state.current_track["id"],
+        queue=queue_ids,
+        queue_index=_playback_state.queue_index,
+        db_conn=db,
+        shuffle=new_shuffle,
+        sort_spec=sort_spec
+    )
+
+    # Fetch full track metadata
+    new_queue = batch_fetch_tracks_with_metadata(new_queue_ids, db, preserve_order=True)
+
+    _playback_state.queue = new_queue
+    _playback_state.sort_spec = sort_spec
+
+    # Persist state
+    save_queue_state(
+        context=_playback_state.current_context,
+        queue_ids=new_queue_ids,
+        queue_index=_playback_state.queue_index,
+        shuffle=new_shuffle,
+        sort_spec=sort_spec,
+        db_conn=db
+    )
+
+    # Broadcast
+    await sync_manager.broadcast("playback:state", get_playback_state())
+
+    return {
+        "shuffle_enabled": new_shuffle,
+        "queue_size": len(new_queue)
+    }
+
+
+@router.post("/set-sort")
+async def set_sort(request: SetSortRequest, db=Depends(get_db)):
+    """Apply manual table sort (disables shuffle)."""
+    global _playback_state
+
+    from ..sync_manager import sync_manager
+    from ..queries.tracks import batch_fetch_tracks_with_metadata
+
+    if not _playback_state.current_track:
+        raise HTTPException(400, "No active playback")
+
+    sort_spec = {"field": request.field, "direction": request.direction}
+
+    # Disable shuffle
+    _playback_state.shuffle_enabled = False
+    _playback_state.sort_spec = sort_spec
+
+    # Initialize position for sorted mode (starts after initial 100-track window)
+    _playback_state.position_in_playlist = 100
+
+    # Rebuild queue with new sort
+    queue_ids = [t["id"] for t in _playback_state.queue]
+    new_queue_ids = rebuild_queue(
+        context=_playback_state.current_context,
+        current_track_id=_playback_state.current_track["id"],
+        queue=queue_ids,
+        queue_index=_playback_state.queue_index,
+        db_conn=db,
+        shuffle=False,
+        sort_spec=sort_spec
+    )
+
+    new_queue = batch_fetch_tracks_with_metadata(new_queue_ids, db, preserve_order=True)
+
+    _playback_state.queue = new_queue
+
+    # Persist state
+    save_queue_state(
+        context=_playback_state.current_context,
+        queue_ids=new_queue_ids,
+        queue_index=_playback_state.queue_index,
+        shuffle=False,
+        sort_spec=sort_spec,
+        position_in_playlist=_playback_state.position_in_playlist,
+        db_conn=db
+    )
+
+    # Broadcast
+    await sync_manager.broadcast("playback:state", get_playback_state())
+
+    return {
+        "queue_size": len(new_queue),
+        "sort": sort_spec
+    }
+
+
 @router.get("/state")
 async def get_state():
     """Get current playback state."""
@@ -346,3 +548,62 @@ async def get_devices():
     ]
 
     return devices
+
+
+async def restore_player_queue_state():
+    """Restore queue state from database. Called by main app startup handler."""
+    global _playback_state
+
+    from music_minion.core.database import get_db_connection
+    from ..queries.tracks import batch_fetch_tracks_with_metadata
+
+    try:
+        with get_db_connection() as db:
+            state = load_queue_state(db)
+
+            if not state:
+                logger.info("No saved queue state found")
+                return
+
+            # Validate context still exists
+            try:
+                context = state["context"]
+                # Check if playlist/builder still exists
+                if context.type == "playlist":
+                    cursor = db.execute("SELECT id FROM playlists WHERE id = ?", (context.playlist_id,))
+                    if not cursor.fetchone():
+                        logger.warning(f"Saved queue referenced deleted playlist {context.playlist_id}, clearing queue")
+                        return
+                # Add similar checks for other context types
+            except Exception as e:
+                logger.warning(f"Failed to validate saved context: {e}")
+                return
+
+            logger.info(f"Restoring queue state: {len(state['queue_ids'])} tracks")
+
+            # Fetch full track metadata
+            queue_tracks = batch_fetch_tracks_with_metadata(
+                state["queue_ids"], db, preserve_order=True
+            )
+
+            if not queue_tracks:
+                logger.warning("No tracks found for saved queue IDs")
+                return
+
+            # Restore state
+            _playback_state.queue = queue_tracks
+            _playback_state.queue_index = state["queue_index"]
+            _playback_state.shuffle_enabled = state["shuffle_enabled"]
+            _playback_state.sort_spec = state.get("sort_spec")
+            _playback_state.position_in_playlist = state.get("position_in_playlist", 0)
+            _playback_state.current_context = state["context"]
+
+            if state["queue_index"] < len(queue_tracks):
+                _playback_state.current_track = queue_tracks[state["queue_index"]]
+
+            # Don't auto-resume playback (user must manually press play)
+            _playback_state.is_playing = False
+
+            logger.info("Queue state restored successfully")
+    except Exception as e:
+        logger.exception("Failed to restore queue state, starting with clean state")

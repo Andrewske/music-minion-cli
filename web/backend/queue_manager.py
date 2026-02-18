@@ -7,19 +7,19 @@ and persistence without any global state.
 import json
 import random
 import sqlite3
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from loguru import logger
 
-
-# Import PlayContext from player router
-from .routers.player import PlayContext
+# Avoid circular import
+if TYPE_CHECKING:
+    from .routers.player import PlayContext
 
 
 # Public API Functions
 
 
 def initialize_queue(
-    context: PlayContext,
+    context: "PlayContext",
     db_conn,
     window_size: int = 100,
     shuffle: bool = True,
@@ -78,7 +78,7 @@ def initialize_queue(
 
 
 def get_next_track(
-    context: PlayContext,
+    context: "PlayContext",
     exclusion_ids: list[int],
     db_conn,
     shuffle: bool = True,
@@ -126,7 +126,7 @@ def get_next_track(
 
 
 def rebuild_queue(
-    context: PlayContext,
+    context: "PlayContext",
     current_track_id: int,
     queue: list[int],
     queue_index: int,
@@ -203,12 +203,13 @@ def rebuild_queue(
 
 
 def save_queue_state(
-    context: PlayContext,
+    context: "PlayContext",
     queue_ids: list[int],
     queue_index: int,
     shuffle: bool,
     sort_spec: Optional[dict],
-    db_conn
+    db_conn,
+    position_in_playlist: Optional[int] = None
 ) -> None:
     """Persist queue state to database.
 
@@ -221,6 +222,7 @@ def save_queue_state(
         shuffle: Shuffle enabled state
         sort_spec: Optional sort specification dict
         db_conn: Database connection
+        position_in_playlist: Position in sorted playlist (for sorted mode tracking)
     """
     try:
         # Serialize data
@@ -228,8 +230,9 @@ def save_queue_state(
         sort_field = sort_spec.get("field") if sort_spec else None
         sort_direction = sort_spec.get("direction") if sort_spec else None
 
-        # Determine position_in_playlist for sorted playback
-        position_in_playlist = queue_index if not shuffle else None
+        # Use provided position_in_playlist, or default to None for shuffle mode
+        if position_in_playlist is None:
+            position_in_playlist = queue_index if not shuffle else None
 
         # Insert or replace singleton row
         db_conn.execute(
@@ -324,7 +327,7 @@ def load_queue_state(db_conn) -> Optional[dict]:
 
 
 def _get_random_track_from_playlist(
-    context: PlayContext,
+    context: "PlayContext",
     exclusion_ids: list[int],
     db_conn
 ) -> Optional[int]:
@@ -411,7 +414,7 @@ def _get_random_track_from_playlist(
 
 
 def _get_sorted_tracks_from_playlist(
-    context: PlayContext,
+    context: "PlayContext",
     sort_spec: dict,
     limit: int,
     offset: int,
@@ -566,7 +569,7 @@ def _build_exclusion_list(queue: list[int], queue_index: int) -> list[int]:
 
 
 def _resolve_context_to_track_ids(
-    context: PlayContext,
+    context: "PlayContext",
     db_conn
 ) -> list[int]:
     """Handle playlist/builder/smart playlist context.
@@ -644,7 +647,7 @@ def _resolve_context_to_track_ids(
         return []
 
 
-def _get_context_id(context: PlayContext) -> Optional[int]:
+def _get_context_id(context: "PlayContext") -> Optional[int]:
     """Extract context ID based on context type.
 
     Args:
@@ -665,7 +668,7 @@ def _reconstruct_play_context(
     context_type: str,
     context_id: Optional[int],
     shuffle: bool
-) -> PlayContext:
+) -> "PlayContext":
     """Reconstruct PlayContext from database fields.
 
     Args:
@@ -676,6 +679,9 @@ def _reconstruct_play_context(
     Returns:
         PlayContext instance
     """
+    # Import at runtime to avoid circular import
+    from .routers.player import PlayContext
+
     if context_type == "playlist":
         return PlayContext(
             type="playlist",
