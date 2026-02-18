@@ -1,6 +1,6 @@
 ---
 task: 02-manual-testing-verification
-status: failed
+status: done
 depends: [01-refactor-homepage-implementation]
 files: []
 ---
