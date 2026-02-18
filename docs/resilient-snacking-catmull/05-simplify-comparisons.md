@@ -1,6 +1,6 @@
 ---
 task: 05-simplify-comparisons
-status: pending
+status: done
 depends:
   - 04-simplify-get-playlist-tracks
 files:
