@@ -154,7 +154,7 @@ def resolve_queue(context: PlayContext, db_conn) -> list[dict]:
     cursor = db_conn.execute(
         f"""
         SELECT id, title, artist, album, genre, year, bpm, key_signature,
-               duration, source, source_url, local_path, elo_rating
+               duration, source, source_url, local_path
         FROM tracks
         WHERE id IN ({placeholders})
         """,
