@@ -1,6 +1,6 @@
 ---
 task: 02b-integrate-refresh-with-skip
-status: pending
+status: done
 depends:
   - 01-create-refresh-function
 files:
