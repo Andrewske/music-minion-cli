@@ -170,4 +170,6 @@ export interface PlaylistStatsResponse {
   quality: PlaylistQualityMetrics;
   top_artists: ArtistStat[];
   top_genres: GenreDistribution[];
+  avg_comparisons_per_day: number;
+  estimated_days_to_full_coverage: number | null;
 }
