@@ -1,6 +1,6 @@
 ---
 task: 05-frontend-ui-updates
-status: pending
+status: done
 depends: [04-frontend-state-management]
 files:
   - path: web/frontend/src/components/player/PlayerBar.tsx

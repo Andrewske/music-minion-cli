@@ -24,7 +24,7 @@ export function PlayerBar(): JSX.Element {
     seek,
     setMuted,
     setVolume,
-    toggleShuffle,
+    toggleShuffleSmooth,
     availableDevices,
     activeDeviceId,
   } = usePlayer();
@@ -132,7 +132,7 @@ export function PlayerBar(): JSX.Element {
         <Button
           variant="ghost"
           size="icon"
-          onClick={toggleShuffle}
+          onClick={toggleShuffleSmooth}
           className={shuffleEnabled ? 'text-obsidian-accent' : 'text-white/60 hover:text-white'}
           title={shuffleEnabled ? 'Shuffle on' : 'Shuffle off'}
         >
