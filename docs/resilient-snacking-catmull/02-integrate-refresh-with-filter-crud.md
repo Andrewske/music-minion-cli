@@ -1,6 +1,6 @@
 ---
 task: 02-integrate-refresh-with-filter-crud
-status: pending
+status: done
 depends:
   - 01-create-refresh-function
 files:

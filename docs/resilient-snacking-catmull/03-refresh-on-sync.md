@@ -1,6 +1,6 @@
 ---
 task: 03-refresh-on-sync
-status: pending
+status: done
 depends:
   - 01-create-refresh-function
 files:

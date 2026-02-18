@@ -138,7 +138,12 @@ def add_filter(
             (playlist_id, field, operator, value, conjunction),
         )
         conn.commit()
-        return cursor.lastrowid
+        filter_id = cursor.lastrowid
+
+    # Refresh materialized tracks
+    refresh_smart_playlist_tracks(playlist_id)
+
+    return filter_id
 
 
 def remove_filter(filter_id: int) -> bool:
@@ -151,9 +156,21 @@ def remove_filter(filter_id: int) -> bool:
         True if filter was removed, False if not found
     """
     with get_db_connection() as conn:
+        # First get playlist_id before deleting
+        cursor = conn.execute("SELECT playlist_id FROM playlist_filters WHERE id = ?", (filter_id,))
+        row = cursor.fetchone()
+        playlist_id = row["playlist_id"] if row else None
+
+        # Delete the filter
         cursor = conn.execute("DELETE FROM playlist_filters WHERE id = ?", (filter_id,))
         conn.commit()
-        return cursor.rowcount > 0
+        success = cursor.rowcount > 0
+
+    # Refresh materialized tracks
+    if playlist_id:
+        refresh_smart_playlist_tracks(playlist_id)
+
+    return success
 
 
 def update_filter(
@@ -212,7 +229,14 @@ def update_filter(
             (new_field, new_operator, new_value, new_conjunction, filter_id),
         )
         conn.commit()
-        return True
+
+        # Get playlist_id for refresh
+        playlist_id = row["playlist_id"]
+
+    # Refresh materialized tracks
+    refresh_smart_playlist_tracks(playlist_id)
+
+    return True
 
 
 def get_playlist_filters(playlist_id: int) -> list[dict[str, Any]]:
