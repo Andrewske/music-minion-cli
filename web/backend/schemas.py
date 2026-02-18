@@ -87,9 +87,6 @@ class PlaylistEloAnalysis(BaseModel):
     avg_playlist_rating: float
     min_playlist_rating: float
     max_playlist_rating: float
-    avg_global_rating: float
-    min_global_rating: float
-    max_global_rating: float
     avg_playlist_comparisons: float
     total_playlist_comparisons: int
 

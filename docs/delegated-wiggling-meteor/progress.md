@@ -33,7 +33,9 @@
 ### Batch 4
 - Started: 2026-02-18T12:46:00Z
 - Tasks: 03-verify-end-to-end (manual verification required)
-- ⏳ Awaiting manual browser testing
+- ⚠️ First attempt failed: `elo_ratings` table not found
+- ✅ Fixed: Removed references to non-existent elo_ratings table (renamed to _backup_elo_ratings)
+- ⏳ Awaiting re-test
 
 ## Manual Testing Required
 
