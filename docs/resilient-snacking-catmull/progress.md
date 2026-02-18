@@ -9,11 +9,11 @@
 | Task | Status | Started | Completed | Duration |
 |------|--------|---------|-----------|----------|
 | 01-create-refresh-function | ✅ Done | 2026-02-18 | 2026-02-18 | <1m |
-| 02-integrate-refresh-with-filter-crud | Pending | - | - | - |
-| 03-refresh-on-sync | Pending | - | - | - |
+| 02-integrate-refresh-with-filter-crud | ✅ Done | 2026-02-18 | 2026-02-18 | <1m |
+| 03-refresh-on-sync | ✅ Done | 2026-02-18 | 2026-02-18 | <1m |
 | 04-simplify-get-playlist-tracks | Pending | - | - | - |
 | 05-simplify-comparisons | Pending | - | - | - |
-| 06-migrate-existing-smart-playlists | Pending | - | - | - |
+| 06-migrate-existing-smart-playlists | ✅ Done | 2026-02-18 | 2026-02-18 | <1m |
 
 ## Execution Log
 
@@ -27,7 +27,12 @@
 ### Batch 2: Integration Points
 - Tasks: 02-integrate-refresh-with-filter-crud, 03-refresh-on-sync, 06-migrate-existing-smart-playlists
 - Dependencies: 01-create-refresh-function
-- Started: Pending
+- Started: 2026-02-18
+- Completed: 2026-02-18
+- Result: ✅ Success (3/3 parallel tasks)
+  - 02: Filter CRUD operations now auto-refresh
+  - 03: Sync local auto-refreshes all smart playlists
+  - 06: v34 migration materialized 3 playlists (65, 3177, 5664 tracks)
 
 ### Batch 3: Query Simplification
 - Tasks: 04-simplify-get-playlist-tracks

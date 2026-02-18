@@ -1,6 +1,6 @@
 ---
 task: 04-simplify-get-playlist-tracks
-status: pending
+status: done
 depends:
   - 01-create-refresh-function
   - 02-integrate-refresh-with-filter-crud
