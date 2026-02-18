@@ -260,6 +260,9 @@ def skip_track(playlist_id: int, track_id: int) -> dict:
     CRITICAL: Must INSERT into playlist_builder_skipped table
     so broken tracks don't reappear in future sessions.
 
+    For smart playlists: Also removes from materialized playlist_tracks
+    so the track disappears immediately without waiting for next refresh.
+
     Args:
         playlist_id: Playlist ID
         track_id: Track ID to skip
@@ -269,6 +272,7 @@ def skip_track(playlist_id: int, track_id: int) -> dict:
     """
     try:
         with get_db_connection() as conn:
+            # Insert into skipped table
             conn.execute(
                 """
                 INSERT OR IGNORE INTO playlist_builder_skipped
@@ -277,6 +281,32 @@ def skip_track(playlist_id: int, track_id: int) -> dict:
                 """,
                 (playlist_id, track_id),
             )
+
+            # Also remove from materialized playlist_tracks (for smart playlists)
+            # This is safe for manual playlists too - skip doesn't remove from manual playlists
+            # We only delete if the track exists in playlist_tracks for this playlist
+            cursor = conn.execute(
+                """
+                DELETE FROM playlist_tracks
+                WHERE playlist_id = ? AND track_id = ?
+                AND EXISTS (
+                    SELECT 1 FROM playlists WHERE id = ? AND type = 'smart'
+                )
+                """,
+                (playlist_id, track_id, playlist_id),
+            )
+
+            # Decrement track_count if we deleted from playlist_tracks
+            if cursor.rowcount > 0:
+                conn.execute(
+                    """
+                    UPDATE playlists
+                    SET track_count = track_count - 1, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ? AND track_count > 0
+                    """,
+                    (playlist_id,),
+                )
+
             conn.commit()
 
         return {"skipped_track_id": track_id, "success": True}
@@ -305,25 +335,45 @@ def add_track(playlist_id: int, track_id: int) -> dict:
         return {"added_track_id": track_id, "success": False}
 
 
-def unskip_track(playlist_id: int, track_id: int) -> None:
+def unskip_track(playlist_id: int, track_id: int) -> bool:
     """Remove track from skipped list.
+
+    For smart playlists: Triggers full refresh to re-add the track
+    if it still matches filters.
 
     Args:
         playlist_id: Playlist ID
         track_id: Track ID to unskip
 
+    Returns:
+        True if track was unskipped, False if it wasn't skipped
+
     Raises:
         sqlite3.Error: If database operation fails
     """
+    from .crud import get_playlist_by_id
+    from .filters import refresh_smart_playlist_tracks
+
     with get_db_connection() as conn:
-        conn.execute(
+        cursor = conn.execute(
             """
             DELETE FROM playlist_builder_skipped
             WHERE playlist_id = ? AND track_id = ?
             """,
             (playlist_id, track_id),
         )
+
+        if cursor.rowcount == 0:
+            return False  # Track wasn't skipped
+
         conn.commit()
+
+    # For smart playlists: refresh to re-add the track if it still matches filters
+    playlist = get_playlist_by_id(playlist_id)
+    if playlist and playlist["type"] == "smart":
+        refresh_smart_playlist_tracks(playlist_id)
+
+    return True
 
 
 def get_skipped_tracks(playlist_id: int) -> list[dict]:
