@@ -316,16 +316,16 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
         throw new Error('Failed to toggle shuffle');
       }
 
-      const data = await response.json();
+      const { shuffle_enabled } = await response.json();
 
       // Optimistic update (will be confirmed via WebSocket)
       set({
-        shuffleEnabled: data.shuffle_enabled,
+        shuffleEnabled: shuffle_enabled,
         sortField: null,
         sortDirection: null,
       });
 
-      console.log(`Shuffle ${data.shuffle_enabled ? 'enabled' : 'disabled'} (smooth toggle)`);
+      console.log(`Shuffle ${shuffle_enabled ? 'enabled' : 'disabled'} (smooth toggle)`);
     } catch (error) {
       console.error('Error toggling shuffle:', error);
       set({ playbackError: (error as Error).message });
@@ -345,8 +345,6 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       if (!response.ok) {
         throw new Error('Failed to set sort order');
       }
-
-      await response.json();
 
       // Optimistic update
       set({

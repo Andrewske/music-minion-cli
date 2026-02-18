@@ -23,7 +23,8 @@ export function HomePage(): JSX.Element {
     pause,
     resume,
     next,
-    play
+    play,
+    setSortOrder
   } = usePlayerStore();
 
   const { data: playlistsData } = usePlaylists();
@@ -67,6 +68,17 @@ export function HomePage(): JSX.Element {
       });
     }
   }, [queue, currentContext, play]);
+
+  const handleSortingChange = useCallback((newSorting: SortingState): void => {
+    // Update local state for UI indicators
+    setSorting(newSorting);
+
+    // Call backend to sort and rebuild queue
+    if (newSorting.length > 0) {
+      const { id, desc } = newSorting[0];
+      setSortOrder(id, desc ? 'desc' : 'asc');
+    }
+  }, [setSortOrder]);
 
   // Spacebar play/pause keyboard shortcut
   useEffect(() => {
@@ -132,7 +144,7 @@ export function HomePage(): JSX.Element {
                 nowPlayingId={currentTrack?.id ?? null}
                 onTrackClick={handleTrackClick}
                 sorting={sorting}
-                onSortingChange={setSorting}
+                onSortingChange={handleSortingChange}
                 onLoadMore={() => {}} // no-op - queue is fully loaded
                 hasMore={false}
                 isLoadingMore={false}
