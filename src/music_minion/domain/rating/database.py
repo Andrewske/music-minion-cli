@@ -11,7 +11,7 @@ from typing import Optional, TypedDict
 from loguru import logger
 
 from music_minion.core.database import get_db_connection
-from music_minion.domain.playlists.crud import get_playlist_tracks
+from music_minion.domain.playlists.crud import get_playlist_track_count, get_playlist_tracks
 
 
 @dataclass
@@ -337,20 +337,16 @@ def get_playlist_comparison_progress(playlist_id: int) -> dict:
             "percentage": float   # Progress percentage
         }
     """
+    # Get track count - works for both manual and smart playlists
+    track_count = get_playlist_track_count(playlist_id)
+
+    if track_count < 2:
+        return {"compared": 0, "total": 0, "percentage": 0.0}
+
+    # Calculate total possible pairs
+    total_possible = (track_count * (track_count - 1)) // 2
+
     with get_db_connection() as conn:
-        # Count tracks in playlist
-        cursor = conn.execute(
-            "SELECT COUNT(*) as count FROM playlist_tracks WHERE playlist_id = ?",
-            (playlist_id,),
-        )
-        track_count = cursor.fetchone()["count"]
-
-        if track_count < 2:
-            return {"compared": 0, "total": 0, "percentage": 0.0}
-
-        # Calculate total possible pairs
-        total_possible = (track_count * (track_count - 1)) // 2
-
         # Count existing comparisons
         cursor = conn.execute(
             "SELECT COUNT(*) as count FROM playlist_comparison_history WHERE playlist_id = ?",
