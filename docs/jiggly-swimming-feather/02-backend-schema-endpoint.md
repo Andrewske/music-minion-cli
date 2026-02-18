@@ -1,6 +1,6 @@
 ---
 task: 02-backend-schema-endpoint
-status: pending
+status: done
 depends: [01-backend-analytics-functions]
 files:
   - path: web/backend/schemas.py
