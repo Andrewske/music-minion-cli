@@ -1,6 +1,6 @@
 ---
 task: 03-frontend-stats-modal
-status: pending
+status: done
 depends: [02-backend-schema-endpoint]
 files:
   - path: web/frontend/src/types/index.ts
