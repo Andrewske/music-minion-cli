@@ -14,9 +14,6 @@ from music_minion.context import AppContext
 from music_minion.core import database
 from music_minion.core.output import log
 from music_minion.domain import library
-from music_minion.domain.rating.database import (
-    get_playlist_leaderboard,
-)
 
 
 def handle_archive_command(ctx: AppContext) -> tuple[AppContext, bool]:
@@ -427,97 +424,6 @@ def handle_unlike_command(ctx: AppContext) -> tuple[AppContext, bool]:
     except Exception as e:
         log(f"⚠ Error unliking on SoundCloud: {e}", level="warning")
         log("   Check logs for details", level="warning")
-
-    return ctx, True
-
-
-def parse_rankings_args(args: list[str]) -> dict:
-    """Parse /rankings command arguments.
-
-    Args:
-        args: Command line arguments
-
-    Returns:
-        Dictionary with parsed arguments: limit, playlist
-    """
-    result = {"limit": 50, "playlist": None}
-
-    for arg in args:
-        if arg.startswith("--limit="):
-            try:
-                result["limit"] = int(arg.split("=", 1)[1])
-            except ValueError:
-                logger.warning(f"Invalid limit value: {arg}")
-        elif arg.startswith("--playlist="):
-            try:
-                result["playlist"] = int(arg.split("=", 1)[1])
-            except ValueError:
-                logger.warning(f"Invalid playlist ID: {arg}")
-
-    return result
-
-
-def handle_rankings_command(
-    ctx: AppContext, args: list[str]
-) -> tuple[AppContext, bool]:
-    """Display top-rated tracks in command palette.
-
-    Args:
-        ctx: Application context
-        args: Command arguments (--playlist=ID, --limit=N)
-
-    Returns:
-        (updated_context, should_continue)
-
-    Examples:
-        rankings --playlist=123     # Top tracks in playlist 123
-        rankings --playlist=123 --limit=100
-    """
-    # Parse arguments
-    parsed = parse_rankings_args(args)
-
-    # Playlist is now required (global ratings removed)
-    if parsed["playlist"] is None:
-        log(
-            "Playlist required: rankings --playlist=<ID>",
-            level="warning",
-        )
-        return ctx, True
-
-    # Load leaderboard from database
-    try:
-        tracks = get_playlist_leaderboard(
-            playlist_id=parsed["playlist"],
-            limit=parsed["limit"],
-            min_comparisons=1,
-        )
-    except Exception as e:
-        logger.exception("Error loading leaderboard")
-        log(f"Error loading rankings: {e}", level="error")
-        return ctx, True
-
-    # Handle empty results
-    if not tracks:
-        log("No rated tracks found matching filters.", level="warning")
-        return ctx, True
-
-    # Build title with playlist name
-    from music_minion.domain.playlists.crud import get_playlist_by_id
-
-    playlist = get_playlist_by_id(parsed["playlist"])
-    if playlist:
-        title = f"Playlist Rankings: {playlist['name']}"
-    else:
-        title = f"Playlist Rankings: ID {parsed['playlist']}"
-
-    # Show in rankings palette using UI action
-    ctx = ctx.with_ui_action(
-        {
-            "type": "show_rankings_palette",
-            "tracks": tracks,
-            "title": title,
-        }
-    )
 
     return ctx, True
 

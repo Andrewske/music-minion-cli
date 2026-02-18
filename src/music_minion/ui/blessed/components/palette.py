@@ -77,7 +77,7 @@ def load_rankings_items(tracks: list[dict]) -> list[tuple[str, str, str, str, in
     Convert ranked tracks to palette items format.
 
     Args:
-        tracks: List of track dicts with rating info from get_leaderboard()
+        tracks: List of track dicts with rating and comparison info
 
     Returns:
         List of palette items: (rank, artist_title, rating_icon, rating_info, track_id)

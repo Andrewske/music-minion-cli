@@ -71,16 +71,6 @@ class GenreStat(BaseModel):
     total_comparisons: int
 
 
-class LeaderboardEntry(BaseModel):
-    track_id: int
-    title: str
-    artist: Optional[str] = None
-    rating: float
-    comparison_count: int
-    wins: int
-    losses: int
-
-
 class PlaylistBasicStats(BaseModel):
     total_tracks: int
     total_duration: float
