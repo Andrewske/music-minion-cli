@@ -139,24 +139,41 @@ async def next_track(db=Depends(get_db)):
                 exclusion_ids=exclusion_ids,
                 db_conn=db,
                 shuffle=_playback_state.shuffle_enabled,
-                sort_spec=_playback_state.sort_spec
+                sort_spec=_playback_state.sort_spec,
+                position_in_playlist=_playback_state.position_in_playlist
             )
 
             if new_track_id:
                 # Fetch full metadata
                 new_tracks = batch_fetch_tracks_with_metadata([new_track_id], db)
-                _playback_state.queue.append(new_tracks[0])
+                if new_tracks:  # Defensive check
+                    _playback_state.queue.append(new_tracks[0])
 
-                # Save updated state
-                queue_ids = [t["id"] for t in _playback_state.queue]
-                save_queue_state(
-                    context=_playback_state.current_context,
-                    queue_ids=queue_ids,
-                    queue_index=_playback_state.queue_index,
-                    shuffle=_playback_state.shuffle_enabled,
-                    sort_spec=_playback_state.sort_spec,
-                    db_conn=db
-                )
+                    # Update position for sorted mode
+                    if not _playback_state.shuffle_enabled:
+                        # Get total playlist size for modulo
+                        total_size = len(_resolve_context_to_track_ids(_playback_state.current_context, db))
+                        _playback_state.position_in_playlist = (_playback_state.position_in_playlist + 100) % total_size
+
+                    # Save updated state
+                    queue_ids = [t["id"] for t in _playback_state.queue]
+                    save_queue_state(
+                        context=_playback_state.current_context,
+                        queue_ids=queue_ids,
+                        queue_index=_playback_state.queue_index,
+                        shuffle=_playback_state.shuffle_enabled,
+                        sort_spec=_playback_state.sort_spec,
+                        position_in_playlist=_playback_state.position_in_playlist,
+                        db_conn=db
+                    )
+
+        # NEW: Queue trimming - prune old metadata to prevent unbounded growth
+        if _playback_state.queue_index > 10:
+            # Keep last 10 played tracks with full metadata for UI display
+            # Trim older tracks to just ID for exclusion tracking
+            old_index = _playback_state.queue_index - 10
+            if "title" in _playback_state.queue[old_index]:  # Check if not already pruned
+                _playback_state.queue[old_index] = {"id": _playback_state.queue[old_index]["id"]}
 
     # Broadcast updated state
     await sync_manager.broadcast("playback:state", get_playback_state())
@@ -243,6 +260,9 @@ async def set_sort(request: SetSortRequest, db=Depends(get_db)):
     _playback_state.shuffle_enabled = False
     _playback_state.sort_spec = sort_spec
 
+    # Initialize position for sorted mode (starts after initial 100-track window)
+    _playback_state.position_in_playlist = 100
+
     # Rebuild queue with new sort
     queue_ids = [t["id"] for t in _playback_state.queue]
     new_queue_ids = rebuild_queue(
@@ -266,6 +286,7 @@ async def set_sort(request: SetSortRequest, db=Depends(get_db)):
         queue_index=_playback_state.queue_index,
         shuffle=False,
         sort_spec=sort_spec,
+        position_in_playlist=_playback_state.position_in_playlist,
         db_conn=db
     )
 
@@ -280,42 +301,75 @@ async def set_sort(request: SetSortRequest, db=Depends(get_db)):
 
 ### Startup Recovery
 
-Add startup event handler to restore queue state:
+**IMPORTANT**: APIRouter doesn't support `@router.on_event()`. Add this to the **main app file** (where FastAPI app is created):
 
 ```python
-@router.on_event("startup")
-async def restore_queue_state():
-    """Restore queue state on server restart."""
+# In web/backend/main.py (or wherever the FastAPI app is instantiated)
+from .routers.player import restore_player_queue_state
+
+@app.on_event("startup")
+async def startup_handler():
+    """Restore player queue state on server restart."""
+    await restore_player_queue_state()
+```
+
+**In player.py**, create the restoration function:
+
+```python
+async def restore_player_queue_state():
+    """Restore queue state from database. Called by main app startup handler."""
     global _playback_state
 
     try:
-        with get_db() as db:
+        with get_db_connection() as db:
             state = load_queue_state(db)
 
-            if state:
-                logger.info(f"Restoring queue state: {len(state['queue_ids'])} tracks")
+            if not state:
+                logger.info("No saved queue state found")
+                return
 
-                # Fetch full track metadata
-                queue_tracks = batch_fetch_tracks_with_metadata(
-                    state["queue_ids"], db, preserve_order=True
-                )
+            # Validate context still exists
+            try:
+                context = state["context"]
+                # Check if playlist/builder still exists
+                if context.context_type == "playlist":
+                    cursor = db.execute("SELECT id FROM playlists WHERE id = ?", (context.context_id,))
+                    if not cursor.fetchone():
+                        logger.warning(f"Saved queue referenced deleted playlist {context.context_id}, clearing queue")
+                        return
+                # Add similar checks for other context types
+            except Exception as e:
+                logger.warning(f"Failed to validate saved context: {e}")
+                return
 
-                # Restore state
-                _playback_state.queue = queue_tracks
-                _playback_state.queue_index = state["queue_index"]
-                _playback_state.shuffle_enabled = state["shuffle_enabled"]
-                _playback_state.sort_spec = state.get("sort_spec")
-                _playback_state.current_context = state["context"]
+            logger.info(f"Restoring queue state: {len(state['queue_ids'])} tracks")
 
-                if state["queue_index"] < len(queue_tracks):
-                    _playback_state.current_track = queue_tracks[state["queue_index"]]
+            # Fetch full track metadata
+            queue_tracks = batch_fetch_tracks_with_metadata(
+                state["queue_ids"], db, preserve_order=True
+            )
 
-                # Don't auto-resume playback (user must manually press play)
-                _playback_state.is_playing = False
+            if not queue_tracks:
+                logger.warning("No tracks found for saved queue IDs")
+                return
 
-                logger.info("Queue state restored successfully")
+            # Restore state
+            _playback_state.queue = queue_tracks
+            _playback_state.queue_index = state["queue_index"]
+            _playback_state.shuffle_enabled = state["shuffle_enabled"]
+            _playback_state.sort_spec = state.get("sort_spec")
+            _playback_state.position_in_playlist = state.get("position_in_playlist", 0)
+            _playback_state.current_context = state["context"]
+
+            if state["queue_index"] < len(queue_tracks):
+                _playback_state.current_track = queue_tracks[state["queue_index"]]
+
+            # Don't auto-resume playback (user must manually press play)
+            _playback_state.is_playing = False
+
+            logger.info("Queue state restored successfully")
     except Exception as e:
-        logger.exception("Failed to restore queue state")
+        logger.exception("Failed to restore queue state, starting with clean state")
 ```
 
 ### Update get_playback_state()

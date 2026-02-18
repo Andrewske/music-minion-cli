@@ -364,3 +364,36 @@ def evaluate_filters(playlist_id: int) -> list[dict[str, Any]]:
         """
         cursor = conn.execute(query, (playlist_id,) + tuple(params) + (playlist_id,))
         return [dict(row) for row in cursor.fetchall()]
+
+
+def refresh_smart_playlist_tracks(playlist_id: int) -> int:
+    """Re-evaluate filters and update playlist_tracks table.
+
+    Returns number of tracks after refresh.
+    """
+    # 1. Get current filter results
+    tracks = evaluate_filters(playlist_id)
+    track_ids = [t["id"] for t in tracks]
+
+    with get_db_connection() as conn:
+        # 2. Clear existing playlist_tracks for this playlist
+        conn.execute("DELETE FROM playlist_tracks WHERE playlist_id = ?", (playlist_id,))
+
+        # 3. Insert new tracks with positions (batch insert for performance)
+        conn.executemany(
+            """
+            INSERT INTO playlist_tracks (playlist_id, track_id, position, added_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            [(playlist_id, track_id, position) for position, track_id in enumerate(track_ids)]
+        )
+
+        # 4. Update playlist track_count
+        conn.execute(
+            "UPDATE playlists SET track_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (len(track_ids), playlist_id)
+        )
+
+        conn.commit()
+
+    return len(track_ids)

@@ -23,7 +23,8 @@ The current frontend shuffle is simplistic (random selection on each play). The 
 2. **[02-queue-manager-module.md](./02-queue-manager-module.md)** - Create pure functional queue management core
 3. **[03-backend-player-integration.md](./03-backend-player-integration.md)** - Update player API endpoints and add shuffle/sort endpoints
 4. **[04-frontend-state-management.md](./04-frontend-state-management.md)** - Update Zustand player store with sort state and smooth actions
-5. **[05-frontend-ui-updates.md](./05-frontend-ui-updates.md)** - Wire shuffle button to smooth toggle action
+5. **[05-frontend-ui-updates.md](./05-frontend-ui-updates.md)** - Wire shuffle button and column headers to backend APIs
+6. **[06-test-coverage.md](./06-test-coverage.md)** - Add unit tests for queue_manager module (80%+ coverage)
 
 ## Success Criteria
 
@@ -83,7 +84,7 @@ uv run music-minion --web
 # Small playlist (<100 tracks):
 # - Play 30-track playlist
 # - Expected: All 30 tracks loaded, no errors
-# - Expected: Queue doesn't grow beyond playlist size
+# - Expected: Queue loops through playlist (tracks become eligible after playing)
 
 # Large playlist (1000+ tracks):
 # - Play massive playlist
@@ -94,7 +95,9 @@ uv run music-minion --web
 # - Create smart playlist with filters (e.g., BPM > 120)
 # - Play from it
 # - Modify filters while playing
-# - Expected: New tracks respect updated filters
+# - Expected: New tracks respect updated filters (lazy update)
+# - NOTE: Existing queue tracks are NOT removed, only new pulls use updated filters
+# - To force rebuild with new filters: toggle shuffle or change sort
 ```
 
 ### Log Verification

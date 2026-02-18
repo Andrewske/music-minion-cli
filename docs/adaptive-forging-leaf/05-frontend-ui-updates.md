@@ -14,6 +14,7 @@ Wire the PlayerBar shuffle button to use the new `toggleShuffleSmooth()` action 
 
 ## Files to Modify/Create
 - web/frontend/src/components/player/PlayerBar.tsx (modify)
+- web/frontend/src/components/queue/QueueTable.tsx (or wherever TanStack Table is used) (modify)
 
 ## Implementation Details
 
@@ -110,6 +111,57 @@ const { shuffleEnabled, sortField, sortDirection } = usePlayer();
   )}
 </div>
 ```
+
+### Integrate Column Header Sorting with Backend
+
+Find the queue table component (wherever TanStack Table is configured) and wire column sorting to call the backend API:
+
+**Current (client-side sorting):**
+```typescript
+const table = useReactTable({
+  data: queue,
+  columns,
+  // ... existing config ...
+  onSortingChange: setSorting,
+  state: {
+    sorting,
+  },
+});
+```
+
+**Updated (backend-driven sorting):**
+```typescript
+const { setSortOrder } = usePlayerStore();
+
+const table = useReactTable({
+  data: queue,
+  columns,
+  // ... existing config ...
+  onSortingChange: (updater) => {
+    const newSort = typeof updater === 'function' ? updater(sorting) : updater;
+
+    if (newSort.length > 0) {
+      const { id, desc } = newSort[0];
+      // Call backend to sort and rebuild queue
+      setSortOrder(id, desc ? 'desc' : 'asc');
+    }
+
+    // Update local state for UI indicators
+    setSorting(newSort);
+  },
+  state: {
+    sorting,
+  },
+});
+```
+
+**Key changes:**
+- Extract `setSortOrder` from player store
+- When user clicks column header, TanStack calls `onSortingChange`
+- Call backend API via `setSortOrder(field, direction)`
+- Backend rebuilds queue with new sort order
+- WebSocket broadcasts new queue to all clients
+- Local `sorting` state updates for visual indicators (↑↓ arrows)
 
 ## Verification
 
