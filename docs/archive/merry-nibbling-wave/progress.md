@@ -2,7 +2,7 @@
 
 **Plan:** merry-nibbling-wave (Remove Sessions + Consolidate to Playlist-Only)
 **Started:** 2026-02-17
-**Status:** In Progress
+**Status:** ✅ Complete
 **Model:** Sonnet (sub-agents)
 
 ## Task Status
@@ -13,7 +13,7 @@
 | 02-config-cache-playlist-id | ✅ Done | 2026-02-17 | 2026-02-17 | ~1min |
 | 03-database-layer-refactor | ✅ Done | 2026-02-17 | 2026-02-17 | ~3min |
 | 04-backend-api-refactor | ✅ Done | 2026-02-17 | 2026-02-17 | ~3min |
-| 05-frontend-refactor | 🔄 Running | 2026-02-17 | - | - |
+| 05-frontend-refactor | ✅ Done | 2026-02-17 | 2026-02-17 | ~4min |
 | 06-cli-refactor | ✅ Done | 2026-02-17 | 2026-02-17 | ~3min |
 
 ## Execution Batches
@@ -50,6 +50,7 @@
 ### Batch 5
 - Started: 2026-02-17
 - Tasks: 05-frontend-refactor
+- ✅ 05-frontend-refactor: Removed session/mode from store, simplified UI, stateless hooks
 
 ## Notes
 

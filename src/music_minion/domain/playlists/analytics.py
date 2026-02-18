@@ -1082,6 +1082,7 @@ def get_playlist_analytics(
         "ratings": get_rating_analysis,
         "elo": get_elo_analysis,
         "quality": get_quality_metrics,
+        "pace": lambda pid: {"pace": get_comparison_pace(pid)},
     }
 
     # Determine which sections to run
@@ -1097,6 +1098,29 @@ def get_playlist_analytics(
         result[section_name] = all_sections[section_name](playlist_id)
 
     return result
+
+
+def get_comparison_pace(playlist_id: int, days: int = 7) -> float:
+    """Calculate average comparisons per day over last N days.
+
+    Args:
+        playlist_id: Playlist to analyze
+        days: Number of days to look back (default 7)
+
+    Returns:
+        Average comparisons per day (float). Returns 0.0 if no comparisons.
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT COUNT(*) as total
+            FROM playlist_comparison_history
+            WHERE playlist_id = ? AND timestamp >= datetime('now', ? || ' days')
+            """,
+            (playlist_id, f"-{days}"),
+        )
+        total = cursor.fetchone()["total"]
+        return total / days if days > 0 else 0.0
 
 
 def get_elo_analysis(playlist_id: int) -> dict[str, Any]:
