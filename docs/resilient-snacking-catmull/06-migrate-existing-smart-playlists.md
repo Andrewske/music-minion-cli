@@ -1,6 +1,6 @@
 ---
 task: 06-migrate-existing-smart-playlists
-status: pending
+status: done
 depends:
   - 01-create-refresh-function
 files:
