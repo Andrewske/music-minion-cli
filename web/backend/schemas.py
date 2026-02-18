@@ -162,6 +162,8 @@ class PlaylistStatsResponse(BaseModel):
     quality: PlaylistQualityMetrics
     top_artists: list[ArtistStat]
     top_genres: list[GenreDistribution]
+    avg_comparisons_per_day: float
+    estimated_days_to_full_coverage: Optional[float] = None
 
 
 # Playlist Builder Schemas

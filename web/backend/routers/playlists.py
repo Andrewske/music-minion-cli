@@ -225,11 +225,22 @@ async def create_playlist(request: CreatePlaylistRequest):
 async def get_playlist_stats(playlist_id: int):
     """Get statistics for a specific playlist."""
     try:
-        from music_minion.domain.playlists.analytics import get_playlist_analytics
+        from music_minion.domain.playlists.analytics import get_playlist_analytics, get_comparison_pace
+        from music_minion.domain.rating.database import get_playlist_comparison_progress
 
         analytics = get_playlist_analytics(playlist_id)
         if "error" in analytics:
             raise HTTPException(status_code=404, detail=analytics["error"])
+
+        # Calculate pace metrics
+        avg_per_day = get_comparison_pace(playlist_id)
+        progress = get_playlist_comparison_progress(playlist_id)
+
+        # Calculate estimated days - handle division by zero
+        remaining_pairs = progress["total"] - progress["compared"]
+        estimated_days = None
+        if avg_per_day > 0 and remaining_pairs > 0:
+            estimated_days = remaining_pairs / avg_per_day
 
         # Transform analytics data to match PlaylistStatsResponse schema
         return PlaylistStatsResponse(
@@ -240,6 +251,8 @@ async def get_playlist_stats(playlist_id: int):
             quality=analytics["quality"],
             top_artists=analytics["artists"]["top_artists"],
             top_genres=analytics["genres"]["genres"],
+            avg_comparisons_per_day=avg_per_day,
+            estimated_days_to_full_coverage=estimated_days,
         )
     except HTTPException:
         raise
