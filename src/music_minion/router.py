@@ -208,7 +208,6 @@ Available commands:
   unlike            Remove SoundCloud like for current song
   note <text>       Add a note to the current song
   rate [opts]       Start pairwise track comparison (--count=N --genre=X --year=Y)
-  rankings [opts]   Show top-rated tracks (--genre=X --year=Y --limit=N)
   status            Show current song and player status
   history [limit]   Show recent playback history (default: 50 tracks)
   stats             Show library and rating statistics
@@ -411,9 +410,6 @@ def handle_command(
 
     elif command == "rate":
         return rating.handle_rate_command(ctx, command, args)
-
-    elif command == "rankings":
-        return rating.handle_rankings_command(ctx, args)
 
     elif command == "status":
         return playback.handle_status_command(ctx)

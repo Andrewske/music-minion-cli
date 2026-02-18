@@ -73,16 +73,6 @@ export interface GenreStat {
   total_comparisons: number;
 }
 
-export interface LeaderboardEntry {
-  track_id: number;
-  title: string;
-  artist?: string;
-  rating: number;
-  comparison_count: number;
-  wins: number;
-  losses: number;
-}
-
 export interface FoldersResponse {
   root: string;
   folders: string[];

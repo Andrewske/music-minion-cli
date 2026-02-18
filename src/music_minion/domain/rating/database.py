@@ -45,58 +45,6 @@ class RatingCoverageFilters(TypedDict, total=False):
 # Global rating functions removed - all comparisons now use playlist context
 
 
-def get_playlist_leaderboard(
-    playlist_id: int,
-    limit: int = 50,
-    min_comparisons: int = 1,
-) -> list[dict]:
-    """Get top-rated tracks within a specific playlist using playlist ratings.
-
-    Args:
-        playlist_id: Playlist ID to get rankings for
-        limit: Maximum number of tracks to return
-        min_comparisons: Minimum number of playlist comparisons required
-
-    Returns:
-        List of dicts with track info and playlist ratings
-    """
-    with get_db_connection() as conn:
-        cursor = conn.execute(
-            """
-            SELECT
-                t.id,
-                t.title,
-                t.artist,
-                t.album,
-                t.genre,
-                t.year,
-                t.local_path,
-                t.soundcloud_id,
-                t.spotify_id,
-                t.youtube_id,
-                t.source,
-                t.duration,
-                COALESCE(per.rating, 1500.0) as playlist_rating,
-                COALESCE(per.comparison_count, 0) as playlist_comparison_count,
-                COALESCE(per.wins, 0) as playlist_wins,
-                COALESCE(per.losses, 0) as playlist_losses
-            FROM playlist_tracks pt
-            JOIN tracks t ON pt.track_id = t.id
-            LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
-            WHERE pt.playlist_id = ? AND COALESCE(per.comparison_count, 0) >= ?
-            ORDER BY COALESCE(per.rating, 1500.0) DESC, per.comparison_count DESC
-            LIMIT ?
-            """,
-            (playlist_id, playlist_id, min_comparisons, limit),
-        )
-
-        tracks = []
-        for row in cursor.fetchall():
-            tracks.append(dict(row))
-
-        return tracks
-
-
 # Coverage and filtering functions removed - use playlist-scoped queries instead
 
 
@@ -463,49 +411,3 @@ def get_playlist_comparison_history(playlist_id: int, limit: int = 50) -> list[d
         return [dict(row) for row in cursor.fetchall()]
 
 
-def get_playlist_tracks_by_rating(
-    playlist_id: int,
-    limit: int = 50,
-    min_comparisons: int = 1,
-) -> list[dict]:
-    """Get playlist tracks sorted by rating.
-
-    Args:
-        playlist_id: Playlist ID
-        limit: Maximum number of tracks to return
-        min_comparisons: Minimum number of comparisons required
-
-    Returns:
-        List of dicts with track info and ratings
-    """
-    with get_db_connection() as conn:
-        cursor = conn.execute(
-            """
-            SELECT
-                t.id,
-                t.title,
-                t.artist,
-                t.album,
-                t.genre,
-                t.year,
-                t.local_path,
-                t.soundcloud_id,
-                t.spotify_id,
-                t.youtube_id,
-                t.source,
-                t.duration,
-                COALESCE(per.rating, 1500.0) as rating,
-                COALESCE(per.comparison_count, 0) as comparison_count,
-                COALESCE(per.wins, 0) as wins,
-                COALESCE(per.losses, 0) as losses
-            FROM playlist_tracks pt
-            JOIN tracks t ON pt.track_id = t.id
-            LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
-            WHERE pt.playlist_id = ? AND COALESCE(per.comparison_count, 0) >= ?
-            ORDER BY COALESCE(per.rating, 1500.0) DESC, per.comparison_count DESC
-            LIMIT ?
-            """,
-            (playlist_id, playlist_id, min_comparisons, limit),
-        )
-
-        return [dict(row) for row in cursor.fetchall()]

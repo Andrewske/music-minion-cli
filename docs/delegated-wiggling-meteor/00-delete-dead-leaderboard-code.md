@@ -1,6 +1,6 @@
 ---
 task: 00-delete-dead-leaderboard-code
-status: pending
+status: done
 depends: []
 files:
   - path: src/music_minion/domain/rating/database.py
