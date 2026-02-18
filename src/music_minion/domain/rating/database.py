@@ -8,7 +8,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, TypedDict
 
+from loguru import logger
+
 from music_minion.core.database import get_db_connection
+from music_minion.domain.playlists.crud import get_playlist_tracks
 
 
 @dataclass
@@ -234,34 +237,34 @@ def get_next_playlist_pair(playlist_id: int) -> tuple[dict, dict]:
     """
     import random
 
-    with get_db_connection() as conn:
-        # Validate playlist has tracks
-        cursor = conn.execute(
-            "SELECT COUNT(*) as count FROM playlist_tracks WHERE playlist_id = ?",
-            (playlist_id,),
+    # Get playlist tracks - works for both manual and smart playlists
+    tracks = get_playlist_tracks(playlist_id)
+    if len(tracks) < 2:
+        raise ValueError(
+            f"Playlist {playlist_id} has {len(tracks)} tracks - need at least 2 for comparison"
         )
-        track_count = cursor.fetchone()["count"]
+    track_ids = [t["id"] for t in tracks]
 
-        if track_count < 2:
-            raise ValueError(
-                f"Playlist {playlist_id} has {track_count} tracks - need at least 2 for comparison"
-            )
+    # Warn if playlist is large (SQLite IN clause has parameter limits)
+    if len(track_ids) > 500:
+        logger.warning(f"Large playlist {playlist_id} with {len(track_ids)} tracks - may hit SQLite parameter limits")
 
+    with get_db_connection() as conn:
         # Step 1: Find top 10 tracks with fewest comparisons, pick random
         cursor = conn.execute(
-            """
-            SELECT pt.track_id, COUNT(pch.id) as comp_count
-            FROM playlist_tracks pt
+            f"""
+            SELECT t.id as track_id, COUNT(pch.id) as comp_count
+            FROM tracks t
             LEFT JOIN playlist_comparison_history pch ON (
-                (pch.track_a_id = pt.track_id OR pch.track_b_id = pt.track_id)
+                (pch.track_a_id = t.id OR pch.track_b_id = t.id)
                 AND pch.playlist_id = ?
             )
-            WHERE pt.playlist_id = ?
-            GROUP BY pt.track_id
+            WHERE t.id IN ({','.join('?' * len(track_ids))})
+            GROUP BY t.id
             ORDER BY comp_count ASC
             LIMIT 10
             """,
-            (playlist_id, playlist_id),
+            (playlist_id,) + tuple(track_ids),
         )
         candidates = cursor.fetchall()
 
@@ -276,12 +279,11 @@ def get_next_playlist_pair(playlist_id: int) -> tuple[dict, dict]:
         # Step 2: Find another track it hasn't been compared to
         # Check both orderings since historical data may not be normalized
         cursor = conn.execute(
-            """
+            f"""
             SELECT t.*,
                    COALESCE(per.rating, 1500.0) as rating,
                    COALESCE(per.comparison_count, 0) as comparison_count
-            FROM playlist_tracks pt
-            JOIN tracks t ON pt.track_id = t.id
+            FROM tracks t
             LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
             LEFT JOIN playlist_comparison_history pch ON (
                 pch.playlist_id = ?
@@ -290,20 +292,13 @@ def get_next_playlist_pair(playlist_id: int) -> tuple[dict, dict]:
                     OR (pch.track_b_id = ? AND pch.track_a_id = t.id)
                 )
             )
-            WHERE pt.playlist_id = ?
+            WHERE t.id IN ({','.join('?' * len(track_ids))})
               AND t.id != ?
               AND pch.id IS NULL
             ORDER BY per.comparison_count ASC, RANDOM()
             LIMIT 1
             """,
-            (
-                playlist_id,
-                playlist_id,
-                track_a_id,
-                track_a_id,
-                playlist_id,
-                track_a_id,
-            ),
+            (playlist_id, playlist_id, track_a_id, track_a_id) + tuple(track_ids) + (track_a_id,),
         )
         track_b_row = cursor.fetchone()
 
