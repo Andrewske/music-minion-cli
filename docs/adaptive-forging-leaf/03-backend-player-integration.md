@@ -1,6 +1,6 @@
 ---
 task: 03-backend-player-integration
-status: pending
+status: done
 depends: [02-queue-manager-module]
 files:
   - path: web/backend/routers/player.py

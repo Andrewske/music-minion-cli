@@ -60,6 +60,7 @@ app.include_router(live.router, tags=["live"])
 async def startup_event():
     """Initialize database on startup."""
     from music_minion.core.db_adapter import is_postgres, init_postgres_schema
+    from .routers.player import restore_player_queue_state
 
     if is_postgres():
         logging.info("PostgreSQL detected, initializing schema...")
@@ -68,6 +69,9 @@ async def startup_event():
         # SQLite - use existing init
         from music_minion.core.database import init_database
         init_database()
+
+    # Restore player queue state from database
+    await restore_player_queue_state()
 
 
 @app.get("/health")
