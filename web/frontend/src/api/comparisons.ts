@@ -21,9 +21,3 @@ export async function recordComparison(
   });
 }
 
-export async function selectTrack(trackId: number, isPlaying: boolean): Promise<void> {
-  await apiRequest('/comparisons/select-track', {
-    method: 'POST',
-    body: JSON.stringify({ track_id: trackId, is_playing: isPlaying }),
-  });
-}
