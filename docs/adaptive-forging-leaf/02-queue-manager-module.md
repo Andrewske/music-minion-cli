@@ -1,6 +1,6 @@
 ---
 task: 02-queue-manager-module
-status: pending
+status: done
 depends: [01-database-schema]
 files:
   - path: web/backend/queue_manager.py
