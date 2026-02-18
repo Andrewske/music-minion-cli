@@ -200,3 +200,31 @@ function SomePage() {
 - Simpler mental model: sidebar is UI chrome, routes consume state
 
 **Rule**: Persistent sidebar/nav content that affects page behavior → use global store, not route-aware rendering.
+
+### 2026-02-17 - Incomplete plan execution reveals dead code
+
+**Pattern**: During code review of merry-nibbling-wave refactor, found frontend still calling removed backend endpoint:
+```typescript
+// ComparisonView.tsx (frontend)
+selectTrack(track.id, true);  // Calls /comparisons/select-track
+
+// comparisons.py (backend) - removed in task 04
+// @router.post("/comparisons/select-track") ← DELETED
+```
+
+**Why it matters**: Task 04 plan removed backend endpoint because it depended on removed `sync_manager.current_comparison` state. Task 05 plan mentioned removing session functions but didn't identify that `selectTrack()` calls removed endpoint. The functionality was redundant (global player already broadcasts state), so removal was correct, but incomplete plan left dead code calling 404 endpoint.
+
+**Rule**: When removing backend endpoints during refactor, grep frontend for ALL calls to that endpoint. Plans must explicitly track cross-layer dependencies (backend → frontend API).
+
+### 2026-02-17 - Type coercion masks str/int inconsistency
+
+**Pattern**: SQLite silently coerces `str` to `int` in queries, masking type hint errors:
+```python
+def get_playlist_elo_rating(track_id: str, playlist_id: int) -> float:
+    cursor.execute("SELECT rating FROM playlist_elo_ratings WHERE track_id = ?", (track_id,))
+    # Works! SQLite coerces str → int in comparison
+```
+
+**Why it matters**: Database layer had mixed type hints (`track_id: str` in some functions, `int` in others). SQLite's type coercion meant all queries worked correctly, but type checkers couldn't catch the inconsistency. Frontend/schemas used `int` throughout. During code review, found 2 functions using `str` that should be `int`.
+
+**Rule**: SQLite's permissive typing means type errors in database functions may not surface until strict type checking. Verify type hints match actual data types in database (use `typeof()` in schema or check actual inserts).

@@ -15,9 +15,6 @@ from music_minion.core import database
 from music_minion.core.output import log
 from music_minion.domain import library
 from music_minion.domain.rating.database import (
-    RatingCoverageFilters,
-    RatingCoverageStats,
-    get_ratings_coverage,
     get_playlist_leaderboard,
 )
 
@@ -441,9 +438,9 @@ def parse_rankings_args(args: list[str]) -> dict:
         args: Command line arguments
 
     Returns:
-        Dictionary with parsed arguments: limit, genre, year
+        Dictionary with parsed arguments: limit, playlist
     """
-    result = {"limit": 50, "genre": None, "year": None, "playlist": None}
+    result = {"limit": 50, "playlist": None}
 
     for arg in args:
         if arg.startswith("--limit="):
@@ -451,13 +448,6 @@ def parse_rankings_args(args: list[str]) -> dict:
                 result["limit"] = int(arg.split("=", 1)[1])
             except ValueError:
                 logger.warning(f"Invalid limit value: {arg}")
-        elif arg.startswith("--genre="):
-            result["genre"] = arg.split("=", 1)[1]
-        elif arg.startswith("--year="):
-            try:
-                result["year"] = int(arg.split("=", 1)[1])
-            except ValueError:
-                logger.warning(f"Invalid year value: {arg}")
         elif arg.startswith("--playlist="):
             try:
                 result["playlist"] = int(arg.split("=", 1)[1])
@@ -474,40 +464,33 @@ def handle_rankings_command(
 
     Args:
         ctx: Application context
-        args: Command arguments (--genre=X, --year=Y, --playlist=ID, --limit=N)
+        args: Command arguments (--playlist=ID, --limit=N)
 
     Returns:
         (updated_context, should_continue)
 
     Examples:
-        rankings                    # Top 50 tracks globally
-        rankings --genre=dubstep    # Top dubstep tracks
-        rankings --year=2025        # Top 2025 tracks
         rankings --playlist=123     # Top tracks in playlist 123
-        rankings --limit=100        # Top 100 tracks
+        rankings --playlist=123 --limit=100
     """
-    from music_minion.domain.rating.database import get_leaderboard
-
     # Parse arguments
     parsed = parse_rankings_args(args)
 
+    # Playlist is now required (global ratings removed)
+    if parsed["playlist"] is None:
+        log(
+            "Playlist required: rankings --playlist=<ID>",
+            level="warning",
+        )
+        return ctx, True
+
     # Load leaderboard from database
     try:
-        if parsed["playlist"] is not None:
-            # Use playlist-specific rankings
-            tracks = get_playlist_leaderboard(
-                playlist_id=parsed["playlist"],
-                limit=parsed["limit"],
-                min_comparisons=1,
-            )
-        else:
-            # Use global rankings
-            tracks = get_leaderboard(
-                limit=parsed["limit"],
-                min_comparisons=1,  # Show any track with at least 1 comparison
-                genre_filter=parsed["genre"],
-                year_filter=parsed["year"],
-            )
+        tracks = get_playlist_leaderboard(
+            playlist_id=parsed["playlist"],
+            limit=parsed["limit"],
+            min_comparisons=1,
+        )
     except Exception as e:
         logger.exception("Error loading leaderboard")
         log(f"Error loading rankings: {e}", level="error")
@@ -518,24 +501,14 @@ def handle_rankings_command(
         log("No rated tracks found matching filters.", level="warning")
         return ctx, True
 
-    # Build title with filter info
-    title = "Top Rated Tracks"
-    if parsed["playlist"] is not None:
-        # Get playlist name for title
-        from music_minion.domain.playlists.crud import get_playlist_by_id
+    # Build title with playlist name
+    from music_minion.domain.playlists.crud import get_playlist_by_id
 
-        playlist = get_playlist_by_id(parsed["playlist"])
-        if playlist:
-            title = f"Playlist Rankings: {playlist['name']}"
-        else:
-            title = f"Playlist Rankings: ID {parsed['playlist']}"
-    elif parsed["genre"] or parsed["year"]:
-        filters = []
-        if parsed["genre"]:
-            filters.append(parsed["genre"].capitalize())
-        if parsed["year"]:
-            filters.append(str(parsed["year"]))
-        title = f"Top Rated: {' • '.join(filters)}"
+    playlist = get_playlist_by_id(parsed["playlist"])
+    if playlist:
+        title = f"Playlist Rankings: {playlist['name']}"
+    else:
+        title = f"Playlist Rankings: ID {parsed['playlist']}"
 
     # Show in rankings palette using UI action
     ctx = ctx.with_ui_action(
