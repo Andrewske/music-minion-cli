@@ -166,7 +166,6 @@ def get_candidate_tracks(
         count_query = f"""
             SELECT COUNT(DISTINCT t.id)
             FROM tracks t
-            LEFT JOIN elo_ratings er ON t.id = er.track_id
             WHERE {filter_where}
                 t.local_path IS NOT NULL AND t.local_path != ''
                 AND NOT EXISTS (
@@ -192,12 +191,8 @@ def get_candidate_tracks(
         # Then get paginated results
         query = f"""
             SELECT DISTINCT
-                t.*,
-                COALESCE(er.rating, 1500.0) as elo_rating,
-                COALESCE(er.comparison_count, 0) as elo_comparison_count,
-                COALESCE(er.wins, 0) as elo_wins
+                t.*
             FROM tracks t
-            LEFT JOIN elo_ratings er ON t.id = er.track_id
             WHERE {filter_where}
                 t.local_path IS NOT NULL AND t.local_path != ''
                 AND NOT EXISTS (
@@ -345,11 +340,9 @@ def get_skipped_tracks(playlist_id: int) -> list[dict]:
             """
             SELECT
                 t.*,
-                s.skipped_at,
-                COALESCE(er.rating, 1500.0) as elo_rating
+                s.skipped_at
             FROM playlist_builder_skipped s
             JOIN tracks t ON s.track_id = t.id
-            LEFT JOIN elo_ratings er ON t.id = er.track_id
             WHERE s.playlist_id = ?
             ORDER BY s.skipped_at DESC
             """,
