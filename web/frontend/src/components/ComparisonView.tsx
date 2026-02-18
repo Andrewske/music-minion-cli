@@ -334,12 +334,14 @@ export function ComparisonView() {
       {/* Spacer for bottom player */}
       <div className="h-24 lg:h-20" />
 
-      {/* Stats Modal */}
-      <StatsModal
-        isOpen={isStatsModalOpen}
-        onClose={() => setIsStatsModalOpen(false)}
-        playlistId={selectedPlaylistId}
-      />
+      {/* Stats Modal - only render when playlist selected */}
+      {selectedPlaylistId !== null && (
+        <StatsModal
+          isOpen={isStatsModalOpen}
+          onClose={() => setIsStatsModalOpen(false)}
+          playlistId={selectedPlaylistId}
+        />
+      )}
     </div>
   );
 }
