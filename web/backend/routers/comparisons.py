@@ -159,9 +159,9 @@ async def record_comparison(
         # Record comparison (no session_id, single transaction)
         record_playlist_comparison(
             playlist_id=request.playlist_id,
-            track_a_id=str(request.track_a_id),
-            track_b_id=str(request.track_b_id),
-            winner_id=str(request.winner_id),
+            track_a_id=request.track_a_id,
+            track_b_id=request.track_b_id,
+            winner_id=request.winner_id,
             track_a_rating_before=track_a_rating,
             track_b_rating_before=track_b_rating,
             track_a_rating_after=track_a_new,
