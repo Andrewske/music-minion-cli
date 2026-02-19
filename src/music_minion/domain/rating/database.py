@@ -10,8 +10,13 @@ from typing import Optional, TypedDict
 
 from loguru import logger
 
+from music_minion.core.config import get_all_playlist_id
 from music_minion.core.database import get_db_connection
 from music_minion.domain.playlists.crud import get_playlist_track_count
+from music_minion.domain.rating.elo import update_ratings
+
+# Number of comparisons per playlist that propagate to All playlist
+FIRST_N_AFFECT_ALL = 5
 
 
 @dataclass
@@ -114,6 +119,42 @@ def get_or_create_playlist_rating(track_id: int, playlist_id: int) -> EloRating:
         )
 
 
+def _update_playlist_rating(
+    conn,
+    track_id: int,
+    playlist_id: int,
+    new_rating: float,
+    is_winner: bool,
+) -> None:
+    """Update a single track's rating in a playlist (internal helper).
+
+    Uses INSERT ... ON CONFLICT for upsert semantics.
+    Also updates last_compared timestamp.
+    """
+    conn.execute(
+        """
+        INSERT INTO playlist_elo_ratings (track_id, playlist_id, rating, comparison_count, wins, losses, last_compared)
+        VALUES (?, ?, ?, 1, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT (track_id, playlist_id) DO UPDATE SET
+            rating = ?,
+            comparison_count = comparison_count + 1,
+            wins = wins + ?,
+            losses = losses + ?,
+            last_compared = CURRENT_TIMESTAMP
+        """,
+        (
+            track_id,
+            playlist_id,
+            new_rating,
+            1 if is_winner else 0,
+            0 if is_winner else 1,
+            new_rating,
+            1 if is_winner else 0,
+            0 if is_winner else 1,
+        ),
+    )
+
+
 def record_playlist_comparison(
     playlist_id: int,
     track_a_id: int,
@@ -123,14 +164,17 @@ def record_playlist_comparison(
     track_b_rating_before: float,
     track_a_rating_after: float,
     track_b_rating_after: float,
-    session_id: str = "",  # Empty string for sessionless (NOT NULL constraint)
+    session_id: str = "",
 ) -> None:
     """Record a playlist comparison with ELO updates.
 
-    session_id defaults to empty string for sessionless comparisons.
-    Uses single transaction for atomicity and performance.
+    Handles "first 5 affect All" logic internally:
+    - If track has < FIRST_N_AFFECT_ALL comparisons in this playlist, propagate to All playlist
+    - Skipped when comparing directly in All playlist
     """
     # Ensure track_a_id < track_b_id for constraint compliance
+    # Note: winner_id stays unchanged - it's a reference to the actual winner,
+    # not positional. The swap only affects which ratings go in which columns.
     if track_a_id > track_b_id:
         track_a_id, track_b_id = track_b_id, track_a_id
         track_a_rating_before, track_b_rating_before = (
@@ -142,74 +186,118 @@ def record_playlist_comparison(
             track_a_rating_after,
         )
 
+    # Get All playlist ID with explicit error if not configured
+    all_playlist_id = get_all_playlist_id()
+    if all_playlist_id is None:
+        raise ValueError(
+            "All playlist not found. Create a playlist named 'All' with no filters."
+        )
+
+    # Guard: Skip propagation when comparing directly in All playlist
+    if playlist_id == all_playlist_id:
+        track_a_affects_all = False
+        track_b_affects_all = False
+        track_a_all_before = None
+        track_b_all_before = None
+        track_a_all_after = None
+        track_b_all_after = None
+    else:
+        # Will check counts and fetch All ratings within the same connection below
+        track_a_affects_all = None  # Determined after count check
+        track_b_affects_all = None
+        track_a_all_before = None
+        track_b_all_before = None
+        track_a_all_after = None
+        track_b_all_after = None
+
     with get_db_connection() as conn:
-        # Single transaction for both history + rating updates
-        conn.execute(
-            """
-            INSERT INTO playlist_comparison_history (
-                playlist_id, track_a_id, track_b_id, winner_id,
-                track_a_rating_before, track_b_rating_before,
-                track_a_rating_after, track_b_rating_after,
-                session_id, timestamp
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """,
-            (
-                playlist_id,
-                track_a_id,
-                track_b_id,
-                winner_id,
-                track_a_rating_before,
-                track_b_rating_before,
-                track_a_rating_after,
-                track_b_rating_after,
-                session_id,  # Empty string for sessionless
-            ),
-        )
+        try:
+            # If not in All playlist, check comparison counts (inlined, no extra round-trip)
+            if playlist_id != all_playlist_id:
+                cursor = conn.execute(
+                    """
+                    SELECT track_id, comparison_count
+                    FROM playlist_elo_ratings
+                    WHERE playlist_id = ? AND track_id IN (?, ?)
+                    """,
+                    (playlist_id, track_a_id, track_b_id)
+                )
+                counts = {row["track_id"]: row["comparison_count"] for row in cursor.fetchall()}
+                track_a_count = counts.get(track_a_id, 0)
+                track_b_count = counts.get(track_b_id, 0)
+                track_a_affects_all = track_a_count < FIRST_N_AFFECT_ALL
+                track_b_affects_all = track_b_count < FIRST_N_AFFECT_ALL
 
-        # Update both track ratings in same transaction
-        conn.execute(
-            """
-            INSERT INTO playlist_elo_ratings (track_id, playlist_id, rating, comparison_count, wins, losses)
-            VALUES (?, ?, ?, 1, ?, 0)
-            ON CONFLICT (track_id, playlist_id) DO UPDATE SET
-                rating = ?,
-                comparison_count = comparison_count + 1,
-                wins = wins + ?,
-                losses = losses + ?
-            """,
-            (
-                track_a_id,
-                playlist_id,
-                track_a_rating_after,
-                1 if winner_id == track_a_id else 0,
-                track_a_rating_after,
-                1 if winner_id == track_a_id else 0,
-                0 if winner_id == track_a_id else 1,
-            ),
-        )
+                # Fetch All playlist ratings for BOTH tracks if either affects All
+                # (opponent rating needed for ELO calc even if opponent doesn't affect All)
+                if track_a_affects_all or track_b_affects_all:
+                    track_a_all_before = get_playlist_elo_rating(track_a_id, all_playlist_id)
+                    track_b_all_before = get_playlist_elo_rating(track_b_id, all_playlist_id)
 
-        conn.execute(
-            """
-            INSERT INTO playlist_elo_ratings (track_id, playlist_id, rating, comparison_count, wins, losses)
-            VALUES (?, ?, ?, 1, ?, 0)
-            ON CONFLICT (track_id, playlist_id) DO UPDATE SET
-                rating = ?,
-                comparison_count = comparison_count + 1,
-                wins = wins + ?,
-                losses = losses + ?
-            """,
-            (
-                track_b_id,
-                playlist_id,
-                track_b_rating_after,
-                1 if winner_id == track_b_id else 0,
-                track_b_rating_after,
-                1 if winner_id == track_b_id else 0,
-                0 if winner_id == track_b_id else 1,
-            ),
-        )
+                    # Calculate new All ratings
+                    k_factor = 32
+                    if winner_id == track_a_id:
+                        new_winner, new_loser = update_ratings(track_a_all_before, track_b_all_before, k_factor)
+                        if track_a_affects_all:
+                            track_a_all_after = new_winner
+                        if track_b_affects_all:
+                            track_b_all_after = new_loser
+                    else:
+                        new_winner, new_loser = update_ratings(track_b_all_before, track_a_all_before, k_factor)
+                        if track_b_affects_all:
+                            track_b_all_after = new_winner
+                        if track_a_affects_all:
+                            track_a_all_after = new_loser
 
-        conn.commit()  # Single commit for all updates
+            affects_global = bool(track_a_affects_all or track_b_affects_all)
+
+            # Record history with CORRECT column names
+            conn.execute(
+                """
+                INSERT INTO playlist_comparison_history (
+                    playlist_id, track_a_id, track_b_id, winner_id,
+                    affects_global,
+                    track_a_playlist_rating_before, track_b_playlist_rating_before,
+                    track_a_playlist_rating_after, track_b_playlist_rating_after,
+                    track_a_global_rating_before, track_a_global_rating_after,
+                    track_b_global_rating_before, track_b_global_rating_after,
+                    session_id, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (
+                    playlist_id,
+                    track_a_id,
+                    track_b_id,
+                    winner_id,
+                    affects_global,
+                    track_a_rating_before,
+                    track_b_rating_before,
+                    track_a_rating_after,
+                    track_b_rating_after,
+                    track_a_all_before,
+                    track_a_all_after,
+                    track_b_all_before,
+                    track_b_all_after,
+                    session_id,
+                ),
+            )
+
+            # Update playlist ratings using helper
+            _update_playlist_rating(conn, track_a_id, playlist_id, track_a_rating_after, winner_id == track_a_id)
+            _update_playlist_rating(conn, track_b_id, playlist_id, track_b_rating_after, winner_id == track_b_id)
+
+            # Update All playlist ratings if affected
+            if track_a_affects_all and track_a_all_after is not None:
+                _update_playlist_rating(conn, track_a_id, all_playlist_id, track_a_all_after, winner_id == track_a_id)
+
+            if track_b_affects_all and track_b_all_after is not None:
+                _update_playlist_rating(conn, track_b_id, all_playlist_id, track_b_all_after, winner_id == track_b_id)
+
+            conn.commit()
+
+        except Exception:
+            conn.rollback()
+            raise
 
 
 class RankingComplete(Exception):

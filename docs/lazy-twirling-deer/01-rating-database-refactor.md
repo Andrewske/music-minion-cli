@@ -1,6 +1,6 @@
 ---
 task: 01-rating-database-refactor
-status: pending
+status: done
 depends: []
 files:
   - path: src/music_minion/domain/rating/database.py
