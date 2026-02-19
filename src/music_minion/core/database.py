@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 36  # Fix playlist_elo_ratings.track_id type (TEXT → INTEGER)
+SCHEMA_VERSION = 37  # Add losses column to playlist_elo_ratings
 
 
 # Initial top 50 curated emojis for music reactions
@@ -953,6 +953,7 @@ def migrate_database(conn, current_version: int) -> None:
                 rating REAL DEFAULT 1500.0,
                 comparison_count INTEGER DEFAULT 0,
                 wins INTEGER DEFAULT 0,
+                losses INTEGER DEFAULT 0,
                 last_compared TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (track_id, playlist_id),
@@ -1560,6 +1561,7 @@ def migrate_database(conn, current_version: int) -> None:
                     rating REAL DEFAULT 1500.0,
                     comparison_count INTEGER DEFAULT 0,
                     wins INTEGER DEFAULT 0,
+                    losses INTEGER DEFAULT 0,
                     last_compared TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (track_id, playlist_id),
@@ -1571,7 +1573,7 @@ def migrate_database(conn, current_version: int) -> None:
             conn.execute("""
                 INSERT INTO playlist_elo_ratings_new
                 SELECT CAST(track_id AS INTEGER), playlist_id, rating,
-                       comparison_count, wins, last_compared, updated_at
+                       comparison_count, wins, 0 as losses, last_compared, updated_at
                 FROM playlist_elo_ratings
             """)
             # Swap tables
@@ -1590,6 +1592,14 @@ def migrate_database(conn, current_version: int) -> None:
             logger.error(f"  ✗ Migration to v36 failed: {e}")
             conn.rollback()
             raise
+
+    if current_version < 37:
+        logger.info("Migrating to v37: add losses column to playlist_elo_ratings...")
+        conn.execute("""
+            ALTER TABLE playlist_elo_ratings ADD COLUMN losses INTEGER DEFAULT 0
+        """)
+        conn.commit()
+        logger.info("  ✓ Migration to v37 complete: added losses column")
 
 
 def init_database() -> None:
