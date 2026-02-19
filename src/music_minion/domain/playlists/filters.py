@@ -381,7 +381,7 @@ def evaluate_filters(playlist_id: int) -> list[dict[str, Any]]:
                 NULL as position,  -- Smart playlists don't have fixed positions
                 NULL as added_at   -- Smart playlists don't have added_at timestamps
             FROM tracks t
-            LEFT JOIN playlist_elo_ratings per ON CAST(t.id AS TEXT) = per.track_id AND per.playlist_id = ?
+            LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
             WHERE {where_clause}t.local_path IS NOT NULL AND t.local_path != ''
             AND t.id NOT IN (
                 SELECT track_id FROM playlist_builder_skipped WHERE playlist_id = ?

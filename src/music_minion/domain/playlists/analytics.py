@@ -1146,7 +1146,7 @@ def get_elo_analysis(playlist_id: int) -> dict[str, Any]:
                 COALESCE(AVG(per.comparison_count), 0) as avg_playlist_comparisons,
                 COALESCE(SUM(per.comparison_count), 0) as total_playlist_comparisons
             FROM playlist_tracks pt
-            LEFT JOIN playlist_elo_ratings per ON CAST(pt.track_id AS TEXT) = per.track_id
+            LEFT JOIN playlist_elo_ratings per ON pt.track_id = per.track_id
                 AND per.playlist_id = ?
             WHERE pt.playlist_id = ?
         """,

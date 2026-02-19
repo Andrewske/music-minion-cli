@@ -120,7 +120,7 @@ def get_playlist_tracks_with_ratings(
                 COUNT(*) OVER() as total_count
             FROM playlist_tracks pt
             JOIN tracks t ON pt.track_id = t.id
-            LEFT JOIN playlist_elo_ratings per ON CAST(pt.track_id AS TEXT) = per.track_id
+            LEFT JOIN playlist_elo_ratings per ON pt.track_id = per.track_id
                 AND per.playlist_id = pt.playlist_id
             WHERE pt.playlist_id = ?
             ORDER BY {column} {direction}, t.title ASC

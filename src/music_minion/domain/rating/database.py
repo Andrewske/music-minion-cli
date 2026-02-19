@@ -282,7 +282,7 @@ def get_next_playlist_pair(playlist_id: int) -> tuple[dict, dict]:
                    COALESCE(per.comparison_count, 0) as comparison_count
             FROM tracks t
             INNER JOIN playlist_tracks pt ON t.id = pt.track_id AND pt.playlist_id = ?
-            LEFT JOIN playlist_elo_ratings per ON CAST(t.id AS TEXT) = per.track_id AND per.playlist_id = ?
+            LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
             LEFT JOIN playlist_comparison_history pch ON (
                 pch.playlist_id = ?
                 AND (
@@ -311,7 +311,7 @@ def get_next_playlist_pair(playlist_id: int) -> tuple[dict, dict]:
                    COALESCE(per.rating, 1500.0) as rating,
                    COALESCE(per.comparison_count, 0) as comparison_count
             FROM tracks t
-            LEFT JOIN playlist_elo_ratings per ON CAST(t.id AS TEXT) = per.track_id AND per.playlist_id = ?
+            LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
             WHERE t.id = ?
             """,
             (playlist_id, track_a_id),

@@ -1,6 +1,6 @@
 ---
 task: 02-revert-cast-workarounds
-status: pending
+status: done
 depends: [01-database-migration]
 files:
   - path: web/backend/routers/playlists.py
