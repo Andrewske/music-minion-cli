@@ -51,12 +51,12 @@ export function HomePage(): JSX.Element {
     }
   }
 
-  const handleWaveformFinish = useCallback((_targetDeviceId?: string): void => {
+  const handleWaveformFinish = useCallback((): void => {
     // Auto-advance to next track
     next();
   }, [next]);
 
-  const handleTrackClick = useCallback((track: Track, _targetDeviceId?: string): void => {
+  const handleTrackClick = useCallback((track: Track): void => {
     if (!currentContext) return;
 
     const trackIndex = queue.findIndex(t => t.id === track.id);
@@ -91,7 +91,11 @@ export function HomePage(): JSX.Element {
       if (e.code === 'Space') {
         e.preventDefault();
         if (currentTrack) {
-          isPlaying ? pause() : resume();
+          if (isPlaying) {
+            pause();
+          } else {
+            resume();
+          }
         }
       }
     };

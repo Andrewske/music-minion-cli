@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Shuffle } from 'lucide-react';
 import { usePlayer } from '../../hooks/usePlayer';
 import { getCurrentPosition } from '../../stores/playerStore';
@@ -38,7 +38,11 @@ export function PlayerBar(): JSX.Element {
       switch (e.code) {
         case 'Space':
           e.preventDefault();
-          isPlaying ? pause() : resume();
+          if (isPlaying) {
+            pause();
+          } else {
+            resume();
+          }
           break;
         case 'ArrowRight':
           next();
@@ -55,12 +59,21 @@ export function PlayerBar(): JSX.Element {
 
   // Progress calculation using interpolation
   const [progress, setProgress] = useState(0);
+  const progressIntervalRef = useRef<number | null>(null);
+
   useEffect(() => {
-    if (!currentTrack?.duration) {
+    // Clear existing interval
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+
+    // Reset progress if no track or not playing
+    if (!currentTrack?.duration || !isPlaying) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setProgress(0);
       return;
     }
-    if (!isPlaying) return;
 
     const updateProgress = (): void => {
       const pos = getCurrentPosition(usePlayerStore.getState());
@@ -68,8 +81,14 @@ export function PlayerBar(): JSX.Element {
     };
 
     updateProgress();
-    const interval = setInterval(updateProgress, 250); // UI update only, no state sync
-    return () => clearInterval(interval); // Cleanup to prevent duplicate intervals
+    progressIntervalRef.current = setInterval(updateProgress, 250); // UI update only, no state sync
+
+    return () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+    };
   }, [currentTrack?.id, currentTrack?.duration, isPlaying]);
 
   const activeDeviceName =

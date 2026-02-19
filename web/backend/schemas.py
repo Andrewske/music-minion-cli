@@ -1,5 +1,6 @@
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
+from typing import Optional, Literal
 
 
 class TrackInfo(BaseModel):
@@ -209,3 +210,18 @@ class SkippedTracksResponse(BaseModel):
 class CreatePlaylistRequest(BaseModel):
     name: str
     description: Optional[str] = None
+
+
+# Player schemas
+
+class PlayContext(BaseModel):
+    """Playback context for queue generation."""
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    type: Literal["playlist", "track", "builder", "search", "comparison"]
+    track_ids: Optional[list[int]] = None  # For comparison context
+    playlist_id: Optional[int] = None
+    builder_id: Optional[int] = None
+    query: Optional[str] = None
+    start_index: int = 0
+    shuffle: bool = True

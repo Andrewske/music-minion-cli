@@ -1515,21 +1515,27 @@ def migrate_database(conn, current_version: int) -> None:
 
     if current_version < 35:
         logger.info("Migrating to v35: Add player_queue_state table")
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS player_queue_state (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                context_type TEXT NOT NULL,
-                context_id INTEGER,
-                shuffle_enabled BOOLEAN NOT NULL,
-                sort_field TEXT,
-                sort_direction TEXT,
-                queue_track_ids TEXT NOT NULL,
-                queue_index INTEGER NOT NULL,
-                position_in_playlist INTEGER,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.commit()
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS player_queue_state (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    context_type TEXT NOT NULL,
+                    context_id INTEGER,
+                    shuffle_enabled BOOLEAN NOT NULL,
+                    sort_field TEXT,
+                    sort_direction TEXT,
+                    queue_track_ids TEXT NOT NULL,
+                    queue_index INTEGER NOT NULL,
+                    position_in_playlist INTEGER,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.commit()
+            logger.info("  ✓ Migration to v35 complete: player_queue_state table added")
+        except Exception as e:
+            logger.error(f"  ✗ Migration to v35 failed: {e}")
+            conn.rollback()
+            raise
 
 
 def init_database() -> None:
