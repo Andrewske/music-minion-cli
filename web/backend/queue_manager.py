@@ -7,19 +7,17 @@ and persistence without any global state.
 import json
 import random
 import sqlite3
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
 from loguru import logger
 
-# Avoid circular import
-if TYPE_CHECKING:
-    from .routers.player import PlayContext
+from .schemas import PlayContext
 
 
 # Public API Functions
 
 
 def initialize_queue(
-    context: "PlayContext",
+    context: PlayContext,
     db_conn,
     window_size: int = 100,
     shuffle: bool = True,
@@ -78,7 +76,7 @@ def initialize_queue(
 
 
 def get_next_track(
-    context: "PlayContext",
+    context: PlayContext,
     exclusion_ids: list[int],
     db_conn,
     shuffle: bool = True,
@@ -126,7 +124,7 @@ def get_next_track(
 
 
 def rebuild_queue(
-    context: "PlayContext",
+    context: PlayContext,
     current_track_id: int,
     queue: list[int],
     queue_index: int,
@@ -203,7 +201,7 @@ def rebuild_queue(
 
 
 def save_queue_state(
-    context: "PlayContext",
+    context: PlayContext,
     queue_ids: list[int],
     queue_index: int,
     shuffle: bool,
@@ -326,8 +324,87 @@ def load_queue_state(db_conn) -> Optional[dict]:
 # Internal Helper Functions
 
 
+def _build_random_query_with_exclusions(playlist_id: int, exclusion_ids: list[int]):
+    """Build SQL query for random track selection with exclusions.
+
+    Args:
+        playlist_id: Playlist or builder ID
+        exclusion_ids: Track IDs to exclude
+
+    Returns:
+        Tuple of (query_string, params_list)
+    """
+    if exclusion_ids:
+        placeholders = ",".join("?" * len(exclusion_ids))
+        query = f"""
+            SELECT track_id FROM playlist_tracks
+            WHERE playlist_id = ?
+            AND track_id NOT IN ({placeholders})
+            ORDER BY RANDOM()
+            LIMIT 1
+        """
+        params = [playlist_id] + exclusion_ids
+    else:
+        query = """
+            SELECT track_id FROM playlist_tracks
+            WHERE playlist_id = ?
+            ORDER BY RANDOM()
+            LIMIT 1
+        """
+        params = [playlist_id]
+    return query, params
+
+
+def _get_random_from_smart_playlist(playlist_id: int, exclusion_ids: list[int]) -> Optional[int]:
+    """Get random track from smart playlist using filter evaluation.
+
+    Args:
+        playlist_id: Smart playlist ID
+        exclusion_ids: Track IDs to exclude
+
+    Returns:
+        Random track ID or None
+    """
+    from music_minion.domain.playlists.filters import evaluate_filters
+    tracks = evaluate_filters(playlist_id)
+    track_ids = [t["id"] for t in tracks]
+    available = [tid for tid in track_ids if tid not in exclusion_ids]
+    return random.choice(available) if available else None
+
+
+def _get_random_from_manual_playlist(playlist_id: int, exclusion_ids: list[int], db_conn) -> Optional[int]:
+    """Get random track from manual playlist using SQL.
+
+    Args:
+        playlist_id: Playlist ID
+        exclusion_ids: Track IDs to exclude
+        db_conn: Database connection
+
+    Returns:
+        Random track ID or None
+    """
+    query, params = _build_random_query_with_exclusions(playlist_id, exclusion_ids)
+    cursor = db_conn.execute(query, params)
+    row = cursor.fetchone()
+    return row["track_id"] if row else None
+
+
+def _get_random_from_comparison(track_ids: list[int], exclusion_ids: list[int]) -> Optional[int]:
+    """Get random track from comparison context.
+
+    Args:
+        track_ids: Available track IDs in comparison
+        exclusion_ids: Track IDs to exclude
+
+    Returns:
+        Random track ID or None
+    """
+    available = [tid for tid in track_ids if tid not in exclusion_ids]
+    return random.choice(available) if available else None
+
+
 def _get_random_track_from_playlist(
-    context: "PlayContext",
+    context: PlayContext,
     exclusion_ids: list[int],
     db_conn
 ) -> Optional[int]:
@@ -342,7 +419,6 @@ def _get_random_track_from_playlist(
         Random track ID, or None if no tracks available
     """
     try:
-        # Build query based on context type
         if context.type == "playlist" and context.playlist_id:
             # Check if smart playlist
             cursor = db_conn.execute(
@@ -354,59 +430,19 @@ def _get_random_track_from_playlist(
                 return None
 
             if row["type"] == "smart":
-                # Smart playlist: get all matching tracks, then filter/randomize
-                from music_minion.domain.playlists.filters import evaluate_filters
-                tracks = evaluate_filters(context.playlist_id)
-                track_ids = [t["id"] for t in tracks]
-                available = [tid for tid in track_ids if tid not in exclusion_ids]
-                return random.choice(available) if available else None
+                return _get_random_from_smart_playlist(context.playlist_id, exclusion_ids)
             else:
-                # Manual playlist
-                placeholders = ",".join("?" * len(exclusion_ids))
-                query = f"""
-                    SELECT track_id FROM playlist_tracks
-                    WHERE playlist_id = ?
-                    AND track_id NOT IN ({placeholders})
-                    ORDER BY RANDOM()
-                    LIMIT 1
-                """ if exclusion_ids else """
-                    SELECT track_id FROM playlist_tracks
-                    WHERE playlist_id = ?
-                    ORDER BY RANDOM()
-                    LIMIT 1
-                """
-                params = [context.playlist_id] + exclusion_ids if exclusion_ids else [context.playlist_id]
-                cursor = db_conn.execute(query, params)
+                return _get_random_from_manual_playlist(context.playlist_id, exclusion_ids, db_conn)
 
         elif context.type == "builder" and context.builder_id:
-            # Builder context
-            placeholders = ",".join("?" * len(exclusion_ids))
-            query = f"""
-                SELECT track_id FROM playlist_tracks
-                WHERE playlist_id = ?
-                AND track_id NOT IN ({placeholders})
-                ORDER BY RANDOM()
-                LIMIT 1
-            """ if exclusion_ids else """
-                SELECT track_id FROM playlist_tracks
-                WHERE playlist_id = ?
-                ORDER BY RANDOM()
-                LIMIT 1
-            """
-            params = [context.builder_id] + exclusion_ids if exclusion_ids else [context.builder_id]
-            cursor = db_conn.execute(query, params)
+            return _get_random_from_manual_playlist(context.builder_id, exclusion_ids, db_conn)
 
         elif context.type == "comparison" and context.track_ids:
-            # Comparison context
-            available = [tid for tid in context.track_ids if tid not in exclusion_ids]
-            return random.choice(available) if available else None
+            return _get_random_from_comparison(context.track_ids, exclusion_ids)
 
         else:
             logger.warning(f"Unsupported context type for random track: {context.type}")
             return None
-
-        row = cursor.fetchone()
-        return row["track_id"] if row else None
 
     except Exception as e:
         logger.exception(f"Error getting random track: {e}")
@@ -414,7 +450,7 @@ def _get_random_track_from_playlist(
 
 
 def _get_sorted_tracks_from_playlist(
-    context: "PlayContext",
+    context: PlayContext,
     sort_spec: dict,
     limit: int,
     offset: int,
@@ -569,7 +605,7 @@ def _build_exclusion_list(queue: list[int], queue_index: int) -> list[int]:
 
 
 def _resolve_context_to_track_ids(
-    context: "PlayContext",
+    context: PlayContext,
     db_conn
 ) -> list[int]:
     """Handle playlist/builder/smart playlist context.
@@ -668,7 +704,7 @@ def _reconstruct_play_context(
     context_type: str,
     context_id: Optional[int],
     shuffle: bool
-) -> "PlayContext":
+) -> PlayContext:
     """Reconstruct PlayContext from database fields.
 
     Args:
@@ -679,9 +715,6 @@ def _reconstruct_play_context(
     Returns:
         PlayContext instance
     """
-    # Import at runtime to avoid circular import
-    from .routers.player import PlayContext
-
     if context_type == "playlist":
         return PlayContext(
             type="playlist",

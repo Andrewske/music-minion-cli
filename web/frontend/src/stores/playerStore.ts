@@ -135,6 +135,23 @@ export function getCurrentPosition(state: PlayerState): number {
   return state.positionMs + (Date.now() + state.clockOffset - state.trackStartedAt);
 }
 
+// Helper function for API POST requests
+async function apiPost<T = any>(endpoint: string, body?: any): Promise<T> {
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    ...(body && { body: JSON.stringify(body) }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`API request failed: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
 const initialVolume = parseFloat(localStorage.getItem('music-minion-volume') ?? '1.0');
 
 const initialState: PlayerState = {
@@ -305,18 +322,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
 
   toggleShuffleSmooth: async () => {
     try {
-      const response = await fetch(`${API_BASE}/player/toggle-shuffle`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to toggle shuffle');
-      }
-
-      const { shuffle_enabled } = await response.json();
+      const { shuffle_enabled } = await apiPost('/player/toggle-shuffle');
 
       // Optimistic update (will be confirmed via WebSocket)
       set({
@@ -334,17 +340,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
 
   setSortOrder: async (field: string, direction: 'asc' | 'desc') => {
     try {
-      const response = await fetch(`${API_BASE}/player/set-sort`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ field, direction }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to set sort order');
-      }
+      await apiPost('/player/set-sort', { field, direction });
 
       // Optimistic update
       set({

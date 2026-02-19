@@ -1,6 +1,7 @@
 """Player router for global playback control and device management."""
 
 import time
+from asyncio import Lock
 from typing import Optional, Literal
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, ConfigDict
@@ -8,6 +9,7 @@ from pydantic.alias_generators import to_camel
 from loguru import logger
 
 from ..deps import get_db
+from ..schemas import PlayContext
 from ..queue_manager import (
     initialize_queue,
     get_next_track,
@@ -21,19 +23,6 @@ router = APIRouter()
 
 
 # Pydantic models
-class PlayContext(BaseModel):
-    """Playback context for queue generation."""
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
-
-    type: Literal["playlist", "track", "builder", "search", "comparison"]
-    track_ids: Optional[list[int]] = None  # For comparison context
-    playlist_id: Optional[int] = None
-    builder_id: Optional[int] = None
-    query: Optional[str] = None
-    start_index: int = 0
-    shuffle: bool = True
-
-
 class PlayRequest(BaseModel):
     """Request to start playback."""
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
@@ -86,6 +75,9 @@ class PlaybackState(BaseModel):
 
 # In-memory state (v1 limitation: lost on server restart)
 _playback_state = PlaybackState()
+
+# Lock for protecting /next endpoint from race conditions
+_next_lock = Lock()
 
 
 def get_playback_state() -> dict:
@@ -294,81 +286,75 @@ async def resume():
 @router.post("/next")
 async def next_track(db=Depends(get_db)):
     """Skip to next track."""
-    global _playback_state
+    async with _next_lock:
+        global _playback_state
 
-    from ..sync_manager import sync_manager
-    from ..queries.tracks import batch_fetch_tracks_with_metadata
+        from ..sync_manager import sync_manager
+        from ..queries.tracks import batch_fetch_tracks_with_metadata
 
-    if not _playback_state.queue:
-        raise HTTPException(400, "No queue")
+        if not _playback_state.queue:
+            raise HTTPException(400, "No queue")
 
-    # Advance queue index
-    _playback_state.queue_index += 1
+        # Advance queue index
+        _playback_state.queue_index += 1
 
-    if _playback_state.queue_index >= len(_playback_state.queue):
-        # End of queue
-        _playback_state.is_playing = False
-        _playback_state.current_track = None
-    else:
-        # Update current track
-        _playback_state.current_track = _playback_state.queue[_playback_state.queue_index]
-        _playback_state.position_ms = 0
-        _playback_state.track_started_at = time.time()
+        if _playback_state.queue_index >= len(_playback_state.queue):
+            # End of queue
+            _playback_state.is_playing = False
+            _playback_state.current_track = None
+        else:
+            # Update current track
+            _playback_state.current_track = _playback_state.queue[_playback_state.queue_index]
+            _playback_state.position_ms = 0
+            _playback_state.track_started_at = time.time()
 
-        # NEW: Check lookahead buffer and refill
-        tracks_ahead = len(_playback_state.queue) - _playback_state.queue_index
+            # NEW: Check lookahead buffer and refill
+            tracks_ahead = len(_playback_state.queue) - _playback_state.queue_index
 
-        if tracks_ahead < 50:  # Lookahead threshold
-            # Build exclusion list: all tracks ahead + current
-            exclusion_ids = [
-                t["id"] for t in _playback_state.queue[_playback_state.queue_index:]
-            ]
+            if tracks_ahead < 50:  # Lookahead threshold
+                # Build exclusion list: all tracks ahead + current
+                exclusion_ids = [
+                    t["id"] for t in _playback_state.queue[_playback_state.queue_index:]
+                ]
 
-            # Pull 1 new track
-            new_track_id = get_next_track(
-                context=_playback_state.current_context,
-                exclusion_ids=exclusion_ids,
-                db_conn=db,
-                shuffle=_playback_state.shuffle_enabled,
-                sort_spec=_playback_state.sort_spec,
-                position_in_sorted=_playback_state.position_in_playlist
-            )
+                # Pull 1 new track
+                new_track_id = get_next_track(
+                    context=_playback_state.current_context,
+                    exclusion_ids=exclusion_ids,
+                    db_conn=db,
+                    shuffle=_playback_state.shuffle_enabled,
+                    sort_spec=_playback_state.sort_spec,
+                    position_in_sorted=_playback_state.position_in_playlist
+                )
 
-            if new_track_id:
-                # Fetch full metadata
-                new_tracks = batch_fetch_tracks_with_metadata([new_track_id], db)
-                if new_tracks:  # Defensive check
-                    _playback_state.queue.append(new_tracks[0])
+                if new_track_id:
+                    # Fetch full metadata
+                    new_tracks = batch_fetch_tracks_with_metadata([new_track_id], db)
+                    if new_tracks:  # Defensive check
+                        _playback_state.queue.append(new_tracks[0])
 
-                    # Update position for sorted mode
-                    if not _playback_state.shuffle_enabled:
-                        # Get total playlist size for modulo
-                        total_size = len(_resolve_context_to_track_ids(_playback_state.current_context, db))
-                        _playback_state.position_in_playlist = (_playback_state.position_in_playlist + 100) % total_size
+                        # Update position for sorted mode
+                        if not _playback_state.shuffle_enabled:
+                            # Get total playlist size for modulo
+                            total_size = len(_resolve_context_to_track_ids(_playback_state.current_context, db))
+                            _playback_state.position_in_playlist = (_playback_state.position_in_playlist + 100) % total_size
 
-                    # Save updated state
-                    queue_ids = [t["id"] for t in _playback_state.queue]
-                    save_queue_state(
-                        context=_playback_state.current_context,
-                        queue_ids=queue_ids,
-                        queue_index=_playback_state.queue_index,
-                        shuffle=_playback_state.shuffle_enabled,
-                        sort_spec=_playback_state.sort_spec,
-                        db_conn=db
-                    )
+                        # Save updated state
+                        queue_ids = [t["id"] for t in _playback_state.queue]
+                        save_queue_state(
+                            context=_playback_state.current_context,
+                            queue_ids=queue_ids,
+                            queue_index=_playback_state.queue_index,
+                            shuffle=_playback_state.shuffle_enabled,
+                            sort_spec=_playback_state.sort_spec,
+                            db_conn=db
+                        )
 
-        # NEW: Queue trimming - prune old metadata to prevent unbounded growth
-        if _playback_state.queue_index > 10:
-            # Keep last 10 played tracks with full metadata for UI display
-            # Trim older tracks to just ID for exclusion tracking
-            old_index = _playback_state.queue_index - 10
-            if "title" in _playback_state.queue[old_index]:  # Check if not already pruned
-                _playback_state.queue[old_index] = {"id": _playback_state.queue[old_index]["id"]}
 
-    # Broadcast updated state
-    await sync_manager.broadcast("playback:state", get_playback_state())
+        # Broadcast updated state
+        await sync_manager.broadcast("playback:state", get_playback_state())
 
-    return {"status": "next"}
+        return {"status": "next"}
 
 
 @router.post("/prev")
