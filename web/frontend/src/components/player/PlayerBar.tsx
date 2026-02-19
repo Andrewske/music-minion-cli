@@ -1,11 +1,14 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Shuffle } from 'lucide-react';
+import { useRouterState } from '@tanstack/react-router';
 import { usePlayer } from '../../hooks/usePlayer';
 import { getCurrentPosition } from '../../stores/playerStore';
 import { usePlayerStore } from '../../stores/playerStore';
+import { useComparisonStore } from '../../stores/comparisonStore';
 import { Button } from '../ui/button';
 import { Slider } from '../ui/slider';
 import { DeviceSelector } from './DeviceSelector';
+import { WaveformPlayer } from '../WaveformPlayer';
 
 export function PlayerBar(): JSX.Element {
   const {
@@ -28,6 +31,32 @@ export function PlayerBar(): JSX.Element {
     availableDevices,
     activeDeviceId,
   } = usePlayer();
+
+  // Route detection for comparison mode waveform
+  const routerState = useRouterState();
+  const isComparisonRoute = routerState.location.pathname === '/comparison';
+
+  // Comparison mode state for track auto-switching
+  const { currentPair, isComparisonMode } = useComparisonStore();
+  const { play } = usePlayerStore();
+
+  // Ref for currentTrack to avoid stale closure in handleTrackFinish
+  const currentTrackRef = useRef(currentTrack);
+  useEffect(() => {
+    currentTrackRef.current = currentTrack;
+  }, [currentTrack]);
+
+  // Handle track finish for comparison mode A/B auto-switching
+  const handleTrackFinish = useCallback(() => {
+    if (!currentPair || !currentTrackRef.current || !isComparisonMode) return;
+
+    const otherTrack = currentTrackRef.current.id === currentPair.track_a.id
+      ? currentPair.track_b
+      : currentPair.track_a;
+
+    const trackIds = [currentPair.track_a.id, currentPair.track_b.id];
+    play(otherTrack, { type: 'comparison', track_ids: trackIds, shuffle: false });
+  }, [currentPair, isComparisonMode, play]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -94,84 +123,102 @@ export function PlayerBar(): JSX.Element {
   const activeDeviceName =
     availableDevices.find((d) => d.id === activeDeviceId)?.name ?? 'Unknown Device';
 
-  return (
-    <div className="fixed bottom-0 left-0 right-0 h-16 bg-obsidian-surface border-t border-obsidian-border flex items-center px-4 gap-4 z-50">
-      {/* Track info */}
-      <div className="flex items-center gap-3 w-64">
-        {currentTrack && (
-          <>
-            <div className="truncate">
-              <div className="font-medium text-white/90 truncate">
-                {currentTrack.title ?? 'Not playing'}
-              </div>
-              <div className="text-sm text-white/60 truncate">{currentTrack.artist}</div>
-            </div>
-          </>
-        )}
-        {!currentTrack && (
-          <div className="text-white/50 text-sm font-sf-mono">Not playing</div>
-        )}
-      </div>
+  // Dynamic height: h-16 (64px) normally, h-36 (144px) on comparison route
+  const barHeight = isComparisonRoute ? 'h-36' : 'h-16';
 
-      {/* Controls */}
-      <div className="flex-1 flex flex-col items-center gap-1">
+  return (
+    <div className={`fixed bottom-0 left-0 right-0 ${barHeight} bg-obsidian-surface border-t border-obsidian-border flex flex-col z-50`}>
+      {/* Waveform section - only on comparison route */}
+      {isComparisonRoute && currentTrack && (
+        <div className="h-20 w-full border-b border-obsidian-border py-2 px-4">
+          <WaveformPlayer
+            track={currentTrack}
+            isPlaying={isPlaying}
+            onTogglePlayPause={() => isPlaying ? pause() : resume()}
+            onFinish={handleTrackFinish}
+          />
+        </div>
+      )}
+
+      {/* Main controls row */}
+      <div className="flex-1 flex items-center px-4 gap-4">
+        {/* Track info */}
+        <div className="flex items-center gap-3 w-64">
+          {currentTrack && (
+            <>
+              <div className="truncate">
+                <div className="font-medium text-white/90 truncate">
+                  {currentTrack.title ?? 'Not playing'}
+                </div>
+                <div className="text-sm text-white/60 truncate">{currentTrack.artist}</div>
+              </div>
+            </>
+          )}
+          {!currentTrack && (
+            <div className="text-white/50 text-sm font-sf-mono">Not playing</div>
+          )}
+        </div>
+
+        {/* Controls */}
+        <div className="flex-1 flex flex-col items-center gap-1">
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" onClick={prev} className="text-white/90 hover:text-white">
+              <SkipBack className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={isPlaying ? pause : resume}
+              className="text-white/90 hover:text-white"
+            >
+              {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+            </Button>
+            <Button variant="ghost" size="icon" onClick={next} className="text-white/90 hover:text-white">
+              <SkipForward className="h-4 w-4" />
+            </Button>
+          </div>
+          {/* Progress bar - hide on comparison route since waveform shows progress */}
+          {currentTrack && !isComparisonRoute && (
+            <Slider
+              value={[progress]}
+              max={100}
+              onValueChange={([v]) => {
+                if (currentTrack.duration) {
+                  seek((v / 100) * currentTrack.duration * 1000);
+                }
+              }}
+              className="w-96"
+            />
+          )}
+        </div>
+
+        {/* Right controls */}
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={prev} className="text-white/90 hover:text-white">
-            <SkipBack className="h-4 w-4" />
-          </Button>
           <Button
             variant="ghost"
             size="icon"
-            onClick={isPlaying ? pause : resume}
+            onClick={toggleShuffleSmooth}
+            className={shuffleEnabled ? 'text-obsidian-accent' : 'text-white/60 hover:text-white'}
+            title={shuffleEnabled ? 'Shuffle on' : 'Shuffle off'}
+          >
+            <Shuffle className="h-4 w-4" />
+          </Button>
+          <DeviceSelector />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setMuted(!isMuted)}
             className="text-white/90 hover:text-white"
           >
-            {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+            {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
           </Button>
-          <Button variant="ghost" size="icon" onClick={next} className="text-white/90 hover:text-white">
-            <SkipForward className="h-4 w-4" />
-          </Button>
-        </div>
-        {/* Progress bar */}
-        {currentTrack && (
           <Slider
-            value={[progress]}
+            value={[isMuted ? 0 : volume * 100]}
             max={100}
-            onValueChange={([v]) => {
-              if (currentTrack.duration) {
-                seek((v / 100) * currentTrack.duration * 1000);
-              }
-            }}
-            className="w-96"
+            onValueChange={([v]) => setVolume(v / 100)}
+            className="w-20"
           />
-        )}
-      </div>
-
-      {/* Right controls */}
-      <div className="flex items-center gap-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={toggleShuffleSmooth}
-          className={shuffleEnabled ? 'text-obsidian-accent' : 'text-white/60 hover:text-white'}
-          title={shuffleEnabled ? 'Shuffle on' : 'Shuffle off'}
-        >
-          <Shuffle className="h-4 w-4" />
-        </Button>
-        <DeviceSelector />
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setMuted(!isMuted)}
-          className="text-white/90 hover:text-white"
-        >
-          {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-        </Button>
-        <Slider
-          value={[isMuted ? 0 : volume * 100]}
-          max={100}
-          onValueChange={([v]) => setVolume(v / 100)}
-          className="w-20"
-        />
+        </div>
       </div>
 
       {/* Error indicator */}
