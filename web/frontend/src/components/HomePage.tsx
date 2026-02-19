@@ -56,6 +56,17 @@ export function HomePage(): JSX.Element {
     next();
   }, [next]);
 
+  const handleEmojiUpdate = useCallback((updatedTrack: { id: number; emojis?: string[] }): void => {
+    // Update both currentTrack and the matching track in queue
+    if (currentTrack && currentTrack.id === updatedTrack.id) {
+      const newTrack = { ...currentTrack, emojis: updatedTrack.emojis };
+      const newQueue = queue.map(t =>
+        t.id === updatedTrack.id ? { ...t, emojis: updatedTrack.emojis } : t
+      );
+      usePlayerStore.getState().set({ currentTrack: newTrack, queue: newQueue });
+    }
+  }, [currentTrack, queue]);
+
   const handleTrackClick = useCallback((track: Track): void => {
     if (!currentContext) return;
 
@@ -129,7 +140,7 @@ export function HomePage(): JSX.Element {
           <div className="space-y-6 md:space-y-12">
             {/* Sticky player section on mobile */}
             <div className="sticky top-10 md:static z-10 bg-black pb-4 md:pb-0">
-              <TrackDisplay track={currentTrack} />
+              <TrackDisplay track={currentTrack} onEmojiUpdate={handleEmojiUpdate} />
               <div className="h-16 border-t border-b border-obsidian-border">
                 <WaveformPlayer
                   track={currentTrack}

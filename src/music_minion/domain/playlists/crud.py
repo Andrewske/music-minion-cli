@@ -186,7 +186,7 @@ def reorder_playlist_by_elo(playlist_id: int) -> bool:
             """
             SELECT pt.track_id, COALESCE(per.rating, 1500.0) as playlist_rating
             FROM playlist_tracks pt
-            LEFT JOIN playlist_elo_ratings per ON pt.track_id = per.track_id
+            LEFT JOIN playlist_elo_ratings per ON CAST(pt.track_id AS TEXT) = per.track_id
                 AND per.playlist_id = ?
             WHERE pt.playlist_id = ?
             ORDER BY playlist_rating DESC, per.comparison_count DESC
@@ -386,7 +386,7 @@ def get_playlist_tracks(playlist_id: int) -> list[dict[str, Any]]:
                 COALESCE(per.wins, 0) as playlist_elo_wins
             FROM tracks t
             JOIN playlist_tracks pt ON t.id = pt.track_id
-            LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
+            LEFT JOIN playlist_elo_ratings per ON CAST(t.id AS TEXT) = per.track_id AND per.playlist_id = ?
             WHERE pt.playlist_id = ?
             ORDER BY pt.position
             """,
