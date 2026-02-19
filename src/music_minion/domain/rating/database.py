@@ -296,6 +296,7 @@ def record_playlist_comparison(
             conn.commit()
 
         except Exception:
+            logger.exception("Failed to record playlist comparison")
             conn.rollback()
             raise
 

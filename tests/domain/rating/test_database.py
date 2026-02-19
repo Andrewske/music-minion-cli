@@ -160,6 +160,10 @@ def test_playlist():
     """Create a test playlist for comparison tests."""
     from music_minion.core.database import get_db_connection
     from dataclasses import dataclass
+    import music_minion.core.config as config_module
+
+    # Reset cache at start to avoid stale values from previous tests
+    config_module.ALL_PLAYLIST_ID = None
 
     @dataclass
     class TestPlaylist:
