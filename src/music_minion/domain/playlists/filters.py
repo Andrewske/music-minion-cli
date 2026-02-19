@@ -354,17 +354,19 @@ def evaluate_filters(playlist_id: int) -> list[dict[str, Any]]:
         playlist_id: ID of the smart playlist
 
     Returns:
-        List of track dictionaries matching the filters
+        List of track dictionaries matching the filters.
+        If no filters are defined, returns all tracks with a local_path.
     """
     # Get filters for this playlist
     filters = get_playlist_filters(playlist_id)
 
-    if not filters:
-        # No filters means no tracks
-        return []
-
-    # Build WHERE clause
-    where_clause, params = build_filter_query(filters)
+    # Build WHERE clause (empty string if no filters = match all tracks)
+    if filters:
+        where_clause, params = build_filter_query(filters)
+        where_clause = f"({where_clause}) AND "
+    else:
+        where_clause = ""
+        params = []
 
     # Query tracks with ELO ratings
     # Note: f-string is safe here because build_filter_query() validates column names
@@ -379,8 +381,8 @@ def evaluate_filters(playlist_id: int) -> list[dict[str, Any]]:
                 NULL as position,  -- Smart playlists don't have fixed positions
                 NULL as added_at   -- Smart playlists don't have added_at timestamps
             FROM tracks t
-            LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
-            WHERE {where_clause}
+            LEFT JOIN playlist_elo_ratings per ON CAST(t.id AS TEXT) = per.track_id AND per.playlist_id = ?
+            WHERE {where_clause}t.local_path IS NOT NULL AND t.local_path != ''
             AND t.id NOT IN (
                 SELECT track_id FROM playlist_builder_skipped WHERE playlist_id = ?
             )

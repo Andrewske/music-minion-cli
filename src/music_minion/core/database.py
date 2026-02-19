@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 35  # Add player_queue_state table
+SCHEMA_VERSION = 36  # Fix playlist_elo_ratings.track_id type (TEXT → INTEGER)
 
 
 # Initial top 50 curated emojis for music reactions
@@ -948,7 +948,7 @@ def migrate_database(conn, current_version: int) -> None:
         # Playlist-specific ELO ratings table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS playlist_elo_ratings (
-                track_id TEXT NOT NULL,
+                track_id INTEGER NOT NULL,
                 playlist_id INTEGER NOT NULL,
                 rating REAL DEFAULT 1500.0,
                 comparison_count INTEGER DEFAULT 0,
@@ -1534,6 +1534,60 @@ def migrate_database(conn, current_version: int) -> None:
             logger.info("  ✓ Migration to v35 complete: player_queue_state table added")
         except Exception as e:
             logger.error(f"  ✗ Migration to v35 failed: {e}")
+            conn.rollback()
+            raise
+
+    if current_version < 36:
+        logger.info("Migrating playlist_elo_ratings.track_id from TEXT to INTEGER...")
+        try:
+            # Validate: check for non-numeric track_ids that would corrupt on CAST
+            cursor = conn.execute("""
+                SELECT COUNT(*) FROM playlist_elo_ratings
+                WHERE track_id GLOB '*[^0-9]*'
+            """)
+            bad_count = cursor.fetchone()[0]
+            if bad_count > 0:
+                raise ValueError(f"Found {bad_count} non-numeric track_id values - manual cleanup required")
+
+            # Disable FK constraints during table recreation (follows v14 pattern)
+            conn.execute("PRAGMA foreign_keys=OFF")
+
+            # Create new table with correct type
+            conn.execute("""
+                CREATE TABLE playlist_elo_ratings_new (
+                    track_id INTEGER NOT NULL,
+                    playlist_id INTEGER NOT NULL,
+                    rating REAL DEFAULT 1500.0,
+                    comparison_count INTEGER DEFAULT 0,
+                    wins INTEGER DEFAULT 0,
+                    last_compared TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (track_id, playlist_id),
+                    FOREIGN KEY (track_id) REFERENCES tracks(id),
+                    FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE
+                )
+            """)
+            # Migrate data with type conversion
+            conn.execute("""
+                INSERT INTO playlist_elo_ratings_new
+                SELECT CAST(track_id AS INTEGER), playlist_id, rating,
+                       comparison_count, wins, last_compared, updated_at
+                FROM playlist_elo_ratings
+            """)
+            # Swap tables
+            conn.execute("DROP TABLE playlist_elo_ratings")
+            conn.execute("ALTER TABLE playlist_elo_ratings_new RENAME TO playlist_elo_ratings")
+            # Recreate indices
+            conn.execute("CREATE INDEX idx_playlist_elo_ratings_playlist_id ON playlist_elo_ratings(playlist_id, rating DESC)")
+            conn.execute("CREATE INDEX idx_playlist_elo_comparison_count ON playlist_elo_ratings(playlist_id, comparison_count)")
+
+            # Re-enable FK constraints
+            conn.execute("PRAGMA foreign_keys=ON")
+
+            conn.commit()
+            logger.info("  ✓ Migration to v36 complete: playlist_elo_ratings.track_id is now INTEGER")
+        except Exception as e:
+            logger.error(f"  ✗ Migration to v36 failed: {e}")
             conn.rollback()
             raise
 

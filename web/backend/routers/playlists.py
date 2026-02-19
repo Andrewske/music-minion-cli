@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from typing import List, Optional, Tuple
 from pydantic import BaseModel
+from time import time
 from ..deps import get_db
 from ..queries.emojis import batch_fetch_track_emojis
 from ..schemas import (
@@ -15,18 +16,49 @@ from ..schemas import (
 
 router = APIRouter()
 
+# Simple TTL cache for playlist tracks queries (5 second expiry)
+_playlist_tracks_cache: dict[tuple, tuple[float, Tuple[List[dict], int]]] = {}
+_CACHE_TTL_SECONDS = 5.0
+
+
+def _get_cached_tracks(cache_key: tuple) -> Optional[Tuple[List[dict], int]]:
+    """Get cached result if valid, None otherwise."""
+    if cache_key in _playlist_tracks_cache:
+        cached_time, result = _playlist_tracks_cache[cache_key]
+        if time() - cached_time < _CACHE_TTL_SECONDS:
+            return result
+        del _playlist_tracks_cache[cache_key]
+    return None
+
+
+def _set_cached_tracks(cache_key: tuple, result: Tuple[List[dict], int]) -> None:
+    """Cache result with current timestamp. Cleans old entries periodically."""
+    # Clean old entries if cache is getting large
+    if len(_playlist_tracks_cache) > 100:
+        current_time = time()
+        expired_keys = [
+            k for k, (t, _) in _playlist_tracks_cache.items()
+            if current_time - t >= _CACHE_TTL_SECONDS
+        ]
+        for k in expired_keys:
+            del _playlist_tracks_cache[k]
+    _playlist_tracks_cache[cache_key] = (time(), result)
+
 
 def get_playlist_tracks_with_ratings(
     playlist_id: int,
     sort_field: str = "artist",
     sort_direction: str = "asc",
     limit: Optional[int] = None,
-    offset: int = 0
+    offset: int = 0,
+    # TODO: Implement cursor-based pagination for O(1) performance at high offsets
+    # When implemented, use: WHERE id > last_id ORDER BY id LIMIT N
+    last_id: Optional[int] = None,
 ) -> Tuple[List[dict], int]:
     """Get tracks in a playlist with their ratings, wins, losses, and emojis.
 
-    Handles both manual playlists (from playlist_tracks table) and
-    smart playlists (dynamically evaluated from filters).
+    Works for both manual and smart playlists via the unified playlist_tracks table.
+    Smart playlists are materialized into playlist_tracks via refresh_smart_playlist_tracks().
 
     Args:
         playlist_id: ID of the playlist
@@ -39,13 +71,12 @@ def get_playlist_tracks_with_ratings(
         Tuple of (tracks, total_count)
     """
     from music_minion.core.database import get_db_connection
-    from music_minion.domain.playlists import get_playlist_by_id
-    from music_minion.domain.playlists.filters import evaluate_filters
 
-    # Check if this is a smart playlist
-    playlist = get_playlist_by_id(playlist_id)
-    if not playlist:
-        return []
+    # Check cache first
+    cache_key = (playlist_id, sort_field, sort_direction, limit, offset)
+    cached = _get_cached_tracks(cache_key)
+    if cached is not None:
+        return cached
 
     # Validate and map sort field to column name
     field_mapping = {
@@ -61,52 +92,7 @@ def get_playlist_tracks_with_ratings(
     column = field_mapping.get(sort_field, "artist")
     direction = "DESC" if sort_direction.lower() == "desc" else "ASC"
 
-    if playlist["type"] == "smart":
-        # Smart playlist - use filter evaluation with extended fields
-        tracks = evaluate_filters(playlist_id)
-
-        # Transform to match expected format with full track fields
-        result = [
-            {
-                "id": t["id"],
-                "title": t["title"],
-                "artist": t["artist"],
-                "album": t.get("album"),
-                "genre": t.get("genre"),
-                "year": t.get("year"),
-                "bpm": t.get("bpm"),
-                "key_signature": t.get("key_signature"),
-                "elo_rating": t.get("playlist_elo_rating", 1500.0),
-                "rating": t.get("playlist_elo_rating", 1500.0),
-                "comparison_count": t.get("playlist_elo_comparison_count", 0),
-                "wins": t.get("playlist_elo_wins", 0),
-                "losses": t.get("playlist_elo_comparison_count", 0) - t.get("playlist_elo_wins", 0),
-            }
-            for t in tracks
-        ]
-
-        # Batch-fetch emojis for all tracks
-        if result:
-            with get_db_connection() as conn:
-                track_ids = [t["id"] for t in result]
-                emojis_map = batch_fetch_track_emojis(track_ids, conn)
-                for track in result:
-                    track["emojis"] = emojis_map.get(track["id"], [])
-
-        # Apply sorting (Python-side since evaluate_filters returns all tracks)
-        result.sort(
-            key=lambda x: (x.get(sort_field) or "", x.get("artist") or ""),
-            reverse=(direction == "DESC")
-        )
-
-        # Apply pagination
-        total = len(result)
-        if limit is not None:
-            result = result[offset:offset + limit]
-
-        return result, total
-
-    # Manual playlist - query from playlist_tracks table
+    # Unified query for both manual and smart playlists via playlist_tracks table
     with get_db_connection() as conn:
         # SQL injection safe: column and direction validated via whitelist above
         # Use COUNT(*) OVER() window function for total count with pagination
@@ -134,7 +120,7 @@ def get_playlist_tracks_with_ratings(
                 COUNT(*) OVER() as total_count
             FROM playlist_tracks pt
             JOIN tracks t ON pt.track_id = t.id
-            LEFT JOIN playlist_elo_ratings per ON pt.track_id = per.track_id
+            LEFT JOIN playlist_elo_ratings per ON CAST(pt.track_id AS TEXT) = per.track_id
                 AND per.playlist_id = pt.playlist_id
             WHERE pt.playlist_id = ?
             ORDER BY {column} {direction}, t.title ASC
@@ -157,7 +143,9 @@ def get_playlist_tracks_with_ratings(
             for track in tracks:
                 track["emojis"] = emojis_map.get(track["id"], [])
 
-        return tracks, total
+        result = (tracks, total)
+        _set_cached_tracks(cache_key, result)
+        return result
 
 
 def get_playlist_name(playlist_id: int) -> Optional[str]:
