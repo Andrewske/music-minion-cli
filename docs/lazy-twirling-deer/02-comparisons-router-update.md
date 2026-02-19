@@ -1,6 +1,6 @@
 ---
 task: 02-comparisons-router-update
-status: pending
+status: done
 depends: [01-rating-database-refactor]
 files: []
 ---
