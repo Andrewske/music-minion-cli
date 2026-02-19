@@ -1,4 +1,4 @@
-import { createRootRoute, Outlet } from '@tanstack/react-router'
+import { createRootRoute, Outlet, useRouterState } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 import { useSyncWebSocket } from '../hooks/useSyncWebSocket'
 import { PlayerBar } from '../components/player/PlayerBar'
@@ -10,6 +10,11 @@ import { AudioElementProvider } from '../contexts/AudioElementContext'
 
 function RootComponent(): JSX.Element {
   useSyncWebSocket() // Connect to sync WebSocket for real-time updates
+
+  // Comparison route has expanded PlayerBar (h-32) and handles its own spacing
+  const routerState = useRouterState()
+  const isComparisonRoute = routerState.location.pathname === '/comparison'
+  const bottomPadding = isComparisonRoute ? 'pb-0' : 'pb-16'
 
   return (
     <AudioElementProvider>
@@ -26,7 +31,7 @@ function RootComponent(): JSX.Element {
         </div>
 
         {/* Main content area */}
-        <main className="flex-1 min-w-0 overflow-y-auto pt-12 md:pt-0 pb-16">
+        <main className={`flex-1 min-w-0 overflow-y-auto pt-12 md:pt-0 ${bottomPadding}`}>
           <Outlet />
         </main>
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { useComparisonStore } from '../stores/comparisonStore';
 import { usePlayerStore } from '../stores/playerStore';
 import { useStartComparison, useRecordComparison, useArchiveTrack } from '../hooks/useComparison';
@@ -6,7 +6,6 @@ import { usePlaylists } from '../hooks/usePlaylists';
 import type { TrackInfo, RecordComparisonRequest } from '../types';
 import { useIPCWebSocket } from '../hooks/useIPCWebSocket';
 import { SwipeableTrack } from './SwipeableTrack';
-import { WaveformPlayer } from './WaveformPlayer';
 import { AutoplayToggle } from './AutoplayToggle';
 import { PlaylistPicker } from './PlaylistPicker';
 
@@ -40,12 +39,6 @@ export function ComparisonView() {
 
   // Stats modal state
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
-
-  // Ref for currentTrack to avoid dependency in handleTrackFinish
-  const currentTrackRef = useRef(currentTrack);
-  useEffect(() => {
-    currentTrackRef.current = currentTrack;
-  }, [currentTrack]);
 
   const handleSelectPlaylist = (playlistId: number) => {
     startComparison.mutate(playlistId);
@@ -103,29 +96,6 @@ export function ComparisonView() {
     if (!currentPair) return;
     handleSwipeLeft(currentPair.track_b.id);
   }, [handleSwipeLeft, currentPair]);
-
-  /**
-   * Handles automatic track switching in comparison mode when one track finishes playing.
-   * This creates a seamless looping experience where users can continuously compare
-   * tracks without manual intervention - when track A finishes, track B starts automatically,
-   * and vice versa, allowing for uninterrupted A/B comparison during ELO rating sessions.
-   */
-  const handleTrackFinish = useCallback(() => {
-    // Guard: only do A/B switching if still in comparison mode
-    // (user may have navigated away while track was playing)
-    if (!currentPair || !currentTrackRef.current || !isComparisonMode) return;
-
-    // Determine which track just finished and play the other one
-    const otherTrack = currentTrackRef.current.id === currentPair.track_a.id
-      ? currentPair.track_b
-      : currentPair.track_a;
-
-    // Include both track IDs for comparison queue context (no shuffle in comparison mode)
-    const trackIds = [currentPair.track_a.id, currentPair.track_b.id];
-
-    // Automatically play the other track via global player
-    play(otherTrack, { type: 'comparison', track_ids: trackIds, shuffle: false });
-  }, [currentPair, isComparisonMode, play]); // currentTrack removed from deps
 
   if (startComparison.isError) {
     return (
@@ -282,39 +252,8 @@ export function ComparisonView() {
         </div>
       </div>
 
-      {/* Persistent Player Bar */}
-      {currentPair && (
-        <div className="fixed bottom-0 inset-x-0 bg-obsidian-surface/90 backdrop-blur-xl border-t border-obsidian-border p-3 pb-6 lg:pb-3 z-50">
-          <div className="max-w-3xl mx-auto flex flex-col gap-1">
-              <div className="flex items-center justify-between text-xs text-white/60 px-1">
-                <span className="font-mono">{isPlaying ? 'NOW PLAYING' : 'PAUSED'}</span>
-                <span className="truncate max-w-[200px] text-white/90">
-                  {currentTrack ? `${currentTrack.artist} - ${currentTrack.title}` : ''}
-                </span>
-              </div>
-
-              {/* Waveform - never unmount during loading to preserve playback */}
-              <div className="h-16 w-full bg-black/50 overflow-hidden relative border border-obsidian-border">
-                {currentTrack ? (
-                   <WaveformPlayer
-                     track={currentTrack}
-                     isPlaying={isPlaying}
-                     onTogglePlayPause={() => isPlaying ? pause() : resume()}
-                     onFinish={handleTrackFinish}
-                   />
-                ) : (
-                  <div className="flex items-center justify-center h-full text-white/50">
-                    No track selected
-                  </div>
-                )}
-              </div>
-
-          </div>
-        </div>
-      )}
-      
-      {/* Spacer for bottom player */}
-      <div className="h-24 lg:h-20" />
+      {/* Spacer for expanded PlayerBar (h-36) */}
+      <div className="h-36" />
 
       {/* Stats Modal - only render when playlist selected */}
       {selectedPlaylistId !== null && (
