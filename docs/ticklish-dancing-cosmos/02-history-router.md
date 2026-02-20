@@ -1,6 +1,6 @@
 ---
 task: 02-history-router
-status: pending
+status: done
 depends: [01-domain-history-functions]
 files:
   - path: web/backend/routers/history.py
