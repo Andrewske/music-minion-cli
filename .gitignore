@@ -32,6 +32,7 @@ venv/
 
 # Music Minion data and config
 ai-test-reports/
+docs/archive/
 notes.md
 config.toml
 
