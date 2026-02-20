@@ -1,6 +1,6 @@
 ---
 task: 03-player-integration
-status: pending
+status: done
 depends: [01-domain-history-functions]
 files:
   - path: web/backend/routers/player.py
