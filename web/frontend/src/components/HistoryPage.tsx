@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { getHistory, getStats, getTopTracks } from '../api/history';
 import { StatCard } from './StatCard';
-import { EmojiTrackActions } from './EmojiTrackActions';
 import type { HistoryEntry, TopTrack } from '../api/history';
 
 type DatePreset = 'last7' | 'last30' | 'all';
@@ -37,6 +36,26 @@ function getPresetDays(preset: DatePreset): number | undefined {
     case 'last7': return 7;
     case 'last30': return 30;
     case 'all': return undefined;
+  }
+}
+
+function formatDuration(durationMs: number): string {
+  const totalSeconds = Math.floor(durationMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function getEndReasonIcon(endReason: string | null): string {
+  switch (endReason) {
+    case 'skip':
+      return '⏭️';
+    case 'completed':
+      return '✓';
+    case 'new_play':
+      return '▶️';
+    default:
+      return '';
   }
 }
 
@@ -306,9 +325,19 @@ export function HistoryPage(): JSX.Element {
                       <div className="text-white/60 text-sm truncate">
                         {entry.track_artist || 'Unknown Artist'}
                       </div>
-                      <div className="text-white/50 text-xs mt-1">
-                        {entry.source_type} • {Math.floor(entry.duration_ms / 1000)}s
-                        {entry.end_reason && ` • ${entry.end_reason}`}
+                      <div className="text-white/50 text-xs mt-1 flex items-center gap-2">
+                        <span>{entry.source_type}</span>
+                        <span>•</span>
+                        <span>{formatDuration(entry.duration_ms)}</span>
+                        {entry.end_reason && (
+                          <>
+                            <span>•</span>
+                            <span className="flex items-center gap-1">
+                              {getEndReasonIcon(entry.end_reason)}
+                              <span className="capitalize">{entry.end_reason}</span>
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">

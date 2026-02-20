@@ -1,8 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Music } from 'lucide-react';
 import { usePlayerStore, type PlayContext } from '../stores/playerStore';
-import { useQuery } from '@tanstack/react-query';
-import { getStations, type Station } from '../api/radio';
 import type { Track } from '../api/builder';
 import type { SortingState } from '@tanstack/react-table';
 import { TrackDisplay } from './builder/TrackDisplay';
@@ -12,7 +10,7 @@ import { usePlaylists } from '../hooks/usePlaylists';
 
 export function HomePage(): JSX.Element {
   const [sorting, setSorting] = useState<SortingState>([]);
-  const [isLoadingPlayback, setIsLoadingPlayback] = useState(false);
+  const [isLoadingPlayback] = useState(false);
 
   const {
     currentTrack,
@@ -28,11 +26,6 @@ export function HomePage(): JSX.Element {
   } = usePlayerStore();
 
   const { data: playlistsData } = usePlaylists();
-
-  const { data: stations } = useQuery({
-    queryKey: ['stations'],
-    queryFn: getStations,
-  });
 
   function getContextTitle(context: PlayContext | null): string {
     if (!context) return 'Queue';
@@ -174,17 +167,7 @@ export function HomePage(): JSX.Element {
           <section className="py-20 text-center">
             <Music className="h-12 w-12 mx-auto text-white/20 mb-4" />
             <h2 className="text-lg font-medium text-white/60 mb-2">Nothing playing</h2>
-            <p className="text-white/40 text-sm">Select a playlist or station to start</p>
-
-            {/* Station quick access */}
-            {stations && stations.length > 0 && (
-              <div className="mt-8">
-                <h3 className="text-sm text-white/40 mb-4">Quick Start</h3>
-                <div className="flex flex-wrap gap-2 justify-center">
-                  {stations.map(station => <StationChip key={station.id} station={station} setIsLoadingPlayback={setIsLoadingPlayback} />)}
-                </div>
-              </div>
-            )}
+            <p className="text-white/40 text-sm">Select a playlist to start listening</p>
           </section>
         )}
       </div>
@@ -192,41 +175,3 @@ export function HomePage(): JSX.Element {
   );
 }
 
-function StationChip({ station, setIsLoadingPlayback }: { station: Station; setIsLoadingPlayback: (loading: boolean) => void }): JSX.Element {
-  const { play } = usePlayerStore();
-
-  const handleClick = async (): Promise<void> => {
-    setIsLoadingPlayback(true);
-
-    try {
-      const response = await fetch(`/api/playlists/${station.playlist_id}/tracks`);
-      if (!response.ok) {
-        console.error('Failed to fetch station playlist tracks');
-        return;
-      }
-      const data = await response.json();
-      const tracks: Track[] = data.tracks;
-
-      if (tracks.length > 0) {
-        await play(tracks[0], {
-          type: 'playlist',
-          playlist_id: station.playlist_id,
-          start_index: 0,
-          shuffle: station.shuffle_enabled,
-        });
-      }
-    } finally {
-      // Reset loading after a delay to prevent flashing
-      setTimeout(() => setIsLoadingPlayback(false), 500);
-    }
-  };
-
-  return (
-    <button
-      onClick={handleClick}
-      className="px-4 py-2 bg-card rounded-full hover:bg-accent transition-colors"
-    >
-      {station.name}
-    </button>
-  );
-}
