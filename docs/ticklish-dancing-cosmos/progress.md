@@ -8,7 +8,7 @@
 
 | Task | Status | Started | Completed | Duration |
 |------|--------|---------|-----------|----------|
-| 01-domain-history-functions | Pending | - | - | - |
+| 01-domain-history-functions | ✅ Done | 2026-02-20 | 2026-02-20 | - |
 | 02-history-router | Pending | - | - | - |
 | 03-player-integration | Pending | - | - | - |
 | 04-frontend-api-update | Pending | - | - | - |

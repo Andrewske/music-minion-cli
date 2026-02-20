@@ -71,6 +71,8 @@ class PlaybackState(BaseModel):
     current_context: Optional[PlayContext] = None  # NEW: track playback context
     position_in_playlist: int = 0  # NEW: position tracker for sorted mode
     server_time: float = 0  # For client clock sync
+    current_history_id: Optional[int] = None  # Track active history entry
+    duration_ms: int = 0  # Accumulated listening time (reset each track)
 
 
 # In-memory state (v1 limitation: lost on server restart)
@@ -78,6 +80,17 @@ _playback_state = PlaybackState()
 
 # Lock for protecting /next endpoint from race conditions
 _next_lock = Lock()
+
+
+def _calculate_final_duration() -> int:
+    """Calculate total listening duration in ms (accumulated + current segment)."""
+    duration = int(_playback_state.duration_ms)
+
+    if _playback_state.track_started_at:
+        elapsed = int((time.time() - _playback_state.track_started_at) * 1000)
+        duration += elapsed
+
+    return duration
 
 
 def get_playback_state() -> dict:
@@ -204,7 +217,13 @@ async def play(request: PlayRequest, db=Depends(get_db)):
     if not active_device_id and sync_manager.devices:
         active_device_id = next(iter(sync_manager.devices.keys()))
 
-    # 4. Update global state
+    # 4. End previous history entry if exists
+    if _playback_state.current_history_id:
+        from music_minion.domain.radio.history import end_play
+        final_duration = _calculate_final_duration()
+        end_play(_playback_state.current_history_id, final_duration, reason="new_play")
+
+    # 5. Update global state
     now = time.time()
     _playback_state.current_track = queue_tracks[queue_index]
     _playback_state.queue = queue_tracks
@@ -217,8 +236,17 @@ async def play(request: PlayRequest, db=Depends(get_db)):
     _playback_state.shuffle_enabled = request.context.shuffle if hasattr(request.context, 'shuffle') else True
     _playback_state.sort_spec = None
     _playback_state.position_in_playlist = 0
+    _playback_state.duration_ms = 0  # Reset for new track
 
-    # 5. Persist queue state
+    # 6. Start new history entry
+    from music_minion.domain.radio.history import start_play
+    history_id = start_play(
+        track_id=_playback_state.current_track["id"],
+        source_type="local"  # TODO: derive from track source when multi-source is implemented
+    )
+    _playback_state.current_history_id = history_id
+
+    # 7. Persist queue state
     save_queue_state(
         context=request.context,
         queue_ids=queue_ids,
@@ -228,7 +256,7 @@ async def play(request: PlayRequest, db=Depends(get_db)):
         db_conn=db
     )
 
-    # 6. Broadcast to all devices
+    # 8. Broadcast to all devices
     await sync_manager.broadcast("playback:state", get_playback_state())
 
     return {
@@ -248,10 +276,12 @@ async def pause():
     if not _playback_state.is_playing:
         return {"message": "Already paused"}
 
-    # Calculate current position
+    # Accumulate listening time and update position
     if _playback_state.track_started_at:
         elapsed = time.time() - _playback_state.track_started_at
-        _playback_state.position_ms += int(elapsed * 1000)
+        elapsed_ms = int(elapsed * 1000)
+        _playback_state.duration_ms += elapsed_ms
+        _playback_state.position_ms += elapsed_ms
 
     _playback_state.is_playing = False
     _playback_state.track_started_at = None
@@ -284,8 +314,12 @@ async def resume():
 
 
 @router.post("/next")
-async def next_track(db=Depends(get_db)):
-    """Skip to next track."""
+async def next_track(reason: str = "skip", db=Depends(get_db)):
+    """Skip to next track.
+
+    Args:
+        reason: Why playback ended - 'skip' (default) or 'completed'
+    """
     async with _next_lock:
         global _playback_state
 
@@ -294,6 +328,13 @@ async def next_track(db=Depends(get_db)):
 
         if not _playback_state.queue:
             raise HTTPException(400, "No queue")
+
+        # Close current history entry
+        if _playback_state.current_history_id:
+            from music_minion.domain.radio.history import end_play
+            final_duration = _calculate_final_duration()
+            end_play(_playback_state.current_history_id, final_duration, reason=reason)
+            _playback_state.current_history_id = None
 
         # Advance queue index
         _playback_state.queue_index += 1
@@ -307,6 +348,15 @@ async def next_track(db=Depends(get_db)):
             _playback_state.current_track = _playback_state.queue[_playback_state.queue_index]
             _playback_state.position_ms = 0
             _playback_state.track_started_at = time.time()
+            _playback_state.duration_ms = 0  # Reset for new track
+
+            # Start new history entry
+            from music_minion.domain.radio.history import start_play
+            history_id = start_play(
+                track_id=_playback_state.current_track["id"],
+                source_type="local"
+            )
+            _playback_state.current_history_id = history_id
 
             # NEW: Check lookahead buffer and refill
             tracks_ahead = len(_playback_state.queue) - _playback_state.queue_index
@@ -393,6 +443,12 @@ async def seek(request: SeekRequest):
     if not _playback_state.current_track:
         raise HTTPException(400, "No track playing")
 
+    # Accumulate listening time before seeking
+    if _playback_state.track_started_at:
+        elapsed = time.time() - _playback_state.track_started_at
+        _playback_state.duration_ms += int(elapsed * 1000)
+
+    # Update position and restart timer
     _playback_state.position_ms = request.position_ms
     _playback_state.track_started_at = time.time() if _playback_state.is_playing else None
 
