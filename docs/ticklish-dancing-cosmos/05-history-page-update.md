@@ -1,6 +1,6 @@
 ---
 task: 05-history-page-update
-status: pending
+status: done
 depends: [04-frontend-api-update]
 files:
   - path: web/frontend/src/components/HistoryPage.tsx
