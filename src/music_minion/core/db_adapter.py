@@ -206,7 +206,8 @@ def init_postgres_schema() -> None:
             source_url TEXT,
             started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             ended_at TIMESTAMP,
-            position_ms INTEGER DEFAULT 0
+            position_ms INTEGER DEFAULT 0,
+            end_reason TEXT DEFAULT 'skip'
         )
     """)
 

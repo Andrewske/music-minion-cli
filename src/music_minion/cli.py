@@ -186,38 +186,32 @@ def run_locate_opus(folder: str, apply: bool = False) -> int:
         return 1
 
 
-def send_web_command_remote_or_ipc(command: str, endpoint: str, data: dict) -> int:
-    """
-    Send web command to remote server if configured, otherwise use IPC.
+def send_web_broadcast_command(command: str) -> int:
+    """Send a command via the web backend broadcast endpoint.
+
+    Used for commands like play1/play2 that need to reach the frontend
+    via WebSocket (sync_manager), not the IPC server.
 
     Args:
-        command: IPC command name (fallback)
-        endpoint: Remote API endpoint path
-        data: JSON data for remote POST
+        command: Command name (without web- prefix)
 
     Returns:
         Exit code (0 for success, 1 for failure)
     """
-    from music_minion.core.config import load_config
+    try:
+        import requests
 
-    config = load_config()
-    remote_server = config.web.remote_server
-
-    if remote_server:
-        try:
-            import requests
-
-            url = f"{remote_server}{endpoint}"
-            response = requests.post(url, json=data, timeout=5)
-            response.raise_for_status()
-            print(f"Command sent to remote server")
-            return 0
-        except Exception as e:
-            print(f"Failed to send command to remote server: {e}", file=sys.stderr)
-            return 1
-    else:
-        # Fallback to local IPC
-        return send_ipc_command(command, [])
+        response = requests.post(
+            "http://localhost:8642/api/commands/broadcast",
+            params={"command": command},
+            timeout=5,
+        )
+        response.raise_for_status()
+        print(f"Sent {command} command to web interface")
+        return 0
+    except Exception as e:
+        print(f"Failed to broadcast command: {e}", file=sys.stderr)
+        return 1
 
 
 def send_ipc_command(command: str, args: list) -> int:
@@ -351,18 +345,10 @@ def main() -> None:
             sys.exit(send_ipc_command("web-archive", []))
 
         elif args.subcommand == "web-play1":
-            sys.exit(send_web_command_remote_or_ipc(
-                "web-play1",
-                "/api/comparisons/select-track",
-                {"track_id": "track_a", "is_playing": True}
-            ))
+            sys.exit(send_web_broadcast_command("play1"))
 
         elif args.subcommand == "web-play2":
-            sys.exit(send_web_command_remote_or_ipc(
-                "web-play2",
-                "/api/comparisons/select-track",
-                {"track_id": "track_b", "is_playing": True}
-            ))
+            sys.exit(send_web_broadcast_command("play2"))
 
         elif args.subcommand == "web-seek-pos":
             sys.exit(send_ipc_command("web-seek-pos", []))

@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 37  # Add losses column to playlist_elo_ratings
+SCHEMA_VERSION = 38  # Add end_reason column to radio_history
 
 
 # Initial top 50 curated emojis for music reactions
@@ -1600,6 +1600,18 @@ def migrate_database(conn, current_version: int) -> None:
         """)
         conn.commit()
         logger.info("  ✓ Migration to v37 complete: added losses column")
+
+    if current_version < 38:
+        logger.info("Migrating to v38: add end_reason column to radio_history...")
+        try:
+            conn.execute("""
+                ALTER TABLE radio_history ADD COLUMN end_reason TEXT DEFAULT 'skip'
+            """)
+            conn.commit()
+            logger.info("  ✓ Migration to v38 complete: added end_reason column")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
 
 
 def init_database() -> None:

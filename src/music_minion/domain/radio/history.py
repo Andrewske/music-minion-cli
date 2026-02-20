@@ -15,18 +15,55 @@ from music_minion.core.db_adapter import get_radio_db_connection
 from music_minion.domain.library.models import Track
 
 
+def start_play(track_id: int, source_type: str = "local") -> int:
+    """Insert a new history entry when a track starts playing. Returns history_id."""
+    with get_radio_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO radio_history (track_id, source_type, started_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            """,
+            (track_id, source_type)
+        )
+        conn.commit()
+        return cursor.lastrowid
+
+
+def end_play(history_id: int, duration_ms: int, reason: str = "skip") -> None:
+    """Update history entry with end time, listening duration, and end reason.
+
+    Args:
+        history_id: ID of the history entry to close
+        duration_ms: Total time spent listening in milliseconds (accounts for seeking)
+        reason: Why playback ended - 'skip', 'completed', or 'new_play'
+    """
+    with get_radio_db_connection() as conn:
+        conn.execute(
+            """
+            UPDATE radio_history
+            SET ended_at = CURRENT_TIMESTAMP, position_ms = ?, end_reason = ?
+            WHERE id = ?
+            """,
+            (duration_ms, reason, history_id)
+        )
+        conn.commit()
+
+
+# NOTE: position_ms column stores DURATION (actual listening time), not position.
+# Name kept for backwards compatibility with existing data.
+
+
 @dataclass(frozen=True)
 class HistoryEntry:
     """A single playback history entry."""
 
     id: int
-    station_id: int
-    station_name: str
     track: Track
     source_type: str  # 'local' | 'youtube' | 'spotify' | 'soundcloud'
     started_at: datetime
     ended_at: Optional[datetime]
-    position_ms: int
+    duration_ms: int  # Renamed from position_ms for clarity
+    end_reason: Optional[str] = None  # 'skip', 'completed', 'new_play'
 
 
 @dataclass(frozen=True)
@@ -39,19 +76,20 @@ class TrackPlayStats:
 
 
 @dataclass(frozen=True)
-class StationStats:
-    """Aggregated statistics for a station."""
+class Stats:
+    """Aggregated statistics for radio playback history."""
 
-    station_id: int
-    station_name: str
     total_plays: int
-    total_minutes: int
+    total_minutes: int  # Actual listening time
     unique_tracks: int
     days_queried: int
 
 
+# Legacy alias for backwards compatibility
+StationStats = Stats
+
+
 def get_history_entries(
-    station_id: Optional[int] = None,
     limit: int = 50,
     offset: int = 0,
     start_date: Optional[str] = None,
@@ -60,7 +98,6 @@ def get_history_entries(
     """Get playback history entries with filtering and pagination.
 
     Args:
-        station_id: Filter by station ID (None = all stations)
         limit: Maximum number of entries to return
         offset: Number of entries to skip (for pagination)
         start_date: Filter entries on or after this date (YYYY-MM-DD)
@@ -73,8 +110,6 @@ def get_history_entries(
         query = """
             SELECT
                 rh.id,
-                rh.station_id,
-                s.name as station_name,
                 rh.track_id,
                 t.local_path,
                 t.title,
@@ -84,17 +119,13 @@ def get_history_entries(
                 rh.source_type,
                 rh.started_at,
                 rh.ended_at,
-                rh.position_ms
+                rh.position_ms,
+                rh.end_reason
             FROM radio_history rh
-            LEFT JOIN stations s ON rh.station_id = s.id
             LEFT JOIN tracks t ON rh.track_id = t.id
             WHERE 1=1
         """
         params = []
-
-        if station_id is not None:
-            query += " AND rh.station_id = ?"
-            params.append(station_id)
 
         if start_date:
             query += " AND DATE(rh.started_at) >= ?"
@@ -124,65 +155,46 @@ def get_history_entries(
 
             entry = HistoryEntry(
                 id=row["id"],
-                station_id=row["station_id"],
-                station_name=row["station_name"] or "Unknown Station",
                 track=track,
                 source_type=row["source_type"],
                 started_at=_parse_timestamp(row["started_at"]),
                 ended_at=_parse_timestamp(row["ended_at"]) if row["ended_at"] else None,
-                position_ms=row["position_ms"],
+                duration_ms=row["position_ms"],
+                end_reason=row["end_reason"] if "end_reason" in row.keys() else None,
             )
             entries.append(entry)
 
         logger.debug(
             f"Retrieved {len(entries)} history entries "
-            f"(station={station_id}, limit={limit}, offset={offset})"
+            f"(limit={limit}, offset={offset})"
         )
         return entries
 
 
-def get_station_stats(station_id: int, days: int = 30) -> Optional[StationStats]:
-    """Get aggregated statistics for a station.
+def get_stats(days: int = 30) -> Stats:
+    """Get aggregated statistics for radio playback history.
 
     Args:
-        station_id: Station ID
         days: Number of days to include (default 30)
 
     Returns:
-        StationStats object, or None if station not found
+        Stats object with aggregated playback statistics
     """
     with get_radio_db_connection() as conn:
-        # Calculate date range
         start_date = (datetime.now() - timedelta(days=days)).date()
-
-        # Get station name
-        cursor = conn.execute("SELECT name FROM stations WHERE id = ?", (station_id,))
-        row = cursor.fetchone()
-        if not row:
-            logger.warning(f"Station {station_id} not found")
-            return None
-
-        station_name = row["name"]
-
-        # Get stats
         cursor = conn.execute(
             """
             SELECT
                 COUNT(*) as total_plays,
-                SUM(CAST((t.duration / 60) AS INTEGER)) as total_minutes,
-                COUNT(DISTINCT rh.track_id) as unique_tracks
-            FROM radio_history rh
-            LEFT JOIN tracks t ON rh.track_id = t.id
-            WHERE rh.station_id = ?
-              AND DATE(rh.started_at) >= ?
+                COALESCE(SUM(position_ms) / 60000, 0) as total_minutes,
+                COUNT(DISTINCT track_id) as unique_tracks
+            FROM radio_history
+            WHERE DATE(started_at) >= ?
             """,
-            (station_id, start_date.isoformat()),
+            (start_date.isoformat(),)
         )
         row = cursor.fetchone()
-
-        return StationStats(
-            station_id=station_id,
-            station_name=station_name,
+        return Stats(
             total_plays=row["total_plays"] or 0,
             total_minutes=row["total_minutes"] or 0,
             unique_tracks=row["unique_tracks"] or 0,
@@ -190,15 +202,23 @@ def get_station_stats(station_id: int, days: int = 30) -> Optional[StationStats]
         )
 
 
+# Legacy alias for backwards compatibility
+def get_station_stats(station_id: int, days: int = 30) -> Optional[Stats]:
+    """DEPRECATED: Use get_stats() instead.
+
+    Get aggregated statistics (ignores station_id for backwards compatibility).
+    """
+    logger.warning("get_station_stats() is deprecated, use get_stats() instead")
+    return get_stats(days)
+
+
 def get_most_played_tracks(
-    station_id: Optional[int] = None,
     limit: int = 10,
     days: int = 30,
 ) -> list[TrackPlayStats]:
     """Get most played tracks with play counts.
 
     Args:
-        station_id: Filter by station ID (None = all stations)
         limit: Maximum number of tracks to return
         days: Number of days to include (default 30)
 
@@ -217,23 +237,15 @@ def get_most_played_tracks(
                 t.album,
                 t.duration,
                 COUNT(*) as play_count,
-                SUM(CAST(t.duration AS INTEGER)) as total_duration_seconds
+                SUM(rh.position_ms) / 1000 as total_duration_seconds
             FROM radio_history rh
             JOIN tracks t ON rh.track_id = t.id
             WHERE DATE(rh.started_at) >= ?
-        """
-        params = [start_date.isoformat()]
-
-        if station_id is not None:
-            query += " AND rh.station_id = ?"
-            params.append(station_id)
-
-        query += """
             GROUP BY t.id, t.local_path, t.title, t.artist, t.album, t.duration
             ORDER BY play_count DESC
             LIMIT ?
         """
-        params.append(limit)
+        params = [start_date.isoformat(), limit]
 
         cursor = conn.execute(query, params)
         rows = cursor.fetchall()
@@ -258,7 +270,7 @@ def get_most_played_tracks(
 
         logger.debug(
             f"Retrieved {len(stats)} top tracks "
-            f"(station={station_id}, days={days}, limit={limit})"
+            f"(days={days}, limit={limit})"
         )
         return stats
 

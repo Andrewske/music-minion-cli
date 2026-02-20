@@ -67,7 +67,11 @@ export function SidebarPlaylists({ sidebarExpanded }: SidebarPlaylistsProps): JS
   });
 
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8, // Require 8px movement before drag starts, allowing clicks to work
+      },
+    }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
