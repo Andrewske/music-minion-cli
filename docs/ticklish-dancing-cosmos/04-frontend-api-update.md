@@ -1,6 +1,6 @@
 ---
 task: 04-frontend-api-update
-status: pending
+status: done
 depends: [02-history-router]
 files:
   - path: web/frontend/src/api/radio.ts

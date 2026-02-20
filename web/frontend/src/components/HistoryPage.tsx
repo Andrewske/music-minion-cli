@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
-import { getHistory, getStations, getStationStats, getTopTracks } from '../api/radio';
+import { getHistory, getStats, getTopTracks } from '../api/history';
 import { StatCard } from './StatCard';
 import { EmojiTrackActions } from './EmojiTrackActions';
-import type { HistoryEntry, TrackPlayStats } from '../api/radio';
+import type { HistoryEntry, TopTrack } from '../api/history';
 
 type DatePreset = 'last7' | 'last30' | 'all';
 
@@ -76,17 +76,10 @@ function EmptyState({ message }: { message: string }) {
 }
 
 export function HistoryPage(): JSX.Element {
-  const [selectedStationId, setSelectedStationId] = useState<number | null>(null);
   const [datePreset, setDatePreset] = useState<DatePreset>('last30');
 
   const dateRange = getDateRange(datePreset);
   const days = getPresetDays(datePreset);
-
-  // Fetch stations for the dropdown
-  const { data: stations, isLoading: isStationsLoading } = useQuery({
-    queryKey: ['stations'],
-    queryFn: getStations,
-  });
 
   // Fetch history with infinite pagination
   const {
@@ -99,10 +92,9 @@ export function HistoryPage(): JSX.Element {
     error: historyError,
     refetch: refetchHistory,
   } = useInfiniteQuery({
-    queryKey: ['history', selectedStationId, dateRange.startDate, dateRange.endDate],
+    queryKey: ['history', dateRange.startDate, dateRange.endDate],
     queryFn: ({ pageParam }) =>
       getHistory({
-        stationId: selectedStationId ?? undefined,
         limit: 50,
         offset: pageParam,
         startDate: dateRange.startDate,
@@ -114,32 +106,30 @@ export function HistoryPage(): JSX.Element {
     },
   });
 
-  // Fetch station stats (only when a station is selected)
+  // Fetch stats
   const {
     data: stats,
     isLoading: isStatsLoading,
     isError: isStatsError,
     refetch: refetchStats,
   } = useQuery({
-    queryKey: ['stationStats', selectedStationId, days],
-    queryFn: () => getStationStats(selectedStationId!, days ?? 30),
-    enabled: selectedStationId !== null,
+    queryKey: ['stats', days],
+    queryFn: () => getStats(days ?? 30),
   });
 
-  // Fetch top tracks (only when a station is selected)
+  // Fetch top tracks
   const {
     data: topTracksData,
     isLoading: isTopTracksLoading,
     isError: isTopTracksError,
     refetch: refetchTopTracks,
   } = useQuery({
-    queryKey: ['topTracks', selectedStationId, days],
-    queryFn: () => getTopTracks(selectedStationId ?? undefined, 10, days ?? 30),
-    enabled: selectedStationId !== null,
+    queryKey: ['topTracks', days],
+    queryFn: () => getTopTracks(10, days ?? 30),
   });
 
   // Local state for top tracks to handle emoji updates
-  const [topTracks, setTopTracks] = useState<TrackPlayStats[]>([]);
+  const [topTracks, setTopTracks] = useState<TopTrack[]>([]);
 
   // Local state for history entries to handle emoji updates
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
@@ -158,27 +148,6 @@ export function HistoryPage(): JSX.Element {
     }
   }, [historyData]);
 
-  // Handle track emoji updates
-  const handleTopTrackUpdate = (trackIndex: number) => (updatedTrack: { id: number; emojis?: string[] }): void => {
-    setTopTracks((prev) =>
-      prev.map((trackStat, idx) =>
-        idx === trackIndex
-          ? { ...trackStat, track: { ...trackStat.track, emojis: updatedTrack.emojis } }
-          : trackStat
-      )
-    );
-  };
-
-  // Handle history entry emoji updates
-  const handleHistoryEntryUpdate = (entryId: number) => (updatedTrack: { id: number; emojis?: string[] }): void => {
-    setHistoryEntries((prev) =>
-      prev.map((entry) =>
-        entry.id === entryId
-          ? { ...entry, track: { ...entry.track, emojis: updatedTrack.emojis } }
-          : entry
-      )
-    );
-  };
 
   return (
     <div className="min-h-screen bg-black text-white p-6">
@@ -186,24 +155,6 @@ export function HistoryPage(): JSX.Element {
 
       {/* Filters */}
       <div className="mb-6 flex flex-wrap gap-4">
-        {/* Station Dropdown */}
-        <div>
-          <label className="block text-sm text-white/60 mb-2">Station</label>
-          <select
-            value={selectedStationId ?? ''}
-            onChange={(e) => setSelectedStationId(e.target.value ? Number(e.target.value) : null)}
-            className="bg-obsidian-border border border-obsidian-border px-4 py-2 text-white focus:outline-none focus:border-obsidian-accent"
-            disabled={isStationsLoading}
-          >
-            <option value="">All Stations</option>
-            {stations?.map((station) => (
-              <option key={station.id} value={station.id}>
-                {station.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
         {/* Date Preset Buttons */}
         <div>
           <label className="block text-sm text-white/60 mb-2">Time Period</label>
@@ -232,12 +183,8 @@ export function HistoryPage(): JSX.Element {
         </div>
       </div>
 
-      {/* Stats Cards - Only show when a station is selected */}
-      {selectedStationId === null ? (
-        <div className="mb-6 bg-obsidian-surface border border-obsidian-border p-6 text-center">
-          <p className="text-white/60">Select a station to view statistics</p>
-        </div>
-      ) : isStatsError ? (
+      {/* Stats Cards */}
+      {isStatsError ? (
         <div className="mb-6">
           <InlineErrorState
             title="Failed to Load Stats"
@@ -259,7 +206,7 @@ export function HistoryPage(): JSX.Element {
             icon="🎵"
             value={stats.total_plays}
             label="Total Plays"
-            subtitle={`In ${stats.station_name}`}
+            subtitle="All listening sessions"
           />
           <StatCard
             icon="⏱️"
@@ -276,9 +223,8 @@ export function HistoryPage(): JSX.Element {
         </div>
       ) : null}
 
-      {/* Top Tracks Section - Only show when a station is selected */}
-      {selectedStationId !== null && (
-        <div className="mb-6">
+      {/* Top Tracks Section */}
+      <div className="mb-6">
           <h2 className="text-xl font-semibold mb-4">Top Tracks</h2>
           {isTopTracksError ? (
             <InlineErrorState
@@ -297,30 +243,25 @@ export function HistoryPage(): JSX.Element {
           ) : topTracks && topTracks.length > 0 ? (
             <div className="bg-obsidian-surface border border-obsidian-border p-6">
               <div className="space-y-3">
-                {topTracks.map((trackStat, index) => (
+                {topTracks.map((track, index) => (
                   <div
-                    key={`${trackStat.track.id}-${index}`}
+                    key={`${track.track_id}-${index}`}
                     className="flex justify-between items-center py-2 border-b border-obsidian-border/50 last:border-0"
                   >
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                       <span className="text-white/60 text-sm w-6">#{index + 1}</span>
                       <div className="min-w-0 flex-1">
                         <div className="text-white/90 font-medium truncate">
-                          {trackStat.track.title || 'Unknown Track'}
+                          {track.track_title || 'Unknown Track'}
                         </div>
                         <div className="text-white/60 text-sm truncate">
-                          {trackStat.track.artist || 'Unknown Artist'}
+                          {track.track_artist || 'Unknown Artist'}
                         </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 ml-2">
-                      <EmojiTrackActions
-                        track={trackStat.track}
-                        onUpdate={handleTopTrackUpdate(index)}
-                        compact
-                      />
                       <span className="text-white/60 text-sm whitespace-nowrap">
-                        {trackStat.play_count} plays
+                        {track.play_count} plays
                       </span>
                     </div>
                   </div>
@@ -330,8 +271,7 @@ export function HistoryPage(): JSX.Element {
           ) : (
             <EmptyState message="No top tracks data available for this period" />
           )}
-        </div>
-      )}
+      </div>
 
       {/* History Timeline */}
       <div>
@@ -361,21 +301,17 @@ export function HistoryPage(): JSX.Element {
                   >
                     <div className="flex-1 min-w-0 mr-4">
                       <div className="text-white/90 font-medium truncate">
-                        {entry.track.title || 'Unknown Track'}
+                        {entry.track_title || 'Unknown Track'}
                       </div>
                       <div className="text-white/60 text-sm truncate">
-                        {entry.track.artist || 'Unknown Artist'}
+                        {entry.track_artist || 'Unknown Artist'}
                       </div>
                       <div className="text-white/50 text-xs mt-1">
-                        {entry.station_name} • {entry.source_type}
+                        {entry.source_type} • {Math.floor(entry.duration_ms / 1000)}s
+                        {entry.end_reason && ` • ${entry.end_reason}`}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <EmojiTrackActions
-                        track={entry.track}
-                        onUpdate={handleHistoryEntryUpdate(entry.id)}
-                        compact
-                      />
                       <div className="text-white/60 text-sm whitespace-nowrap">
                         {new Date(entry.started_at).toLocaleString()}
                       </div>
