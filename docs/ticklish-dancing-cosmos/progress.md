@@ -12,7 +12,7 @@
 | 02-history-router | ✅ Done | 2026-02-20 | 2026-02-20 | - |
 | 03-player-integration | ✅ Done | 2026-02-20 | 2026-02-20 | - |
 | 04-frontend-api-update | ✅ Done | 2026-02-20 | 2026-02-20 | - |
-| 05-history-page-update | Pending | - | - | - |
+| 05-history-page-update | ✅ Done | 2026-02-20 | 2026-02-20 | - |
 
 ## Dependency Graph
 
