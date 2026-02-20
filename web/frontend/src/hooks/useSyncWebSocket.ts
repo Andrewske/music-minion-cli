@@ -51,6 +51,27 @@ export function useSyncWebSocket() {
         case 'ping':
           break;
 
+        case 'command': {
+          const { command } = data;
+          if (command === 'play1' || command === 'play2') {
+            const { currentPair } = useComparisonStore.getState();
+            const { play } = usePlayerStore.getState();
+
+            if (!currentPair) {
+              console.warn(`${command}: No active comparison pair`);
+              return;
+            }
+
+            const track = command === 'play1' ? currentPair.track_a : currentPair.track_b;
+            play(track, {
+              type: 'comparison',
+              track_ids: [currentPair.track_a.id, currentPair.track_b.id],
+              shuffle: false,
+            });
+          }
+          break;
+        }
+
         default:
           console.log('Unknown sync message type:', type);
       }

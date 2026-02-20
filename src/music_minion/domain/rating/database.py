@@ -339,16 +339,15 @@ def get_next_playlist_pair(playlist_id: int) -> tuple[dict, dict]:
             )
 
         # Step 1: Find top 10 tracks with fewest comparisons
+        # Uses stored comparison_count from playlist_elo_ratings (updated on each comparison)
+        # with idx_playlist_elo_comparison_count index for fast sorting
         cursor = conn.execute(
             """
-            SELECT t.id as track_id, COUNT(pch.id) as comp_count
+            SELECT t.id as track_id,
+                   COALESCE(per.comparison_count, 0) as comp_count
             FROM tracks t
             INNER JOIN playlist_tracks pt ON t.id = pt.track_id AND pt.playlist_id = ?
-            LEFT JOIN playlist_comparison_history pch ON (
-                (pch.track_a_id = t.id OR pch.track_b_id = t.id)
-                AND pch.playlist_id = ?
-            )
-            GROUP BY t.id
+            LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
             ORDER BY comp_count ASC
             LIMIT 10
             """,
@@ -364,6 +363,8 @@ def get_next_playlist_pair(playlist_id: int) -> tuple[dict, dict]:
         track_a_id = random.choice(candidates)["track_id"]
 
         # Step 2: Find another track it hasn't been compared to
+        # Uses NOT IN with UNION to check both directions of comparison history,
+        # allowing SQLite to use idx_playlist_comparison_track_a/b indexes
         cursor = conn.execute(
             """
             SELECT t.*,
@@ -372,19 +373,18 @@ def get_next_playlist_pair(playlist_id: int) -> tuple[dict, dict]:
             FROM tracks t
             INNER JOIN playlist_tracks pt ON t.id = pt.track_id AND pt.playlist_id = ?
             LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
-            LEFT JOIN playlist_comparison_history pch ON (
-                pch.playlist_id = ?
-                AND (
-                    (pch.track_a_id = ? AND pch.track_b_id = t.id)
-                    OR (pch.track_b_id = ? AND pch.track_a_id = t.id)
-                )
-            )
             WHERE t.id != ?
-              AND pch.id IS NULL
+              AND t.id NOT IN (
+                  SELECT track_b_id FROM playlist_comparison_history
+                  WHERE playlist_id = ? AND track_a_id = ?
+                  UNION
+                  SELECT track_a_id FROM playlist_comparison_history
+                  WHERE playlist_id = ? AND track_b_id = ?
+              )
             ORDER BY per.comparison_count ASC, RANDOM()
             LIMIT 1
             """,
-            (playlist_id, playlist_id, playlist_id, track_a_id, track_a_id, track_a_id),
+            (playlist_id, playlist_id, track_a_id, playlist_id, track_a_id, playlist_id, track_a_id),
         )
         track_b_row = cursor.fetchone()
 

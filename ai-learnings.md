@@ -228,3 +228,24 @@ def get_playlist_elo_rating(track_id: str, playlist_id: int) -> float:
 **Why it matters**: Database layer had mixed type hints (`track_id: str` in some functions, `int` in others). SQLite's type coercion meant all queries worked correctly, but type checkers couldn't catch the inconsistency. Frontend/schemas used `int` throughout. During code review, found 2 functions using `str` that should be `int`.
 
 **Rule**: SQLite's permissive typing means type errors in database functions may not surface until strict type checking. Verify type hints match actual data types in database (use `typeof()` in schema or check actual inserts).
+
+### 2026-02-19 - Type mismatch destroys SQLite index performance
+
+**Pattern**: `playlist_elo_ratings.track_id` was TEXT instead of INTEGER, causing 800x slowdown:
+```sql
+-- Schema bug (TEXT column)
+track_id TEXT NOT NULL
+-- JOIN fails to use index (type mismatch)
+LEFT JOIN playlist_elo_ratings per ON pt.track_id = per.track_id
+-- Query: 9+ seconds
+```
+
+**Why it matters**: SQLite silently allows TEXT/INTEGER comparison but refuses to use indexes across type boundaries. The query worked correctly but was catastrophically slow. Adding `CAST(pt.track_id AS TEXT)` workarounds "fixed" performance temporarily but masked the root issue.
+
+**Diagnosis**: Run `EXPLAIN QUERY PLAN` - if you see "SCAN" instead of "SEARCH" on indexed columns, check for type mismatches:
+```bash
+sqlite3 db.db "EXPLAIN QUERY PLAN SELECT ... FROM tracks t JOIN ratings r ON t.id = r.track_id"
+# Look for: SCAN vs SEARCH, index usage
+```
+
+**Rule**: When indexes aren't being used, verify column types match in JOIN conditions. Migration pattern: disable FK constraints, recreate table with correct type, re-enable FKs.
