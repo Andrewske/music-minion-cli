@@ -73,36 +73,56 @@ export function useIPCWebSocket(handlers?: IPCWebSocketHandlers) {
         }
         break;
 
-       case 'winner':
-         if (currentPair) {
-           // Read playlist ID from store
-           const { selectedPlaylistId } = useComparisonStore.getState();
+      case 'winner':
+        if (currentPair) {
+          const { selectedPlaylistId } = useComparisonStore.getState();
 
-           if (!selectedPlaylistId) {
-             console.log('Winner command received but no playlist selected');
-             return;
-           }
+          if (!selectedPlaylistId) {
+            console.log('Winner command received but no playlist selected');
+            return;
+          }
 
-           const request: RecordComparisonRequest = {
-             playlist_id: selectedPlaylistId,
-             track_a_id: currentPair.track_a.id,
-             track_b_id: currentPair.track_b.id,
-             winner_id: currentPair.track_a.id,
-           };
+          // Determine winner based on currently playing track
+          let winnerId: number;
+          if (currentTrack?.id === currentPair.track_a.id) {
+            winnerId = currentPair.track_a.id;
+          } else if (currentTrack?.id === currentPair.track_b.id) {
+            winnerId = currentPair.track_b.id;
+          } else {
+            console.log('Winner command: no comparison track is currently playing');
+            return;
+          }
 
-           recordComparison.mutate(request);
-         } else {
-           console.log('Winner command received but no active comparison');
-         }
-         break;
+          const request: RecordComparisonRequest = {
+            playlist_id: selectedPlaylistId,
+            track_a_id: currentPair.track_a.id,
+            track_b_id: currentPair.track_b.id,
+            winner_id: winnerId,
+          };
 
-       case 'archive':
-         if (currentPair) {
-           archiveTrack.mutate(currentPair.track_a.id);
-         } else {
-           console.log('Archive command received but no active comparison');
-         }
-         break;
+          recordComparison.mutate(request);
+        } else {
+          console.log('Winner command received but no active comparison');
+        }
+        break;
+
+      case 'archive':
+        if (currentPair) {
+          // Archive the loser (track NOT currently playing)
+          let loserId: number;
+          if (currentTrack?.id === currentPair.track_a.id) {
+            loserId = currentPair.track_b.id;  // A is playing, archive B
+          } else if (currentTrack?.id === currentPair.track_b.id) {
+            loserId = currentPair.track_a.id;  // B is playing, archive A
+          } else {
+            console.log('Archive command: no comparison track is currently playing');
+            return;
+          }
+          archiveTrack.mutate(loserId);
+        } else {
+          console.log('Archive command received but no active comparison');
+        }
+        break;
 
        case 'seek-pos':
          // Dispatch custom event for seek forward
@@ -154,10 +174,10 @@ export function useIPCWebSocket(handlers?: IPCWebSocketHandlers) {
             // Builder mode: Skip track
             handlersRef.current?.onBuilderSkip?.();
           } else if (data.type === 'comparison:winner') {
-            // Comparison mode: Select track A as winner (via hotkey)
+            // Comparison mode: Select currently playing track as winner
             handleCommand('winner', []);
           } else if (data.type === 'comparison:loser') {
-            // Comparison mode: Archive track A (via hotkey)
+            // Comparison mode: Archive the non-playing track (loser)
             handleCommand('archive', []);
           } else if (data.type === 'shutdown') {
             // Backend is shutting down - pause all playback immediately

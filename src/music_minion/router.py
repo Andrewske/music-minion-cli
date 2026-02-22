@@ -84,11 +84,10 @@ def _handle_web_winner_command(ctx: AppContext) -> tuple[AppContext, bool]:
         return ctx, True
 
     elif ctx.active_web_mode == "comparison":
-        # Comparison mode: Execute existing comparison logic
-        # TODO: Implement comparison winner logic
-        # For now, just log that it would execute
-        log("✅ Track A selected as winner", level="info")
-        logger.info("web-winner: comparison mode")
+        # Comparison mode: Frontend handles winner selection based on currently playing track
+        # The IPC broadcast triggers frontend to record the comparison via API
+        log("✅ Winner recorded", level="info")
+        logger.info("web-winner: comparison mode, winner determined by frontend")
         return ctx, True
 
     else:

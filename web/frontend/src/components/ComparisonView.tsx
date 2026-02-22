@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useComparisonStore } from '../stores/comparisonStore';
 import { usePlayerStore } from '../stores/playerStore';
 import { useStartComparison, useRecordComparison, useArchiveTrack } from '../hooks/useComparison';
@@ -8,6 +8,7 @@ import { useIPCWebSocket } from '../hooks/useIPCWebSocket';
 import { SwipeableTrack } from './SwipeableTrack';
 import { AutoplayToggle } from './AutoplayToggle';
 import { PlaylistPicker } from './PlaylistPicker';
+import { activateComparisonMode, deactivateComparisonMode } from '../api/comparisons';
 
 import { ErrorState } from './ErrorState';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -39,6 +40,18 @@ export function ComparisonView() {
 
   // Stats modal state
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
+
+  // Activate comparison mode on mount, deactivate on unmount
+  // This tells the CLI backend that web-winner/web-archive should route to comparison
+  useEffect(() => {
+    if (isComparisonMode) {
+      activateComparisonMode().catch(console.error);
+
+      return () => {
+        deactivateComparisonMode().catch(console.error);
+      };
+    }
+  }, [isComparisonMode]);
 
   const handleSelectPlaylist = (playlistId: number) => {
     startComparison.mutate(playlistId);
