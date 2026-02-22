@@ -105,6 +105,9 @@ export function usePlayer() {
       if (err.name === 'NotAllowedError') {
         // iOS Safari blocked autoplay - need user gesture
         store.set({ needsUserGesture: true });
+      } else if (err.name === 'AbortError') {
+        // Expected during track switching - play() interrupted by new load()
+        // No action needed, the new track will play when ready
       } else {
         store.setPlaybackError(err.message);
       }

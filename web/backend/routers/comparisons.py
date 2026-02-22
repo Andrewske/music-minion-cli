@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
 from pydantic import BaseModel
 from ..deps import get_db
+from music_minion.ipc import send_command
 from ..sync_manager import sync_manager
 from ..schemas import (
     ComparisonRequest,
@@ -198,4 +199,52 @@ async def record_comparison(
         logger.exception("Failed to record comparison")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# Context Activation Endpoints
+
+
+@router.post("/comparisons/activate")
+async def activate_comparison_mode():
+    """Activate comparison mode in CLI context.
+
+    Sends IPC command to set active_web_mode='comparison' so that
+    web-winner/web-archive hotkeys work correctly.
+    """
+    import logging
+    log = logging.getLogger(__name__)
+    log.info("activate_comparison_mode called")
+
+    try:
+        log.info("Sending IPC command: set-web-mode comparison")
+        success, message = send_command("set-web-mode", ["comparison"])
+        log.info(f"IPC response: success={success}, message={message}")
+
+        if not success:
+            raise HTTPException(status_code=500, detail=f"Failed to activate: {message}")
+
+        return {"success": True}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.exception("Failed to activate comparison mode")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/comparisons/activate")
+async def deactivate_comparison_mode():
+    """Deactivate comparison mode in CLI context.
+
+    Sends IPC command to clear active_web_mode.
+    Called when leaving the comparison page.
+    """
+    try:
+        success, message = send_command("set-web-mode", ["none"])
+
+        # Don't fail hard - CLI might have restarted
+        return {"success": True}
+
+    except Exception:
+        # Swallow errors on deactivation - not critical
+        return {"success": True}
 

@@ -48,6 +48,37 @@ export function useSyncWebSocket() {
           usePlayerStore.getState().syncDevices(data);
           break;
 
+        case 'track:emojis_updated': {
+          const { track_id, emojis } = data;
+          const { currentTrack, queue, set } = usePlayerStore.getState();
+
+          // Update currentTrack if it matches
+          const updatedCurrentTrack = currentTrack?.id === track_id
+            ? { ...currentTrack, emojis } as typeof currentTrack
+            : currentTrack;
+
+          // Update queue if track is in it
+          const updatedQueue = queue.map(t =>
+            t.id === track_id ? { ...t, emojis } : t
+          );
+
+          // Only update if something changed
+          if (updatedCurrentTrack !== currentTrack || updatedQueue !== queue) {
+            set({ currentTrack: updatedCurrentTrack, queue: updatedQueue });
+          }
+
+          // Also update comparisonStore if track is in current pair
+          const { currentPair, updateTrackInPair } = useComparisonStore.getState();
+          if (currentPair) {
+            if (currentPair.track_a.id === track_id) {
+              updateTrackInPair({ ...currentPair.track_a, emojis });
+            } else if (currentPair.track_b.id === track_id) {
+              updateTrackInPair({ ...currentPair.track_b, emojis });
+            }
+          }
+          break;
+        }
+
         case 'ping':
           break;
 

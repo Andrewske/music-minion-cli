@@ -21,3 +21,10 @@ export async function recordComparison(
   });
 }
 
+export async function activateComparisonMode(): Promise<void> {
+  await apiRequest('/comparisons/activate', { method: 'POST' });
+}
+
+export async function deactivateComparisonMode(): Promise<void> {
+  await apiRequest('/comparisons/activate', { method: 'DELETE' });
+}

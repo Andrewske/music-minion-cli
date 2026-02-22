@@ -21,7 +21,7 @@ def start_play(track_id: int, source_type: str = "local") -> int:
         cursor = conn.execute(
             """
             INSERT INTO radio_history (track_id, source_type, started_at)
-            VALUES (?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, datetime('now', 'localtime'))
             """,
             (track_id, source_type)
         )
@@ -41,7 +41,7 @@ def end_play(history_id: int, duration_ms: int, reason: str = "skip") -> None:
         conn.execute(
             """
             UPDATE radio_history
-            SET ended_at = CURRENT_TIMESTAMP, position_ms = ?, end_reason = ?
+            SET ended_at = datetime('now', 'localtime'), position_ms = ?, end_reason = ?
             WHERE id = ?
             """,
             (duration_ms, reason, history_id)
@@ -132,7 +132,7 @@ def get_history_entries(
             params.append(start_date)
 
         if end_date:
-            query += " AND DATE(rh.started_at) < ?"
+            query += " AND DATE(rh.started_at) <= ?"
             params.append(end_date)
 
         query += " ORDER BY rh.started_at DESC LIMIT ? OFFSET ?"

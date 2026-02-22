@@ -244,7 +244,10 @@ export function useWavesurfer({ trackId, isPlaying, onFinish, onReady, onSeek, o
 
     if (isPlaying && !wavesurferRef.current.isPlaying()) {
       wavesurferRef.current.play().catch((err) => {
-        console.warn('Play failed:', err);
+        // AbortError is expected during track switching - ignore it
+        if (err.name !== 'AbortError') {
+          console.warn('Play failed:', err);
+        }
       });
     } else if (!isPlaying && wavesurferRef.current.isPlaying()) {
       wavesurferRef.current.pause();
