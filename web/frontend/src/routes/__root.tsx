@@ -6,6 +6,7 @@ import { Sidebar } from '../components/sidebar/Sidebar'
 import { MobileHeader } from '../components/sidebar/MobileHeader'
 import { SidebarPlaylists } from '../components/sidebar/SidebarPlaylists'
 import { SidebarFilters } from '../components/sidebar/SidebarFilters'
+import { SidebarQuickTag } from '../components/sidebar/SidebarQuickTag'
 import { AudioElementProvider } from '../contexts/AudioElementContext'
 
 function RootComponent(): JSX.Element {
@@ -25,6 +26,7 @@ function RootComponent(): JSX.Element {
         {/* Desktop sidebar - only on md+ */}
         <div className="hidden md:flex">
           <Sidebar>
+            <SidebarQuickTag sidebarExpanded={true} />
             <SidebarPlaylists sidebarExpanded={true} />
             <SidebarFilters sidebarExpanded={true} />
           </Sidebar>
