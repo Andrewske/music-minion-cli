@@ -1,6 +1,6 @@
 ---
 task: 07-organizer-page
-status: pending
+status: done
 depends: [05-organizer-hook, 06-organizer-routes]
 files:
   - path: web/frontend/src/pages/PlaylistOrganizer.tsx

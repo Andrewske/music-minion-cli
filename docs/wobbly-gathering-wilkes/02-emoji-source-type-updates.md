@@ -1,6 +1,6 @@
 ---
 task: 02-emoji-source-type-updates
-status: pending
+status: done
 depends: [01-database-migration]
 files:
   - path: web/backend/queries/emojis.py

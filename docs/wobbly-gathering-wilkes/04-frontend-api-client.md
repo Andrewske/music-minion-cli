@@ -1,6 +1,6 @@
 ---
 task: 04-frontend-api-client
-status: pending
+status: done
 depends: [03-bucket-backend-api]
 files:
   - path: web/frontend/src/api/buckets.ts
