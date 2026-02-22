@@ -1,6 +1,6 @@
 ---
 task: 08-bucket-components
-status: pending
+status: done
 depends: [07-organizer-page]
 files:
   - path: web/frontend/src/components/organizer/BucketList.tsx

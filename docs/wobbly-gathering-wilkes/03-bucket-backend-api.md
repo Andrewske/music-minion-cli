@@ -1,6 +1,6 @@
 ---
 task: 03-bucket-backend-api
-status: pending
+status: complete
 depends: [01-database-migration, 02-emoji-source-type-updates]
 files:
   - path: web/backend/routers/buckets.py

@@ -39,6 +39,7 @@ export function SidebarPlaylists({ sidebarExpanded }: SidebarPlaylistsProps): JS
 
   const isOnHome = location.pathname === '/';
   const isOnComparison = location.pathname === '/comparison';
+  const isOnOrganizer = location.pathname.startsWith('/playlist-organizer');
 
   const startComparisonMutation = useStartComparison();
   const { selectedPlaylistId: comparisonPlaylistId, isComparisonMode } = useComparisonStore();
@@ -94,6 +95,9 @@ export function SidebarPlaylists({ sidebarExpanded }: SidebarPlaylistsProps): JS
     } else if (isOnComparison) {
       // Start comparison with this playlist
       startComparisonMutation.mutate(playlistId);
+    } else if (isOnOrganizer) {
+      // Navigate to organizer
+      navigate({ to: '/playlist-organizer/$playlistId', params: { playlistId: String(playlistId) } });
     } else {
       // Navigate to builder
       navigate({ to: '/playlist-builder/$playlistId', params: { playlistId: String(playlistId) } });

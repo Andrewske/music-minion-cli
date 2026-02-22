@@ -1,6 +1,6 @@
 ---
 task: 01-database-migration
-status: pending
+status: done
 depends: []
 files:
   - path: src/music_minion/core/database.py

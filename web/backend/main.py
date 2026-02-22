@@ -21,7 +21,7 @@ custom_emojis_dir.mkdir(exist_ok=True)
 app.mount(
     "/custom_emojis",
     StaticFiles(directory=str(custom_emojis_dir)),
-    name="custom_emojis"
+    name="custom_emojis",
 )
 
 # CORS: Allow environment override for production
@@ -41,7 +41,21 @@ app.add_middleware(
 )
 
 # Include routers
-from .routers import comparisons, tracks, youtube, soundcloud, builder, sync, live, emojis, player, commands, history, quicktag
+from .routers import (
+    comparisons,
+    tracks,
+    youtube,
+    soundcloud,
+    builder,
+    sync,
+    live,
+    emojis,
+    player,
+    commands,
+    history,
+    quicktag,
+    buckets,
+)
 from .routers.playlists import router as playlists_router
 
 app.include_router(comparisons.router, prefix="/api", tags=["comparisons"])
@@ -57,6 +71,7 @@ app.include_router(history.router, prefix="/api/history", tags=["history"])
 app.include_router(live.router, tags=["live"])
 app.include_router(commands.router, prefix="/api", tags=["commands"])
 app.include_router(quicktag.router, prefix="/api/quicktag", tags=["quicktag"])
+app.include_router(buckets.router, tags=["buckets"])
 
 
 @app.on_event("startup")
@@ -71,6 +86,7 @@ async def startup_event():
     else:
         # SQLite - use existing init
         from music_minion.core.database import init_database
+
         init_database()
 
     # Restore player queue state from database
@@ -94,4 +110,6 @@ if FRONTEND_DIST.exists():
         """Serve React SPA for all non-API routes."""
         return FileResponse(FRONTEND_DIST / "index.html")
 else:
-    logging.info(f"Frontend dist not found at {FRONTEND_DIST}, skipping static file serving")
+    logging.info(
+        f"Frontend dist not found at {FRONTEND_DIST}, skipping static file serving"
+    )

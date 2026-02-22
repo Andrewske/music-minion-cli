@@ -15,6 +15,7 @@ Usage:
 
 import argparse
 import sys
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -24,12 +25,14 @@ from music_minion.core.database import get_db_connection, normalize_emoji_id
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description='Bulk tag tracks with emoji')
+    parser = argparse.ArgumentParser(description="Bulk tag tracks with emoji")
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('--playlist', help='Playlist name')
-    group.add_argument('--path-pattern', help='File path pattern (e.g., "*/EDM/*")')
-    group.add_argument('--track-ids', help='Comma-separated track IDs')
-    parser.add_argument('--emoji', required=True, help='Emoji to add (Unicode or custom UUID)')
+    group.add_argument("--playlist", help="Playlist name")
+    group.add_argument("--path-pattern", help='File path pattern (e.g., "*/EDM/*")')
+    group.add_argument("--track-ids", help="Comma-separated track IDs")
+    parser.add_argument(
+        "--emoji", required=True, help="Emoji to add (Unicode or custom UUID)"
+    )
     args = parser.parse_args()
 
     emoji_id = normalize_emoji_id(args.emoji)
@@ -44,22 +47,20 @@ def main() -> None:
                 JOIN playlists p ON pt.playlist_id = p.id
                 WHERE p.name = ?
                 """,
-                (args.playlist,)
+                (args.playlist,),
             )
         elif args.path_pattern:
             cursor = conn.execute(
-                "SELECT id FROM tracks WHERE local_path GLOB ?",
-                (args.path_pattern,)
+                "SELECT id FROM tracks WHERE local_path GLOB ?", (args.path_pattern,)
             )
         else:  # track_ids
-            track_id_list = [int(x.strip()) for x in args.track_ids.split(',')]
-            placeholders = ','.join('?' * len(track_id_list))
+            track_id_list = [int(x.strip()) for x in args.track_ids.split(",")]
+            placeholders = ",".join("?" * len(track_id_list))
             cursor = conn.execute(
-                f"SELECT id FROM tracks WHERE id IN ({placeholders})",
-                track_id_list
+                f"SELECT id FROM tracks WHERE id IN ({placeholders})", track_id_list
             )
 
-        track_ids = [row['id'] for row in cursor.fetchall()]
+        track_ids = [row["id"] for row in cursor.fetchall()]
 
         if not track_ids:
             print("No tracks found matching criteria")
@@ -72,35 +73,40 @@ def main() -> None:
         try:
             # Auto-create emoji metadata if missing (same behavior as web UI)
             cursor = conn.execute(
-                "SELECT type FROM emoji_metadata WHERE emoji_id = ?",
-                (emoji_id,)
+                "SELECT type FROM emoji_metadata WHERE emoji_id = ?", (emoji_id,)
             )
             row = cursor.fetchone()
             if not row:
                 # Check if it looks like a custom emoji UUID
-                if len(emoji_id) == 36 and emoji_id.count('-') == 4:
+                if len(emoji_id) == 36 and emoji_id.count("-") == 4:
                     print(f"Error: Custom emoji '{emoji_id}' not found in database")
                     print("Add custom emojis first with add-custom-emoji.py")
                     sys.exit(1)
 
                 # Auto-create for Unicode emojis
                 try:
-                    name = emoji_lib.demojize(emoji_id).strip(':').replace('_', ' ')
+                    name = emoji_lib.demojize(emoji_id).strip(":").replace("_", " ")
                 except Exception:
                     name = emoji_id
 
                 conn.execute(
                     "INSERT INTO emoji_metadata (emoji_id, type, default_name, use_count) VALUES (?, 'unicode', ?, 0)",
-                    (emoji_id, name)
+                    (emoji_id, name),
                 )
                 print(f"Auto-created metadata for emoji '{emoji_id}' ({name})")
 
-            # Bulk insert (INSERT OR IGNORE to skip duplicates)
+            # Bulk insert with source tracking (INSERT OR IGNORE to skip duplicates)
             added = 0
             for track_id in track_ids:
+                # Generate 32-char hex UUID for each instance
+                instance_id = uuid.uuid4().hex
                 cursor = conn.execute(
-                    "INSERT OR IGNORE INTO track_emojis (track_id, emoji_id) VALUES (?, ?)",
-                    (track_id, emoji_id)
+                    """
+                    INSERT OR IGNORE INTO track_emojis
+                    (id, track_id, emoji_id, source_type, source_id)
+                    VALUES (?, ?, ?, 'bulk', NULL)
+                    """,
+                    (instance_id, track_id, emoji_id),
                 )
                 if cursor.rowcount > 0:
                     added += 1
@@ -113,11 +119,13 @@ def main() -> None:
                     SET use_count = use_count + ?, last_used = CURRENT_TIMESTAMP
                     WHERE emoji_id = ?
                     """,
-                    (added, emoji_id)
+                    (added, emoji_id),
                 )
 
             conn.commit()
-            print(f"✅ Added emoji to {added} tracks ({len(track_ids) - added} already had it)")
+            print(
+                f"✅ Added emoji to {added} tracks ({len(track_ids) - added} already had it)"
+            )
 
         except Exception as e:
             conn.rollback()
@@ -125,5 +133,5 @@ def main() -> None:
             sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -1,5 +1,5 @@
 import { Link, useRouterState } from '@tanstack/react-router';
-import { House, Clock, Trophy, ListMusic } from 'lucide-react';
+import { House, Clock, Trophy, ListMusic, Layers } from 'lucide-react';
 
 interface NavItem {
   href: string;
@@ -12,6 +12,7 @@ const navItems: NavItem[] = [
   { href: '/history', label: 'History', icon: Clock },
   { href: '/comparison', label: 'Comparison', icon: Trophy },
   { href: '/playlist-builder', label: 'Playlist Builder', icon: ListMusic },
+  { href: '/playlist-organizer', label: 'Playlist Organizer', icon: Layers },
 ];
 
 interface SidebarNavProps {

@@ -17,40 +17,67 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 39  # Quick Tag dimension pairs and votes
+SCHEMA_VERSION = 40  # Bucket sessions and track_emojis source tracking
 
 
 # Initial top 50 curated emojis for music reactions
 INITIAL_TOP_50_EMOJIS = [
     # Energy/Vibe (8)
-    ("🔥", "fire"), ("⚡", "high voltage"), ("💥", "collision"),
-    ("✨", "sparkles"), ("🌟", "star"), ("💫", "dizzy"),
-    ("🎆", "fireworks"), ("🌈", "rainbow"),
-
+    ("🔥", "fire"),
+    ("⚡", "high voltage"),
+    ("💥", "collision"),
+    ("✨", "sparkles"),
+    ("🌟", "star"),
+    ("💫", "dizzy"),
+    ("🎆", "fireworks"),
+    ("🌈", "rainbow"),
     # Emotions (10)
-    ("💪", "flexed biceps"), ("🎯", "direct hit"), ("😍", "smiling face with heart-eyes"),
-    ("😎", "smiling face with sunglasses"), ("🤘", "sign of the horns"),
-    ("👌", "ok hand"), ("🙌", "raising hands"), ("💖", "sparkling heart"),
-    ("❤️", "red heart"), ("💯", "hundred points"),
-
+    ("💪", "flexed biceps"),
+    ("🎯", "direct hit"),
+    ("😍", "smiling face with heart-eyes"),
+    ("😎", "smiling face with sunglasses"),
+    ("🤘", "sign of the horns"),
+    ("👌", "ok hand"),
+    ("🙌", "raising hands"),
+    ("💖", "sparkling heart"),
+    ("❤️", "red heart"),
+    ("💯", "hundred points"),
     # Music/Audio (8)
-    ("🎵", "musical note"), ("🎶", "musical notes"), ("🎤", "microphone"),
-    ("🎧", "headphone"), ("🔊", "speaker high volume"), ("🎸", "guitar"),
-    ("🎹", "musical keyboard"), ("🥁", "drum"),
-
+    ("🎵", "musical note"),
+    ("🎶", "musical notes"),
+    ("🎤", "microphone"),
+    ("🎧", "headphone"),
+    ("🔊", "speaker high volume"),
+    ("🎸", "guitar"),
+    ("🎹", "musical keyboard"),
+    ("🥁", "drum"),
     # Dance/Movement (6)
-    ("💃", "woman dancing"), ("🕺", "man dancing"), ("🪩", "mirror ball"),
-    ("🎉", "party popper"), ("🎊", "confetti ball"), ("🏃", "person running"),
-
+    ("💃", "woman dancing"),
+    ("🕺", "man dancing"),
+    ("🪩", "mirror ball"),
+    ("🎉", "party popper"),
+    ("🎊", "confetti ball"),
+    ("🏃", "person running"),
     # Chill/Relaxed (6)
-    ("😌", "relieved face"), ("🌙", "crescent moon"), ("☁️", "cloud"),
-    ("🌊", "water wave"), ("🍃", "leaf fluttering in wind"), ("🧘", "person in lotus position"),
-
+    ("😌", "relieved face"),
+    ("🌙", "crescent moon"),
+    ("☁️", "cloud"),
+    ("🌊", "water wave"),
+    ("🍃", "leaf fluttering in wind"),
+    ("🧘", "person in lotus position"),
     # Miscellaneous (12)
-    ("🚀", "rocket"), ("💎", "gem stone"), ("👑", "crown"),
-    ("🌺", "hibiscus"), ("🔮", "crystal ball"), ("⭐", "star"),
-    ("🌸", "cherry blossom"), ("🦋", "butterfly"), ("🐉", "dragon"),
-    ("🎭", "performing arts"), ("🏆", "trophy"), ("🎨", "artist palette")
+    ("🚀", "rocket"),
+    ("💎", "gem stone"),
+    ("👑", "crown"),
+    ("🌺", "hibiscus"),
+    ("🔮", "crystal ball"),
+    ("⭐", "star"),
+    ("🌸", "cherry blossom"),
+    ("🦋", "butterfly"),
+    ("🐉", "dragon"),
+    ("🎭", "performing arts"),
+    ("🏆", "trophy"),
+    ("🎨", "artist palette"),
 ]
 
 
@@ -67,14 +94,14 @@ def normalize_emoji_id(emoji_str: str) -> str:
         Normalized emoji identifier
     """
     # UUID pattern check for custom emojis (they don't need normalization)
-    if len(emoji_str) == 36 and emoji_str.count('-') == 4:
+    if len(emoji_str) == 36 and emoji_str.count("-") == 4:
         return emoji_str
 
     # Strip variation selectors (VS15 text, VS16 emoji presentation)
-    emoji_str = emoji_str.replace('\ufe0e', '').replace('\ufe0f', '')
+    emoji_str = emoji_str.replace("\ufe0e", "").replace("\ufe0f", "")
 
     # Normalize Unicode emojis to NFC form
-    return unicodedata.normalize('NFC', emoji_str)
+    return unicodedata.normalize("NFC", emoji_str)
 
 
 def seed_initial_emojis(conn) -> None:
@@ -84,7 +111,7 @@ def seed_initial_emojis(conn) -> None:
         INSERT OR IGNORE INTO emoji_metadata (emoji_id, default_name, use_count)
         VALUES (?, ?, 0)
         """,
-        INITIAL_TOP_50_EMOJIS
+        INITIAL_TOP_50_EMOJIS,
     )
     conn.commit()
 
@@ -93,7 +120,9 @@ def seed_initial_emojis(conn) -> None:
     fts_count = cursor.fetchone()[0]
     if fts_count != 50:
         logger.error(f"FTS index not properly populated. Expected 50, got {fts_count}")
-        logger.info("Run this to rebuild: INSERT INTO emoji_metadata_fts SELECT rowid, emoji_id, custom_name, default_name FROM emoji_metadata")
+        logger.info(
+            "Run this to rebuild: INSERT INTO emoji_metadata_fts SELECT rowid, emoji_id, custom_name, default_name FROM emoji_metadata"
+        )
 
 
 def get_database_path() -> Path:
@@ -1196,7 +1225,9 @@ def migrate_database(conn, current_version: int) -> None:
 
     if current_version < 30:
         # Migration from v29 to v30: Add source_filter to stations
-        logger.info("Migrating database to schema version 30 (Station Source Filter)...")
+        logger.info(
+            "Migrating database to schema version 30 (Station Source Filter)..."
+        )
 
         try:
             conn.execute(
@@ -1251,10 +1282,14 @@ def migrate_database(conn, current_version: int) -> None:
 
         # Performance indexes
         conn.execute("CREATE INDEX idx_track_emojis_track_id ON track_emojis(track_id)")
-        conn.execute("CREATE INDEX idx_track_emojis_emoji_id ON track_emojis(emoji_id)")  # For emoji filtering
+        conn.execute(
+            "CREATE INDEX idx_track_emojis_emoji_id ON track_emojis(emoji_id)"
+        )  # For emoji filtering
 
         # Regular indexes for sorting
-        conn.execute("CREATE INDEX idx_emoji_metadata_use_count ON emoji_metadata(use_count DESC, last_used DESC)")
+        conn.execute(
+            "CREATE INDEX idx_emoji_metadata_use_count ON emoji_metadata(use_count DESC, last_used DESC)"
+        )
 
         # Full-Text Search index for searching emoji names (supports ALL emojis, not just initial 50)
         conn.execute("""
@@ -1301,19 +1336,25 @@ def migrate_database(conn, current_version: int) -> None:
         print("  Migrating to v32: Adding playlist pinning support...")
 
         try:
-            conn.execute("ALTER TABLE playlists ADD COLUMN pin_order INTEGER DEFAULT NULL")
+            conn.execute(
+                "ALTER TABLE playlists ADD COLUMN pin_order INTEGER DEFAULT NULL"
+            )
         except sqlite3.OperationalError as e:
             if "duplicate column name" not in str(e).lower():
                 raise
 
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_playlists_pin_order ON playlists(pin_order)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_playlists_pin_order ON playlists(pin_order)"
+        )
 
         print("  ✓ Migration to v32 complete: Playlist pinning support added")
         conn.commit()
 
     if current_version < 33:
         # Migration from v32 to v33: Consolidate global ELO to "All" playlist
-        print("  Migrating to v33: Consolidating ELO rankings to playlist-based system...")
+        print(
+            "  Migrating to v33: Consolidating ELO rankings to playlist-based system..."
+        )
 
         # Add performance indexes first
         conn.execute("""
@@ -1334,7 +1375,7 @@ def migrate_database(conn, current_version: int) -> None:
         all_playlist = cursor.fetchone()
 
         if all_playlist:
-            all_id = all_playlist['id']
+            all_id = all_playlist["id"]
 
             # Count data before migration
             cursor = conn.execute("SELECT COUNT(*) FROM elo_ratings")
@@ -1344,7 +1385,8 @@ def migrate_database(conn, current_version: int) -> None:
             old_comparisons = cursor.fetchone()[0]
 
             # Migrate global ELO ratings to "All" playlist
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT OR REPLACE INTO playlist_elo_ratings (track_id, playlist_id, rating, comparison_count, wins)
                 SELECT
                     er.track_id,
@@ -1353,11 +1395,14 @@ def migrate_database(conn, current_version: int) -> None:
                     er.comparison_count,
                     er.wins
                 FROM elo_ratings er
-            """, (all_id,))
+            """,
+                (all_id,),
+            )
 
             # Migrate global comparison history to "All" playlist
             # Map old global ratings to both playlist and global columns
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO playlist_comparison_history (
                     playlist_id, track_a_id, track_b_id, winner_id, affects_global,
                     track_a_playlist_rating_before, track_a_playlist_rating_after,
@@ -1376,49 +1421,70 @@ def migrate_database(conn, current_version: int) -> None:
                     ch.track_b_rating_before, ch.track_b_rating_after,
                     ch.session_id, ch.timestamp
                 FROM comparison_history ch
-            """, (all_id,))
+            """,
+                (all_id,),
+            )
 
             # Count data after migration
             cursor = conn.execute(
                 "SELECT COUNT(*) FROM playlist_elo_ratings WHERE playlist_id = ?",
-                (all_id,)
+                (all_id,),
             )
             new_ratings = cursor.fetchone()[0]
 
             cursor = conn.execute(
                 "SELECT COUNT(*) FROM playlist_comparison_history WHERE playlist_id = ?",
-                (all_id,)
+                (all_id,),
             )
             new_comparisons = cursor.fetchone()[0]
 
             # Log migration results
             logger.info("✅ Migration to v33 complete:")
-            logger.info(f"  - Ratings: {new_ratings} / {old_ratings} migrated to All playlist")
-            logger.info(f"  - Comparisons: {new_comparisons} / {old_comparisons} migrated to All playlist")
+            logger.info(
+                f"  - Ratings: {new_ratings} / {old_ratings} migrated to All playlist"
+            )
+            logger.info(
+                f"  - Comparisons: {new_comparisons} / {old_comparisons} migrated to All playlist"
+            )
 
             if new_ratings != old_ratings or new_comparisons != old_comparisons:
                 logger.warning("⚠️  Migration mismatch detected - check for data issues")
 
         # Backup old tables (can be removed in future migration if all is well)
         try:
-            conn.execute("ALTER TABLE comparison_history RENAME TO _backup_comparison_history")
+            conn.execute(
+                "ALTER TABLE comparison_history RENAME TO _backup_comparison_history"
+            )
         except sqlite3.OperationalError as e:
-            if "no such table" not in str(e).lower() and "already exists" not in str(e).lower():
+            if (
+                "no such table" not in str(e).lower()
+                and "already exists" not in str(e).lower()
+            ):
                 raise
 
         try:
             conn.execute("ALTER TABLE elo_ratings RENAME TO _backup_elo_ratings")
         except sqlite3.OperationalError as e:
-            if "no such table" not in str(e).lower() and "already exists" not in str(e).lower():
+            if (
+                "no such table" not in str(e).lower()
+                and "already exists" not in str(e).lower()
+            ):
                 raise
 
         try:
-            conn.execute("ALTER TABLE playlist_ranking_sessions RENAME TO _backup_playlist_ranking_sessions")
+            conn.execute(
+                "ALTER TABLE playlist_ranking_sessions RENAME TO _backup_playlist_ranking_sessions"
+            )
         except sqlite3.OperationalError as e:
-            if "no such table" not in str(e).lower() and "already exists" not in str(e).lower():
+            if (
+                "no such table" not in str(e).lower()
+                and "already exists" not in str(e).lower()
+            ):
                 raise
 
-        print("  ✓ Migration to v33 complete: ELO rankings consolidated to playlist-based system")
+        print(
+            "  ✓ Migration to v33 complete: ELO rankings consolidated to playlist-based system"
+        )
         conn.commit()
 
     if current_version < 34:
@@ -1436,7 +1502,7 @@ def migrate_database(conn, current_version: int) -> None:
                 # Get filters for this playlist
                 cursor = conn.execute(
                     "SELECT field, operator, value, conjunction FROM playlist_filters WHERE playlist_id = ? ORDER BY id",
-                    (playlist_id,)
+                    (playlist_id,),
                 )
                 filters = cursor.fetchall()
 
@@ -1480,7 +1546,9 @@ def migrate_database(conn, current_version: int) -> None:
                 where_clause = " AND ".join(where_parts)
 
                 # Clear existing playlist_tracks
-                conn.execute("DELETE FROM playlist_tracks WHERE playlist_id = ?", (playlist_id,))
+                conn.execute(
+                    "DELETE FROM playlist_tracks WHERE playlist_id = ?", (playlist_id,)
+                )
 
                 # Insert matching tracks
                 cursor = conn.execute(
@@ -1490,20 +1558,20 @@ def migrate_database(conn, current_version: int) -> None:
                     AND t.id NOT IN (SELECT track_id FROM playlist_builder_skipped WHERE playlist_id = ?)
                     ORDER BY artist, album, title
                     """,
-                    tuple(params) + (playlist_id,)
+                    tuple(params) + (playlist_id,),
                 )
                 track_ids = [row["id"] for row in cursor.fetchall()]
 
                 # Batch insert
                 conn.executemany(
                     "INSERT INTO playlist_tracks (playlist_id, track_id, position, added_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
-                    [(playlist_id, tid, pos) for pos, tid in enumerate(track_ids)]
+                    [(playlist_id, tid, pos) for pos, tid in enumerate(track_ids)],
                 )
 
                 # Update track_count
                 conn.execute(
                     "UPDATE playlists SET track_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                    (len(track_ids), playlist_id)
+                    (len(track_ids), playlist_id),
                 )
 
                 print(f"    Materialized '{playlist_name}': {len(track_ids)} tracks")
@@ -1548,7 +1616,9 @@ def migrate_database(conn, current_version: int) -> None:
             """)
             bad_count = cursor.fetchone()[0]
             if bad_count > 0:
-                raise ValueError(f"Found {bad_count} non-numeric track_id values - manual cleanup required")
+                raise ValueError(
+                    f"Found {bad_count} non-numeric track_id values - manual cleanup required"
+                )
 
             # Disable FK constraints during table recreation (follows v14 pattern)
             conn.execute("PRAGMA foreign_keys=OFF")
@@ -1578,16 +1648,24 @@ def migrate_database(conn, current_version: int) -> None:
             """)
             # Swap tables
             conn.execute("DROP TABLE playlist_elo_ratings")
-            conn.execute("ALTER TABLE playlist_elo_ratings_new RENAME TO playlist_elo_ratings")
+            conn.execute(
+                "ALTER TABLE playlist_elo_ratings_new RENAME TO playlist_elo_ratings"
+            )
             # Recreate indices
-            conn.execute("CREATE INDEX idx_playlist_elo_ratings_playlist_id ON playlist_elo_ratings(playlist_id, rating DESC)")
-            conn.execute("CREATE INDEX idx_playlist_elo_comparison_count ON playlist_elo_ratings(playlist_id, comparison_count)")
+            conn.execute(
+                "CREATE INDEX idx_playlist_elo_ratings_playlist_id ON playlist_elo_ratings(playlist_id, rating DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX idx_playlist_elo_comparison_count ON playlist_elo_ratings(playlist_id, comparison_count)"
+            )
 
             # Re-enable FK constraints
             conn.execute("PRAGMA foreign_keys=ON")
 
             conn.commit()
-            logger.info("  ✓ Migration to v36 complete: playlist_elo_ratings.track_id is now INTEGER")
+            logger.info(
+                "  ✓ Migration to v36 complete: playlist_elo_ratings.track_id is now INTEGER"
+            )
         except Exception as e:
             logger.error(f"  ✗ Migration to v36 failed: {e}")
             conn.rollback()
@@ -1647,16 +1725,86 @@ def migrate_database(conn, current_version: int) -> None:
 
         # Seed the 10 bass music dimension pairs
         dimension_pairs = [
-            ("filth", "✨", "💀", "Pristine vs Filthy", "Grimy sound design vs clean production", 1),
-            ("energy", "🐢", "🚀", "Cruisin' vs Raging", "Chill vs peak-time banger", 2),
-            ("drop", "🪶", "💣", "Subtle vs Devastating", "Smooth transitions vs face-melting drops", 3),
-            ("groove", "🤖", "💃", "Mechanical vs Groovy", "Robotic/stiff vs infectious bounce", 4),
-            ("depth", "☀️", "🌊", "Bright vs Deep", "High/airy vs sub-heavy darkness", 5),
-            ("weirdness", "🏠", "👽", "Familiar vs Alien", "Conventional vs mind-bending", 6),
-            ("headbang", "😴", "🤘", "Nodding vs Necking", "Head nod vs full neck workout", 7),
-            ("vocals", "🎸", "🎤", "Instrumental vs Vocal", "Purely instrumental vs vocal-driven", 8),
-            ("buildup", "⚡", "🌀", "Quick vs Epic", "Instant drops vs cinematic tension", 9),
-            ("dancefloor", "🎧", "🪩", "Headphones vs Dancefloor", "Bedroom listening vs club weapon", 10),
+            (
+                "filth",
+                "✨",
+                "💀",
+                "Pristine vs Filthy",
+                "Grimy sound design vs clean production",
+                1,
+            ),
+            (
+                "energy",
+                "🐢",
+                "🚀",
+                "Cruisin' vs Raging",
+                "Chill vs peak-time banger",
+                2,
+            ),
+            (
+                "drop",
+                "🪶",
+                "💣",
+                "Subtle vs Devastating",
+                "Smooth transitions vs face-melting drops",
+                3,
+            ),
+            (
+                "groove",
+                "🤖",
+                "💃",
+                "Mechanical vs Groovy",
+                "Robotic/stiff vs infectious bounce",
+                4,
+            ),
+            (
+                "depth",
+                "☀️",
+                "🌊",
+                "Bright vs Deep",
+                "High/airy vs sub-heavy darkness",
+                5,
+            ),
+            (
+                "weirdness",
+                "🏠",
+                "👽",
+                "Familiar vs Alien",
+                "Conventional vs mind-bending",
+                6,
+            ),
+            (
+                "headbang",
+                "😴",
+                "🤘",
+                "Nodding vs Necking",
+                "Head nod vs full neck workout",
+                7,
+            ),
+            (
+                "vocals",
+                "🎸",
+                "🎤",
+                "Instrumental vs Vocal",
+                "Purely instrumental vs vocal-driven",
+                8,
+            ),
+            (
+                "buildup",
+                "⚡",
+                "🌀",
+                "Quick vs Epic",
+                "Instant drops vs cinematic tension",
+                9,
+            ),
+            (
+                "dancefloor",
+                "🎧",
+                "🪩",
+                "Headphones vs Dancefloor",
+                "Bedroom listening vs club weapon",
+                10,
+            ),
         ]
         conn.executemany(
             """
@@ -1667,7 +1815,119 @@ def migrate_database(conn, current_version: int) -> None:
         )
 
         conn.commit()
-        logger.info("  ✓ Migration to v39 complete: Quick Tag tables created and seeded")
+        logger.info(
+            "  ✓ Migration to v39 complete: Quick Tag tables created and seeded"
+        )
+
+    if current_version < 40:
+        logger.info(
+            "Migrating to v40: Bucket sessions and track_emojis source tracking..."
+        )
+
+        # Step 1: Rebuild track_emojis table with new schema
+        # Disable FK constraints during table recreation
+        conn.execute("PRAGMA foreign_keys=OFF")
+
+        # Create new track_emojis table with surrogate key and source tracking
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS track_emojis_new (
+                id TEXT PRIMARY KEY,
+                track_id INTEGER NOT NULL,
+                emoji_id TEXT NOT NULL,
+                source_type TEXT DEFAULT 'manual',
+                source_id TEXT,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (track_id) REFERENCES tracks (id) ON DELETE CASCADE
+            )
+        """)
+
+        # Migrate existing data with generated UUIDs (32-char hex format)
+        conn.execute("""
+            INSERT INTO track_emojis_new (id, track_id, emoji_id, source_type, source_id, added_at)
+            SELECT
+                lower(hex(randomblob(16))) as id,
+                track_id,
+                emoji_id,
+                'manual' as source_type,
+                NULL as source_id,
+                added_at
+            FROM track_emojis
+        """)
+
+        # Drop old table and rename new one
+        conn.execute("DROP TABLE track_emojis")
+        conn.execute("ALTER TABLE track_emojis_new RENAME TO track_emojis")
+
+        # Create indexes on new track_emojis table
+        conn.execute("CREATE INDEX idx_track_emojis_track_id ON track_emojis(track_id)")
+        conn.execute("CREATE INDEX idx_track_emojis_emoji_id ON track_emojis(emoji_id)")
+        conn.execute(
+            "CREATE INDEX idx_track_emojis_source ON track_emojis(source_type, source_id)"
+        )
+
+        # Re-enable FK constraints
+        conn.execute("PRAGMA foreign_keys=ON")
+
+        # Step 2: Create bucket_sessions table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS bucket_sessions (
+                id TEXT PRIMARY KEY,
+                playlist_id INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                status TEXT DEFAULT 'active',
+                FOREIGN KEY (playlist_id) REFERENCES playlists (id) ON DELETE CASCADE
+            )
+        """)
+
+        # Create unique partial index for active sessions per playlist
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_active_session_playlist
+            ON bucket_sessions(playlist_id)
+            WHERE status = 'active'
+        """)
+
+        # Step 3: Create buckets table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS buckets (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                emoji_id TEXT,
+                position INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (session_id) REFERENCES bucket_sessions (id) ON DELETE CASCADE
+            )
+        """)
+
+        # Step 4: Create bucket_tracks table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS bucket_tracks (
+                id TEXT PRIMARY KEY,
+                bucket_id TEXT NOT NULL,
+                track_id INTEGER NOT NULL,
+                position INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (bucket_id) REFERENCES buckets (id) ON DELETE CASCADE,
+                FOREIGN KEY (track_id) REFERENCES tracks (id) ON DELETE CASCADE,
+                UNIQUE (bucket_id, track_id)
+            )
+        """)
+
+        # Create indexes for bucket tables
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_buckets_session ON buckets(session_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_bucket_tracks_bucket ON bucket_tracks(bucket_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_bucket_tracks_track ON bucket_tracks(track_id)"
+        )
+
+        conn.commit()
+        logger.info(
+            "  ✓ Migration to v40 complete: Bucket sessions and track_emojis source tracking"
+        )
 
 
 def init_database() -> None:
@@ -2802,7 +3062,9 @@ def batch_insert_youtube_tracks(tracks_data: list[dict]) -> list[int]:
 
     with get_db_connection() as conn:
         # Use RETURNING clause to get all IDs in one query
-        placeholders = ", ".join(["(?, ?, ?, ?, ?, ?, 'youtube', ?)"] * len(tracks_data))
+        placeholders = ", ".join(
+            ["(?, ?, ?, ?, ?, ?, 'youtube', ?)"] * len(tracks_data)
+        )
 
         # Flatten the data with youtube_synced_at timestamp
         synced_at = datetime.now()
