@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 38  # Add end_reason column to radio_history
+SCHEMA_VERSION = 39  # Quick Tag dimension pairs and votes
 
 
 # Initial top 50 curated emojis for music reactions
@@ -1612,6 +1612,62 @@ def migrate_database(conn, current_version: int) -> None:
         except sqlite3.OperationalError as e:
             if "duplicate column name" not in str(e).lower():
                 raise
+
+    if current_version < 39:
+        logger.info("Migrating to v39: Quick Tag dimension pairs and votes...")
+
+        # Static reference table for dimension pairs
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS dimension_pairs (
+                id TEXT PRIMARY KEY,
+                left_emoji TEXT NOT NULL,
+                right_emoji TEXT NOT NULL,
+                label TEXT NOT NULL,
+                description TEXT,
+                sort_order INTEGER NOT NULL
+            )
+        """)
+
+        # Votes table (single vote per track-dimension, upsert overwrites)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS track_dimension_votes (
+                track_id INTEGER NOT NULL,
+                dimension_id TEXT NOT NULL,
+                vote INTEGER NOT NULL CHECK (vote IN (-1, 0, 1)),
+                voted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (track_id, dimension_id),
+                FOREIGN KEY (track_id) REFERENCES tracks (id) ON DELETE CASCADE,
+                FOREIGN KEY (dimension_id) REFERENCES dimension_pairs (id) ON DELETE CASCADE
+            )
+        """)
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dim_votes_track ON track_dimension_votes (track_id)"
+        )
+
+        # Seed the 10 bass music dimension pairs
+        dimension_pairs = [
+            ("filth", "✨", "💀", "Pristine vs Filthy", "Grimy sound design vs clean production", 1),
+            ("energy", "🐢", "🚀", "Cruisin' vs Raging", "Chill vs peak-time banger", 2),
+            ("drop", "🪶", "💣", "Subtle vs Devastating", "Smooth transitions vs face-melting drops", 3),
+            ("groove", "🤖", "💃", "Mechanical vs Groovy", "Robotic/stiff vs infectious bounce", 4),
+            ("depth", "☀️", "🌊", "Bright vs Deep", "High/airy vs sub-heavy darkness", 5),
+            ("weirdness", "🏠", "👽", "Familiar vs Alien", "Conventional vs mind-bending", 6),
+            ("headbang", "😴", "🤘", "Nodding vs Necking", "Head nod vs full neck workout", 7),
+            ("vocals", "🎸", "🎤", "Instrumental vs Vocal", "Purely instrumental vs vocal-driven", 8),
+            ("buildup", "⚡", "🌀", "Quick vs Epic", "Instant drops vs cinematic tension", 9),
+            ("dancefloor", "🎧", "🪩", "Headphones vs Dancefloor", "Bedroom listening vs club weapon", 10),
+        ]
+        conn.executemany(
+            """
+            INSERT OR IGNORE INTO dimension_pairs (id, left_emoji, right_emoji, label, description, sort_order)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            dimension_pairs,
+        )
+
+        conn.commit()
+        logger.info("  ✓ Migration to v39 complete: Quick Tag tables created and seeded")
 
 
 def init_database() -> None:
