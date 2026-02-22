@@ -49,13 +49,14 @@ export function useSyncWebSocket() {
           break;
 
         case 'track:emojis_updated': {
-          const { track_id, emojis } = data;
+          const { track_id, emojis } = data as { track_id: number; emojis: string[] };
           const { currentTrack, queue, set } = usePlayerStore.getState();
 
           // Update currentTrack if it matches
-          const updatedCurrentTrack = currentTrack?.id === track_id
-            ? { ...currentTrack, emojis } as typeof currentTrack
-            : currentTrack;
+          let updatedCurrentTrack = currentTrack;
+          if (currentTrack && currentTrack.id === track_id) {
+            updatedCurrentTrack = { ...currentTrack, emojis };
+          }
 
           // Update queue if track is in it
           const updatedQueue = queue.map(t =>
@@ -69,12 +70,10 @@ export function useSyncWebSocket() {
 
           // Also update comparisonStore if track is in current pair
           const { currentPair, updateTrackInPair } = useComparisonStore.getState();
-          if (currentPair) {
-            if (currentPair.track_a.id === track_id) {
-              updateTrackInPair({ ...currentPair.track_a, emojis });
-            } else if (currentPair.track_b.id === track_id) {
-              updateTrackInPair({ ...currentPair.track_b, emojis });
-            }
+          if (currentPair?.track_a.id === track_id) {
+            updateTrackInPair({ ...currentPair.track_a, emojis });
+          } else if (currentPair?.track_b.id === track_id) {
+            updateTrackInPair({ ...currentPair.track_b, emojis });
           }
           break;
         }
