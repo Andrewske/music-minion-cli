@@ -1,7 +1,10 @@
+import { useState } from 'react';
 import type { TrackInfo } from '../types';
 import { EmojiTrackActions } from './EmojiTrackActions';
 import { usePlayer } from '../hooks/usePlayer';
 import type { PlayContext } from '../stores/playerStore';
+import { GenreTag } from './GenreTag';
+import { GenreSelectionModal } from './GenreSelectionModal';
 
 interface TrackCardProps {
   onClick?: () => void;
@@ -18,6 +21,10 @@ interface TrackCardProps {
 
 export function TrackCard({ track, isPlaying, className = '', onArchive, onWinner, onClick, isLoading, rankingMode = 'global', onTrackUpdate, context }: TrackCardProps) {
   const { play } = usePlayer();
+  const [genreModalOpen, setGenreModalOpen] = useState(false);
+
+  // Get primary genre (position=1 or first in array, or fall back to genre string)
+  const primaryGenre = track.genres?.[0] ?? (track.genre ? { name: track.genre, emoji_id: null } : null);
 
   const handleClick = () => {
     if (onClick) {
@@ -125,7 +132,26 @@ export function TrackCard({ track, isPlaying, className = '', onArchive, onWinne
 
         {/* Genre + Emojis row - just above divider, outside clickable area */}
         <div className="w-full text-sm text-white/50 font-sf-mono mb-2 flex items-center justify-center gap-2">
-          <span>{track.genre ?? 'Unknown genre'}</span>
+          {primaryGenre ? (
+            <>
+              <GenreTag
+                genre={primaryGenre}
+                onClick={onTrackUpdate ? () => setGenreModalOpen(true) : undefined}
+              />
+              {onTrackUpdate && (
+                <GenreSelectionModal
+                  open={genreModalOpen}
+                  onClose={() => setGenreModalOpen(false)}
+                  track={track}
+                  onSave={(genres) => {
+                    onTrackUpdate({ ...track, genres });
+                  }}
+                />
+              )}
+            </>
+          ) : (
+            <span className="text-white/30">No genre</span>
+          )}
           {onTrackUpdate && (
             <EmojiTrackActions
               track={track}

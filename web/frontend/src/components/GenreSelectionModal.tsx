@@ -1,85 +1,14 @@
----
-task: 04-genre-selection-modal
-status: done
-depends:
-  - 03-frontend-api-store
-files:
-  - path: web/frontend/src/components/GenreSelectionModal.tsx
-    action: create
-  - path: web/frontend/src/components/GenreTag.tsx
-    action: create
-  - path: web/frontend/src/components/TrackCard.tsx
-    action: modify
----
-
-# Genre Selection Modal & TrackCard Integration
-
-## Context
-Modal for selecting/ordering genres per track. GenreTag component for display. TrackCard shows primary genre only.
-
-## Files to Modify/Create
-- `web/frontend/src/components/GenreSelectionModal.tsx` (new)
-- `web/frontend/src/components/GenreTag.tsx` (new)
-- `web/frontend/src/components/TrackCard.tsx` (modify)
-
-## Implementation Details
-
-### 1. Create `GenreTag.tsx`
-
-```tsx
-interface GenreTagProps {
-  genre: {
-    name: string;
-    emoji_id?: string | null;
-  };
-  onClick?: () => void;
-  className?: string;
-}
-
-export function GenreTag({ genre, onClick, className = '' }: GenreTagProps): JSX.Element {
-  const content = (
-    <>
-      {genre.emoji_id && <span className="mr-1">{genre.emoji_id}</span>}
-      <span>{genre.name}</span>
-    </>
-  );
-
-  if (onClick) {
-    return (
-      <button
-        type="button"
-        onClick={onClick}
-        className={`inline-flex items-center hover:text-white/80 transition-colors ${className}`}
-      >
-        {content}
-      </button>
-    );
-  }
-
-  return (
-    <span className={`inline-flex items-center ${className}`}>
-      {content}
-    </span>
-  );
-}
-```
-
-### 2. Create `GenreSelectionModal.tsx`
-
-Follow `SkippedTracksDialog.tsx` Radix Dialog pattern:
-
-```tsx
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { useGenreStore } from '../stores/genreStore';
 import { updateTrackGenres, type TrackGenre } from '../api/genres';
-import type { Track } from '../api/tracks';
+import type { TrackInfo } from '../types';
 
 interface GenreSelectionModalProps {
   open: boolean;
   onClose: () => void;
-  track: Track;
+  track: TrackInfo;
   onSave: (genres: TrackGenre[]) => void;
 }
 
@@ -101,7 +30,7 @@ export function GenreSelectionModal({
     }
   }, [open, track.genres, fetchGenres]);
 
-  const handleToggle = (genreId: number) => {
+  const handleToggle = (genreId: number): void => {
     setSelectedIds((prev) => {
       if (prev.includes(genreId)) {
         return prev.filter((id) => id !== genreId);
@@ -110,7 +39,7 @@ export function GenreSelectionModal({
     });
   };
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<void> => {
     setSaving(true);
     try {
       const updated = await updateTrackGenres(track.id, selectedIds);
@@ -208,50 +137,3 @@ export function GenreSelectionModal({
     </Dialog.Root>
   );
 }
-```
-
-### 3. Update `TrackCard.tsx`
-
-Replace the genre span (around line 128) with GenreTag:
-
-```tsx
-import { useState } from 'react';
-import { GenreTag } from './GenreTag';
-import { GenreSelectionModal } from './GenreSelectionModal';
-
-// Inside TrackCard component:
-const [genreModalOpen, setGenreModalOpen] = useState(false);
-
-// Get primary genre (position=1 or first in array, or fall back to genre string)
-const primaryGenre = track.genres?.[0] ?? (track.genre ? { name: track.genre, emoji_id: null } : null);
-
-// In the render:
-{primaryGenre ? (
-  <>
-    <GenreTag
-      genre={primaryGenre}
-      onClick={onTrackUpdate ? () => setGenreModalOpen(true) : undefined}
-    />
-    {onTrackUpdate && (
-      <GenreSelectionModal
-        open={genreModalOpen}
-        onClose={() => setGenreModalOpen(false)}
-        track={track}
-        onSave={(genres) => {
-          onTrackUpdate({ ...track, genres });
-        }}
-      />
-    )}
-  </>
-) : (
-  <span className="text-white/30">No genre</span>
-)}
-```
-
-## Verification
-- Start app: `uv run music-minion --web`
-- Open http://localhost:5173
-- Find a track with a genre
-- Click the genre text → modal should open
-- Select/deselect genres, verify order changes
-- Save → track should update
