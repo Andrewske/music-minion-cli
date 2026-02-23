@@ -10,9 +10,10 @@ from enum import Enum
 from threading import Lock
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from loguru import logger
 from pydantic import BaseModel
+from requests.exceptions import Timeout
 
 from music_minion.domain.library.providers.soundcloud.exceptions import (
     DuplicateTrackError,
@@ -24,6 +25,24 @@ from music_minion.domain.library.providers.soundcloud.import_handlers import (
     get_playlist_preview as get_sc_playlist_preview,
     import_playlist,
     import_single_track,
+)
+from music_minion.domain.library.providers.soundcloud.api import (
+    get_playlists as sc_get_playlists,
+    get_playlist_tracks as sc_get_playlist_tracks,
+)
+from music_minion.domain.library.deduplication import find_best_matches_tfidf
+from music_minion.domain.playlists.crud import (
+    create_playlist as crud_create_playlist,
+    add_track_to_playlist,
+    get_playlist_by_name,
+)
+from web.backend.soundcloud_auth import get_web_provider_state
+from web.backend.deps import get_db
+from web.backend.schemas import (
+    MatchPlaylistResponse,
+    ScPlaylistMatch,
+    ScCreatePlaylistRequest,
+    ScCreatePlaylistResponse,
 )
 
 router = APIRouter()
@@ -328,3 +347,245 @@ async def get_playlist_preview(url: str) -> PlaylistInfoResponse:
     except Exception as e:
         logger.exception(f"Unexpected error fetching SoundCloud playlist {url}")
         raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
+
+
+# ============================================================================
+# SoundCloud Import Wizard Endpoints
+# ============================================================================
+
+
+@router.get("/playlists")
+async def get_soundcloud_playlists() -> list[dict]:
+    """Get user's SoundCloud playlists.
+
+    Returns: [{id, name, track_count}]
+
+    Raises:
+        HTTPException: 401 if not authenticated
+    """
+    state = get_web_provider_state()
+    if not state:
+        raise HTTPException(status_code=401, detail="SoundCloud not authenticated")
+
+    try:
+        updated_state, playlists = sc_get_playlists(state)
+
+        # Check if auth failed during API call
+        if not updated_state.authenticated:
+            raise HTTPException(status_code=401, detail="SoundCloud not authenticated")
+
+        return [
+            {
+                "id": p["id"],
+                "name": p["name"],
+                "track_count": p["track_count"],
+            }
+            for p in playlists
+        ]
+    except HTTPException:
+        raise
+    except Timeout:
+        raise HTTPException(
+            status_code=503, detail="SoundCloud API timeout, please retry"
+        )
+    except Exception as e:
+        logger.exception("Error fetching SoundCloud playlists")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch playlists: {e}")
+
+
+class MatchPlaylistRequest(BaseModel):
+    """Request to match a SoundCloud playlist to local library."""
+    playlist_id: str
+
+
+@router.post("/match-playlist")
+async def match_playlist(
+    request: MatchPlaylistRequest, db=Depends(get_db)
+) -> MatchPlaylistResponse:
+    """Match SoundCloud playlist tracks to local library.
+
+    - Fetches tracks from SoundCloud
+    - Runs TF-IDF matching against local library
+    - Auto-approves matches >= 0.85 confidence
+    - Returns all matches sorted by confidence (low to high)
+
+    Args:
+        request: Request with playlist_id
+
+    Returns:
+        MatchPlaylistResponse with matches and counts
+
+    Raises:
+        HTTPException: 401 if not authenticated, 404 if playlist not found
+    """
+    state = get_web_provider_state()
+    if not state:
+        raise HTTPException(status_code=401, detail="SoundCloud not authenticated")
+
+    try:
+        # Get playlist name first from playlists list
+        updated_state, playlists = sc_get_playlists(state)
+        if not updated_state.authenticated:
+            raise HTTPException(status_code=401, detail="SoundCloud not authenticated")
+
+        playlist_info = next(
+            (p for p in playlists if p["id"] == request.playlist_id), None
+        )
+        if not playlist_info:
+            raise HTTPException(
+                status_code=404, detail=f"Playlist not found: {request.playlist_id}"
+            )
+
+        playlist_name = playlist_info["name"]
+
+        # Fetch tracks from SoundCloud playlist
+        updated_state, sc_tracks, _ = sc_get_playlist_tracks(
+            updated_state, request.playlist_id
+        )
+        if not updated_state.authenticated:
+            raise HTTPException(status_code=401, detail="SoundCloud not authenticated")
+
+        # Get local tracks from database
+        cursor = db.execute(
+            "SELECT id, title, artist, album, local_path FROM tracks WHERE local_path IS NOT NULL"
+        )
+        local_tracks = [dict(row) for row in cursor.fetchall()]
+
+        # Run TF-IDF matching (min_score=0.0 to get all matches)
+        match_results = find_best_matches_tfidf(sc_tracks, local_tracks, min_score=0.0)
+
+        # Build matches list
+        matches: list[ScPlaylistMatch] = []
+        auto_approved_count = 0
+        needs_review_count = 0
+
+        for position, (sc_id, sc_metadata) in enumerate(sc_tracks):
+            # Find corresponding match result
+            match_result = next(
+                (r for r in match_results if r[0] == sc_id), (sc_id, None, 0.0)
+            )
+            _, local_track, confidence = match_result
+
+            # Determine approval status
+            is_approved = confidence >= 0.85
+            is_missing = local_track is None
+
+            if is_approved and not is_missing:
+                auto_approved_count += 1
+            elif not is_missing:
+                needs_review_count += 1
+
+            match = ScPlaylistMatch(
+                sc_track_id=sc_id,
+                sc_title=sc_metadata.get("title", ""),
+                sc_artist=sc_metadata.get("artist", ""),
+                local_track_id=local_track["id"] if local_track else None,
+                local_title=local_track.get("title") if local_track else None,
+                local_artist=local_track.get("artist") if local_track else None,
+                confidence=confidence,
+                is_approved=is_approved,
+                is_missing=is_missing,
+                sc_position=position,
+            )
+            matches.append(match)
+
+        # Sort by confidence ascending (low first for review)
+        matches.sort(key=lambda m: m.confidence)
+
+        return MatchPlaylistResponse(
+            playlist_name=playlist_name,
+            sc_playlist_id=request.playlist_id,
+            matches=matches,
+            auto_approved_count=auto_approved_count,
+            needs_review_count=needs_review_count,
+        )
+
+    except HTTPException:
+        raise
+    except Timeout:
+        raise HTTPException(
+            status_code=503, detail="SoundCloud API timeout, please retry"
+        )
+    except Exception as e:
+        logger.exception(f"Error matching playlist {request.playlist_id}")
+        raise HTTPException(status_code=500, detail=f"Failed to match playlist: {e}")
+
+
+@router.post("/create-playlist-from-matches")
+async def create_playlist_from_matches(
+    request: ScCreatePlaylistRequest, db=Depends(get_db)
+) -> ScCreatePlaylistResponse:
+    """Create local playlist from matched tracks.
+
+    - Creates playlist with given name
+    - Adds matched tracks (excluding is_missing) in sc_position order
+    - Links playlist to SoundCloud playlist ID for future sync
+    - Sets soundcloud_id on matched local tracks for sync support
+
+    Args:
+        request: Request with playlist name, SC playlist ID, and matches
+
+    Returns:
+        ScCreatePlaylistResponse with playlist_id and track_count
+
+    Raises:
+        HTTPException: 400 if no valid matches, 409 if playlist name exists
+    """
+    # Filter matches: exclude is_missing=True, keep only with local_track_id
+    valid_matches = [
+        m
+        for m in request.matches
+        if not m.is_missing and m.local_track_id is not None
+    ]
+
+    if not valid_matches:
+        raise HTTPException(status_code=400, detail="No tracks to add")
+
+    # Check for duplicate playlist name
+    existing = get_playlist_by_name(request.playlist_name)
+    if existing:
+        raise HTTPException(
+            status_code=409, detail="Playlist name already exists"
+        )
+
+    # Sort by sc_position ascending (preserve playlist order)
+    valid_matches.sort(key=lambda m: m.sc_position if m.sc_position is not None else 0)
+
+    try:
+        # Create playlist
+        playlist_id = crud_create_playlist(request.playlist_name, "manual")
+
+        # Link to SoundCloud playlist ID
+        db.execute(
+            "UPDATE playlists SET soundcloud_playlist_id = ? WHERE id = ?",
+            (request.sc_playlist_id, playlist_id),
+        )
+
+        # Add tracks and set soundcloud_id on matched tracks
+        for match in valid_matches:
+            # Add track to playlist
+            add_track_to_playlist(playlist_id, match.local_track_id)
+
+            # Set soundcloud_id on the local track for sync support
+            db.execute(
+                "UPDATE tracks SET soundcloud_id = ? WHERE id = ?",
+                (match.sc_track_id, match.local_track_id),
+            )
+
+        db.connection.commit()
+
+        return ScCreatePlaylistResponse(
+            playlist_id=playlist_id,
+            track_count=len(valid_matches),
+        )
+
+    except ValueError as e:
+        # crud_create_playlist raises ValueError for duplicate names
+        if "already exists" in str(e):
+            raise HTTPException(status_code=409, detail="Playlist name already exists")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Error creating playlist from matches")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create playlist: {e}"
+        )
