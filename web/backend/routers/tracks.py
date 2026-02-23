@@ -11,7 +11,6 @@ from music_minion.core.config import Config
 
 router = APIRouter()
 
-# Add at top of file
 AUDIO_MIME_TYPES: dict[str, str] = {
     ".opus": "audio/opus",
     ".mp3": "audio/mpeg",
@@ -40,14 +39,42 @@ def get_mime_type(file_path: Path) -> str:
     return guessed or "application/octet-stream"
 
 
+@router.get("/tracks/search")
+async def search_tracks(q: str, limit: int = 20, db=Depends(get_db)) -> list[dict]:
+    """Search local tracks for autocomplete.
+
+    Uses simple LIKE query with case-insensitive matching.
+    Returns tracks with local_path (true local files only).
+
+    Args:
+        q: Search query string
+        limit: Maximum results to return (default 20)
+        db: Database connection dependency
+
+    Returns:
+        List of dicts with id, title, artist, album
+    """
+    query = f"%{q}%"
+    cursor = db.execute(
+        """
+        SELECT id, title, artist, album
+        FROM tracks
+        WHERE (title LIKE ? COLLATE NOCASE OR artist LIKE ? COLLATE NOCASE)
+          AND local_path IS NOT NULL
+        LIMIT ?
+        """,
+        (query, query, limit),
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
 @router.get("/tracks/{track_id}/stream")
 async def stream_audio(
     track_id: int, db=Depends(get_db), config: Config = Depends(get_config)
 ):
     # Check for multi-source support (SoundCloud redirect)
     cursor = db.execute(
-        "SELECT source, source_url FROM tracks WHERE id = ?",
-        (track_id,)
+        "SELECT source, source_url FROM tracks WHERE id = ?", (track_id,)
     )
     row = cursor.fetchone()
     if row and row["source"] == "soundcloud" and row["source_url"]:
