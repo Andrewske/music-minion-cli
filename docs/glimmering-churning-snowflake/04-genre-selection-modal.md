@@ -1,6 +1,6 @@
 ---
 task: 04-genre-selection-modal
-status: pending
+status: done
 depends:
   - 03-frontend-api-store
 files:
