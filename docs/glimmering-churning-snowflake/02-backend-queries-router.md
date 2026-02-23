@@ -1,6 +1,6 @@
 ---
 task: 02-backend-queries-router
-status: pending
+status: done
 depends:
   - 01-database-migration-v41
 files:

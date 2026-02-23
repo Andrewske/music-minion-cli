@@ -55,6 +55,7 @@ from .routers import (
     history,
     quicktag,
     buckets,
+    genres,
 )
 from .routers.playlists import router as playlists_router
 
@@ -72,6 +73,7 @@ app.include_router(live.router, tags=["live"])
 app.include_router(commands.router, prefix="/api", tags=["commands"])
 app.include_router(quicktag.router, prefix="/api/quicktag", tags=["quicktag"])
 app.include_router(buckets.router, tags=["buckets"])
+app.include_router(genres.router)
 
 
 @app.on_event("startup")
