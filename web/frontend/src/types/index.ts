@@ -17,6 +17,13 @@ export interface TrackInfo {
   playlist_rating?: number;
   playlist_comparison_count?: number;
   global_rating?: number;
+  // Multi-genre support
+  genres?: Array<{
+    id: number;
+    name: string;
+    emoji_id: string | null;
+    position: number;
+  }>;
 }
 
 export interface Playlist {

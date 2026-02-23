@@ -1,6 +1,6 @@
 ---
 task: 03-frontend-api-store
-status: pending
+status: done
 depends:
   - 02-backend-queries-router
 files:
@@ -8,7 +8,7 @@ files:
     action: create
   - path: web/frontend/src/stores/genreStore.ts
     action: create
-  - path: web/frontend/src/api/tracks.ts
+  - path: web/frontend/src/types/index.ts
     action: modify
 ---
 

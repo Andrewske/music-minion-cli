@@ -1,34 +1,3 @@
----
-task: 05-genre-settings-page
-status: done
-depends:
-  - 03-frontend-api-store
-files:
-  - path: web/frontend/src/components/Settings/GenreSettingsSection.tsx
-    action: create
-  - path: web/frontend/src/components/Settings/SettingsPage.tsx
-    action: modify
-  - path: web/frontend/src/routes/settings.tsx
-    action: modify
----
-
-# Genre Settings Page
-
-## Context
-Settings tab for bulk genre management: rename, merge, assign emojis, delete. Core feature 2.
-
-## Files to Modify/Create
-- `web/frontend/src/components/Settings/GenreSettingsSection.tsx` (new)
-- `web/frontend/src/components/Settings/SettingsPage.tsx` (modify)
-- `web/frontend/src/routes/settings.tsx` (modify)
-
-## Implementation Details
-
-### 1. Create `GenreSettingsSection.tsx`
-
-Follow `EmojiSettingsSection.tsx` pattern:
-
-```tsx
 import { useState, useEffect } from 'react';
 import { Trash2, Check, X } from 'lucide-react';
 import { useGenreStore } from '../../stores/genreStore';
@@ -51,12 +20,12 @@ export function GenreSettingsSection(): JSX.Element {
     fetchGenres();
   }, [fetchGenres]);
 
-  const handleStartEdit = (genre: GenreInfo) => {
+  const handleStartEdit = (genre: GenreInfo): void => {
     setEditingId(genre.id);
     setEditValue(genre.name);
   };
 
-  const handleSaveEdit = async (genreId: number) => {
+  const handleSaveEdit = async (genreId: number): Promise<void> => {
     if (!editValue.trim()) {
       toast.error('Genre name cannot be empty');
       return;
@@ -81,7 +50,7 @@ export function GenreSettingsSection(): JSX.Element {
     }
   };
 
-  const handleDelete = async (genre: GenreInfo) => {
+  const handleDelete = async (genre: GenreInfo): Promise<void> => {
     if (genre.track_count > 0) {
       toast.error(`Cannot delete: ${genre.track_count} tracks use this genre`);
       return;
@@ -96,7 +65,7 @@ export function GenreSettingsSection(): JSX.Element {
     }
   };
 
-  const handleEmojiSelect = async (genreId: number, emojiId: string | null) => {
+  const handleEmojiSelect = async (genreId: number, emojiId: string | null): Promise<void> => {
     try {
       const updated = await assignGenreEmoji(genreId, emojiId);
       updateGenre(updated);
@@ -108,7 +77,7 @@ export function GenreSettingsSection(): JSX.Element {
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent, genreId: number) => {
+  const handleKeyDown = (e: React.KeyboardEvent, genreId: number): void => {
     if (e.key === 'Enter') {
       handleSaveEdit(genreId);
     } else if (e.key === 'Escape') {
@@ -213,51 +182,3 @@ export function GenreSettingsSection(): JSX.Element {
     </div>
   );
 }
-```
-
-### 2. Update `SettingsPage.tsx`
-
-Add genres to tab type and render:
-
-```tsx
-// Update type
-type SettingsTab = 'emoji' | 'genres' | /* other tabs */;
-
-// Add import
-import { GenreSettingsSection } from './GenreSettingsSection';
-
-// Add tab button
-<button
-  onClick={() => setActiveTab('genres')}
-  className={activeTab === 'genres' ? 'active-class' : 'inactive-class'}
->
-  Genres
-</button>
-
-// Add render case
-{activeTab === 'genres' && <GenreSettingsSection />}
-```
-
-### 3. Update `routes/settings.tsx`
-
-Add 'genres' to SettingsSearch schema:
-
-```tsx
-// In the search schema validation
-const SettingsSearch = z.object({
-  tab: z.enum(['emoji', 'genres', /* other tabs */]).optional().default('emoji'),
-});
-```
-
-## Verification
-- Start app: `uv run music-minion --web`
-- Navigate to Settings page
-- Click "Genres" tab
-- Verify:
-  - All genres listed with track counts
-  - Click name to edit inline
-  - Enter saves, Escape cancels
-  - Renaming to existing name shows merge confirmation
-  - Emoji picker works
-  - Delete blocked for genres with tracks (shows toast)
-  - Delete works for empty genres

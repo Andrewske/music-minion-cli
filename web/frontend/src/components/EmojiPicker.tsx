@@ -4,8 +4,9 @@ import data from '@emoji-mart/data';
 import { useQuery } from '@tanstack/react-query';
 
 interface EmojiPickerProps {
-  onSelect: (emojiId: string) => void;
+  onSelect: (emojiId: string | null) => void;
   onClose: () => void;
+  allowClear?: boolean;
 }
 
 interface EmojiMartEmoji {
@@ -19,7 +20,7 @@ interface EmojiMartEmoji {
  * Emoji picker using emoji-mart with custom emoji support.
  * Wraps emoji-mart in a modal overlay with backdrop click to close.
  */
-export function EmojiPicker({ onSelect, onClose }: EmojiPickerProps): JSX.Element {
+export function EmojiPicker({ onSelect, onClose, allowClear = false }: EmojiPickerProps): JSX.Element {
   const pickerRef = useRef<HTMLDivElement>(null);
 
   // Fetch custom emojis from backend in emoji-mart format
@@ -73,6 +74,19 @@ export function EmojiPicker({ onSelect, onClose }: EmojiPickerProps): JSX.Elemen
         onClick={(e) => e.stopPropagation()}
         className="rounded-lg overflow-hidden"
       >
+        {allowClear && (
+          <div className="bg-gray-800 p-2 border-b border-gray-700">
+            <button
+              onClick={() => {
+                onSelect(null);
+                onClose();
+              }}
+              className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm font-medium"
+            >
+              Clear Emoji
+            </button>
+          </div>
+        )}
         <Picker
           data={data}
           custom={customCategory}
