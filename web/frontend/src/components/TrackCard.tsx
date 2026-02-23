@@ -100,12 +100,12 @@ export function TrackCard({ track, isPlaying, className = '', onArchive, onWinne
       )}
 
       {/* Clickable content area */}
-      <button
-        type="button"
-        onClick={handleClick}
-        className="cursor-pointer flex flex-col w-full text-left"
-      >
-        <div className="p-4 flex flex-col items-center justify-center text-center relative z-10">
+      <div className="p-4 flex flex-col items-center justify-center text-center relative z-10">
+        <button
+          type="button"
+          onClick={handleClick}
+          className="cursor-pointer flex flex-col w-full items-center"
+        >
           <div className="flex-1 pt-2">
             {/* Title & Artist */}
             <h3 className="font-bold text-xl text-white/90 leading-tight mb-2 line-clamp-2">
@@ -119,26 +119,27 @@ export function TrackCard({ track, isPlaying, className = '', onArchive, onWinne
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm text-white/50 font-sf-mono mb-2">
               <span className="min-h-[1rem]">{track.year ?? '----'}</span>
               <span className="min-h-[1rem]">{track.bpm ? `${track.bpm} BPM` : '--- BPM'}</span>
-              <span className="col-span-2 min-h-[1rem]">{track.genre ?? 'Unknown genre'}</span>
             </div>
           </div>
+        </button>
 
-          {/* Stats / Badges */}
-          <div className="pt-4 border-t border-obsidian-border w-full flex flex-col items-center gap-3">
-            {renderRatingBadge(track.rating, track.wins, track.losses, track.comparison_count)}
-          </div>
+        {/* Genre + Emojis row - just above divider, outside clickable area */}
+        <div className="w-full text-sm text-white/50 font-sf-mono mb-2 flex items-center justify-center gap-2">
+          <span>{track.genre ?? 'Unknown genre'}</span>
+          {onTrackUpdate && (
+            <EmojiTrackActions
+              track={track}
+              onUpdate={(updated) => onTrackUpdate({ ...track, emojis: updated.emojis })}
+              compact
+            />
+          )}
         </div>
-      </button>
 
-      {/* Emoji Tags - outside clickable area */}
-      {onTrackUpdate && (
-        <div className="px-4 pb-3" onClick={(e) => e.stopPropagation()}>
-          <EmojiTrackActions
-            track={track}
-            onUpdate={(updated) => onTrackUpdate({ ...track, emojis: updated.emojis })}
-          />
+        {/* Stats / Badges */}
+        <div className="pt-4 border-t border-obsidian-border w-full flex flex-col items-center gap-3">
+          {renderRatingBadge(track.rating, track.wins, track.losses, track.comparison_count)}
         </div>
-      )}
+      </div>
 
       {/* Action Buttons - separate from clickable area */}
       {(onArchive && onWinner) && (
