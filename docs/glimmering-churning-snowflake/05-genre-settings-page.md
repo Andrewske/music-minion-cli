@@ -1,6 +1,6 @@
 ---
 task: 05-genre-settings-page
-status: pending
+status: done
 depends:
   - 03-frontend-api-store
 files:

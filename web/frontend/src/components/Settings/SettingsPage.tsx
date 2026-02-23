@@ -2,8 +2,9 @@ import { useSearch, useNavigate } from '@tanstack/react-router';
 import { YouTubeImportSection } from './YouTubeImportSection';
 import { EmojiSettingsSection } from './EmojiSettingsSection';
 import { SoundCloudImportSection } from './SoundCloudImportSection';
+import { GenreSettingsSection } from './GenreSettingsSection';
 
-type SettingsTab = 'youtube' | 'emoji' | 'soundcloud';
+type SettingsTab = 'youtube' | 'emoji' | 'soundcloud' | 'genres';
 
 export function SettingsPage() {
   const search = useSearch({ from: '/settings' });
@@ -66,6 +67,19 @@ export function SettingsPage() {
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-obsidian-accent" />
             )}
           </button>
+          <button
+            onClick={() => handleTabChange('genres')}
+            className={`px-6 py-3 font-medium transition-colors relative ${
+              activeTab === 'genres'
+                ? 'text-obsidian-accent'
+                : 'text-white/60 hover:text-white'
+            }`}
+          >
+            Genres
+            {activeTab === 'genres' && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-obsidian-accent" />
+            )}
+          </button>
         </div>
 
         {/* Content */}
@@ -73,6 +87,7 @@ export function SettingsPage() {
           {activeTab === 'youtube' && <YouTubeImportSection />}
           {activeTab === 'emoji' && <EmojiSettingsSection />}
           {activeTab === 'soundcloud' && <SoundCloudImportSection />}
+          {activeTab === 'genres' && <GenreSettingsSection />}
         </div>
       </div>
     </div>
