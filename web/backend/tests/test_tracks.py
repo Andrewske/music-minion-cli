@@ -116,3 +116,28 @@ def test_waveform_track_with_null_path():
     response = client.get("/api/tracks/99999/waveform")
     assert response.status_code == 404
     assert "Track not found" in response.json()["detail"]
+
+
+class TestSearchTracks:
+    """Test search_tracks endpoint."""
+
+    def test_search_tracks_returns_list(self):
+        """Test search endpoint returns a list."""
+        response = client.get("/api/tracks/search?q=test")
+        assert response.status_code == 200
+        assert isinstance(response.json(), list)
+
+    def test_search_tracks_with_limit(self):
+        """Test search endpoint respects limit parameter."""
+        response = client.get("/api/tracks/search?q=test&limit=5")
+        assert response.status_code == 200
+        assert isinstance(response.json(), list)
+        # Can't assert exact count without test data, but verify it's valid
+        assert len(response.json()) <= 5
+
+    def test_search_tracks_empty_query(self):
+        """Test search endpoint with empty query."""
+        response = client.get("/api/tracks/search?q=")
+        assert response.status_code == 200
+        # Empty query should still work (matches everything with %)
+        assert isinstance(response.json(), list)
