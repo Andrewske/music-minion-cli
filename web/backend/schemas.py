@@ -225,3 +225,42 @@ class PlayContext(BaseModel):
     query: Optional[str] = None
     start_index: int = 0
     shuffle: bool = True
+
+
+# SoundCloud Import Wizard Schemas
+
+
+class ScPlaylistMatch(BaseModel):
+    """A single track match between SoundCloud and local library."""
+    sc_track_id: str
+    sc_title: str
+    sc_artist: str
+    local_track_id: Optional[int] = None
+    local_title: Optional[str] = None
+    local_artist: Optional[str] = None
+    confidence: float
+    is_approved: bool = False
+    is_missing: bool = False
+    sc_position: Optional[int] = None
+
+
+class MatchPlaylistResponse(BaseModel):
+    """Response from matching a SoundCloud playlist to local library."""
+    playlist_name: str
+    sc_playlist_id: str
+    matches: list[ScPlaylistMatch]
+    auto_approved_count: int
+    needs_review_count: int
+
+
+class ScCreatePlaylistRequest(BaseModel):
+    """Request to create a local playlist from SoundCloud matches."""
+    playlist_name: str
+    sc_playlist_id: str
+    matches: list[ScPlaylistMatch]
+
+
+class ScCreatePlaylistResponse(BaseModel):
+    """Response from creating a local playlist from matches."""
+    playlist_id: int
+    track_count: int
