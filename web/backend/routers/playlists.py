@@ -554,3 +554,101 @@ async def get_skipped_tracks_endpoint(playlist_id: int):
             status_code=500,
             detail=f"Failed to get skipped tracks: {str(e)}"
         )
+
+
+@router.post("/playlists/{playlist_id}/sync-to-soundcloud")
+async def sync_playlist_to_soundcloud(playlist_id: int):
+    """Sync local playlist order to linked SoundCloud playlist.
+
+    1. Get local playlist with tracks (in order)
+    2. Get linked SC playlist ID from database
+    3. Map local tracks to SC track IDs
+    4. Call reorder_playlist with new order
+
+    Requires:
+        - Local playlist has soundcloud_playlist_id set (from import)
+        - Local tracks have soundcloud_id set
+
+    Returns:
+        {"success": True, "synced_count": N}
+
+    Raises:
+        HTTPException: 404 if playlist not found
+        HTTPException: 400 if playlist not linked to SoundCloud
+        HTTPException: 401 if SoundCloud not authenticated
+        HTTPException: 500 on sync failure
+    """
+    from loguru import logger
+    from music_minion.core.database import get_db_connection
+    from music_minion.domain.library.providers.soundcloud.api import reorder_playlist
+    from web.backend.soundcloud_auth import get_web_provider_state
+
+    # 1. Get playlist and verify it's linked to SoundCloud
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            "SELECT id, name, soundcloud_playlist_id FROM playlists WHERE id = ?",
+            (playlist_id,),
+        )
+        playlist_row = cursor.fetchone()
+
+        if not playlist_row:
+            raise HTTPException(status_code=404, detail="Playlist not found")
+
+        soundcloud_playlist_id = playlist_row["soundcloud_playlist_id"]
+        if not soundcloud_playlist_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Playlist is not linked to a SoundCloud playlist"
+            )
+
+        # 2. Get tracks in order with their soundcloud_id
+        cursor = conn.execute(
+            """
+            SELECT t.id, t.soundcloud_id, t.title, t.artist
+            FROM playlist_tracks pt
+            JOIN tracks t ON pt.track_id = t.id
+            WHERE pt.playlist_id = ?
+            ORDER BY pt.position
+            """,
+            (playlist_id,),
+        )
+        tracks = [dict(row) for row in cursor.fetchall()]
+
+    # 3. Filter to tracks that have soundcloud_id
+    sc_track_ids = [
+        track["soundcloud_id"]
+        for track in tracks
+        if track["soundcloud_id"] is not None
+    ]
+
+    if not sc_track_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="No tracks in playlist have SoundCloud IDs"
+        )
+
+    # 4. Get SoundCloud provider state
+    state = get_web_provider_state()
+    if not state:
+        raise HTTPException(status_code=401, detail="SoundCloud not authenticated")
+
+    # 5. Call reorder_playlist
+    logger.info(
+        f"Syncing playlist {playlist_id} to SoundCloud playlist {soundcloud_playlist_id} "
+        f"with {len(sc_track_ids)} tracks"
+    )
+
+    new_state, success, error = reorder_playlist(state, soundcloud_playlist_id, sc_track_ids)
+
+    if not new_state.authenticated:
+        raise HTTPException(status_code=401, detail="SoundCloud authentication expired")
+
+    if not success:
+        logger.error(f"Failed to sync playlist to SoundCloud: {error}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to sync to SoundCloud: {error}"
+        )
+
+    logger.info(f"Successfully synced playlist {playlist_id} to SoundCloud")
+    return {"success": True, "synced_count": len(sc_track_ids)}
