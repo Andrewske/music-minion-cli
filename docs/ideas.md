@@ -7,8 +7,7 @@
 5. [1] Keypad shortcuts for playlist-builder mode
 6. [6] SoundCloud reposts sync and playlist-builder integration
 7. [3] Fix mobile comparison emoji picker
-8. [4] True shuffle with rolling 100-track window
-9. [2] Deduplicate play counts within time window (10-30 min)
+8. [2] Deduplicate play counts within time window (10-30 min)
 
 ## 1. Clickable Genre Tags with Popularity Overlay
 
@@ -118,13 +117,7 @@ Mobile comparison view: clicking emoji button stops the song, then emoji picker 
 
 **Context**: `web/frontend/src/components/ComparisonView.tsx`, `web/frontend/src/components/EmojiPicker.tsx`, `web/frontend/src/hooks/useSwipeGesture.ts`
 
-## 8. True Shuffle with Rolling 100-Track Window - 2026-02-18
-
-Implement proper shuffle that maintains a rolling window of ~100 tracks to avoid repeating recently played songs. Current shuffle likely picks randomly each time without history awareness.
-
-**Context**: `domain/playback/` shuffle logic, playerStore, queue management
-
-## 9. Deduplicate Play Counts Within Time Window - 2026-02-22
+## 8. Deduplicate Play Counts Within Time Window - 2026-02-22
 
 Count all plays within a 10-30 minute window as a single play. Addresses false inflation from: going back and forth between tracks while comparing, and forgetting to stop playback (looping while focused elsewhere).
 
