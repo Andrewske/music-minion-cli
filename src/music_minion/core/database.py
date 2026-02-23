@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 40  # Bucket sessions and track_emojis source tracking
+SCHEMA_VERSION = 41  # Genre tables and triggers
 
 
 # Initial top 50 curated emojis for music reactions
@@ -102,6 +102,11 @@ def normalize_emoji_id(emoji_str: str) -> str:
 
     # Normalize Unicode emojis to NFC form
     return unicodedata.normalize("NFC", emoji_str)
+
+
+def normalize_genre_name(genre: str) -> str:
+    """Normalize genre name for consistent storage and matching."""
+    return unicodedata.normalize("NFC", genre.strip().lower())
 
 
 def seed_initial_emojis(conn) -> None:
@@ -1928,6 +1933,110 @@ def migrate_database(conn, current_version: int) -> None:
         logger.info(
             "  ✓ Migration to v40 complete: Bucket sessions and track_emojis source tracking"
         )
+
+    if current_version < 41:
+        logger.info("Migrating to v41: Genre tables and triggers...")
+
+        # Create genres table
+        conn.execute("""
+            CREATE TABLE genres (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                emoji_id TEXT,
+                track_count INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Create track_genres junction table
+        conn.execute("""
+            CREATE TABLE track_genres (
+                track_id INTEGER NOT NULL,
+                genre_id INTEGER NOT NULL,
+                position INTEGER NOT NULL DEFAULT 1,
+                PRIMARY KEY (track_id, genre_id),
+                FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE,
+                FOREIGN KEY (genre_id) REFERENCES genres(id) ON DELETE RESTRICT
+            )
+        """)
+
+        # Create indexes
+        conn.execute("CREATE INDEX idx_track_genres_track ON track_genres(track_id, position)")
+        conn.execute("CREATE INDEX idx_track_genres_genre ON track_genres(genre_id)")
+
+        # Create trigger: sync tracks.genre from track_genres position=1 (INSERT)
+        conn.execute("""
+            CREATE TRIGGER sync_primary_genre_insert AFTER INSERT ON track_genres
+            WHEN NEW.position = 1
+            BEGIN
+                UPDATE tracks SET genre = (SELECT name FROM genres WHERE id = NEW.genre_id)
+                WHERE id = NEW.track_id;
+            END
+        """)
+
+        # Create trigger: sync tracks.genre from track_genres position=1 (UPDATE)
+        conn.execute("""
+            CREATE TRIGGER sync_primary_genre_update AFTER UPDATE ON track_genres
+            WHEN NEW.position = 1 OR OLD.position = 1
+            BEGIN
+                UPDATE tracks SET genre = (
+                    SELECT g.name FROM genres g
+                    JOIN track_genres tg ON g.id = tg.genre_id
+                    WHERE tg.track_id = NEW.track_id AND tg.position = 1
+                ) WHERE id = NEW.track_id;
+            END
+        """)
+
+        # Create trigger: sync tracks.genre from track_genres position=1 (DELETE)
+        conn.execute("""
+            CREATE TRIGGER sync_primary_genre_delete AFTER DELETE ON track_genres
+            WHEN OLD.position = 1
+            BEGIN
+                UPDATE tracks SET genre = (
+                    SELECT g.name FROM genres g
+                    JOIN track_genres tg ON g.id = tg.genre_id
+                    WHERE tg.track_id = OLD.track_id AND tg.position = 1
+                ) WHERE id = OLD.track_id;
+            END
+        """)
+
+        # Create trigger: increment genre track_count (INSERT)
+        conn.execute("""
+            CREATE TRIGGER update_genre_count_insert AFTER INSERT ON track_genres
+            BEGIN
+                UPDATE genres SET track_count = track_count + 1 WHERE id = NEW.genre_id;
+            END
+        """)
+
+        # Create trigger: decrement genre track_count (DELETE)
+        conn.execute("""
+            CREATE TRIGGER update_genre_count_delete AFTER DELETE ON track_genres
+            BEGIN
+                UPDATE genres SET track_count = track_count - 1 WHERE id = OLD.genre_id;
+            END
+        """)
+
+        # Migrate existing genre data from tracks table
+        # Get unique normalized genres from tracks
+        rows = conn.execute(
+            "SELECT DISTINCT genre FROM tracks WHERE genre IS NOT NULL AND genre != ''"
+        ).fetchall()
+        for (genre,) in rows:
+            normalized = normalize_genre_name(genre)
+            conn.execute("INSERT OR IGNORE INTO genres (name) VALUES (?)", (normalized,))
+
+        # Populate track_genres from tracks.genre
+        # Need to normalize each track's genre during migration
+        conn.execute("""
+            INSERT INTO track_genres (track_id, genre_id, position)
+            SELECT t.id, g.id, 1
+            FROM tracks t
+            JOIN genres g ON LOWER(TRIM(t.genre)) = g.name
+            WHERE t.genre IS NOT NULL AND t.genre != ''
+        """)
+
+        conn.commit()
+        logger.info("  ✓ Migration to v41 complete: Genre tables and triggers")
 
 
 def init_database() -> None:

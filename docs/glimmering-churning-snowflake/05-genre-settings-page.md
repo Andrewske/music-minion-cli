@@ -1,7 +1,8 @@
 ---
 task: 05-genre-settings-page
 status: pending
-depends: [03-frontend-api-state]
+depends:
+  - 03-frontend-api-store
 files:
   - path: web/frontend/src/components/Settings/GenreSettingsSection.tsx
     action: create
@@ -14,7 +15,7 @@ files:
 # Genre Settings Page
 
 ## Context
-Core feature 2: Settings page for mass genre management. Rename/merge genres, assign emojis that propagate to all tracks.
+Settings tab for bulk genre management: rename, merge, assign emojis, delete. Core feature 2.
 
 ## Files to Modify/Create
 - `web/frontend/src/components/Settings/GenreSettingsSection.tsx` (new)
@@ -23,218 +24,189 @@ Core feature 2: Settings page for mass genre management. Rename/merge genres, as
 
 ## Implementation Details
 
-### GenreSettingsSection.tsx
+### 1. Create `GenreSettingsSection.tsx`
 
 Follow `EmojiSettingsSection.tsx` pattern:
 
-```typescript
+```tsx
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { Trash2, Check, X } from 'lucide-react';
 import { useGenreStore } from '../../stores/genreStore';
-import { renameGenre, assignGenreEmoji, deleteGenre } from '../../api/genres';
-import { EmojiDisplay } from '../EmojiDisplay';
+import {
+  renameGenre,
+  deleteGenre,
+  assignGenreEmoji,
+  type GenreInfo,
+} from '../../api/genres';
 import { EmojiPicker } from '../EmojiPicker';
+import { toast } from 'sonner';
 
 export function GenreSettingsSection(): JSX.Element {
   const { genres, fetchGenres, updateGenre, removeGenre } = useGenreStore();
-  const [isLoading, setIsLoading] = useState(true);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValue, setEditValue] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
-  const [emojiPickerOpen, setEmojiPickerOpen] = useState<number | null>(null);
+  const [emojiPickerFor, setEmojiPickerFor] = useState<number | null>(null);
 
   useEffect(() => {
-    fetchGenres().then(() => setIsLoading(false));
-  }, []);
+    fetchGenres();
+  }, [fetchGenres]);
 
-  const handleEdit = (genre: { id: number; name: string }) => {
+  const handleStartEdit = (genre: GenreInfo) => {
     setEditingId(genre.id);
     setEditValue(genre.name);
   };
 
-  const handleSave = async (genreId: number) => {
-    const newName = editValue.trim();
-    if (!newName) return;
-
-    // Check if name exists (merge warning)
-    const existing = genres.find(g => g.name.toLowerCase() === newName.toLowerCase() && g.id !== genreId);
-    if (existing) {
-      if (!confirm(`"${newName}" already exists with ${existing.track_count} tracks. Merge genres?`)) {
-        return;
-      }
-    }
-
-    setIsSaving(true);
-    try {
-      const updated = await renameGenre(genreId, newName);
-
-      if (existing) {
-        // Merge happened - remove old genre from UI, update existing
-        removeGenre(genreId);
-        updateGenre(existing.id, { track_count: updated.track_count });
-        toast.success(`Merged into "${newName}"`);
-      } else {
-        updateGenre(genreId, { name: newName });
-        toast.success('Genre renamed');
-      }
-
-      setEditingId(null);
-    } catch (err) {
-      toast.error('Failed to rename genre');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleCancel = () => {
-    setEditingId(null);
-    setEditValue('');
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent, genreId: number) => {
-    if (e.key === 'Enter') handleSave(genreId);
-    else if (e.key === 'Escape') handleCancel();
-  };
-
-  const handleEmojiSelect = async (genreId: number, emojiId: string) => {
-    try {
-      await assignGenreEmoji(genreId, emojiId);
-      updateGenre(genreId, { emoji_id: emojiId });
-      setEmojiPickerOpen(null);
-      toast.success('Emoji assigned to genre');
-    } catch (err) {
-      toast.error('Failed to assign emoji');
-    }
-  };
-
-  const handleRemoveEmoji = async (genreId: number) => {
-    try {
-      await assignGenreEmoji(genreId, null);
-      updateGenre(genreId, { emoji_id: null });
-      toast.success('Emoji removed');
-    } catch (err) {
-      toast.error('Failed to remove emoji');
-    }
-  };
-
-  const handleDelete = async (genreId: number, name: string, trackCount: number) => {
-    if (!confirm(`Delete "${name}"? This will remove the genre from ${trackCount} tracks.`)) {
+  const handleSaveEdit = async (genreId: number) => {
+    if (!editValue.trim()) {
+      toast.error('Genre name cannot be empty');
       return;
     }
 
     try {
-      await deleteGenre(genreId);
-      removeGenre(genreId);
+      const updated = await renameGenre(genreId, editValue.trim());
+      updateGenre(updated);
+
+      // Check if it was a merge (id changed)
+      if (updated.id !== genreId) {
+        removeGenre(genreId);
+        toast.success(`Merged into "${updated.name}"`);
+      } else {
+        toast.success('Genre renamed');
+      }
+    } catch (err) {
+      toast.error('Failed to rename genre');
+    } finally {
+      setEditingId(null);
+      setEditValue('');
+    }
+  };
+
+  const handleDelete = async (genre: GenreInfo) => {
+    if (genre.track_count > 0) {
+      toast.error(`Cannot delete: ${genre.track_count} tracks use this genre`);
+      return;
+    }
+
+    try {
+      await deleteGenre(genre.id);
+      removeGenre(genre.id);
       toast.success('Genre deleted');
     } catch (err) {
       toast.error('Failed to delete genre');
     }
   };
 
-  if (isLoading) {
-    return <div className="text-white/60">Loading genres...</div>;
-  }
+  const handleEmojiSelect = async (genreId: number, emojiId: string | null) => {
+    try {
+      const updated = await assignGenreEmoji(genreId, emojiId);
+      updateGenre(updated);
+      toast.success(emojiId ? 'Emoji assigned' : 'Emoji removed');
+    } catch (err) {
+      toast.error('Failed to update emoji');
+    } finally {
+      setEmojiPickerFor(null);
+    }
+  };
 
-  // Sort by track count
-  const sortedGenres = [...genres].sort((a, b) => b.track_count - a.track_count);
+  const handleKeyDown = (e: React.KeyboardEvent, genreId: number) => {
+    if (e.key === 'Enter') {
+      handleSaveEdit(genreId);
+    } else if (e.key === 'Escape') {
+      setEditingId(null);
+      setEditValue('');
+    }
+  };
 
   return (
-    <div>
-      <h2 className="text-lg font-semibold text-white mb-3">Genre Management</h2>
-      <p className="text-white/60 mb-4">
-        Rename genres to merge them. Assign emojis to apply across all tracks.
+    <div className="space-y-4">
+      <h2 className="text-lg font-semibold">Genres</h2>
+      <p className="text-sm text-white/60">
+        Rename, merge, or assign emojis to genres. Renaming to an existing name merges them.
       </p>
 
-      <div className="bg-obsidian-surface overflow-hidden">
+      <div className="border border-white/10 rounded-lg overflow-hidden">
         <table className="w-full">
-          <thead className="bg-obsidian-border">
+          <thead className="bg-white/5">
             <tr>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-white/60">Genre</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-white/60">Tracks</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-white/60">Emoji</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-white/60">Actions</th>
+              <th className="text-left px-4 py-2 text-sm font-medium text-white/70">Name</th>
+              <th className="text-center px-4 py-2 text-sm font-medium text-white/70 w-20">Tracks</th>
+              <th className="text-center px-4 py-2 text-sm font-medium text-white/70 w-20">Emoji</th>
+              <th className="w-12"></th>
             </tr>
           </thead>
           <tbody>
-            {sortedGenres.map((genre) => (
-              <tr key={genre.id} className="border-t border-obsidian-border">
-                <td className="px-4 py-3">
+            {genres.map((genre) => (
+              <tr key={genre.id} className="border-t border-white/5 hover:bg-white/5">
+                <td className="px-4 py-2">
                   {editingId === genre.id ? (
-                    <input
-                      type="text"
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      onKeyDown={(e) => handleKeyDown(e, genre.id)}
-                      className="w-full px-2 py-1 bg-obsidian-border text-white border border-slate-600 focus:border-obsidian-accent focus:outline-none"
-                      autoFocus
-                    />
-                  ) : (
-                    <span className="text-white">{genre.name}</span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-sm text-white/60">{genre.track_count}</td>
-                <td className="px-4 py-3 relative">
-                  {genre.emoji_id ? (
                     <div className="flex items-center gap-2">
-                      <EmojiDisplay emojiId={genre.emoji_id} size="md" />
+                      <input
+                        type="text"
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        onKeyDown={(e) => handleKeyDown(e, genre.id)}
+                        className="flex-1 bg-white/10 px-2 py-1 rounded text-sm"
+                        autoFocus
+                      />
                       <button
-                        onClick={() => handleRemoveEmoji(genre.id)}
-                        className="text-red-400 hover:text-red-300 text-xs"
+                        onClick={() => handleSaveEdit(genre.id)}
+                        className="text-green-400 hover:text-green-300"
                       >
-                        Remove
+                        <Check size={16} />
+                      </button>
+                      <button
+                        onClick={() => setEditingId(null)}
+                        className="text-white/50 hover:text-white"
+                      >
+                        <X size={16} />
                       </button>
                     </div>
                   ) : (
                     <button
-                      onClick={() => setEmojiPickerOpen(genre.id)}
-                      className="text-white/40 hover:text-white text-sm"
+                      onClick={() => handleStartEdit(genre)}
+                      className="text-left hover:text-white/80"
                     >
-                      + Add emoji
+                      {genre.name}
                     </button>
                   )}
-                  {emojiPickerOpen === genre.id && (
+                </td>
+                <td className="text-center px-4 py-2 text-sm text-white/60">
+                  {genre.track_count}
+                </td>
+                <td className="text-center px-4 py-2">
+                  <button
+                    onClick={() => setEmojiPickerFor(genre.id)}
+                    className="text-lg hover:bg-white/10 px-2 py-1 rounded"
+                  >
+                    {genre.emoji_id ?? '➕'}
+                  </button>
+                  {emojiPickerFor === genre.id && (
                     <EmojiPicker
                       onSelect={(emojiId) => handleEmojiSelect(genre.id, emojiId)}
-                      onClose={() => setEmojiPickerOpen(null)}
+                      onClose={() => setEmojiPickerFor(null)}
+                      allowClear={!!genre.emoji_id}
                     />
                   )}
                 </td>
-                <td className="px-4 py-3">
-                  {editingId === genre.id ? (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleSave(genre.id)}
-                        disabled={isSaving}
-                        className="px-3 py-1 bg-obsidian-accent hover:bg-obsidian-accent/80 disabled:opacity-50 text-sm text-white"
-                      >
-                        {isSaving ? 'Saving...' : 'Save'}
-                      </button>
-                      <button
-                        onClick={handleCancel}
-                        className="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-sm text-white"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleEdit(genre)}
-                        className="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-sm text-white"
-                      >
-                        Rename
-                      </button>
-                      <button
-                        onClick={() => handleDelete(genre.id, genre.name, genre.track_count)}
-                        className="px-3 py-1 bg-red-700 hover:bg-red-600 text-sm text-white"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  )}
+                <td className="px-2">
+                  <button
+                    onClick={() => handleDelete(genre)}
+                    disabled={genre.track_count > 0}
+                    className="text-red-400 hover:text-red-300 disabled:text-white/20 disabled:cursor-not-allowed p-1"
+                    title={genre.track_count > 0 ? `${genre.track_count} tracks use this genre` : 'Delete genre'}
+                  >
+                    <Trash2 size={16} />
+                  </button>
                 </td>
               </tr>
             ))}
+            {genres.length === 0 && (
+              <tr>
+                <td colSpan={4} className="text-center py-8 text-white/40">
+                  No genres found
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -243,52 +215,49 @@ export function GenreSettingsSection(): JSX.Element {
 }
 ```
 
-### SettingsPage.tsx Update
+### 2. Update `SettingsPage.tsx`
 
-Add 'genres' tab:
+Add genres to tab type and render:
 
-```typescript
-type SettingsTab = 'youtube' | 'emoji' | 'genres';
+```tsx
+// Update type
+type SettingsTab = 'emoji' | 'genres' | /* other tabs */;
 
-// In the tab buttons section, add:
+// Add import
+import { GenreSettingsSection } from './GenreSettingsSection';
+
+// Add tab button
 <button
   onClick={() => setActiveTab('genres')}
-  className={`px-4 py-2 ${activeTab === 'genres' ? 'bg-obsidian-accent' : 'bg-slate-700'}`}
+  className={activeTab === 'genres' ? 'active-class' : 'inactive-class'}
 >
   Genres
 </button>
 
-// In the content section, add:
+// Add render case
 {activeTab === 'genres' && <GenreSettingsSection />}
 ```
 
-### settings.tsx Update
+### 3. Update `routes/settings.tsx`
 
-```typescript
-type SettingsSearch = {
-  tab?: 'youtube' | 'emoji' | 'genres';
-};
+Add 'genres' to SettingsSearch schema:
 
-export const Route = createFileRoute('/settings')({
-  component: SettingsPage,
-  validateSearch: (search: Record<string, unknown>): SettingsSearch => {
-    const validTabs = ['youtube', 'emoji', 'genres'];
-    const tab = search.tab as string;
-    return {
-      tab: validTabs.includes(tab) ? tab as SettingsSearch['tab'] : 'youtube',
-    };
-  },
+```tsx
+// In the search schema validation
+const SettingsSearch = z.object({
+  tab: z.enum(['emoji', 'genres', /* other tabs */]).optional().default('emoji'),
 });
 ```
 
 ## Verification
-
-1. Start app: `uv run music-minion --web`
-2. Open http://localhost:5173/settings?tab=genres
-3. Verify:
-   - Genres listed sorted by track count
-   - Inline rename works (Enter to save, Escape to cancel)
-   - Merge confirmation when renaming to existing
-   - Emoji picker assigns emoji
-   - Emoji shows on tracks with that genre
-   - Delete confirmation and removal
+- Start app: `uv run music-minion --web`
+- Navigate to Settings page
+- Click "Genres" tab
+- Verify:
+  - All genres listed with track counts
+  - Click name to edit inline
+  - Enter saves, Escape cancels
+  - Renaming to existing name shows merge confirmation
+  - Emoji picker works
+  - Delete blocked for genres with tracks (shows toast)
+  - Delete works for empty genres
