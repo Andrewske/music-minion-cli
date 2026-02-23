@@ -946,6 +946,77 @@ def remove_track_from_playlist(
         return state, False, f"Unexpected error: {str(e)}"
 
 
+def reorder_playlist(
+    state: ProviderState, playlist_id: str, track_ids: list[str]
+) -> tuple[ProviderState, bool, Optional[str]]:
+    """Reorder a SoundCloud playlist.
+
+    Uses PUT to replace the entire track list with the new order.
+    This is the same pattern as add_track_to_playlist/remove_track_from_playlist.
+
+    Args:
+        state: Current provider state
+        playlist_id: SoundCloud playlist ID
+        track_ids: List of SoundCloud track IDs in desired order
+
+    Returns:
+        (new_state, success, error_message)
+    """
+    if not state.authenticated:
+        return state, False, "Not authenticated with SoundCloud"
+
+    # Ensure token is valid, refresh if needed
+    state, token_data = _ensure_valid_token(state)
+    if not token_data:
+        return state, False, "Token expired and refresh failed"
+
+    access_token = token_data["access_token"]
+
+    try:
+        # Update playlist with new track order (using URN format for tracks)
+        playlist_urn = _format_playlist_urn(playlist_id)
+        url = f"{API_BASE_URL}/playlists/{playlist_urn}"
+        headers = {"Authorization": f"OAuth {access_token}"}
+
+        update_data = {
+            "playlist": {
+                "tracks": [{"urn": _format_track_urn(tid)} for tid in track_ids]
+            }
+        }
+
+        logger.debug(f"Reordering playlist - URL: {url}")
+        logger.debug(f"Request payload: {json.dumps(update_data, indent=2)}")
+
+        response = requests.put(url, headers=headers, json=update_data, timeout=30)
+        response.raise_for_status()
+
+        return state, True, None
+
+    except requests.HTTPError as e:
+        logger.error(f"HTTP error reordering playlist: {e.response.status_code}")
+        logger.error(f"Request URL: {url}")
+        logger.error(f"Response body: {e.response.text}")
+
+        if e.response.status_code == 401:
+            return state.with_authenticated(False), False, "Authentication failed (401)"
+        elif e.response.status_code == 404:
+            return state, False, "Playlist not found (404)"
+        elif e.response.status_code == 429:
+            return state, False, "Rate limit exceeded (429)"
+        else:
+            try:
+                error_detail = e.response.text[:500]
+                return state, False, f"HTTP {e.response.status_code}: {error_detail}"
+            except Exception:
+                return state, False, f"HTTP error: {e.response.status_code}"
+    except requests.RequestException as e:
+        logger.error(f"Network error reordering playlist: {str(e)}", exc_info=True)
+        return state, False, f"Network error: {str(e)}"
+    except Exception as e:
+        logger.error(f"Unexpected error reordering playlist: {str(e)}", exc_info=True)
+        return state, False, f"Unexpected error: {str(e)}"
+
+
 def create_playlist(
     state: ProviderState, name: str, description: Optional[str] = None
 ) -> tuple[ProviderState, Optional[str], Optional[str]]:

@@ -1,6 +1,6 @@
 ---
 task: 05-playlist-sync
-status: pending
+status: done
 depends:
   - 04-frontend-import-wizard
 files:

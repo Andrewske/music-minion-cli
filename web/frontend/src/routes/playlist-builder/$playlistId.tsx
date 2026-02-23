@@ -64,6 +64,7 @@ function PlaylistBuilder() {
       playlistId={playlist.id}
       playlistName={playlist.name}
       playlistType={playlist.type}
+      soundcloudPlaylistId={playlist.soundcloud_playlist_id ?? undefined}
     />
   )
 }

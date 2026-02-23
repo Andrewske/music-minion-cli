@@ -27,6 +27,7 @@ export interface Playlist {
   track_count: number;
   library: string;
   pin_order: number | null;
+  soundcloud_playlist_id?: string | null;
 }
 
 export interface ComparisonPair {

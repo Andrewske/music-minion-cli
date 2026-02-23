@@ -15,12 +15,15 @@ interface PlaylistBuilderProps {
   playlistId: number;
   playlistName: string;
   playlistType: 'manual' | 'smart';
+  soundcloudPlaylistId?: string;
 }
 
-export function PlaylistBuilder({ playlistId, playlistName, playlistType }: PlaylistBuilderProps) {
+export function PlaylistBuilder({ playlistId, playlistName, playlistType, soundcloudPlaylistId }: PlaylistBuilderProps) {
   const [queueTrackId, setQueueTrackId] = useState<number | null>(null);
   const [loopEnabled, setLoopEnabled] = useState(true);
   const [isSkippedDialogOpen, setIsSkippedDialogOpen] = useState(false);
+  const [isSyncingToSoundCloud, setIsSyncingToSoundCloud] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [localTrackOverrides, setLocalTrackOverrides] = useState<Record<number, { emojis?: string[] }>>({});
 
@@ -169,6 +172,41 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType }: Play
     }
   };
 
+  // Handle sync to SoundCloud
+  const handleSyncToSoundCloud = async (): Promise<void> => {
+    if (isSyncingToSoundCloud || !soundcloudPlaylistId) return;
+
+    setIsSyncingToSoundCloud(true);
+    setSyncMessage(null);
+
+    try {
+      const response = await fetch(`/api/playlists/${playlistId}/sync-to-soundcloud`, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+        throw new Error(errorData.detail || `HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      setSyncMessage({
+        type: 'success',
+        text: `Synced ${data.synced_count} tracks to SoundCloud`,
+      });
+
+      // Clear success message after 5 seconds
+      setTimeout(() => setSyncMessage(null), 5000);
+    } catch (error) {
+      setSyncMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Failed to sync',
+      });
+    } finally {
+      setIsSyncingToSoundCloud(false);
+    }
+  };
+
   // Loading state
   if (builder.isLoading) {
     return (
@@ -249,6 +287,17 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType }: Play
           </div>
           <div className="flex items-center gap-4">
             <span className="text-white/40 text-sm">{builder.tracks.length} tracks</span>
+            {soundcloudPlaylistId && (
+              <button
+                onClick={handleSyncToSoundCloud}
+                disabled={isSyncingToSoundCloud}
+                className="px-4 py-2 text-orange-400 hover:text-orange-300 disabled:text-orange-400/50
+                  text-sm transition-colors border border-orange-400/30 hover:border-orange-400/50
+                  disabled:border-orange-400/20 rounded"
+              >
+                {isSyncingToSoundCloud ? 'Syncing...' : 'Sync to SoundCloud'}
+              </button>
+            )}
             <button
               onClick={() => setIsSkippedDialogOpen(true)}
               className="px-4 py-2 text-white/40 hover:text-white/60 text-sm transition-colors"
@@ -256,6 +305,11 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType }: Play
               Skipped ({builder.skippedTracks?.length ?? 0})
             </button>
           </div>
+          {syncMessage && (
+            <div className={`mt-2 text-sm ${syncMessage.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>
+              {syncMessage.text}
+            </div>
+          )}
         </div>
 
         {playlistType === 'smart' ? (
