@@ -82,8 +82,8 @@ export function EmojiPicker({ onSelect, onClose }: EmojiPickerProps): JSX.Elemen
           previewPosition="none"
           navPosition="top"
           perLine={10}
-          emojiSize={32}
-          emojiButtonSize={42}
+          emojiSize={16}
+          emojiButtonSize={24}
           maxFrequentRows={2}
         />
       </div>

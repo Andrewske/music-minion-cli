@@ -1,14 +1,14 @@
 # Ideas
 
-1. Clickable genre tags with popularity-sorted overlay for multi-genre selection
-2. Genre settings page for mass rename/merge operations
-3. SoundCloud + AI metadata enrichment with field-by-field approval
-4. Android browser notification shows current playing track metadata
-5. Keypad shortcuts for playlist-builder mode
-6. SoundCloud reposts sync and playlist-builder integration
-7. Fix mobile comparison emoji picker
-8. True shuffle with rolling 100-track window
-9. Deduplicate play counts within time window (10-30 min)
+1. [4] Clickable genre tags with popularity-sorted overlay for multi-genre selection
+2. [5] Genre settings page for mass rename/merge operations
+3. [8] SoundCloud + AI metadata enrichment with field-by-field approval
+4. [2] Android browser notification shows current playing track metadata
+5. [1] Keypad shortcuts for playlist-builder mode
+6. [6] SoundCloud reposts sync and playlist-builder integration
+7. [3] Fix mobile comparison emoji picker
+8. [4] True shuffle with rolling 100-track window
+9. [2] Deduplicate play counts within time window (10-30 min)
 
 ## 1. Clickable Genre Tags with Popularity Overlay
 

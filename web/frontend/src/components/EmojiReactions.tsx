@@ -70,6 +70,7 @@ export function EmojiReactions({
         return (
           <button
             key={emojiId}
+            type="button"
             onClick={() => onRemove(emojiId)}
             className={`
               relative group ${compact ? 'text-sm' : 'text-base'}
@@ -89,9 +90,10 @@ export function EmojiReactions({
         );
       })}
 
-      {/* Add button (hidden in compact mode) */}
-      {!compact && (
+      {/* Add button */}
+      {(!compact || emojis.length === 0) && (
         <button
+          type="button"
           onClick={onAddClick}
           disabled={isAdding}
           className={`text-sm font-bold transition-colors ${

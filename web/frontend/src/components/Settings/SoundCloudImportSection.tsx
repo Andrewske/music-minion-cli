@@ -572,7 +572,7 @@ function DoneStep({
           <span className="font-medium text-white">{playlistName}</span> with {trackCount} tracks
         </p>
         <Link
-          to="/playlists/$playlistId"
+          to="/playlist-builder/$playlistId"
           params={{ playlistId: String(playlistId) }}
           className="inline-block mt-4 px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors"
         >
