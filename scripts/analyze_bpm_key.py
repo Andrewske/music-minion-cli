@@ -3,6 +3,8 @@
 
 import argparse
 import os
+import subprocess
+import tempfile
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -149,17 +151,58 @@ def scan_library(music_dir: Path, workers: int = 8) -> list[dict]:
     return results
 
 
+def decode_with_ffmpeg(file_path: Path, temp_dir: Path) -> Path | None:
+    """Decode audio file to temp WAV using ffmpeg.
+
+    Args:
+        file_path: Path to audio file
+        temp_dir: Directory for temp files
+
+    Returns:
+        Path to temp WAV file, or None on failure
+    """
+    try:
+        # Use a unique name based on original file
+        temp_path = temp_dir / f"{file_path.stem}_{hash(str(file_path))}.wav"
+
+        result = subprocess.run(
+            [
+                "ffmpeg", "-y", "-i", str(file_path),
+                "-ar", "44100", "-ac", "1",  # 44.1kHz mono
+                "-loglevel", "error",
+                "-f", "wav", str(temp_path)
+            ],
+            capture_output=True,
+            timeout=60,
+        )
+
+        if result.returncode == 0 and temp_path.exists():
+            return temp_path
+        else:
+            if temp_path.exists():
+                temp_path.unlink()
+            logger.debug(f"ffmpeg failed: {result.stderr.decode()}")
+            return None
+
+    except Exception as e:
+        logger.debug(f"ffmpeg decode failed for {file_path}: {e}")
+        return None
+
+
+# Codecs that Essentia can't decode natively
+NEEDS_FFMPEG_DECODE = {'.opus'}
+
+
 def analyze_audio(file_path: Path) -> tuple[float | None, str | None, float]:
     """Run Essentia analysis on audio file.
 
     Args:
-        file_path: Path to audio file
+        file_path: Path to audio file (must be Essentia-compatible, pre-decode opus)
 
     Returns:
         Tuple of (bpm, camelot_key, key_confidence)
     """
     try:
-        # Load audio
         audio = es.MonoLoader(filename=str(file_path), sampleRate=44100)()
 
         # Extract BPM
@@ -193,17 +236,23 @@ def analyze_audio(file_path: Path) -> tuple[float | None, str | None, float]:
         return (bpm, camelot_key, strength)
 
     except Exception as e:
-        logger.exception(f"Error analyzing {file_path}: {e}")
+        logger.error(f"Error analyzing {file_path}: {e}")
         return (None, None, 0)
 
 
-def process_file(file_info: dict, dry_run: bool = False, force: bool = False) -> dict:
+def process_file(
+    file_info: dict,
+    dry_run: bool = False,
+    force: bool = False,
+    analysis_path: Path | None = None,
+) -> dict:
     """Process a single file: analyze and write metadata.
 
     Args:
         file_info: Dict with file scan results
         dry_run: If True, don't write tags
         force: If True, re-analyze even if tags exist
+        analysis_path: Optional path to pre-decoded audio for analysis
 
     Returns:
         Dict with processing result
@@ -218,8 +267,8 @@ def process_file(file_info: dict, dry_run: bool = False, force: bool = False) ->
             "reason": "already_complete",
         }
 
-    # Analyze
-    bpm, camelot_key, key_confidence = analyze_audio(file_path)
+    # Analyze (use pre-decoded path if provided)
+    bpm, camelot_key, key_confidence = analyze_audio(analysis_path or file_path)
 
     result = {
         "path": file_path,
@@ -296,6 +345,8 @@ def run_analysis(files_to_process: list[dict], args) -> None:
         files_to_process: List of file info dicts
         args: Command-line arguments
     """
+    import shutil
+
     # Respect limit
     if args.limit:
         files_to_process = files_to_process[:args.limit]
@@ -305,66 +356,106 @@ def run_analysis(files_to_process: list[dict], args) -> None:
     written_count = 0
     skipped_count = 0
 
-    # Use ProcessPoolExecutor for CPU-bound work
-    with ProcessPoolExecutor(max_workers=args.workers) as executor:
-        futures = {
-            executor.submit(process_file, file_info, args.dry_run, args.force): file_info
-            for file_info in files_to_process
-        }
+    # Create temp directory for pre-decoded files
+    temp_dir = Path(tempfile.mkdtemp(prefix="bpm_key_analysis_"))
 
-        with tqdm(total=len(futures), desc="Analyzing", unit="track") as pbar:
-            for future in as_completed(futures):
-                file_info = futures[future]
-                try:
-                    result = future.result()
+    # Pre-decode opus files (can't do this inside forked process pool)
+    opus_files = [f for f in files_to_process if f["path"].suffix.lower() in NEEDS_FFMPEG_DECODE]
+    analysis_paths: dict[Path, Path] = {}  # original -> temp wav
 
-                    # Update progress bar
-                    pbar.update(1)
+    if opus_files:
+        logger.info(f"Pre-decoding {len(opus_files)} opus files...")
+        with ThreadPoolExecutor(max_workers=args.workers) as executor:
+            futures = {
+                executor.submit(decode_with_ffmpeg, f["path"], temp_dir): f["path"]
+                for f in opus_files
+            }
+            for future in tqdm(as_completed(futures), total=len(futures), desc="Decoding opus", unit="file"):
+                original_path = futures[future]
+                temp_path = future.result()
+                if temp_path:
+                    analysis_paths[original_path] = temp_path
+                else:
+                    logger.warning(f"Failed to decode: {original_path.name}")
 
-                    # Log result
-                    if result["status"] == "skipped":
-                        skipped_count += 1
-                    elif result["status"] in ["written", "analyzed", "no_write_needed"]:
-                        filename = result["path"].name
-                        bpm_str = f"BPM={result['bpm']}" if result['bpm'] else "BPM=?"
-                        key_str = f"Key={result['key']}" if result['key'] else "Key=?"
-                        logger.info(f"{filename}: {bpm_str}, {key_str}")
+    # Use ProcessPoolExecutor for CPU-bound Essentia analysis
+    try:
+        with ProcessPoolExecutor(max_workers=args.workers) as executor:
+            futures = {
+                executor.submit(
+                    process_file,
+                    file_info,
+                    args.dry_run,
+                    args.force,
+                    analysis_paths.get(file_info["path"]),
+                ): file_info
+                for file_info in files_to_process
+            }
 
-                        if result["status"] == "written":
-                            written_count += 1
+            with tqdm(total=len(futures), desc="Analyzing", unit="track") as pbar:
+                for future in as_completed(futures):
+                    file_info = futures[future]
+                    try:
+                        result = future.result()
 
-                        # Collect low confidence keys
-                        if result.get("low_confidence"):
-                            low_confidence_entries.append({
-                                "path": result["path"],
-                                "key": result["key"],
-                                "confidence": result["key_confidence"],
-                            })
-                    elif result["status"] == "write_failed":
-                        errors.append(result["path"])
-                        logger.error(f"Failed to write metadata: {result['path']}")
+                        # Update progress bar
+                        pbar.update(1)
 
-                except Exception as e:
-                    logger.exception(f"Error processing {file_info['path']}: {e}")
-                    errors.append(file_info["path"])
-                    pbar.update(1)
+                        # Log result
+                        if result["status"] == "skipped":
+                            skipped_count += 1
+                        elif result["status"] in ["written", "analyzed", "no_write_needed"]:
+                            filename = result["path"].name
+                            bpm_str = f"BPM={result['bpm']}" if result['bpm'] else "BPM=?"
+                            key_str = f"Key={result['key']}" if result['key'] else "Key=?"
 
-    # Write low confidence keys to file
-    if low_confidence_entries:
-        with open(LOW_CONFIDENCE_FILE, "w") as f:
-            f.write("# Tracks with key confidence < 0.5 - review manually\n")
-            for entry in low_confidence_entries:
-                f.write(f"{entry['path']}\tdetected={entry['key']}\tconfidence={entry['confidence']:.2f}\n")
+                            # Count as error if analysis completely failed
+                            if result["bpm"] is None and result["key"] is None:
+                                errors.append(result["path"])
+                                logger.warning(f"{filename}: analysis failed (BPM=?, Key=?)")
+                            else:
+                                logger.info(f"{filename}: {bpm_str}, {key_str}")
 
-    # Print summary
-    logger.info("")
-    logger.info("=" * 60)
-    logger.info("Analysis complete!")
-    logger.info(f"  Written: {written_count}")
-    logger.info(f"  Skipped: {skipped_count}")
-    logger.info(f"  Errors: {len(errors)}")
-    logger.info(f"  Low confidence keys: {len(low_confidence_entries)}")
-    logger.info("=" * 60)
+                                if result["status"] == "written":
+                                    written_count += 1
+
+                                # Collect low confidence keys
+                                if result.get("low_confidence"):
+                                    low_confidence_entries.append({
+                                        "path": result["path"],
+                                        "key": result["key"],
+                                        "confidence": result["key_confidence"],
+                                    })
+                        elif result["status"] == "write_failed":
+                            errors.append(result["path"])
+                            logger.error(f"Failed to write metadata: {result['path']}")
+
+                    except Exception as e:
+                        logger.exception(f"Error processing {file_info['path']}: {e}")
+                        errors.append(file_info["path"])
+                        pbar.update(1)
+
+        # Write low confidence keys to file
+        if low_confidence_entries:
+            with open(LOW_CONFIDENCE_FILE, "w") as f:
+                f.write("# Tracks with key confidence < 0.5 - review manually\n")
+                for entry in low_confidence_entries:
+                    f.write(f"{entry['path']}\tdetected={entry['key']}\tconfidence={entry['confidence']:.2f}\n")
+
+        # Print summary
+        logger.info("")
+        logger.info("=" * 60)
+        logger.info("Analysis complete!")
+        logger.info(f"  Written: {written_count}")
+        logger.info(f"  Skipped: {skipped_count}")
+        logger.info(f"  Errors: {len(errors)}")
+        logger.info(f"  Low confidence keys: {len(low_confidence_entries)}")
+        logger.info("=" * 60)
+
+    finally:
+        # Clean up temp directory
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def print_stats(scan_results: list[dict]) -> None:
