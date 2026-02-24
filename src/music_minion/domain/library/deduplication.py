@@ -122,7 +122,10 @@ def find_best_matches_tfidf(
 
         # Combine artist, title, and filename for matching
         # Filename often has "{artist} - {title}" format
-        combined = normalize_string(strip_featuring_artists(f"{artist} {title} {filename}"))
+        # Note: Don't strip featuring artists from local tracks - we need all tokens
+        # for matching, especially when artist metadata is missing. Only strip from
+        # SC side to reduce noise from "(feat. X)" causing wrong matches to remixes.
+        combined = normalize_string(f"{artist} {title} {filename}")
         local_strings.append(combined)
 
     # Build TF-IDF index (one-time cost)

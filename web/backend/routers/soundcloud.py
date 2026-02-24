@@ -582,15 +582,24 @@ async def create_playlist_from_matches(
         )
 
         # Batch update tracks with soundcloud_id
-        track_updates = [
-            (m.sc_track_id, m.local_track_id)
-            for m in valid_matches if m.sc_track_id
-        ]
-        if track_updates:
-            db.executemany(
-                "UPDATE tracks SET soundcloud_id = ? WHERE id = ? AND soundcloud_id IS NULL",
-                track_updates
-            )
+        # De-duplicate: only keep first occurrence of each sc_track_id
+        seen_sc_ids: set[str] = set()
+        track_updates = []
+        for m in valid_matches:
+            if m.sc_track_id and m.sc_track_id not in seen_sc_ids:
+                track_updates.append((m.sc_track_id, m.local_track_id))
+                seen_sc_ids.add(m.sc_track_id)
+
+        # Update tracks one by one to handle conflicts gracefully
+        for sc_track_id, local_track_id in track_updates:
+            try:
+                db.execute(
+                    "UPDATE tracks SET soundcloud_id = ? WHERE id = ? AND soundcloud_id IS NULL",
+                    (sc_track_id, local_track_id)
+                )
+            except sqlite3.IntegrityError:
+                # SC track ID already assigned to another track - skip silently
+                logger.debug(f"Skipping SC ID {sc_track_id} - already assigned to another track")
 
         # Update track count
         db.execute(
@@ -606,16 +615,21 @@ async def create_playlist_from_matches(
         )
 
     except sqlite3.IntegrityError as e:
+        logger.error(f"IntegrityError during playlist creation: {e}")
         db.rollback()
         if "UNIQUE constraint" in str(e):
             # Provide more specific error based on which constraint failed
             error_str = str(e).lower()
-            if "soundcloud_playlist_id" in error_str:
+            if "playlists.soundcloud_playlist_id" in error_str:
                 detail = "This SoundCloud playlist is already linked to another local playlist"
-            elif "spotify_playlist_id" in error_str:
+            elif "playlists.spotify_playlist_id" in error_str:
                 detail = "This Spotify playlist is already linked to another local playlist"
-            else:
+            elif "playlists.name" in error_str:
                 detail = "Playlist name already exists"
+            elif "tracks.soundcloud_id" in error_str:
+                detail = "A track's SoundCloud ID conflicts with an existing track"
+            else:
+                detail = f"Database constraint error: {e}"
             raise HTTPException(status_code=409, detail=detail)
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

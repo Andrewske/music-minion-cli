@@ -13,6 +13,7 @@ from typing import Any, Optional
 
 from loguru import logger
 from mutagen import File as MutagenFile
+from mutagen.flac import FLAC
 from mutagen.id3 import (
     ID3,
     ID3NoHeaderError,
@@ -103,7 +104,7 @@ def extract_track_metadata(local_path: str) -> Track:
 
         # Extract DJ metadata (ID3, MP4, Vorbis/Opus)
         key = get_tag_value(
-            audio_file, ["TKEY", "KEY", "INITIAL_KEY", "initialkey", "\xa9key", "key"]
+            audio_file, ["TKEY", "KEY", "INITIALKEY", "initialkey", "\xa9key", "key"]
         )
         bpm_str = get_tag_value(
             audio_file, ["TBPM", "BPM", "BEATS_PER_MINUTE", "\xa9bpm", "bpm"]
@@ -284,7 +285,7 @@ def write_metadata_to_file(
             _write_id3_metadata(audio, title, artist, album, genre, year, bpm, key)
         elif isinstance(audio, MP4):
             _write_mp4_metadata(audio, title, artist, album, genre, year, bpm, key)
-        elif isinstance(audio, (OggOpus, OggVorbis)):
+        elif isinstance(audio, (OggOpus, OggVorbis, FLAC)):
             _write_vorbis_metadata(audio, title, artist, album, genre, year, bpm, key)
         else:
             logger.warning(f"Unsupported format for metadata writing: {local_path}")
@@ -557,7 +558,7 @@ def write_elo_to_file(
             _write_elo_id3(audio, global_elo, playlist_elo, update_comment)
         elif isinstance(audio, MP4):
             _write_elo_mp4(audio, global_elo, playlist_elo, update_comment)
-        elif isinstance(audio, (OggOpus, OggVorbis)):
+        elif isinstance(audio, (OggOpus, OggVorbis, FLAC)):
             _write_elo_vorbis(audio, global_elo, playlist_elo, update_comment)
         else:
             logger.warning(f"Unsupported format for ELO writing: {local_path}")
