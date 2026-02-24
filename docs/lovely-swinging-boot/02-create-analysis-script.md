@@ -1,6 +1,6 @@
 ---
 task: 02-create-analysis-script
-status: pending
+status: done
 depends: [01-add-essentia-dependency]
 files:
   - path: scripts/analyze_bpm_key.py
