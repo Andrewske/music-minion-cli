@@ -47,6 +47,7 @@ type ImportAction =
       localTitle: string;
       localArtist: string;
     }
+  | { type: 'CONFIRM_MATCH'; scTrackId: string }
   | { type: 'MARK_MISSING'; scTrackId: string }
   | { type: 'UNDO_MISSING'; scTrackId: string }
   | { type: 'UPDATE_PLAYLIST_NAME'; name: string }
@@ -99,6 +100,14 @@ function importReducer(state: ImportState, action: ImportAction): ImportState {
                 isFixed: true,
               }
             : m
+        ),
+      };
+
+    case 'CONFIRM_MATCH':
+      return {
+        ...state,
+        matches: state.matches.map((m) =>
+          m.sc_track_id === action.scTrackId ? { ...m, is_approved: true, isConfirmed: true } : m
         ),
       };
 
@@ -251,6 +260,7 @@ interface ReviewStepProps {
     localTitle: string,
     localArtist: string
   ) => void;
+  onConfirmMatch: (scTrackId: string) => void;
   onMarkMissing: (scTrackId: string) => void;
   onUndoMissing: (scTrackId: string) => void;
   onContinue: () => void;
@@ -259,6 +269,7 @@ interface ReviewStepProps {
 function ReviewStep({
   matches,
   onFixMatch,
+  onConfirmMatch,
   onMarkMissing,
   onUndoMissing,
   onContinue,
@@ -266,7 +277,8 @@ function ReviewStep({
   const [fixingTrackId, setFixingTrackId] = useState<string | null>(null);
 
   // Count stats
-  const autoApproved = matches.filter((m) => m.is_approved && !m.isFixed && !m.is_missing).length;
+  const autoApproved = matches.filter((m) => m.is_approved && !m.isFixed && !m.isConfirmed && !m.is_missing).length;
+  const manuallyConfirmed = matches.filter((m) => m.isConfirmed).length;
   const manuallyFixed = matches.filter((m) => m.isFixed).length;
   const markedMissing = matches.filter((m) => m.is_missing).length;
   const needsReview = matches.filter(
@@ -296,10 +308,16 @@ function ReviewStep({
           <span className="text-yellow-400 font-medium">{needsReview.length}</span>
           <span className="text-slate-400"> need review</span>
         </div>
+        {manuallyConfirmed > 0 && (
+          <div className="text-sm">
+            <span className="text-cyan-400 font-medium">{manuallyConfirmed}</span>
+            <span className="text-slate-400"> confirmed</span>
+          </div>
+        )}
         {manuallyFixed > 0 && (
           <div className="text-sm">
             <span className="text-blue-400 font-medium">{manuallyFixed}</span>
-            <span className="text-slate-400"> manually fixed</span>
+            <span className="text-slate-400"> fixed</span>
           </div>
         )}
         {markedMissing > 0 && (
@@ -383,6 +401,15 @@ function ReviewStep({
                   <td className="py-3">
                     {!match.is_missing ? (
                       <div className="flex gap-2">
+                        {match.local_track_id && !match.isFixed && (
+                          <button
+                            type="button"
+                            onClick={() => onConfirmMatch(match.sc_track_id)}
+                            className="px-2 py-1 bg-green-700 hover:bg-green-600 text-white text-xs rounded transition-colors"
+                          >
+                            Confirm
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => setFixingTrackId(match.sc_track_id)}
@@ -748,6 +775,7 @@ export function SoundCloudImportSection(): JSX.Element {
             onFixMatch={(scTrackId, localTrackId, localTitle, localArtist) =>
               dispatch({ type: 'FIX_MATCH', scTrackId, localTrackId, localTitle, localArtist })
             }
+            onConfirmMatch={(scTrackId) => dispatch({ type: 'CONFIRM_MATCH', scTrackId })}
             onMarkMissing={(scTrackId) => dispatch({ type: 'MARK_MISSING', scTrackId })}
             onUndoMissing={(scTrackId) => dispatch({ type: 'UNDO_MISSING', scTrackId })}
             onContinue={() => dispatch({ type: 'PROCEED_TO_CONFIRM' })}

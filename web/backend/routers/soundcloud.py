@@ -588,7 +588,7 @@ async def create_playlist_from_matches(
         ]
         if track_updates:
             db.executemany(
-                "UPDATE tracks SET soundcloud_id = ? WHERE id = ?",
+                "UPDATE tracks SET soundcloud_id = ? WHERE id = ? AND soundcloud_id IS NULL",
                 track_updates
             )
 
@@ -598,7 +598,7 @@ async def create_playlist_from_matches(
             (len(valid_matches), playlist_id)
         )
 
-        db.connection.commit()
+        db.commit()
 
         return ScCreatePlaylistResponse(
             playlist_id=playlist_id,
@@ -606,11 +606,19 @@ async def create_playlist_from_matches(
         )
 
     except sqlite3.IntegrityError as e:
-        db.connection.rollback()
+        db.rollback()
         if "UNIQUE constraint" in str(e):
-            raise HTTPException(status_code=409, detail="Playlist name already exists")
+            # Provide more specific error based on which constraint failed
+            error_str = str(e).lower()
+            if "soundcloud_playlist_id" in error_str:
+                detail = "This SoundCloud playlist is already linked to another local playlist"
+            elif "spotify_playlist_id" in error_str:
+                detail = "This Spotify playlist is already linked to another local playlist"
+            else:
+                detail = "Playlist name already exists"
+            raise HTTPException(status_code=409, detail=detail)
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        db.connection.rollback()
+        db.rollback()
         logger.exception("Error creating playlist from matches")
         raise HTTPException(status_code=500, detail=f"Failed to create playlist: {e}")

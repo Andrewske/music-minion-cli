@@ -1,4 +1,5 @@
 import { useState, useEffect, Children, isValidElement, cloneElement, type ReactElement } from 'react';
+import { useRouterState } from '@tanstack/react-router';
 import { SidebarNav } from './SidebarNav';
 import { SidebarToggle } from './SidebarToggle';
 import { SidebarSection } from './SidebarSection';
@@ -24,6 +25,11 @@ export function Sidebar({ children, isExpanded: controlledExpanded, isMobile = f
   // Use controlled state if provided (mobile), otherwise use internal state (desktop)
   const isExpanded = controlledExpanded !== undefined ? controlledExpanded : internalExpanded;
 
+  // Detect comparison route for dynamic height (PlayerBar is h-36/144px on comparison, h-16/64px otherwise)
+  const routerState = useRouterState();
+  const isComparisonRoute = routerState.location.pathname === '/comparison';
+  const sidebarHeight = isComparisonRoute ? 'h-[calc(100vh-144px)]' : 'h-[calc(100vh-64px)]';
+
   // Persist to localStorage (desktop only)
   useEffect(() => {
     if (!isMobile && controlledExpanded === undefined) {
@@ -33,7 +39,7 @@ export function Sidebar({ children, isExpanded: controlledExpanded, isMobile = f
 
   return (
     <aside
-      className={`flex flex-col bg-black border-r border-obsidian-border h-[calc(100vh-64px)] transition-all duration-300 ease-in-out ${
+      className={`flex flex-col bg-black border-r border-obsidian-border ${sidebarHeight} transition-all duration-300 ease-in-out ${
         isExpanded ? 'w-[280px]' : 'w-[72px]'
       }`}
     >
