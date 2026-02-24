@@ -20,6 +20,7 @@ SUPPORTED_FORMATS = {'.mp3', '.m4a', '.opus', '.ogg', '.flac'}  # No .wav - no t
 MUSIC_DIR = Path.home() / "Music" / "EDM"
 KEY_CONFIDENCE_THRESHOLD = 0.5
 LOW_CONFIDENCE_FILE = Path("low_confidence_keys.txt")
+MAX_DURATION_SECONDS = 600  # 10 minutes - skip DJ mixes, podcasts, etc.
 
 # Camelot wheel mapping (musical key → Camelot code)
 CAMELOT_MAP = {
@@ -67,6 +68,9 @@ def scan_file(file_path: Path) -> dict:
         if audio is None:
             return None
 
+        # Get duration
+        duration = audio.info.length if audio.info else None
+
         # Try to get BPM
         has_bpm = False
         bpm = None
@@ -105,6 +109,7 @@ def scan_file(file_path: Path) -> dict:
             "has_key": has_key,
             "bpm": bpm,
             "key": key,
+            "duration": duration,
         }
 
     except Exception as e:
@@ -350,6 +355,12 @@ def run_analysis(files_to_process: list[dict], args) -> None:
     # Respect limit
     if args.limit:
         files_to_process = files_to_process[:args.limit]
+
+    # Filter out long tracks (DJ mixes, podcasts, etc.)
+    long_tracks = [f for f in files_to_process if (f.get("duration") or 0) > MAX_DURATION_SECONDS]
+    if long_tracks:
+        logger.info(f"Skipping {len(long_tracks)} tracks > 10 min")
+    files_to_process = [f for f in files_to_process if (f.get("duration") or 0) <= MAX_DURATION_SECONDS]
 
     low_confidence_entries = []
     errors = []
