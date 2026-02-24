@@ -23,18 +23,19 @@ LOW_CONFIDENCE_FILE = Path("low_confidence_keys.txt")
 MAX_DURATION_SECONDS = 600  # 10 minutes - skip DJ mixes, podcasts, etc.
 
 # Camelot wheel mapping (musical key → Camelot code)
+# Includes both sharp and flat enharmonic equivalents
 CAMELOT_MAP = {
     "C": "8B", "Am": "8A",
     "G": "9B", "Em": "9A",
     "D": "10B", "Bm": "10A",
-    "A": "11B", "F#m": "11A",
-    "E": "12B", "C#m": "12A",
-    "B": "1B", "G#m": "1A",
-    "F#": "2B", "D#m": "2A",
-    "Db": "3B", "Bbm": "3A",
-    "Ab": "4B", "Fm": "4A",
-    "Eb": "5B", "Cm": "5A",
-    "Bb": "6B", "Gm": "6A",
+    "A": "11B", "F#m": "11A", "Gbm": "11A",
+    "E": "12B", "C#m": "12A", "Dbm": "12A",
+    "B": "1B", "Cb": "1B", "G#m": "1A", "Abm": "1A",
+    "F#": "2B", "Gb": "2B", "D#m": "2A", "Ebm": "2A",
+    "Db": "3B", "C#": "3B", "Bbm": "3A", "A#m": "3A",
+    "Ab": "4B", "G#": "4B", "Fm": "4A",
+    "Eb": "5B", "D#": "5B", "Cm": "5A",
+    "Bb": "6B", "A#": "6B", "Gm": "6A",
     "F": "7B", "Dm": "7A",
 }
 
