@@ -4,6 +4,7 @@ SoundCloud tracks are imported as streaming-only (no download).
 Metadata is stored with permalink URLs that are resolved via yt-dlp at playback time.
 """
 
+import sqlite3
 import time
 import uuid
 from enum import Enum
@@ -541,36 +542,61 @@ async def create_playlist_from_matches(
     if not valid_matches:
         raise HTTPException(status_code=400, detail="No tracks to add")
 
-    # Check for duplicate playlist name
-    existing = get_playlist_by_name(request.playlist_name)
-    if existing:
-        raise HTTPException(
-            status_code=409, detail="Playlist name already exists"
-        )
+    # Check for duplicate playlist name using injected connection
+    # (replaces get_playlist_by_name() which opens its own connection)
+    cursor = db.execute(
+        "SELECT id FROM playlists WHERE name = ? AND library = ?",
+        (request.playlist_name, "local")
+    )
+    if cursor.fetchone():
+        raise HTTPException(status_code=409, detail="Playlist name already exists")
 
     # Sort by sc_position ascending (preserve playlist order)
     valid_matches.sort(key=lambda m: m.sc_position if m.sc_position is not None else 0)
 
     try:
-        # Create playlist
-        playlist_id = crud_create_playlist(request.playlist_name, "manual")
+        # Create playlist using injected connection
+        # Note: Using direct SQL instead of crud_create_playlist() to:
+        # 1. Avoid opening multiple connections (fixes database lock error)
+        # 2. Skip SoundCloud sync trigger (we're importing FROM SoundCloud, not TO it)
+        cursor = db.execute(
+            "INSERT INTO playlists (name, type, library) VALUES (?, ?, ?)",
+            (request.playlist_name, "manual", "local")
+        )
+        playlist_id = cursor.lastrowid
 
         # Link to SoundCloud playlist ID
         db.execute(
             "UPDATE playlists SET soundcloud_playlist_id = ? WHERE id = ?",
-            (request.sc_playlist_id, playlist_id),
+            (request.sc_playlist_id, playlist_id)
         )
 
-        # Add tracks and set soundcloud_id on matched tracks
-        for match in valid_matches:
-            # Add track to playlist
-            add_track_to_playlist(playlist_id, match.local_track_id)
+        # Batch insert playlist_tracks (no need for duplicate check - new playlist)
+        playlist_tracks = [
+            (playlist_id, m.local_track_id, idx + 1)
+            for idx, m in enumerate(valid_matches)
+        ]
+        db.executemany(
+            "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, ?)",
+            playlist_tracks
+        )
 
-            # Set soundcloud_id on the local track for sync support
-            db.execute(
+        # Batch update tracks with soundcloud_id
+        track_updates = [
+            (m.sc_track_id, m.local_track_id)
+            for m in valid_matches if m.sc_track_id
+        ]
+        if track_updates:
+            db.executemany(
                 "UPDATE tracks SET soundcloud_id = ? WHERE id = ?",
-                (match.sc_track_id, match.local_track_id),
+                track_updates
             )
+
+        # Update track count
+        db.execute(
+            "UPDATE playlists SET track_count = ? WHERE id = ?",
+            (len(valid_matches), playlist_id)
+        )
 
         db.connection.commit()
 
@@ -579,13 +605,12 @@ async def create_playlist_from_matches(
             track_count=len(valid_matches),
         )
 
-    except ValueError as e:
-        # crud_create_playlist raises ValueError for duplicate names
-        if "already exists" in str(e):
+    except sqlite3.IntegrityError as e:
+        db.connection.rollback()
+        if "UNIQUE constraint" in str(e):
             raise HTTPException(status_code=409, detail="Playlist name already exists")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        db.connection.rollback()
         logger.exception("Error creating playlist from matches")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to create playlist: {e}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to create playlist: {e}")
