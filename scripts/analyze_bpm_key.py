@@ -366,6 +366,7 @@ def run_analysis(files_to_process: list[dict], args) -> None:
     errors = []
     written_count = 0
     skipped_count = 0
+    key_failed_count = 0  # Key detection returned None (not in Camelot map)
 
     # Create temp directory for pre-decoded files
     temp_dir = Path(tempfile.mkdtemp(prefix="bpm_key_analysis_"))
@@ -430,6 +431,10 @@ def run_analysis(files_to_process: list[dict], args) -> None:
                                 if result["status"] == "written":
                                     written_count += 1
 
+                                # Track key detection failures (None = not in Camelot map)
+                                if result["key"] is None:
+                                    key_failed_count += 1
+
                                 # Collect low confidence keys
                                 if result.get("low_confidence"):
                                     low_confidence_entries.append({
@@ -458,9 +463,10 @@ def run_analysis(files_to_process: list[dict], args) -> None:
         logger.info("=" * 60)
         logger.info("Analysis complete!")
         logger.info(f"  Written: {written_count}")
-        logger.info(f"  Skipped: {skipped_count}")
-        logger.info(f"  Errors: {len(errors)}")
+        logger.info(f"  Skipped (already complete): {skipped_count}")
+        logger.info(f"  Key detection failed: {key_failed_count}")
         logger.info(f"  Low confidence keys: {len(low_confidence_entries)}")
+        logger.info(f"  Errors: {len(errors)}")
         logger.info("=" * 60)
 
     finally:
