@@ -52,6 +52,28 @@ def normalize_string(s: Optional[str]) -> str:
     return s.strip()
 
 
+def strip_featuring_artists(s: str) -> str:
+    """Remove featuring artist credits from string.
+
+    Patterns matched:
+    - (feat. Artist), (feat Artist)
+    - (ft. Artist), (ft Artist)
+    - (featuring Artist)
+    - [feat. Artist], [ft. Artist], [featuring Artist]
+
+    Returns string with featuring patterns removed.
+    Safely fails (preserves original) if nested brackets detected.
+    """
+    if not s:
+        return ""
+    # Handle parentheses: (feat. X), (ft. X), (featuring X)
+    # [^()]+ ensures safe failure on nested parens
+    s = re.sub(r"\s*\((?:feat\.?|ft\.?|featuring)\s+[^()]+\)", "", s, flags=re.IGNORECASE)
+    # Handle square brackets: [feat. X], [ft. X], [featuring X]
+    s = re.sub(r"\s*\[(?:feat\.?|ft\.?|featuring)\s+[^\[\]]+\]", "", s, flags=re.IGNORECASE)
+    return s
+
+
 def find_best_matches_tfidf(
     sc_tracks: list[tuple[str, dict[str, Any]]],
     local_tracks: list[dict[str, Any]],
@@ -100,7 +122,7 @@ def find_best_matches_tfidf(
 
         # Combine artist, title, and filename for matching
         # Filename often has "{artist} - {title}" format
-        combined = normalize_string(f"{artist} {title} {filename}")
+        combined = normalize_string(strip_featuring_artists(f"{artist} {title} {filename}"))
         local_strings.append(combined)
 
     # Build TF-IDF index (one-time cost)
@@ -124,7 +146,7 @@ def find_best_matches_tfidf(
         # Build combined string for SC track
         sc_artist = sc_metadata.get("artist", "") or ""
         sc_title = sc_metadata.get("title", "") or ""
-        sc_combined = normalize_string(f"{sc_artist} {sc_title}")
+        sc_combined = normalize_string(strip_featuring_artists(f"{sc_artist} {sc_title}"))
 
         try:
             # Vectorize SC track

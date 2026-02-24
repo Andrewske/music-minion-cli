@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 41  # Genre tables and triggers
+SCHEMA_VERSION = 42  # Composite unique index for provider playlist IDs
 
 
 # Initial top 50 curated emojis for music reactions
@@ -2037,6 +2037,30 @@ def migrate_database(conn, current_version: int) -> None:
 
         conn.commit()
         logger.info("  ✓ Migration to v41 complete: Genre tables and triggers")
+
+    if current_version < 42:
+        logger.info("Migrating to v42: Composite unique index for provider playlist IDs...")
+
+        # Drop old unique indexes (only unique on provider ID)
+        conn.execute("DROP INDEX IF EXISTS idx_playlists_soundcloud_id")
+        conn.execute("DROP INDEX IF EXISTS idx_playlists_spotify_id")
+
+        # Create new composite unique indexes (unique on provider ID + library)
+        # This allows the same SC/Spotify playlist to exist in both 'soundcloud'/'spotify'
+        # library (synced copy) and 'local' library (imported copy)
+        conn.execute("""
+            CREATE UNIQUE INDEX idx_playlists_soundcloud_id
+            ON playlists (soundcloud_playlist_id, library)
+            WHERE soundcloud_playlist_id IS NOT NULL
+        """)
+        conn.execute("""
+            CREATE UNIQUE INDEX idx_playlists_spotify_id
+            ON playlists (spotify_playlist_id, library)
+            WHERE spotify_playlist_id IS NOT NULL
+        """)
+
+        conn.commit()
+        logger.info("  ✓ Migration to v42 complete: Composite unique index for provider playlist IDs")
 
 
 def init_database() -> None:

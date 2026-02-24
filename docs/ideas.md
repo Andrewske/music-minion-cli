@@ -1,49 +1,14 @@
 # Ideas
 
-1. [4] Clickable genre tags with popularity-sorted overlay for multi-genre selection
-2. [5] Genre settings page for mass rename/merge operations
-3. [8] SoundCloud + AI metadata enrichment with field-by-field approval
-4. [2] Android browser notification shows current playing track metadata
-5. [1] Keypad shortcuts for playlist-builder mode
-6. [6] SoundCloud reposts sync and playlist-builder integration
-7. [3] Fix mobile comparison emoji picker
-8. [2] Deduplicate play counts within time window (10-30 min)
+1. [8] SoundCloud + AI metadata enrichment with field-by-field approval
+2. [2] Android browser notification shows current playing track metadata
+3. [1] Keypad shortcuts for playlist-builder mode
+4. [6] SoundCloud reposts sync and playlist-builder integrationsound
+5. [3] Fix mobile comparison emoji picker
+6. [2] Deduplicate play counts within time window (10-30 min)
+7. [1] CRUD functions accept optional connection parameter
 
-## 1. Clickable Genre Tags with Popularity Overlay
-
-**Context**: Playlist builder, track viewer, anywhere genre tags display
-
-**Idea**: Click on genre tag to open overlay showing all genres sorted by popularity (usage count in local library). Select to change track's main genre.
-
-**Components**:
-- UI: Blessed overlay/popup component
-- Data: Genre statistics query (count by tag usage)
-- Metadata: Genre update handler (Mutagen atomic write)
-
-**Questions**:
-- Should this also allow adding secondary genres, or only change primary?
-    - Answer: Would be awesome to be able to select multiple genres, but have selections numbered so the first genre you click is 1, then 2, then 3, ect... if there is an existing genre it would be 1 and you need to click that to remove it and select a new 1. Selected genres will show at the top of the overlay and be removed from the genre list in order.
-- Should popularity show absolute counts or percentages?
-    - Answer: We don't even need to show popularity, it's just for sorting.
-
-## 2. Genre Settings Page
-
-**Context**: Settings/management view for library-wide genre cleanup
-
-**Idea**: Dedicated page showing all genres with track counts. Inline editing of genre names triggers mass update across all affected tracks. Renaming to existing genre merges them automatically (e.g., "dubstep" → "Dubstep" merges both, removes "dubstep" from list).
-
-**Components**:
-- UI: Settings page with sortable genre list
-- Data: Genre statistics with track counts
-- Operations: Bulk genre rename/merge (atomic file operations for all affected tracks)
-- Conflict handling: Auto-merge detection when renamed genre matches existing
-
-**Behavior**:
-- Show genre + count (e.g., "dubstep (15 tracks)")
-- Edit inline → mass update all tracks
-- Merge if target genre exists → combined count, old genre removed from list
-
-## 3. SoundCloud + AI Metadata Enrichment
+## 1. SoundCloud + AI Metadata Enrichment
 
 **Context**: Track playback, metadata improvement workflow
 
@@ -73,7 +38,7 @@
 - Confidence threshold for auto-suggestions vs requiring review?
 - How to handle mismatches (SoundCloud track is different song)?
 
-## 4. Android Browser Notification Shows Current Track Metadata
+## 2. Android Browser Notification Shows Current Track Metadata
 
 **Context**: Mobile web player (Android browser)
 
@@ -93,13 +58,13 @@
 - Should notification controls (play/pause/skip) trigger API calls or use existing frontend state?
 - How to handle artwork for tracks without album art? (fallback image?)
 
-## 5. Keypad Shortcuts for Playlist-Builder Mode - 2026-02-15
+## 3. Keypad Shortcuts for Playlist-Builder Mode - 2026-02-15
 
 Add numeric keypad shortcuts for common playlist-builder operations to speed up curation workflow.
 
 **Context**: Blessed UI, playlist-builder keyboard event handlers (`ui/blessed/events/keys/builder.py`)
 
-## 6. SoundCloud Reposts Sync and Playlist-Builder Integration - 2026-02-15
+## 4. SoundCloud Reposts Sync and Playlist-Builder Integration - 2026-02-15
 
 Auto-sync SoundCloud reposts (like `~/coding/soundcloud-discovery`) to keep an up-to-date list. Use playlist-builder to filter and curate monthly playlists (e.g., "Feb 26") from these reposts.
 
@@ -111,14 +76,37 @@ Auto-sync SoundCloud reposts (like `~/coding/soundcloud-discovery`) to keep an u
 - Filter/view for SoundCloud-only tracks
 - Integration with existing playlist-builder UI
 
-## 7. Fix Mobile Comparison Emoji Picker - 2026-02-17
+## 5. Fix Mobile Comparison Emoji Picker - 2026-02-17
 
 Mobile comparison view: clicking emoji button stops the song, then emoji picker glitches (can't select emoji or close it). Likely interaction between swipe gestures and emoji picker popup.
 
 **Context**: `web/frontend/src/components/ComparisonView.tsx`, `web/frontend/src/components/EmojiPicker.tsx`, `web/frontend/src/hooks/useSwipeGesture.ts`
 
-## 8. Deduplicate Play Counts Within Time Window - 2026-02-22
+## 6. Deduplicate Play Counts Within Time Window - 2026-02-22
 
 Count all plays within a 10-30 minute window as a single play. Addresses false inflation from: going back and forth between tracks while comparing, and forgetting to stop playback (looping while focused elsewhere).
 
 **Context**: `domain/radio/history.py`, play count calculation logic
+
+## 7. CRUD Functions Accept Optional Connection Parameter - 2026-02-24
+
+Add optional `conn` parameter to CRUD functions so FastAPI endpoints can pass their injected connection instead of each function opening its own. Fixes database lock contention at the architecture level.
+
+**Context**: `domain/playlists/crud.py`, `web/backend/routers/*.py`, database locking during multi-operation endpoints
+
+**Pattern**:
+```python
+def get_playlist_by_name(name: str, library: str = None, conn: Connection = None) -> Optional[dict]:
+    def _query(c):
+        cursor = c.execute("SELECT * FROM playlists WHERE name = ? AND library = ?", (name, library))
+        return dict(cursor.fetchone()) if cursor.fetchone() else None
+
+    if conn:
+        return _query(conn)
+    with get_db_connection() as c:
+        return _query(c)
+```
+
+**Scope**: `create_playlist()`, `add_track_to_playlist()`, `get_playlist_by_name()`, `get_playlist_by_id()` - any CRUD function called from FastAPI endpoints that also use the injected `db` connection.
+
+**Trade-off**: More invasive change but eliminates the root cause. Current workaround is inline SQL in endpoints.

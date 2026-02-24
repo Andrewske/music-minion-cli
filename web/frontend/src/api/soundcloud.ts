@@ -26,6 +26,7 @@ export interface ScPlaylistMatch {
   sc_position?: number;
   // Frontend-only state (not sent to backend):
   isFixed?: boolean;
+  isConfirmed?: boolean;
 }
 
 export interface MatchPlaylistResponse {

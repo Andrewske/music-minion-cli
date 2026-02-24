@@ -61,8 +61,8 @@ export function GenreSelectionModal({
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-zinc-900 rounded-lg p-6 w-full max-w-md max-h-[80vh] overflow-y-auto">
+        <Dialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" />
+        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-zinc-900 rounded-lg p-6 w-full max-w-md max-h-[80vh] overflow-y-auto z-50">
           <Dialog.Title className="text-lg font-semibold mb-4">
             Select Genres
           </Dialog.Title>
