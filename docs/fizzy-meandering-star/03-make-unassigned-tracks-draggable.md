@@ -1,6 +1,6 @@
 ---
 task: 03-make-unassigned-tracks-draggable
-status: pending
+status: done
 depends: [02-add-dnd-context-to-playlist-organizer]
 files:
   - path: web/frontend/src/components/organizer/UnassignedTrackTable.tsx
