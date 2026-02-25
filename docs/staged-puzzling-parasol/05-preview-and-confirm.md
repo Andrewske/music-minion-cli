@@ -1,6 +1,6 @@
 ---
 task: 05-preview-and-confirm
-status: pending
+status: done
 depends: [04-gpt4o-mini-parsing]
 files:
   - path: scripts/enrich_metadata.py

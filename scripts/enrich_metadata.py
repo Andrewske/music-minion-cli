@@ -25,6 +25,7 @@ from openai import OpenAI
 from music_minion.core.config import load_config
 from music_minion.core.database import get_db_connection, get_track_by_path
 from music_minion.domain.library.deduplication import normalize_string
+from music_minion.domain.library.metadata import extract_track_metadata
 from music_minion.domain.library.provider import ProviderConfig, ProviderState
 from music_minion.domain.library.providers.soundcloud import api as sc_api
 from music_minion.domain.library.providers.soundcloud import auth as sc_auth
@@ -318,6 +319,104 @@ def parse_with_ai(sc_data: dict) -> tuple[dict, dict]:
     return result, usage
 
 
+def format_artist_string(parsed: dict) -> str:
+    """Format artists as: 'Artist1 x Artist2 ft. Featured1, Featured2'
+
+    Uses 'x' for collaborations (not '&' which appears in artist names like 'Chase & Status').
+    Remix artist is NOT included here - remix attribution should be in the title.
+
+    Args:
+        parsed: Parsed metadata dictionary
+
+    Returns:
+        Formatted artist string
+    """
+    parts = []
+
+    # Original artists joined with ' x '
+    if parsed.get("original_artists"):
+        parts.append(" x ".join(parsed["original_artists"]))
+
+    # Featured artists with 'ft.' prefix
+    if parsed.get("featured_artists"):
+        parts.append("ft. " + ", ".join(parsed["featured_artists"]))
+
+    return " ".join(parts)
+
+
+def preview_changes(current: dict, parsed: dict, usage: dict, match_confidence: float) -> None:
+    """Display side-by-side comparison of current vs parsed metadata.
+
+    Args:
+        current: Current file metadata (Track object as dict)
+        parsed: AI-parsed metadata
+        usage: Token usage statistics
+        match_confidence: Confidence score for SoundCloud match
+    """
+    print("\n" + "=" * 60)
+    print(f"MATCH CONFIDENCE: {match_confidence:.2f}")
+    print("=" * 60)
+
+    print("\nCURRENT FILE METADATA:")
+    print(f"  Title:  {current.get('title', '(none)')}")
+    print(f"  Artist: {current.get('artist', '(none)')}")
+    print(f"  Genre:  {current.get('genre', '(none)')}")
+    print(f"  Year:   {current.get('year', '(none)')}")
+
+    print("\nPARSED FROM SOUNDCLOUD:")
+    print(f"  Title:  {parsed['title']}")
+    print(f"  Artist: {format_artist_string(parsed)}")
+    print(f"  Genre:  {parsed.get('genre', '(none)')}")
+    print(f"  Year:   {parsed.get('year', '(none)')}")
+
+    print(f"\n[Tokens: {usage['prompt_tokens']} in / {usage['completion_tokens']} out]")
+    print("=" * 60)
+
+
+def validate_parsed_output(parsed: dict) -> tuple[bool, str]:
+    """Validate AI output before applying. Returns (valid, error_message).
+
+    Args:
+        parsed: AI-parsed metadata dictionary
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    if not parsed.get("title"):
+        return False, "Missing title"
+    if not parsed.get("original_artists"):
+        return False, "Missing original_artists"
+    if not isinstance(parsed.get("original_artists"), list):
+        return False, "original_artists must be a list"
+    return True, ""
+
+
+def confirm_apply() -> bool:
+    """Prompt user to confirm changes.
+
+    Returns:
+        True if user confirms, False otherwise
+    """
+    response = input("\nApply changes? [y/N]: ").strip().lower()
+    return response in ("y", "yes")
+
+
+def should_auto_apply(match_confidence: float, parsed: dict) -> bool:
+    """Check if we can auto-apply without confirmation.
+
+    Args:
+        match_confidence: Confidence score for SoundCloud match
+        parsed: AI-parsed metadata dictionary
+
+    Returns:
+        True if auto-apply is safe, False otherwise
+    """
+    if match_confidence < 0.85:
+        return False
+    valid, _ = validate_parsed_output(parsed)
+    return valid
+
+
 def main() -> int:
     """Main entry point for metadata enrichment script.
 
@@ -495,32 +594,56 @@ def main() -> int:
     print("\n🤖 Parsing metadata with GPT-4o-mini...")
     try:
         parsed_metadata, usage_stats = parse_with_ai(track_details)
-        print("\n✨ Parsed Metadata:")
-        print(f"  Title: {parsed_metadata.get('title')}")
-        print(f"  Original Artists: {parsed_metadata.get('original_artists')}")
-        print(f"  Featured Artists: {parsed_metadata.get('featured_artists')}")
-        print(f"  Remix Artist: {parsed_metadata.get('remix_artist')}")
-        print(f"  Genre: {parsed_metadata.get('genre')}")
-        print(f"  Year: {parsed_metadata.get('year')}")
-        print(f"\n📊 Token Usage:")
-        print(f"  Prompt: {usage_stats['prompt_tokens']} tokens")
-        print(f"  Completion: {usage_stats['completion_tokens']} tokens")
-        print(f"  Total: {usage_stats['total_tokens']} tokens")
     except Exception as e:
         print(f"❌ Failed to parse metadata with AI: {e}")
         return 1
 
-    # Link track to soundcloud_id
+    # Read current file metadata
+    current_metadata = extract_track_metadata(str(local_path))
+    current_dict = {
+        "title": current_metadata.title,
+        "artist": current_metadata.artist,
+        "genre": current_metadata.genre,
+        "year": current_metadata.year,
+    }
+
+    # Calculate match confidence (use first match confidence if available)
+    match_confidence = matches[0].confidence_score if matches else 0.0
+
+    # Display preview
+    preview_changes(current_dict, parsed_metadata, usage_stats, match_confidence)
+
+    # Validate parsed output
+    valid, error = validate_parsed_output(parsed_metadata)
+    if not valid:
+        print(f"\n⚠ Invalid AI output: {error}")
+        print("[Skipping this track]")
+        return 1
+
+    # Dry run mode: exit without writing
     if args.dry_run:
-        print(f"\n[DRY RUN] Would link track to SoundCloud ID: {soundcloud_id}")
+        print("\n[Dry run - no changes applied]")
+        return 0
+
+    # Determine whether to apply changes
+    if args.auto and should_auto_apply(match_confidence, parsed_metadata):
+        print("\n[Auto-applying: high confidence match]")
+        apply = True
     else:
-        if link_track_to_soundcloud(str(local_path), soundcloud_id):
-            print(f"\n✅ Linked track to SoundCloud ID: {soundcloud_id}")
-        else:
-            print(
-                "\n⚠ Track not linked (SoundCloud ID already in use by another track)"
-            )
-            return 1
+        apply = confirm_apply()
+
+    if not apply:
+        print("\n[Skipped by user]")
+        return 0
+
+    # Link track to soundcloud_id
+    if link_track_to_soundcloud(str(local_path), soundcloud_id):
+        print(f"\n✅ Linked track to SoundCloud ID: {soundcloud_id}")
+    else:
+        print(
+            "\n⚠ Track not linked (SoundCloud ID already in use by another track)"
+        )
+        return 1
 
     return 0
 
