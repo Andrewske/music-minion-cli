@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState, useMemo } from 'react';
+import { useEffect, useCallback, useState, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   DndContext,
@@ -69,6 +69,7 @@ export function PlaylistOrganizer({
 
   const [activeId, setActiveId] = useState<number | null>(null);
   const [activeDragType, setActiveDragType] = useState<'unassigned-track' | 'bucket-track' | null>(null);
+  const isDragOperationInProgress = useRef(false);
 
   // Auto-advance helper function (used by both keyboard shortcuts and drag-and-drop)
   const playNextUnassignedTrack = useCallback(
@@ -163,8 +164,21 @@ export function PlaylistOrganizer({
   // Handle drag end events
   const handleDragEnd = useCallback(
     async (event: DragEndEvent): Promise<void> => {
+      // Prevent concurrent drag operations
+      if (isDragOperationInProgress.current) {
+        console.warn('Drag operation already in progress, ignoring');
+        return;
+      }
+
       try {
+        isDragOperationInProgress.current = true;
+
         const { active, over } = event;
+
+        // Clear drag state immediately to prevent loops
+        setActiveId(null);
+        setActiveDragType(null);
+
         if (!over) return;
 
         const dragType = active.data.current?.type;
@@ -296,10 +310,11 @@ export function PlaylistOrganizer({
             return;
           }
         }
+      } catch (outerError) {
+        console.error('Unexpected error in handleDragEnd:', outerError);
       } finally {
-        // Always clear state, even if early return or error
-        setActiveId(null);
-        setActiveDragType(null);
+        // Always release the drag operation lock
+        isDragOperationInProgress.current = false;
       }
     },
     [buckets, assignTrack, unassignTrack, reorderTracks, playNextUnassignedTrack]
