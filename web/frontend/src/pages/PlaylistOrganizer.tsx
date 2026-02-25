@@ -87,10 +87,20 @@ export function PlaylistOrganizer({
     async (bucketId: string): Promise<void> => {
       if (!currentTrack) return;
 
+      // Find which bucket (if any) currently contains this track
+      const currentBucket = buckets.find((b) => b.track_ids.includes(currentTrack.id));
+
+      // If already in target bucket, no-op
+      if (currentBucket?.id === bucketId) return;
+
       await assignTrack(bucketId, currentTrack.id);
-      playNextUnassignedTrack(currentTrack.id);
+
+      // Only auto-advance if moving from unassigned
+      if (!currentBucket) {
+        playNextUnassignedTrack(currentTrack.id);
+      }
     },
-    [currentTrack, assignTrack, playNextUnassignedTrack]
+    [currentTrack, buckets, assignTrack, playNextUnassignedTrack]
   );
 
   // Handle drag end events
