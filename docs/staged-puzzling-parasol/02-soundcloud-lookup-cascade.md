@@ -1,6 +1,6 @@
 ---
 task: 02-soundcloud-lookup-cascade
-status: pending
+status: done
 depends: [01-setup-dependencies]
 files:
   - path: scripts/enrich_metadata.py
