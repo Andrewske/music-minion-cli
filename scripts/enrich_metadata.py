@@ -25,7 +25,7 @@ from openai import OpenAI
 from music_minion.core.config import load_config
 from music_minion.core.database import get_db_connection, get_track_by_path
 from music_minion.domain.library.deduplication import normalize_string
-from music_minion.domain.library.metadata import extract_track_metadata
+from music_minion.domain.library.metadata import extract_track_metadata, write_metadata_to_file
 from music_minion.domain.library.provider import ProviderConfig, ProviderState
 from music_minion.domain.library.providers.soundcloud import api as sc_api
 from music_minion.domain.library.providers.soundcloud import auth as sc_auth
@@ -417,6 +417,42 @@ def should_auto_apply(match_confidence: float, parsed: dict) -> bool:
     return valid
 
 
+def prepare_metadata(parsed: dict) -> dict:
+    """Convert AI output to display-ready metadata dict.
+
+    Args:
+        parsed: AI-parsed metadata dictionary
+
+    Returns:
+        Display-ready metadata dictionary
+    """
+    return {
+        "title": parsed["title"],
+        "artist": format_artist_string(parsed),
+        "genre": parsed.get("genre"),
+        "year": parsed.get("year"),
+    }
+
+
+def apply_enrichment(local_path: str, parsed: dict) -> bool:
+    """Write AI-parsed metadata to file.
+
+    Args:
+        local_path: Path to local audio file
+        parsed: AI-parsed metadata dictionary
+
+    Returns:
+        True if successful, False otherwise
+    """
+    return write_metadata_to_file(
+        local_path=local_path,
+        title=parsed["title"],
+        artist=format_artist_string(parsed),
+        genre=parsed.get("genre"),
+        year=parsed.get("year"),
+    )
+
+
 def main() -> int:
     """Main entry point for metadata enrichment script.
 
@@ -636,9 +672,16 @@ def main() -> int:
         print("\n[Skipped by user]")
         return 0
 
+    # Apply metadata enrichment to file
+    if apply_enrichment(str(local_path), parsed_metadata):
+        print(f"\n✅ Metadata written to file: {local_path}")
+    else:
+        print(f"\n❌ Failed to write metadata to file: {local_path}")
+        return 1
+
     # Link track to soundcloud_id
     if link_track_to_soundcloud(str(local_path), soundcloud_id):
-        print(f"\n✅ Linked track to SoundCloud ID: {soundcloud_id}")
+        print(f"✅ Linked track to SoundCloud ID: {soundcloud_id}")
     else:
         print(
             "\n⚠ Track not linked (SoundCloud ID already in use by another track)"
