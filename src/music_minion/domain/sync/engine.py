@@ -5,15 +5,23 @@ Handles bidirectional sync between database and file metadata.
 Supports reading/writing tags to MP3 (ID3) and M4A files.
 """
 
+import fcntl
+import hashlib
 import os
 import shutil
+from contextlib import contextmanager
+from datetime import datetime
+from enum import Enum
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Optional
 
+from loguru import logger
 from mutagen import File as MutagenFile
 from mutagen.id3 import COMM, ID3
 from mutagen.mp4 import MP4
 
-from music_minion.core.config import Config
+from music_minion.core.config import Config, get_data_dir
 from music_minion.core.database import (
     add_tags,
     get_db_connection,
@@ -22,6 +30,34 @@ from music_minion.core.database import (
     remove_tag,
 )
 from music_minion.domain.library.metadata import write_elo_to_file
+
+
+class SyncInProgressError(Exception):
+    """Raised when another sync operation is already running."""
+    pass
+
+
+class SyncAction(Enum):
+    SKIP = "skip"
+    IMPORT = "import"      # File changed, DB didn't
+    EXPORT = "export"      # DB changed, file didn't
+    CONFLICT = "conflict"  # Both changed
+
+
+class ConflictStrategy(Enum):
+    OURS = "ours"       # DB wins
+    THEIRS = "theirs"   # File wins
+
+
+@dataclass(frozen=True)
+class SyncResult:
+    track_id: int
+    local_path: str
+    action: SyncAction
+    computed_file_hash: str | None = None  # Needed to update DB after sync
+    file_metadata: dict | None = None
+    db_metadata: dict | None = None
+    conflict_fields: list[str] | None = None
 
 
 def get_file_mtime(local_path: str) -> Optional[float]:
@@ -180,6 +216,448 @@ def read_tags_from_file(local_path: str, config: Config) -> list[str]:
     except Exception as e:
         print(f"Error reading tags from {local_path}: {e}")
         return []
+
+
+def compute_metadata_hash(metadata: dict) -> str:
+    """Compute deterministic hash of structured metadata fields.
+
+    Args:
+        metadata: Dict with keys: key_signature, bpm, title, artist, album, genre, year, comment
+
+    Returns:
+        16-character hex hash string
+    """
+    def normalize(key: str, value: Any) -> str:
+        if value is None or value == '':
+            return ''
+        if key == 'bpm':
+            # Normalize floats: 128.0, 128.00, 128 -> "128.0"
+            try:
+                return str(round(float(value), 1))
+            except (ValueError, TypeError):
+                return ''
+        return str(value)
+
+    fields = ['key_signature', 'bpm', 'title', 'artist', 'album', 'genre', 'year', 'comment']
+    values = [normalize(f, metadata.get(f)) for f in fields]
+    return hashlib.sha256('|'.join(values).encode()).hexdigest()[:16]
+
+
+def extract_file_structured_metadata(local_path: str) -> dict:
+    """Extract structured metadata fields from audio file.
+
+    Uses existing extract_track_metadata from domain.library.metadata.
+    Returns dict with: title, artist, album, genre, year, bpm, key_signature, comment
+    """
+    from music_minion.domain.library.metadata import extract_track_metadata
+
+    # Extract track metadata
+    track = extract_track_metadata(local_path)
+
+    # Extract comment field separately since it's not in Track model
+    comment = None
+    try:
+        audio = MutagenFile(local_path, easy=False)
+        if audio:
+            if isinstance(audio, MP4):
+                # M4A file
+                comment = audio.get("\xa9cmt", [""])[0]
+            elif hasattr(audio, "tags") and audio.tags:
+                # Check for VorbisComment (Opus, Ogg Vorbis, FLAC)
+                if hasattr(audio.tags, "get"):
+                    # VorbisComment uses dictionary-like access
+                    comment = audio.tags.get("COMMENT", [""])[0] if "COMMENT" in audio.tags else None
+                elif hasattr(audio.tags, "getall"):
+                    # ID3 tags (MP3) - read COMM frame
+                    comm_frames = audio.tags.getall("COMM")
+                    if comm_frames:
+                        comment = comm_frames[0].text[0] if comm_frames[0].text else None
+    except Exception:
+        pass
+
+    return {
+        'title': track.title,
+        'artist': track.artist,
+        'album': track.album,
+        'genre': track.genre,
+        'year': track.year,
+        'bpm': track.bpm,
+        'key_signature': track.key,
+        'comment': comment,
+    }
+
+
+def get_track_metadata_from_db(track_id: int) -> dict:
+    """Fetch current metadata values from database for conflict detection."""
+    with get_db_connection() as conn:
+        row = conn.execute(
+            """SELECT title, artist, album, genre, year, bpm, key_signature
+               FROM tracks WHERE id = ?""",
+            (track_id,)
+        ).fetchone()
+        if row:
+            result = dict(row)
+            # Add comment as None since it's not stored in DB
+            result['comment'] = None
+            return result
+        return {}
+
+
+def determine_sync_action(
+    track_id: int,
+    local_path: str,
+    stored_file_hash: str | None,
+    metadata_updated_at: datetime | None,
+    last_synced_at: datetime | None,
+) -> SyncResult:
+    """Determine what sync action is needed for a track.
+
+    Logic:
+    - file_changed = current file hash != stored hash (or stored hash is NULL)
+    - db_changed = metadata_updated_at > last_synced_at (and both are not NULL)
+
+    Returns SyncResult with action: IMPORT, EXPORT, CONFLICT, or SKIP
+    """
+    # Extract current file metadata and compute hash
+    try:
+        file_metadata = extract_file_structured_metadata(local_path)
+        current_hash = compute_metadata_hash(file_metadata)
+    except Exception:
+        # File unreadable - skip
+        return SyncResult(track_id=track_id, local_path=local_path, action=SyncAction.SKIP)
+
+    # Determine if file changed
+    # NULL stored_hash means never synced -> treat as file changed (import to initialize)
+    file_changed = stored_file_hash is None or current_hash != stored_file_hash
+
+    # Determine if DB changed
+    # Both timestamps must exist and metadata_updated_at must be after last_synced_at
+    db_changed = (
+        metadata_updated_at is not None
+        and last_synced_at is not None
+        and metadata_updated_at > last_synced_at
+    )
+
+    # Determine action based on change matrix
+    db_metadata = None
+    conflict_fields = None
+
+    if file_changed and db_changed:
+        action = SyncAction.CONFLICT
+        # Fetch DB values for field-level diff
+        db_metadata = get_track_metadata_from_db(track_id)
+        conflict_fields = [
+            f for f in ['title', 'artist', 'album', 'genre', 'year', 'bpm', 'key_signature', 'comment']
+            if file_metadata.get(f) != db_metadata.get(f)
+        ]
+    elif file_changed:
+        action = SyncAction.IMPORT
+    elif db_changed:
+        action = SyncAction.EXPORT
+    else:
+        action = SyncAction.SKIP
+
+    return SyncResult(
+        track_id=track_id,
+        local_path=local_path,
+        action=action,
+        computed_file_hash=current_hash,
+        file_metadata=file_metadata if action != SyncAction.SKIP else None,
+        db_metadata=db_metadata,  # For field-level diff display
+        conflict_fields=conflict_fields,
+    )
+
+
+def update_tracks_sync_state(updates: list[tuple[int, str]]) -> None:
+    """Batch update tracks' file_metadata_hash and last_synced_at after sync.
+
+    Args:
+        updates: List of (track_id, file_hash) tuples
+    """
+    if not updates:
+        return
+
+    with get_db_connection() as conn:
+        conn.executemany(
+            """UPDATE tracks
+               SET file_metadata_hash = ?, last_synced_at = CURRENT_TIMESTAMP
+               WHERE id = ?""",
+            [(file_hash, track_id) for track_id, file_hash in updates]
+        )
+        conn.commit()
+
+
+@contextmanager
+def sync_lock(config: Config):
+    """Acquire exclusive lock to prevent concurrent syncs.
+
+    Usage:
+        with sync_lock(config):
+            # sync operations here
+
+    Raises SyncInProgressError if another sync is running.
+    """
+    lock_path = Path(get_data_dir()) / ".sync.lock"
+    lock_file = open(lock_path, 'w')
+    try:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
+    except BlockingIOError:
+        raise SyncInProgressError("Another sync is already running")
+    finally:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        lock_file.close()
+
+
+def analyze_sync_status(config: Config) -> tuple[list[SyncResult], dict[str, int]]:
+    """Analyze all local tracks and determine sync actions needed.
+
+    Side effect: Populates file_metadata_hash for tracks that have NULL hash.
+    This enables bootstrap on first run - hashes are computed and stored,
+    but only actual changes (not NULL -> hash) trigger import/export.
+
+    Returns:
+        Tuple of (list of SyncResult, stats dict with counts by action type)
+    """
+    results = []
+    stats = {
+        'skip': 0,
+        'import': 0,
+        'export': 0,
+        'conflict': 0,
+    }
+
+    # Query all local tracks with their stored hash and timestamps
+    with get_db_connection() as conn:
+        cursor = conn.execute("""
+            SELECT id, local_path, file_metadata_hash, metadata_updated_at, last_synced_at
+            FROM tracks
+            WHERE source = 'local' AND local_path IS NOT NULL
+        """)
+        tracks = [dict(row) for row in cursor.fetchall()]
+
+    # Track which tracks need hash initialization
+    hash_updates = []
+
+    for track in tracks:
+        # Check if file exists
+        if not os.path.exists(track['local_path']):
+            continue
+
+        # Determine sync action
+        result = determine_sync_action(
+            track_id=track['id'],
+            local_path=track['local_path'],
+            stored_file_hash=track['file_metadata_hash'],
+            metadata_updated_at=track['metadata_updated_at'],
+            last_synced_at=track['last_synced_at'],
+        )
+
+        # If stored_hash was NULL, populate it (bootstrap for that track)
+        if track['file_metadata_hash'] is None and result.computed_file_hash:
+            hash_updates.append((track['id'], result.computed_file_hash))
+
+        results.append(result)
+        stats[result.action.value] += 1
+
+    # Populate NULL hashes
+    if hash_updates:
+        update_tracks_sync_state(hash_updates)
+        logger.info(f"Initialized {len(hash_updates)} tracks with content hashes")
+
+    return results, stats
+
+
+def execute_sync_actions(
+    config: Config,
+    results: list[SyncResult],
+    strategy: ConflictStrategy = ConflictStrategy.OURS,
+    show_progress: bool = True,
+) -> dict[str, int]:
+    """Execute determined sync actions.
+
+    For IMPORT: read file metadata, update database, update file_metadata_hash
+    For EXPORT: write database metadata to file (requires config for write settings)
+    For CONFLICT: resolve based on strategy, then import or export
+
+    Error handling: Failed tracks are logged with logger.exception(),
+    counted in stats['failed'], and skipped. Sync continues with remaining tracks.
+
+    Returns stats: {imported, exported, conflicts_resolved, skipped, failed}
+    """
+    from music_minion.domain.library.metadata import write_metadata_to_file
+
+    stats = {
+        'imported': 0,
+        'exported': 0,
+        'conflicts_resolved': 0,
+        'skipped': 0,
+        'failed': 0,
+    }
+
+    # Separate results by action
+    to_import = [r for r in results if r.action == SyncAction.IMPORT]
+    to_export = [r for r in results if r.action == SyncAction.EXPORT]
+    conflicts = [r for r in results if r.action == SyncAction.CONFLICT]
+
+    # Resolve conflicts based on strategy
+    for conflict in conflicts:
+        if strategy == ConflictStrategy.THEIRS:
+            to_import.append(conflict)
+        else:  # OURS
+            to_export.append(conflict)
+
+    sync_state_updates = []
+
+    # Process imports
+    for result in to_import:
+        try:
+            if not result.file_metadata:
+                stats['failed'] += 1
+                continue
+
+            # Update database with file metadata
+            with get_db_connection() as conn:
+                conn.execute("""
+                    UPDATE tracks
+                    SET title = ?, artist = ?, album = ?, genre = ?, year = ?,
+                        bpm = ?, key_signature = ?, metadata_updated_at = CURRENT_TIMESTAMP,
+                        sync_source = 'file'
+                    WHERE id = ?
+                """, (
+                    result.file_metadata.get('title'),
+                    result.file_metadata.get('artist'),
+                    result.file_metadata.get('album'),
+                    result.file_metadata.get('genre'),
+                    result.file_metadata.get('year'),
+                    result.file_metadata.get('bpm'),
+                    result.file_metadata.get('key_signature'),
+                    result.track_id
+                ))
+                conn.commit()
+
+            # Track hash update
+            if result.computed_file_hash:
+                sync_state_updates.append((result.track_id, result.computed_file_hash))
+
+            if result.action == SyncAction.CONFLICT:
+                stats['conflicts_resolved'] += 1
+            else:
+                stats['imported'] += 1
+
+        except Exception as e:
+            logger.exception(f"Failed to import metadata for track {result.track_id}: {e}")
+            stats['failed'] += 1
+
+    # Process exports
+    for result in to_export:
+        try:
+            # Fetch DB metadata
+            db_metadata = get_track_metadata_from_db(result.track_id)
+            if not db_metadata:
+                stats['failed'] += 1
+                continue
+
+            # Write metadata to file
+            success = write_metadata_to_file(
+                result.local_path,
+                title=db_metadata.get('title'),
+                artist=db_metadata.get('artist'),
+                album=db_metadata.get('album'),
+                genre=db_metadata.get('genre'),
+                year=db_metadata.get('year'),
+                bpm=db_metadata.get('bpm'),
+                key=db_metadata.get('key_signature'),
+            )
+
+            if success:
+                # Recompute hash after export
+                file_metadata = extract_file_structured_metadata(result.local_path)
+                new_hash = compute_metadata_hash(file_metadata)
+                sync_state_updates.append((result.track_id, new_hash))
+
+                if result.action == SyncAction.CONFLICT:
+                    stats['conflicts_resolved'] += 1
+                else:
+                    stats['exported'] += 1
+            else:
+                stats['failed'] += 1
+
+        except Exception as e:
+            logger.exception(f"Failed to export metadata for track {result.track_id}: {e}")
+            stats['failed'] += 1
+
+    # Batch update sync state
+    if sync_state_updates:
+        update_tracks_sync_state(sync_state_updates)
+
+    # Count skips
+    stats['skipped'] = sum(1 for r in results if r.action == SyncAction.SKIP)
+
+    return stats
+
+
+def sync_pull(config: Config, force_all: bool = False, dry_run: bool = False) -> dict[str, int]:
+    """Import file metadata to database (trust files).
+
+    Args:
+        force_all: If True, import all files regardless of hash (bypass change detection)
+        dry_run: If True, return stats without making changes
+
+    Returns:
+        Stats dict: {imported, failed, skipped} or {to_import} if dry_run
+    """
+    with sync_lock(config):
+        results, stats = analyze_sync_status(config)
+
+        # Filter to only import actions (or all if force_all)
+        if force_all:
+            # Force import on all files by treating them as changed
+            to_import = [r for r in results if r.action != SyncAction.SKIP]
+        else:
+            to_import = [r for r in results if r.action == SyncAction.IMPORT]
+
+        if dry_run:
+            return {'to_import': len(to_import)}
+
+        # Execute imports only
+        return execute_sync_actions(
+            config,
+            to_import,
+            strategy=ConflictStrategy.THEIRS,  # File wins
+            show_progress=True
+        )
+
+
+def sync_push(config: Config, force_all: bool = False, dry_run: bool = False) -> dict[str, int]:
+    """Export database metadata to files (trust database).
+
+    Args:
+        force_all: If True, export all files regardless of change detection
+        dry_run: If True, return stats without making changes
+
+    Returns:
+        Stats dict: {exported, failed, skipped} or {to_export} if dry_run
+    """
+    with sync_lock(config):
+        results, stats = analyze_sync_status(config)
+
+        # Filter to only export actions (or all if force_all)
+        if force_all:
+            to_export = [r for r in results if r.action != SyncAction.SKIP]
+        else:
+            to_export = [r for r in results if r.action == SyncAction.EXPORT]
+
+        if dry_run:
+            return {'to_export': len(to_export)}
+
+        # Execute exports only
+        return execute_sync_actions(
+            config,
+            to_export,
+            strategy=ConflictStrategy.OURS,  # DB wins
+            show_progress=True
+        )
 
 
 def detect_file_changes(config: Config) -> list[dict[str, Any]]:
