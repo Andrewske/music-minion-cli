@@ -1,6 +1,6 @@
 ---
 task: 03-command-handlers
-status: pending
+status: done
 depends: [02-sync-engine-core]
 files:
   - path: src/music_minion/commands/sync.py

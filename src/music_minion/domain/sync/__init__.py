@@ -21,6 +21,8 @@ from .engine import (
     rescan_library,
     path_similarity,
     detect_missing_and_moved_files,
+    sync_pull,
+    sync_push,
 )
 
 __all__ = [
@@ -36,4 +38,6 @@ __all__ = [
     "rescan_library",
     "path_similarity",
     "detect_missing_and_moved_files",
+    "sync_pull",
+    "sync_push",
 ]

@@ -519,14 +519,23 @@ def handle_command(
     elif command == "sync":
         if not args:
             # sync (no arguments) - context-aware sync
-            return sync.handle_sync_command(ctx)
+            return sync.handle_sync_command(ctx, args)
         elif args[0] == "full":
             # sync full - full sync bypassing cache
             return sync.handle_sync_full_command(ctx)
+        elif args[0] == "pull":
+            # sync pull - force import from files
+            return sync.handle_sync_pull_command(ctx, args[1:])
+        elif args[0] == "push":
+            # sync push - force export to files
+            return sync.handle_sync_push_command(ctx, args[1:])
+        elif args[0].startswith("--"):
+            # sync with flags (--dry-run, --ours, --theirs)
+            return sync.handle_sync_command(ctx, args)
         else:
             logger.warning(f"Unknown sync subcommand: '{args[0]}'")
             log(
-                f"Unknown sync subcommand: '{args[0]}'. Use 'sync' or 'sync full'",
+                f"Unknown sync subcommand: '{args[0]}'. Use 'sync', 'sync pull', 'sync push', or 'sync full'",
                 level="error",
             )
             return ctx, True
