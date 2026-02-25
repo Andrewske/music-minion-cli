@@ -11,12 +11,16 @@ Usage:
 """
 
 import argparse
+import json
+import os
 import re
 import sys
 from pathlib import Path
 from typing import Optional
 
 import requests
+from dotenv import load_dotenv
+from openai import OpenAI
 
 from music_minion.core.config import load_config
 from music_minion.core.database import get_db_connection, get_track_by_path
@@ -25,6 +29,20 @@ from music_minion.domain.library.provider import ProviderConfig, ProviderState
 from music_minion.domain.library.providers.soundcloud import api as sc_api
 from music_minion.domain.library.providers.soundcloud import auth as sc_auth
 from music_minion.domain.playlists.matching import MatchCandidate, batch_score_candidates
+
+# Load environment variables and initialize OpenAI client
+load_dotenv()
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+SYSTEM_PROMPT = """You are a music metadata parser. Parse SoundCloud track data into clean, structured metadata.
+
+Rules:
+- If username matches label_name or common label patterns (Records, Music, Recordings), don't include as artist
+- Extract featured artists from "feat.", "ft.", "featuring", "with" patterns in title
+- Identify remix artist from "(X Remix)", "(X Edit)", "(X Bootleg)", "[X Mix]" patterns
+- Clean title: remove artist prefix, [Free DL], promo text, but keep remix attribution
+- Genre: use the genre from SoundCloud as-is (preserve original)
+- Year: prefer release_year, fall back to created_at year"""
 
 
 def get_valid_access_token() -> Optional[str]:
@@ -243,6 +261,63 @@ def create_provider_state() -> ProviderState:
     )
 
 
+def build_user_prompt(sc_data: dict) -> str:
+    """Build user prompt for AI parsing from SoundCloud data.
+
+    Args:
+        sc_data: Dictionary containing SoundCloud track fields
+
+    Returns:
+        Formatted prompt string
+    """
+    # Safely extract fields with fallbacks
+    description = sc_data.get('description') or ''
+    description_preview = description[:500] if description else '(none)'
+
+    return f"""Parse this SoundCloud track:
+
+- Title: {sc_data.get('title') or '(unknown)'}
+- Username (uploader): {sc_data.get('username') or '(unknown)'}
+- Metadata Artist: {sc_data.get('metadata_artist') or '(none)'}
+- Description: {description_preview}
+- Genre: {sc_data.get('genre') or '(none)'}
+- Label: {sc_data.get('label_name') or '(none)'}
+- Release Year: {sc_data.get('release_year') or '(none)'}
+- Tags: {sc_data.get('tag_list') or '(none)'}
+- Created: {sc_data.get('created_at') or '(unknown)'}
+
+Return JSON with exactly these fields:
+{{"title": "...", "original_artists": [...], "featured_artists": [...], "remix_artist": "..." or null, "genre": "...", "year": ... or null}}"""
+
+
+def parse_with_ai(sc_data: dict) -> tuple[dict, dict]:
+    """Parse SoundCloud data with GPT-4o-mini.
+
+    Args:
+        sc_data: Dictionary containing SoundCloud track fields
+
+    Returns:
+        Tuple of (parsed_result, usage_stats)
+    """
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": build_user_prompt(sc_data)},
+        ],
+        response_format={"type": "json_object"},
+        temperature=0.1,  # Low temp for consistent parsing
+    )
+
+    result = json.loads(response.choices[0].message.content)
+    usage = {
+        "prompt_tokens": response.usage.prompt_tokens,
+        "completion_tokens": response.usage.completion_tokens,
+        "total_tokens": response.usage.total_tokens,
+    }
+    return result, usage
+
+
 def main() -> int:
     """Main entry point for metadata enrichment script.
 
@@ -414,6 +489,25 @@ def main() -> int:
         return 1
     except Exception as e:
         print(f"❌ Error fetching track details: {e}")
+        return 1
+
+    # Parse metadata with AI
+    print("\n🤖 Parsing metadata with GPT-4o-mini...")
+    try:
+        parsed_metadata, usage_stats = parse_with_ai(track_details)
+        print("\n✨ Parsed Metadata:")
+        print(f"  Title: {parsed_metadata.get('title')}")
+        print(f"  Original Artists: {parsed_metadata.get('original_artists')}")
+        print(f"  Featured Artists: {parsed_metadata.get('featured_artists')}")
+        print(f"  Remix Artist: {parsed_metadata.get('remix_artist')}")
+        print(f"  Genre: {parsed_metadata.get('genre')}")
+        print(f"  Year: {parsed_metadata.get('year')}")
+        print(f"\n📊 Token Usage:")
+        print(f"  Prompt: {usage_stats['prompt_tokens']} tokens")
+        print(f"  Completion: {usage_stats['completion_tokens']} tokens")
+        print(f"  Total: {usage_stats['total_tokens']} tokens")
+    except Exception as e:
+        print(f"❌ Failed to parse metadata with AI: {e}")
         return 1
 
     # Link track to soundcloud_id
