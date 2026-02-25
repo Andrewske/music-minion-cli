@@ -1,0 +1,6 @@
+# Tracks with key confidence < 0.5 - review manually
+/home/kevin/Music/EDM/2026/Jan 26/Blurrd Vzn - PROFITS [VIP].opus	detected=7A	confidence=0.43
+/home/kevin/Music/EDM/2025/Nov 25/NAH (Out Now On Bandcamp For Subscribers).opus	detected=1B	confidence=0.34
+/home/kevin/Music/EDM/2026/Feb 26/43. Wakaan - TVBOO, Flozone - Beast Mode.opus	detected=4A	confidence=0.46
+/home/kevin/Music/EDM/2025/Nov 25/ALL NIGHT.opus	detected=9A	confidence=0.46
+/home/kevin/Music/EDM/2025/Nov 25/Aylen - Gang Cream.opus	detected=5A	confidence=0.45

@@ -134,6 +134,8 @@ export interface PlaylistTrackEntry {
   id: number;
   title: string;
   artist?: string;
+  bpm?: number;
+  key_signature?: string;
   rating: number;
   wins: number;
   losses: number;

@@ -42,7 +42,13 @@ def get_tag_value(audio_file: MutagenFile, tag_names: list[str]) -> Optional[str
             if value:
                 # Handle different formats
                 if isinstance(value, list) and value:
-                    return str(value[0])
+                    value = value[0]
+                # Handle bytes (e.g., M4A iTunes custom tags)
+                if isinstance(value, bytes):
+                    return value.decode("utf-8")
+                # Handle MP4FreeForm objects
+                if hasattr(value, "decode"):
+                    return value.decode("utf-8")
                 return str(value)
         except (KeyError, ValueError):
             # Some formats (like Vorbis) raise ValueError for non-existent keys
@@ -103,11 +109,12 @@ def extract_track_metadata(local_path: str) -> Track:
         genre = get_tag_value(audio_file, ["TCON", "\xa9gen", "GENRE", "genre"])
 
         # Extract DJ metadata (ID3, MP4, Vorbis/Opus)
+        # Note: M4A uses "----:com.apple.iTunes:INITIALKEY" and "tmpo"
         key = get_tag_value(
-            audio_file, ["TKEY", "KEY", "INITIALKEY", "initialkey", "\xa9key", "key"]
+            audio_file, ["TKEY", "KEY", "INITIALKEY", "initialkey", "\xa9key", "key", "----:com.apple.iTunes:INITIALKEY"]
         )
         bpm_str = get_tag_value(
-            audio_file, ["TBPM", "BPM", "BEATS_PER_MINUTE", "\xa9bpm", "bpm"]
+            audio_file, ["TBPM", "BPM", "BEATS_PER_MINUTE", "\xa9bpm", "bpm", "tmpo"]
         )
         bpm = None
         if bpm_str:
