@@ -16,6 +16,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+import requests
+
 from music_minion.core.config import load_config
 from music_minion.core.database import get_db_connection, get_track_by_path
 from music_minion.domain.library.deduplication import normalize_string
@@ -23,6 +25,61 @@ from music_minion.domain.library.provider import ProviderConfig, ProviderState
 from music_minion.domain.library.providers.soundcloud import api as sc_api
 from music_minion.domain.library.providers.soundcloud import auth as sc_auth
 from music_minion.domain.playlists.matching import MatchCandidate, batch_score_candidates
+
+
+def get_valid_access_token() -> Optional[str]:
+    """Load token, refresh if expired, return access_token or None.
+
+    Returns:
+        Valid access token or None if not authenticated
+    """
+    token_data = sc_auth._load_user_tokens()
+    if not token_data:
+        print("❌ Not authenticated. Run: library auth soundcloud")
+        return None
+
+    if sc_auth.is_token_expired(token_data):
+        refreshed = sc_auth.refresh_token(token_data)
+        if not refreshed:
+            print("❌ Token expired. Run: library auth soundcloud")
+            return None
+        token_data = refreshed
+
+    return token_data["access_token"]
+
+
+def fetch_soundcloud_track(soundcloud_id: str, access_token: str) -> dict:
+    """Fetch full track details from SoundCloud API.
+
+    Args:
+        soundcloud_id: SoundCloud track ID
+        access_token: Valid OAuth access token
+
+    Returns:
+        Track data dictionary with extracted fields
+
+    Raises:
+        requests.HTTPError: If API request fails
+    """
+    url = f"https://api.soundcloud.com/tracks/{soundcloud_id}"
+    headers = {"Authorization": f"OAuth {access_token}"}
+
+    response = requests.get(url, headers=headers, timeout=30)
+    response.raise_for_status()
+    track = response.json()
+
+    # Extract key fields for AI parsing
+    return {
+        "title": track.get("title"),
+        "username": track.get("user", {}).get("username"),
+        "metadata_artist": track.get("metadata_artist"),
+        "description": track.get("description"),
+        "genre": track.get("genre"),
+        "label_name": track.get("label_name"),
+        "release_year": track.get("release_year"),
+        "tag_list": track.get("tag_list"),
+        "created_at": track.get("created_at"),
+    }
 
 
 def extract_id_from_url(url: str) -> Optional[str]:
@@ -219,6 +276,11 @@ def main() -> int:
 
     args = parser.parse_args()
 
+    # Validate access token at script start
+    access_token = get_valid_access_token()
+    if not access_token:
+        return 1
+
     # Validate local path (don't resolve - keep as-is to match DB)
     local_path = Path(args.local_path).expanduser()
     if not local_path.exists():
@@ -327,6 +389,32 @@ def main() -> int:
         if not args.search:
             print("  Tip: Try --search to enable API search fallback")
         return 0  # Not an error, just no match
+
+    # Fetch full SoundCloud track details
+    print(f"\n🔍 Fetching SoundCloud track details for ID: {soundcloud_id}")
+    try:
+        track_details = fetch_soundcloud_track(soundcloud_id, access_token)
+        print("\n📋 SoundCloud Track Details:")
+        print(f"  Title: {track_details.get('title')}")
+        print(f"  Username: {track_details.get('username')}")
+        print(f"  Metadata Artist: {track_details.get('metadata_artist')}")
+        print(f"  Genre: {track_details.get('genre')}")
+        print(f"  Label: {track_details.get('label_name')}")
+        print(f"  Release Year: {track_details.get('release_year')}")
+        print(f"  Tags: {track_details.get('tag_list')}")
+        print(f"  Created At: {track_details.get('created_at')}")
+        if track_details.get('description'):
+            desc = track_details['description']
+            # Truncate long descriptions for display
+            if len(desc) > 200:
+                desc = desc[:200] + "..."
+            print(f"  Description: {desc}")
+    except requests.HTTPError as e:
+        print(f"❌ Failed to fetch SoundCloud track details: {e}")
+        return 1
+    except Exception as e:
+        print(f"❌ Error fetching track details: {e}")
+        return 1
 
     # Link track to soundcloud_id
     if args.dry_run:
