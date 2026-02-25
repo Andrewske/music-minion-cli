@@ -8,7 +8,7 @@ import {
   type Row,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useDraggable } from '@dnd-kit/core';
+import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { GripVertical } from 'lucide-react';
 import type { PlaylistTrackEntry } from '../../types';
 
@@ -24,6 +24,12 @@ export function UnassignedTrackTable({
   onTrackClick,
 }: UnassignedTrackTableProps): JSX.Element {
   const parentRef = useRef<HTMLDivElement>(null);
+
+  // Make container droppable for bucket tracks
+  const { setNodeRef: setDroppableRef, isOver } = useDroppable({
+    id: 'unassigned-area',
+    data: { type: 'unassigned-area' },
+  });
 
   // Column definitions
   const columns: ColumnDef<PlaylistTrackEntry>[] = [
@@ -193,7 +199,13 @@ export function UnassignedTrackTable({
   }
 
   return (
-    <div className="border border-obsidian-border rounded-lg overflow-hidden">
+    <div
+      ref={setDroppableRef}
+      data-testid="unassigned-droppable"
+      className={`border border-obsidian-border rounded-lg overflow-hidden ${
+        isOver ? 'ring-2 ring-obsidian-accent' : ''
+      }`}
+    >
       {/* Desktop: Table view */}
       <div className="hidden md:block">
         <div

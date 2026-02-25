@@ -1,6 +1,6 @@
 ---
 task: 02-make-unassigned-area-droppable
-status: pending
+status: done
 depends: [01-update-bucket-drag-handlers]
 files:
   - path: web/frontend/src/components/organizer/UnassignedTrackTable.tsx
