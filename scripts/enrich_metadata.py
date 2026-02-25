@@ -383,11 +383,18 @@ def retry_for_original_artist(sc_data: dict, remix_artist: str) -> tuple[dict, d
     Returns:
         Tuple of (parsed_result, usage_stats)
     """
-    enhanced_prompt = f"""The remix artist is "{remix_artist}".
-Who is the ORIGINAL artist of the song "{sc_data.get('title', '')}"?
+    enhanced_prompt = f"""This is a remix. The remix artist is "{remix_artist}".
+
+The song title is: "{sc_data.get('title', '')}"
+
+Use your knowledge of popular music to identify who originally performed this song.
+For example, "Best I Ever Had" is originally by Drake, "Levels" is originally by Avicii.
+
+If you can identify the original artist, return them in original_artists.
+If you cannot identify the original artist with confidence, leave original_artists empty.
 
 Return JSON with exactly these fields:
-{{"title": "...", "original_artists": [...], "featured_artists": [...], "remix_artist": "..." or null, "genre": "...", "year": ... or null}}"""
+{{"title": "...", "original_artists": [...], "featured_artists": [...], "remix_artist": "{remix_artist}", "genre": "...", "year": ... or null}}"""
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -772,6 +779,13 @@ def main() -> int:
     # Check if we need username fallback (no original_artists and no valid remix_artist)
     has_original = parsed_metadata.get("original_artists") and len(parsed_metadata["original_artists"]) > 0
     has_remix = isinstance(parsed_metadata.get("remix_artist"), str) and parsed_metadata["remix_artist"].strip()
+
+    # If falling back to remix_artist, preserve original title with remix attribution
+    if not has_original and has_remix:
+        original_title = track_details.get("title", parsed_metadata["title"])
+        parsed_metadata["title"] = original_title
+        print(f"📝 Preserving original title: {original_title}")
+
     if not has_original and not has_remix:
         needs_manual_review = True
         print(f"⚠ Using username as fallback: {track_details.get('username')}")
