@@ -83,8 +83,9 @@ export function PlaylistOrganizer({
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
 
-      const num = parseInt(e.key);
-      if (isNaN(num)) return;
+      const digitMatch = e.code.match(/^(?:Digit|Numpad)(\d)$/);
+      if (!digitMatch) return;
+      const num = parseInt(digitMatch[1]);
 
       e.preventDefault();
 

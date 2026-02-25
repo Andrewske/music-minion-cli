@@ -314,6 +314,7 @@ def log_enrichment(
     response: dict,
     usage: dict,
     applied: bool,
+    needs_manual_review: bool = False,
 ) -> None:
     """Append enrichment record to JSONL log.
 
@@ -324,6 +325,7 @@ def log_enrichment(
         response: Parsed response from AI
         usage: Token usage statistics
         applied: Whether metadata was written to file
+        needs_manual_review: Whether this track used username fallback
     """
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
@@ -336,6 +338,7 @@ def log_enrichment(
         "completion_tokens": usage["completion_tokens"],
         "response": response,
         "applied": applied,
+        "needs_manual_review": needs_manual_review,
     }
 
     with open(LOG_FILE, "a") as f:
@@ -370,23 +373,63 @@ def parse_with_ai(sc_data: dict) -> tuple[dict, dict]:
     return result, usage
 
 
-def format_artist_string(parsed: dict) -> str:
+def retry_for_original_artist(sc_data: dict, remix_artist: str) -> tuple[dict, dict]:
+    """Retry parsing with explicit hint to find original artist.
+
+    Args:
+        sc_data: Dictionary containing SoundCloud track fields
+        remix_artist: The identified remix artist
+
+    Returns:
+        Tuple of (parsed_result, usage_stats)
+    """
+    enhanced_prompt = f"""The remix artist is "{remix_artist}".
+Who is the ORIGINAL artist of the song "{sc_data.get('title', '')}"?
+
+Return JSON with exactly these fields:
+{{"title": "...", "original_artists": [...], "featured_artists": [...], "remix_artist": "..." or null, "genre": "...", "year": ... or null}}"""
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": enhanced_prompt},
+        ],
+        response_format={"type": "json_object"},
+        temperature=0.1,
+    )
+
+    result = json.loads(response.choices[0].message.content)
+    usage = {
+        "prompt_tokens": response.usage.prompt_tokens,
+        "completion_tokens": response.usage.completion_tokens,
+        "total_tokens": response.usage.total_tokens,
+    }
+    return result, usage
+
+
+def format_artist_string(parsed: dict, fallback_username: str | None = None) -> str:
     """Format artists as: 'Artist1 x Artist2 ft. Featured1, Featured2'
 
     Uses 'x' for collaborations (not '&' which appears in artist names like 'Chase & Status').
-    Remix artist is NOT included here - remix attribution should be in the title.
+    Falls back to remix_artist, then username if no original artists found.
 
     Args:
         parsed: Parsed metadata dictionary
+        fallback_username: SoundCloud username to use as last resort
 
     Returns:
         Formatted artist string
     """
     parts = []
 
-    # Original artists joined with ' x '
+    # Cascade: original_artists -> remix_artist -> username
     if parsed.get("original_artists"):
         parts.append(" x ".join(parsed["original_artists"]))
+    elif isinstance(parsed.get("remix_artist"), str) and parsed["remix_artist"].strip():
+        parts.append(parsed["remix_artist"])
+    elif fallback_username:
+        parts.append(fallback_username)
 
     # Featured artists with 'ft.' prefix
     if parsed.get("featured_artists"):
@@ -395,7 +438,13 @@ def format_artist_string(parsed: dict) -> str:
     return " ".join(parts)
 
 
-def preview_changes(current: dict, parsed: dict, usage: dict, match_confidence: float) -> None:
+def preview_changes(
+    current: dict,
+    parsed: dict,
+    usage: dict,
+    match_confidence: float,
+    fallback_username: str | None = None,
+) -> None:
     """Display side-by-side comparison of current vs parsed metadata.
 
     Args:
@@ -403,6 +452,7 @@ def preview_changes(current: dict, parsed: dict, usage: dict, match_confidence: 
         parsed: AI-parsed metadata
         usage: Token usage statistics
         match_confidence: Confidence score for SoundCloud match
+        fallback_username: SoundCloud username to use as last resort
     """
     print("\n" + "=" * 60)
     print(f"MATCH CONFIDENCE: {match_confidence:.2f}")
@@ -416,7 +466,7 @@ def preview_changes(current: dict, parsed: dict, usage: dict, match_confidence: 
 
     print("\nPARSED FROM SOUNDCLOUD:")
     print(f"  Title:  {parsed['title']}")
-    print(f"  Artist: {format_artist_string(parsed)}")
+    print(f"  Artist: {format_artist_string(parsed, fallback_username)}")
     print(f"  Genre:  {parsed.get('genre', '(none)')}")
     print(f"  Year:   {parsed.get('year', '(none)')}")
 
@@ -435,9 +485,12 @@ def validate_parsed_output(parsed: dict) -> tuple[bool, str]:
     """
     if not parsed.get("title"):
         return False, "Missing title"
-    if not parsed.get("original_artists"):
-        return False, "Missing original_artists"
-    if not isinstance(parsed.get("original_artists"), list):
+    # Allow tracks with non-empty remix_artist but no original_artists
+    has_original = parsed.get("original_artists") and len(parsed["original_artists"]) > 0
+    has_remix = isinstance(parsed.get("remix_artist"), str) and parsed["remix_artist"].strip()
+    if not has_original and not has_remix:
+        return False, "Missing original_artists and remix_artist"
+    if parsed.get("original_artists") and not isinstance(parsed["original_artists"], list):
         return False, "original_artists must be a list"
     return True, ""
 
@@ -468,29 +521,31 @@ def should_auto_apply(match_confidence: float, parsed: dict) -> bool:
     return valid
 
 
-def prepare_metadata(parsed: dict) -> dict:
+def prepare_metadata(parsed: dict, fallback_username: str | None = None) -> dict:
     """Convert AI output to display-ready metadata dict.
 
     Args:
         parsed: AI-parsed metadata dictionary
+        fallback_username: SoundCloud username to use as last resort
 
     Returns:
         Display-ready metadata dictionary
     """
     return {
         "title": parsed["title"],
-        "artist": format_artist_string(parsed),
+        "artist": format_artist_string(parsed, fallback_username),
         "genre": parsed.get("genre"),
         "year": parsed.get("year"),
     }
 
 
-def apply_enrichment(local_path: str, parsed: dict) -> bool:
+def apply_enrichment(local_path: str, parsed: dict, fallback_username: str | None = None) -> bool:
     """Write AI-parsed metadata to file.
 
     Args:
         local_path: Path to local audio file
         parsed: AI-parsed metadata dictionary
+        fallback_username: SoundCloud username to use as last resort
 
     Returns:
         True if successful, False otherwise
@@ -498,7 +553,7 @@ def apply_enrichment(local_path: str, parsed: dict) -> bool:
     return write_metadata_to_file(
         local_path=local_path,
         title=parsed["title"],
-        artist=format_artist_string(parsed),
+        artist=format_artist_string(parsed, fallback_username),
         genre=parsed.get("genre"),
         year=parsed.get("year"),
     )
@@ -695,6 +750,32 @@ def main() -> int:
         print(f"❌ Failed to parse metadata with AI: {e}")
         return 1
 
+    # Retry if original_artists is empty but we have a remix_artist
+    needs_manual_review = False
+    if not parsed_metadata.get("original_artists") and parsed_metadata.get("remix_artist"):
+        print("🔄 Retrying to identify original artist...")
+        try:
+            retry_result, retry_usage = retry_for_original_artist(
+                track_details, parsed_metadata["remix_artist"]
+            )
+            # Merge usage stats
+            usage_stats["prompt_tokens"] += retry_usage["prompt_tokens"]
+            usage_stats["completion_tokens"] += retry_usage["completion_tokens"]
+            usage_stats["total_tokens"] += retry_usage["total_tokens"]
+
+            if retry_result.get("original_artists"):
+                parsed_metadata["original_artists"] = retry_result["original_artists"]
+                print(f"✅ Found original artist: {retry_result['original_artists']}")
+        except Exception as e:
+            print(f"⚠ Retry failed: {e}")
+
+    # Check if we need username fallback (no original_artists and no valid remix_artist)
+    has_original = parsed_metadata.get("original_artists") and len(parsed_metadata["original_artists"]) > 0
+    has_remix = isinstance(parsed_metadata.get("remix_artist"), str) and parsed_metadata["remix_artist"].strip()
+    if not has_original and not has_remix:
+        needs_manual_review = True
+        print(f"⚠ Using username as fallback: {track_details.get('username')}")
+
     # Read current file metadata
     current_metadata = extract_track_metadata(str(local_path))
     current_dict = {
@@ -708,7 +789,8 @@ def main() -> int:
     match_confidence = matches[0].confidence_score if matches else 0.0
 
     # Display preview
-    preview_changes(current_dict, parsed_metadata, usage_stats, match_confidence)
+    fallback_username = track_details.get("username")
+    preview_changes(current_dict, parsed_metadata, usage_stats, match_confidence, fallback_username)
 
     # Validate parsed output
     valid, error = validate_parsed_output(parsed_metadata)
@@ -723,6 +805,7 @@ def main() -> int:
             response=parsed_metadata,
             usage=usage_stats,
             applied=False,
+            needs_manual_review=True,
         )
         return 1
 
@@ -739,6 +822,7 @@ def main() -> int:
             response=parsed_metadata,
             usage=usage_stats,
             applied=False,
+            needs_manual_review=needs_manual_review,
         )
         return 0
 
@@ -758,11 +842,12 @@ def main() -> int:
             response=parsed_metadata,
             usage=usage_stats,
             applied=False,
+            needs_manual_review=needs_manual_review,
         )
         return 0
 
     # Apply metadata enrichment to file
-    if apply_enrichment(str(local_path), parsed_metadata):
+    if apply_enrichment(str(local_path), parsed_metadata, fallback_username):
         print(f"\n✅ Metadata written to file: {local_path}")
         applied = True
     else:
@@ -774,6 +859,7 @@ def main() -> int:
             response=parsed_metadata,
             usage=usage_stats,
             applied=False,
+            needs_manual_review=needs_manual_review,
         )
         return 1
 
@@ -791,6 +877,7 @@ def main() -> int:
             response=parsed_metadata,
             usage=usage_stats,
             applied=applied,
+            needs_manual_review=needs_manual_review,
         )
         return 0  # Enrichment succeeded, linking is secondary
 
@@ -802,6 +889,7 @@ def main() -> int:
         response=parsed_metadata,
         usage=usage_stats,
         applied=applied,
+        needs_manual_review=needs_manual_review,
     )
 
     return 0
