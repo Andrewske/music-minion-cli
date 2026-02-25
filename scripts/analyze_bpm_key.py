@@ -199,8 +199,36 @@ def decode_with_ffmpeg(file_path: Path, temp_dir: Path) -> Path | None:
 NEEDS_FFMPEG_DECODE = {'.opus'}
 
 
+def to_camelot(key: str, scale: str) -> str | None:
+    """Convert musical key to Camelot notation.
+
+    Args:
+        key: Musical key (e.g., "C", "F#")
+        scale: Scale type ("major" or "minor")
+
+    Returns:
+        Camelot code (e.g., "8A", "11B") or None if not found
+    """
+    # Try full format first (e.g., "Cmajor")
+    musical_key = f"{key}{scale}"
+    camelot = CAMELOT_MAP.get(musical_key)
+
+    # If not found, try short format (e.g., "C" or "Am")
+    if camelot is None:
+        if scale == "minor":
+            musical_key = f"{key}m"
+        else:
+            musical_key = key
+        camelot = CAMELOT_MAP.get(musical_key)
+
+    return camelot
+
+
 def analyze_audio(file_path: Path) -> tuple[float | None, str | None, float]:
     """Run Essentia analysis on audio file.
+
+    Uses ensemble approach: tries both default and edmm (EDM minor) key profiles,
+    returns whichever has higher confidence.
 
     Args:
         file_path: Path to audio file (must be Essentia-compatible, pre-decode opus)
@@ -221,25 +249,25 @@ def analyze_audio(file_path: Path) -> tuple[float | None, str | None, float]:
 
         bpm = round(bpm, 1)
 
-        # Extract key
-        key_extractor = es.KeyExtractor()
-        key, scale, strength = key_extractor(audio)
+        # Extract key using ensemble approach (default + edmm profiles)
+        # EDM minor profile often works better for electronic music
+        best_camelot = None
+        best_strength = 0.0
 
-        # Convert to Camelot notation
-        musical_key = f"{key}{scale}"
-        camelot_key = CAMELOT_MAP.get(musical_key)
-
-        # If not in map, try just the key or scale
-        if camelot_key is None:
-            if scale == "minor":
-                musical_key = f"{key}m"
+        for profile in [None, "edmm"]:  # None = default (temperley)
+            if profile:
+                key_extractor = es.KeyExtractor(profileType=profile)
             else:
-                musical_key = key
-            camelot_key = CAMELOT_MAP.get(musical_key)
+                key_extractor = es.KeyExtractor()
 
-        # TODO: Add genre detection with Essentia classifiers
+            key, scale, strength = key_extractor(audio)
+            camelot = to_camelot(key, scale)
 
-        return (bpm, camelot_key, strength)
+            if camelot and strength > best_strength:
+                best_camelot = camelot
+                best_strength = strength
+
+        return (bpm, best_camelot, best_strength)
 
     except Exception as e:
         logger.error(f"Error analyzing {file_path}: {e}")
