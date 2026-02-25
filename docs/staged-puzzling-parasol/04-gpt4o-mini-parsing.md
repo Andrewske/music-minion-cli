@@ -1,6 +1,6 @@
 ---
 task: 04-gpt4o-mini-parsing
-status: pending
+status: done
 depends: [03-fetch-soundcloud-details]
 files:
   - path: scripts/enrich_metadata.py
