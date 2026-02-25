@@ -48,7 +48,10 @@ function SortableTrack({ track }: SortableTrackProps): JSX.Element {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: track.id });
+  } = useSortable({
+    id: track.id,
+    data: { type: 'bucket-track' },
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
