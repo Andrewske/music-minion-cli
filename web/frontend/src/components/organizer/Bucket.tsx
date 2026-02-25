@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   DndContext,
   closestCenter,
@@ -129,24 +129,27 @@ export function BucketComponent({
   // Keyboard shortcut number (Shift+1 = first bucket)
   const shortcutNumber = bucketIndex < 9 ? bucketIndex + 1 : 0;
 
-  const handleDragEnd = (event: DragEndEvent): void => {
-    const { active, over } = event;
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent): void => {
+      const { active, over } = event;
 
-    if (!over) return;
-    if (active.id === over.id) return;
-    if (active.data.current?.type === 'unassigned-track') return;
+      if (!over) return;
+      if (active.id === over.id) return;
+      if (active.data.current?.type === 'unassigned-track') return;
 
-    const sourceBucketId = active.data.current?.bucketId;
-    if (sourceBucketId !== bucket.id) return;
+      const sourceBucketId = active.data.current?.bucketId;
+      if (sourceBucketId !== bucket.id) return;
 
-    const oldIndex = trackIds.indexOf(active.id as number);
-    const newIndex = trackIds.indexOf(over.id as number);
+      const oldIndex = trackIds.indexOf(active.id as number);
+      const newIndex = trackIds.indexOf(over.id as number);
 
-    if (oldIndex === -1 || newIndex === -1) return;
+      if (oldIndex === -1 || newIndex === -1) return;
 
-    const newOrder = arrayMove(trackIds, oldIndex, newIndex);
-    onReorderTracks(newOrder);
-  };
+      const newOrder = arrayMove(trackIds, oldIndex, newIndex);
+      onReorderTracks(newOrder);
+    },
+    [bucket.id, trackIds, onReorderTracks]
+  );
 
   const handleEditSave = async (name: string, emojiId?: string): Promise<void> => {
     await onUpdate({ name, emoji_id: emojiId ?? null });
