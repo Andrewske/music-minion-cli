@@ -38,9 +38,10 @@ interface BucketComponentProps {
 // Sortable track item component
 interface SortableTrackProps {
   track: PlaylistTrackEntry;
+  bucketId: string;
 }
 
-function SortableTrack({ track }: SortableTrackProps): JSX.Element {
+function SortableTrack({ track, bucketId }: SortableTrackProps): JSX.Element {
   const {
     attributes,
     listeners,
@@ -50,7 +51,10 @@ function SortableTrack({ track }: SortableTrackProps): JSX.Element {
     isDragging,
   } = useSortable({
     id: track.id,
-    data: { type: 'bucket-track' },
+    data: {
+      type: 'bucket-track',
+      bucketId,
+    },
   });
 
   const style = {
@@ -128,14 +132,20 @@ export function BucketComponent({
   const handleDragEnd = (event: DragEndEvent): void => {
     const { active, over } = event;
 
-    // Only handle if dragging within this bucket's SortableContext
-    // Skip if dragging unassigned-track (handled by parent DndContext)
-    if (over && active.id !== over.id && active.data.current?.type !== 'unassigned-track') {
-      const oldIndex = trackIds.indexOf(active.id as number);
-      const newIndex = trackIds.indexOf(over.id as number);
-      const newOrder = arrayMove(trackIds, oldIndex, newIndex);
-      onReorderTracks(newOrder);
-    }
+    if (!over) return;
+    if (active.id === over.id) return;
+    if (active.data.current?.type === 'unassigned-track') return;
+
+    const sourceBucketId = active.data.current?.bucketId;
+    if (sourceBucketId !== bucket.id) return;
+
+    const oldIndex = trackIds.indexOf(active.id as number);
+    const newIndex = trackIds.indexOf(over.id as number);
+
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const newOrder = arrayMove(trackIds, oldIndex, newIndex);
+    onReorderTracks(newOrder);
   };
 
   const handleEditSave = async (name: string, emojiId?: string): Promise<void> => {
@@ -148,6 +158,7 @@ export function BucketComponent({
       {/* Header */}
       <div
         ref={setDropRef}
+        data-testid={`bucket-header-${bucket.id}`}
         className={`flex items-center gap-2 px-3 py-2 transition-colors ${
           isOver ? 'bg-obsidian-accent/20 border-obsidian-accent' : ''
         }`}
@@ -263,7 +274,7 @@ export function BucketComponent({
                 strategy={verticalListSortingStrategy}
               >
                 {tracks.map((track) => (
-                  <SortableTrack key={track.id} track={track} />
+                  <SortableTrack key={track.id} track={track} bucketId={bucket.id} />
                 ))}
               </SortableContext>
             </DndContext>

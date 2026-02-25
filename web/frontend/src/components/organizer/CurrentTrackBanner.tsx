@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
-import { usePlayerStore, getCurrentPosition } from '../../stores/playerStore';
-import { Slider } from '../ui/slider';
+import { useCallback } from 'react';
+import { usePlayerStore } from '../../stores/playerStore';
+import { WaveformPlayer } from '../WaveformPlayer';
 import type { Bucket } from '../../api/buckets';
 
 interface CurrentTrackBannerProps {
@@ -10,53 +10,16 @@ interface CurrentTrackBannerProps {
 export function CurrentTrackBanner({ buckets }: CurrentTrackBannerProps): JSX.Element {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const pause = usePlayerStore((s) => s.pause);
+  const resume = usePlayerStore((s) => s.resume);
 
-  // Progress calculation
-  const [progress, setProgress] = useState(0);
-  const progressIntervalRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    // Clear existing interval
-    if (progressIntervalRef.current) {
-      clearInterval(progressIntervalRef.current);
-      progressIntervalRef.current = null;
+  const handleTogglePlayPause = useCallback((): void => {
+    if (isPlaying) {
+      pause();
+    } else {
+      resume();
     }
-
-    // Reset progress if no track or not playing
-    if (!currentTrack?.duration || !isPlaying) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setProgress(0);
-      return;
-    }
-
-    const duration = currentTrack.duration;
-    const updateProgress = (): void => {
-      const pos = getCurrentPosition(usePlayerStore.getState());
-      setProgress((pos / (duration * 1000)) * 100);
-    };
-
-    updateProgress();
-    progressIntervalRef.current = setInterval(updateProgress, 250);
-
-    return () => {
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-        progressIntervalRef.current = null;
-      }
-    };
-  }, [currentTrack?.duration, isPlaying]);
-
-  // Format duration as mm:ss
-  const formatDuration = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  // Current position in seconds
-  const currentSeconds = currentTrack?.duration
-    ? (progress / 100) * currentTrack.duration
-    : 0;
+  }, [isPlaying, pause, resume]);
 
   if (!currentTrack) {
     return (
@@ -80,19 +43,14 @@ export function CurrentTrackBanner({ buckets }: CurrentTrackBannerProps): JSX.El
             {currentTrack.artist ?? 'Unknown Artist'}
           </div>
         </div>
-
-        {/* Duration display */}
-        <div className="text-xs text-white/40 font-sf-mono ml-4">
-          {formatDuration(currentSeconds)} / {formatDuration(currentTrack.duration ?? 0)}
-        </div>
       </div>
 
-      {/* Progress bar */}
-      <div className="mb-3">
-        <Slider
-          value={[progress]}
-          max={100}
-          className="w-full"
+      {/* Waveform player */}
+      <div className="h-16 mb-3">
+        <WaveformPlayer
+          track={currentTrack}
+          isPlaying={isPlaying}
+          onTogglePlayPause={handleTogglePlayPause}
         />
       </div>
 

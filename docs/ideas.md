@@ -7,6 +7,7 @@
 5. [3] Fix mobile comparison emoji picker
 6. [2] Deduplicate play counts within time window (10-30 min)
 7. [1] CRUD functions accept optional connection parameter
+8. [3] Mobile drag-and-drop support for playlist organizer
 
 ## 1. SoundCloud + AI Metadata Enrichment
 
@@ -110,3 +111,22 @@ def get_playlist_by_name(name: str, library: str = None, conn: Connection = None
 **Scope**: `create_playlist()`, `add_track_to_playlist()`, `get_playlist_by_name()`, `get_playlist_by_id()` - any CRUD function called from FastAPI endpoints that also use the injected `db` connection.
 
 **Trade-off**: More invasive change but eliminates the root cause. Current workaround is inline SQL in endpoints.
+
+## 8. Mobile Drag-and-Drop Support for Playlist Organizer - 2026-02-25
+
+Add touch-based drag-and-drop support for mobile devices in the playlist organizer, enabling bucket-to-bucket and bucket-to-unassigned operations on phones/tablets.
+
+**Context**: `web/frontend/src/pages/PlaylistOrganizer.tsx`, `web/frontend/src/components/organizer/UnassignedTrackTable.tsx`, @dnd-kit touch support
+
+**Current Limitation**: Drag-and-drop only works on desktop. Mobile users must rely on keyboard shortcuts (Shift+1-9) which aren't accessible on mobile browsers.
+
+**Components**:
+- Touch sensor configuration for @dnd-kit
+- Mobile-specific drag feedback (haptics, visual indicators)
+- Testing across iOS Safari and Android Chrome
+- Fallback UI if touch DnD proves unreliable (long-press menu?)
+
+**Questions**:
+- Does @dnd-kit's PointerSensor handle touch events, or do we need TouchSensor?
+- Should mobile use different visual feedback (larger drag handles, different opacity)?
+- Consider long-press context menu as alternative to drag-and-drop?
