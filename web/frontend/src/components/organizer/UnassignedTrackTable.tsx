@@ -5,8 +5,11 @@ import {
   flexRender,
   type ColumnDef,
   type Column,
+  type Row,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { useDraggable } from '@dnd-kit/core';
+import { GripVertical } from 'lucide-react';
 import type { PlaylistTrackEntry } from '../../types';
 
 interface UnassignedTrackTableProps {
@@ -24,6 +27,13 @@ export function UnassignedTrackTable({
 
   // Column definitions
   const columns: ColumnDef<PlaylistTrackEntry>[] = [
+    {
+      id: 'drag',
+      header: '',
+      cell: () => null, // Rendered separately in DraggableRow
+      size: 40,
+      meta: { fixed: true },
+    },
     {
       id: 'title',
       accessorKey: 'title',
@@ -99,18 +109,78 @@ export function UnassignedTrackTable({
     overscan: 5,
   });
 
-  // Helper to get row highlight classes
-  const getRowClasses = (trackId: number): string => {
-    const isPlaying = trackId === currentTrackId;
+  interface DraggableRowProps {
+    track: PlaylistTrackEntry;
+    virtualRow: { start: number; size: number };
+    row: Row<PlaylistTrackEntry>;
+    isPlaying: boolean;
+    onTrackClick: (trackId: number) => void;
+    getColumnFlex: (column: Column<PlaylistTrackEntry>) => React.CSSProperties;
+  }
 
-    let classes = 'cursor-pointer hover:bg-white/5 transition-colors ';
+  function DraggableRow({ track, virtualRow, row, isPlaying, onTrackClick, getColumnFlex }: DraggableRowProps): JSX.Element {
+    const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+      id: track.id,
+      data: { type: 'unassigned-track' },
+    });
 
-    if (isPlaying) {
-      classes += 'bg-obsidian-accent/10 border-l-2 border-l-obsidian-accent ';
-    }
+    const dragTransform = transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : '';
+    const virtualTransform = `translateY(${virtualRow.start}px)`;
+    const combinedTransform = transform ? dragTransform : virtualTransform;
 
-    return classes;
-  };
+    const rowClasses = `cursor-pointer hover:bg-white/5 transition-colors ${
+      isPlaying ? 'bg-obsidian-accent/10 border-l-2 border-l-obsidian-accent' : ''
+    }`;
+
+    return (
+      <tr
+        ref={setNodeRef}
+        className={rowClasses}
+        onClick={() => onTrackClick(track.id)}
+        style={{
+          display: 'flex',
+          position: 'absolute',
+          transform: combinedTransform,
+          width: '100%',
+          height: `${virtualRow.size}px`,
+          opacity: isDragging ? 0.5 : 1,
+        }}
+      >
+        {/* Drag handle */}
+        <td
+          className="px-3 py-2 border-b border-obsidian-border/50"
+          style={{ flex: '0 0 40px', minWidth: 0 }}
+        >
+          <div
+            {...attributes}
+            {...listeners}
+            className="cursor-grab active:cursor-grabbing text-white/30 hover:text-white/60 focus:outline-none focus:ring-2 focus:ring-obsidian-accent"
+            onClick={(e) => e.stopPropagation()} // Prevent row click when grabbing
+            tabIndex={0}
+            role="button"
+            aria-label={`Drag ${track.title} to assign to bucket`}
+          >
+            <GripVertical className="w-4 h-4" />
+          </div>
+        </td>
+
+        {/* Existing cells (filter out drag column by ID, not position) */}
+        {row.getVisibleCells()
+          .filter(cell => cell.column.id !== 'drag')
+          .map((cell) => (
+          <td
+            key={cell.id}
+            className="px-3 py-2 border-b border-obsidian-border/50 overflow-hidden text-white/50"
+            style={getColumnFlex(cell.column)}
+          >
+            <div className="truncate" title={String(cell.getValue() ?? '')}>
+              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+            </div>
+          </td>
+        ))}
+      </tr>
+    );
+  }
 
   if (tracks.length === 0) {
     return (
@@ -165,33 +235,15 @@ export function UnassignedTrackTable({
                 const track = tracks[virtualRow.index];
 
                 return (
-                  <tr
+                  <DraggableRow
                     key={row.id}
-                    className={getRowClasses(track.id)}
-                    onClick={() => onTrackClick(track.id)}
-                    style={{
-                      display: 'flex',
-                      position: 'absolute',
-                      transform: `translateY(${virtualRow.start}px)`,
-                      width: '100%',
-                      height: `${virtualRow.size}px`,
-                    }}
-                  >
-                    {row.getVisibleCells().map((cell) => (
-                      <td
-                        key={cell.id}
-                        className="px-3 py-2 border-b border-obsidian-border/50 overflow-hidden text-white/50"
-                        style={getColumnFlex(cell.column)}
-                      >
-                        <div className="truncate" title={String(cell.getValue() ?? '')}>
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext()
-                          )}
-                        </div>
-                      </td>
-                    ))}
-                  </tr>
+                    track={track}
+                    virtualRow={virtualRow}
+                    row={row}
+                    isPlaying={track.id === currentTrackId}
+                    onTrackClick={onTrackClick}
+                    getColumnFlex={getColumnFlex}
+                  />
                 );
               })}
             </tbody>
