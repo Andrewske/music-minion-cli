@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   DndContext,
   closestCenter,
+  pointerWithin,
   KeyboardSensor,
   PointerSensor,
   useSensor,
@@ -195,7 +196,7 @@ export function PlaylistOrganizer({
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={pointerWithin}
       onDragEnd={handleDragEnd}
     >
       <div className="min-h-screen bg-black font-inter p-6">
