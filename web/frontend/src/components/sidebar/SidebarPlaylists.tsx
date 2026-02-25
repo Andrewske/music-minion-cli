@@ -181,13 +181,20 @@ export function SidebarPlaylists({ sidebarExpanded }: SidebarPlaylistsProps): JS
           <div className="px-3 py-2 text-white/30 text-sm">Loading...</div>
         )}
         {pinnedPlaylists.length > 0 && (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={pinnedPlaylists.map(p => p.id)} strategy={verticalListSortingStrategy}>
-              {pinnedPlaylists.map(playlist => (
-                <SortablePlaylistItem key={playlist.id} playlist={playlist} />
-              ))}
-            </SortableContext>
-          </DndContext>
+          isOnOrganizer ? (
+            // Disable drag-and-drop when on organizer page to avoid nested DndContext
+            pinnedPlaylists.map(playlist => (
+              <PlaylistItem key={playlist.id} playlist={playlist} isPinned={true} />
+            ))
+          ) : (
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={pinnedPlaylists.map(p => p.id)} strategy={verticalListSortingStrategy}>
+                {pinnedPlaylists.map(playlist => (
+                  <SortablePlaylistItem key={playlist.id} playlist={playlist} />
+                ))}
+              </SortableContext>
+            </DndContext>
+          )
         )}
         {unpinnedPlaylists.map(playlist => (
           <PlaylistItem key={playlist.id} playlist={playlist} isPinned={false} />
