@@ -1,6 +1,6 @@
 ---
 task: 04-extend-keyboard-shortcuts
-status: pending
+status: done
 depends: [03-update-parent-drag-handler]
 files:
   - path: web/frontend/src/pages/PlaylistOrganizer.tsx
