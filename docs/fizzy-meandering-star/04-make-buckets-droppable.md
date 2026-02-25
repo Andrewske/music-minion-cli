@@ -1,6 +1,6 @@
 ---
 task: 04-make-buckets-droppable
-status: pending
+status: done
 depends: [03-make-unassigned-tracks-draggable]
 files:
   - path: web/frontend/src/components/organizer/Bucket.tsx

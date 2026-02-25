@@ -10,7 +10,7 @@
 |------|--------|---------|-----------|----------|
 | 01-fix-keyboard-shortcuts | ✅ Done | 2026-02-25T00:00:00Z | 2026-02-25T00:02:00Z | ~2 min |
 | 02-add-dnd-context-to-playlist-organizer | ✅ Done | 2026-02-25T00:02:00Z | 2026-02-25T00:05:00Z | ~3 min |
-| 03-make-unassigned-tracks-draggable | Pending | - | - | - |
+| 03-make-unassigned-tracks-draggable | ✅ Done | 2026-02-25T00:05:00Z | 2026-02-25T00:08:00Z | ~3 min |
 | 04-make-buckets-droppable | Pending | - | - | - |
 
 ## Execution Log
@@ -28,4 +28,9 @@
 ### Batch 3
 - Started: 2026-02-25T00:05:00Z
 - Tasks: 03-make-unassigned-tracks-draggable
+- Completed: ✅ Added DraggableRow component with drag handles and keyboard accessibility
+
+### Batch 4
+- Started: 2026-02-25T00:08:00Z
+- Tasks: 04-make-buckets-droppable
 

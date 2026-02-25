@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   DndContext,
   closestCenter,
@@ -6,6 +6,7 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
+  useDroppable,
 } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
 import {
@@ -90,6 +91,19 @@ export function BucketComponent({
   const [isExpanded, setIsExpanded] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
+  const { setNodeRef: setDropRef, isOver } = useDroppable({
+    id: bucket.id,
+    data: { type: 'bucket' },
+  });
+
+  // Auto-expand on drag hover
+  useEffect(() => {
+    if (isOver && !isExpanded) {
+      const timer = setTimeout(() => setIsExpanded(true), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [isOver, isExpanded, setIsExpanded]);
+
   // DnD sensors
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -111,7 +125,9 @@ export function BucketComponent({
   const handleDragEnd = (event: DragEndEvent): void => {
     const { active, over } = event;
 
-    if (over && active.id !== over.id) {
+    // Only handle if dragging within this bucket's SortableContext
+    // Skip if dragging unassigned-track (handled by parent DndContext)
+    if (over && active.id !== over.id && active.data.current?.type !== 'unassigned-track') {
       const oldIndex = trackIds.indexOf(active.id as number);
       const newIndex = trackIds.indexOf(over.id as number);
       const newOrder = arrayMove(trackIds, oldIndex, newIndex);
@@ -127,7 +143,12 @@ export function BucketComponent({
   return (
     <div className="bg-obsidian-surface border border-obsidian-border rounded-lg overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2">
+      <div
+        ref={setDropRef}
+        className={`flex items-center gap-2 px-3 py-2 transition-colors ${
+          isOver ? 'bg-obsidian-accent/20 border-obsidian-accent' : ''
+        }`}
+      >
         {/* Expand/collapse button */}
         <button
           type="button"
@@ -226,7 +247,7 @@ export function BucketComponent({
         <div className="border-t border-obsidian-border">
           {tracks.length === 0 ? (
             <div className="px-3 py-4 text-center text-sm text-white/40">
-              No tracks assigned. Play a track and press Shift+{shortcutNumber} to assign.
+              No tracks assigned. Drag a track here or press Shift+{shortcutNumber}.
             </div>
           ) : (
             <DndContext
