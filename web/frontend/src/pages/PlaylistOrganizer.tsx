@@ -118,7 +118,8 @@ export function PlaylistOrganizer({
         playNextUnassignedTrack(trackId);
       } catch (error) {
         console.error('Failed to assign track:', error);
-        toast.error(`Failed to assign track ${trackId} to bucket ${bucketId}: ${error.message}`);
+        const message = error instanceof Error ? error.message : String(error);
+        toast.error(`Failed to assign track ${trackId} to bucket ${bucketId}: ${message}`);
       }
       return;
     }
@@ -157,7 +158,8 @@ export function PlaylistOrganizer({
           await assignTrack(targetBucketId, trackId);
         } catch (error) {
           console.error('Failed to move track between buckets:', error);
-          toast.error(`Failed to move track ${trackId} from bucket ${sourceBucketId} to ${targetBucketId}: ${error.message}`);
+          const message = error instanceof Error ? error.message : String(error);
+          toast.error(`Failed to move track ${trackId} from bucket ${sourceBucketId} to ${targetBucketId}: ${message}`);
         }
         return;
       }
@@ -168,7 +170,8 @@ export function PlaylistOrganizer({
           await unassignTrack(sourceBucketId, trackId);
         } catch (error) {
           console.error('Failed to unassign track:', error);
-          toast.error(`Failed to unassign track ${trackId} from bucket ${sourceBucketId}: ${error.message}`);
+          const message = error instanceof Error ? error.message : String(error);
+          toast.error(`Failed to unassign track ${trackId} from bucket ${sourceBucketId}: ${message}`);
         }
         return;
       }
@@ -189,7 +192,8 @@ export function PlaylistOrganizer({
           await assignTrack(targetBucketId, trackId);
         } catch (error) {
           console.error('Failed to move track between buckets:', error);
-          toast.error(`Failed to move track ${trackId} from bucket ${sourceBucketId} to ${targetBucketId}: ${error.message}`);
+          const message = error instanceof Error ? error.message : String(error);
+          toast.error(`Failed to move track ${trackId} from bucket ${sourceBucketId} to ${targetBucketId}: ${message}`);
         }
         return;
       }
