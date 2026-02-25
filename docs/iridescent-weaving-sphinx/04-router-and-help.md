@@ -1,6 +1,6 @@
 ---
 task: 04-router-and-help
-status: pending
+status: done
 depends: [03-command-handlers]
 files:
   - path: src/music_minion/router.py

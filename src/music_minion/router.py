@@ -245,13 +245,19 @@ Tag Commands:
   tag remove <tag>  Remove/blacklist a tag from current track
   tag list          Show all tags for current track
 
-Sync Commands:
-  sync export       Write all database tags to file metadata
-  sync import       Read tags from changed files to database
-  sync import --all Import from all files (force full import)
-  sync status       Show sync status and pending changes
-  sync rescan       Rescan library for file changes (incremental)
-  sync rescan --full Full library rescan (all files)
+Sync Commands (Local Library):
+  sync              Full sync: find new files + bidirectional merge
+  sync --dry-run    Preview what would change (no modifications)
+  sync --ours       Resolve conflicts: database wins
+  sync --theirs     Resolve conflicts: file wins
+  sync pull         Import changed files → database
+  sync pull --all   Full filesystem scan + import all
+  sync push         Export changed metadata → files
+  sync push --all   Export all metadata → files
+  (all commands support --dry-run)
+
+Sync Commands (Provider Libraries):
+  sync              Sync likes/playlists from API (SoundCloud, Spotify, YouTube)
 
 Library Commands:
   library                          List all available libraries with track counts
@@ -518,24 +524,22 @@ def handle_command(
 
     elif command == "sync":
         if not args:
-            # sync (no arguments) - context-aware sync
-            return sync.handle_sync_command(ctx, args)
-        elif args[0] == "full":
-            # sync full - full sync bypassing cache
-            return sync.handle_sync_full_command(ctx)
+            # sync - full smart sync (find new + bidirectional)
+            return sync.handle_sync_command(ctx, [])
         elif args[0] == "pull":
-            # sync pull - force import from files
+            # sync pull [--all] [--dry-run]
             return sync.handle_sync_pull_command(ctx, args[1:])
         elif args[0] == "push":
-            # sync push - force export to files
+            # sync push [--all] [--dry-run]
             return sync.handle_sync_push_command(ctx, args[1:])
         elif args[0].startswith("--"):
-            # sync with flags (--dry-run, --ours, --theirs)
+            # sync --dry-run, sync --ours, sync --theirs
             return sync.handle_sync_command(ctx, args)
         else:
             logger.warning(f"Unknown sync subcommand: '{args[0]}'")
             log(
-                f"Unknown sync subcommand: '{args[0]}'. Use 'sync', 'sync pull', 'sync push', or 'sync full'",
+                f"Unknown sync subcommand: '{args[0]}'. "
+                "Available: sync, sync pull, sync push",
                 level="error",
             )
             return ctx, True
