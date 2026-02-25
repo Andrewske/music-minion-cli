@@ -1225,7 +1225,7 @@ def main_loop(term: Terminal, ctx: AppContext) -> AppContext:
                             current_spotify_player = ctx.spotify_player
 
                             # Run sync (updates tracks but may lose player state)
-                            updated_ctx, _ = sync.handle_sync_command(ctx)
+                            updated_ctx, _ = sync.handle_sync_command(ctx, None)
 
                             # Preserve current player state (prevent clearing current track)
                             ctx = dataclasses.replace(
