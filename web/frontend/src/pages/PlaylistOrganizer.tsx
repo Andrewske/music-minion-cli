@@ -1,7 +1,8 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   DndContext,
+  DragOverlay,
   closestCenter,
   pointerWithin,
   KeyboardSensor,
@@ -9,6 +10,7 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from '@dnd-kit/core';
 import { toast } from 'react-toastify';
 import { usePlayerStore } from '../stores/playerStore';
@@ -65,6 +67,9 @@ export function PlaylistOrganizer({
     useSensor(KeyboardSensor)
   );
 
+  const [activeId, setActiveId] = useState<number | null>(null);
+  const [activeDragType, setActiveDragType] = useState<'unassigned-track' | 'bucket-track' | null>(null);
+
   // Auto-advance helper function (used by both keyboard shortcuts and drag-and-drop)
   const playNextUnassignedTrack = useCallback(
     (excludeTrackId: number): void => {
@@ -103,111 +108,145 @@ export function PlaylistOrganizer({
     [currentTrack, assignTrack, playNextUnassignedTrack]
   );
 
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    const { active } = event;
+    setActiveId(active.id as number);
+    setActiveDragType(active.data.current?.type as 'unassigned-track' | 'bucket-track');
+  }, []);
+
+  const handleDragCancel = useCallback(() => {
+    setActiveId(null);
+    setActiveDragType(null);
+  }, []);
+
+  // Memoize track display to avoid O(n*m) lookup on every render
+  const activeTrackDisplay = useMemo(() => {
+    if (!activeId || !activeDragType) return null;
+
+    if (activeDragType === 'unassigned-track') {
+      const track = unassignedTracks.find(t => t.id === activeId);
+      return track ? track.title : 'Unknown Track';
+    }
+
+    // Bucket track - find in buckets
+    for (const bucket of buckets) {
+      const track = bucket.tracks.find(t => t.id === activeId);
+      if (track) return `${bucket.emoji_id || '📦'} ${track.title}`;
+    }
+    return 'Unknown Track';
+  }, [activeId, activeDragType, unassignedTracks, buckets]);
+
   // Handle drag end events
   const handleDragEnd = useCallback(
     async (event: DragEndEvent): Promise<void> => {
-      const { active, over } = event;
-      if (!over) return;
+      try {
+        const { active, over } = event;
+        if (!over) return;
 
-      const dragType = active.data.current?.type;
+        const dragType = active.data.current?.type;
 
-      // Case 1: Unassigned track → bucket (existing functionality)
-      if (dragType === 'unassigned-track') {
-        if (over.data.current?.type !== 'bucket') return;
+        // Case 1: Unassigned track → bucket (existing functionality)
+        if (dragType === 'unassigned-track') {
+          if (over.data.current?.type !== 'bucket') return;
 
-        const trackId = active.id as number;
-        const bucketId = over.id as string;
+          const trackId = active.id as number;
+          const bucketId = over.id as string;
 
-        // Type guard for development
-        if (typeof trackId !== 'number' || typeof bucketId !== 'string') {
-          console.error('Invalid drag data types:', { trackId, bucketId });
-          return;
-        }
-
-        try {
-          await assignTrack(bucketId, trackId);
-          playNextUnassignedTrack(trackId);
-        } catch (error) {
-          console.error('Failed to assign track:', error);
-          const message = error instanceof Error ? error.message : String(error);
-          toast.error(`Failed to assign track ${trackId} to bucket ${bucketId}: ${message}`);
-        }
-        return;
-      }
-
-      // Case 2: Bucket track → different bucket OR unassigned (NEW)
-      if (dragType === 'bucket-track') {
-        const trackId = active.id as number;
-        const sourceBucketId = active.data.current?.bucketId as string | undefined;
-
-        // Type guards for development
-        if (typeof trackId !== 'number') {
-          console.error('Invalid track ID type:', trackId);
-          return;
-        }
-
-        if (!sourceBucketId || typeof sourceBucketId !== 'string') {
-          console.error('Missing or invalid source bucket ID in drag data:', sourceBucketId);
-          return;
-        }
-
-        const overType = over.data.current?.type;
-
-        // Case 2a: Bucket track → different bucket
-        if (overType === 'bucket') {
-          const targetBucketId = over.id as string;
-
-          if (typeof targetBucketId !== 'string') {
-            console.error('Invalid target bucket ID type:', targetBucketId);
+          // Type guard for development
+          if (typeof trackId !== 'number' || typeof bucketId !== 'string') {
+            console.error('Invalid drag data types:', { trackId, bucketId });
             return;
           }
 
-          // No-op if dropping on same bucket
-          if (targetBucketId === sourceBucketId) return;
-
           try {
-            await assignTrack(targetBucketId, trackId);
+            await assignTrack(bucketId, trackId);
+            playNextUnassignedTrack(trackId);
           } catch (error) {
-            console.error('Failed to move track between buckets:', error);
+            console.error('Failed to assign track:', error);
             const message = error instanceof Error ? error.message : String(error);
-            toast.error(`Failed to move track ${trackId} from bucket ${sourceBucketId} to ${targetBucketId}: ${message}`);
+            toast.error(`Failed to assign track ${trackId} to bucket ${bucketId}: ${message}`);
           }
           return;
         }
 
-        // Case 2b: Bucket track → unassigned area
-        if (overType === 'unassigned-area') {
-          try {
-            await unassignTrack(sourceBucketId, trackId);
-          } catch (error) {
-            console.error('Failed to unassign track:', error);
-            const message = error instanceof Error ? error.message : String(error);
-            toast.error(`Failed to unassign track ${trackId} from bucket ${sourceBucketId}: ${message}`);
-          }
-          return;
-        }
+        // Case 2: Bucket track → different bucket OR unassigned (NEW)
+        if (dragType === 'bucket-track') {
+          const trackId = active.id as number;
+          const sourceBucketId = active.data.current?.bucketId as string | undefined;
 
-        // Case 2c: Bucket track → track in different bucket (NEW)
-        if (overType === 'bucket-track') {
-          const targetBucketId = over.data.current?.bucketId as string | undefined;
-
-          if (!targetBucketId || typeof targetBucketId !== 'string') {
-            console.error('Missing or invalid target bucket ID in drag data:', targetBucketId);
+          // Type guards for development
+          if (typeof trackId !== 'number') {
+            console.error('Invalid track ID type:', trackId);
             return;
           }
 
-          // No-op if dropping in same bucket (within-bucket reordering handled by child)
-          if (targetBucketId === sourceBucketId) return;
-
-          try {
-            await assignTrack(targetBucketId, trackId);
-          } catch (error) {
-            console.error('Failed to move track between buckets:', error);
-            const message = error instanceof Error ? error.message : String(error);
-            toast.error(`Failed to move track ${trackId} from bucket ${sourceBucketId} to ${targetBucketId}: ${message}`);
+          if (!sourceBucketId || typeof sourceBucketId !== 'string') {
+            console.error('Missing or invalid source bucket ID in drag data:', sourceBucketId);
+            return;
           }
-          return;
+
+          const overType = over.data.current?.type;
+
+          // Case 2a: Bucket track → different bucket
+          if (overType === 'bucket') {
+            const targetBucketId = over.id as string;
+
+            if (typeof targetBucketId !== 'string') {
+              console.error('Invalid target bucket ID type:', targetBucketId);
+              return;
+            }
+
+            // No-op if dropping on same bucket
+            if (targetBucketId === sourceBucketId) return;
+
+            try {
+              await assignTrack(targetBucketId, trackId);
+            } catch (error) {
+              console.error('Failed to move track between buckets:', error);
+              const message = error instanceof Error ? error.message : String(error);
+              toast.error(`Failed to move track ${trackId} from bucket ${sourceBucketId} to ${targetBucketId}: ${message}`);
+            }
+            return;
+          }
+
+          // Case 2b: Bucket track → unassigned area
+          if (overType === 'unassigned-area') {
+            try {
+              await unassignTrack(sourceBucketId, trackId);
+            } catch (error) {
+              console.error('Failed to unassign track:', error);
+              const message = error instanceof Error ? error.message : String(error);
+              toast.error(`Failed to unassign track ${trackId} from bucket ${sourceBucketId}: ${message}`);
+            }
+            return;
+          }
+
+          // Case 2c: Bucket track → track in different bucket (NEW)
+          if (overType === 'bucket-track') {
+            const targetBucketId = over.data.current?.bucketId as string | undefined;
+
+            if (!targetBucketId || typeof targetBucketId !== 'string') {
+              console.error('Missing or invalid target bucket ID in drag data:', targetBucketId);
+              return;
+            }
+
+            // No-op if dropping in same bucket (within-bucket reordering handled by child)
+            if (targetBucketId === sourceBucketId) return;
+
+            try {
+              await assignTrack(targetBucketId, trackId);
+            } catch (error) {
+              console.error('Failed to move track between buckets:', error);
+              const message = error instanceof Error ? error.message : String(error);
+              toast.error(`Failed to move track ${trackId} from bucket ${sourceBucketId} to ${targetBucketId}: ${message}`);
+            }
+            return;
+          }
         }
+      } finally {
+        // Always clear state, even if early return or error
+        setActiveId(null);
+        setActiveDragType(null);
       }
     },
     [assignTrack, unassignTrack, playNextUnassignedTrack]
@@ -292,7 +331,9 @@ export function PlaylistOrganizer({
     <DndContext
       sensors={sensors}
       collisionDetection={pointerWithin}
+      onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
     >
       <div className="min-h-screen bg-black font-inter p-6">
         <div className="max-w-4xl mx-auto">
@@ -360,6 +401,16 @@ export function PlaylistOrganizer({
           </div>
         </div>
       </div>
+
+      <DragOverlay>
+        {activeTrackDisplay ? (
+          <div className="bg-obsidian-surface border border-obsidian-accent rounded px-3 py-2 shadow-xl opacity-90 cursor-grabbing">
+            <div className="text-sm text-white/90 truncate max-w-md">
+              {activeTrackDisplay}
+            </div>
+          </div>
+        ) : null}
+      </DragOverlay>
     </DndContext>
   );
 }
