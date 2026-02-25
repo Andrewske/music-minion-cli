@@ -100,7 +100,7 @@ export function PlaylistOrganizer({
         playNextUnassignedTrack(currentTrack.id);
       }
     },
-    [currentTrack, buckets, assignTrack, playNextUnassignedTrack]
+    [currentTrack, assignTrack, playNextUnassignedTrack]
   );
 
   // Handle drag end events
