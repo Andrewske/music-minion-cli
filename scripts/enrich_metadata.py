@@ -15,6 +15,7 @@ import json
 import os
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -34,6 +35,8 @@ from music_minion.domain.playlists.matching import MatchCandidate, batch_score_c
 # Load environment variables and initialize OpenAI client
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+LOG_FILE = Path(__file__).parent.parent / "logs" / "metadata_enrichment.jsonl"
 
 SYSTEM_PROMPT = """You are a music metadata parser. Parse SoundCloud track data into clean, structured metadata.
 
@@ -289,6 +292,41 @@ def build_user_prompt(sc_data: dict) -> str:
 
 Return JSON with exactly these fields:
 {{"title": "...", "original_artists": [...], "featured_artists": [...], "remix_artist": "..." or null, "genre": "...", "year": ... or null}}"""
+
+
+def log_enrichment(
+    local_path: str,
+    soundcloud_id: str,
+    input_data: dict,
+    response: dict,
+    usage: dict,
+    applied: bool,
+) -> None:
+    """Append enrichment record to JSONL log.
+
+    Args:
+        local_path: Path to local audio file
+        soundcloud_id: SoundCloud track ID
+        input_data: Input data sent to AI (SoundCloud track details)
+        response: Parsed response from AI
+        usage: Token usage statistics
+        applied: Whether metadata was written to file
+    """
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "local_path": local_path,
+        "soundcloud_id": soundcloud_id,
+        "input_data": input_data,
+        "prompt_tokens": usage["prompt_tokens"],
+        "completion_tokens": usage["completion_tokens"],
+        "response": response,
+        "applied": applied,
+    }
+
+    with open(LOG_FILE, "a") as f:
+        f.write(json.dumps(entry) + "\n")
 
 
 def parse_with_ai(sc_data: dict) -> tuple[dict, dict]:
@@ -654,11 +692,31 @@ def main() -> int:
     if not valid:
         print(f"\n⚠ Invalid AI output: {error}")
         print("[Skipping this track]")
+        # Log even if validation failed
+        log_enrichment(
+            local_path=str(local_path),
+            soundcloud_id=soundcloud_id,
+            input_data=track_details,
+            response=parsed_metadata,
+            usage=usage_stats,
+            applied=False,
+        )
         return 1
+
+    # Track whether metadata was applied
+    applied = False
 
     # Dry run mode: exit without writing
     if args.dry_run:
         print("\n[Dry run - no changes applied]")
+        log_enrichment(
+            local_path=str(local_path),
+            soundcloud_id=soundcloud_id,
+            input_data=track_details,
+            response=parsed_metadata,
+            usage=usage_stats,
+            applied=False,
+        )
         return 0
 
     # Determine whether to apply changes
@@ -670,13 +728,30 @@ def main() -> int:
 
     if not apply:
         print("\n[Skipped by user]")
+        log_enrichment(
+            local_path=str(local_path),
+            soundcloud_id=soundcloud_id,
+            input_data=track_details,
+            response=parsed_metadata,
+            usage=usage_stats,
+            applied=False,
+        )
         return 0
 
     # Apply metadata enrichment to file
     if apply_enrichment(str(local_path), parsed_metadata):
         print(f"\n✅ Metadata written to file: {local_path}")
+        applied = True
     else:
         print(f"\n❌ Failed to write metadata to file: {local_path}")
+        log_enrichment(
+            local_path=str(local_path),
+            soundcloud_id=soundcloud_id,
+            input_data=track_details,
+            response=parsed_metadata,
+            usage=usage_stats,
+            applied=False,
+        )
         return 1
 
     # Link track to soundcloud_id
@@ -686,7 +761,25 @@ def main() -> int:
         print(
             "\n⚠ Track not linked (SoundCloud ID already in use by another track)"
         )
+        log_enrichment(
+            local_path=str(local_path),
+            soundcloud_id=soundcloud_id,
+            input_data=track_details,
+            response=parsed_metadata,
+            usage=usage_stats,
+            applied=applied,
+        )
         return 1
+
+    # Log successful enrichment
+    log_enrichment(
+        local_path=str(local_path),
+        soundcloud_id=soundcloud_id,
+        input_data=track_details,
+        response=parsed_metadata,
+        usage=usage_stats,
+        applied=applied,
+    )
 
     return 0
 
