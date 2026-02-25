@@ -1,6 +1,6 @@
 ---
 task: 02-add-dnd-context-to-playlist-organizer
-status: pending
+status: done
 depends: [01-fix-keyboard-shortcuts]
 files:
   - path: web/frontend/src/pages/PlaylistOrganizer.tsx

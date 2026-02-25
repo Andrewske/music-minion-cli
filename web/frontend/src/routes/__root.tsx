@@ -1,5 +1,7 @@
 import { createRootRoute, Outlet, useRouterState } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
+import { ToastContainer } from 'react-toastify'
+import 'react-toastify/dist/ReactToastify.css'
 import { useSyncWebSocket } from '../hooks/useSyncWebSocket'
 import { PlayerBar } from '../components/player/PlayerBar'
 import { Sidebar } from '../components/sidebar/Sidebar'
@@ -39,6 +41,20 @@ function RootComponent(): JSX.Element {
 
         {/* Player bar - fixed bottom */}
         <PlayerBar />
+
+        {/* Toast notifications */}
+        <ToastContainer
+          position="bottom-right"
+          autoClose={3000}
+          hideProgressBar={false}
+          newestOnTop={false}
+          closeOnClick
+          rtl={false}
+          pauseOnFocusLoss
+          draggable
+          pauseOnHover
+          theme="dark"
+        />
 
         {/* Dev tools */}
         {import.meta.env.DEV && <TanStackRouterDevtools />}
