@@ -8,7 +8,7 @@
 
 | Task | Status | Started | Completed | Duration |
 |------|--------|---------|-----------|----------|
-| 01-setup-dependencies | Pending | - | - | - |
+| 01-setup-dependencies | ✅ Done | 2026-02-24T12:00:00Z | 2026-02-24T12:01:00Z | ~1min |
 | 02-soundcloud-lookup-cascade | Pending | - | - | - |
 | 03-fetch-soundcloud-details | Pending | - | - | - |
 | 04-gpt4o-mini-parsing | Pending | - | - | - |
