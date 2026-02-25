@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as bucketsApi from '../api/buckets';
 import type { BucketSession, Bucket } from '../api/buckets';
@@ -248,48 +249,78 @@ export function usePlaylistOrganizer(
   };
 
   // Wrapper functions for cleaner API
-  const createBucket = async (name: string, emojiId?: string): Promise<Bucket> => {
-    return createBucketMutation.mutateAsync({ name, emojiId });
-  };
+  const createBucket = useCallback(
+    async (name: string, emojiId?: string): Promise<Bucket> => {
+      return createBucketMutation.mutateAsync({ name, emojiId });
+    },
+    [createBucketMutation]
+  );
 
-  const updateBucket = async (
-    bucketId: string,
-    updates: { name?: string; emoji_id?: string | null }
-  ): Promise<void> => {
-    await updateBucketMutation.mutateAsync({ bucketId, updates });
-  };
+  const updateBucket = useCallback(
+    async (
+      bucketId: string,
+      updates: { name?: string; emoji_id?: string | null }
+    ): Promise<void> => {
+      await updateBucketMutation.mutateAsync({ bucketId, updates });
+    },
+    [updateBucketMutation]
+  );
 
-  const deleteBucket = async (bucketId: string): Promise<void> => {
-    await deleteBucketMutation.mutateAsync(bucketId);
-  };
+  const deleteBucket = useCallback(
+    async (bucketId: string): Promise<void> => {
+      await deleteBucketMutation.mutateAsync(bucketId);
+    },
+    [deleteBucketMutation]
+  );
 
-  const moveBucket = async (bucketId: string, direction: 'up' | 'down'): Promise<void> => {
-    await moveBucketMutation.mutateAsync({ bucketId, direction });
-  };
+  const moveBucket = useCallback(
+    async (bucketId: string, direction: 'up' | 'down'): Promise<void> => {
+      await moveBucketMutation.mutateAsync({ bucketId, direction });
+    },
+    [moveBucketMutation]
+  );
 
-  const shuffleBucket = async (bucketId: string): Promise<void> => {
-    await shuffleBucketMutation.mutateAsync(bucketId);
-  };
+  const shuffleBucket = useCallback(
+    async (bucketId: string): Promise<void> => {
+      await shuffleBucketMutation.mutateAsync(bucketId);
+    },
+    [shuffleBucketMutation]
+  );
 
-  const assignTrack = async (bucketId: string, trackId: number): Promise<void> => {
-    await assignTrackMutation.mutateAsync({ bucketId, trackId });
-  };
+  const assignTrack = useCallback(
+    async (bucketId: string, trackId: number): Promise<void> => {
+      await assignTrackMutation.mutateAsync({ bucketId, trackId });
+    },
+    [assignTrackMutation]
+  );
 
-  const unassignTrack = async (bucketId: string, trackId: number): Promise<void> => {
-    await unassignTrackMutation.mutateAsync({ bucketId, trackId });
-  };
+  const unassignTrack = useCallback(
+    async (bucketId: string, trackId: number): Promise<void> => {
+      await unassignTrackMutation.mutateAsync({ bucketId, trackId });
+    },
+    [unassignTrackMutation]
+  );
 
-  const reorderTracks = async (bucketId: string, trackIds: number[]): Promise<void> => {
-    await reorderTracksMutation.mutateAsync({ bucketId, trackIds });
-  };
+  const reorderTracks = useCallback(
+    async (bucketId: string, trackIds: number[]): Promise<void> => {
+      await reorderTracksMutation.mutateAsync({ bucketId, trackIds });
+    },
+    [reorderTracksMutation]
+  );
 
-  const applyOrder = async (): Promise<void> => {
-    await applyOrderMutation.mutateAsync();
-  };
+  const applyOrder = useCallback(
+    async (): Promise<void> => {
+      await applyOrderMutation.mutateAsync();
+    },
+    [applyOrderMutation]
+  );
 
-  const discardSession = async (): Promise<void> => {
-    await discardSessionMutation.mutateAsync();
-  };
+  const discardSession = useCallback(
+    async (): Promise<void> => {
+      await discardSessionMutation.mutateAsync();
+    },
+    [discardSessionMutation]
+  );
 
   return {
     // Session data
