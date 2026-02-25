@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query';
 import {
   DndContext,
   DragOverlay,
-  closestCenter,
   pointerWithin,
   KeyboardSensor,
   PointerSensor,
@@ -121,20 +120,22 @@ export function PlaylistOrganizer({
 
   // Memoize track display to avoid O(n*m) lookup on every render
   const activeTrackDisplay = useMemo(() => {
-    if (!activeId || !activeDragType) return null;
+    if (!activeId || !activeDragType || !allTracks?.tracks) return null;
 
     if (activeDragType === 'unassigned-track') {
       const track = unassignedTracks.find(t => t.id === activeId);
       return track ? track.title : 'Unknown Track';
     }
 
-    // Bucket track - find in buckets
+    // Bucket track - find which bucket contains this track ID, then look up track details
     for (const bucket of buckets) {
-      const track = bucket.tracks.find(t => t.id === activeId);
-      if (track) return `${bucket.emoji_id || '📦'} ${track.title}`;
+      if (bucket.track_ids.includes(activeId)) {
+        const track = allTracks.tracks.find(t => t.id === activeId);
+        if (track) return `${bucket.emoji_id || '📦'} ${track.title}`;
+      }
     }
     return 'Unknown Track';
-  }, [activeId, activeDragType, unassignedTracks, buckets]);
+  }, [activeId, activeDragType, unassignedTracks, buckets, allTracks]);
 
   // Handle drag end events
   const handleDragEnd = useCallback(
