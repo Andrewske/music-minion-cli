@@ -1,18 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
+import { useDroppable } from '@dnd-kit/core';
 import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  useDroppable,
-} from '@dnd-kit/core';
-import type { DragEndEvent } from '@dnd-kit/core';
-import {
-  arrayMove,
   SortableContext,
-  sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
@@ -111,45 +100,11 @@ export function BucketComponent({
     }
   }, [isOver, isExpanded, setIsExpanded]);
 
-  // DnD sensors
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
   // Track IDs for sortable context
   const trackIds = tracks.map((t) => t.id);
 
   // Keyboard shortcut number (Shift+1 = first bucket)
   const shortcutNumber = bucketIndex < 9 ? bucketIndex + 1 : 0;
-
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent): void => {
-      const { active, over } = event;
-
-      if (!over) return;
-      if (active.id === over.id) return;
-      if (active.data.current?.type === 'unassigned-track') return;
-
-      const sourceBucketId = active.data.current?.bucketId;
-      if (sourceBucketId !== bucket.id) return;
-
-      const oldIndex = trackIds.indexOf(active.id as number);
-      const newIndex = trackIds.indexOf(over.id as number);
-
-      if (oldIndex === -1 || newIndex === -1) return;
-
-      const newOrder = arrayMove(trackIds, oldIndex, newIndex);
-      onReorderTracks(newOrder);
-    },
-    [bucket.id, trackIds, onReorderTracks]
-  );
 
   const handleEditSave = async (name: string, emojiId?: string): Promise<void> => {
     await onUpdate({ name, emoji_id: emojiId ?? null });
@@ -267,20 +222,14 @@ export function BucketComponent({
               No tracks assigned. Drag a track here or press Shift+{shortcutNumber}.
             </div>
           ) : (
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleDragEnd}
+            <SortableContext
+              items={trackIds}
+              strategy={verticalListSortingStrategy}
             >
-              <SortableContext
-                items={trackIds}
-                strategy={verticalListSortingStrategy}
-              >
-                {tracks.map((track) => (
-                  <SortableTrack key={track.id} track={track} bucketId={bucket.id} />
-                ))}
-              </SortableContext>
-            </DndContext>
+              {tracks.map((track) => (
+                <SortableTrack key={track.id} track={track} bucketId={bucket.id} />
+              ))}
+            </SortableContext>
           )}
         </div>
       )}

@@ -11,6 +11,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
+import { arrayMove } from '@dnd-kit/sortable';
 import { toast } from 'react-toastify';
 import { usePlayerStore } from '../stores/playerStore';
 import { usePlaylistOrganizer } from '../hooks/usePlaylistOrganizer';
@@ -104,7 +105,7 @@ export function PlaylistOrganizer({
         playNextUnassignedTrack(currentTrack.id);
       }
     },
-    [currentTrack, assignTrack, playNextUnassignedTrack]
+    [currentTrack, buckets, assignTrack, playNextUnassignedTrack]
   );
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
@@ -118,24 +119,46 @@ export function PlaylistOrganizer({
     setActiveDragType(null);
   }, []);
 
-  // Memoize track display to avoid O(n*m) lookup on every render
-  const activeTrackDisplay = useMemo(() => {
-    if (!activeId || !activeDragType || !allTracks?.tracks) return null;
-
-    if (activeDragType === 'unassigned-track') {
-      const track = unassignedTracks.find(t => t.id === activeId);
-      return track ? track.title : 'Unknown Track';
-    }
-
-    // Bucket track - find which bucket contains this track ID, then look up track details
+  // Pre-compute Maps for O(1) lookup during drag operations
+  const trackToBucketMap = useMemo(() => {
+    const map = new Map<number, { bucketId: string; emojiId: string | null }>();
     for (const bucket of buckets) {
-      if (bucket.track_ids.includes(activeId)) {
-        const track = allTracks.tracks.find(t => t.id === activeId);
-        if (track) return `${bucket.emoji_id || '📦'} ${track.title}`;
+      for (const trackId of bucket.track_ids) {
+        map.set(trackId, { bucketId: bucket.id, emojiId: bucket.emoji_id ?? null });
       }
     }
+    return map;
+  }, [buckets]);
+
+  const trackIdToTrackMap = useMemo(() => {
+    const map = new Map<number, { title: string; artist: string | null }>();
+    if (allTracks?.tracks) {
+      for (const track of allTracks.tracks) {
+        map.set(track.id, { title: track.title, artist: track.artist });
+      }
+    }
+    return map;
+  }, [allTracks]);
+
+  // Memoize track display with O(1) lookups
+  const activeTrackDisplay = useMemo(() => {
+    if (!activeId || !activeDragType) return null;
+
+    const track = trackIdToTrackMap.get(activeId);
+    if (!track) return 'Unknown Track';
+
+    if (activeDragType === 'unassigned-track') {
+      return track.title;
+    }
+
+    // Bucket track - O(1) lookup
+    const bucketInfo = trackToBucketMap.get(activeId);
+    if (bucketInfo) {
+      return `${bucketInfo.emojiId || '📦'} ${track.title}`;
+    }
+
     return 'Unknown Track';
-  }, [activeId, activeDragType, unassignedTracks, buckets, allTracks]);
+  }, [activeId, activeDragType, trackIdToTrackMap, trackToBucketMap]);
 
   // Handle drag end events
   const handleDragEnd = useCallback(
@@ -222,7 +245,7 @@ export function PlaylistOrganizer({
             return;
           }
 
-          // Case 2c: Bucket track → track in different bucket (NEW)
+          // Case 2c: Bucket track → track in different bucket (cross-bucket move)
           if (overType === 'bucket-track') {
             const targetBucketId = over.data.current?.bucketId as string | undefined;
 
@@ -231,9 +254,38 @@ export function PlaylistOrganizer({
               return;
             }
 
-            // No-op if dropping in same bucket (within-bucket reordering handled by child)
-            if (targetBucketId === sourceBucketId) return;
+            // Case 2c-i: Within-bucket reordering (same bucket)
+            if (targetBucketId === sourceBucketId) {
+              const bucket = buckets.find((b) => b.id === sourceBucketId);
+              if (!bucket) {
+                console.error('Source bucket not found:', sourceBucketId);
+                return;
+              }
 
+              const oldIndex = bucket.track_ids.indexOf(trackId);
+              const newIndex = bucket.track_ids.indexOf(over.id as number);
+
+              if (oldIndex === -1 || newIndex === -1) {
+                console.error('Track not found in bucket for reordering:', { trackId, overId: over.id, trackIds: bucket.track_ids });
+                return;
+              }
+
+              // Skip if no actual movement
+              if (oldIndex === newIndex) return;
+
+              const newOrder = arrayMove(bucket.track_ids, oldIndex, newIndex);
+
+              try {
+                await reorderTracks(sourceBucketId, newOrder);
+              } catch (error) {
+                console.error('Failed to reorder tracks within bucket:', error);
+                const message = error instanceof Error ? error.message : String(error);
+                toast.error(`Failed to reorder tracks in bucket ${sourceBucketId}: ${message}`);
+              }
+              return;
+            }
+
+            // Case 2c-ii: Cross-bucket move (different bucket)
             try {
               await assignTrack(targetBucketId, trackId);
             } catch (error) {
@@ -250,7 +302,7 @@ export function PlaylistOrganizer({
         setActiveDragType(null);
       }
     },
-    [assignTrack, unassignTrack, playNextUnassignedTrack]
+    [buckets, assignTrack, unassignTrack, reorderTracks, playNextUnassignedTrack]
   );
 
   // Keyboard handler for Shift+1-0
