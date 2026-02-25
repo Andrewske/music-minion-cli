@@ -1,6 +1,6 @@
 ---
 task: 03-update-parent-drag-handler
-status: pending
+status: done
 depends: [01-update-bucket-drag-handlers, 02-make-unassigned-area-droppable]
 files:
   - path: web/frontend/src/pages/PlaylistOrganizer.tsx
