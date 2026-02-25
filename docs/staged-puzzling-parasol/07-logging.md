@@ -1,6 +1,6 @@
 ---
 task: 07-logging
-status: pending
+status: done
 depends: [06-write-metadata-to-file]
 files:
   - path: scripts/enrich_metadata.py
