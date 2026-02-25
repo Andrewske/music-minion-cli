@@ -1,6 +1,6 @@
 ---
 task: 01-setup-dependencies
-status: pending
+status: done
 depends: []
 files: []
 ---
