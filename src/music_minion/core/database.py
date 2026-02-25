@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 42  # Composite unique index for provider playlist IDs
+SCHEMA_VERSION = 44  # Content-based metadata sync
 
 
 # Initial top 50 curated emojis for music reactions
@@ -2061,6 +2061,33 @@ def migrate_database(conn, current_version: int) -> None:
 
         conn.commit()
         logger.info("  ✓ Migration to v42 complete: Composite unique index for provider playlist IDs")
+
+    if current_version < 44:
+        logger.info("Migrating to v44: Content-based metadata sync...")
+
+        # Add file_metadata_hash column for change detection
+        try:
+            conn.execute("ALTER TABLE tracks ADD COLUMN file_metadata_hash TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+        # Add last_sync_direction for ping-pong detection
+        try:
+            conn.execute("ALTER TABLE tracks ADD COLUMN last_sync_direction TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+        # Add sync_source for audit trail ('file', 'ui', 'api')
+        try:
+            conn.execute("ALTER TABLE tracks ADD COLUMN sync_source TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+        # Note: No index needed - sync queries scan all local tracks anyway.
+        # Composite indexes don't help with hash inequality comparisons.
+
+        conn.commit()
+        logger.info("  ✓ Migration to v44 complete: Content-based metadata sync")
 
 
 def init_database() -> None:

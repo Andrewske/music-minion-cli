@@ -44,7 +44,10 @@ export function UnassignedTrackTable({
       id: 'bpm',
       accessorKey: 'bpm',
       header: 'BPM',
-      cell: () => '-', // PlaylistTrackEntry doesn't have BPM
+      cell: (info) => {
+        const val = info.getValue() as number | undefined;
+        return val ? Math.round(val) : '-';
+      },
       size: 50,
       meta: { fixed: true },
     },
@@ -52,7 +55,7 @@ export function UnassignedTrackTable({
       id: 'key_signature',
       accessorKey: 'key_signature',
       header: 'Key',
-      cell: () => '-', // PlaylistTrackEntry doesn't have key
+      cell: (info) => info.getValue() ?? '-',
       size: 60,
       meta: { fixed: true },
     },

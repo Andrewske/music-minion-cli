@@ -5,6 +5,7 @@ import { usePlaylistOrganizer } from '../hooks/usePlaylistOrganizer';
 import { getPlaylistTracks } from '../api/playlists';
 import { CurrentTrackBanner } from '../components/organizer/CurrentTrackBanner';
 import { UnassignedTrackTable } from '../components/organizer/UnassignedTrackTable';
+import { BucketList } from '../components/organizer/BucketList';
 import { Button } from '../components/ui/button';
 import type { PlaylistOrganizerProps } from './PlaylistOrganizer.types';
 
@@ -26,6 +27,12 @@ export function PlaylistOrganizer({
     getBucketByIndex,
     isAssigning,
     isApplying,
+    createBucket,
+    updateBucket,
+    deleteBucket,
+    moveBucket,
+    shuffleBucket,
+    reorderTracks,
   } = usePlaylistOrganizer({ playlistId });
 
   // Load full track data for unassigned tracks
@@ -175,16 +182,19 @@ export function PlaylistOrganizer({
           />
         </div>
 
-        {/* Buckets section placeholder - will be in next task */}
+        {/* Buckets section */}
         <div className="mb-6">
           <h2 className="text-sm font-medium text-white/60 mb-2">Buckets</h2>
-          <div className="bg-obsidian-surface border border-obsidian-border rounded-lg p-8 text-center">
-            <div className="text-white/50 text-sm">
-              {buckets.length === 0
-                ? 'No buckets yet. Create buckets to organize tracks.'
-                : `${buckets.length} bucket${buckets.length !== 1 ? 's' : ''} • Bucket list coming in next task`}
-            </div>
-          </div>
+          <BucketList
+            buckets={buckets}
+            allTracks={allTracks?.tracks ?? []}
+            onCreateBucket={createBucket}
+            onMoveBucket={moveBucket}
+            onShuffleBucket={shuffleBucket}
+            onDeleteBucket={deleteBucket}
+            onUpdateBucket={updateBucket}
+            onReorderTracks={reorderTracks}
+          />
         </div>
 
         {/* Status bar */}
