@@ -34,6 +34,7 @@ export function PlaylistOrganizer({
     buckets,
     unassignedTrackIds,
     assignTrack,
+    unassignTrack,
     applyOrder,
     getBucketByIndex,
     isAssigning,
@@ -95,27 +96,104 @@ export function PlaylistOrganizer({
   // Handle drag end events
   const handleDragEnd = async (event: DragEndEvent): Promise<void> => {
     const { active, over } = event;
-
     if (!over) return;
 
     const dragType = active.data.current?.type;
 
+    // Case 1: Unassigned track → bucket (existing functionality)
     if (dragType === 'unassigned-track') {
-      // Validate drop target is a bucket
       if (over.data.current?.type !== 'bucket') return;
 
       const trackId = active.id as number;
       const bucketId = over.id as string;
+
+      // Type guard for development
+      if (typeof trackId !== 'number' || typeof bucketId !== 'string') {
+        console.error('Invalid drag data types:', { trackId, bucketId });
+        return;
+      }
 
       try {
         await assignTrack(bucketId, trackId);
         playNextUnassignedTrack(trackId);
       } catch (error) {
         console.error('Failed to assign track:', error);
-        toast.error('Failed to assign track to bucket');
+        toast.error(`Failed to assign track ${trackId} to bucket ${bucketId}: ${error.message}`);
+      }
+      return;
+    }
+
+    // Case 2: Bucket track → different bucket OR unassigned (NEW)
+    if (dragType === 'bucket-track') {
+      const trackId = active.id as number;
+      const sourceBucketId = active.data.current?.bucketId as string | undefined;
+
+      // Type guards for development
+      if (typeof trackId !== 'number') {
+        console.error('Invalid track ID type:', trackId);
+        return;
+      }
+
+      if (!sourceBucketId || typeof sourceBucketId !== 'string') {
+        console.error('Missing or invalid source bucket ID in drag data:', sourceBucketId);
+        return;
+      }
+
+      const overType = over.data.current?.type;
+
+      // Case 2a: Bucket track → different bucket
+      if (overType === 'bucket') {
+        const targetBucketId = over.id as string;
+
+        if (typeof targetBucketId !== 'string') {
+          console.error('Invalid target bucket ID type:', targetBucketId);
+          return;
+        }
+
+        // No-op if dropping on same bucket
+        if (targetBucketId === sourceBucketId) return;
+
+        try {
+          await assignTrack(targetBucketId, trackId);
+        } catch (error) {
+          console.error('Failed to move track between buckets:', error);
+          toast.error(`Failed to move track ${trackId} from bucket ${sourceBucketId} to ${targetBucketId}: ${error.message}`);
+        }
+        return;
+      }
+
+      // Case 2b: Bucket track → unassigned area
+      if (overType === 'unassigned-area') {
+        try {
+          await unassignTrack(sourceBucketId, trackId);
+        } catch (error) {
+          console.error('Failed to unassign track:', error);
+          toast.error(`Failed to unassign track ${trackId} from bucket ${sourceBucketId}: ${error.message}`);
+        }
+        return;
+      }
+
+      // Case 2c: Bucket track → track in different bucket (NEW)
+      if (overType === 'bucket-track') {
+        const targetBucketId = over.data.current?.bucketId as string | undefined;
+
+        if (!targetBucketId || typeof targetBucketId !== 'string') {
+          console.error('Missing or invalid target bucket ID in drag data:', targetBucketId);
+          return;
+        }
+
+        // No-op if dropping in same bucket (within-bucket reordering handled by child)
+        if (targetBucketId === sourceBucketId) return;
+
+        try {
+          await assignTrack(targetBucketId, trackId);
+        } catch (error) {
+          console.error('Failed to move track between buckets:', error);
+          toast.error(`Failed to move track ${trackId} from bucket ${sourceBucketId} to ${targetBucketId}: ${error.message}`);
+        }
+        return;
       }
     }
-    // bucket-track type is handled by SortableContext within buckets
   };
 
   // Keyboard handler for Shift+1-0
