@@ -13,7 +13,6 @@ Usage:
 import argparse
 import json
 import os
-import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,7 +24,6 @@ from openai import OpenAI
 
 from music_minion.core.config import load_config
 from music_minion.core.database import get_db_connection, get_track_by_path
-from music_minion.domain.library.deduplication import normalize_string
 from music_minion.domain.library.metadata import extract_track_metadata, write_metadata_to_file
 from music_minion.domain.library.provider import ProviderConfig, ProviderState
 from music_minion.domain.library.providers.soundcloud import api as sc_api
@@ -104,20 +102,34 @@ def fetch_soundcloud_track(soundcloud_id: str, access_token: str) -> dict:
     }
 
 
-def extract_id_from_url(url: str) -> Optional[str]:
-    """Extract SoundCloud track ID from URL.
+def resolve_soundcloud_url(url: str, access_token: str) -> Optional[str]:
+    """Resolve SoundCloud URL to track ID using /resolve endpoint.
 
     Args:
         url: SoundCloud URL (e.g., https://soundcloud.com/artist/track)
+        access_token: Valid OAuth access token
 
     Returns:
-        Track ID or None if URL is invalid
+        Track ID or None if URL is invalid or not a track
     """
-    # For now, we'll need to resolve the URL via the API
-    # SoundCloud URLs don't contain numeric IDs directly
-    # This would require calling /resolve endpoint
-    # For this implementation, we'll return None and handle in the main function
-    return None
+    resolve_url = "https://api.soundcloud.com/resolve"
+    headers = {"Authorization": f"OAuth {access_token}"}
+    params = {"url": url}
+
+    try:
+        response = requests.get(resolve_url, headers=headers, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+
+        # Ensure it's a track (not a playlist, user, etc.)
+        if data.get("kind") != "track":
+            print(f"⚠ URL is not a track (got: {data.get('kind')})")
+            return None
+
+        return str(data.get("id"))
+    except requests.HTTPError as e:
+        print(f"❌ Failed to resolve URL: {e}")
+        return None
 
 
 def find_soundcloud_matches_for_local(
@@ -246,7 +258,8 @@ def create_provider_state() -> ProviderState:
     token_data = None
     try:
         token_data = sc_auth._load_user_tokens()
-    except Exception:
+    except (OSError, ValueError):
+        # File missing or invalid JSON - not authenticated
         pass
 
     cache = {
@@ -524,6 +537,11 @@ def main() -> int:
 
     args = parser.parse_args()
 
+    # Validate OpenAI API key
+    if not os.getenv("OPENAI_API_KEY"):
+        print("❌ OPENAI_API_KEY not set. Add it to your .env file.")
+        return 1
+
     # Validate access token at script start
     access_token = get_valid_access_token()
     if not access_token:
@@ -546,90 +564,95 @@ def main() -> int:
 
     # Step 0: Check for --sc-url override
     if args.sc_url:
-        print(f"⚠ URL-based lookup not yet implemented: {args.sc_url}")
-        print("  Tip: Remove --sc-url to use fuzzy matching or API search")
-        return 1
+        print(f"🔗 Resolving SoundCloud URL: {args.sc_url}")
+        soundcloud_id = resolve_soundcloud_url(args.sc_url, access_token)
+        if not soundcloud_id:
+            return 1
+        print(f"✅ Resolved to SoundCloud ID: {soundcloud_id}")
+        # Skip lookup, go directly to fetch
+        matches = []  # No matches for confidence tracking
 
     # Step 1: Check existing soundcloud_id in DB
-    if track.get("soundcloud_id"):
+    elif track.get("soundcloud_id"):
         soundcloud_id = track["soundcloud_id"]
         print(f"✅ Track already linked to SoundCloud ID: {soundcloud_id}")
-        return 0
+        matches = []  # No matches for confidence tracking
 
-    # Step 2: Fuzzy match in DB
-    print(f"\nSearching for matches for: {track.get('title')} - {track.get('artist')}")
-    matches = find_soundcloud_matches_for_local(track)
+    else:
+        # Step 2: Fuzzy match in DB
+        print(f"\nSearching for matches for: {track.get('title')} - {track.get('artist')}")
+        matches = find_soundcloud_matches_for_local(track)
 
-    if matches:
-        if len(matches) == 1 and (args.auto and matches[0].confidence_score > 0.85):
-            # Auto-accept high confidence single match
-            soundcloud_id = matches[0].soundcloud_id
-            print(
-                f"✅ Auto-matched (confidence: {matches[0].confidence_score:.2f}): "
-                f"{matches[0].soundcloud_artist} - {matches[0].soundcloud_title}"
-            )
-        else:
-            # Prompt user to pick
-            soundcloud_id = prompt_for_match(matches)
-
-    # Step 3: SoundCloud API search fallback (only with --search flag)
-    if not soundcloud_id and args.search:
-        print("\nNo DB matches found, searching SoundCloud API...")
-        state = create_provider_state()
-
-        if not state.authenticated:
-            print("⚠ Not authenticated with SoundCloud")
-            print("  Run 'music-minion' and authenticate to enable API search")
-            return 1
-
-        # Build query from track metadata
-        query_parts = []
-        if track.get("title"):
-            query_parts.append(track["title"])
-        if track.get("artist"):
-            query_parts.append(track["artist"])
-        query = " ".join(query_parts)
-
-        if not query:
-            # Fallback to filename
-            query = local_path.stem
-
-        state, search_results = sc_api.search(state, query)
-
-        if search_results:
-            # Convert to MatchCandidate format for consistent prompt
-            search_matches = []
-            for sc_id, metadata in search_results[:5]:
-                # Create a dummy MatchCandidate for display
-                # We can't compute confidence without batch scoring
-                search_matches.append(
-                    MatchCandidate(
-                        soundcloud_id=sc_id,
-                        soundcloud_title=metadata.get("title", ""),
-                        soundcloud_artist=metadata.get("artist", ""),
-                        soundcloud_duration=metadata.get("duration", 0.0),
-                        title_similarity=0.0,
-                        artist_similarity=0.0,
-                        duration_match=0.0,
-                        confidence_score=0.0,  # Unknown from search
-                    )
+        if matches:
+            if len(matches) == 1 and (args.auto and matches[0].confidence_score > 0.85):
+                # Auto-accept high confidence single match
+                soundcloud_id = matches[0].soundcloud_id
+                print(
+                    f"✅ Auto-matched (confidence: {matches[0].confidence_score:.2f}): "
+                    f"{matches[0].soundcloud_artist} - {matches[0].soundcloud_title}"
                 )
+            else:
+                # Prompt user to pick
+                soundcloud_id = prompt_for_match(matches)
 
-            if search_matches:
-                print("\nAPI search results:")
-                for i, m in enumerate(search_matches, 1):
-                    duration_str = f"{int(m.soundcloud_duration)}s" if m.soundcloud_duration else "?"
-                    print(f"  [{i}] {m.soundcloud_artist} - {m.soundcloud_title} ({duration_str})")
-                print("  [s] Skip this track")
+        # Step 3: SoundCloud API search fallback (only with --search flag)
+        if not soundcloud_id and args.search:
+            print("\nNo DB matches found, searching SoundCloud API...")
+            state = create_provider_state()
 
-                choice = input("\nPick [1-5] or [s]: ").strip().lower()
-                if choice != "s":
-                    try:
-                        idx = int(choice) - 1
-                        if 0 <= idx < len(search_matches):
-                            soundcloud_id = search_matches[idx].soundcloud_id
-                    except ValueError:
-                        pass
+            if not state.authenticated:
+                print("⚠ Not authenticated with SoundCloud")
+                print("  Run 'music-minion' and authenticate to enable API search")
+                return 1
+
+            # Build query from track metadata
+            query_parts = []
+            if track.get("title"):
+                query_parts.append(track["title"])
+            if track.get("artist"):
+                query_parts.append(track["artist"])
+            query = " ".join(query_parts)
+
+            if not query:
+                # Fallback to filename
+                query = local_path.stem
+
+            state, search_results = sc_api.search(state, query)
+
+            if search_results:
+                # Convert to MatchCandidate format for consistent prompt
+                search_matches = []
+                for sc_id, metadata in search_results[:5]:
+                    # Create a dummy MatchCandidate for display
+                    # We can't compute confidence without batch scoring
+                    search_matches.append(
+                        MatchCandidate(
+                            soundcloud_id=sc_id,
+                            soundcloud_title=metadata.get("title", ""),
+                            soundcloud_artist=metadata.get("artist", ""),
+                            soundcloud_duration=metadata.get("duration", 0.0),
+                            title_similarity=0.0,
+                            artist_similarity=0.0,
+                            duration_match=0.0,
+                            confidence_score=0.0,  # Unknown from search
+                        )
+                    )
+
+                if search_matches:
+                    print("\nAPI search results:")
+                    for i, m in enumerate(search_matches, 1):
+                        duration_str = f"{int(m.soundcloud_duration)}s" if m.soundcloud_duration else "?"
+                        print(f"  [{i}] {m.soundcloud_artist} - {m.soundcloud_title} ({duration_str})")
+                    print("  [s] Skip this track")
+
+                    choice = input("\nPick [1-5] or [s]: ").strip().lower()
+                    if choice != "s":
+                        try:
+                            idx = int(choice) - 1
+                            if 0 <= idx < len(search_matches):
+                                soundcloud_id = search_matches[idx].soundcloud_id
+                        except ValueError:
+                            pass
 
     # Handle no match found
     if not soundcloud_id:
@@ -769,7 +792,7 @@ def main() -> int:
             usage=usage_stats,
             applied=applied,
         )
-        return 1
+        return 0  # Enrichment succeeded, linking is secondary
 
     # Log successful enrichment
     log_enrichment(
