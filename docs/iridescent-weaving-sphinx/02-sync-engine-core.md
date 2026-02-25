@@ -1,6 +1,6 @@
 ---
 task: 02-sync-engine-core
-status: pending
+status: done
 depends: [01-database-migration]
 files:
   - path: src/music_minion/domain/sync/engine.py
