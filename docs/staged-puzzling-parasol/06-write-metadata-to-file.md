@@ -1,6 +1,6 @@
 ---
 task: 06-write-metadata-to-file
-status: pending
+status: done
 depends: [05-preview-and-confirm]
 files:
   - path: scripts/enrich_metadata.py
