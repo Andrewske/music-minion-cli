@@ -160,17 +160,7 @@ export function PlaylistOrganizer({
     setActiveDragType(null);
   }, []);
 
-  // Pre-compute Maps for O(1) lookup during drag operations
-  const trackToBucketMap = useMemo(() => {
-    const map = new Map<number, { bucketId: string; emojiId: string | null }>();
-    for (const bucket of buckets) {
-      for (const trackId of bucket.track_ids) {
-        map.set(trackId, { bucketId: bucket.id, emojiId: bucket.emoji_id ?? null });
-      }
-    }
-    return map;
-  }, [buckets]);
-
+  // Pre-compute Map for O(1) lookup of track details during drag operations
   const trackIdToTrackMap = useMemo(() => {
     const map = new Map<number, PlaylistTrackEntry>();
     if (allTracks?.tracks) {
