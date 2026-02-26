@@ -1,6 +1,6 @@
 ---
 task: 02-implement-drag-preview-row
-status: pending
+status: done
 depends: []
 files:
   - path: web/frontend/src/pages/PlaylistOrganizer.tsx
