@@ -13,6 +13,7 @@ import {
 } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 import { toast } from 'react-toastify';
+import { GripVertical } from 'lucide-react';
 import { usePlayerStore } from '../stores/playerStore';
 import { usePlaylistOrganizer } from '../hooks/usePlaylistOrganizer';
 import { getPlaylistTracks } from '../api/playlists';
@@ -21,6 +22,7 @@ import { UnassignedTrackTable } from '../components/organizer/UnassignedTrackTab
 import { BucketList } from '../components/organizer/BucketList';
 import { Button } from '../components/ui/button';
 import type { PlaylistOrganizerProps } from './PlaylistOrganizer.types';
+import type { PlaylistTrackEntry } from '../types';
 
 export function PlaylistOrganizer({
   playlistId,
@@ -179,9 +181,29 @@ export function PlaylistOrganizer({
         setActiveId(null);
         setActiveDragType(null);
 
-        if (!over) return;
-
         const dragType = active.data.current?.type;
+
+        // Special case: Bucket track dropped outside any drop zone = unassign
+        if (!over && dragType === 'bucket-track') {
+          const trackId = active.id as number;
+          const sourceBucketId = active.data.current?.bucketId as string | undefined;
+
+          if (typeof trackId !== 'number' || !sourceBucketId) {
+            console.error('Invalid drag data for unassign:', { trackId, sourceBucketId });
+            return;
+          }
+
+          try {
+            await unassignTrack(sourceBucketId, trackId);
+          } catch (error) {
+            console.error('Failed to unassign track:', error);
+            const message = error instanceof Error ? error.message : String(error);
+            toast.error(`Failed to unassign track ${trackId}: ${message}`);
+          }
+          return;
+        }
+
+        if (!over) return;
 
         // Case 1: Unassigned track → bucket (existing functionality)
         if (dragType === 'unassigned-track') {
@@ -247,19 +269,7 @@ export function PlaylistOrganizer({
             return;
           }
 
-          // Case 2b: Bucket track → unassigned area
-          if (overType === 'unassigned-area') {
-            try {
-              await unassignTrack(sourceBucketId, trackId);
-            } catch (error) {
-              console.error('Failed to unassign track:', error);
-              const message = error instanceof Error ? error.message : String(error);
-              toast.error(`Failed to unassign track ${trackId} from bucket ${sourceBucketId}: ${message}`);
-            }
-            return;
-          }
-
-          // Case 2c: Bucket track → track in different bucket (cross-bucket move)
+          // Case 2b: Bucket track → track in different bucket (cross-bucket move)
           if (overType === 'bucket-track') {
             const targetBucketId = over.data.current?.bucketId as string | undefined;
 
@@ -268,7 +278,7 @@ export function PlaylistOrganizer({
               return;
             }
 
-            // Case 2c-i: Within-bucket reordering (same bucket)
+            // Case 2b-i: Within-bucket reordering (same bucket)
             if (targetBucketId === sourceBucketId) {
               const bucket = buckets.find((b) => b.id === sourceBucketId);
               if (!bucket) {
@@ -299,7 +309,7 @@ export function PlaylistOrganizer({
               return;
             }
 
-            // Case 2c-ii: Cross-bucket move (different bucket)
+            // Case 2b-ii: Cross-bucket move (different bucket)
             try {
               await assignTrack(targetBucketId, trackId);
             } catch (error) {
@@ -434,6 +444,7 @@ export function PlaylistOrganizer({
               tracks={unassignedTracks}
               currentTrackId={currentTrack?.id ?? null}
               onTrackClick={handlePlayTrack}
+              isDragging={activeId !== null && activeDragType === 'unassigned-track'}
             />
           </div>
 
