@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useMemo, useCallback } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -31,8 +31,8 @@ export function UnassignedTrackTable({
     data: { type: 'unassigned-area' },
   });
 
-  // Column definitions
-  const columns: ColumnDef<PlaylistTrackEntry>[] = [
+  // Column definitions - memoized to prevent table recalculation on every render
+  const columns: ColumnDef<PlaylistTrackEntry>[] = useMemo(() => [
     {
       id: 'drag',
       header: '',
@@ -86,10 +86,10 @@ export function UnassignedTrackTable({
       size: 70,
       meta: { fixed: true },
     },
-  ];
+  ], []); // Empty deps - columns definition never changes
 
-  // Helper to get flex style for fixed vs flexible columns
-  const getColumnFlex = (column: Column<PlaylistTrackEntry>): React.CSSProperties => {
+  // Helper to get flex style for fixed vs flexible columns - memoized to prevent re-creation
+  const getColumnFlex = useCallback((column: Column<PlaylistTrackEntry>): React.CSSProperties => {
     const meta = column.columnDef.meta as { fixed?: boolean; flexible?: boolean } | undefined;
     const size = column.getSize();
 
@@ -97,7 +97,7 @@ export function UnassignedTrackTable({
       return { flex: `0 0 ${size}px`, minWidth: 0 };
     }
     return { flex: `${size} 1 0`, minWidth: 0 };
-  };
+  }, []); // Empty deps - logic never changes
 
   // TanStack Table setup
   const table = useReactTable({
