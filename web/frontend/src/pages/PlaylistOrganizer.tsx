@@ -153,9 +153,15 @@ export function PlaylistOrganizer({
     const { active } = event;
     setActiveId(active.id as number);
     setActiveDragType(active.data.current?.type as 'unassigned-track' | 'bucket-track');
+
+    // Global cursor override for consistent drag UX
+    document.body.style.cursor = 'grabbing';
   }, []);
 
   const handleDragCancel = useCallback(() => {
+    // Reset cursor immediately
+    document.body.style.cursor = '';
+
     setActiveId(null);
     setActiveDragType(null);
   }, []);
@@ -180,6 +186,9 @@ export function PlaylistOrganizer({
   // Handle drag end events
   const handleDragEnd = useCallback(
     async (event: DragEndEvent): Promise<void> => {
+      // Reset cursor immediately
+      document.body.style.cursor = '';
+
       // Prevent concurrent drag operations
       if (isDragOperationInProgress.current) {
         console.warn('Drag operation already in progress, ignoring');
