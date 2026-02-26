@@ -125,14 +125,13 @@ export function UnassignedTrackTable({
   }
 
   function DraggableRow({ track, virtualRow, row, isPlaying, onTrackClick, getColumnFlex }: DraggableRowProps): JSX.Element {
-    const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
       id: track.id,
       data: { type: 'unassigned-track' },
     });
 
-    const dragTransform = transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : '';
+    // ONLY virtual scrolling transform - drag visuals handled by DragOverlay
     const virtualTransform = `translateY(${virtualRow.start}px)`;
-    const combinedTransform = transform ? dragTransform : virtualTransform;
 
     const rowClasses = `cursor-pointer hover:bg-white/5 transition-colors ${
       isPlaying ? 'bg-obsidian-accent/10 border-l-2 border-l-obsidian-accent' : ''
@@ -146,10 +145,10 @@ export function UnassignedTrackTable({
         style={{
           display: 'flex',
           position: 'absolute',
-          transform: combinedTransform,
+          transform: virtualTransform,
           width: '100%',
           height: `${virtualRow.size}px`,
-          opacity: isDragging ? 0.5 : 1,
+          opacity: isDragging ? 0 : 1,
         }}
       >
         {/* Drag handle */}
