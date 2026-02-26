@@ -24,6 +24,44 @@ import { Button } from '../components/ui/button';
 import type { PlaylistOrganizerProps } from './PlaylistOrganizer.types';
 import type { PlaylistTrackEntry } from '../types';
 
+function DragPreviewRow({ track }: { track: PlaylistTrackEntry }): JSX.Element {
+  return (
+    <div className="bg-obsidian-surface border-2 border-obsidian-accent rounded shadow-2xl cursor-grabbing transform scale-105 opacity-95">
+      <div className="flex items-center w-full px-3 py-2 text-sm">
+        {/* Drag handle icon */}
+        <div className="flex-none w-10 text-white/30">
+          <GripVertical className="w-4 h-4" />
+        </div>
+
+        {/* Title - flex 3 */}
+        <div className="flex-[3] min-w-0 px-2 text-white/90 truncate">
+          {track.title}
+        </div>
+
+        {/* Artist - flex 2 */}
+        <div className="flex-[2] min-w-0 px-2 text-white/70 truncate">
+          {track.artist ?? '-'}
+        </div>
+
+        {/* BPM - fixed 50px */}
+        <div className="flex-none w-[50px] px-2 text-white/60 text-center">
+          {track.bpm ? Math.round(track.bpm) : '-'}
+        </div>
+
+        {/* Key - fixed 60px */}
+        <div className="flex-none w-[60px] px-2 text-white/60 text-center">
+          {track.key_signature ?? '-'}
+        </div>
+
+        {/* Rating - fixed 70px */}
+        <div className="flex-none w-[70px] px-2 text-white/60 text-center">
+          {track.rating ? Math.round(track.rating) : '-'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function PlaylistOrganizer({
   playlistId,
   playlistName,
@@ -134,34 +172,20 @@ export function PlaylistOrganizer({
   }, [buckets]);
 
   const trackIdToTrackMap = useMemo(() => {
-    const map = new Map<number, { title: string; artist: string | null }>();
+    const map = new Map<number, PlaylistTrackEntry>();
     if (allTracks?.tracks) {
       for (const track of allTracks.tracks) {
-        map.set(track.id, { title: track.title, artist: track.artist });
+        map.set(track.id, track); // Store full track object
       }
     }
     return map;
   }, [allTracks]);
 
-  // Memoize track display with O(1) lookups
-  const activeTrackDisplay = useMemo(() => {
-    if (!activeId || !activeDragType) return null;
-
-    const track = trackIdToTrackMap.get(activeId);
-    if (!track) return 'Unknown Track';
-
-    if (activeDragType === 'unassigned-track') {
-      return track.title;
-    }
-
-    // Bucket track - O(1) lookup
-    const bucketInfo = trackToBucketMap.get(activeId);
-    if (bucketInfo) {
-      return `${bucketInfo.emojiId || '📦'} ${track.title}`;
-    }
-
-    return 'Unknown Track';
-  }, [activeId, activeDragType, trackIdToTrackMap, trackToBucketMap]);
+  // Get full track object for drag preview
+  const activeTrack = useMemo(() => {
+    if (!activeId) return null;
+    return trackIdToTrackMap.get(activeId) ?? null;
+  }, [activeId, trackIdToTrackMap]);
 
   // Handle drag end events
   const handleDragEnd = useCallback(
@@ -482,12 +506,8 @@ export function PlaylistOrganizer({
       </div>
 
       <DragOverlay>
-        {activeTrackDisplay ? (
-          <div className="bg-obsidian-surface border border-obsidian-accent rounded px-3 py-2 shadow-xl opacity-90 cursor-grabbing">
-            <div className="text-sm text-white/90 truncate max-w-md">
-              {activeTrackDisplay}
-            </div>
-          </div>
+        {activeId && activeTrack ? (
+          <DragPreviewRow track={activeTrack} />
         ) : null}
       </DragOverlay>
     </DndContext>
