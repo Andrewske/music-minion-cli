@@ -1,6 +1,6 @@
 ---
 task: 03-fix-cursor-styling
-status: pending
+status: done
 depends: [02-implement-drag-preview-row]
 files:
   - path: web/frontend/src/pages/PlaylistOrganizer.tsx
