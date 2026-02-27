@@ -19,7 +19,7 @@ This implementation modifies the playlist organizer to filter the playback queue
 3. [02-implement-queue-resolution.md](./02-implement-queue-resolution.md) - Implement queue resolution, shuffle, and looping for organizer context
 4. [03-real-time-queue-updates.md](./03-real-time-queue-updates.md) - Add WebSocket-based queue updates on assignment changes
 5. [04-frontend-integration.md](./04-frontend-integration.md) - Update frontend to use organizer context and remove manual auto-advance
-6. [05-session-validation.md](./05-session-validation.md) - Add validation for organizer playback requests
+6. [05-player-organizer-support.md](./05-player-organizer-support.md) - Add validation and loop restart handling for organizer playback
 7. [06-write-tests.md](./06-write-tests.md) - Write automated tests for organizer queue functionality
 
 ## Success Criteria

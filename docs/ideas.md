@@ -8,6 +8,7 @@
 6. [2] Deduplicate play counts within time window (10-30 min)
 7. [1] CRUD functions accept optional connection parameter
 8. [3] Mobile drag-and-drop support for playlist organizer
+9. [5] Refactor player state to immutable FP pattern
 
 ## 1. SoundCloud + AI Metadata Enrichment
 
@@ -130,3 +131,65 @@ Add touch-based drag-and-drop support for mobile devices in the playlist organiz
 - Does @dnd-kit's PointerSensor handle touch events, or do we need TouchSensor?
 - Should mobile use different visual feedback (larger drag handles, different opacity)?
 - Consider long-press context menu as alternative to drag-and-drop?
+
+## 9. Refactor Player State to Immutable FP Pattern - 2026-02-26
+
+Refactor `_playback_state` in `web/backend/routers/player.py` from mutable global to immutable state with explicit updates via `dataclasses.replace()`.
+
+**Context**: CLAUDE.md mandates "Immutable state: All updates via `dataclasses.replace()`, never mutation" but player.py uses direct mutation (`_playback_state.queue = ...`, `_playback_state.queue_index += 1`).
+
+**Current Problem**:
+- `PlaybackState` is a mutable global in player.py
+- Multiple modules need to modify it (player.py endpoints, buckets.py queue updates)
+- Cross-module state access creates tight coupling
+- Direct mutation makes testing difficult (can't inject state)
+
+**Proposed Pattern**:
+```python
+# playback_state_manager.py (new module)
+from dataclasses import dataclass, replace
+from threading import Lock
+
+@dataclass(frozen=True)
+class PlaybackState:
+    queue: tuple[dict, ...]  # Immutable tuple instead of list
+    queue_index: int
+    current_track: dict | None
+    # ... other fields
+
+_state: PlaybackState = PlaybackState(...)
+_state_lock = Lock()
+
+def get_state() -> PlaybackState:
+    return _state
+
+def update_state(fn: Callable[[PlaybackState], PlaybackState]) -> PlaybackState:
+    """Thread-safe state update via pure function."""
+    global _state
+    with _state_lock:
+        _state = fn(_state)
+        return _state
+
+# Usage in player.py
+def next_track():
+    def advance(state: PlaybackState) -> PlaybackState:
+        new_index = state.queue_index + 1
+        return replace(state, queue_index=new_index, current_track=state.queue[new_index])
+
+    new_state = update_state(advance)
+    await broadcast(new_state)
+```
+
+**Benefits**:
+- State changes are explicit and traceable
+- Pure update functions are easily testable
+- Cross-module access goes through single interface
+- Easier to add undo/replay capabilities later
+
+**Scope**:
+- Create `web/backend/playback_state_manager.py`
+- Migrate `PlaybackState` dataclass (make frozen)
+- Convert all `_playback_state.field = value` to `update_state(lambda s: replace(s, field=value))`
+- Update imports in player.py, buckets.py, queue_manager.py
+
+**Effort**: Medium-large refactor, touch ~5 files, ~200 lines changed

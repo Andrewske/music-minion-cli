@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 44  # Content-based metadata sync
+SCHEMA_VERSION = 45  # Add session_id to player_queue_state
 
 
 # Initial top 50 curated emojis for music reactions
@@ -2088,6 +2088,22 @@ def migrate_database(conn, current_version: int) -> None:
 
         conn.commit()
         logger.info("  ✓ Migration to v44 complete: Content-based metadata sync")
+
+    if current_version < 45:
+        logger.info("Migrating to v45: Add context_session_id to player_queue_state...")
+
+        # Add context_session_id column for organizer playback contexts
+        try:
+            conn.execute(
+                "ALTER TABLE player_queue_state ADD COLUMN context_session_id TEXT DEFAULT NULL"
+            )
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+        conn.commit()
+        logger.info(
+            "  ✓ Migration to v45 complete: Added context_session_id to player_queue_state"
+        )
 
 
 def init_database() -> None:
