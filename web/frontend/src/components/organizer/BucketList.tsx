@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { PlaylistTrackEntry } from '../../types';
 import type { Bucket } from '../../api/buckets';
+import type { Track } from '../../api/builder';
 import { BucketComponent } from './Bucket';
 import { BucketEditDialog } from './BucketEditDialog';
 import { Button } from '../ui/button';
@@ -17,6 +18,8 @@ interface BucketListProps {
   onUpdateBucket: (bucketId: string, updates: { name?: string; emoji_id?: string | null }) => Promise<void>;
   onReorderTracks: (bucketId: string, trackIds: number[]) => Promise<void>;
   onTrackClick: (trackId: number) => void;
+  onBucketHeaderClick?: (bucketId: string) => Promise<void>;
+  currentTrack?: Track | null;
 }
 
 export function BucketList({
@@ -30,6 +33,8 @@ export function BucketList({
   onUpdateBucket,
   onReorderTracks,
   onTrackClick,
+  onBucketHeaderClick,
+  currentTrack,
 }: BucketListProps): JSX.Element {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
@@ -78,6 +83,8 @@ export function BucketList({
               mobileExpandedBucketId === bucket.id ? null : bucket.id
             );
           }}
+          onHeaderClick={() => onBucketHeaderClick?.(bucket.id)}
+          isClickable={!!currentTrack}
         />
       ))}
 

@@ -166,6 +166,26 @@ export function PlaylistOrganizer({
     [currentTrack, buckets, assignTrack, playNextUnassignedTrack]
   );
 
+  const handleBucketHeaderClick = useCallback(
+    async (bucketId: string): Promise<void> => {
+      if (!currentTrack) return;
+
+      // Find which bucket (if any) currently contains this track
+      const currentBucketId = trackToBucketMap.get(currentTrack.id);
+
+      // If already in target bucket, no-op
+      if (currentBucketId === bucketId) return;
+
+      await assignTrack(bucketId, currentTrack.id);
+
+      // Only auto-advance if moving from unassigned
+      if (!currentBucketId) {
+        playNextUnassignedTrack(currentTrack.id);
+      }
+    },
+    [currentTrack, trackToBucketMap, assignTrack, playNextUnassignedTrack]
+  );
+
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const { active } = event;
     setActiveId(active.id as number);
@@ -534,6 +554,8 @@ export function PlaylistOrganizer({
               onUpdateBucket={updateBucket}
               onReorderTracks={reorderTracks}
               onTrackClick={handlePlayTrack}
+              onBucketHeaderClick={handleBucketHeaderClick}
+              currentTrack={currentTrack}
             />
           </div>
 

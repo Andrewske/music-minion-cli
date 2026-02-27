@@ -28,6 +28,8 @@ interface BucketComponentProps {
   isMobileExpanded?: boolean;
   onMobileToggle?: () => void;
   isActive?: boolean;
+  onHeaderClick?: () => void;
+  isClickable?: boolean;
 }
 
 // Sortable track item component
@@ -91,12 +93,14 @@ export function BucketComponent({
   onShuffle,
   onDelete,
   onUpdate,
-  onReorderTracks,
+  onReorderTracks: _onReorderTracks,
   onTrackClick,
   isMobile = false,
   isMobileExpanded = false,
   onMobileToggle,
   isActive = false,
+  onHeaderClick,
+  isClickable = false,
 }: BucketComponentProps): JSX.Element {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -150,10 +154,13 @@ export function BucketComponent({
       <div
         ref={setDropRef}
         data-testid={`bucket-header-${bucket.id}`}
+        onClick={onHeaderClick}
         className={`flex items-center gap-2 px-3 py-2 transition-colors ${
           isOver ? 'bg-obsidian-accent/20 border-obsidian-accent' : ''
         } ${
           isActive ? 'border-4' : 'border-l-4'
+        } ${
+          isClickable ? 'cursor-pointer hover:bg-white/5' : ''
         }`}
         style={{
           borderColor: getBucketColor(bucketIndex),
@@ -162,7 +169,10 @@ export function BucketComponent({
         {/* Expand/collapse button */}
         <button
           type="button"
-          onClick={handleToggleExpand}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleToggleExpand(e);
+          }}
           className="text-white/50 hover:text-white/80 transition-colors"
         >
           {actuallyExpanded ? (
@@ -199,7 +209,10 @@ export function BucketComponent({
           {/* Move up */}
           <button
             type="button"
-            onClick={() => onMove('up')}
+            onClick={(e) => {
+              e.stopPropagation();
+              onMove('up');
+            }}
             disabled={bucketIndex === 0}
             className="p-1.5 text-white/40 hover:text-white/80 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             title="Move up"
@@ -210,7 +223,10 @@ export function BucketComponent({
           {/* Move down */}
           <button
             type="button"
-            onClick={() => onMove('down')}
+            onClick={(e) => {
+              e.stopPropagation();
+              onMove('down');
+            }}
             disabled={bucketIndex === totalBuckets - 1}
             className="p-1.5 text-white/40 hover:text-white/80 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             title="Move down"
@@ -221,7 +237,10 @@ export function BucketComponent({
           {/* Shuffle */}
           <button
             type="button"
-            onClick={onShuffle}
+            onClick={(e) => {
+              e.stopPropagation();
+              onShuffle();
+            }}
             disabled={tracks.length < 2}
             className="p-1.5 text-white/40 hover:text-white/80 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             title="Shuffle tracks"
@@ -232,7 +251,10 @@ export function BucketComponent({
           {/* Edit */}
           <button
             type="button"
-            onClick={() => setIsEditDialogOpen(true)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsEditDialogOpen(true);
+            }}
             className="p-1.5 text-white/40 hover:text-white/80 transition-colors"
             title="Edit bucket"
           >
@@ -242,7 +264,10 @@ export function BucketComponent({
           {/* Delete */}
           <button
             type="button"
-            onClick={onDelete}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
             disabled={tracks.length > 0}
             className="p-1.5 text-white/40 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             title={tracks.length > 0 ? 'Cannot delete bucket with tracks' : 'Delete bucket'}

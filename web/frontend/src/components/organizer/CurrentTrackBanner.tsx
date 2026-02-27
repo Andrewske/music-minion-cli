@@ -54,11 +54,17 @@ export function CurrentTrackBanner({ buckets }: CurrentTrackBannerProps): JSX.El
         />
       </div>
 
-      {/* Keyboard hints */}
+      {/* Keyboard/tap hints */}
       <div className="flex items-center justify-between text-xs">
-        <div className="text-white/40">
+        {/* Desktop hint */}
+        <div className="hidden md:block text-white/40">
           Press <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/60">Shift</kbd> +{' '}
           <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/60">1</kbd>-<kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/60">{Math.min(buckets.length, 9)}</kbd> to assign to bucket
+        </div>
+
+        {/* Mobile hint */}
+        <div className="md:hidden text-white/40">
+          Tap bucket below to assign
         </div>
 
         {buckets.length === 0 && (
