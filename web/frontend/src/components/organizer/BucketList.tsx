@@ -16,7 +16,6 @@ interface BucketListProps {
   onShuffleBucket: (bucketId: string) => Promise<void>;
   onDeleteBucket: (bucketId: string) => Promise<void>;
   onUpdateBucket: (bucketId: string, updates: { name?: string; emoji_id?: string | null }) => Promise<void>;
-  onReorderTracks: (bucketId: string, trackIds: number[]) => Promise<void>;
   onTrackClick: (trackId: number) => void;
   onBucketHeaderClick?: (bucketId: string) => Promise<void>;
   currentTrack?: Track | null;
@@ -31,7 +30,6 @@ export function BucketList({
   onShuffleBucket,
   onDeleteBucket,
   onUpdateBucket,
-  onReorderTracks,
   onTrackClick,
   onBucketHeaderClick,
   currentTrack,
@@ -73,7 +71,6 @@ export function BucketList({
           onShuffle={() => onShuffleBucket(bucket.id)}
           onDelete={() => onDeleteBucket(bucket.id)}
           onUpdate={(updates) => onUpdateBucket(bucket.id, updates)}
-          onReorderTracks={(trackIds) => onReorderTracks(bucket.id, trackIds)}
           onTrackClick={onTrackClick}
           isMobile={isMobile}
           isMobileExpanded={mobileExpandedBucketId === bucket.id}

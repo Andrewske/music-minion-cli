@@ -22,7 +22,6 @@ interface BucketComponentProps {
   onShuffle: () => Promise<void>;
   onDelete: () => Promise<void>;
   onUpdate: (updates: { name?: string; emoji_id?: string | null }) => Promise<void>;
-  onReorderTracks: (trackIds: number[]) => Promise<void>;
   onTrackClick: (trackId: number) => void;
   isMobile?: boolean;
   isMobileExpanded?: boolean;
@@ -93,7 +92,6 @@ export function BucketComponent({
   onShuffle,
   onDelete,
   onUpdate,
-  onReorderTracks: _onReorderTracks,
   onTrackClick,
   isMobile = false,
   isMobileExpanded = false,
@@ -169,10 +167,7 @@ export function BucketComponent({
         {/* Expand/collapse button */}
         <button
           type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleToggleExpand(e);
-          }}
+          onClick={handleToggleExpand}
           className="text-white/50 hover:text-white/80 transition-colors"
         >
           {actuallyExpanded ? (
