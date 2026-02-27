@@ -291,6 +291,12 @@ async def assign_track_endpoint(bucket_id: str, track_id: int):
         result = bucket_queries.assign_track_to_bucket(bucket_id, track_id)
         if not result:
             raise HTTPException(status_code=404, detail="Bucket not found")
+
+        # Get session_id to update organizer queue if playing
+        session_id = _get_session_id_for_bucket(bucket_id)
+        if session_id:
+            await update_organizer_queue(session_id)
+
         return result
     except HTTPException:
         raise
@@ -308,6 +314,12 @@ async def unassign_track_endpoint(bucket_id: str, track_id: int) -> dict[str, bo
             raise HTTPException(
                 status_code=404, detail="Track not in bucket or bucket not found"
             )
+
+        # Get session_id to update organizer queue if playing
+        session_id = _get_session_id_for_bucket(bucket_id)
+        if session_id:
+            await update_organizer_queue(session_id)
+
         return {"unassigned": True}
     except HTTPException:
         raise
@@ -315,6 +327,53 @@ async def unassign_track_endpoint(bucket_id: str, track_id: int) -> dict[str, bo
         logger.exception("Failed to unassign track")
         raise HTTPException(
             status_code=500, detail=f"Failed to unassign track: {str(e)}"
+        )
+
+
+@router.delete("/sessions/{session_id}/buckets/{bucket_id}/tracks")
+async def bulk_unassign_from_bucket(
+    session_id: str,
+    bucket_id: str
+) -> dict:
+    """Unassign all tracks from a bucket (empty the bucket)."""
+    from music_minion.core.database import get_db_connection
+
+    try:
+        # Validate session exists and is active
+        session = bucket_queries.get_session_with_data(session_id)
+        if not session:
+            raise HTTPException(404, f"Session {session_id} not found")
+        if session["status"] != "active":
+            raise HTTPException(400, f"Session is {session['status']}, cannot modify")
+
+        # Validate bucket exists in session
+        bucket = next((b for b in session["buckets"] if b["id"] == bucket_id), None)
+        if not bucket:
+            raise HTTPException(404, f"Bucket {bucket_id} not found in session")
+
+        # Delete all assignments for this bucket
+        with get_db_connection() as db_conn:
+            cursor = db_conn.execute(
+                "DELETE FROM bucket_track_assignments WHERE bucket_id = ?",
+                (bucket_id,)
+            )
+            deleted_count = cursor.rowcount
+            db_conn.commit()
+
+        # Update queue if currently playing from this session
+        await update_organizer_queue(session_id)
+
+        return {
+            "session_id": session_id,
+            "bucket_id": bucket_id,
+            "tracks_unassigned": deleted_count
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Failed to bulk unassign tracks")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to bulk unassign tracks: {str(e)}"
         )
 
 
