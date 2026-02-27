@@ -91,9 +91,25 @@ export function BucketComponent({
   onUpdate,
   onReorderTracks,
   onTrackClick,
+  isMobile = false,
+  isMobileExpanded = false,
+  onMobileToggle,
 }: BucketComponentProps): JSX.Element {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+
+  // Determine actual expanded state based on mobile/desktop mode
+  const actuallyExpanded = isMobile ? isMobileExpanded : isExpanded;
+
+  // Handle expand/collapse button click
+  const handleToggleExpand = (e: React.MouseEvent): void => {
+    e.stopPropagation();
+    if (isMobile && onMobileToggle) {
+      onMobileToggle();
+    } else {
+      setIsExpanded(!isExpanded);
+    }
+  };
 
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: bucket.id,
@@ -102,11 +118,17 @@ export function BucketComponent({
 
   // Auto-expand on drag hover
   useEffect(() => {
-    if (isOver && !isExpanded) {
-      const timer = setTimeout(() => setIsExpanded(true), 500);
+    if (isOver && !actuallyExpanded) {
+      const timer = setTimeout(() => {
+        if (isMobile && onMobileToggle) {
+          onMobileToggle();
+        } else {
+          setIsExpanded(true);
+        }
+      }, 500);
       return () => clearTimeout(timer);
     }
-  }, [isOver, isExpanded, setIsExpanded]);
+  }, [isOver, actuallyExpanded, isMobile, onMobileToggle]);
 
   // Track IDs for sortable context
   const trackIds = tracks.map((t) => t.id);
@@ -132,10 +154,10 @@ export function BucketComponent({
         {/* Expand/collapse button */}
         <button
           type="button"
-          onClick={() => setIsExpanded(!isExpanded)}
+          onClick={handleToggleExpand}
           className="text-white/50 hover:text-white/80 transition-colors"
         >
-          {isExpanded ? (
+          {actuallyExpanded ? (
             <ChevronDown className="w-4 h-4" />
           ) : (
             <ChevronRight className="w-4 h-4" />
@@ -223,7 +245,7 @@ export function BucketComponent({
       </div>
 
       {/* Expanded track list */}
-      {isExpanded && (
+      {actuallyExpanded && (
         <div className="border-t border-obsidian-border">
           {tracks.length === 0 ? (
             <div className="px-3 py-4 text-center text-sm text-white/40">

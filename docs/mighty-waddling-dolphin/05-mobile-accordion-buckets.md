@@ -1,6 +1,6 @@
 ---
 task: 05-mobile-accordion-buckets
-status: pending
+status: done
 depends: []
 files:
   - path: web/frontend/src/hooks/useIsMobile.ts
