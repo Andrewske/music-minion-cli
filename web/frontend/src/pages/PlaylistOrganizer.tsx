@@ -69,6 +69,7 @@ export function PlaylistOrganizer({
 }: PlaylistOrganizerProps): JSX.Element {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const play = usePlayerStore((s) => s.play);
+  const shuffleEnabled = usePlayerStore((state) => state.shuffleEnabled);
 
   const {
     session,
@@ -128,22 +129,6 @@ export function PlaylistOrganizer({
   const [isUnassignedExpanded, setIsUnassignedExpanded] = useState(true);
   const isDragOperationInProgress = useRef(false);
 
-  // Auto-advance helper function (used by both keyboard shortcuts and drag-and-drop)
-  const playNextUnassignedTrack = useCallback(
-    (excludeTrackId: number): void => {
-      const remainingUnassigned = unassignedTrackIds.filter((id) => id !== excludeTrackId);
-      if (remainingUnassigned.length > 0 && allTracks?.tracks) {
-        const nextTrack = allTracks.tracks.find((t) => t.id === remainingUnassigned[0]);
-        if (nextTrack) {
-          play(
-            { id: nextTrack.id, title: nextTrack.title, artist: nextTrack.artist },
-            { type: 'playlist', playlist_id: playlistId }
-          );
-        }
-      }
-    },
-    [unassignedTrackIds, allTracks, playlistId, play]
-  );
 
   // Assign current track to a bucket (used by keyboard shortcuts and header clicks)
   const assignCurrentTrackToBucket = useCallback(
@@ -157,13 +142,8 @@ export function PlaylistOrganizer({
       if (currentBucketId === bucketId) return;
 
       await assignTrack(bucketId, currentTrack.id);
-
-      // Only auto-advance if moving from unassigned
-      if (!currentBucketId) {
-        playNextUnassignedTrack(currentTrack.id);
-      }
     },
-    [currentTrack, trackToBucketMap, assignTrack, playNextUnassignedTrack]
+    [currentTrack, trackToBucketMap, assignTrack]
   );
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
@@ -366,7 +346,7 @@ export function PlaylistOrganizer({
         isDragOperationInProgress.current = false;
       }
     },
-    [buckets, assignTrack, unassignTrack, reorderTracks, playNextUnassignedTrack]
+    [buckets, assignTrack, unassignTrack, reorderTracks]
   );
 
   // Keyboard handler for Shift+1-0
@@ -398,29 +378,42 @@ export function PlaylistOrganizer({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentTrack, getBucketByIndex, assignCurrentTrackToBucket]);
 
+  // Save session ID when created/resumed
+  useEffect(() => {
+    if (session && playlistId) {
+      localStorage.setItem(`organizer-session-${playlistId}`, session.id);
+    }
+  }, [session, playlistId]);
+
   // Handle playing a track from the table
   const handlePlayTrack = useCallback(
     (trackId: number): void => {
       const tracks = allTracks?.tracks;
       const track = tracks?.find((t) => t.id === trackId);
-      if (track) {
+      if (track && session) {
         play(
           {
             id: track.id,
             title: track.title,
             artist: track.artist,
           },
-          { type: 'playlist', playlist_id: playlistId }
+          {
+            type: 'organizer',
+            playlist_id: playlistId,
+            session_id: session.id,
+            shuffle: shuffleEnabled
+          }
         );
       }
     },
-    [allTracks, play, playlistId]
+    [allTracks, play, playlistId, session, shuffleEnabled]
   );
 
   // Handle applying the order
   const handleApplyOrder = useCallback(async (): Promise<void> => {
     await applyOrder();
-  }, [applyOrder]);
+    localStorage.removeItem(`organizer-session-${playlistId}`);
+  }, [applyOrder, playlistId]);
 
   // Loading state
   if (isLoading) {

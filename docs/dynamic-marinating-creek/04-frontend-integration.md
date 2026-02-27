@@ -1,6 +1,6 @@
 ---
 task: 04-frontend-integration
-status: pending
+status: done
 depends: [01-extend-playcontext-schema]
 files:
   - path: web/frontend/src/stores/playerStore.ts

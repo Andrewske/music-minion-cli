@@ -11,10 +11,11 @@ interface Device {
 }
 
 export interface PlayContext {
-  type: 'playlist' | 'track' | 'builder' | 'search' | 'comparison';
+  type: 'playlist' | 'track' | 'builder' | 'search' | 'comparison' | 'organizer';
   track_ids?: number[];
   playlist_id?: number;
   builder_id?: number;
+  session_id?: string;
   query?: string;
   start_index?: number;
   shuffle?: boolean;

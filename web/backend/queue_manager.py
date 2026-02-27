@@ -116,6 +116,14 @@ def get_next_track(
                 all_track_ids = _resolve_context_to_track_ids(context, db_conn)
                 # Filter out exclusions
                 available = [tid for tid in all_track_ids if tid not in exclusion_ids]
+
+                # NEW: Loop restart for organizer context
+                if not available and all_track_ids and context.type == "organizer":
+                    # All tracks excluded - return None to signal queue rebuild needed
+                    # Caller should detect None and call rebuild_queue() to clear exclusions
+                    logger.info("Organizer loop exhausted - triggering queue rebuild")
+                    return None
+
                 return available[0] if available else None
 
     except Exception as e:
@@ -238,8 +246,8 @@ def save_queue_state(
             INSERT OR REPLACE INTO player_queue_state (
                 id, context_type, context_id, shuffle_enabled,
                 sort_field, sort_direction, queue_track_ids,
-                queue_index, position_in_playlist, updated_at
-            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                queue_index, position_in_playlist, context_session_id, updated_at
+            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """,
             (
                 context.type,
@@ -249,7 +257,8 @@ def save_queue_state(
                 sort_direction,
                 queue_json,
                 queue_index,
-                position_in_playlist
+                position_in_playlist,
+                context.session_id if context.type == "organizer" else None
             )
         )
         db_conn.commit()
@@ -272,7 +281,7 @@ def load_queue_state(db_conn) -> Optional[dict]:
             """
             SELECT context_type, context_id, shuffle_enabled,
                    sort_field, sort_direction, queue_track_ids,
-                   queue_index, position_in_playlist
+                   queue_index, position_in_playlist, context_session_id
             FROM player_queue_state
             WHERE id = 1
             """
@@ -298,7 +307,8 @@ def load_queue_state(db_conn) -> Optional[dict]:
         context = _reconstruct_play_context(
             row["context_type"],
             row["context_id"],
-            row["shuffle_enabled"]
+            row["shuffle_enabled"],
+            row["context_session_id"]
         )
 
         state = {
@@ -439,6 +449,20 @@ def _get_random_track_from_playlist(
 
         elif context.type == "comparison" and context.track_ids:
             return _get_random_from_comparison(context.track_ids, exclusion_ids)
+
+        elif context.type == "organizer" and context.session_id:
+            # Organizer shuffle mode
+            from ..queries.buckets import get_session_with_data
+            session = get_session_with_data(context.session_id)
+            if session and session["status"] == "active":
+                available = [tid for tid in session["unassigned_track_ids"] if tid not in exclusion_ids]
+                if not available and session["unassigned_track_ids"]:
+                    # Loop restart - return None to signal queue rebuild needed
+                    # Caller (player.py) should detect None and call rebuild_queue()
+                    logger.info("Organizer loop exhausted - triggering queue rebuild")
+                    return None
+                return random.choice(available) if available else None
+            return None
 
         else:
             logger.warning(f"Unsupported context type for random track: {context.type}")
@@ -669,6 +693,16 @@ def _resolve_context_to_track_ids(
         elif context.type == "comparison" and context.track_ids:
             return context.track_ids
 
+        elif context.type == "organizer" and context.session_id:
+            # Organizer context - return only unassigned tracks
+            from ..queries.buckets import get_session_with_data
+            session = get_session_with_data(context.session_id)
+            if session and session["status"] == "active":
+                return session["unassigned_track_ids"]
+            else:
+                logger.warning(f"Organizer session {context.session_id} not found or inactive")
+                return []
+
         elif context.type == "search":
             # TODO: Implement search query execution
             logger.warning("Search context not yet implemented")
@@ -703,14 +737,16 @@ def _get_context_id(context: "PlayContext") -> Optional[int]:
 def _reconstruct_play_context(
     context_type: str,
     context_id: Optional[int],
-    shuffle: bool
+    shuffle: bool,
+    context_session_id: Optional[str] = None
 ) -> PlayContext:
     """Reconstruct PlayContext from database fields.
 
     Args:
-        context_type: Type of context (playlist/builder/comparison)
+        context_type: Type of context (playlist/builder/comparison/organizer)
         context_id: ID of playlist/builder
         shuffle: Shuffle enabled state
+        context_session_id: Session ID for organizer context
 
     Returns:
         PlayContext instance
@@ -732,6 +768,30 @@ def _reconstruct_play_context(
         return PlayContext(
             type="comparison",
             track_ids=[],
+            shuffle=shuffle
+        )
+    elif context_type == "organizer":
+        # Reconstruct organizer context with session_id from database
+        # (requires context_session_id column added in task 00)
+        from ..queries.buckets import get_session_with_data
+
+        # Validate session still exists and is active
+        if context_session_id:
+            session = get_session_with_data(context_session_id)
+            if session and session["status"] == "active":
+                return PlayContext(
+                    type="organizer",
+                    playlist_id=context_id,
+                    session_id=context_session_id,
+                    shuffle=shuffle
+                )
+            else:
+                logger.warning(f"Organizer session {context_session_id} no longer active, falling back to playlist")
+
+        # Fallback to regular playlist if session invalid/missing
+        return PlayContext(
+            type="playlist",
+            playlist_id=context_id,
             shuffle=shuffle
         )
     else:
