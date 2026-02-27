@@ -1,6 +1,6 @@
 ---
 task: 00-database-migration
-status: pending
+status: done
 depends: []
 files:
   - path: src/music_minion/core/database.py
@@ -28,17 +28,12 @@ CREATE TABLE IF NOT EXISTS player_queue_state (
 
 ## Migration SQL
 
-Add new columns:
+Add new column:
 
 ```sql
 -- Store session ID for organizer contexts
 ALTER TABLE player_queue_state
 ADD COLUMN context_session_id TEXT DEFAULT NULL;
-
--- Future-proof: metadata for bucket customization (colors, emojis, icons)
--- Not used in this implementation but cheap to add now, expensive to retrofit later
-ALTER TABLE bucket_sessions
-ADD COLUMN metadata TEXT DEFAULT NULL;  -- JSON stored as text
 ```
 
 ## Implementation Details
@@ -50,8 +45,8 @@ ADD COLUMN metadata TEXT DEFAULT NULL;  -- JSON stored as text
 Find the `player_queue_state` table creation and update schema version:
 
 ```python
-# Update to schema version 32 (or next available)
-SCHEMA_VERSION = 32
+# Update to schema version 36 (current is 35)
+SCHEMA_VERSION = 36
 
 # In _migrate_database() or table creation:
 cursor.execute("""
@@ -68,7 +63,7 @@ cursor.execute("""
 """)
 
 # Add migration for existing databases:
-# In migration logic (check current version < 32):
+# In migration logic (check current version < 36):
 cursor.execute("""
     ALTER TABLE player_queue_state
     ADD COLUMN context_session_id TEXT DEFAULT NULL

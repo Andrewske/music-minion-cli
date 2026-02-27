@@ -1,7 +1,7 @@
 ---
 task: 06-write-tests
 status: pending
-depends: [02-implement-queue-resolution, 03-real-time-queue-updates, 05-session-validation]
+depends: [02-implement-queue-resolution, 03-real-time-queue-updates, 05-player-organizer-support]
 files:
   - path: web/backend/tests/test_queue_manager.py
     action: modify
@@ -173,8 +173,7 @@ def test_resolve_organizer_context_inactive_session_returns_empty(test_db):
 @pytest.mark.asyncio
 async def test_queue_update_removes_assigned_track():
     """Assigning a track should remove it from queue in real-time."""
-    from web.backend.routers.buckets import _update_organizer_queue_if_active
-    from web.backend.routers.player import _playback_state
+    from web.backend.routers.player import update_organizer_queue, _playback_state
     from unittest.mock import patch, AsyncMock
 
     # Setup initial queue with tracks 1,2,3
@@ -202,11 +201,11 @@ async def test_queue_update_removes_assigned_track():
         assigned_track_ids=[2]  # Track 2 now assigned
     )
 
-    with patch("web.backend.routers.buckets.get_playback_state", return_value=mock_state), \
-         patch("web.backend.routers.buckets.get_session_with_data", return_value=mock_session), \
-         patch("web.backend.routers.buckets.sync_manager.broadcast", new_callable=AsyncMock):
+    with patch("web.backend.routers.player.get_playback_state", return_value=mock_state), \
+         patch("web.backend.routers.player.get_session_with_data", return_value=mock_session), \
+         patch("web.backend.routers.player.sync_manager.broadcast", new_callable=AsyncMock):
 
-        await _update_organizer_queue_if_active("test-session-123")
+        await update_organizer_queue("test-session-123")
 
     # Queue should now only have tracks 1 and 3
     assert len(_playback_state.queue) == 2
@@ -221,8 +220,7 @@ async def test_queue_update_removes_assigned_track():
 @pytest.mark.asyncio
 async def test_queue_update_adds_unassigned_track():
     """Unassigning a track should add it back to queue in real-time."""
-    from web.backend.routers.buckets import _update_organizer_queue_if_active
-    from web.backend.routers.player import _playback_state
+    from web.backend.routers.player import update_organizer_queue, _playback_state
     from unittest.mock import patch, AsyncMock
 
     # Setup queue missing track 2 (was assigned)
@@ -230,6 +228,8 @@ async def test_queue_update_adds_unassigned_track():
         {"id": 1, "title": "Track 1"},
         {"id": 3, "title": "Track 3"}
     ]
+    _playback_state.current_track = {"id": 1}
+    _playback_state.queue_index = 0
 
     mock_state = {
         "context": {
@@ -243,28 +243,23 @@ async def test_queue_update_adds_unassigned_track():
     # Mock session after unassigning track 2
     mock_session = create_test_session(
         all_track_ids=[1, 2, 3],
-        assigned_track_ids=[]  # Track 2 unassigned
+        assigned_track_ids=[]  # Track 2 now unassigned
     )
 
-    # Mock batch_fetch to return track 2
-    mock_tracks = {
-        1: {"id": 1, "title": "Track 1"},
-        2: {"id": 2, "title": "Track 2"},
-        3: {"id": 3, "title": "Track 3"}
-    }
+    with patch("web.backend.routers.player.get_playback_state", return_value=mock_state), \
+         patch("web.backend.routers.player.get_session_with_data", return_value=mock_session), \
+         patch("web.backend.routers.player.batch_fetch_tracks_with_metadata", return_value=[{"id": 2, "title": "Track 2"}]), \
+         patch("web.backend.routers.player.sync_manager.broadcast", new_callable=AsyncMock):
 
-    with patch("web.backend.routers.buckets.get_playback_state", return_value=mock_state), \
-         patch("web.backend.routers.buckets.get_session_with_data", return_value=mock_session), \
-         patch("web.backend.routers.buckets.sync_manager.broadcast", new_callable=AsyncMock):
+        await update_organizer_queue("test-session-123")
 
-        # Note: This test needs queue to be rebuilt or track 2 added back
-        # The current implementation filters existing queue, doesn't add new tracks
-        # This is a potential gap - unassigned tracks won't appear until queue rebuild
-        await _update_organizer_queue_if_active("test-session-123")
-
-    # This test will fail with current implementation - tracks don't get added back
-    # Queue rebuild is needed, or we need to modify _update_organizer_queue_if_active
-    # to fetch and add unassigned tracks
+    # Track 2 should now be in queue (appended to end)
+    assert len(_playback_state.queue) == 3
+    queue_ids = [t["id"] for t in _playback_state.queue]
+    assert 2 in queue_ids
+    # Original tracks still present
+    assert 1 in queue_ids
+    assert 3 in queue_ids
 ```
 
 ### Test 7: Session Validation
@@ -315,16 +310,13 @@ Expected results:
 - ✅ test_organizer_loop_shuffle_returns_none_when_exhausted
 - ✅ test_resolve_organizer_context_inactive_session_returns_empty
 - ✅ test_queue_update_removes_assigned_track
-- ❓ test_queue_update_adds_unassigned_track (may fail - see note in test)
+- ✅ test_queue_update_adds_unassigned_track
 - ✅ test_play_endpoint_rejects_invalid_organizer_session
 
-## Known Gaps
+## Notes
 
-**Test 6 reveals a potential issue:** The current `_update_organizer_queue_if_active()` implementation only FILTERS the existing queue - it doesn't ADD tracks back when they're unassigned. Unassigned tracks won't appear until the next queue rebuild.
+The `update_organizer_queue()` function in player.py handles both:
+1. Removing assigned tracks from queue
+2. Adding newly unassigned tracks back to queue (appended to end)
 
-**Options:**
-1. Accept this limitation - unassigned tracks appear on next natural queue rebuild
-2. Modify `_update_organizer_queue_if_active()` to fetch missing tracks and add them back
-3. Trigger a full queue rebuild when tracks are unassigned
-
-This should be discussed and decided before implementation.
+This is implemented via `newly_unassigned_ids` detection in the function.
