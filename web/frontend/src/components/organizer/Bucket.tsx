@@ -22,15 +22,17 @@ interface BucketComponentProps {
   onDelete: () => Promise<void>;
   onUpdate: (updates: { name?: string; emoji_id?: string | null }) => Promise<void>;
   onReorderTracks: (trackIds: number[]) => Promise<void>;
+  onTrackClick: (trackId: number) => void;
 }
 
 // Sortable track item component
 interface SortableTrackProps {
   track: PlaylistTrackEntry;
   bucketId: string;
+  onTrackClick: (trackId: number) => void;
 }
 
-function SortableTrack({ track, bucketId }: SortableTrackProps): JSX.Element {
+function SortableTrack({ track, bucketId, onTrackClick }: SortableTrackProps): JSX.Element {
   const {
     attributes,
     listeners,
@@ -56,12 +58,14 @@ function SortableTrack({ track, bucketId }: SortableTrackProps): JSX.Element {
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-2 px-3 py-2 bg-obsidian-surface border-b border-obsidian-border/50 last:border-b-0 hover:bg-white/5"
+      className="flex items-center gap-2 px-3 py-2 bg-obsidian-surface border-b border-obsidian-border/50 last:border-b-0 hover:bg-white/5 cursor-pointer"
+      onClick={() => onTrackClick(track.id)}
     >
       <div
         {...attributes}
         {...listeners}
         className="cursor-grab active:cursor-grabbing text-white/30 hover:text-white/60"
+        onClick={(e) => e.stopPropagation()}
       >
         <GripVertical className="w-4 h-4" />
       </div>
@@ -83,6 +87,7 @@ export function BucketComponent({
   onDelete,
   onUpdate,
   onReorderTracks,
+  onTrackClick,
 }: BucketComponentProps): JSX.Element {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -227,7 +232,7 @@ export function BucketComponent({
               strategy={verticalListSortingStrategy}
             >
               {tracks.map((track) => (
-                <SortableTrack key={track.id} track={track} bucketId={bucket.id} />
+                <SortableTrack key={track.id} track={track} bucketId={bucket.id} onTrackClick={onTrackClick} />
               ))}
             </SortableContext>
           )}

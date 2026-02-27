@@ -13,7 +13,7 @@ import {
 } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 import { toast } from 'react-toastify';
-import { GripVertical } from 'lucide-react';
+import { GripVertical, ChevronDown, ChevronRight } from 'lucide-react';
 import { usePlayerStore } from '../stores/playerStore';
 import { usePlaylistOrganizer } from '../hooks/usePlaylistOrganizer';
 import { getPlaylistTracks } from '../api/playlists';
@@ -109,6 +109,7 @@ export function PlaylistOrganizer({
 
   const [activeId, setActiveId] = useState<number | null>(null);
   const [activeDragType, setActiveDragType] = useState<'unassigned-track' | 'bucket-track' | null>(null);
+  const [isUnassignedExpanded, setIsUnassignedExpanded] = useState(true);
   const isDragOperationInProgress = useRef(false);
 
   // Auto-advance helper function (used by both keyboard shortcuts and drag-and-drop)
@@ -243,7 +244,6 @@ export function PlaylistOrganizer({
 
           try {
             await assignTrack(bucketId, trackId);
-            playNextUnassignedTrack(trackId);
           } catch (error) {
             console.error('Failed to assign track:', error);
             const message = error instanceof Error ? error.message : String(error);
@@ -462,17 +462,50 @@ export function PlaylistOrganizer({
 
           {/* Unassigned tracks table */}
           <div className="mb-6">
-            <h2 className="text-sm font-medium text-white/60 mb-2">Unassigned Tracks</h2>
-            <UnassignedTrackTable
-              tracks={unassignedTracks}
-              currentTrackId={currentTrack?.id ?? null}
-              onTrackClick={handlePlayTrack}
-              isDragging={activeId !== null && activeDragType === 'unassigned-track'}
-            />
+            <div className="bg-obsidian-surface border border-obsidian-border rounded-lg overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center gap-2 px-3 py-2">
+                {/* Expand/collapse button */}
+                <button
+                  type="button"
+                  onClick={() => setIsUnassignedExpanded(!isUnassignedExpanded)}
+                  className="text-white/50 hover:text-white/80 transition-colors"
+                >
+                  {isUnassignedExpanded ? (
+                    <ChevronDown className="w-4 h-4" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4" />
+                  )}
+                </button>
+
+                {/* Name and count */}
+                <div className="flex-1">
+                  <span className="text-sm font-medium text-white/90">
+                    Unassigned Tracks
+                  </span>
+                  <span className="text-xs text-white/40 ml-2">
+                    ({unassignedTrackIds.length})
+                  </span>
+                </div>
+              </div>
+
+              {/* Expanded track table */}
+              {isUnassignedExpanded && (
+                <div className="border-t border-obsidian-border">
+                  <UnassignedTrackTable
+                    tracks={unassignedTracks}
+                    currentTrackId={currentTrack?.id ?? null}
+                    onTrackClick={handlePlayTrack}
+                    isDragging={activeId !== null && activeDragType === 'unassigned-track'}
+                    noBorder={true}
+                  />
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Buckets section */}
-          <div className="mb-6">
+          {/* Buckets section - sticky container */}
+          <div className="sticky top-0 z-10 bg-black pb-4">
             <h2 className="text-sm font-medium text-white/60 mb-2">Buckets</h2>
             <BucketList
               buckets={buckets}
@@ -483,6 +516,7 @@ export function PlaylistOrganizer({
               onDeleteBucket={deleteBucket}
               onUpdateBucket={updateBucket}
               onReorderTracks={reorderTracks}
+              onTrackClick={handlePlayTrack}
             />
           </div>
 

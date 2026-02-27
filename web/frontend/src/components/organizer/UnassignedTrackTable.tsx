@@ -17,6 +17,7 @@ interface UnassignedTrackTableProps {
   currentTrackId: number | null;
   onTrackClick: (trackId: number) => void;
   isDragging?: boolean;
+  noBorder?: boolean;
 }
 
 export function UnassignedTrackTable({
@@ -24,6 +25,7 @@ export function UnassignedTrackTable({
   currentTrackId,
   onTrackClick,
   isDragging = false,
+  noBorder = false,
 }: UnassignedTrackTableProps): JSX.Element {
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -189,7 +191,7 @@ export function UnassignedTrackTable({
 
   if (tracks.length === 0) {
     return (
-      <div className="bg-obsidian-surface border border-obsidian-border rounded-lg p-8 text-center">
+      <div className={`bg-obsidian-surface p-8 text-center ${noBorder ? '' : 'border border-obsidian-border rounded-lg'}`}>
         <div className="text-white/50 text-sm">
           All tracks assigned! Create more buckets or check your assignments.
         </div>
@@ -199,7 +201,7 @@ export function UnassignedTrackTable({
 
   return (
     <div
-      className="border border-obsidian-border rounded-lg overflow-hidden"
+      className={`overflow-hidden ${noBorder ? '' : 'border border-obsidian-border rounded-lg'}`}
     >
       {/* Desktop: Table view */}
       <div className="hidden md:block">
