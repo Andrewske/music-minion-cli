@@ -31,6 +31,10 @@ export function useSyncWebSocket() {
           if (data.playback) {
             usePlayerStore.getState().syncState(data.playback);
           }
+          // Sync device list if present
+          if (data.devices) {
+            usePlayerStore.getState().syncDevices(data.devices);
+          }
           break;
 
         case 'comparison:advanced':

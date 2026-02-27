@@ -107,7 +107,15 @@ class SyncManager:
                 "active_device_id": _playback_state.active_device_id,
                 "shuffle_enabled": _playback_state.shuffle_enabled,
                 "server_time": time.time(),
-            }
+            },
+            "devices": [
+                {
+                    "id": device_id,
+                    "name": device_info["name"],
+                    "connected_at": device_info["connected_at"],
+                }
+                for device_id, device_info in self.devices.items()
+            ],
         }
 
     async def broadcast_device_list(self) -> None:
