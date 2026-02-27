@@ -23,6 +23,9 @@ interface BucketComponentProps {
   onUpdate: (updates: { name?: string; emoji_id?: string | null }) => Promise<void>;
   onReorderTracks: (trackIds: number[]) => Promise<void>;
   onTrackClick: (trackId: number) => void;
+  isMobile?: boolean;
+  isMobileExpanded?: boolean;
+  onMobileToggle?: () => void;
 }
 
 // Sortable track item component
