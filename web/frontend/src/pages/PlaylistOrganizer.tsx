@@ -13,7 +13,7 @@ import {
 } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 import { toast } from 'react-toastify';
-import { GripVertical, ChevronDown, ChevronRight } from 'lucide-react';
+import { GripVertical, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
 import { usePlayerStore } from '../stores/playerStore';
 import { usePlaylistOrganizer } from '../hooks/usePlaylistOrganizer';
 import { getPlaylistTracks } from '../api/playlists';
@@ -79,9 +79,11 @@ export function PlaylistOrganizer({
     assignTrack,
     unassignTrack,
     applyOrder,
+    finalizeSession,
     getBucketByIndex,
     isAssigning,
     isApplying,
+    isFinalizing,
     createBucket,
     updateBucket,
     deleteBucket,
@@ -390,6 +392,7 @@ export function PlaylistOrganizer({
     (trackId: number): void => {
       const tracks = allTracks?.tracks;
       const track = tracks?.find((t) => t.id === trackId);
+      const bucketId = trackToBucketMap.get(trackId);  // undefined for unassigned
       if (track && session) {
         play(
           {
@@ -401,19 +404,27 @@ export function PlaylistOrganizer({
             type: 'organizer',
             playlist_id: playlistId,
             session_id: session.id,
+            bucket_id: bucketId,
             shuffle: shuffleEnabled
           }
         );
       }
     },
-    [allTracks, play, playlistId, session, shuffleEnabled]
+    [allTracks, play, playlistId, session, shuffleEnabled, trackToBucketMap]
   );
 
-  // Handle applying the order
+  // Handle applying the order (keeps session active)
   const handleApplyOrder = useCallback(async (): Promise<void> => {
     await applyOrder();
+    toast.success('Playlist order applied');
+  }, [applyOrder]);
+
+  // Handle finalizing the session (closes organizing mode)
+  const handleFinalize = useCallback(async (): Promise<void> => {
+    await finalizeSession();
     localStorage.removeItem(`organizer-session-${playlistId}`);
-  }, [applyOrder, playlistId]);
+    toast.success('Organizing session finalized');
+  }, [finalizeSession, playlistId]);
 
   // Loading state
   if (isLoading) {
@@ -457,13 +468,24 @@ export function PlaylistOrganizer({
               </div>
             </div>
 
-            <Button
-              onClick={handleApplyOrder}
-              disabled={isApplying || unassignedTrackIds.length > 0}
-              className="bg-obsidian-accent hover:bg-obsidian-accent/80"
-            >
-              {isApplying ? 'Applying...' : 'Apply Order'}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={handleApplyOrder}
+                disabled={isApplying || unassignedTrackIds.length > 0}
+                className="bg-obsidian-accent hover:bg-obsidian-accent/80"
+              >
+                {isApplying ? 'Applying...' : 'Apply Order'}
+              </Button>
+              <Button
+                onClick={handleFinalize}
+                disabled={isFinalizing}
+                variant="outline"
+                size="icon"
+                title="Reset session (close organizing mode)"
+              >
+                <RotateCcw className={`w-4 h-4 ${isFinalizing ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
           </div>
 
           {/* Current track banner */}

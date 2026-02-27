@@ -83,6 +83,14 @@ export async function applySession(sessionId: string): Promise<void> {
   }
 }
 
+export async function finalizeSession(sessionId: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/sessions/${sessionId}/finalize`, { method: 'POST' });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || 'Failed to finalize session');
+  }
+}
+
 // Bucket operations
 
 export async function createBucket(sessionId: string, body: CreateBucketBody): Promise<Bucket> {

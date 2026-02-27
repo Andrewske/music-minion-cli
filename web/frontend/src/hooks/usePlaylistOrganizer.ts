@@ -28,6 +28,7 @@ interface UsePlaylistOrganizerReturn {
 
   // Session operations
   applyOrder: () => Promise<void>;
+  finalizeSession: () => Promise<void>;
   discardSession: () => Promise<void>;
 
   // Computed
@@ -38,6 +39,7 @@ interface UsePlaylistOrganizerReturn {
   // Loading states (for UI feedback)
   isAssigning: boolean;
   isApplying: boolean;
+  isFinalizing: boolean;
 }
 
 export function usePlaylistOrganizer(
@@ -226,6 +228,16 @@ export function usePlaylistOrganizer(
     },
   });
 
+  const finalizeSessionMutation = useMutation({
+    mutationFn: () => {
+      if (!session) throw new Error('No active session');
+      return bucketsApi.finalizeSession(session.id);
+    },
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey });
+    },
+  });
+
   const discardSessionMutation = useMutation({
     mutationFn: () => {
       if (!session) throw new Error('No active session');
@@ -315,6 +327,13 @@ export function usePlaylistOrganizer(
     [applyOrderMutation]
   );
 
+  const finalizeSession = useCallback(
+    async (): Promise<void> => {
+      await finalizeSessionMutation.mutateAsync();
+    },
+    [finalizeSessionMutation]
+  );
+
   const discardSession = useCallback(
     async (): Promise<void> => {
       await discardSessionMutation.mutateAsync();
@@ -342,6 +361,7 @@ export function usePlaylistOrganizer(
 
     // Session operations
     applyOrder,
+    finalizeSession,
     discardSession,
 
     // Computed
@@ -352,5 +372,6 @@ export function usePlaylistOrganizer(
     // Loading states
     isAssigning: assignTrackMutation.isPending,
     isApplying: applyOrderMutation.isPending,
+    isFinalizing: finalizeSessionMutation.isPending,
   };
 }
