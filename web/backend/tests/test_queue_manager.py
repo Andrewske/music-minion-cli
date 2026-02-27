@@ -1075,7 +1075,6 @@ def create_test_session(
     }
 
 
-@pytest.mark.skip(reason="Import bug in queue_manager.py line 455,698,776 - should be `from .queries.buckets` not `from ..queries.buckets`. Integration tests cover this functionality.")
 @mock.patch('backend.queries.buckets.get_session_with_data')
 def test_resolve_organizer_context_returns_only_unassigned(mock_get_session, test_db):
     """Queue should only contain unassigned tracks from bucket session."""
@@ -1112,7 +1111,6 @@ def test_resolve_organizer_context_returns_only_unassigned(mock_get_session, tes
         assert track_id in [1, 2, 3]
 
 
-@pytest.mark.skip(reason="Import bug in queue_manager.py - see test_resolve_organizer_context_returns_only_unassigned")
 @mock.patch('backend.queries.buckets.get_session_with_data')
 def test_organizer_loop_sequential_returns_none_when_exhausted(mock_get_session, test_db):
     """Sequential mode should return None when all tracks excluded (signals queue rebuild)."""
@@ -1140,7 +1138,6 @@ def test_organizer_loop_sequential_returns_none_when_exhausted(mock_get_session,
     assert next_track is None
 
 
-@pytest.mark.skip(reason="Import bug in queue_manager.py - see test_resolve_organizer_context_returns_only_unassigned")
 @mock.patch('backend.queries.buckets.get_session_with_data')
 def test_organizer_loop_shuffle_returns_none_when_exhausted(mock_get_session, test_db):
     """Shuffle mode should return None when all tracks excluded (signals queue rebuild)."""
@@ -1167,7 +1164,6 @@ def test_organizer_loop_shuffle_returns_none_when_exhausted(mock_get_session, te
     assert next_track is None
 
 
-@pytest.mark.skip(reason="Import bug in queue_manager.py - see test_resolve_organizer_context_returns_only_unassigned")
 @mock.patch('backend.queries.buckets.get_session_with_data')
 def test_resolve_organizer_context_inactive_session_returns_empty(mock_get_session, test_db):
     """Inactive sessions should return empty track list."""

@@ -452,7 +452,7 @@ def _get_random_track_from_playlist(
 
         elif context.type == "organizer" and context.session_id:
             # Organizer shuffle mode
-            from ..queries.buckets import get_session_with_data
+            from .queries.buckets import get_session_with_data
             session = get_session_with_data(context.session_id)
             if session and session["status"] == "active":
                 available = [tid for tid in session["unassigned_track_ids"] if tid not in exclusion_ids]
@@ -695,7 +695,7 @@ def _resolve_context_to_track_ids(
 
         elif context.type == "organizer" and context.session_id:
             # Organizer context - return only unassigned tracks
-            from ..queries.buckets import get_session_with_data
+            from .queries.buckets import get_session_with_data
             session = get_session_with_data(context.session_id)
             if session and session["status"] == "active":
                 return session["unassigned_track_ids"]
@@ -773,7 +773,7 @@ def _reconstruct_play_context(
     elif context_type == "organizer":
         # Reconstruct organizer context with session_id from database
         # (requires context_session_id column added in task 00)
-        from ..queries.buckets import get_session_with_data
+        from .queries.buckets import get_session_with_data
 
         # Validate session still exists and is active
         if context_session_id:

@@ -354,7 +354,7 @@ async def bulk_unassign_from_bucket(
         # Delete all assignments for this bucket
         with get_db_connection() as db_conn:
             cursor = db_conn.execute(
-                "DELETE FROM bucket_track_assignments WHERE bucket_id = ?",
+                "DELETE FROM bucket_tracks WHERE bucket_id = ?",
                 (bucket_id,)
             )
             deleted_count = cursor.rowcount
