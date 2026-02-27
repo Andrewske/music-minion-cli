@@ -145,28 +145,8 @@ export function PlaylistOrganizer({
     [unassignedTrackIds, allTracks, playlistId, play]
   );
 
-  // Handle assigning current track to a bucket
-  const handleAssignCurrentTrack = useCallback(
-    async (bucketId: string): Promise<void> => {
-      if (!currentTrack) return;
-
-      // Find which bucket (if any) currently contains this track
-      const currentBucket = buckets.find((b) => b.track_ids.includes(currentTrack.id));
-
-      // If already in target bucket, no-op
-      if (currentBucket?.id === bucketId) return;
-
-      await assignTrack(bucketId, currentTrack.id);
-
-      // Only auto-advance if moving from unassigned
-      if (!currentBucket) {
-        playNextUnassignedTrack(currentTrack.id);
-      }
-    },
-    [currentTrack, buckets, assignTrack, playNextUnassignedTrack]
-  );
-
-  const handleBucketHeaderClick = useCallback(
+  // Assign current track to a bucket (used by keyboard shortcuts and header clicks)
+  const assignCurrentTrackToBucket = useCallback(
     async (bucketId: string): Promise<void> => {
       if (!currentTrack) return;
 
@@ -410,13 +390,13 @@ export function PlaylistOrganizer({
       const bucket = getBucketByIndex(bucketIndex);
 
       if (bucket) {
-        handleAssignCurrentTrack(bucket.id);
+        assignCurrentTrackToBucket(bucket.id);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentTrack, getBucketByIndex, handleAssignCurrentTrack]);
+  }, [currentTrack, getBucketByIndex, assignCurrentTrackToBucket]);
 
   // Handle playing a track from the table
   const handlePlayTrack = useCallback(
@@ -552,9 +532,8 @@ export function PlaylistOrganizer({
               onShuffleBucket={shuffleBucket}
               onDeleteBucket={deleteBucket}
               onUpdateBucket={updateBucket}
-              onReorderTracks={reorderTracks}
               onTrackClick={handlePlayTrack}
-              onBucketHeaderClick={handleBucketHeaderClick}
+              onBucketHeaderClick={assignCurrentTrackToBucket}
               currentTrack={currentTrack}
             />
           </div>
