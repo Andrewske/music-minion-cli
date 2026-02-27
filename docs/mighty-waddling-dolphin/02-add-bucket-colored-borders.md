@@ -1,6 +1,6 @@
 ---
 task: 02-add-bucket-colored-borders
-status: pending
+status: done
 depends: [01-create-color-system]
 files:
   - path: web/frontend/src/components/organizer/Bucket.tsx
