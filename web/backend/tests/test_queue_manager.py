@@ -238,6 +238,7 @@ def test_save_load_queue_state_round_trip(test_db, mock_context):
             queue_track_ids TEXT,
             queue_index INTEGER,
             position_in_playlist INTEGER,
+            context_session_id TEXT DEFAULT NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -267,6 +268,7 @@ def test_load_queue_state_returns_none_when_empty(test_db):
             queue_track_ids TEXT,
             queue_index INTEGER,
             position_in_playlist INTEGER,
+            context_session_id TEXT DEFAULT NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -294,6 +296,7 @@ def test_save_queue_state_with_sort_spec(test_db, mock_context):
             queue_track_ids TEXT,
             queue_index INTEGER,
             position_in_playlist INTEGER,
+            context_session_id TEXT DEFAULT NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -400,6 +403,7 @@ def test_save_queue_state_updates_existing(test_db, mock_context):
             queue_track_ids TEXT,
             queue_index INTEGER,
             position_in_playlist INTEGER,
+            context_session_id TEXT DEFAULT NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -574,6 +578,7 @@ def test_load_queue_state_with_builder_context(test_db):
             queue_track_ids TEXT,
             queue_index INTEGER,
             position_in_playlist INTEGER,
+            context_session_id TEXT DEFAULT NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -664,6 +669,7 @@ def test_save_queue_state_with_none_sort_spec(test_db, mock_context):
             queue_track_ids TEXT,
             queue_index INTEGER,
             position_in_playlist INTEGER,
+            context_session_id TEXT DEFAULT NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -709,6 +715,7 @@ def test_load_queue_state_with_comparison_context(test_db):
             queue_track_ids TEXT,
             queue_index INTEGER,
             position_in_playlist INTEGER,
+            context_session_id TEXT DEFAULT NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -716,7 +723,7 @@ def test_load_queue_state_with_comparison_context(test_db):
     # Insert a comparison context state
     test_db.execute("""
         INSERT INTO player_queue_state VALUES
-        (1, 'comparison', NULL, 1, NULL, NULL, '[1, 2, 3]', 0, NULL, CURRENT_TIMESTAMP)
+        (1, 'comparison', NULL, 1, NULL, NULL, '[1, 2, 3]', 0, NULL, NULL, CURRENT_TIMESTAMP)
     """)
 
     state = queue_manager.load_queue_state(test_db)
@@ -739,6 +746,7 @@ def test_load_queue_state_unknown_context_type(test_db):
             queue_track_ids TEXT,
             queue_index INTEGER,
             position_in_playlist INTEGER,
+            context_session_id TEXT DEFAULT NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -746,7 +754,7 @@ def test_load_queue_state_unknown_context_type(test_db):
     # Insert an unknown context type
     test_db.execute("""
         INSERT INTO player_queue_state VALUES
-        (1, 'unknown_type', 42, 1, NULL, NULL, '[1, 2, 3]', 0, NULL, CURRENT_TIMESTAMP)
+        (1, 'unknown_type', 42, 1, NULL, NULL, '[1, 2, 3]', 0, NULL, NULL, CURRENT_TIMESTAMP)
     """)
 
     state = queue_manager.load_queue_state(test_db)
@@ -888,6 +896,7 @@ def test_save_queue_state_with_position_in_playlist(test_db, mock_context):
             queue_track_ids TEXT,
             queue_index INTEGER,
             position_in_playlist INTEGER,
+            context_session_id TEXT DEFAULT NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -914,6 +923,7 @@ def test_load_queue_state_with_sort_direction_none(test_db):
             queue_track_ids TEXT,
             queue_index INTEGER,
             position_in_playlist INTEGER,
+            context_session_id TEXT DEFAULT NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -921,7 +931,7 @@ def test_load_queue_state_with_sort_direction_none(test_db):
     # Insert state with sort_field but NULL sort_direction
     test_db.execute("""
         INSERT INTO player_queue_state VALUES
-        (1, 'playlist', 1, 0, 'bpm', NULL, '[1, 2, 3]', 0, 0, CURRENT_TIMESTAMP)
+        (1, 'playlist', 1, 0, 'bpm', NULL, '[1, 2, 3]', 0, 0, NULL, CURRENT_TIMESTAMP)
     """)
 
     state = queue_manager.load_queue_state(test_db)
