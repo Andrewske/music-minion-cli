@@ -140,7 +140,7 @@ async def discard_session_endpoint(session_id: str) -> dict[str, bool]:
 
 @router.post("/sessions/{session_id}/apply")
 async def apply_session_endpoint(session_id: str) -> dict[str, bool]:
-    """Apply order to playlist."""
+    """Apply bucket order to playlist (keeps session active for continued editing)."""
     try:
         success = bucket_queries.apply_session(session_id)
         if not success:
@@ -154,6 +154,25 @@ async def apply_session_endpoint(session_id: str) -> dict[str, bool]:
         logger.exception("Failed to apply session")
         raise HTTPException(
             status_code=500, detail=f"Failed to apply session: {str(e)}"
+        )
+
+
+@router.post("/sessions/{session_id}/finalize")
+async def finalize_session_endpoint(session_id: str) -> dict[str, bool]:
+    """Finalize session (marks as applied, closes organizing mode)."""
+    try:
+        success = bucket_queries.finalize_session(session_id)
+        if not success:
+            raise HTTPException(
+                status_code=404, detail="Session not found or not active"
+            )
+        return {"finalized": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Failed to finalize session")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to finalize session: {str(e)}"
         )
 
 

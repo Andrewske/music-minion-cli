@@ -226,6 +226,7 @@ class PlayContext(BaseModel):
     start_index: int = 0
     shuffle: bool = True
     session_id: Optional[str] = None  # For organizer context
+    bucket_id: Optional[str] = None  # For organizer: queue = bucket tracks when set
 
     @model_validator(mode='after')
     def validate_organizer_session_id(self):

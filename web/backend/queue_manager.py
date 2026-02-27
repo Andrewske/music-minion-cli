@@ -455,8 +455,18 @@ def _get_random_track_from_playlist(
             from .queries.buckets import get_session_with_data
             session = get_session_with_data(context.session_id)
             if session and session["status"] == "active":
-                available = [tid for tid in session["unassigned_track_ids"] if tid not in exclusion_ids]
-                if not available and session["unassigned_track_ids"]:
+                # Determine track pool based on bucket_id
+                if context.bucket_id:
+                    bucket = next(
+                        (b for b in session["buckets"] if b["id"] == context.bucket_id),
+                        None
+                    )
+                    track_pool = bucket["track_ids"] if bucket else session["unassigned_track_ids"]
+                else:
+                    track_pool = session["unassigned_track_ids"]
+
+                available = [tid for tid in track_pool if tid not in exclusion_ids]
+                if not available and track_pool:
                     # Loop restart - return None to signal queue rebuild needed
                     # Caller (player.py) should detect None and call rebuild_queue()
                     logger.info("Organizer loop exhausted - triggering queue rebuild")
@@ -694,10 +704,17 @@ def _resolve_context_to_track_ids(
             return context.track_ids
 
         elif context.type == "organizer" and context.session_id:
-            # Organizer context - return only unassigned tracks
+            # Organizer context - return bucket tracks or unassigned tracks
             from .queries.buckets import get_session_with_data
             session = get_session_with_data(context.session_id)
             if session and session["status"] == "active":
+                if context.bucket_id:
+                    bucket = next(
+                        (b for b in session["buckets"] if b["id"] == context.bucket_id),
+                        None
+                    )
+                    if bucket:
+                        return bucket["track_ids"]
                 return session["unassigned_track_ids"]
             else:
                 logger.warning(f"Organizer session {context.session_id} not found or inactive")

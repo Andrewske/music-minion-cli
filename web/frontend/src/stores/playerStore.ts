@@ -16,6 +16,7 @@ export interface PlayContext {
   playlist_id?: number;
   builder_id?: number;
   session_id?: string;
+  bucket_id?: string;  // For organizer: queue = bucket tracks when set
   query?: string;
   start_index?: number;
   shuffle?: boolean;

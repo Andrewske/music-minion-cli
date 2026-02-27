@@ -18,6 +18,7 @@ interface BucketComponentProps {
   tracks: PlaylistTrackEntry[];
   bucketIndex: number;
   totalBuckets: number;
+  currentTrackId: number | null;
   onMove: (direction: 'up' | 'down') => Promise<void>;
   onShuffle: () => Promise<void>;
   onDelete: () => Promise<void>;
@@ -35,10 +36,11 @@ interface BucketComponentProps {
 interface SortableTrackProps {
   track: PlaylistTrackEntry;
   bucketId: string;
+  isPlaying: boolean;
   onTrackClick: (trackId: number) => void;
 }
 
-function SortableTrack({ track, bucketId, onTrackClick }: SortableTrackProps): JSX.Element {
+function SortableTrack({ track, bucketId, isPlaying, onTrackClick }: SortableTrackProps): JSX.Element {
   const {
     attributes,
     listeners,
@@ -64,7 +66,11 @@ function SortableTrack({ track, bucketId, onTrackClick }: SortableTrackProps): J
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-2 px-3 py-2 bg-obsidian-surface border-b border-obsidian-border/50 last:border-b-0 hover:bg-white/5 cursor-pointer"
+      className={`flex items-center gap-2 px-3 py-2 border-b border-obsidian-border/50 last:border-b-0 cursor-pointer ${
+        isPlaying
+          ? 'bg-obsidian-accent/10 border-l-2 border-l-obsidian-accent'
+          : 'bg-obsidian-surface hover:bg-white/5'
+      }`}
       onClick={() => onTrackClick(track.id)}
     >
       <div
@@ -76,7 +82,9 @@ function SortableTrack({ track, bucketId, onTrackClick }: SortableTrackProps): J
         <GripVertical className="w-4 h-4" />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-sm text-white/90 truncate">{track.title}</div>
+        <div className={`text-sm truncate ${isPlaying ? 'text-obsidian-accent font-medium' : 'text-white/90'}`}>
+          {track.title}
+        </div>
         <div className="text-xs text-white/50 truncate">{track.artist ?? 'Unknown Artist'}</div>
       </div>
     </div>
@@ -88,6 +96,7 @@ export function BucketComponent({
   tracks,
   bucketIndex,
   totalBuckets,
+  currentTrackId,
   onMove,
   onShuffle,
   onDelete,
@@ -285,7 +294,13 @@ export function BucketComponent({
               strategy={verticalListSortingStrategy}
             >
               {tracks.map((track) => (
-                <SortableTrack key={track.id} track={track} bucketId={bucket.id} onTrackClick={onTrackClick} />
+                <SortableTrack
+                  key={track.id}
+                  track={track}
+                  bucketId={bucket.id}
+                  isPlaying={track.id === currentTrackId}
+                  onTrackClick={onTrackClick}
+                />
               ))}
             </SortableContext>
           )}

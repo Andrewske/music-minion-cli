@@ -778,6 +778,47 @@ def apply_session(session_id: str) -> bool:
             position_data,
         )
 
+        conn.commit()
+
+        logger.info(
+            f"Applied order for session {session_id}: "
+            f"{len(ordered_track_ids)} bucket tracks, "
+            f"{len(unassigned_track_ids)} unassigned tracks"
+        )
+        return True
+
+
+def finalize_session(session_id: str) -> bool:
+    """Finalize session - mark as applied and clear bucket data.
+
+    This closes out the organizing session. The playlist order has already
+    been applied, this just marks the session as done.
+
+    Args:
+        session_id: UUID of the session
+
+    Returns:
+        True if finalized, False if session not found or not active
+    """
+    with get_db_connection() as conn:
+        # Get session
+        cursor = conn.execute(
+            """
+            SELECT id, status FROM bucket_sessions WHERE id = ?
+            """,
+            (session_id,),
+        )
+        session = cursor.fetchone()
+
+        if not session:
+            return False
+
+        if session["status"] != "active":
+            logger.warning(
+                f"Cannot finalize session {session_id}: status is {session['status']}"
+            )
+            return False
+
         # Mark session as applied
         conn.execute(
             """
@@ -787,11 +828,7 @@ def apply_session(session_id: str) -> bool:
         )
         conn.commit()
 
-        logger.info(
-            f"Applied session {session_id}: "
-            f"{len(ordered_track_ids)} bucket tracks, "
-            f"{len(unassigned_track_ids)} unassigned tracks"
-        )
+        logger.info(f"Finalized session {session_id}")
         return True
 
 

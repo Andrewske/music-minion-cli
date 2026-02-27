@@ -67,6 +67,7 @@ export function BucketList({
           bucketIndex={index}
           totalBuckets={buckets.length}
           isActive={bucket.id === activeBucketId}
+          currentTrackId={currentTrack?.id ?? null}
           onMove={(direction) => onMoveBucket(bucket.id, direction)}
           onShuffle={() => onShuffleBucket(bucket.id)}
           onDelete={() => onDeleteBucket(bucket.id)}
