@@ -1,6 +1,6 @@
 ---
 task: 02-implement-queue-resolution
-status: pending
+status: done
 depends: [01-extend-playcontext-schema]
 files:
   - path: web/backend/queue_manager.py
