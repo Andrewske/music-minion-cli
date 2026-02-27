@@ -19,11 +19,12 @@ if str(web_dir) not in sys.path:
 @dataclass
 class MockPlayContext:
     """Mock PlayContext matching the Pydantic model structure."""
-    type: Literal["playlist", "track", "builder", "search", "comparison"] = "playlist"
+    type: Literal["playlist", "track", "builder", "search", "comparison", "organizer"] = "playlist"
     playlist_id: Optional[int] = 1
     builder_id: Optional[int] = None
     track_ids: Optional[list[int]] = None
     shuffle: bool = True
+    session_id: Optional[str] = None  # For organizer context
 
 
 # Mock the player module before any imports happen
@@ -32,3 +33,9 @@ mock_player_module = mock.MagicMock()
 mock_player_module.PlayContext = MockPlayContext
 sys.modules['backend.routers'] = mock.MagicMock()
 sys.modules['backend.routers.player'] = mock_player_module
+
+# Mock the queries.buckets module to prevent import errors
+# This can be overridden in individual tests with specific behavior
+mock_buckets_module = mock.MagicMock()
+sys.modules['backend.queries'] = mock.MagicMock()
+sys.modules['backend.queries.buckets'] = mock_buckets_module
