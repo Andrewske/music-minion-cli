@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 from pydantic.alias_generators import to_camel
 from typing import Optional, Literal
 
@@ -218,13 +218,21 @@ class PlayContext(BaseModel):
     """Playback context for queue generation."""
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
-    type: Literal["playlist", "track", "builder", "search", "comparison"]
+    type: Literal["playlist", "track", "builder", "search", "comparison", "organizer"]
     track_ids: Optional[list[int]] = None  # For comparison context
     playlist_id: Optional[int] = None
     builder_id: Optional[int] = None
     query: Optional[str] = None
     start_index: int = 0
     shuffle: bool = True
+    session_id: Optional[str] = None  # For organizer context
+
+    @model_validator(mode='after')
+    def validate_organizer_session_id(self):
+        """Validate that organizer contexts include session_id."""
+        if self.type == 'organizer' and not self.session_id:
+            raise ValueError('session_id is required when type is "organizer"')
+        return self
 
 
 # SoundCloud Import Wizard Schemas

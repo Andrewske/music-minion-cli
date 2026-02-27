@@ -1,6 +1,6 @@
 ---
 task: 01-extend-playcontext-schema
-status: pending
+status: done
 depends: [00-database-migration]
 files:
   - path: web/backend/schemas.py
