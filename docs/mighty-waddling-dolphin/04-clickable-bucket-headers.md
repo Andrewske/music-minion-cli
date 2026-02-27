@@ -1,6 +1,6 @@
 ---
 task: 04-clickable-bucket-headers
-status: pending
+status: done
 depends: [02-add-bucket-colored-borders]
 files:
   - path: web/frontend/src/components/organizer/Bucket.tsx
