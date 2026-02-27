@@ -38,13 +38,27 @@ LOG_FILE = Path(__file__).parent.parent / "logs" / "metadata_enrichment.jsonl"
 
 SYSTEM_PROMPT = """You are a music metadata parser. Parse SoundCloud track data into clean, structured metadata.
 
-Rules:
-- If username matches label_name or common label patterns (Records, Music, Recordings), don't include as artist
-- Extract featured artists from "feat.", "ft.", "featuring", "with" patterns in title
-- Identify remix artist from "(X Remix)", "(X Edit)", "(X Bootleg)", "[X Mix]" patterns
-- Clean title: remove artist prefix, [Free DL], promo text, but keep remix attribution
-- Genre: use the genre from SoundCloud as-is (preserve original)
-- Year: prefer release_year, fall back to created_at year"""
+Remix vs Original Track Detection:
+1. Check title for "(X Remix)", "(X Edit)", "(X Flip)", "(X Bootleg)", "[X Mix]" patterns
+2. If remix pattern found → username/uploader is the REMIXER (remix_artist), NOT original artist
+3. For remixes: Use music knowledge to identify original artist (e.g., "Circus" = Britney Spears)
+4. For original tracks: Use signals below to identify original_artists
+
+Original Artist Identification (for non-remix tracks):
+1. "Artist - Title" pattern: If title starts with "Artist -", that's the PRIMARY artist (move to original_artists)
+2. Metadata Artist field: First artist listed is usually the PRIMARY artist
+3. Username (uploader): Strong signal for primary artist, especially if it matches title prefix or metadata_artist
+4. Featured artists: "feat.", "ft.", "featuring", "with" in title are ADDITIONAL artists, not primary
+5. Labels: If username matches label_name or label patterns (Records, Music, Recordings), ignore as artist
+
+Title Cleaning:
+- Remove artist prefix from "Artist - Title" pattern
+- Remove [Free DL], promo text, release info
+- For remixes: Remove "(X Remix/Edit/Flip)" if already captured in remix_artist, otherwise keep
+
+Other:
+- Genre: use SoundCloud genre as-is (preserve original)
+- Year: use release_year if present, otherwise extract year from created_at timestamp (e.g., "2025/06/05" → 2025)"""
 
 
 def get_valid_access_token() -> Optional[str]:
@@ -216,16 +230,20 @@ def link_track_to_soundcloud(local_path: str, soundcloud_id: str) -> bool:
         soundcloud_id: SoundCloud track ID
 
     Returns:
-        True if linked successfully, False if soundcloud_id already linked elsewhere
+        True if linked successfully, False if soundcloud_id already linked to different track
     """
     with get_db_connection() as conn:
-        # Check if soundcloud_id is already used by another track
+        # Check if soundcloud_id is already used
         cursor = conn.execute(
             "SELECT local_path FROM tracks WHERE soundcloud_id = ?",
             (soundcloud_id,),
         )
         existing = cursor.fetchone()
         if existing:
+            # Already linked to this track - success, no action needed
+            if existing['local_path'] == local_path:
+                return True
+            # Linked to a different track - conflict
             print(
                 f"⚠ SoundCloud ID {soundcloud_id} already linked to: {existing['local_path']}"
             )
@@ -233,7 +251,7 @@ def link_track_to_soundcloud(local_path: str, soundcloud_id: str) -> bool:
 
         # Link the track
         conn.execute(
-            "UPDATE tracks SET soundcloud_id = ? WHERE local_path = ? AND soundcloud_id IS NULL",
+            "UPDATE tracks SET soundcloud_id = ? WHERE local_path = ?",
             (soundcloud_id, local_path),
         )
         conn.commit()
@@ -293,15 +311,20 @@ def build_user_prompt(sc_data: dict) -> str:
 
     return f"""Parse this SoundCloud track:
 
+KEY ARTIST SIGNALS (use these to identify original_artists):
 - Title: {sc_data.get('title') or '(unknown)'}
 - Username (uploader): {sc_data.get('username') or '(unknown)'}
 - Metadata Artist: {sc_data.get('metadata_artist') or '(none)'}
+
+ADDITIONAL CONTEXT:
 - Description: {description_preview}
 - Genre: {sc_data.get('genre') or '(none)'}
 - Label: {sc_data.get('label_name') or '(none)'}
 - Release Year: {sc_data.get('release_year') or '(none)'}
 - Tags: {sc_data.get('tag_list') or '(none)'}
 - Created: {sc_data.get('created_at') or '(unknown)'}
+
+IMPORTANT: Look for "Artist - Title (feat. X)" pattern. The artist before the dash is the PRIMARY artist (original_artists), and X is featured (featured_artists).
 
 Return JSON with exactly these fields:
 {{"title": "...", "original_artists": [...], "featured_artists": [...], "remix_artist": "..." or null, "genre": "...", "year": ... or null}}"""

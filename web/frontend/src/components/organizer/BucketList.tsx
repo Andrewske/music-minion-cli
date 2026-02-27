@@ -4,6 +4,7 @@ import type { Bucket } from '../../api/buckets';
 import { BucketComponent } from './Bucket';
 import { BucketEditDialog } from './BucketEditDialog';
 import { Button } from '../ui/button';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 interface BucketListProps {
   buckets: Bucket[];
@@ -14,6 +15,7 @@ interface BucketListProps {
   onDeleteBucket: (bucketId: string) => Promise<void>;
   onUpdateBucket: (bucketId: string, updates: { name?: string; emoji_id?: string | null }) => Promise<void>;
   onReorderTracks: (bucketId: string, trackIds: number[]) => Promise<void>;
+  onTrackClick: (trackId: number) => void;
 }
 
 export function BucketList({
@@ -25,8 +27,15 @@ export function BucketList({
   onDeleteBucket,
   onUpdateBucket,
   onReorderTracks,
+  onTrackClick,
 }: BucketListProps): JSX.Element {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  // Track which bucket is expanded on mobile (null = all collapsed)
+  const [mobileExpandedBucketId, setMobileExpandedBucketId] = useState<string | null>(null);
+
+  // Detect mobile viewport using shared hook
+  const isMobile = useIsMobile();
 
   // Sort buckets by position
   const sortedBuckets = [...buckets].sort((a, b) => a.position - b.position);
@@ -57,6 +66,15 @@ export function BucketList({
           onDelete={() => onDeleteBucket(bucket.id)}
           onUpdate={(updates) => onUpdateBucket(bucket.id, updates)}
           onReorderTracks={(trackIds) => onReorderTracks(bucket.id, trackIds)}
+          onTrackClick={onTrackClick}
+          isMobile={isMobile}
+          isMobileExpanded={mobileExpandedBucketId === bucket.id}
+          onMobileToggle={() => {
+            // Toggle: if already expanded, collapse; otherwise expand this one
+            setMobileExpandedBucketId(
+              mobileExpandedBucketId === bucket.id ? null : bucket.id
+            );
+          }}
         />
       ))}
 
