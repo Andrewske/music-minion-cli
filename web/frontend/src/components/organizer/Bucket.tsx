@@ -11,6 +11,7 @@ import type { PlaylistTrackEntry } from '../../types';
 import type { Bucket } from '../../api/buckets';
 import { EmojiDisplay } from '../EmojiDisplay';
 import { BucketEditDialog } from './BucketEditDialog';
+import { getBucketColor } from '../../constants/bucketColors';
 
 interface BucketComponentProps {
   bucket: Bucket;
@@ -26,6 +27,7 @@ interface BucketComponentProps {
   isMobile?: boolean;
   isMobileExpanded?: boolean;
   onMobileToggle?: () => void;
+  isActive?: boolean;
 }
 
 // Sortable track item component
@@ -94,6 +96,7 @@ export function BucketComponent({
   isMobile = false,
   isMobileExpanded = false,
   onMobileToggle,
+  isActive = false,
 }: BucketComponentProps): JSX.Element {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -149,7 +152,12 @@ export function BucketComponent({
         data-testid={`bucket-header-${bucket.id}`}
         className={`flex items-center gap-2 px-3 py-2 transition-colors ${
           isOver ? 'bg-obsidian-accent/20 border-obsidian-accent' : ''
+        } ${
+          isActive ? 'border-4' : 'border-l-4'
         }`}
+        style={{
+          borderColor: getBucketColor(bucketIndex),
+        }}
       >
         {/* Expand/collapse button */}
         <button

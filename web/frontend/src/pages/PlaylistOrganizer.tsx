@@ -99,6 +99,22 @@ export function PlaylistOrganizer({
   const unassignedSet = new Set(unassignedTrackIds);
   const unassignedTracks = allTracks?.tracks.filter((t) => unassignedSet.has(t.id)) ?? [];
 
+  // Build reverse lookup map for O(1) performance
+  const trackToBucketMap = useMemo(() => {
+    const map = new Map<number, string>();
+    buckets.forEach((bucket) => {
+      bucket.track_ids.forEach((trackId) => {
+        map.set(trackId, bucket.id);
+      });
+    });
+    return map;
+  }, [buckets]);
+
+  // Detect which bucket contains the current track
+  const activeBucketId = currentTrack
+    ? trackToBucketMap.get(currentTrack.id) ?? null
+    : null;
+
   // Configure drag-and-drop sensors
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -510,6 +526,7 @@ export function PlaylistOrganizer({
             <BucketList
               buckets={buckets}
               allTracks={allTracks?.tracks ?? []}
+              activeBucketId={activeBucketId}
               onCreateBucket={createBucket}
               onMoveBucket={moveBucket}
               onShuffleBucket={shuffleBucket}
