@@ -101,6 +101,70 @@ def get_playback_state() -> dict:
     return state
 
 
+async def update_organizer_queue(session_id: str) -> None:
+    """Update playback queue if currently playing from this organizer session.
+
+    Removes assigned tracks from queue, adds unassigned tracks back,
+    and broadcasts updated state via WebSocket.
+
+    Called by buckets.py when tracks are assigned/unassigned.
+    State mutation stays encapsulated in player.py.
+    """
+    global _playback_state
+
+    from ..queries.buckets import get_session_with_data
+    from ..queries.tracks import batch_fetch_tracks_with_metadata
+    from ..sync_manager import sync_manager
+    from music_minion.core.database import get_db_connection
+
+    # Check if currently playing from this organizer session
+    state = get_playback_state()
+    if (
+        not state
+        or not state.get("context")
+        or state["context"].get("type") != "organizer"
+        or state["context"].get("session_id") != session_id
+    ):
+        return
+
+    # Fetch updated unassigned tracks
+    session = get_session_with_data(session_id)
+    if not session or session["status"] != "active":
+        return
+
+    new_unassigned_set = set(session["unassigned_track_ids"])
+
+    async with _next_lock:
+        current_queue = _playback_state.queue
+        current_track_id = _playback_state.current_track.get("id") if _playback_state.current_track else None
+
+        # Filter queue to only include unassigned tracks
+        updated_queue = [track for track in current_queue if track["id"] in new_unassigned_set]
+
+        # Detect newly unassigned tracks and append them
+        current_queue_ids = {t["id"] for t in current_queue}
+        newly_unassigned_ids = [tid for tid in new_unassigned_set if tid not in current_queue_ids]
+
+        if newly_unassigned_ids:
+            with get_db_connection() as db_conn:
+                newly_unassigned_tracks = batch_fetch_tracks_with_metadata(newly_unassigned_ids, db_conn)
+                updated_queue.extend(newly_unassigned_tracks)
+
+        # Recalculate queue index
+        if current_track_id:
+            try:
+                new_index = next(i for i, t in enumerate(updated_queue) if t["id"] == current_track_id)
+                _playback_state.queue_index = new_index
+            except StopIteration:
+                _playback_state.queue_index = 0
+                logger.info(f"Current track {current_track_id} assigned - will finish then skip to next unassigned")
+
+        _playback_state.queue = updated_queue
+
+    await sync_manager.broadcast("playback:state", get_playback_state())
+    logger.info(f"Updated organizer queue: {len(updated_queue)} unassigned tracks remaining")
+
+
 def resolve_queue(context: PlayContext, db_conn) -> list[dict]:
     """Resolve play context to a list of tracks (max 50)."""
     from random import shuffle as random_shuffle
@@ -189,6 +253,15 @@ async def play(request: PlayRequest, db=Depends(get_db)):
     from ..queries.tracks import batch_fetch_tracks_with_metadata
 
     logger.info(f"Play request: track_id={request.track_id}, context={request.context}")
+
+    # Validate organizer session exists and is active
+    if request.context.type == "organizer":
+        from ..queries.buckets import get_session_with_data
+        session = get_session_with_data(request.context.session_id)
+        if not session:
+            raise HTTPException(404, f"Organizer session {request.context.session_id} not found")
+        if session["status"] != "active":
+            raise HTTPException(400, f"Organizer session is {session['status']}, cannot play")
 
     # 1. Initialize queue using queue_manager (not resolve_queue)
     queue_ids = initialize_queue(
@@ -377,8 +450,50 @@ async def next_track(reason: str = "skip", db=Depends(get_db)):
                     position_in_sorted=_playback_state.position_in_playlist
                 )
 
-                if new_track_id:
-                    # Fetch full metadata
+                # Handle organizer loop restart
+                if new_track_id is None and _playback_state.current_context.type == "organizer":
+                    # Queue exhausted - rebuild for loop restart
+                    logger.info("Organizer queue exhausted, rebuilding for loop restart")
+
+                    new_queue_ids = rebuild_queue(
+                        context=_playback_state.current_context,
+                        current_track_id=_playback_state.current_track["id"],
+                        queue=[t["id"] for t in _playback_state.queue],
+                        queue_index=_playback_state.queue_index,
+                        db_conn=db,
+                        shuffle=_playback_state.shuffle_enabled,
+                        sort_spec=_playback_state.sort_spec
+                    )
+
+                    if new_queue_ids:
+                        # Fetch metadata for new queue
+                        new_tracks = batch_fetch_tracks_with_metadata(new_queue_ids, db)
+                        _playback_state.queue = new_tracks
+                        _playback_state.queue_index = 0
+                        _playback_state.current_track = new_tracks[0]
+                        _playback_state.position_ms = 0
+                        _playback_state.track_started_at = time.time()
+
+                        # Start history entry for first track of new loop
+                        from music_minion.domain.radio.history import start_play
+                        history_id = start_play(
+                            track_id=_playback_state.current_track["id"],
+                            source_type="local"
+                        )
+                        _playback_state.current_history_id = history_id
+
+                        # Save state
+                        save_queue_state(
+                            context=_playback_state.current_context,
+                            queue_ids=new_queue_ids,
+                            queue_index=0,
+                            shuffle=_playback_state.shuffle_enabled,
+                            sort_spec=_playback_state.sort_spec,
+                            db_conn=db
+                        )
+
+                elif new_track_id:
+                    # Normal case: append new track to queue
                     new_tracks = batch_fetch_tracks_with_metadata([new_track_id], db)
                     if new_tracks:  # Defensive check
                         _playback_state.queue.append(new_tracks[0])
