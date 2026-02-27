@@ -9,6 +9,7 @@ from loguru import logger
 from pydantic import BaseModel
 
 from ..queries import buckets as bucket_queries
+from .player import update_organizer_queue
 
 
 router = APIRouter(prefix="/api/buckets", tags=["buckets"])

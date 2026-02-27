@@ -10,9 +10,9 @@
 |------|--------|---------|-----------|----------|
 | 00-database-migration | ✅ Done | 2026-02-26 | 2026-02-26 | ~2min |
 | 01-extend-playcontext-schema | ✅ Done | 2026-02-26 | 2026-02-26 | ~1min |
-| 02-implement-queue-resolution | Pending | - | - | - |
+| 02-implement-queue-resolution | ✅ Done | 2026-02-26 | 2026-02-26 | ~2min |
 | 03-real-time-queue-updates | Pending | - | - | - |
-| 04-frontend-integration | Pending | - | - | - |
+| 04-frontend-integration | ✅ Done | 2026-02-26 | 2026-02-26 | ~2min |
 | 05-player-organizer-support | Pending | - | - | - |
 | 06-write-tests | Pending | - | - | - |
 
@@ -48,4 +48,10 @@ Batch 5 (depends on batches 3-4):
 - Started: 2026-02-26
 - Tasks: 01-extend-playcontext-schema
 - ✅ 01-extend-playcontext-schema: Extended PlayContext schema for organizer context
+
+### Batch 3
+- Started: 2026-02-26
+- Tasks: 02-implement-queue-resolution, 04-frontend-integration (parallel)
+- ✅ 02-implement-queue-resolution: Queue resolution for organizer context with loop support
+- ✅ 04-frontend-integration: Frontend integration for organizer playback context
 

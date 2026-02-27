@@ -1,6 +1,6 @@
 ---
 task: 05-player-organizer-support
-status: pending
+status: done
 depends: [02-implement-queue-resolution]
 files:
   - path: web/backend/routers/player.py
