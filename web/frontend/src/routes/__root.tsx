@@ -23,7 +23,11 @@ function RootComponent(): JSX.Element {
     <AudioElementProvider>
       <div className="flex h-screen bg-black">
         {/* Mobile header - only on small screens */}
-        <MobileHeader />
+        <MobileHeader>
+          <SidebarQuickTag sidebarExpanded={true} />
+          <SidebarPlaylists sidebarExpanded={true} />
+          <SidebarFilters sidebarExpanded={true} />
+        </MobileHeader>
 
         {/* Desktop sidebar - only on md+ */}
         <div className="hidden md:flex">
