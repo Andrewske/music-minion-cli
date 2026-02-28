@@ -1,9 +1,11 @@
 ---
 task: 02-migrate-player-router
-status: pending
+status: done
 depends: [01-create-player-state-module]
 files:
   - path: web/backend/routers/player.py
+    action: modify
+  - path: web/backend/tests/test_organizer_queue.py
     action: modify
 ---
 
