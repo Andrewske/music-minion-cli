@@ -441,12 +441,36 @@ async def prev_track():
     else:
         # Go to previous track
         new_index = max(0, state.queue_index - 1)
-        await update_state({
-            "queue_index": new_index,
-            "current_track": state.queue[new_index],
-            "position_ms": 0,
-            "track_started_at": time.time() if state.is_playing else None
-        })
+
+        # Only update history if actually changing tracks
+        if new_index != state.queue_index:
+            # Close current history entry
+            if state.current_history_id:
+                from music_minion.domain.radio.history import end_play
+                final_duration = _calculate_final_duration()
+                end_play(state.current_history_id, final_duration, reason="prev")
+
+            # Start new history entry
+            from music_minion.domain.radio.history import start_play
+            history_id = start_play(
+                track_id=state.queue[new_index]["id"],
+                source_type="local"
+            )
+
+            await update_state({
+                "queue_index": new_index,
+                "current_track": state.queue[new_index],
+                "position_ms": 0,
+                "track_started_at": time.time() if state.is_playing else None,
+                "duration_ms": 0,
+                "current_history_id": history_id
+            })
+        else:
+            # At start of queue, just restart current track
+            await update_state({
+                "position_ms": 0,
+                "track_started_at": time.time() if state.is_playing else None
+            })
 
     return {"message": "Previous track"}
 
@@ -578,7 +602,7 @@ async def set_sort(request: SetSortRequest, db=Depends(get_db)):
 
 
 @router.get("/state")
-async def get_state():
+async def get_player_state():
     """Get current playback state."""
     return get_playback_state()
 

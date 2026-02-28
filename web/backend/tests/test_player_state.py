@@ -2,6 +2,7 @@
 
 import asyncio
 import pytest
+from pydantic import ValidationError
 from backend.player_state import (
     PlaybackState,
     get_state,
@@ -24,7 +25,7 @@ class TestPlaybackStateImmutability:
 
     def test_cannot_mutate_field(self):
         state = PlaybackState()
-        with pytest.raises(Exception):  # ValidationError for frozen
+        with pytest.raises(ValidationError):
             state.is_playing = True
 
     def test_queue_is_tuple(self):
