@@ -1,9 +1,13 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Menu, X } from 'lucide-react';
 import { Sheet, SheetContent } from '../ui/sheet';
 import { Sidebar } from './Sidebar';
 
-export function MobileHeader(): JSX.Element {
+interface MobileHeaderProps {
+  children?: ReactNode;
+}
+
+export function MobileHeader({ children }: MobileHeaderProps): JSX.Element {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -21,7 +25,9 @@ export function MobileHeader(): JSX.Element {
         </button>
         <SheetContent side="left" className="w-[280px] p-0">
           {/* Full sidebar content - always expanded in mobile sheet */}
-          <Sidebar isExpanded={true} isMobile={true} onNavigate={() => setIsOpen(false)} />
+          <Sidebar isExpanded={true} isMobile={true} onNavigate={() => setIsOpen(false)}>
+            {children}
+          </Sidebar>
         </SheetContent>
       </Sheet>
 
