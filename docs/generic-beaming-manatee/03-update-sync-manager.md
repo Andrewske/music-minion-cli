@@ -1,6 +1,6 @@
 ---
 task: 03-update-sync-manager
-status: pending
+status: done
 depends: [01-create-player-state-module]
 files:
   - path: web/backend/sync_manager.py
