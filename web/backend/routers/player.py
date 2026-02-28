@@ -18,6 +18,7 @@ from ..queue_manager import (
     load_queue_state,
     _resolve_context_to_track_ids,
 )
+from ..player_state import get_state, get_state_dict, update_state, PlaybackState
 
 router = APIRouter()
 
@@ -55,39 +56,17 @@ class DeviceInfo(BaseModel):
     is_active: bool
 
 
-class PlaybackState(BaseModel):
-    """Current playback state."""
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
-
-    current_track: Optional[dict] = None
-    queue: list[dict] = []
-    queue_index: int = 0
-    position_ms: int = 0
-    track_started_at: Optional[float] = None
-    is_playing: bool = False
-    active_device_id: Optional[str] = None
-    shuffle_enabled: bool = True
-    sort_spec: Optional[dict] = None  # NEW: dict with 'field' and 'direction'
-    current_context: Optional[PlayContext] = None  # NEW: track playback context
-    position_in_playlist: int = 0  # NEW: position tracker for sorted mode
-    server_time: float = 0  # For client clock sync
-    current_history_id: Optional[int] = None  # Track active history entry
-    duration_ms: int = 0  # Accumulated listening time (reset each track)
-
-
-# In-memory state (v1 limitation: lost on server restart)
-_playback_state = PlaybackState()
-
 # Lock for protecting /next endpoint from race conditions
 _next_lock = Lock()
 
 
 def _calculate_final_duration() -> int:
     """Calculate total listening duration in ms (accumulated + current segment)."""
-    duration = int(_playback_state.duration_ms)
+    state = get_state()
+    duration = int(state.duration_ms)
 
-    if _playback_state.track_started_at:
-        elapsed = int((time.time() - _playback_state.track_started_at) * 1000)
+    if state.track_started_at:
+        elapsed = int((time.time() - state.track_started_at) * 1000)
         duration += elapsed
 
     return duration
@@ -95,10 +74,9 @@ def _calculate_final_duration() -> int:
 
 def get_playback_state() -> dict:
     """Get current playback state with server time for clock sync."""
-    state = _playback_state.model_dump(by_alias=True)
-    state["serverTime"] = time.time()
-    state["sortSpec"] = _playback_state.sort_spec  # Ensure sort_spec is included
-    return state
+    state_dict = get_state_dict()
+    state_dict["sortSpec"] = get_state().sort_spec
+    return state_dict
 
 
 async def update_organizer_queue(session_id: str) -> None:
