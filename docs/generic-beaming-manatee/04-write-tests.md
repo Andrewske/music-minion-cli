@@ -1,6 +1,6 @@
 ---
 task: 04-write-tests
-status: pending
+status: done
 depends: [01-create-player-state-module, 02-migrate-player-router]
 files:
   - path: web/backend/tests/test_player_state.py
