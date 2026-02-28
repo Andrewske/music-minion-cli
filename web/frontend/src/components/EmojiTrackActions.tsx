@@ -27,8 +27,10 @@ export function EmojiTrackActions({
 
   const { addEmoji, removeEmoji, isAdding } = useTrackEmojis(track, onUpdate);
 
-  const handleAddEmoji = async (emoji: string): Promise<void> => {
-    await addEmoji(emoji);
+  const handleAddEmoji = async (emoji: string | null): Promise<void> => {
+    if (emoji) {
+      await addEmoji(emoji);
+    }
     setShowPicker(false);
   };
 

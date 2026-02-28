@@ -46,8 +46,8 @@ export function BucketEditDialog({
     }
   };
 
-  const handleEmojiSelect = (selectedEmojiId: string): void => {
-    setEmojiId(selectedEmojiId);
+  const handleEmojiSelect = (selectedEmojiId: string | null): void => {
+    setEmojiId(selectedEmojiId ?? undefined);
     setShowEmojiPicker(false);
   };
 
