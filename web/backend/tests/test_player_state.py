@@ -1,28 +1,8 @@
----
-task: 04-write-tests
-status: done
-depends: [01-create-player-state-module, 02-migrate-player-router]
-files:
-  - path: web/backend/tests/test_player_state.py
-    action: create
----
-
-# Write Tests for Player State Module
-
-## Context
-The new player_state module needs unit tests to verify immutability guarantees and thread-safe update behavior.
-
-## Files to Modify/Create
-- web/backend/tests/test_player_state.py (new)
-
-## Implementation Details
-
-```python
 """Tests for player_state module."""
 
 import asyncio
 import pytest
-from web.backend.player_state import (
+from backend.player_state import (
     PlaybackState,
     get_state,
     get_state_dict,
@@ -88,7 +68,7 @@ class TestUpdateState:
     async def test_update_with_dict(self, monkeypatch):
         # Mock broadcast to avoid import issues
         monkeypatch.setattr(
-            "web.backend.sync_manager.sync_manager.broadcast",
+            "backend.sync_manager.sync_manager.broadcast",
             lambda *args: asyncio.sleep(0)
         )
 
@@ -101,7 +81,7 @@ class TestUpdateState:
     @pytest.mark.asyncio
     async def test_update_with_callable(self, monkeypatch):
         monkeypatch.setattr(
-            "web.backend.sync_manager.sync_manager.broadcast",
+            "backend.sync_manager.sync_manager.broadcast",
             lambda *args: asyncio.sleep(0)
         )
 
@@ -115,7 +95,7 @@ class TestUpdateState:
     @pytest.mark.asyncio
     async def test_list_to_tuple_conversion(self, monkeypatch):
         monkeypatch.setattr(
-            "web.backend.sync_manager.sync_manager.broadcast",
+            "backend.sync_manager.sync_manager.broadcast",
             lambda *args: asyncio.sleep(0)
         )
 
@@ -128,7 +108,7 @@ class TestUpdateState:
     async def test_concurrent_updates_are_serialized(self, monkeypatch):
         """Multiple concurrent updates should not race."""
         monkeypatch.setattr(
-            "web.backend.sync_manager.sync_manager.broadcast",
+            "backend.sync_manager.sync_manager.broadcast",
             lambda *args: asyncio.sleep(0)
         )
 
@@ -145,10 +125,3 @@ class TestUpdateState:
 
         # Should be exactly 300 (no lost updates)
         assert get_state().queue_index == 300
-```
-
-## Verification
-
-```bash
-uv run pytest web/backend/tests/test_player_state.py -v
-```
