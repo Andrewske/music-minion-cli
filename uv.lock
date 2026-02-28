@@ -415,7 +415,7 @@ source = { editable = "." }
 dependencies = [
     { name = "blessed" },
     { name = "emoji" },
-    { name = "essentia" },
+    { name = "essentia", marker = "platform_machine != 'aarch64'" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "loguru" },
@@ -458,7 +458,7 @@ dev = [
 requires-dist = [
     { name = "blessed", specifier = ">=1.20.0" },
     { name = "emoji", specifier = ">=2.15.0" },
-    { name = "essentia", specifier = ">=2.1b6.dev1389" },
+    { name = "essentia", marker = "platform_machine != 'aarch64'", specifier = ">=2.1b6.dev1389" },
     { name = "fastapi", specifier = ">=0.109.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "loguru", specifier = ">=0.7.0" },

@@ -249,3 +249,12 @@ sqlite3 db.db "EXPLAIN QUERY PLAN SELECT ... FROM tracks t JOIN ratings r ON t.i
 ```
 
 **Rule**: When indexes aren't being used, verify column types match in JOIN conditions. Migration pattern: disable FK constraints, recreate table with correct type, re-enable FKs.
+
+## Merge Direction Matters (2026-02-27)
+
+**Bug:** enrich-metadata skill deleted local tracks when merging with SC-only tracks, causing cascade deletion of bucket_tracks, ratings, ELO scores.
+
+**Fix:** Always preserve the local track (has more relationships). Delete the SC-only track instead.
+
+**Lesson:** When merging duplicate records, preserve the one with more foreign key relationships. Check all tables with CASCADE deletes before deciding which record to delete.
+

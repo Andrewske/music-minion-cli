@@ -188,6 +188,6 @@ Pattern: Sidebar content affects multiple routes via Zustand stores, not props d
 
 ## Files
 
-- Database: SQLite v31 in `core/database.py`
+- Database: SQLite v31 at `~/.local/share/music-minion/music_minion.db` (schema in `core/database.py`)
 - Learnings: `ai-learnings.md`
 - Future roadmap: `docs/incomplete-items.md`

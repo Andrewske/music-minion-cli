@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 45  # Add session_id to player_queue_state
+SCHEMA_VERSION = 46  # Add enriched_at to tracks for metadata enrichment tracking
 
 
 # Initial top 50 curated emojis for music reactions
@@ -2105,6 +2105,20 @@ def migrate_database(conn, current_version: int) -> None:
             "  ✓ Migration to v45 complete: Added context_session_id to player_queue_state"
         )
 
+    if current_version < 46:
+        logger.info("Migrating to v46: Add enriched_at to tracks...")
+
+        # Add enriched_at column for tracking metadata enrichment status
+        try:
+            conn.execute(
+                "ALTER TABLE tracks ADD COLUMN enriched_at TIMESTAMP DEFAULT NULL"
+            )
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+        conn.commit()
+        logger.info("  ✓ Migration to v46 complete: Added enriched_at to tracks")
+
 
 def init_database() -> None:
     """Initialize the database with required tables."""
@@ -2137,7 +2151,8 @@ def init_database() -> None:
                 key_signature TEXT,
                 bpm REAL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                enriched_at TIMESTAMP DEFAULT NULL
             )
         """)
 

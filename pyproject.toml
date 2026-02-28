@@ -32,7 +32,7 @@ dependencies = [
     "httpx>=0.27.0", # Async HTTP client for stream proxy
     "emoji>=2.15.0",
     "pillow>=12.1.1",
-    "essentia>=2.1b6.dev1389",
+    "essentia>=2.1b6.dev1389; platform_machine != 'aarch64'",  # No ARM64 wheels
     "tqdm>=4.67.3",
 ]
 

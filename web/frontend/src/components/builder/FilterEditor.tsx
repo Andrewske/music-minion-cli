@@ -19,7 +19,7 @@ function EmojiValuePicker({ value, onChange }: { value: string; onChange: (v: st
       </button>
       {showPicker && (
         <EmojiPicker
-          onSelect={(emoji) => { onChange(emoji); setShowPicker(false); }}
+          onSelect={(emoji) => { if (emoji) onChange(emoji); setShowPicker(false); }}
           onClose={() => setShowPicker(false)}
         />
       )}
