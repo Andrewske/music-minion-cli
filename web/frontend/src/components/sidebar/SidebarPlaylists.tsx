@@ -25,13 +25,15 @@ import { useComparisonStore } from '../../stores/comparisonStore';
 import { useStartComparison } from '../../hooks/useComparison';
 import { SidebarSection } from './SidebarSection';
 import type { Playlist } from '../../types';
+import { useLibraryStore } from '../../stores/libraryStore';
 
 interface SidebarPlaylistsProps {
   sidebarExpanded: boolean;
 }
 
 export function SidebarPlaylists({ sidebarExpanded }: SidebarPlaylistsProps): JSX.Element {
-  const { data: playlists, isLoading } = usePlaylists();
+  const { activeLibrary } = useLibraryStore();
+  const { data: playlists, isLoading } = usePlaylists(activeLibrary);  // Pass library
   const params = useParams({ strict: false });
   const location = useLocation();
   const navigate = useNavigate();

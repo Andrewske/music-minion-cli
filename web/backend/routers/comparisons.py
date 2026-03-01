@@ -56,6 +56,8 @@ def _track_to_info(track: dict, emojis: list[str] | None = None) -> TrackInfo:
             playlist_rating=track.get("playlist_rating"),
             playlist_comparison_count=track.get("playlist_comparison_count"),
             global_rating=track.get("global_rating"),
+            source=track.get("source"),
+            local_path=track.get("local_path"),
         )
         logger.debug(f"Converted track {track['id']} to TrackInfo")
         return track_info

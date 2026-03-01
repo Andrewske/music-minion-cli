@@ -22,6 +22,9 @@ class TrackInfo(BaseModel):
     playlist_rating: Optional[float] = None
     playlist_comparison_count: Optional[int] = None
     global_rating: Optional[float] = None
+    # Multi-source fields
+    source: Optional[str] = None
+    local_path: Optional[str] = None
 
 
 class ComparisonPair(BaseModel):

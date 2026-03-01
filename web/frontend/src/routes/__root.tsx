@@ -6,6 +6,7 @@ import { useSyncWebSocket } from '../hooks/useSyncWebSocket'
 import { PlayerBar } from '../components/player/PlayerBar'
 import { Sidebar } from '../components/sidebar/Sidebar'
 import { MobileHeader } from '../components/sidebar/MobileHeader'
+import { SidebarLibrarySwitcher } from '../components/sidebar/SidebarLibrarySwitcher'
 import { SidebarPlaylists } from '../components/sidebar/SidebarPlaylists'
 import { SidebarFilters } from '../components/sidebar/SidebarFilters'
 import { SidebarQuickTag } from '../components/sidebar/SidebarQuickTag'
@@ -24,6 +25,7 @@ function RootComponent(): JSX.Element {
       <div className="flex h-screen bg-black">
         {/* Mobile header - only on small screens */}
         <MobileHeader>
+          <SidebarLibrarySwitcher sidebarExpanded={true} />
           <SidebarQuickTag sidebarExpanded={true} />
           <SidebarPlaylists sidebarExpanded={true} />
           <SidebarFilters sidebarExpanded={true} />
@@ -32,6 +34,7 @@ function RootComponent(): JSX.Element {
         {/* Desktop sidebar - only on md+ */}
         <div className="hidden md:flex">
           <Sidebar>
+            <SidebarLibrarySwitcher sidebarExpanded={true} />
             <SidebarQuickTag sidebarExpanded={true} />
             <SidebarPlaylists sidebarExpanded={true} />
             <SidebarFilters sidebarExpanded={true} />

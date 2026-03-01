@@ -9,8 +9,8 @@
 | Task | Status | Started | Completed | Duration |
 |------|--------|---------|-----------|----------|
 | 01-database-migration | ✅ Done | 2026-02-28T13:00:00Z | 2026-02-28T13:02:00Z | ~2m |
-| 02-backend-playlist-filtering | Pending | - | - | - |
-| 03-backend-soundcloud-sync | Pending | - | - | - |
+| 02-backend-playlist-filtering | ✅ Done | 2026-02-28T13:02:00Z | 2026-02-28T13:05:00Z | ~3m |
+| 03-backend-soundcloud-sync | ✅ Done | 2026-02-28T13:02:00Z | 2026-02-28T13:05:00Z | ~3m |
 | 04-frontend-library-switcher | Pending | - | - | - |
 | 05-settings-sync-button | Pending | - | - | - |
 
@@ -48,4 +48,10 @@
 ### Batch 2
 - Started: 2026-02-28T13:02:00Z
 - Tasks: 02-backend-playlist-filtering, 03-backend-soundcloud-sync (parallel)
+- ✅ Completed: 02-backend-playlist-filtering - Library filter param + source_type fixes
+- ✅ Completed: 03-backend-soundcloud-sync - Provider interface + preseed script + sync endpoint
+
+### Batch 3
+- Started: 2026-02-28T13:05:00Z
+- Tasks: 04-frontend-library-switcher
 
