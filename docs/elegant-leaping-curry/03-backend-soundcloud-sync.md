@@ -1,6 +1,6 @@
 ---
 task: 03-backend-soundcloud-sync
-status: pending
+status: done
 depends:
   - 01-database-migration
 files:
