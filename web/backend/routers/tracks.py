@@ -72,14 +72,31 @@ async def search_tracks(q: str, limit: int = 20, db=Depends(get_db)) -> list[dic
 async def stream_audio(
     track_id: int, db=Depends(get_db), config: Config = Depends(get_config)
 ):
-    # Check for multi-source support (SoundCloud redirect)
+    # Check for multi-source support (SoundCloud streaming)
     cursor = db.execute(
-        "SELECT source, source_url FROM tracks WHERE id = ?", (track_id,)
+        "SELECT source, source_url, soundcloud_id FROM tracks WHERE id = ?", (track_id,)
     )
     row = cursor.fetchone()
     if row and row["source"] == "soundcloud" and row["source_url"]:
-        logger.info(f"Redirecting to SoundCloud stream for track {track_id}")
-        return RedirectResponse(row["source_url"])
+        from web.backend.soundcloud_auth import get_web_provider_state
+        from music_minion.domain.library.providers.soundcloud.api import get_stream_url
+
+        state = get_web_provider_state()
+        if state and state.authenticated:
+            # Fast path: use SC API directly (~200ms)
+            stream_url = get_stream_url(state, row["soundcloud_id"])
+            if stream_url:
+                logger.info(f"Resolved SC stream for track {track_id}")
+                return RedirectResponse(stream_url)
+
+        # Fallback: yt-dlp for unauthenticated or API failure (~2-3s)
+        from music_minion.domain.radio.stream_resolver import resolve_stream_url
+        stream_url = resolve_stream_url(row["source_url"])
+        if stream_url:
+            logger.info(f"Resolved stream via yt-dlp for track {track_id}")
+            return RedirectResponse(stream_url)
+
+        raise HTTPException(503, "Failed to resolve stream URL")
 
     # Local file handling (existing logic)
     file_path = get_track_path(track_id, db)

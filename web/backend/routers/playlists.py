@@ -162,13 +162,13 @@ def get_playlist_name(playlist_id: int) -> Optional[str]:
 
 
 @router.get("/playlists")
-async def get_playlists():
-    """Get all playlists for the current user."""
+async def get_playlists(library: Optional[str] = None):
+    """Get all playlists, optionally filtered by library."""
     try:
         from music_minion.core.database import get_db_connection
         from music_minion.domain.playlists.crud import get_all_playlists
 
-        playlists = get_all_playlists()
+        playlists = get_all_playlists(library=library)
         return {"playlists": playlists}
     except Exception as e:
         raise HTTPException(
