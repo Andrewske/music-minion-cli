@@ -12,12 +12,16 @@
 
 import { useReducer, useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';
+import { toast } from 'sonner';
 import {
   getSoundCloudPlaylists,
   matchPlaylist,
   createPlaylistFromMatches,
+  syncSoundCloudLibrary,
+  getSoundCloudSyncStatus,
   type SoundCloudPlaylist,
   type ScPlaylistMatch,
+  type SyncStatus,
 } from '../../api/soundcloud';
 import { TrackSearchAutocomplete } from './TrackSearchAutocomplete';
 
@@ -648,8 +652,11 @@ export function SoundCloudImportSection(): JSX.Element {
   const [state, dispatch] = useReducer(importReducer, initialState);
   const [isLoadingPlaylists, setIsLoadingPlaylists] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
+  const [syncResult, setSyncResult] = useState<{ tracks: number; playlists: number; likes: number } | null>(null);
 
-  // Fetch playlists on mount
+  // Fetch playlists and sync status on mount
   useEffect(() => {
     const fetchPlaylists = async (): Promise<void> => {
       setIsLoadingPlaylists(true);
@@ -673,7 +680,17 @@ export function SoundCloudImportSection(): JSX.Element {
       }
     };
 
+    const fetchSyncStatus = async (): Promise<void> => {
+      try {
+        const status = await getSoundCloudSyncStatus();
+        setSyncStatus(status);
+      } catch {
+        // Ignore errors
+      }
+    };
+
     fetchPlaylists();
+    fetchSyncStatus();
   }, []);
 
   const handleStartMatching = async (): Promise<void> => {
@@ -718,12 +735,92 @@ export function SoundCloudImportSection(): JSX.Element {
     }
   };
 
+  const handleSync = async (): Promise<void> => {
+    setIsSyncing(true);
+    setSyncResult(null);
+
+    try {
+      const result = await syncSoundCloudLibrary();
+      setSyncResult({
+        tracks: result.tracks_synced,
+        playlists: result.playlists_synced,
+        likes: result.likes_synced,
+      });
+      setSyncStatus({ last_synced_at: result.last_synced_at, track_count: result.tracks_synced });
+
+      if (result.errors.length > 0) {
+        toast.warning(`Sync completed with ${result.errors.length} errors`);
+      } else {
+        toast.success(`Synced ${result.tracks_synced} tracks`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Sync failed';
+
+      if (message === 'SOUNDCLOUD_AUTH_EXPIRED') {
+        toast.error('SoundCloud session expired', {
+          description: 'Re-authenticate in Settings > SoundCloud',
+        });
+      } else {
+        toast.error(message);
+      }
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const formatLastSync = (iso: string): string => {
+    const date = new Date(iso);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
+  };
+
   const matchedCount = state.matches.filter(
     (m) => m.local_track_id !== null && !m.is_missing
   ).length;
 
   return (
     <div className="space-y-6">
+      {/* Sync Library Section */}
+      <div className="p-6 bg-slate-800 border border-slate-700 rounded-lg">
+        <h3 className="text-lg font-semibold text-white mb-2">Sync SoundCloud Library</h3>
+        <p className="text-sm text-slate-400 mb-4">
+          Import your SoundCloud likes and playlists for streaming in the app.
+          This creates separate records that can be browsed in the SoundCloud library view.
+        </p>
+
+        <div className="flex items-center gap-4">
+          <button
+            onClick={handleSync}
+            disabled={isSyncing}
+            className="px-6 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
+          >
+            {isSyncing ? 'Syncing...' : 'Sync Now'}
+          </button>
+
+          {syncStatus?.last_synced_at && (
+            <span className="text-sm text-slate-400">
+              Last synced: {formatLastSync(syncStatus.last_synced_at)}
+              {' • '}
+              {syncStatus.track_count} tracks
+            </span>
+          )}
+        </div>
+
+        {syncResult && (
+          <p className="mt-3 text-sm text-green-400">
+            Synced {syncResult.tracks} tracks, {syncResult.playlists} playlists, {syncResult.likes} likes
+          </p>
+        )}
+      </div>
+
       {/* Header */}
       <div>
         <h2 className="text-xl font-semibold text-white">Import from SoundCloud</h2>

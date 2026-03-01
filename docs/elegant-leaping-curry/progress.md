@@ -11,7 +11,7 @@
 | 01-database-migration | ✅ Done | 2026-02-28T13:00:00Z | 2026-02-28T13:02:00Z | ~2m |
 | 02-backend-playlist-filtering | ✅ Done | 2026-02-28T13:02:00Z | 2026-02-28T13:05:00Z | ~3m |
 | 03-backend-soundcloud-sync | ✅ Done | 2026-02-28T13:02:00Z | 2026-02-28T13:05:00Z | ~3m |
-| 04-frontend-library-switcher | Pending | - | - | - |
+| 04-frontend-library-switcher | ✅ Done | 2026-02-28T13:05:00Z | 2026-02-28T13:08:00Z | ~3m |
 | 05-settings-sync-button | Pending | - | - | - |
 
 ## Dependency Graph
@@ -54,4 +54,9 @@
 ### Batch 3
 - Started: 2026-02-28T13:05:00Z
 - Tasks: 04-frontend-library-switcher
+- ✅ Completed: 04-frontend-library-switcher - Library store + switcher + streaming indicator
+
+### Batch 4
+- Started: 2026-02-28T13:08:00Z
+- Tasks: 05-settings-sync-button
 
