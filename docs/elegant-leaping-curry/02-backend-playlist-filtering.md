@@ -1,6 +1,6 @@
 ---
 task: 02-backend-playlist-filtering
-status: pending
+status: done
 depends:
   - 01-database-migration
 files:

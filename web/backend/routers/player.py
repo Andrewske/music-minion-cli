@@ -197,7 +197,7 @@ async def play(request: PlayRequest, db=Depends(get_db)):
     from music_minion.domain.radio.history import start_play
     history_id = start_play(
         track_id=queue_tracks[queue_index]["id"],
-        source_type="local"  # TODO: derive from track source when multi-source is implemented
+        source_type=queue_tracks[queue_index].get('source', 'local')
     )
 
     # 6. Update global state
@@ -312,7 +312,7 @@ async def next_track(reason: str = "skip", db=Depends(get_db)):
             from music_minion.domain.radio.history import start_play
             history_id = start_play(
                 track_id=s.queue[new_index]["id"],
-                source_type="local"
+                source_type=s.queue[new_index].get('source', 'local')
             )
 
             return s.model_copy(update={
@@ -370,7 +370,7 @@ async def next_track(reason: str = "skip", db=Depends(get_db)):
                         from music_minion.domain.radio.history import start_play
                         history_id = start_play(
                             track_id=new_tracks[0]["id"],
-                            source_type="local"
+                            source_type=new_tracks[0].get('source', 'local')
                         )
 
                         await update_state({
@@ -454,7 +454,7 @@ async def prev_track():
             from music_minion.domain.radio.history import start_play
             history_id = start_play(
                 track_id=state.queue[new_index]["id"],
-                source_type="local"
+                source_type=state.queue[new_index].get('source', 'local')
             )
 
             await update_state({
