@@ -1,6 +1,6 @@
 ---
 task: 04-frontend-library-switcher
-status: pending
+status: done
 depends:
   - 02-backend-playlist-filtering
 files:

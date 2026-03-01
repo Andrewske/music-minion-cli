@@ -26,6 +26,9 @@ export function TrackCard({ track, isPlaying, className = '', onArchive, onWinne
   // Get primary genre (position=1 or first in array, or fall back to genre string)
   const primaryGenre = track.genres?.[0] ?? (track.genre ? { name: track.genre, emoji_id: null } : null);
 
+  // Helper to detect streaming-only tracks
+  const isStreamingOnly = track.source === 'soundcloud' && !track.local_path;
+
   const handleClick = () => {
     if (onClick) {
       onClick();
@@ -115,8 +118,16 @@ export function TrackCard({ track, isPlaying, className = '', onArchive, onWinne
         >
           <div className="flex-1 pt-2">
             {/* Title & Artist */}
-            <h3 className="font-bold text-xl text-white/90 leading-tight mb-2 line-clamp-2">
-              {track.title}
+            <h3 className="font-bold text-xl text-white/90 leading-tight mb-2 line-clamp-2 flex items-center justify-center gap-2">
+              <span>{track.title}</span>
+              {isStreamingOnly && (
+                <span
+                  className="text-xs text-orange-400/70"
+                  title="Streaming from SoundCloud"
+                >
+                  ☁️
+                </span>
+              )}
             </h3>
             <p className="text-lg text-obsidian-accent font-medium mb-2 line-clamp-1">
               {track.artist}

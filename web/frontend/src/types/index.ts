@@ -24,6 +24,9 @@ export interface TrackInfo {
     emoji_id: string | null;
     position: number;
   }>;
+  // Multi-source fields
+  source?: string;
+  local_path?: string;
 }
 
 export interface Playlist {
