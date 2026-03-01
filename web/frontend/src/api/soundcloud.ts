@@ -126,27 +126,19 @@ export interface SyncStatus {
 }
 
 export async function getSoundCloudSyncStatus(): Promise<SyncStatus> {
-  const response = await fetch('/api/soundcloud/sync/status');
-  if (!response.ok) {
-    throw new Error('Failed to get sync status');
-  }
-  return response.json();
+  return apiRequest<SyncStatus>('/soundcloud/sync/status');
 }
 
 export async function syncSoundCloudLibrary(): Promise<SyncResponse> {
-  const response = await fetch('/api/soundcloud/sync', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-  });
-
-  if (response.status === 401) {
-    throw new Error('SOUNDCLOUD_AUTH_EXPIRED');
+  try {
+    return await apiRequest<SyncResponse>('/soundcloud/sync', {
+      method: 'POST',
+    });
+  } catch (err) {
+    // Preserve special error code for auth expiration
+    if (err instanceof Error && err.message.includes('401')) {
+      throw new Error('SOUNDCLOUD_AUTH_EXPIRED');
+    }
+    throw err;
   }
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.detail || 'Sync failed');
-  }
-
-  return response.json();
 }

@@ -6,6 +6,7 @@ Usage: uv run python scripts/preseed_soundcloud_likes.py
 from pathlib import Path
 
 import pandas as pd
+from loguru import logger
 
 from music_minion.core.database import get_db_connection
 
@@ -15,11 +16,11 @@ LIKES_PARQUET = Path.home() / "coding/soundcloud-discovery/.cache/likes.parquet"
 def preseed_likes() -> None:
     """Import cached SoundCloud likes into database."""
     if not LIKES_PARQUET.exists():
-        print(f"Cache not found: {LIKES_PARQUET}")
+        logger.warning(f"Cache not found: {LIKES_PARQUET}")
         return
 
     df = pd.read_parquet(LIKES_PARQUET)
-    print(f"Found {len(df)} cached likes")
+    logger.info(f"Found {len(df)} cached likes")
 
     with get_db_connection() as conn:
         inserted = 0
@@ -87,7 +88,7 @@ def preseed_likes() -> None:
         )
 
         conn.commit()
-        print(f"Inserted {inserted} tracks, linked {len(playlist_tracks)} to playlist")
+        logger.info(f"Inserted {inserted} tracks, linked {len(playlist_tracks)} to playlist")
 
 
 if __name__ == "__main__":
