@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 46  # Add enriched_at to tracks for metadata enrichment tracking
+SCHEMA_VERSION = 47  # Composite unique indexes for track provider IDs with source
 
 
 # Initial top 50 curated emojis for music reactions
@@ -482,13 +482,13 @@ def migrate_database(conn, current_version: int) -> None:
 
         # 10. Create UNIQUE indexes on provider IDs for fast lookups and uniqueness
         conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_soundcloud_id ON tracks (soundcloud_id) WHERE soundcloud_id IS NOT NULL"
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_soundcloud_id ON tracks (source, soundcloud_id) WHERE soundcloud_id IS NOT NULL"
         )
         conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_spotify_id ON tracks (spotify_id) WHERE spotify_id IS NOT NULL"
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_spotify_id ON tracks (source, spotify_id) WHERE spotify_id IS NOT NULL"
         )
         conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_youtube_id ON tracks (youtube_id) WHERE youtube_id IS NOT NULL"
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_youtube_id ON tracks (source, youtube_id) WHERE youtube_id IS NOT NULL"
         )
 
         conn.commit()
@@ -623,13 +623,13 @@ def migrate_database(conn, current_version: int) -> None:
 
         # Partial UNIQUE indexes
         conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_soundcloud_id ON tracks (soundcloud_id) WHERE soundcloud_id IS NOT NULL"
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_soundcloud_id ON tracks (source, soundcloud_id) WHERE soundcloud_id IS NOT NULL"
         )
         conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_spotify_id ON tracks (spotify_id) WHERE spotify_id IS NOT NULL"
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_spotify_id ON tracks (source, spotify_id) WHERE spotify_id IS NOT NULL"
         )
         conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_youtube_id ON tracks (youtube_id) WHERE youtube_id IS NOT NULL"
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_youtube_id ON tracks (source, youtube_id) WHERE youtube_id IS NOT NULL"
         )
 
         # Step 7: Re-enable foreign keys
@@ -2118,6 +2118,34 @@ def migrate_database(conn, current_version: int) -> None:
 
         conn.commit()
         logger.info("  ✓ Migration to v46 complete: Added enriched_at to tracks")
+
+    if current_version < 47:
+        logger.info("Migrating to v47: Composite unique index for track provider IDs...")
+
+        # Drop old single-column unique indexes
+        conn.execute("DROP INDEX IF EXISTS idx_tracks_soundcloud_id")
+        conn.execute("DROP INDEX IF EXISTS idx_tracks_spotify_id")
+        conn.execute("DROP INDEX IF EXISTS idx_tracks_youtube_id")
+
+        # Create new composite unique indexes with source
+        conn.execute("""
+            CREATE UNIQUE INDEX idx_tracks_soundcloud_id
+            ON tracks (source, soundcloud_id)
+            WHERE soundcloud_id IS NOT NULL
+        """)
+        conn.execute("""
+            CREATE UNIQUE INDEX idx_tracks_spotify_id
+            ON tracks (source, spotify_id)
+            WHERE spotify_id IS NOT NULL
+        """)
+        conn.execute("""
+            CREATE UNIQUE INDEX idx_tracks_youtube_id
+            ON tracks (source, youtube_id)
+            WHERE youtube_id IS NOT NULL
+        """)
+
+        conn.commit()
+        logger.info("  ✓ Migration to v47 complete")
 
 
 def init_database() -> None:
