@@ -1,6 +1,6 @@
 ---
 task: 05-settings-sync-button
-status: pending
+status: done
 depends:
   - 03-backend-soundcloud-sync
   - 04-frontend-library-switcher

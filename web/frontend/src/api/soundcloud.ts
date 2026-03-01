@@ -111,3 +111,42 @@ export async function searchTracks(query: string, limit = 20): Promise<TrackSear
     `/tracks/search?q=${encodeURIComponent(query)}&limit=${limit}`
   );
 }
+
+export interface SyncResponse {
+  tracks_synced: number;
+  playlists_synced: number;
+  likes_synced: number;
+  errors: string[];
+  last_synced_at: string;
+}
+
+export interface SyncStatus {
+  last_synced_at: string | null;
+  track_count: number;
+}
+
+export async function getSoundCloudSyncStatus(): Promise<SyncStatus> {
+  const response = await fetch('/api/soundcloud/sync/status');
+  if (!response.ok) {
+    throw new Error('Failed to get sync status');
+  }
+  return response.json();
+}
+
+export async function syncSoundCloudLibrary(): Promise<SyncResponse> {
+  const response = await fetch('/api/soundcloud/sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (response.status === 401) {
+    throw new Error('SOUNDCLOUD_AUTH_EXPIRED');
+  }
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Sync failed');
+  }
+
+  return response.json();
+}

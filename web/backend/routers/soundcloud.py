@@ -645,6 +645,30 @@ class SyncResponse(BaseModel):
     playlists_synced: int
     likes_synced: int
     errors: list[str]
+    last_synced_at: str
+
+
+class SyncStatusResponse(BaseModel):
+    """Response model for sync status."""
+
+    last_synced_at: Optional[str]
+    track_count: int
+
+
+@router.get("/sync/status")
+async def get_sync_status(db=Depends(get_db)) -> SyncStatusResponse:
+    """Get last sync timestamp and track count."""
+    cursor = db.execute("""
+        SELECT
+            MAX(created_at) as last_synced_at,
+            COUNT(*) as track_count
+        FROM tracks WHERE source = 'soundcloud'
+    """)
+    row = cursor.fetchone()
+    return SyncStatusResponse(
+        last_synced_at=row["last_synced_at"],
+        track_count=row["track_count"] or 0,
+    )
 
 
 @router.post("/sync")
@@ -871,6 +895,10 @@ async def sync_soundcloud_library(db=Depends(get_db)) -> SyncResponse:
 
         db.commit()
 
+        # Get the current timestamp for last_synced_at
+        from datetime import datetime
+        last_synced_at = datetime.utcnow().isoformat()
+
     except Exception as e:
         db.rollback()
         logger.exception("Sync failed")
@@ -881,4 +909,5 @@ async def sync_soundcloud_library(db=Depends(get_db)) -> SyncResponse:
         playlists_synced=playlists_synced,
         likes_synced=likes_synced,
         errors=errors,
+        last_synced_at=last_synced_at,
     )
