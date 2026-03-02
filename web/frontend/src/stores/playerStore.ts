@@ -89,7 +89,7 @@ interface PlayerActions {
   toggleShuffle: () => void;
   toggleShuffleSmooth: () => Promise<void>;
   setSortOrder: (field: string, direction: 'asc' | 'desc') => Promise<void>;
-  setActiveDevice: (deviceId: string) => void;
+  setActiveDevice: (deviceId: string) => Promise<void>;
   syncState: (state: PlaybackState & { serverTime: number }) => void;
   syncDevices: (devices: Device[]) => void;
   setPlaybackError: (error: string | null) => void;
@@ -231,9 +231,14 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   },
 
   resume: async () => {
+    const { thisDeviceId, activeDeviceId } = get();
     try {
       const response = await fetch(`${API_BASE}/player/resume`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target_device_id: activeDeviceId ?? thisDeviceId,
+        }),
       });
 
       if (!response.ok) {
@@ -358,17 +363,30 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     }
   },
 
-  setActiveDevice: (deviceId: string) => {
-    // Simplified: just update active device preference
-    set({ activeDeviceId: deviceId });
+  setActiveDevice: async (deviceId: string) => {
+    try {
+      await fetch(`${API_BASE}/player/transfer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_id: deviceId }),
+      });
+      // State will be synced via WebSocket broadcast
+    } catch (error) {
+      console.error('Failed to transfer playback:', error);
+    }
   },
 
-  syncState: (state: PlaybackState & { serverTime: number; sortSpec?: { field: string; direction: 'asc' | 'desc' } | null }) => {
+  syncState: (state: PlaybackState & { serverTime: number; sortSpec?: { field: string; direction: 'asc' | 'desc' } | null; currentContext?: PlayContext | null }) => {
     const prevTrackId = get().currentTrack?.id;
     const newTrackId = state.currentTrack?.id;
 
     // Reset scrobble tracking on track change
     const scrobbledThisPlaythrough = prevTrackId === newTrackId ? get().scrobbledThisPlaythrough : false;
+
+    // Preserve currentTrack reference if same track ID (prevents effect re-runs in usePlayer)
+    const currentTrack = prevTrackId === newTrackId && prevTrackId != null
+      ? get().currentTrack
+      : state.currentTrack;
 
     // Compute clock offset
     const clockOffset = state.serverTime - Date.now();
@@ -378,7 +396,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     const sortDirection = state.sortSpec?.direction ?? null;
 
     set({
-      currentTrack: state.currentTrack,
+      currentTrack,
       queue: state.queue,
       queueIndex: state.queueIndex,
       trackStartedAt: state.trackStartedAt,
@@ -391,6 +409,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       clockOffset,
       scrobbledThisPlaythrough,
       isThisDeviceActive: state.activeDeviceId === get().thisDeviceId,
+      currentContext: state.currentContext ?? get().currentContext,  // Sync context from backend
     });
   },
 
