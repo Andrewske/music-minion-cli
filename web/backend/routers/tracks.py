@@ -5,7 +5,7 @@ import mimetypes
 import json
 from pathlib import Path
 from typing import Optional
-from ..waveform import has_cached_waveform, generate_waveform, get_waveform_path
+from ..waveform import has_cached_waveform, generate_waveform, get_waveform_path, fetch_soundcloud_waveform
 from ..deps import get_db, get_config
 from music_minion.core.config import Config
 
@@ -72,47 +72,48 @@ async def search_tracks(q: str, limit: int = 20, db=Depends(get_db)) -> list[dic
 async def stream_audio(
     track_id: int, db=Depends(get_db), config: Config = Depends(get_config)
 ):
-    # Check for multi-source support (SoundCloud streaming)
+    # Prioritize local file if it exists (even for SoundCloud tracks that were downloaded)
+    file_path = get_track_path(track_id, db)
+    if file_path and file_path.exists():
+        # SECURITY: Validate path within library
+        from music_minion.core.path_security import validate_track_path
+
+        validated = validate_track_path(file_path, config.music)
+        if validated:
+            logger.info(f"Streaming local file for track {track_id}: {validated.name}")
+            return FileResponse(validated, media_type=get_mime_type(validated))
+        else:
+            logger.warning(f"Blocked access outside library: {file_path}")
+
+    # Fallback to SoundCloud streaming for tracks without local files
     cursor = db.execute(
         "SELECT source, source_url, soundcloud_id FROM tracks WHERE id = ?", (track_id,)
     )
     row = cursor.fetchone()
-    if row and row["source"] == "soundcloud" and row["source_url"]:
+    if row and row["source"] == "soundcloud" and (row["soundcloud_id"] or row["source_url"]):
         from web.backend.soundcloud_auth import get_web_provider_state
-        from music_minion.domain.library.providers.soundcloud.api import get_stream_url
+        from music_minion.domain.library.providers.soundcloud.api import resolve_stream_url as sc_resolve
 
         state = get_web_provider_state()
-        if state and state.authenticated:
-            # Fast path: use SC API directly (~200ms)
-            stream_url = get_stream_url(state, row["soundcloud_id"])
+        if state and state.authenticated and row["soundcloud_id"]:
+            # Resolve to actual CDN URL for browser playback (~200ms)
+            stream_url = sc_resolve(state, row["soundcloud_id"])
             if stream_url:
                 logger.info(f"Resolved SC stream for track {track_id}")
                 return RedirectResponse(stream_url)
 
         # Fallback: yt-dlp for unauthenticated or API failure (~2-3s)
-        from music_minion.domain.radio.stream_resolver import resolve_stream_url
-        stream_url = resolve_stream_url(row["source_url"])
-        if stream_url:
-            logger.info(f"Resolved stream via yt-dlp for track {track_id}")
-            return RedirectResponse(stream_url)
+        if row["source_url"]:
+            from music_minion.domain.radio.stream_resolver import resolve_stream_url
+            stream_url = resolve_stream_url(row["source_url"])
+            if stream_url:
+                logger.info(f"Resolved stream via yt-dlp for track {track_id}")
+                return RedirectResponse(stream_url)
 
         raise HTTPException(503, "Failed to resolve stream URL")
 
-    # Local file handling (existing logic)
-    file_path = get_track_path(track_id, db)
-    if not file_path:
-        raise HTTPException(404, "Track not found")
-
-    # SECURITY: Validate path within library
-    from music_minion.core.path_security import validate_track_path
-
-    validated = validate_track_path(file_path, config.music)
-    if not validated:
-        logger.warning(f"Blocked access outside library: {file_path}")
-        raise HTTPException(403, "Access denied")
-
-    logger.info(f"Streaming track {track_id}: {validated.name}")
-    return FileResponse(validated, media_type=get_mime_type(validated))
+    # No local file and not a SoundCloud track - track not found
+    raise HTTPException(404, "Track not found or no streamable source")
 
 
 @router.get("/tracks/{track_id}/waveform")
@@ -132,23 +133,38 @@ async def get_waveform(
                 # Corrupted cache, regenerate
                 pass
 
-        # Generate new waveform
-        file_path = get_track_path(track_id, db)
-        if not file_path:
+        # Check if it's a SoundCloud track
+        cursor = db.execute(
+            "SELECT source, soundcloud_id, duration FROM tracks WHERE id = ?",
+            (track_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
             raise HTTPException(404, "Track not found")
 
-        # SECURITY: Validate path within library
-        from music_minion.core.path_security import validate_track_path
+        # Prioritize local file for waveform generation
+        file_path = get_track_path(track_id, db)
+        if file_path:
+            # SECURITY: Validate path within library
+            from music_minion.core.path_security import validate_track_path
 
-        validated = validate_track_path(file_path, config.music)
-        if not validated:
-            logger.warning(f"Blocked waveform access outside library: {file_path}")
-            raise HTTPException(403, "Access denied")
+            validated = validate_track_path(file_path, config.music)
+            if validated and validated.exists():
+                logger.info(f"Generating waveform from local file for track {track_id}")
+                waveform_data = generate_waveform(str(validated), track_id)
+                return JSONResponse(waveform_data)
 
-        logger.info(f"Generating waveform for track {track_id}")
-        waveform_data = generate_waveform(str(validated), track_id)
+        # Fallback to SoundCloud API for streaming-only tracks
+        if row["soundcloud_id"]:
+            duration = row["duration"] or 0
+            waveform_data = fetch_soundcloud_waveform(
+                row["soundcloud_id"], track_id, duration
+            )
+            if waveform_data:
+                logger.info(f"Fetched SoundCloud waveform for track {track_id}")
+                return JSONResponse(waveform_data)
 
-        return JSONResponse(waveform_data)
+        raise HTTPException(404, "No waveform source available")
 
     except HTTPException:
         raise
