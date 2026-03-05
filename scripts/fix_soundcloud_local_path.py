@@ -114,12 +114,12 @@ def migrate_track(conn, track_id: int, dry_run: bool) -> int | None:
             soundcloud_synced_at
         )
         VALUES (
-            'local', ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?,
             ?
         )
-    """, ('local',) + track)
+    """, ('local',) + tuple(track))
 
     new_local_id = cursor.lastrowid
     logger.info(f"Created local track {new_local_id} for SoundCloud track {track_id}: {track[1]} by {track[2]}")
