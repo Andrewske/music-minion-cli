@@ -92,10 +92,10 @@ export function PlaylistOrganizer({
     reorderTracks,
   } = usePlaylistOrganizer({ playlistId });
 
-  // Load full track data for unassigned tracks
+  // Load full track data for all tracks in playlist (high limit for organizer)
   const { data: allTracks } = useQuery({
-    queryKey: ['playlist', playlistId, 'tracks'],
-    queryFn: () => getPlaylistTracks(playlistId),
+    queryKey: ['playlist', playlistId, 'tracks', 'all'],
+    queryFn: () => getPlaylistTracks(playlistId, { limit: 10000 }),
   });
 
   // Use Set for O(1) lookup
@@ -143,7 +143,13 @@ export function PlaylistOrganizer({
       // If already in target bucket, no-op
       if (currentBucketId === bucketId) return;
 
-      await assignTrack(bucketId, currentTrack.id);
+      try {
+        await assignTrack(bucketId, currentTrack.id);
+      } catch (error) {
+        console.error('Failed to assign track via shortcut:', error);
+        const message = error instanceof Error ? error.message : String(error);
+        toast.error(`Failed to assign track: ${message}`);
+      }
     },
     [currentTrack, trackToBucketMap, assignTrack]
   );

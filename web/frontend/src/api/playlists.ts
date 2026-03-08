@@ -32,8 +32,16 @@ export async function getPlaylistStats(playlistId: number): Promise<PlaylistStat
   return apiRequest<PlaylistStatsResponse>(`/playlists/${playlistId}/stats`);
 }
 
-export async function getPlaylistTracks(playlistId: number): Promise<PlaylistTracksResponse> {
-  return apiRequest<PlaylistTracksResponse>(`/playlists/${playlistId}/tracks`);
+export async function getPlaylistTracks(
+  playlistId: number,
+  options?: { limit?: number }
+): Promise<PlaylistTracksResponse> {
+  const params = new URLSearchParams();
+  if (options?.limit) params.set('limit', String(options.limit));
+  const query = params.toString();
+  return apiRequest<PlaylistTracksResponse>(
+    `/playlists/${playlistId}/tracks${query ? `?${query}` : ''}`
+  );
 }
 
 export async function getSmartFilters(playlistId: number): Promise<Filter[]> {
