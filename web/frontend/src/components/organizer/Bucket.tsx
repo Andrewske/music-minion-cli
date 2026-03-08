@@ -30,6 +30,9 @@ interface BucketComponentProps {
   isActive?: boolean;
   onHeaderClick?: () => void;
   isClickable?: boolean;
+  parentPlaylistId?: number;
+  parentLibrary?: string;
+  onLink?: (playlistId: number | null) => Promise<void>;
 }
 
 // Sortable track item component
@@ -108,6 +111,9 @@ export function BucketComponent({
   isActive = false,
   onHeaderClick,
   isClickable = false,
+  parentPlaylistId,
+  parentLibrary,
+  onLink,
 }: BucketComponentProps): JSX.Element {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -192,13 +198,23 @@ export function BucketComponent({
         )}
 
         {/* Name and count */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 flex items-center gap-2">
           <span className="text-sm font-medium text-white/90 truncate">
             {bucket.name}
           </span>
-          <span className="text-xs text-white/40 ml-2">
+          <span className="text-xs text-white/40">
             ({tracks.length})
           </span>
+
+          {/* Linked playlist indicator */}
+          {bucket.linked_playlist_name && (
+            <>
+              <span className="text-white/30">🔗</span>
+              <span className="text-xs text-white/50 truncate">
+                {bucket.linked_playlist_name}
+              </span>
+            </>
+          )}
         </div>
 
         {/* Keyboard shortcut badge */}
@@ -315,6 +331,10 @@ export function BucketComponent({
         mode="edit"
         initialName={bucket.name}
         initialEmojiId={bucket.emoji_id ?? undefined}
+        parentPlaylistId={parentPlaylistId}
+        parentLibrary={parentLibrary}
+        linkedPlaylistId={bucket.linked_playlist_id}
+        onLink={onLink}
       />
     </div>
   );

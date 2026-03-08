@@ -60,6 +60,7 @@ function PlaylistOrganizerRoute(): JSX.Element {
       playlistId={playlist.id}
       playlistName={playlist.name}
       playlistType={playlist.type}
+      playlistLibrary={playlist.library}
     />
   );
 }

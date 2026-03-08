@@ -10,9 +10,9 @@
 |------|--------|---------|-----------|----------|
 | 01-database-migration | ✅ Done | 2026-03-08T12:00:00Z | 2026-03-08T12:01:00Z | ~1m |
 | 02-backend-queries | ✅ Done | 2026-03-08T12:01:00Z | 2026-03-08T12:02:00Z | ~1m |
-| 03-backend-api | Pending | - | - | - |
-| 04-frontend-types-api | Pending | - | - | - |
-| 05-frontend-hook | Pending | - | - | - |
+| 03-backend-api | ✅ Done | 2026-03-08T12:02:00Z | 2026-03-08T12:03:00Z | ~1m |
+| 04-frontend-types-api | ✅ Done | 2026-03-08T12:03:00Z | 2026-03-08T12:04:00Z | ~1m |
+| 05-frontend-hook | ✅ Done | 2026-03-08T12:04:00Z | 2026-03-08T12:05:00Z | ~1m |
 | 06-bucket-edit-popup | Pending | - | - | - |
 | 07-bucket-header-indicator | Merged into 06 | - | - | - |
 | 08-toggle-behavior | Pending | - | - | - |
@@ -54,4 +54,19 @@
 ### Batch 3
 - Started: 2026-03-08T12:02:00Z
 - Tasks: 03-backend-api
+- ✅ Completed: 03-backend-api (link/unlink endpoints, updated BucketResponse)
+
+### Batch 4
+- Started: 2026-03-08T12:03:00Z
+- Tasks: 04-frontend-types-api
+- ✅ Completed: 04-frontend-types-api (Bucket interface + linkBucket/getBucketLink)
+
+### Batch 5
+- Started: 2026-03-08T12:04:00Z
+- Tasks: 05-frontend-hook
+- ✅ Completed: 05-frontend-hook (linkBucketMutation + multi-bucket optimistic updates)
+
+### Batch 6 (parallel)
+- Started: 2026-03-08T12:05:00Z
+- Tasks: 06-bucket-edit-popup, 08-toggle-behavior
 

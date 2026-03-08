@@ -153,3 +153,11 @@ export async function getSmartPlaylistTracks(
   if (!response.ok) throw new Error('Failed to fetch tracks');
   return response.json();
 }
+
+export async function getPlaylistsByLibrary(library: string): Promise<Playlist[]> {
+  const params = new URLSearchParams({ library });
+  const response = await fetch(`${API_BASE}/playlists?${params}`);
+  if (!response.ok) throw new Error('Failed to fetch playlists');
+  const data = await response.json();
+  return data.playlists;
+}

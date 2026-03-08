@@ -1,6 +1,6 @@
 ---
 task: 06-bucket-edit-popup
-status: pending
+status: done
 depends: [05-frontend-hook]
 files:
   - path: web/frontend/src/components/organizer/BucketEditPopup.tsx
