@@ -1,6 +1,6 @@
 ---
 task: 04-frontend-types-api
-status: pending
+status: done
 depends: [03-backend-api]
 files:
   - path: web/frontend/src/api/buckets.ts

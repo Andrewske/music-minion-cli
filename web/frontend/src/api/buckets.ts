@@ -17,6 +17,8 @@ export interface Bucket {
   emoji_id: string | null;
   position: number;
   track_ids: number[];
+  linked_playlist_id: number | null;
+  linked_playlist_name: string | null;
 }
 
 export interface CreateSessionBody {
@@ -39,6 +41,14 @@ export interface MoveBucketBody {
 
 export interface ReorderTracksBody {
   track_ids: number[];
+}
+
+export interface LinkBucketBody {
+  playlist_id: number | null;
+}
+
+export interface BucketLinkResponse {
+  playlist_id: number | null;
 }
 
 // Session operations
@@ -183,4 +193,28 @@ export async function reorderTracks(bucketId: string, trackIds: number[]): Promi
     const error = await response.json().catch(() => ({ detail: response.statusText }));
     throw new Error(error.detail || 'Failed to reorder tracks');
   }
+}
+
+// Bucket linking
+
+export async function linkBucket(bucketId: string, playlistId: number | null): Promise<void> {
+  const response = await fetch(`${API_BASE}/${bucketId}/link`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playlist_id: playlistId }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || 'Failed to link bucket');
+  }
+}
+
+export async function getBucketLink(bucketId: string): Promise<BucketLinkResponse> {
+  const response = await fetch(`${API_BASE}/${bucketId}/link`);
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || 'Failed to get bucket link');
+  }
+  return response.json();
 }
