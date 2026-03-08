@@ -1,6 +1,6 @@
 ---
 task: 02-backend-queries
-status: pending
+status: done
 depends: [01-database-migration]
 files:
   - path: web/backend/queries/buckets.py

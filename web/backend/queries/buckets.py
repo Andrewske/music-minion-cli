@@ -500,9 +500,9 @@ def assign_track_to_bucket(bucket_id: str, track_id: int) -> dict[str, Any] | No
     """Assign track to bucket.
 
     Steps:
-    1. If track in another bucket, remove it (and its emoji)
-    2. Add to new bucket at end
-    3. If bucket has emoji, add it to track with source_id=bucket_id
+    1. Add to bucket at end
+    2. If bucket has emoji, add it to track with source_id=bucket_id
+    3. Sync to linked playlist if bucket is linked
 
     Args:
         bucket_id: UUID of the bucket
@@ -526,40 +526,7 @@ def assign_track_to_bucket(bucket_id: str, track_id: int) -> dict[str, Any] | No
         if not bucket:
             return None
 
-        session_id = bucket["session_id"]
         emoji_id = bucket["emoji_id"]
-
-        # Check if track is in another bucket in this session
-        other_bucket_cursor = conn.execute(
-            """
-            SELECT bt.bucket_id, b.emoji_id
-            FROM bucket_tracks bt
-            JOIN buckets b ON bt.bucket_id = b.id
-            WHERE b.session_id = ? AND bt.track_id = ?
-            """,
-            (session_id, track_id),
-        )
-        other_bucket = other_bucket_cursor.fetchone()
-
-        if other_bucket:
-            # Remove from other bucket
-            conn.execute(
-                """
-                DELETE FROM bucket_tracks
-                WHERE bucket_id = ? AND track_id = ?
-                """,
-                (other_bucket["bucket_id"], track_id),
-            )
-
-            # Remove other bucket's emoji from track
-            if other_bucket["emoji_id"]:
-                remove_emoji_from_track_mutation(
-                    track_id,
-                    other_bucket["emoji_id"],
-                    conn,
-                    source_id=other_bucket["bucket_id"],
-                    force=True,
-                )
 
         # Get next position in this bucket
         position_cursor = conn.execute(
@@ -589,6 +556,9 @@ def assign_track_to_bucket(bucket_id: str, track_id: int) -> dict[str, Any] | No
             )
 
         conn.commit()
+
+        # Sync to linked playlist (if bucket is linked)
+        sync_track_to_linked_playlist(bucket_id, track_id)
 
         logger.info(f"Assigned track {track_id} to bucket {bucket_id}")
         return {
@@ -647,6 +617,9 @@ def unassign_track(bucket_id: str, track_id: int) -> bool:
             (bucket_id, track_id),
         )
         conn.commit()
+
+        # Unsync from linked playlist (if bucket is linked)
+        unsync_track_from_linked_playlist(bucket_id, track_id)
 
         logger.info(f"Unassigned track {track_id} from bucket {bucket_id}")
         return True
@@ -741,7 +714,14 @@ def apply_session(session_id: str) -> bool:
             """,
             (session_id,),
         )
-        ordered_track_ids = [row["track_id"] for row in bucket_tracks_cursor.fetchall()]
+
+        # Deduplicate: track appears at position of first bucket it's in
+        seen = set()
+        ordered_track_ids = []
+        for row in bucket_tracks_cursor.fetchall():
+            if row["track_id"] not in seen:
+                ordered_track_ids.append(row["track_id"])
+                seen.add(row["track_id"])
 
         # Get unassigned tracks in their original order
         unassigned_cursor = conn.execute(
@@ -898,4 +878,197 @@ def discard_session(session_id: str) -> bool:
         conn.commit()
 
         logger.info(f"Discarded session {session_id}")
+        return True
+
+
+def link_bucket_to_playlist(bucket_id: str, playlist_id: int) -> bool:
+    """Link bucket to playlist. Returns False if bucket not found.
+
+    Args:
+        bucket_id: UUID of the bucket
+        playlist_id: ID of the playlist to link to
+
+    Returns:
+        True if linked successfully, False if bucket not found
+    """
+    with get_db_connection() as conn:
+        # Verify bucket exists
+        cursor = conn.execute(
+            "SELECT id FROM buckets WHERE id = ?",
+            (bucket_id,),
+        )
+        if not cursor.fetchone():
+            return False
+
+        # Insert or replace link
+        link_id = uuid.uuid4().hex
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO bucket_playlist_links (id, bucket_id, playlist_id)
+            VALUES (?, ?, ?)
+            """,
+            (link_id, bucket_id, playlist_id),
+        )
+        conn.commit()
+
+        logger.info(f"Linked bucket {bucket_id} to playlist {playlist_id}")
+        return True
+
+
+def unlink_bucket(bucket_id: str) -> bool:
+    """Remove playlist link from bucket.
+
+    Args:
+        bucket_id: UUID of the bucket
+
+    Returns:
+        True if unlinked (or already unlinked), False if bucket not found
+    """
+    with get_db_connection() as conn:
+        # Verify bucket exists
+        cursor = conn.execute(
+            "SELECT id FROM buckets WHERE id = ?",
+            (bucket_id,),
+        )
+        if not cursor.fetchone():
+            return False
+
+        # Remove link if exists
+        conn.execute(
+            "DELETE FROM bucket_playlist_links WHERE bucket_id = ?",
+            (bucket_id,),
+        )
+        conn.commit()
+
+        logger.info(f"Unlinked bucket {bucket_id}")
+        return True
+
+
+def get_bucket_link(bucket_id: str) -> int | None:
+    """Get linked playlist_id for bucket, or None if unlinked.
+
+    Args:
+        bucket_id: UUID of the bucket
+
+    Returns:
+        Playlist ID if linked, None if unlinked
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT playlist_id FROM bucket_playlist_links
+            WHERE bucket_id = ?
+            """,
+            (bucket_id,),
+        )
+        result = cursor.fetchone()
+        return result["playlist_id"] if result else None
+
+
+def sync_track_to_linked_playlist(bucket_id: str, track_id: int) -> bool:
+    """Add track to bucket's linked playlist (if linked). Called on bucket assignment.
+
+    Args:
+        bucket_id: UUID of the bucket
+        track_id: ID of the track to sync
+
+    Returns:
+        True if synced (or no link exists), False on error
+    """
+    with get_db_connection() as conn:
+        # Get linked playlist_id
+        cursor = conn.execute(
+            """
+            SELECT playlist_id FROM bucket_playlist_links
+            WHERE bucket_id = ?
+            """,
+            (bucket_id,),
+        )
+        result = cursor.fetchone()
+
+        if not result:
+            # No link, nothing to sync
+            return True
+
+        playlist_id = result["playlist_id"]
+
+        # Check if track already in playlist
+        existing_cursor = conn.execute(
+            """
+            SELECT track_id FROM playlist_tracks
+            WHERE playlist_id = ? AND track_id = ?
+            """,
+            (playlist_id, track_id),
+        )
+        if existing_cursor.fetchone():
+            # Already present, nothing to do
+            return True
+
+        # Get next position
+        position_cursor = conn.execute(
+            """
+            SELECT COALESCE(MAX(position), -1) + 1 as next_position
+            FROM playlist_tracks
+            WHERE playlist_id = ?
+            """,
+            (playlist_id,),
+        )
+        next_position = position_cursor.fetchone()["next_position"]
+
+        # Add track to playlist
+        conn.execute(
+            """
+            INSERT INTO playlist_tracks (playlist_id, track_id, position)
+            VALUES (?, ?, ?)
+            """,
+            (playlist_id, track_id, next_position),
+        )
+        conn.commit()
+
+        logger.info(
+            f"Synced track {track_id} to linked playlist {playlist_id} (bucket {bucket_id})"
+        )
+        return True
+
+
+def unsync_track_from_linked_playlist(bucket_id: str, track_id: int) -> bool:
+    """Remove track from bucket's linked playlist (if linked). Called on bucket unassignment.
+
+    Args:
+        bucket_id: UUID of the bucket
+        track_id: ID of the track to unsync
+
+    Returns:
+        True if unsynced (or no link exists), False on error
+    """
+    with get_db_connection() as conn:
+        # Get linked playlist_id
+        cursor = conn.execute(
+            """
+            SELECT playlist_id FROM bucket_playlist_links
+            WHERE bucket_id = ?
+            """,
+            (bucket_id,),
+        )
+        result = cursor.fetchone()
+
+        if not result:
+            # No link, nothing to unsync
+            return True
+
+        playlist_id = result["playlist_id"]
+
+        # Remove track from playlist
+        conn.execute(
+            """
+            DELETE FROM playlist_tracks
+            WHERE playlist_id = ? AND track_id = ?
+            """,
+            (playlist_id, track_id),
+        )
+        conn.commit()
+
+        logger.info(
+            f"Unsynced track {track_id} from linked playlist {playlist_id} (bucket {bucket_id})"
+        )
         return True
