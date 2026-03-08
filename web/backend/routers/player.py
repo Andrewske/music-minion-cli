@@ -258,9 +258,14 @@ async def pause():
     return {"message": "Paused"}
 
 
+class ResumeRequest(BaseModel):
+    """Resume playback request."""
+    target_device_id: str | None = None
+
+
 @router.post("/resume")
-async def resume():
-    """Resume playback on active device."""
+async def resume(request: ResumeRequest | None = None):
+    """Resume playback on specified or active device."""
     state = get_state()
 
     if state.is_playing:
@@ -269,12 +274,20 @@ async def resume():
     if not state.current_track:
         raise HTTPException(400, "No track to resume")
 
+    # Use specified device or keep current, defaulting to first connected
+    active_device_id = state.active_device_id
+    if request and request.target_device_id:
+        active_device_id = request.target_device_id
+    elif not active_device_id and sync_manager.devices:
+        active_device_id = next(iter(sync_manager.devices.keys()))
+
     await update_state({
         "is_playing": True,
-        "track_started_at": time.time()
+        "track_started_at": time.time(),
+        "active_device_id": active_device_id
     })
 
-    return {"message": "Resumed"}
+    return {"message": "Resumed", "active_device_id": active_device_id}
 
 
 @router.post("/next")
@@ -599,6 +612,25 @@ async def set_sort(request: SetSortRequest, db=Depends(get_db)):
         "queue_size": len(new_queue),
         "sort": sort_spec
     }
+
+
+class TransferRequest(BaseModel):
+    """Request to transfer playback to a different device."""
+    device_id: str
+
+
+@router.post("/transfer")
+async def transfer_playback(request: TransferRequest):
+    """Transfer playback to a different device."""
+    from ..sync_manager import sync_manager
+
+    # Verify device exists
+    if request.device_id not in sync_manager.devices:
+        raise HTTPException(400, f"Device {request.device_id} not connected")
+
+    await update_state({"active_device_id": request.device_id})
+
+    return {"active_device_id": request.device_id}
 
 
 @router.get("/state")

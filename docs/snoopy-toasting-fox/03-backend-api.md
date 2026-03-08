@@ -1,6 +1,6 @@
 ---
 task: 03-backend-api
-status: pending
+status: done
 depends: [02-backend-queries]
 files:
   - path: web/backend/routers/buckets.py

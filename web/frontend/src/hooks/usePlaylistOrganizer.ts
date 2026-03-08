@@ -150,7 +150,9 @@ export function usePlaylistOrganizer(
 
       return { previousSession };
     },
-    onError: (_err, _params, context) => {
+    onError: (err, params, context) => {
+      // Log error for debugging
+      console.error('Failed to assign track:', err, params);
       // Rollback on error
       if (context?.previousSession) {
         queryClient.setQueryData(queryKey, context.previousSession);

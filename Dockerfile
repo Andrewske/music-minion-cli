@@ -2,10 +2,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies (curl for healthcheck, git for pip git deps)
+# Install system dependencies (curl for healthcheck, git for pip git deps, ffmpeg for waveform generation)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     git \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
