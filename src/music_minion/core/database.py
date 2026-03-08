@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 47  # Composite unique indexes for track provider IDs with source
+SCHEMA_VERSION = 48  # Add bucket_playlist_links table for bucket-to-playlist linking
 
 
 # Initial top 50 curated emojis for music reactions
@@ -2146,6 +2146,35 @@ def migrate_database(conn, current_version: int) -> None:
 
         conn.commit()
         logger.info("  ✓ Migration to v47 complete")
+
+    if current_version < 48:
+        logger.info("Migrating to v48: Add bucket_playlist_links table...")
+
+        # Create bucket_playlist_links table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS bucket_playlist_links (
+                id TEXT PRIMARY KEY,
+                bucket_id TEXT NOT NULL UNIQUE,
+                playlist_id INTEGER NOT NULL,
+                link_type TEXT DEFAULT 'sync',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (bucket_id) REFERENCES buckets (id) ON DELETE CASCADE,
+                FOREIGN KEY (playlist_id) REFERENCES playlists (id) ON DELETE CASCADE
+            )
+        """)
+
+        # Create indexes for efficient lookups
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_bucket_playlist_links_bucket
+            ON bucket_playlist_links(bucket_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_bucket_playlist_links_playlist
+            ON bucket_playlist_links(playlist_id)
+        """)
+
+        conn.commit()
+        logger.info("  ✓ Migration to v48 complete: bucket_playlist_links table created")
 
 
 def init_database() -> None:
