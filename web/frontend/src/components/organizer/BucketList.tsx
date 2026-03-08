@@ -19,6 +19,9 @@ interface BucketListProps {
   onTrackClick: (trackId: number) => void;
   onBucketHeaderClick?: (bucketId: string) => Promise<void>;
   currentTrack?: Track | null;
+  parentPlaylistId?: number;
+  parentLibrary?: string;
+  onLinkBucket?: (bucketId: string, playlistId: number | null) => Promise<void>;
 }
 
 export function BucketList({
@@ -33,6 +36,9 @@ export function BucketList({
   onTrackClick,
   onBucketHeaderClick,
   currentTrack,
+  parentPlaylistId,
+  parentLibrary,
+  onLinkBucket,
 }: BucketListProps): JSX.Element {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
@@ -83,6 +89,9 @@ export function BucketList({
           }}
           onHeaderClick={() => onBucketHeaderClick?.(bucket.id)}
           isClickable={!!currentTrack}
+          parentPlaylistId={parentPlaylistId}
+          parentLibrary={parentLibrary}
+          onLink={onLinkBucket ? (playlistId) => onLinkBucket(bucket.id, playlistId) : undefined}
         />
       ))}
 

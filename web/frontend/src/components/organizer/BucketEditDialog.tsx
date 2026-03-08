@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { Button } from '../ui/button';
 import { EmojiPicker } from '../EmojiPicker';
+import { getPlaylistsByLibrary } from '../../api/playlists';
 
 interface BucketEditDialogProps {
   open: boolean;
@@ -11,6 +13,10 @@ interface BucketEditDialogProps {
   mode: 'create' | 'edit';
   initialName?: string;
   initialEmojiId?: string;
+  parentPlaylistId?: number;
+  parentLibrary?: string;
+  linkedPlaylistId?: number | null;
+  onLink?: (playlistId: number | null) => Promise<void>;
 }
 
 export function BucketEditDialog({
@@ -20,19 +26,39 @@ export function BucketEditDialog({
   mode,
   initialName = '',
   initialEmojiId,
+  parentPlaylistId,
+  parentLibrary,
+  linkedPlaylistId,
+  onLink,
 }: BucketEditDialogProps): JSX.Element {
   const [name, setName] = useState(initialName);
   const [emojiId, setEmojiId] = useState<string | undefined>(initialEmojiId);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string>(
+    linkedPlaylistId ? String(linkedPlaylistId) : 'unlink'
+  );
+
+  // Fetch playlists for selector (only if editing and parent info provided)
+  const { data: playlists } = useQuery({
+    queryKey: ['playlists', parentLibrary],
+    queryFn: () => getPlaylistsByLibrary(parentLibrary!),
+    enabled: mode === 'edit' && !!parentLibrary && !!parentPlaylistId,
+  });
+
+  // Filter: same library, exclude parent
+  const availablePlaylists = playlists?.filter(
+    (p) => p.id !== parentPlaylistId
+  ) ?? [];
 
   // Reset form when dialog opens
   useEffect(() => {
     if (open) {
       setName(initialName);
       setEmojiId(initialEmojiId);
+      setSelectedPlaylistId(linkedPlaylistId ? String(linkedPlaylistId) : 'unlink');
     }
-  }, [open, initialName, initialEmojiId]);
+  }, [open, initialName, initialEmojiId, linkedPlaylistId]);
 
   const handleSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
@@ -41,9 +67,24 @@ export function BucketEditDialog({
     setIsSaving(true);
     try {
       await onSave(name.trim(), emojiId);
+
+      // Handle playlist linking (only if editing and onLink provided)
+      if (mode === 'edit' && onLink) {
+        const newPlaylistId = selectedPlaylistId === 'unlink' ? null : parseInt(selectedPlaylistId, 10);
+        const currentPlaylistId = linkedPlaylistId ?? null;
+
+        // Only call onLink if the selection changed
+        if (newPlaylistId !== currentPlaylistId) {
+          await onLink(newPlaylistId);
+        }
+      }
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handlePlaylistChange = (e: React.ChangeEvent<HTMLSelectElement>): void => {
+    setSelectedPlaylistId(e.target.value);
   };
 
   const handleEmojiSelect = (selectedEmojiId: string | null): void => {
@@ -137,6 +178,34 @@ export function BucketEditDialog({
                     If set, the emoji will be automatically added to all tracks in this bucket.
                   </p>
                 </div>
+
+                {/* Playlist link selector (only in edit mode) */}
+                {mode === 'edit' && parentPlaylistId && parentLibrary && onLink && (
+                  <div>
+                    <label
+                      htmlFor="bucket-playlist-link"
+                      className="block text-sm font-medium text-white/70 mb-1.5"
+                    >
+                      Link to Playlist (optional)
+                    </label>
+                    <select
+                      id="bucket-playlist-link"
+                      value={selectedPlaylistId}
+                      onChange={handlePlaylistChange}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-obsidian-accent focus:border-transparent"
+                    >
+                      <option value="unlink">Not linked</option>
+                      {availablePlaylists.map((p) => (
+                        <option key={p.id} value={String(p.id)}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-white/40 mt-1.5">
+                      Link this bucket to an existing playlist for quick access.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Footer */}

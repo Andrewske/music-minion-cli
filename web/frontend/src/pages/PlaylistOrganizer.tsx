@@ -66,6 +66,7 @@ export function PlaylistOrganizer({
   playlistId,
   playlistName,
   playlistType,
+  playlistLibrary,
 }: PlaylistOrganizerProps): JSX.Element {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const play = usePlayerStore((s) => s.play);
@@ -90,6 +91,7 @@ export function PlaylistOrganizer({
     moveBucket,
     shuffleBucket,
     reorderTracks,
+    linkBucket,
   } = usePlaylistOrganizer({ playlistId });
 
   // Load full track data for all tracks in playlist (high limit for organizer)
@@ -564,6 +566,9 @@ export function PlaylistOrganizer({
               onTrackClick={handlePlayTrack}
               onBucketHeaderClick={assignCurrentTrackToBucket}
               currentTrack={currentTrack}
+              parentPlaylistId={playlistId}
+              parentLibrary={playlistLibrary}
+              onLinkBucket={linkBucket}
             />
           </div>
 
