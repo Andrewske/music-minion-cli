@@ -118,10 +118,14 @@ def get_session_with_data(session_id: str) -> dict[str, Any] | None:
         # Get all buckets with their track IDs
         buckets_cursor = conn.execute(
             """
-            SELECT id, name, emoji_id, position
-            FROM buckets
-            WHERE session_id = ?
-            ORDER BY position ASC
+            SELECT b.id, b.name, b.emoji_id, b.position,
+                   bpl.playlist_id as linked_playlist_id,
+                   p.name as linked_playlist_name
+            FROM buckets b
+            LEFT JOIN bucket_playlist_links bpl ON b.id = bpl.bucket_id
+            LEFT JOIN playlists p ON bpl.playlist_id = p.id
+            WHERE b.session_id = ?
+            ORDER BY b.position ASC
             """,
             (session_id,),
         )
@@ -148,6 +152,8 @@ def get_session_with_data(session_id: str) -> dict[str, Any] | None:
                     "emoji_id": bucket_row["emoji_id"],
                     "position": bucket_row["position"],
                     "track_ids": track_ids,
+                    "linked_playlist_id": bucket_row["linked_playlist_id"],
+                    "linked_playlist_name": bucket_row["linked_playlist_name"],
                 }
             )
 
@@ -224,6 +230,8 @@ def create_bucket(
             "emoji_id": emoji_id,
             "position": position,
             "track_ids": [],
+            "linked_playlist_id": None,
+            "linked_playlist_name": None,
         }
 
 
@@ -319,12 +327,26 @@ def update_bucket(
         )
         track_ids = [row["track_id"] for row in tracks_cursor.fetchall()]
 
+        # Get link information
+        link_cursor = conn.execute(
+            """
+            SELECT bpl.playlist_id, p.name
+            FROM bucket_playlist_links bpl
+            LEFT JOIN playlists p ON bpl.playlist_id = p.id
+            WHERE bpl.bucket_id = ?
+            """,
+            (bucket_id,),
+        )
+        link_row = link_cursor.fetchone()
+
         return {
             "id": bucket_id,
             "name": new_name,
             "emoji_id": new_emoji_id,
             "position": bucket["position"],
             "track_ids": track_ids,
+            "linked_playlist_id": link_row["playlist_id"] if link_row else None,
+            "linked_playlist_name": link_row["name"] if link_row else None,
         }
 
 

@@ -256,7 +256,10 @@ def search(
 
 
 def get_stream_url(state: ProviderState, provider_id: str) -> Optional[str]:
-    """Get SoundCloud stream URL.
+    """Get SoundCloud stream URL for MPV playback.
+
+    Uses the /streams endpoint to get full track URLs (not previews).
+    Returns a URL that MPV can follow to get the actual stream.
 
     Args:
         state: Current provider state
@@ -275,9 +278,117 @@ def get_stream_url(state: ProviderState, provider_id: str) -> Optional[str]:
 
     access_token = token_data["access_token"]
 
-    # SoundCloud stream URL
-    # MPV will follow the redirect to the actual progressive HTTP stream
-    return f"{API_BASE_URL}/tracks/{provider_id}/stream?oauth_token={access_token}"
+    # Use /streams endpoint to get full track URLs
+    streams_url = f"{API_BASE_URL}/tracks/{provider_id}/streams"
+    headers = {"Authorization": f"OAuth {access_token}"}
+
+    try:
+        response = requests.get(streams_url, headers=headers, timeout=10)
+        if not response.ok:
+            logger.warning(f"Failed to get streams for {provider_id}: HTTP {response.status_code}")
+            return None
+
+        streams = response.json()
+
+        # Prefer http_mp3_128_url for MPV compatibility
+        stream_url = (
+            streams.get("http_mp3_128_url")
+            or streams.get("hls_mp3_128_url")
+            or streams.get("hls_aac_160_url")
+            or streams.get("preview_mp3_128_url")  # Fallback to preview
+        )
+
+        if stream_url:
+            logger.debug(f"Got stream URL for {provider_id}")
+            return stream_url
+
+        logger.warning(f"No stream URLs available for track {provider_id}")
+        return None
+
+    except Exception as e:
+        logger.warning(f"Failed to get stream URL for {provider_id}: {e}")
+        return None
+
+
+def resolve_stream_url(state: ProviderState, provider_id: str) -> Optional[str]:
+    """Resolve SoundCloud stream to actual CDN URL (for browsers).
+
+    Uses the /streams endpoint to get full track streaming URLs (not previews).
+    Prefers http_mp3_128_url for broad browser compatibility.
+
+    Args:
+        state: Current provider state
+        provider_id: SoundCloud track ID
+
+    Returns:
+        Direct CDN stream URL or None
+    """
+    if not state.authenticated:
+        return None
+
+    # Ensure token is valid, refresh if needed
+    state, token_data = _ensure_valid_token(state)
+    if not token_data:
+        return None
+
+    access_token = token_data["access_token"]
+    # Use /streams endpoint (plural) to get full track URLs, not /stream which returns previews
+    streams_url = f"{API_BASE_URL}/tracks/{provider_id}/streams"
+    headers = {"Authorization": f"OAuth {access_token}"}
+
+    try:
+        # Get available stream URLs
+        response = requests.get(streams_url, headers=headers, timeout=10)
+
+        if not response.ok:
+            logger.warning(
+                f"Failed to get streams for {provider_id}: HTTP {response.status_code}"
+            )
+            return None
+
+        streams = response.json()
+
+        # Prefer http_mp3_128_url for browser compatibility, fall back to others
+        stream_url = (
+            streams.get("http_mp3_128_url")
+            or streams.get("hls_mp3_128_url")
+            or streams.get("hls_aac_160_url")
+        )
+
+        if not stream_url:
+            # Last resort: preview (30 seconds)
+            stream_url = streams.get("preview_mp3_128_url")
+            if stream_url:
+                logger.warning(f"Only preview available for track {provider_id}")
+
+        if not stream_url:
+            logger.warning(f"No stream URLs available for track {provider_id}")
+            return None
+
+        # Follow redirect to get actual CDN URL
+        redirect_response = requests.get(
+            stream_url, headers=headers, allow_redirects=False, timeout=10
+        )
+
+        if redirect_response.status_code in (301, 302, 303, 307, 308):
+            cdn_url = redirect_response.headers.get("Location")
+            if cdn_url:
+                logger.debug(f"Resolved SC stream {provider_id} to CDN URL")
+                return cdn_url
+
+        # If no redirect, the URL itself might be playable
+        if redirect_response.status_code == 200:
+            logger.debug(f"SC stream {provider_id} returned direct content")
+            return stream_url
+
+        logger.warning(
+            f"Unexpected status {redirect_response.status_code} resolving SC stream {provider_id}"
+        )
+        return None
+
+    except Exception as e:
+        logger.warning(f"Failed to resolve SC stream {provider_id}: {e}")
+        return None
 
 
 def get_playlists(

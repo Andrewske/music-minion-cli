@@ -50,6 +50,12 @@ class ReorderBody(BaseModel):
     track_ids: list[int]
 
 
+class LinkBucketBody(BaseModel):
+    """Request body for linking/unlinking a bucket to a playlist."""
+
+    playlist_id: int | None  # None to unlink
+
+
 class BucketResponse(BaseModel):
     """Bucket representation for API responses."""
 
@@ -58,6 +64,8 @@ class BucketResponse(BaseModel):
     emoji_id: str | None
     position: int
     track_ids: list[int]
+    linked_playlist_id: int | None
+    linked_playlist_name: str | None
 
 
 class SessionResponse(BaseModel):
@@ -284,6 +292,39 @@ async def shuffle_bucket_endpoint(bucket_id: str):
         logger.exception("Failed to shuffle bucket")
         raise HTTPException(
             status_code=500, detail=f"Failed to shuffle bucket: {str(e)}"
+        )
+
+
+@router.post("/{bucket_id}/link")
+async def link_bucket_endpoint(bucket_id: str, body: LinkBucketBody) -> dict[str, bool]:
+    """Link/unlink bucket to playlist."""
+    try:
+        if body.playlist_id is None:
+            success = bucket_queries.unlink_bucket(bucket_id)
+        else:
+            success = bucket_queries.link_bucket_to_playlist(bucket_id, body.playlist_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Bucket not found")
+        return {"linked": body.playlist_id is not None}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Failed to link/unlink bucket")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to link/unlink bucket: {str(e)}"
+        )
+
+
+@router.get("/{bucket_id}/link")
+async def get_bucket_link_endpoint(bucket_id: str) -> dict[str, int | None]:
+    """Get current link status for bucket."""
+    try:
+        playlist_id = bucket_queries.get_bucket_link(bucket_id)
+        return {"playlist_id": playlist_id}
+    except Exception as e:
+        logger.exception("Failed to get bucket link")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get bucket link: {str(e)}"
         )
 
 
