@@ -102,21 +102,24 @@ export function PlaylistOrganizer({
   const unassignedSet = new Set(unassignedTrackIds);
   const unassignedTracks = allTracks?.tracks.filter((t) => unassignedSet.has(t.id)) ?? [];
 
-  // Build reverse lookup map for O(1) performance
-  const trackToBucketMap = useMemo(() => {
-    const map = new Map<number, string>();
+  // Build reverse lookup map for O(1) performance (supports multi-bucket)
+  const trackToBucketsMap = useMemo(() => {
+    const map = new Map<number, Set<string>>();
     buckets.forEach((bucket) => {
       bucket.track_ids.forEach((trackId) => {
-        map.set(trackId, bucket.id);
+        if (!map.has(trackId)) {
+          map.set(trackId, new Set());
+        }
+        map.get(trackId)!.add(bucket.id);
       });
     });
     return map;
   }, [buckets]);
 
-  // Detect which bucket contains the current track
-  const activeBucketId = currentTrack
-    ? trackToBucketMap.get(currentTrack.id) ?? null
-    : null;
+  // Detect which buckets contain the current track
+  const activeBucketIds = currentTrack
+    ? trackToBucketsMap.get(currentTrack.id) ?? new Set<string>()
+    : new Set<string>();
 
   // Configure drag-and-drop sensors
   const sensors = useSensors(
@@ -132,26 +135,30 @@ export function PlaylistOrganizer({
   const isDragOperationInProgress = useRef(false);
 
 
-  // Assign current track to a bucket (used by keyboard shortcuts and header clicks)
+  // Assign/unassign current track to a bucket with toggle behavior (used by keyboard shortcuts and header clicks)
   const assignCurrentTrackToBucket = useCallback(
     async (bucketId: string): Promise<void> => {
       if (!currentTrack) return;
 
-      // Find which bucket (if any) currently contains this track
-      const currentBucketId = trackToBucketMap.get(currentTrack.id);
-
-      // If already in target bucket, no-op
-      if (currentBucketId === bucketId) return;
+      // Check if track is already in this bucket
+      const bucket = buckets.find(b => b.id === bucketId);
+      const isInBucket = bucket?.track_ids.includes(currentTrack.id) ?? false;
 
       try {
-        await assignTrack(bucketId, currentTrack.id);
+        if (isInBucket) {
+          // Toggle OFF: Unassign track from bucket
+          await unassignTrack(bucketId, currentTrack.id);
+        } else {
+          // Toggle ON: Assign track to bucket
+          await assignTrack(bucketId, currentTrack.id);
+        }
       } catch (error) {
-        console.error('Failed to assign track via shortcut:', error);
+        console.error('Failed to toggle track assignment:', error);
         const message = error instanceof Error ? error.message : String(error);
-        toast.error(`Failed to assign track: ${message}`);
+        toast.error(`Failed to update track: ${message}`);
       }
     },
-    [currentTrack, trackToBucketMap, assignTrack]
+    [currentTrack, buckets, assignTrack, unassignTrack]
   );
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
@@ -398,7 +405,8 @@ export function PlaylistOrganizer({
     (trackId: number): void => {
       const tracks = allTracks?.tracks;
       const track = tracks?.find((t) => t.id === trackId);
-      const bucketId = trackToBucketMap.get(trackId);  // undefined for unassigned
+      const bucketIds = trackToBucketsMap.get(trackId);
+      const bucketId = bucketIds && bucketIds.size > 0 ? Array.from(bucketIds)[0] : undefined;  // undefined for unassigned, pick first bucket if multi-bucket
       if (track && session) {
         play(
           {
@@ -416,7 +424,7 @@ export function PlaylistOrganizer({
         );
       }
     },
-    [allTracks, play, playlistId, session, shuffleEnabled, trackToBucketMap]
+    [allTracks, play, playlistId, session, shuffleEnabled, trackToBucketsMap]
   );
 
   // Handle applying the order (keeps session active)
@@ -547,7 +555,7 @@ export function PlaylistOrganizer({
             <BucketList
               buckets={buckets}
               allTracks={allTracks?.tracks ?? []}
-              activeBucketId={activeBucketId}
+              activeBucketIds={activeBucketIds}
               onCreateBucket={createBucket}
               onMoveBucket={moveBucket}
               onShuffleBucket={shuffleBucket}

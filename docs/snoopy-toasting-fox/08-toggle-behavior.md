@@ -1,6 +1,6 @@
 ---
 task: 08-toggle-behavior
-status: pending
+status: done
 depends: [05-frontend-hook]
 files:
   - path: web/frontend/src/pages/PlaylistOrganizer.tsx

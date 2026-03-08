@@ -10,7 +10,7 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 interface BucketListProps {
   buckets: Bucket[];
   allTracks: PlaylistTrackEntry[];
-  activeBucketId: string | null;
+  activeBucketIds: Set<string>;
   onCreateBucket: (name: string, emojiId?: string) => Promise<Bucket>;
   onMoveBucket: (bucketId: string, direction: 'up' | 'down') => Promise<void>;
   onShuffleBucket: (bucketId: string) => Promise<void>;
@@ -24,7 +24,7 @@ interface BucketListProps {
 export function BucketList({
   buckets,
   allTracks,
-  activeBucketId,
+  activeBucketIds,
   onCreateBucket,
   onMoveBucket,
   onShuffleBucket,
@@ -66,7 +66,7 @@ export function BucketList({
           tracks={bucket.track_ids.map((id) => trackMap.get(id)).filter((t): t is PlaylistTrackEntry => t !== undefined)}
           bucketIndex={index}
           totalBuckets={buckets.length}
-          isActive={bucket.id === activeBucketId}
+          isActive={activeBucketIds.has(bucket.id)}
           currentTrackId={currentTrack?.id ?? null}
           onMove={(direction) => onMoveBucket(bucket.id, direction)}
           onShuffle={() => onShuffleBucket(bucket.id)}
