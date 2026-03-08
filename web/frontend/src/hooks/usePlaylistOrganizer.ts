@@ -20,6 +20,7 @@ interface UsePlaylistOrganizerReturn {
   deleteBucket: (bucketId: string) => Promise<void>;
   moveBucket: (bucketId: string, direction: 'up' | 'down') => Promise<void>;
   shuffleBucket: (bucketId: string) => Promise<void>;
+  linkBucket: (bucketId: string, playlistId: number | null) => Promise<void>;
 
   // Track operations
   assignTrack: (bucketId: string, trackId: number) => Promise<void>;
@@ -40,6 +41,7 @@ interface UsePlaylistOrganizerReturn {
   isAssigning: boolean;
   isApplying: boolean;
   isFinalizing: boolean;
+  isLinking: boolean;
 }
 
 export function usePlaylistOrganizer(
@@ -109,6 +111,15 @@ export function usePlaylistOrganizer(
     },
   });
 
+  const linkBucketMutation = useMutation({
+    mutationFn: (params: { bucketId: string; playlistId: number | null }) => {
+      return bucketsApi.linkBucket(params.bucketId, params.playlistId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey });
+    },
+  });
+
   // Track operations with optimistic updates
 
   const assignTrackMutation = useMutation({
@@ -125,17 +136,12 @@ export function usePlaylistOrganizer(
       const previousSession = queryClient.getQueryData<BucketSession>(queryKey);
 
       if (previousSession) {
-        // Optimistically update: remove track from unassigned, add to target bucket, remove from other buckets
+        // Optimistically update: remove track from unassigned, add to target bucket (keep in other buckets)
         const updatedBuckets = previousSession.buckets.map((bucket) => {
-          if (bucket.id === bucketId) {
-            // Add track to target bucket if not already present
-            if (!bucket.track_ids.includes(trackId)) {
-              return { ...bucket, track_ids: [...bucket.track_ids, trackId] };
-            }
-            return bucket;
+          if (bucket.id === bucketId && !bucket.track_ids.includes(trackId)) {
+            return { ...bucket, track_ids: [...bucket.track_ids, trackId] };
           }
-          // Remove track from other buckets
-          return { ...bucket, track_ids: bucket.track_ids.filter((id) => id !== trackId) };
+          return bucket; // Keep all other buckets unchanged
         });
 
         // Remove from unassigned
@@ -175,7 +181,7 @@ export function usePlaylistOrganizer(
       const previousSession = queryClient.getQueryData<BucketSession>(queryKey);
 
       if (previousSession) {
-        // Remove track from bucket and add to unassigned
+        // Remove track from bucket
         const updatedBuckets = previousSession.buckets.map((bucket) => {
           if (bucket.id === bucketId) {
             return { ...bucket, track_ids: bucket.track_ids.filter((id) => id !== trackId) };
@@ -183,10 +189,15 @@ export function usePlaylistOrganizer(
           return bucket;
         });
 
-        // Add to unassigned if not already present
-        const updatedUnassigned = previousSession.unassigned_track_ids.includes(trackId)
+        // Only add to unassigned if track is not in ANY other bucket
+        const stillInOtherBucket = updatedBuckets.some(
+          (b) => b.id !== bucketId && b.track_ids.includes(trackId)
+        );
+        const updatedUnassigned = stillInOtherBucket
           ? previousSession.unassigned_track_ids
-          : [...previousSession.unassigned_track_ids, trackId];
+          : previousSession.unassigned_track_ids.includes(trackId)
+            ? previousSession.unassigned_track_ids
+            : [...previousSession.unassigned_track_ids, trackId];
 
         queryClient.setQueryData<BucketSession>(queryKey, {
           ...previousSession,
@@ -301,6 +312,13 @@ export function usePlaylistOrganizer(
     [shuffleBucketMutation]
   );
 
+  const linkBucket = useCallback(
+    async (bucketId: string, playlistId: number | null): Promise<void> => {
+      await linkBucketMutation.mutateAsync({ bucketId, playlistId });
+    },
+    [linkBucketMutation]
+  );
+
   const assignTrack = useCallback(
     async (bucketId: string, trackId: number): Promise<void> => {
       await assignTrackMutation.mutateAsync({ bucketId, trackId });
@@ -355,6 +373,7 @@ export function usePlaylistOrganizer(
     deleteBucket,
     moveBucket,
     shuffleBucket,
+    linkBucket,
 
     // Track operations
     assignTrack,
@@ -375,5 +394,6 @@ export function usePlaylistOrganizer(
     isAssigning: assignTrackMutation.isPending,
     isApplying: applyOrderMutation.isPending,
     isFinalizing: finalizeSessionMutation.isPending,
+    isLinking: linkBucketMutation.isPending,
   };
 }
