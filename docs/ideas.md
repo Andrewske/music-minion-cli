@@ -7,8 +7,6 @@
 5. [3] Fix mobile comparison emoji picker
 6. [2] Deduplicate play counts within time window (10-30 min)
 7. [1] CRUD functions accept optional connection parameter
-8. [3] Mobile drag-and-drop support for playlist organizer
-9. [5] Refactor player state to immutable FP pattern
 
 ## 1. SoundCloud + AI Metadata Enrichment
 
@@ -113,83 +111,43 @@ def get_playlist_by_name(name: str, library: str = None, conn: Connection = None
 
 **Trade-off**: More invasive change but eliminates the root cause. Current workaround is inline SQL in endpoints.
 
-## 8. Mobile Drag-and-Drop Support for Playlist Organizer - 2026-02-25
+## 8. Waveform Loading Inconsistent on Deployed Web UI - 2026-03-02
 
-Add touch-based drag-and-drop support for mobile devices in the playlist organizer, enabling bucket-to-bucket and bucket-to-unassigned operations on phones/tablets.
+Waveform frequently fails to load on deployed web UI but works consistently in dev server. Likely related to production build differences, asset paths, or CORS/proxy configuration.
 
-**Context**: `web/frontend/src/pages/PlaylistOrganizer.tsx`, `web/frontend/src/components/organizer/UnassignedTrackTable.tsx`, @dnd-kit touch support
+**Context**: `web/backend/waveform.py`, frontend waveform component, Vite build/deploy config
 
-**Current Limitation**: Drag-and-drop only works on desktop. Mobile users must rely on keyboard shortcuts (Shift+1-9) which aren't accessible on mobile browsers.
+## 9. SoundCloud Import Downloads Missing Tracks via scdl - 2026-03-02
 
-**Components**:
-- Touch sensor configuration for @dnd-kit
-- Mobile-specific drag feedback (haptics, visual indicators)
-- Testing across iOS Safari and Android Chrome
-- Fallback UI if touch DnD proves unreliable (long-press menu?)
+Extend SoundCloud import to automatically download tracks using `scdl` when no local match exists. Import would: check for match → if none found, download via scdl → then import the downloaded file.
 
-**Questions**:
-- Does @dnd-kit's PointerSensor handle touch events, or do we need TouchSensor?
-- Should mobile use different visual feedback (larger drag handles, different opacity)?
-- Consider long-press context menu as alternative to drag-and-drop?
+**Context**: `domain/library/providers/soundcloud/`, existing TF-IDF matching logic, scdl CLI tool
 
-## 9. Refactor Player State to Immutable FP Pattern - 2026-02-26
+## 10. Tie Buckets to Playlists in Playlist Organizer - 2026-03-02
 
-Refactor `_playback_state` in `web/backend/routers/player.py` from mutable global to immutable state with explicit updates via `dataclasses.replace()`.
+Link a bucket in the playlist organizer to an actual playlist. When tracks are assigned to a bucket, they'd automatically sync to the associated playlist.
 
-**Context**: CLAUDE.md mandates "Immutable state: All updates via `dataclasses.replace()`, never mutation" but player.py uses direct mutation (`_playback_state.queue = ...`, `_playback_state.queue_index += 1`).
+**Context**: Playlist organizer UI, bucket system, playlist CRUD
 
-**Current Problem**:
-- `PlaybackState` is a mutable global in player.py
-- Multiple modules need to modify it (player.py endpoints, buckets.py queue updates)
-- Cross-module state access creates tight coupling
-- Direct mutation makes testing difficult (can't inject state)
+## 11. Playlist Organizer Bucket Click Resets Seekbar - 2026-03-05
 
-**Proposed Pattern**:
-```python
-# playback_state_manager.py (new module)
-from dataclasses import dataclass, replace
-from threading import Lock
+Clicking a bucket to add a song resets the seekbar to 0 even though the audio keeps playing. Visual-only bug - playback continues normally but progress display breaks.
 
-@dataclass(frozen=True)
-class PlaybackState:
-    queue: tuple[dict, ...]  # Immutable tuple instead of list
-    queue_index: int
-    current_track: dict | None
-    # ... other fields
+**Context**: `web/frontend/src/pages/PlaylistOrganizer.tsx`, `web/frontend/src/hooks/usePlaylistOrganizer.ts`, PlayerBar seekbar component
 
-_state: PlaybackState = PlaybackState(...)
-_state_lock = Lock()
+## 12. Bucket-to-Playlist Linking in Playlist Organizer - 2026-03-05
 
-def get_state() -> PlaybackState:
-    return _state
+Allow buckets in playlist organizer to be linked to actual playlists. Options: create new playlist from bucket, or link to existing playlist (names don't need to match). When a track is added to a bucket, it syncs to the linked playlist.
 
-def update_state(fn: Callable[[PlaybackState], PlaybackState]) -> PlaybackState:
-    """Thread-safe state update via pure function."""
-    global _state
-    with _state_lock:
-        _state = fn(_state)
-        return _state
+**Inverse sync**: If a track is added to the linked playlist through other means and that track exists in the parent playlist being organized, it should appear in the bucket. Bucket shows intersection of (linked playlist) AND (parent playlist) - not all linked playlist tracks.
 
-# Usage in player.py
-def next_track():
-    def advance(state: PlaybackState) -> PlaybackState:
-        new_index = state.queue_index + 1
-        return replace(state, queue_index=new_index, current_track=state.queue[new_index])
+**Example**: Organizing "EDM" playlist with "dubstep" bucket linked to "Dubstep" playlist. Adding track to bucket → appears in Dubstep playlist. Track added to Dubstep playlist elsewhere → shows in dubstep bucket IF it's also in EDM. Tracks in Dubstep but not in EDM don't appear in bucket.
 
-    new_state = update_state(advance)
-    await broadcast(new_state)
-```
+**Context**: `web/frontend/src/pages/PlaylistOrganizer.tsx`, `web/frontend/src/hooks/usePlaylistOrganizer.ts`, bucket system, playlist CRUD
 
-**Benefits**:
-- State changes are explicit and traceable
-- Pure update functions are easily testable
-- Cross-module access goes through single interface
-- Easier to add undo/replay capabilities later
+## 13. Multiple Organizer Sessions with Dropdown Selection - 2026-03-05
 
-**Scope**:
-- Create `web/backend/playback_state_manager.py`
-- Migrate `PlaybackState` dataclass (make frozen)
-- Convert all `_playback_state.field = value` to `update_state(lambda s: replace(s, field=value))`
-- Update imports in player.py, buckets.py, queue_manager.py
+Support multiple named playlist-organizer sessions selectable via dropdown. Default session always exists, plus button to create new sessions. Each session has its own buckets and track assignments. Switch between sessions at any time.
 
-**Effort**: Medium-large refactor, touch ~5 files, ~200 lines changed
+**Context**: `web/frontend/src/pages/PlaylistOrganizer.tsx`, `web/frontend/src/hooks/usePlaylistOrganizer.ts`, session state persistence
+
