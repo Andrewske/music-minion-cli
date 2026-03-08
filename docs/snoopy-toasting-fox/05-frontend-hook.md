@@ -1,6 +1,6 @@
 ---
 task: 05-frontend-hook
-status: pending
+status: done
 depends: [04-frontend-types-api]
 files:
   - path: web/frontend/src/hooks/usePlaylistOrganizer.ts
