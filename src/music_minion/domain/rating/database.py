@@ -369,7 +369,8 @@ def get_next_playlist_pair(playlist_id: int) -> tuple[dict, dict]:
             """
             SELECT t.*,
                    COALESCE(per.rating, 1500.0) as rating,
-                   COALESCE(per.comparison_count, 0) as comparison_count
+                   COALESCE(per.comparison_count, 0) as comparison_count,
+                   COALESCE(per.wins, 0) as wins
             FROM tracks t
             INNER JOIN playlist_tracks pt ON t.id = pt.track_id AND pt.playlist_id = ?
             LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
@@ -398,7 +399,8 @@ def get_next_playlist_pair(playlist_id: int) -> tuple[dict, dict]:
             """
             SELECT t.*,
                    COALESCE(per.rating, 1500.0) as rating,
-                   COALESCE(per.comparison_count, 0) as comparison_count
+                   COALESCE(per.comparison_count, 0) as comparison_count,
+                   COALESCE(per.wins, 0) as wins
             FROM tracks t
             LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
             WHERE t.id = ?
