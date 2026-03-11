@@ -186,11 +186,47 @@ Key files:
 
 Pattern: Sidebar content affects multiple routes via Zustand stores, not props drilling.
 
+**Bucket-Playlist Linking** (Playlist Organizer):
+Buckets can be linked to playlists for automatic sync:
+- **Link behavior**: When bucket linked to playlist, existing bucket tracks sync to playlist
+- **Toggle assignment**: Tracks can be in multiple buckets; clicking assigns/unassigns
+- **Database**: `bucket_playlist_links` table stores bucket_id → playlist_id mappings
+- **Optimistic updates**: Frontend uses React Query mutations with rollback on failure
+
+Key files:
+- `web/backend/queries/buckets.py` - `link_bucket_to_playlist()`, `sync_existing_bucket_tracks_to_playlist()`
+- `web/frontend/src/api/buckets.ts` - `linkBucket()`, `getBucketLink()`
+- `web/frontend/src/hooks/usePlaylistOrganizer.ts` - `linkBucketMutation`, multi-bucket support
+- `web/frontend/src/components/organizer/BucketEditDialog.tsx` - Playlist selector UI
+
+API endpoints:
+- `POST /api/buckets/{bucket_id}/link` - Link bucket to playlist (body: `{playlist_id: number | null}`)
+- `GET /api/buckets/{bucket_id}/link` - Get linked playlist_id
+
+Bucket interface includes:
+- `linked_playlist_id: number | null`
+- `linked_playlist_name: string | null`
+
 ## Files
 
-- Database: SQLite v31 at `~/.local/share/music-minion/music_minion.db` (schema in `core/database.py`)
+- Database: SQLite at `~/.local/share/music-minion/music_minion.db` (schema in `core/database.py`)
 - Learnings: `ai-learnings.md`
 - Future roadmap: `docs/incomplete-items.md`
+
+## Recent Updates (2026-03-11)
+
+**Bucket-Playlist Linking** (snoopy-toasting-fox plan):
+- Buckets can now be linked to playlists via BucketEditDialog
+- Linked buckets auto-sync tracks to playlist on assignment
+- Toggle behavior: clicking bucket assigns/unassigns track (multi-bucket support)
+- Database migration added `bucket_playlist_links` table
+
+**Comparison Mode Enhancement**:
+- `get_next_playlist_pair()` now includes `wins` column in results
+
+**Playlist API**:
+- `getPlaylistTracks()` now accepts `{limit?: number}` option
+- Added `getPlaylistsByLibrary(library: string)` for filtering playlists
 
 <!-- rtk-instructions v2 -->
 # RTK (Rust Token Killer) - Token-Optimized Commands
