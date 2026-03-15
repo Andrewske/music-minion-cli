@@ -5,6 +5,7 @@ from asyncio import Lock
 from typing import Callable, Optional
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
+from .schemas import PlayContext
 
 _state_lock = Lock()
 
@@ -25,7 +26,7 @@ class PlaybackState(BaseModel):
     active_device_id: Optional[str] = None
     shuffle_enabled: bool = True
     sort_spec: Optional[dict] = None
-    current_context: Optional[dict] = None
+    current_context: Optional[PlayContext] = None
     position_in_playlist: int = 0
     server_time: float = 0
     current_history_id: Optional[int] = None

@@ -96,8 +96,8 @@ async def update_organizer_queue(session_id: str) -> None:
     state = get_state()
     if (
         not state.current_context
-        or state.current_context.get("type") != "organizer"
-        or state.current_context.get("session_id") != session_id
+        or state.current_context.type != "organizer"
+        or state.current_context.session_id != session_id
     ):
         return
 
@@ -210,7 +210,7 @@ async def play(request: PlayRequest, db=Depends(get_db)):
         "track_started_at": now,
         "is_playing": True,
         "active_device_id": active_device_id,
-        "current_context": request.context.model_dump(),
+        "current_context": request.context,
         "shuffle_enabled": request.context.shuffle if hasattr(request.context, 'shuffle') else True,
         "sort_spec": None,
         "position_in_playlist": 0,
@@ -361,7 +361,7 @@ async def next_track(reason: str = "skip", db=Depends(get_db)):
                 )
 
                 # Handle organizer loop restart
-                if new_track_id is None and state.current_context.get("type") == "organizer":
+                if new_track_id is None and state.current_context and state.current_context.type == "organizer":
                     # Queue exhausted - rebuild for loop restart
                     logger.info("Organizer queue exhausted, rebuilding for loop restart")
 
