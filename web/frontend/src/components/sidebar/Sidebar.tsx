@@ -3,7 +3,7 @@ import { useRouterState } from '@tanstack/react-router';
 import { SidebarNav } from './SidebarNav';
 import { SidebarToggle } from './SidebarToggle';
 import { SidebarSection } from './SidebarSection';
-import { SidebarSettingsLink } from './SidebarSettingsLink';
+import { SidebarLibrarySwitcher } from './SidebarLibrarySwitcher';
 
 interface SidebarProps {
   children?: React.ReactNode;
@@ -43,15 +43,16 @@ export function Sidebar({ children, isExpanded: controlledExpanded, isMobile = f
         isExpanded ? 'w-[280px]' : 'w-[72px]'
       }`}
     >
-      {/* Header with logo and toggle */}
+      {/* Header with logo, library switcher, and toggle */}
       <div className="flex items-center justify-between px-4 py-4 border-b border-obsidian-border">
         {isExpanded ? (
           <div className="flex items-center gap-2">
+            <SidebarLibrarySwitcher isExpanded={isExpanded} />
             <span className="text-lg font-semibold text-white">Music Minion</span>
           </div>
         ) : (
           <div className="flex items-center justify-center w-full">
-            <span className="text-lg font-bold text-obsidian-accent">M</span>
+            <SidebarLibrarySwitcher isExpanded={isExpanded} />
           </div>
         )}
         {isExpanded && !isMobile && <SidebarToggle isExpanded={isExpanded} onToggle={() => setInternalExpanded(!internalExpanded)} />}
@@ -73,11 +74,6 @@ export function Sidebar({ children, isExpanded: controlledExpanded, isMobile = f
           )}
         </div>
       )}
-
-      {/* Settings footer */}
-      <div className="mt-auto border-t border-obsidian-border">
-        <SidebarSettingsLink isExpanded={isExpanded} onNavigate={onNavigate} />
-      </div>
 
       {/* Collapsed state toggle at bottom */}
       {!isExpanded && !isMobile && (

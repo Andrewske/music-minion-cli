@@ -1,52 +1,62 @@
 import { HardDrive, Cloud } from 'lucide-react';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { cn } from '../../lib/utils';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '../ui/dropdown-menu';
+
+const libraries = [
+  { id: 'local' as const, label: 'Local', icon: HardDrive },
+  { id: 'soundcloud' as const, label: 'SoundCloud', icon: Cloud },
+];
 
 interface SidebarLibrarySwitcherProps {
-  sidebarExpanded: boolean;
+  isExpanded: boolean;
 }
 
-export function SidebarLibrarySwitcher({ sidebarExpanded }: SidebarLibrarySwitcherProps): JSX.Element {
+export function SidebarLibrarySwitcher({ isExpanded }: SidebarLibrarySwitcherProps): JSX.Element {
   const { activeLibrary, setActiveLibrary } = useLibraryStore();
 
+  const active = libraries.find((l) => l.id === activeLibrary) ?? libraries[0];
+  const ActiveIcon = active.icon;
+
   return (
-    <div className={cn(
-      "border-b border-obsidian-border",
-      sidebarExpanded ? "px-4 py-3" : "px-2 py-3"
-    )}>
-      <div className={cn(
-        "flex gap-1 p-1 bg-obsidian-surface rounded-lg",
-        !sidebarExpanded && "flex-col"
-      )}>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
         <button
-          onClick={() => setActiveLibrary('local')}
-          title={!sidebarExpanded ? "Local Library" : undefined}
+          title={active.label}
           className={cn(
-            "flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-all duration-200",
-            sidebarExpanded ? "flex-1 px-3 py-2" : "p-2",
-            activeLibrary === 'local'
-              ? "bg-obsidian-accent text-black"
-              : "text-white/60 hover:text-white hover:bg-white/5"
-          )}
-        >
-          <HardDrive className="w-4 h-4" />
-          {sidebarExpanded && <span>Local</span>}
-        </button>
-        <button
-          onClick={() => setActiveLibrary('soundcloud')}
-          title={!sidebarExpanded ? "SoundCloud" : undefined}
-          className={cn(
-            "flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-all duration-200",
-            sidebarExpanded ? "flex-1 px-3 py-2" : "p-2",
+            "p-1.5 rounded-md transition-colors",
             activeLibrary === 'soundcloud'
-              ? "bg-[#ff5500] text-white"
-              : "text-white/60 hover:text-white hover:bg-white/5"
+              ? "text-[#ff5500] hover:bg-[#ff5500]/10"
+              : "text-white/60 hover:text-white hover:bg-white/10"
           )}
         >
-          <Cloud className="w-4 h-4" />
-          {sidebarExpanded && <span>SoundCloud</span>}
+          <ActiveIcon className="w-5 h-5" />
         </button>
-      </div>
-    </div>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align={isExpanded ? "start" : "center"} side="bottom">
+        {libraries.map((lib) => {
+          const Icon = lib.icon;
+          const isActive = activeLibrary === lib.id;
+          return (
+            <DropdownMenuItem
+              key={lib.id}
+              onClick={() => setActiveLibrary(lib.id)}
+              className={cn(
+                "flex items-center gap-3 cursor-pointer",
+                isActive && "text-obsidian-accent"
+              )}
+            >
+              <Icon className="w-4 h-4" />
+              <span>{lib.label}</span>
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
