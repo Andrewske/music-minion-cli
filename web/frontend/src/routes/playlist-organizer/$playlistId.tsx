@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { usePlaylists } from '../../hooks/usePlaylists';
 import { PlaylistOrganizer } from '../../pages/PlaylistOrganizer';
+import { useLibraryStore } from '../../stores/libraryStore';
 
 export const Route = createFileRoute('/playlist-organizer/$playlistId')({
   component: PlaylistOrganizerRoute,
@@ -9,7 +10,8 @@ export const Route = createFileRoute('/playlist-organizer/$playlistId')({
 function PlaylistOrganizerRoute(): JSX.Element {
   const { playlistId } = Route.useParams();
   const navigate = useNavigate();
-  const { data: playlistsData, isLoading } = usePlaylists();
+  const { activeLibrary } = useLibraryStore();
+  const { data: playlistsData, isLoading } = usePlaylists(activeLibrary);
 
   if (isLoading) {
     return (
