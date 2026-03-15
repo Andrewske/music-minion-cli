@@ -509,31 +509,27 @@ export function PlaylistOrganizer({
           {/* Unassigned tracks table */}
           <div className="mb-6">
             <div className="bg-obsidian-surface border border-obsidian-border rounded-lg overflow-hidden">
-              {/* Header */}
-              <div className="flex items-center gap-2 px-3 py-2">
-                {/* Expand/collapse button */}
-                <button
-                  type="button"
-                  onClick={() => setIsUnassignedExpanded(!isUnassignedExpanded)}
-                  className="text-white/50 hover:text-white/80 transition-colors"
-                >
+              {/* Header - clickable to expand/collapse */}
+              <button
+                type="button"
+                onClick={() => setIsUnassignedExpanded(!isUnassignedExpanded)}
+                className="flex items-center gap-2 px-3 py-2 w-full hover:bg-white/5 transition-colors cursor-pointer"
+              >
+                <span className="text-white/50">
                   {isUnassignedExpanded ? (
                     <ChevronDown className="w-4 h-4" />
                   ) : (
                     <ChevronRight className="w-4 h-4" />
                   )}
-                </button>
+                </span>
 
-                {/* Name and count */}
-                <div className="flex-1">
-                  <span className="text-sm font-medium text-white/90">
-                    Unassigned Tracks
-                  </span>
-                  <span className="text-xs text-white/40 ml-2">
-                    ({unassignedTrackIds.length})
-                  </span>
-                </div>
-              </div>
+                <span className="text-sm font-medium text-white/90">
+                  Unassigned Tracks
+                </span>
+                <span className="text-xs text-white/40">
+                  ({unassignedTrackIds.length})
+                </span>
+              </button>
 
               {/* Expanded track table */}
               {isUnassignedExpanded && (
