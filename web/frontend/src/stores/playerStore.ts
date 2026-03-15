@@ -96,6 +96,7 @@ interface PlayerActions {
   retryPlayback: () => void;
   preloadNextTrack: () => void;
   onTrackPlayed: (trackId: number, playedMs: number) => void;
+  renameDevice: (name: string) => void;
   registerDevice: () => void;
   set: (partial: Partial<PlayerState>) => void;
 }
@@ -112,6 +113,9 @@ function generateDeviceId(): string {
 }
 
 function getDeviceName(): string {
+  const custom = localStorage.getItem('music-minion-device-name');
+  if (custom) return custom;
+
   const ua = navigator.userAgent;
   let platform = 'Unknown';
   let browser = 'Unknown';
@@ -460,6 +464,16 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     } catch {
       // Ignore scrobble errors - not critical
     }
+  },
+
+  renameDevice: (name: string) => {
+    const trimmed = name.trim();
+    if (trimmed) {
+      localStorage.setItem('music-minion-device-name', trimmed);
+    } else {
+      localStorage.removeItem('music-minion-device-name');
+    }
+    set({ thisDeviceName: trimmed || getDeviceName() });
   },
 
   registerDevice: () => {
