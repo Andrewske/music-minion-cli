@@ -191,5 +191,23 @@ export function useSyncWebSocket() {
     return () => disconnect();
   }, [connect, disconnect]);
 
+  // Re-register device when name changes
+  useEffect(() => {
+    let prevName = usePlayerStore.getState().thisDeviceName;
+    return usePlayerStore.subscribe((state) => {
+      if (state.thisDeviceName !== prevName) {
+        prevName = state.thisDeviceName;
+        const ws = wsRef.current;
+        if (ws?.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'device:register',
+            id: state.thisDeviceId,
+            name: state.thisDeviceName,
+          }));
+        }
+      }
+    });
+  }, []);
+
   return { isConnected };
 }
