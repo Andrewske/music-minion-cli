@@ -82,7 +82,6 @@ export function PlaylistOrganizer({
     applyOrder,
     finalizeSession,
     getBucketByIndex,
-    isAssigning,
     isApplying,
     isFinalizing,
     createBucket,
@@ -570,22 +569,6 @@ export function PlaylistOrganizer({
               parentLibrary={playlistLibrary}
               onLinkBucket={linkBucket}
             />
-          </div>
-
-          {/* Status bar */}
-          <div className="fixed bottom-16 left-0 right-0 bg-obsidian-surface border-t border-obsidian-border px-4 py-2 text-xs text-white/40">
-            <div className="max-w-4xl mx-auto flex items-center justify-between">
-              <div>
-                {isAssigning ? 'Assigning track...' : 'Ready'}
-              </div>
-              <div>
-                {buckets.length > 0 && (
-                  <span>
-                    Shift+1-{Math.min(buckets.length, 9)} to assign current track
-                  </span>
-                )}
-              </div>
-            </div>
           </div>
         </div>
       </div>
