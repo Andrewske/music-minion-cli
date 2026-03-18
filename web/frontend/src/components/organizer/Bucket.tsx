@@ -6,7 +6,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { ChevronDown, ChevronRight, GripVertical, Pencil, Shuffle, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, GripVertical, Loader2, Pencil, RefreshCw, Shuffle, Trash2 } from 'lucide-react';
 import type { PlaylistTrackEntry } from '../../types';
 import type { Bucket } from '../../api/buckets';
 import { EmojiDisplay } from '../EmojiDisplay';
@@ -33,6 +33,8 @@ interface BucketComponentProps {
   parentPlaylistId?: number;
   parentLibrary?: string;
   onLink?: (playlistId: number | null) => Promise<void>;
+  onSyncSoundCloud?: () => Promise<void>;
+  isSyncingSoundCloud?: boolean;
 }
 
 // Sortable track item component
@@ -114,6 +116,8 @@ export function BucketComponent({
   parentPlaylistId,
   parentLibrary,
   onLink,
+  onSyncSoundCloud,
+  isSyncingSoundCloud,
 }: BucketComponentProps): JSX.Element {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -267,6 +271,26 @@ export function BucketComponent({
           >
             <Shuffle className="w-4 h-4" />
           </button>
+
+          {/* Sync with SoundCloud */}
+          {bucket.linked_playlist_soundcloud_id && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSyncSoundCloud?.();
+              }}
+              disabled={isSyncingSoundCloud}
+              className="p-1.5 text-white/40 hover:text-orange-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="Sync with SoundCloud"
+            >
+              {isSyncingSoundCloud ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4" />
+              )}
+            </button>
+          )}
 
           {/* Edit */}
           <button

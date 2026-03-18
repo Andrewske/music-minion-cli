@@ -91,6 +91,8 @@ export function PlaylistOrganizer({
     shuffleBucket,
     reorderTracks,
     linkBucket,
+    syncBucketSoundCloud,
+    syncingBucketId,
   } = usePlaylistOrganizer({ playlistId });
 
   // Load full track data for all tracks in playlist (high limit for organizer)
@@ -428,6 +430,16 @@ export function PlaylistOrganizer({
     [allTracks, play, playlistId, session, shuffleEnabled, trackToBucketsMap]
   );
 
+  // Handle SoundCloud sync for a bucket
+  const handleSyncSoundCloud = useCallback(async (bucketId: string): Promise<void> => {
+    try {
+      const result = await syncBucketSoundCloud(bucketId);
+      toast.success(`SC sync: ${result.pulled} pulled, ${result.pushed_adds} added, ${result.pushed_removals} removed`);
+    } catch (error) {
+      toast.error(`SoundCloud sync failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, [syncBucketSoundCloud]);
+
   // Handle applying the order (keeps session active)
   const handleApplyOrder = useCallback(async (): Promise<void> => {
     await applyOrder();
@@ -564,6 +576,8 @@ export function PlaylistOrganizer({
               parentPlaylistId={playlistId}
               parentLibrary={playlistLibrary}
               onLinkBucket={linkBucket}
+              onSyncSoundCloud={handleSyncSoundCloud}
+              syncingBucketId={syncingBucketId}
             />
           </div>
         </div>
