@@ -66,6 +66,7 @@ class BucketResponse(BaseModel):
     track_ids: list[int]
     linked_playlist_id: int | None
     linked_playlist_name: str | None
+    linked_playlist_soundcloud_id: str | None = None
 
 
 class SessionResponse(BaseModel):
