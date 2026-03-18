@@ -7,6 +7,7 @@ Metadata is stored with permalink URLs that are resolved via yt-dlp at playback 
 import sqlite3
 import time
 import uuid
+from datetime import datetime
 from enum import Enum
 from threading import Lock
 from typing import Optional
@@ -643,6 +644,7 @@ class SyncResponse(BaseModel):
 
     tracks_synced: int
     playlists_synced: int
+    playlists_skipped: int
     likes_synced: int
     errors: list[str]
     last_synced_at: str
@@ -672,7 +674,7 @@ async def get_sync_status(db=Depends(get_db)) -> SyncStatusResponse:
 
 
 @router.post("/sync")
-async def sync_soundcloud_library(db=Depends(get_db)) -> SyncResponse:
+async def sync_soundcloud_library(force: bool = False, db=Depends(get_db)) -> SyncResponse:
     """
     Sync SoundCloud library to local database.
     Creates track records with source='soundcloud' that can be streamed.
@@ -700,6 +702,7 @@ async def sync_soundcloud_library(db=Depends(get_db)) -> SyncResponse:
     errors = []
     tracks_synced = 0
     playlists_synced = 0
+    playlists_skipped = 0
     likes_synced = 0
 
     try:
@@ -709,61 +712,134 @@ async def sync_soundcloud_library(db=Depends(get_db)) -> SyncResponse:
         # NOTE: These are SYNCHRONOUS functions - no await!
         updated_state, sc_playlists = sc_get_playlists(state)
 
+        # Build lookup of existing SC playlists for change detection
+        existing_rows = db.execute(
+            """SELECT soundcloud_playlist_id, id, provider_last_modified, last_track_count
+               FROM playlists
+               WHERE library = 'soundcloud' AND soundcloud_playlist_id IS NOT NULL"""
+        ).fetchall()
+        existing_map: dict[str, tuple[int, str | None, int]] = {
+            row["soundcloud_playlist_id"]: (
+                row["id"],
+                row["provider_last_modified"],
+                row["last_track_count"] or 0,
+            )
+            for row in existing_rows
+        }
+
+        # Track which SC playlist IDs we see (for orphan detection)
+        seen_sc_playlist_ids: set[str] = set()
+
         for sc_playlist in sc_playlists:
             try:
+                sc_pid = sc_playlist["id"]
+                seen_sc_playlist_ids.add(sc_pid)
+
+                # Change detection: skip unchanged playlists
+                if not force and sc_pid in existing_map:
+                    db_id, stored_modified, stored_count = existing_map[sc_pid]
+                    sc_modified = sc_playlist.get("last_modified")
+                    sc_count = sc_playlist.get("track_count", 0)
+
+                    if (
+                        stored_modified is not None
+                        and stored_modified == sc_modified
+                        and stored_count == sc_count
+                    ):
+                        # Still update name (free, no API call)
+                        db.execute(
+                            "UPDATE playlists SET name = ? WHERE id = ?",
+                            (sc_playlist["name"], db_id),
+                        )
+                        playlists_skipped += 1
+                        logger.debug(f"Skipped unchanged playlist '{sc_playlist['name']}'")
+                        continue
+
                 # Fetch tracks for playlist (synchronous)
                 updated_state, sc_tracks, _ = sc_get_playlist_tracks(
-                    updated_state, sc_playlist["id"]
+                    updated_state, sc_pid
                 )
 
                 # Upsert tracks with source='soundcloud' and FULL metadata
+                # Note: Can't use ON CONFLICT with partial unique indexes in SQLite,
+                # so we use explicit check-then-insert/update pattern
                 for sc_id, metadata in sc_tracks:
-                    db.execute(
-                        """
-                        INSERT INTO tracks (
-                            title, artist, genre, bpm, duration,
-                            source, soundcloud_id, source_url
-                        ) VALUES (?, ?, ?, ?, ?, 'soundcloud', ?, ?)
-                        ON CONFLICT (source, soundcloud_id)
-                        DO UPDATE SET
-                            title = excluded.title,
-                            artist = excluded.artist,
-                            genre = excluded.genre,
-                            bpm = excluded.bpm,
-                            duration = excluded.duration,
-                            source_url = excluded.source_url
-                    """,
-                        (
-                            metadata.get("title"),
-                            metadata.get("artist"),
-                            metadata.get("genre"),
-                            metadata.get("bpm"),
-                            metadata.get("duration"),
-                            sc_id,
-                            f"https://soundcloud.com/tracks/{sc_id}",  # Permalink for yt-dlp fallback
-                        ),
-                    )
+                    existing = db.execute(
+                        "SELECT id FROM tracks WHERE source = 'soundcloud' AND soundcloud_id = ?",
+                        (sc_id,),
+                    ).fetchone()
+
+                    if existing:
+                        db.execute(
+                            """
+                            UPDATE tracks SET
+                                title = ?, artist = ?, genre = ?, bpm = ?,
+                                duration = ?, source_url = ?
+                            WHERE id = ?
+                            """,
+                            (
+                                metadata.get("title"),
+                                metadata.get("artist"),
+                                metadata.get("genre"),
+                                metadata.get("bpm"),
+                                metadata.get("duration"),
+                                f"https://soundcloud.com/tracks/{sc_id}",
+                                existing[0],
+                            ),
+                        )
+                    else:
+                        db.execute(
+                            """
+                            INSERT INTO tracks (
+                                title, artist, genre, bpm, duration,
+                                source, soundcloud_id, source_url
+                            ) VALUES (?, ?, ?, ?, ?, 'soundcloud', ?, ?)
+                            """,
+                            (
+                                metadata.get("title"),
+                                metadata.get("artist"),
+                                metadata.get("genre"),
+                                metadata.get("bpm"),
+                                metadata.get("duration"),
+                                sc_id,
+                                f"https://soundcloud.com/tracks/{sc_id}",
+                            ),
+                        )
                     tracks_synced += 1
 
-                # Create/update playlist
-                cursor = db.execute(
-                    """
-                    INSERT INTO playlists (
-                        name, library, soundcloud_playlist_id, track_count, type
-                    ) VALUES (?, 'soundcloud', ?, ?, 'manual')
-                    ON CONFLICT (soundcloud_playlist_id, library)
-                    DO UPDATE SET
-                        name = excluded.name,
-                        track_count = excluded.track_count
-                    RETURNING id
-                """,
-                    (
-                        sc_playlist["name"],
-                        sc_playlist["id"],
-                        len(sc_tracks),
-                    ),
-                )
-                playlist_id = cursor.fetchone()[0]
+                # Sync metadata for storage
+                now_iso = datetime.utcnow().isoformat()
+                sc_last_modified = sc_playlist.get("last_modified")
+
+                # Create/update playlist (explicit check for partial index compatibility)
+                existing_playlist = db.execute(
+                    "SELECT id FROM playlists WHERE soundcloud_playlist_id = ? AND library = 'soundcloud'",
+                    (sc_pid,),
+                ).fetchone()
+
+                if existing_playlist:
+                    playlist_id = existing_playlist[0]
+                    db.execute(
+                        """UPDATE playlists SET
+                            name = ?, track_count = ?,
+                            provider_last_modified = ?, last_track_count = ?, last_synced_at = ?
+                        WHERE id = ?""",
+                        (sc_playlist["name"], len(sc_tracks),
+                         sc_last_modified, len(sc_tracks), now_iso,
+                         playlist_id),
+                    )
+                else:
+                    cursor = db.execute(
+                        """
+                        INSERT INTO playlists (
+                            name, library, soundcloud_playlist_id, track_count, type,
+                            provider_last_modified, last_track_count, last_synced_at
+                        ) VALUES (?, 'soundcloud', ?, ?, 'manual', ?, ?, ?)
+                        """,
+                        (sc_playlist["name"], sc_pid, len(sc_tracks),
+                         sc_last_modified, len(sc_tracks), now_iso),
+                    )
+                    playlist_id = cursor.lastrowid
 
                 # Link tracks to playlist via playlist_tracks
                 # First, get track IDs for the SC tracks we just upserted
@@ -800,14 +876,28 @@ async def sync_soundcloud_library(db=Depends(get_db)) -> SyncResponse:
                 logger.exception(f"Failed to sync playlist {sc_playlist['name']}")
                 errors.append(f"Failed to sync playlist {sc_playlist['name']}: {e}")
 
+        # Detect orphaned local playlists (deleted on SC)
+        orphaned = set(existing_map.keys()) - seen_sc_playlist_ids
+        for orphan_id in orphaned:
+            db_id, _, _ = existing_map[orphan_id]
+            logger.warning(
+                f"Orphaned SC playlist detected: soundcloud_playlist_id={orphan_id}, "
+                f"local db id={db_id} — playlist may have been deleted on SoundCloud"
+            )
+
+        logger.info(
+            f"Playlist sync summary: {playlists_synced} synced, "
+            f"{playlists_skipped} skipped (unchanged), {len(orphaned)} orphaned"
+        )
+
         # =====================
         # 2. Delta sync likes (only new since last sync)
         # =====================
         try:
-            # Get most recent liked_at from existing SC tracks
+            # Get most recent created_at from existing SC tracks (for delta sync reference)
             cursor = db.execute(
                 """
-                SELECT MAX(liked_at) FROM tracks WHERE source = 'soundcloud'
+                SELECT MAX(created_at) FROM tracks WHERE source = 'soundcloud'
             """
             )
             last_sync = cursor.fetchone()[0]
@@ -818,47 +908,71 @@ async def sync_soundcloud_library(db=Depends(get_db)) -> SyncResponse:
                 access_token, existing_ids=set(), incremental=True
             )
 
-            # Upsert liked tracks
+            # Upsert liked tracks using explicit check pattern (partial index workaround)
             for sc_id, metadata in liked_tracks:
-                db.execute(
-                    """
-                    INSERT INTO tracks (
-                        title, artist, genre, bpm, duration,
-                        source, soundcloud_id, source_url
-                    ) VALUES (?, ?, ?, ?, ?, 'soundcloud', ?, ?)
-                    ON CONFLICT (source, soundcloud_id)
-                    DO UPDATE SET
-                        title = excluded.title,
-                        artist = excluded.artist,
-                        genre = excluded.genre,
-                        bpm = excluded.bpm,
-                        duration = excluded.duration,
-                        source_url = excluded.source_url
-                """,
-                    (
-                        metadata.get("title"),
-                        metadata.get("artist"),
-                        metadata.get("genre"),
-                        metadata.get("bpm"),
-                        metadata.get("duration"),
-                        sc_id,
-                        f"https://soundcloud.com/tracks/{sc_id}",
-                    ),
-                )
+                existing = db.execute(
+                    "SELECT id FROM tracks WHERE source = 'soundcloud' AND soundcloud_id = ?",
+                    (sc_id,),
+                ).fetchone()
+
+                if existing:
+                    db.execute(
+                        """
+                        UPDATE tracks SET
+                            title = ?, artist = ?, genre = ?, bpm = ?,
+                            duration = ?, source_url = ?
+                        WHERE id = ?
+                        """,
+                        (
+                            metadata.get("title"),
+                            metadata.get("artist"),
+                            metadata.get("genre"),
+                            metadata.get("bpm"),
+                            metadata.get("duration"),
+                            f"https://soundcloud.com/tracks/{sc_id}",
+                            existing[0],
+                        ),
+                    )
+                else:
+                    db.execute(
+                        """
+                        INSERT INTO tracks (
+                            title, artist, genre, bpm, duration,
+                            source, soundcloud_id, source_url
+                        ) VALUES (?, ?, ?, ?, ?, 'soundcloud', ?, ?)
+                        """,
+                        (
+                            metadata.get("title"),
+                            metadata.get("artist"),
+                            metadata.get("genre"),
+                            metadata.get("bpm"),
+                            metadata.get("duration"),
+                            sc_id,
+                            f"https://soundcloud.com/tracks/{sc_id}",
+                        ),
+                    )
                 likes_synced += 1
 
-            # Create/update "SoundCloud Likes" playlist
-            cursor = db.execute(
-                """
-                INSERT INTO playlists (
-                    name, library, track_count, type
-                ) VALUES ('SoundCloud Likes', 'soundcloud', ?, 'manual')
-                ON CONFLICT (name, library) DO UPDATE SET track_count = excluded.track_count
-                RETURNING id
-            """,
-                (len(liked_tracks),),
-            )
-            likes_playlist_id = cursor.fetchone()[0]
+            # Create/update "SoundCloud Likes" playlist (explicit check pattern)
+            existing_likes = db.execute(
+                "SELECT id FROM playlists WHERE name = 'SoundCloud Likes' AND library = 'soundcloud'"
+            ).fetchone()
+
+            if existing_likes:
+                likes_playlist_id = existing_likes[0]
+                db.execute(
+                    "UPDATE playlists SET track_count = ? WHERE id = ?",
+                    (len(liked_tracks), likes_playlist_id),
+                )
+            else:
+                cursor = db.execute(
+                    """
+                    INSERT INTO playlists (name, library, track_count, type)
+                    VALUES ('SoundCloud Likes', 'soundcloud', ?, 'manual')
+                    """,
+                    (len(liked_tracks),),
+                )
+                likes_playlist_id = cursor.lastrowid
 
             # Link liked tracks
             sc_ids = [sc_id for sc_id, _ in liked_tracks]
@@ -896,7 +1010,6 @@ async def sync_soundcloud_library(db=Depends(get_db)) -> SyncResponse:
         db.commit()
 
         # Get the current timestamp for last_synced_at
-        from datetime import datetime
         last_synced_at = datetime.utcnow().isoformat()
 
     except Exception as e:
@@ -907,6 +1020,7 @@ async def sync_soundcloud_library(db=Depends(get_db)) -> SyncResponse:
     return SyncResponse(
         tracks_synced=tracks_synced,
         playlists_synced=playlists_synced,
+        playlists_skipped=playlists_skipped,
         likes_synced=likes_synced,
         errors=errors,
         last_synced_at=last_synced_at,
