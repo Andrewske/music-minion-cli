@@ -8,6 +8,14 @@ from fastapi import APIRouter, HTTPException
 from loguru import logger
 from pydantic import BaseModel
 
+from music_minion.core.database import get_db_connection
+from web.backend.soundcloud_auth import get_web_provider_state
+from music_minion.domain.library.providers.soundcloud.api import (
+    add_track_to_playlist as sc_add_track,
+    remove_track_from_playlist as sc_remove_track,
+    get_playlist_tracks as sc_get_playlist_tracks,
+)
+
 from ..queries import buckets as bucket_queries
 from .player import update_organizer_queue
 
@@ -91,6 +99,16 @@ class AssignResponse(BaseModel):
     bucket_id: str
     track_id: int
     position: int
+
+
+class SyncSoundCloudResponse(BaseModel):
+    """Response for bidirectional SoundCloud sync."""
+
+    pulled: int
+    pushed_adds: int
+    pushed_removals: int
+    skipped: int
+    errors: list[str]
 
 
 # === Session Endpoints ===
@@ -329,10 +347,143 @@ async def get_bucket_link_endpoint(bucket_id: str) -> dict[str, int | None]:
         )
 
 
+@router.post("/{bucket_id}/sync-soundcloud", response_model=SyncSoundCloudResponse)
+def sync_soundcloud_endpoint(bucket_id: str) -> SyncSoundCloudResponse:
+    """Bidirectional sync: pull SC playlist tracks locally, push local changes to SC."""
+    try:
+        # 1. Resolve IDs
+        with get_db_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT bpl.playlist_id, p.soundcloud_playlist_id
+                FROM bucket_playlist_links bpl
+                JOIN playlists p ON bpl.playlist_id = p.id
+                WHERE bpl.bucket_id = ?
+                """,
+                (bucket_id,),
+            ).fetchone()
+
+        if not row:
+            raise HTTPException(status_code=400, detail="Bucket is not linked to a playlist")
+
+        linked_playlist_id: int = row["playlist_id"]
+        sc_playlist_id: str | None = row["soundcloud_playlist_id"]
+
+        if not sc_playlist_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Linked playlist has no SoundCloud ID",
+            )
+
+        # 2. Auth
+        state = get_web_provider_state()
+        if state is None:
+            raise HTTPException(status_code=401, detail="SoundCloud not authenticated")
+
+        pulled = 0
+        pushed_adds = 0
+        pushed_removals = 0
+        skipped = 0
+        errors: list[str] = []
+
+        # 3. PULL phase
+        state, remote_tracks, _ = sc_get_playlist_tracks(state, sc_playlist_id)
+        remote_sc_ids: set[str] = set()
+
+        with get_db_connection() as conn:
+            # Get max position in local playlist
+            max_pos_row = conn.execute(
+                "SELECT COALESCE(MAX(position), -1) as max_pos FROM playlist_tracks WHERE playlist_id = ?",
+                (linked_playlist_id,),
+            ).fetchone()
+            next_position: int = max_pos_row["max_pos"] + 1
+
+            for sc_track_id, _metadata in remote_tracks:
+                remote_sc_ids.add(sc_track_id)
+
+                # Look up local track by soundcloud_id
+                local_row = conn.execute(
+                    "SELECT id FROM tracks WHERE soundcloud_id = ?",
+                    (sc_track_id,),
+                ).fetchone()
+
+                if not local_row:
+                    continue
+
+                local_track_id: int = local_row["id"]
+
+                # Check if already in local playlist
+                exists = conn.execute(
+                    "SELECT 1 FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?",
+                    (linked_playlist_id, local_track_id),
+                ).fetchone()
+
+                if not exists:
+                    conn.execute(
+                        "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, ?)",
+                        (linked_playlist_id, local_track_id, next_position),
+                    )
+                    next_position += 1
+                    pulled += 1
+
+            conn.commit()
+
+        # 4. PUSH phase
+        with get_db_connection() as conn:
+            # Get local playlist tracks with SC IDs
+            local_rows = conn.execute(
+                """
+                SELECT t.soundcloud_id
+                FROM playlist_tracks pt
+                JOIN tracks t ON pt.track_id = t.id
+                WHERE pt.playlist_id = ?
+                """,
+                (linked_playlist_id,),
+            ).fetchall()
+
+        local_sc_ids: set[str] = set()
+        for r in local_rows:
+            if r["soundcloud_id"]:
+                local_sc_ids.add(r["soundcloud_id"])
+            else:
+                skipped += 1
+
+        # Additions: in local but not in remote
+        additions = local_sc_ids - remote_sc_ids
+        for sc_track_id in additions:
+            state, success, error = sc_add_track(state, sc_playlist_id, sc_track_id)
+            if success:
+                pushed_adds += 1
+            elif error:
+                errors.append(error)
+
+        # Removals: in remote but not in local
+        removals = remote_sc_ids - local_sc_ids
+        for sc_track_id in removals:
+            state, success, error = sc_remove_track(state, sc_playlist_id, sc_track_id)
+            if success:
+                pushed_removals += 1
+            elif error:
+                errors.append(error)
+
+        return SyncSoundCloudResponse(
+            pulled=pulled,
+            pushed_adds=pushed_adds,
+            pushed_removals=pushed_removals,
+            skipped=skipped,
+            errors=errors,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Failed to sync SoundCloud")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to sync SoundCloud: {str(e)}"
+        )
+
+
 def _get_session_id_for_bucket(bucket_id: str) -> str | None:
     """Helper to get session_id for a bucket."""
-    from music_minion.core.database import get_db_connection
-
     with get_db_connection() as conn:
         cursor = conn.execute(
             "SELECT session_id FROM buckets WHERE id = ?",
@@ -397,8 +548,6 @@ async def bulk_unassign_from_bucket(
     bucket_id: str
 ) -> dict:
     """Unassign all tracks from a bucket (empty the bucket)."""
-    from music_minion.core.database import get_db_connection
-
     try:
         # Validate session exists and is active
         session = bucket_queries.get_session_with_data(session_id)
