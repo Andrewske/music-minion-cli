@@ -7,6 +7,12 @@ from typing import Any
 from loguru import logger
 
 from music_minion.core.database import get_db_connection
+from web.backend.sc_push_worker import (
+    enqueue_sc_push_add,
+    enqueue_sc_push_bulk_sync,
+    enqueue_sc_push_remove,
+)
+
 from .emojis import (
     add_emoji_to_track_mutation,
     remove_emoji_from_track_mutation,
@@ -120,7 +126,8 @@ def get_session_with_data(session_id: str) -> dict[str, Any] | None:
             """
             SELECT b.id, b.name, b.emoji_id, b.position,
                    bpl.playlist_id as linked_playlist_id,
-                   p.name as linked_playlist_name
+                   p.name as linked_playlist_name,
+                   p.soundcloud_playlist_id as linked_playlist_soundcloud_id
             FROM buckets b
             LEFT JOIN bucket_playlist_links bpl ON b.id = bpl.bucket_id
             LEFT JOIN playlists p ON bpl.playlist_id = p.id
@@ -154,6 +161,7 @@ def get_session_with_data(session_id: str) -> dict[str, Any] | None:
                     "track_ids": track_ids,
                     "linked_playlist_id": bucket_row["linked_playlist_id"],
                     "linked_playlist_name": bucket_row["linked_playlist_name"],
+                    "linked_playlist_soundcloud_id": bucket_row["linked_playlist_soundcloud_id"],
                 }
             )
 
@@ -232,6 +240,7 @@ def create_bucket(
             "track_ids": [],
             "linked_playlist_id": None,
             "linked_playlist_name": None,
+            "linked_playlist_soundcloud_id": None,
         }
 
 
@@ -330,7 +339,7 @@ def update_bucket(
         # Get link information
         link_cursor = conn.execute(
             """
-            SELECT bpl.playlist_id, p.name
+            SELECT bpl.playlist_id, p.name, p.soundcloud_playlist_id
             FROM bucket_playlist_links bpl
             LEFT JOIN playlists p ON bpl.playlist_id = p.id
             WHERE bpl.bucket_id = ?
@@ -347,6 +356,7 @@ def update_bucket(
             "track_ids": track_ids,
             "linked_playlist_id": link_row["playlist_id"] if link_row else None,
             "linked_playlist_name": link_row["name"] if link_row else None,
+            "linked_playlist_soundcloud_id": link_row["soundcloud_playlist_id"] if link_row else None,
         }
 
 
@@ -933,8 +943,12 @@ def link_bucket_to_playlist(bucket_id: str, playlist_id: int) -> bool:
         )
         conn.commit()
 
-        logger.info(f"Linked bucket {bucket_id} to playlist {playlist_id}")
-        return True
+    # Sync existing bucket tracks to the linked playlist (outside transaction)
+    synced_count = sync_existing_bucket_tracks_to_playlist(bucket_id, playlist_id)
+    logger.info(
+        f"Linked bucket {bucket_id} to playlist {playlist_id}, synced {synced_count} existing tracks"
+    )
+    return True
 
 
 def unlink_bucket(bucket_id: str) -> bool:
@@ -985,6 +999,64 @@ def get_bucket_link(bucket_id: str) -> int | None:
         )
         result = cursor.fetchone()
         return result["playlist_id"] if result else None
+
+
+def sync_existing_bucket_tracks_to_playlist(bucket_id: str, playlist_id: int) -> int:
+    """Sync all existing bucket tracks to linked playlist. Called when link is established.
+
+    Args:
+        bucket_id: UUID of the bucket
+        playlist_id: ID of the playlist to sync to
+
+    Returns:
+        Number of tracks added to playlist
+    """
+    with get_db_connection() as conn:
+        # Get all track_ids in bucket
+        cursor = conn.execute(
+            "SELECT track_id FROM bucket_tracks WHERE bucket_id = ? ORDER BY position",
+            (bucket_id,),
+        )
+        bucket_track_ids = [row["track_id"] for row in cursor.fetchall()]
+
+        if not bucket_track_ids:
+            return 0
+
+        # Get tracks already in playlist
+        existing_cursor = conn.execute(
+            f"""
+            SELECT track_id FROM playlist_tracks
+            WHERE playlist_id = ? AND track_id IN ({','.join('?' * len(bucket_track_ids))})
+            """,
+            (playlist_id, *bucket_track_ids),
+        )
+        existing_ids = {row["track_id"] for row in existing_cursor.fetchall()}
+
+        # Filter to new tracks only
+        new_track_ids = [tid for tid in bucket_track_ids if tid not in existing_ids]
+
+        if not new_track_ids:
+            return 0
+
+        # Get next position in playlist
+        position_cursor = conn.execute(
+            "SELECT COALESCE(MAX(position), -1) + 1 as next_position FROM playlist_tracks WHERE playlist_id = ?",
+            (playlist_id,),
+        )
+        next_position = position_cursor.fetchone()["next_position"]
+
+        # Batch insert all new tracks
+        conn.executemany(
+            "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, ?)",
+            [(playlist_id, tid, next_position + i) for i, tid in enumerate(new_track_ids)],
+        )
+        conn.commit()
+
+        logger.info(
+            f"Bulk synced {len(new_track_ids)} tracks from bucket {bucket_id} to playlist {playlist_id}"
+        )
+        enqueue_sc_push_bulk_sync(playlist_id)
+        return len(new_track_ids)
 
 
 def sync_track_to_linked_playlist(bucket_id: str, track_id: int) -> bool:
@@ -1050,6 +1122,7 @@ def sync_track_to_linked_playlist(bucket_id: str, track_id: int) -> bool:
         logger.info(
             f"Synced track {track_id} to linked playlist {playlist_id} (bucket {bucket_id})"
         )
+        enqueue_sc_push_add(playlist_id, track_id)
         return True
 
 
@@ -1093,4 +1166,5 @@ def unsync_track_from_linked_playlist(bucket_id: str, track_id: int) -> bool:
         logger.info(
             f"Unsynced track {track_id} from linked playlist {playlist_id} (bucket {bucket_id})"
         )
+        enqueue_sc_push_remove(playlist_id, track_id)
         return True

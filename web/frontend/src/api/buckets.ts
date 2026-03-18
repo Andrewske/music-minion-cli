@@ -19,6 +19,7 @@ export interface Bucket {
   track_ids: number[];
   linked_playlist_id: number | null;
   linked_playlist_name: string | null;
+  linked_playlist_soundcloud_id: string | null;
 }
 
 export interface CreateSessionBody {
