@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 48  # Add bucket_playlist_links table for bucket-to-playlist linking
+SCHEMA_VERSION = 50  # Add global comparison indexes for graceful-snacking-seahorse
 
 
 # Initial top 50 curated emojis for music reactions
@@ -2175,6 +2175,92 @@ def migrate_database(conn, current_version: int) -> None:
 
         conn.commit()
         logger.info("  ✓ Migration to v48 complete: bucket_playlist_links table created")
+
+    if current_version < 49:
+        logger.info("Migrating to v49: Change playlists unique constraint to (name, library)...")
+
+        # SQLite doesn't support ALTER CONSTRAINT, so we recreate the table
+        # 1. Create new table with correct constraint
+        conn.execute("""
+            CREATE TABLE playlists_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                type TEXT NOT NULL,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                track_count INTEGER DEFAULT 0,
+                last_played_at TIMESTAMP,
+                soundcloud_playlist_id TEXT,
+                spotify_playlist_id TEXT,
+                last_track_count INTEGER DEFAULT 0,
+                last_synced_at TIMESTAMP,
+                provider_last_modified TIMESTAMP,
+                provider_created_at TIMESTAMP,
+                spotify_snapshot_id TEXT,
+                library TEXT DEFAULT 'local',
+                pin_order INTEGER DEFAULT NULL,
+                UNIQUE(name, library)
+            )
+        """)
+
+        # 2. Copy all data
+        conn.execute("""
+            INSERT INTO playlists_new
+            SELECT * FROM playlists
+        """)
+
+        # 3. Drop old table
+        conn.execute("DROP TABLE playlists")
+
+        # 4. Rename new table
+        conn.execute("ALTER TABLE playlists_new RENAME TO playlists")
+
+        # 5. Recreate indexes
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_playlists_last_played
+            ON playlists(last_played_at DESC)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_playlists_library
+            ON playlists(library)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_playlists_pin_order
+            ON playlists(pin_order)
+        """)
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_playlists_soundcloud_id
+            ON playlists (soundcloud_playlist_id, library)
+            WHERE soundcloud_playlist_id IS NOT NULL
+        """)
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_playlists_spotify_id
+            ON playlists (spotify_playlist_id, library)
+            WHERE spotify_playlist_id IS NOT NULL
+        """)
+
+        conn.commit()
+        logger.info("  ✓ Migration to v49 complete: playlists unique constraint changed to (name, library)")
+
+    if current_version < 50:
+        logger.info(
+            "Migrating to v50: Add global comparison indexes for pair selection..."
+        )
+        # The existing (playlist_id, track_a_id) and (playlist_id, track_b_id)
+        # indexes can't be used when playlist_id is dropped from WHERE clauses.
+        # These new indexes support the global pair-skipping query in
+        # get_next_playlist_pair() which uses WHERE track_a_id = ? / track_b_id = ?.
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_playlist_comparison_global_track_a
+            ON playlist_comparison_history(track_a_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_playlist_comparison_global_track_b
+            ON playlist_comparison_history(track_b_id)
+        """)
+        conn.commit()
+        logger.info("  ✓ Migration to v50 complete: global comparison indexes added")
 
 
 def init_database() -> None:

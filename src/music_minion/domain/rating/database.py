@@ -10,13 +10,9 @@ from typing import Optional, TypedDict
 
 from loguru import logger
 
-from music_minion.core.config import get_all_playlist_id
 from music_minion.core.database import get_db_connection
 from music_minion.domain.playlists.crud import get_playlist_track_count
 from music_minion.domain.rating.elo import update_ratings
-
-# Number of comparisons per playlist that propagate to All playlist
-FIRST_N_AFFECT_ALL = 5
 
 
 @dataclass
@@ -119,6 +115,119 @@ def get_or_create_playlist_rating(track_id: int, playlist_id: int) -> EloRating:
         )
 
 
+def get_contextual_track_stats(track_id: int, playlist_id: int) -> tuple[int, int]:
+    """Calculate wins/losses for a track against opponents in this playlist.
+
+    Counts comparisons from the global history where the opponent is also
+    a current member of the given playlist. This is the "contextual view"
+    of a track's performance — same comparison graph, filtered by context.
+
+    Args:
+        track_id: Track to get stats for
+        playlist_id: Playlist context (only count opponents in this playlist)
+
+    Returns:
+        Tuple of (wins, losses)
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT
+                SUM(CASE WHEN pch.winner_id = ? THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN pch.winner_id != ? THEN 1 ELSE 0 END) as losses
+            FROM playlist_comparison_history pch
+            WHERE (pch.track_a_id = ? OR pch.track_b_id = ?)
+              AND EXISTS (
+                  SELECT 1 FROM playlist_tracks pt
+                  WHERE pt.playlist_id = ?
+                    AND pt.track_id = CASE
+                        WHEN pch.track_a_id = ? THEN pch.track_b_id
+                        ELSE pch.track_a_id
+                    END
+              )
+            """,
+            (track_id, track_id, track_id, track_id, playlist_id, track_id),
+        )
+        row = cursor.fetchone()
+        wins = row["wins"] or 0
+        losses = row["losses"] or 0
+        logger.debug(
+            f"Contextual stats track={track_id} playlist={playlist_id}: "
+            f"{wins}W / {losses}L"
+        )
+        return (wins, losses)
+
+
+def get_contextual_pair_stats(
+    track_a_id: int, track_b_id: int, playlist_id: int
+) -> tuple[int, int, int, int]:
+    """Calculate contextual wins/losses for both tracks in a pair.
+
+    Single-query batch version of get_contextual_track_stats for two tracks.
+    Counts comparisons from the global history where the opponent is also
+    a current member of the given playlist.
+
+    Args:
+        track_a_id: First track
+        track_b_id: Second track
+        playlist_id: Playlist context
+
+    Returns:
+        Tuple of (a_wins, a_losses, b_wins, b_losses)
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT
+                SUM(CASE WHEN pch.winner_id = ? AND (pch.track_a_id = ? OR pch.track_b_id = ?)
+                         AND EXISTS (SELECT 1 FROM playlist_tracks pt
+                                     WHERE pt.playlist_id = ?
+                                       AND pt.track_id = CASE WHEN pch.track_a_id = ? THEN pch.track_b_id ELSE pch.track_a_id END)
+                    THEN 1 ELSE 0 END) as a_wins,
+                SUM(CASE WHEN pch.winner_id != ? AND (pch.track_a_id = ? OR pch.track_b_id = ?)
+                         AND EXISTS (SELECT 1 FROM playlist_tracks pt
+                                     WHERE pt.playlist_id = ?
+                                       AND pt.track_id = CASE WHEN pch.track_a_id = ? THEN pch.track_b_id ELSE pch.track_a_id END)
+                    THEN 1 ELSE 0 END) as a_losses,
+                SUM(CASE WHEN pch.winner_id = ? AND (pch.track_a_id = ? OR pch.track_b_id = ?)
+                         AND EXISTS (SELECT 1 FROM playlist_tracks pt
+                                     WHERE pt.playlist_id = ?
+                                       AND pt.track_id = CASE WHEN pch.track_a_id = ? THEN pch.track_b_id ELSE pch.track_a_id END)
+                    THEN 1 ELSE 0 END) as b_wins,
+                SUM(CASE WHEN pch.winner_id != ? AND (pch.track_a_id = ? OR pch.track_b_id = ?)
+                         AND EXISTS (SELECT 1 FROM playlist_tracks pt
+                                     WHERE pt.playlist_id = ?
+                                       AND pt.track_id = CASE WHEN pch.track_a_id = ? THEN pch.track_b_id ELSE pch.track_a_id END)
+                    THEN 1 ELSE 0 END) as b_losses
+            FROM playlist_comparison_history pch
+            WHERE (pch.track_a_id IN (?, ?) OR pch.track_b_id IN (?, ?))
+            """,
+            (
+                # a_wins
+                track_a_id, track_a_id, track_a_id, playlist_id, track_a_id,
+                # a_losses
+                track_a_id, track_a_id, track_a_id, playlist_id, track_a_id,
+                # b_wins
+                track_b_id, track_b_id, track_b_id, playlist_id, track_b_id,
+                # b_losses
+                track_b_id, track_b_id, track_b_id, playlist_id, track_b_id,
+                # WHERE filter
+                track_a_id, track_b_id, track_a_id, track_b_id,
+            ),
+        )
+        row = cursor.fetchone()
+        a_wins = row["a_wins"] or 0
+        a_losses = row["a_losses"] or 0
+        b_wins = row["b_wins"] or 0
+        b_losses = row["b_losses"] or 0
+        logger.debug(
+            f"Contextual pair stats playlist={playlist_id}: "
+            f"track_a={track_a_id} {a_wins}W/{a_losses}L, "
+            f"track_b={track_b_id} {b_wins}W/{b_losses}L"
+        )
+        return (a_wins, a_losses, b_wins, b_losses)
+
+
 def _update_playlist_rating(
     conn,
     track_id: int,
@@ -130,6 +239,11 @@ def _update_playlist_rating(
 
     Uses INSERT ... ON CONFLICT for upsert semantics.
     Also updates last_compared timestamp.
+
+    Note: The `wins` and `losses` columns track comparisons recorded IN this
+    specific playlist context (i.e., when this playlist was active during
+    record_playlist_comparison). They are NOT contextual wins — use
+    get_contextual_track_stats() for wins against opponents in this playlist.
     """
     conn.execute(
         """
@@ -168,12 +282,12 @@ def record_playlist_comparison(
 ) -> None:
     """Record a playlist comparison with ELO updates.
 
-    Handles "first 5 affect All" logic internally:
-    - If track has < FIRST_N_AFFECT_ALL comparisons in this playlist, propagate to All playlist
-    - Skipped when comparing directly in All playlist
+    Records the comparison to the global history and updates playlist-specific
+    ratings. No propagation to other playlists — the global comparison graph
+    handles cross-playlist visibility via get_contextual_track_stats().
     """
-    # Ensure track_a_id < track_b_id for constraint compliance
-    # Note: winner_id stays unchanged - it's a reference to the actual winner,
+    # Ensure track_a_id < track_b_id for constraint compliance.
+    # winner_id stays unchanged — it's a reference to the actual winner,
     # not positional. The swap only affects which ratings go in which columns.
     if track_a_id > track_b_id:
         track_a_id, track_b_id = track_b_id, track_a_id
@@ -186,72 +300,8 @@ def record_playlist_comparison(
             track_a_rating_after,
         )
 
-    # Get All playlist ID with explicit error if not configured
-    all_playlist_id = get_all_playlist_id()
-    if all_playlist_id is None:
-        raise ValueError(
-            "All playlist not found. Create a playlist named 'All' with no filters."
-        )
-
-    # Guard: Skip propagation when comparing directly in All playlist
-    if playlist_id == all_playlist_id:
-        track_a_affects_all = False
-        track_b_affects_all = False
-        track_a_all_before = None
-        track_b_all_before = None
-        track_a_all_after = None
-        track_b_all_after = None
-    else:
-        # Will check counts and fetch All ratings within the same connection below
-        track_a_affects_all = None  # Determined after count check
-        track_b_affects_all = None
-        track_a_all_before = None
-        track_b_all_before = None
-        track_a_all_after = None
-        track_b_all_after = None
-
     with get_db_connection() as conn:
         try:
-            # If not in All playlist, check comparison counts (inlined, no extra round-trip)
-            if playlist_id != all_playlist_id:
-                cursor = conn.execute(
-                    """
-                    SELECT track_id, comparison_count
-                    FROM playlist_elo_ratings
-                    WHERE playlist_id = ? AND track_id IN (?, ?)
-                    """,
-                    (playlist_id, track_a_id, track_b_id)
-                )
-                counts = {row["track_id"]: row["comparison_count"] for row in cursor.fetchall()}
-                track_a_count = counts.get(track_a_id, 0)
-                track_b_count = counts.get(track_b_id, 0)
-                track_a_affects_all = track_a_count < FIRST_N_AFFECT_ALL
-                track_b_affects_all = track_b_count < FIRST_N_AFFECT_ALL
-
-                # Fetch All playlist ratings for BOTH tracks if either affects All
-                # (opponent rating needed for ELO calc even if opponent doesn't affect All)
-                if track_a_affects_all or track_b_affects_all:
-                    track_a_all_before = get_playlist_elo_rating(track_a_id, all_playlist_id)
-                    track_b_all_before = get_playlist_elo_rating(track_b_id, all_playlist_id)
-
-                    # Calculate new All ratings
-                    k_factor = 32
-                    if winner_id == track_a_id:
-                        new_winner, new_loser = update_ratings(track_a_all_before, track_b_all_before, k_factor)
-                        if track_a_affects_all:
-                            track_a_all_after = new_winner
-                        if track_b_affects_all:
-                            track_b_all_after = new_loser
-                    else:
-                        new_winner, new_loser = update_ratings(track_b_all_before, track_a_all_before, k_factor)
-                        if track_b_affects_all:
-                            track_b_all_after = new_winner
-                        if track_a_affects_all:
-                            track_a_all_after = new_loser
-
-            affects_global = bool(track_a_affects_all or track_b_affects_all)
-
-            # Record history with CORRECT column names
             conn.execute(
                 """
                 INSERT INTO playlist_comparison_history (
@@ -269,29 +319,18 @@ def record_playlist_comparison(
                     track_a_id,
                     track_b_id,
                     winner_id,
-                    affects_global,
+                    False,  # affects_global is always False in the global graph model
                     track_a_rating_before,
                     track_b_rating_before,
                     track_a_rating_after,
                     track_b_rating_after,
-                    track_a_all_before,
-                    track_a_all_after,
-                    track_b_all_before,
-                    track_b_all_after,
+                    None, None, None, None,  # No separate global ratings
                     session_id,
                 ),
             )
 
-            # Update playlist ratings using helper
             _update_playlist_rating(conn, track_a_id, playlist_id, track_a_rating_after, winner_id == track_a_id)
             _update_playlist_rating(conn, track_b_id, playlist_id, track_b_rating_after, winner_id == track_b_id)
-
-            # Update All playlist ratings if affected
-            if track_a_affects_all and track_a_all_after is not None:
-                _update_playlist_rating(conn, track_a_id, all_playlist_id, track_a_all_after, winner_id == track_a_id)
-
-            if track_b_affects_all and track_b_all_after is not None:
-                _update_playlist_rating(conn, track_b_id, all_playlist_id, track_b_all_after, winner_id == track_b_id)
 
             conn.commit()
 
@@ -362,9 +401,9 @@ def get_next_playlist_pair(playlist_id: int) -> tuple[dict, dict]:
 
         track_a_id = random.choice(candidates)["track_id"]
 
-        # Step 2: Find another track it hasn't been compared to
-        # Uses NOT IN with UNION to check both directions of comparison history,
-        # allowing SQLite to use idx_playlist_comparison_track_a/b indexes
+        # Step 2: Find another track it hasn't been compared to (globally).
+        # NOT IN checks global history without playlist_id filter — a pair compared
+        # in any playlist is considered done and won't be offered again.
         cursor = conn.execute(
             """
             SELECT t.*,
@@ -376,16 +415,14 @@ def get_next_playlist_pair(playlist_id: int) -> tuple[dict, dict]:
             LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
             WHERE t.id != ?
               AND t.id NOT IN (
-                  SELECT track_b_id FROM playlist_comparison_history
-                  WHERE playlist_id = ? AND track_a_id = ?
+                  SELECT track_b_id FROM playlist_comparison_history WHERE track_a_id = ?
                   UNION
-                  SELECT track_a_id FROM playlist_comparison_history
-                  WHERE playlist_id = ? AND track_b_id = ?
+                  SELECT track_a_id FROM playlist_comparison_history WHERE track_b_id = ?
               )
             ORDER BY per.comparison_count ASC, RANDOM()
             LIMIT 1
             """,
-            (playlist_id, playlist_id, track_a_id, playlist_id, track_a_id, playlist_id, track_a_id),
+            (playlist_id, playlist_id, track_a_id, track_a_id, track_a_id),
         )
         track_b_row = cursor.fetchone()
 
@@ -409,18 +446,38 @@ def get_next_playlist_pair(playlist_id: int) -> tuple[dict, dict]:
         )
         track_a_row = cursor.fetchone()
 
-        return (dict(track_a_row), dict(track_b_row))
+        track_b_id = track_b_row["id"]
+
+        # Inject contextual stats (wins/losses against opponents in this playlist)
+        a_wins, a_losses, b_wins, b_losses = get_contextual_pair_stats(
+            track_a_id, track_b_id, playlist_id
+        )
+
+        track_a = dict(track_a_row)
+        track_b = dict(track_b_row)
+
+        track_a["wins"] = a_wins
+        track_a["comparison_count"] = a_wins + a_losses
+        track_b["wins"] = b_wins
+        track_b["comparison_count"] = b_wins + b_losses
+
+        return (track_a, track_b)
 
 
 def get_playlist_comparison_progress(playlist_id: int) -> dict:
-    """Calculate playlist ranking progress without sessions.
+    """Calculate playlist ranking progress based on relevant comparisons.
+
+    Counts distinct pairs compared where BOTH tracks are current members of
+    this playlist, regardless of which playlist the comparison was originally
+    recorded in. This reflects the global comparison graph model — work done
+    in any playlist counts toward progress here.
 
     Args:
         playlist_id: Playlist to check progress for
 
     Returns:
         {
-            "compared": int,      # Comparisons made so far
+            "compared": int,      # Distinct pairs compared (both tracks in playlist)
             "total": int,         # Total possible pairs: N*(N-1)/2
             "percentage": float   # Progress percentage
         }
@@ -435,10 +492,25 @@ def get_playlist_comparison_progress(playlist_id: int) -> dict:
     total_possible = (track_count * (track_count - 1)) // 2
 
     with get_db_connection() as conn:
-        # Count existing comparisons
+        # Count distinct pairs where both tracks are in this playlist.
+        # DISTINCT on the normalized pair key prevents double-counting if the
+        # same pair was somehow recorded more than once (e.g., from old data).
         cursor = conn.execute(
-            "SELECT COUNT(*) as count FROM playlist_comparison_history WHERE playlist_id = ?",
-            (playlist_id,),
+            """
+            SELECT COUNT(DISTINCT
+                CAST(pch.track_a_id AS TEXT) || '-' || CAST(pch.track_b_id AS TEXT)
+            ) as count
+            FROM playlist_comparison_history pch
+            WHERE EXISTS (
+                SELECT 1 FROM playlist_tracks pt1
+                WHERE pt1.track_id = pch.track_a_id AND pt1.playlist_id = ?
+            )
+            AND EXISTS (
+                SELECT 1 FROM playlist_tracks pt2
+                WHERE pt2.track_id = pch.track_b_id AND pt2.playlist_id = ?
+            )
+            """,
+            (playlist_id, playlist_id),
         )
         compared = cursor.fetchone()["count"]
 
