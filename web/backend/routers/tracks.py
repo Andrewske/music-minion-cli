@@ -5,7 +5,7 @@ import mimetypes
 import json
 from pathlib import Path
 from typing import Optional
-from ..waveform import has_cached_waveform, generate_waveform, get_waveform_path, fetch_soundcloud_waveform
+from ..waveform import has_cached_waveform, generate_waveform, get_waveform_path, get_waveform_cache_dir, fetch_soundcloud_waveform
 from ..deps import get_db, get_config
 from music_minion.core.config import Config
 
@@ -171,6 +171,30 @@ async def get_waveform(
     except Exception as e:
         logger.exception(f"Waveform error for track {track_id}")
         raise HTTPException(500, f"Waveform generation failed: {str(e)}")
+
+
+@router.delete("/tracks/{track_id}/waveform")
+async def delete_waveform_cache(track_id: int) -> dict[str, bool]:
+    cache_path = get_waveform_path(track_id)
+    if cache_path.exists():
+        cache_path.unlink()
+    return {"ok": True}
+
+
+@router.post("/waveforms/purge-soundcloud")
+async def purge_soundcloud_waveforms() -> dict[str, int]:
+    cache_dir = get_waveform_cache_dir()
+    count = 0
+    for f in cache_dir.glob("*.json"):
+        try:
+            with open(f) as fh:
+                data = json.load(fh)
+            if data.get("source") == "soundcloud":
+                f.unlink()
+                count += 1
+        except (json.JSONDecodeError, OSError):
+            continue
+    return {"purged": count}
 
 
 @router.post("/tracks/{track_id}/archive")
