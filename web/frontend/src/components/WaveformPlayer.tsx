@@ -1,4 +1,6 @@
 import { useEffect, useCallback } from 'react';
+import { RefreshCw, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useWavesurfer } from '../hooks/useWavesurfer';
 import { useAudioElement } from '../contexts/AudioElementContext';
 import { usePlayerStore } from '../stores/playerStore';
@@ -35,7 +37,7 @@ export function WaveformPlayer({ track, isPlaying, onTogglePlayPause, onFinish }
     seek(positionMs);
   }, [seek, track.duration]);
 
-  const { containerRef, currentTime, duration, error, retryLoad, togglePlayPause } = useWavesurfer({
+  const { containerRef, currentTime, duration, error, isRefreshing, refreshWaveform, retryLoad, togglePlayPause } = useWavesurfer({
     trackId: track.id,
     isPlaying,
     onFinish,
@@ -142,6 +144,23 @@ export function WaveformPlayer({ track, isPlaying, onTogglePlayPause, onFinish }
       <span className="text-white/30 text-xs font-sf-mono w-20 text-right">
         {formatTime(currentTime)} / {formatTime(duration)}
       </span>
+
+      {/* Refresh waveform button */}
+      <button
+        onClick={async () => {
+          try {
+            await refreshWaveform();
+          } catch {
+            toast.error('Failed to refresh waveform — check SoundCloud auth in Settings');
+          }
+        }}
+        disabled={isRefreshing}
+        className="w-6 h-6 flex items-center justify-center text-white/20 hover:text-white/60 transition-colors disabled:opacity-30"
+        aria-label="Refresh waveform"
+        title="Refresh waveform"
+      >
+        {isRefreshing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+      </button>
     </div>
   );
 }
