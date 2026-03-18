@@ -52,6 +52,14 @@ export interface BucketLinkResponse {
   playlist_id: number | null;
 }
 
+export interface SyncSoundCloudResponse {
+  pulled: number;
+  pushed_adds: number;
+  pushed_removals: number;
+  skipped: number;
+  errors: string[];
+}
+
 // Session operations
 
 export async function createOrResumeSession(playlistId: number): Promise<BucketSession> {
@@ -216,6 +224,22 @@ export async function getBucketLink(bucketId: string): Promise<BucketLinkRespons
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: response.statusText }));
     throw new Error(error.detail || 'Failed to get bucket link');
+  }
+  return response.json();
+}
+
+export async function syncBucketSoundCloud(bucketId: string): Promise<SyncSoundCloudResponse> {
+  const response = await fetch(`${API_BASE}/${bucketId}/sync-soundcloud`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    try {
+      const error = JSON.parse(errorText);
+      throw new Error(error.detail || 'Sync failed');
+    } catch {
+      throw new Error(errorText || 'Sync failed');
+    }
   }
   return response.json();
 }

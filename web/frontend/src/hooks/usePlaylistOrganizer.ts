@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as bucketsApi from '../api/buckets';
-import type { BucketSession, Bucket } from '../api/buckets';
+import type { BucketSession, Bucket, SyncSoundCloudResponse } from '../api/buckets';
 
 interface UsePlaylistOrganizerOptions {
   playlistId: number;
@@ -36,6 +36,10 @@ interface UsePlaylistOrganizerReturn {
   buckets: Bucket[];
   unassignedTrackIds: number[];
   getBucketByIndex: (index: number) => Bucket | undefined;
+
+  // SoundCloud sync
+  syncBucketSoundCloud: (bucketId: string) => Promise<SyncSoundCloudResponse>;
+  syncingBucketId: string | null;
 
   // Loading states (for UI feedback)
   isAssigning: boolean;
@@ -117,6 +121,14 @@ export function usePlaylistOrganizer(
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey });
+    },
+  });
+
+  const syncSoundCloudMutation = useMutation({
+    mutationFn: (bucketId: string) => bucketsApi.syncBucketSoundCloud(bucketId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey });
+      queryClient.invalidateQueries({ queryKey: ['playlists'] });
     },
   });
 
@@ -319,6 +331,15 @@ export function usePlaylistOrganizer(
     [linkBucketMutation]
   );
 
+  const syncBucketSoundCloud = useCallback(
+    async (bucketId: string): Promise<SyncSoundCloudResponse> => {
+      return syncSoundCloudMutation.mutateAsync(bucketId);
+    },
+    [syncSoundCloudMutation]
+  );
+
+  const syncingBucketId = syncSoundCloudMutation.isPending ? (syncSoundCloudMutation.variables ?? null) : null;
+
   const assignTrack = useCallback(
     async (bucketId: string, trackId: number): Promise<void> => {
       await assignTrackMutation.mutateAsync({ bucketId, trackId });
@@ -384,6 +405,10 @@ export function usePlaylistOrganizer(
     applyOrder,
     finalizeSession,
     discardSession,
+
+    // SoundCloud sync
+    syncBucketSoundCloud,
+    syncingBucketId,
 
     // Computed
     buckets,
