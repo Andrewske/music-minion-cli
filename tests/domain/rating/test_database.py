@@ -266,3 +266,148 @@ def test_record_comparison_basic(test_db, test_playlist):
         track_a_rating_after=1516.0,
         track_b_rating_after=1484.0,
     )
+
+
+@pytest.fixture
+def two_playlist_setup():
+    """Create two playlists with overlapping tracks for cross-playlist tests."""
+    from music_minion.core.database import get_db_connection
+    import music_minion.core.config as config_module
+
+    config_module.ALL_PLAYLIST_ID = None
+
+    with get_db_connection() as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS playlists (id INTEGER PRIMARY KEY, name TEXT NOT NULL, filter_source TEXT, filter_genre TEXT, filter_year INTEGER)")
+        conn.execute("CREATE TABLE IF NOT EXISTS playlist_elo_ratings (track_id INTEGER NOT NULL, playlist_id INTEGER NOT NULL, rating REAL DEFAULT 1500.0, comparison_count INTEGER DEFAULT 0, wins INTEGER DEFAULT 0, losses INTEGER DEFAULT 0, last_compared TIMESTAMP, PRIMARY KEY (track_id, playlist_id))")
+        conn.execute("CREATE TABLE IF NOT EXISTS playlist_comparison_history (id INTEGER PRIMARY KEY AUTOINCREMENT, track_a_id INTEGER NOT NULL, track_b_id INTEGER NOT NULL, winner_id INTEGER NOT NULL, playlist_id INTEGER NOT NULL, affects_global BOOLEAN, track_a_playlist_rating_before REAL, track_a_playlist_rating_after REAL, track_b_playlist_rating_before REAL, track_b_playlist_rating_after REAL, track_a_global_rating_before REAL, track_a_global_rating_after REAL, track_b_global_rating_before REAL, track_b_global_rating_after REAL, session_id TEXT NOT NULL DEFAULT '', timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)")
+        conn.execute("CREATE TABLE IF NOT EXISTS playlist_tracks (playlist_id INTEGER NOT NULL, track_id INTEGER NOT NULL, PRIMARY KEY (playlist_id, track_id))")
+
+        # Playlist A has tracks 1, 2, 3
+        conn.execute("INSERT INTO playlists (name) VALUES ('Playlist A')")
+        playlist_a_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.execute("INSERT INTO playlists (name) VALUES ('Playlist B')")
+        playlist_b_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        for track_id in [1, 2, 3]:
+            conn.execute("INSERT OR IGNORE INTO playlist_tracks VALUES (?, ?)", (playlist_a_id, track_id))
+        # Playlist B has tracks 1, 2 (same pair as A) plus track 4
+        for track_id in [1, 2, 4]:
+            conn.execute("INSERT OR IGNORE INTO playlist_tracks VALUES (?, ?)", (playlist_b_id, track_id))
+
+        conn.commit()
+
+    yield {"playlist_a": playlist_a_id, "playlist_b": playlist_b_id}
+
+    with get_db_connection() as conn:
+        conn.execute("DELETE FROM playlists WHERE id IN (?, ?)", (playlist_a_id, playlist_b_id))
+        conn.execute("DELETE FROM playlist_tracks WHERE playlist_id IN (?, ?)", (playlist_a_id, playlist_b_id))
+        conn.execute("DELETE FROM playlist_comparison_history WHERE playlist_id IN (?, ?)", (playlist_a_id, playlist_b_id))
+        conn.execute("DELETE FROM playlist_elo_ratings WHERE playlist_id IN (?, ?)", (playlist_a_id, playlist_b_id))
+        conn.commit()
+
+    config_module.ALL_PLAYLIST_ID = None
+
+
+def test_global_pair_skipping(test_db, two_playlist_setup):
+    """Pair compared in playlist A is not offered again in playlist B."""
+    from music_minion.domain.rating.database import (
+        record_playlist_comparison,
+        get_next_playlist_pair,
+        RankingComplete,
+    )
+
+    playlist_a = two_playlist_setup["playlist_a"]
+    playlist_b = two_playlist_setup["playlist_b"]
+
+    # Compare track 1 vs 2 in playlist A
+    record_playlist_comparison(
+        playlist_id=playlist_a,
+        track_a_id=1,
+        track_b_id=2,
+        winner_id=1,
+        track_a_rating_before=1500.0,
+        track_b_rating_before=1500.0,
+        track_a_rating_after=1516.0,
+        track_b_rating_after=1484.0,
+    )
+
+    # In playlist B (tracks 1, 2, 4), the only uncompared pairs are 1v4 and 2v4.
+    # The pair 1v2 should NOT be offered because it's globally skipped.
+    # Fetch several pairs and verify 1v2 never appears.
+    seen_pairs = set()
+    for _ in range(10):
+        try:
+            track_a, track_b = get_next_playlist_pair(playlist_b)
+            pair = tuple(sorted([track_a["id"], track_b["id"]]))
+            seen_pairs.add(pair)
+        except RankingComplete:
+            break
+
+    assert (1, 2) not in seen_pairs, "Pair (1, 2) was offered despite being compared in playlist A"
+    # Both remaining valid pairs should eventually appear
+    assert len(seen_pairs) > 0, "No pairs were offered in playlist B"
+
+
+def test_contextual_stats(test_db, two_playlist_setup):
+    """Contextual stats only count wins against opponents in the current playlist."""
+    from music_minion.domain.rating.database import (
+        record_playlist_comparison,
+        get_contextual_track_stats,
+    )
+
+    playlist_a = two_playlist_setup["playlist_a"]
+    playlist_b = two_playlist_setup["playlist_b"]
+
+    # Compare track 1 vs 3 in playlist A (track 3 is NOT in playlist B)
+    record_playlist_comparison(
+        playlist_id=playlist_a,
+        track_a_id=1,
+        track_b_id=3,
+        winner_id=1,
+        track_a_rating_before=1500.0,
+        track_b_rating_before=1500.0,
+        track_a_rating_after=1516.0,
+        track_b_rating_after=1484.0,
+    )
+
+    # Track 1's win against track 3 should count in playlist A (track 3 is a member)
+    a_wins, a_losses = get_contextual_track_stats(1, playlist_a)
+    assert a_wins == 1, f"Expected 1 win in playlist A, got {a_wins}"
+
+    # But should NOT count in playlist B (track 3 is not a member of playlist B)
+    b_wins, b_losses = get_contextual_track_stats(1, playlist_b)
+    assert b_wins == 0, f"Expected 0 wins in playlist B (opponent not a member), got {b_wins}"
+
+
+def test_cross_playlist_progress(test_db, two_playlist_setup):
+    """Progress in playlist B increases when both tracks are compared in playlist A."""
+    from music_minion.domain.rating.database import (
+        record_playlist_comparison,
+        get_playlist_comparison_progress,
+    )
+
+    playlist_a = two_playlist_setup["playlist_a"]
+    playlist_b = two_playlist_setup["playlist_b"]
+
+    progress_before = get_playlist_comparison_progress(playlist_b)
+
+    # Compare track 1 vs 2 in playlist A (both are also in playlist B)
+    record_playlist_comparison(
+        playlist_id=playlist_a,
+        track_a_id=1,
+        track_b_id=2,
+        winner_id=1,
+        track_a_rating_before=1500.0,
+        track_b_rating_before=1500.0,
+        track_a_rating_after=1516.0,
+        track_b_rating_after=1484.0,
+    )
+
+    progress_after = get_playlist_comparison_progress(playlist_b)
+
+    assert progress_after["compared"] == progress_before["compared"] + 1, (
+        f"Expected progress to increase by 1, got {progress_before['compared']} → {progress_after['compared']}"
+    )
+    assert progress_after["percentage"] <= 100.0, (
+        f"Progress exceeded 100%: {progress_after['percentage']}"
+    )
