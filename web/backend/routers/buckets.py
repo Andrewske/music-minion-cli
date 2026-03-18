@@ -107,7 +107,6 @@ class SyncSoundCloudResponse(BaseModel):
     pulled: int
     pushed_adds: int
     pushed_removals: int
-    skipped: int
     errors: list[str]
 
 
@@ -383,12 +382,13 @@ def sync_soundcloud_endpoint(bucket_id: str) -> SyncSoundCloudResponse:
         pulled = 0
         pushed_adds = 0
         pushed_removals = 0
-        skipped = 0
         errors: list[str] = []
 
         # 3. PULL phase
         state, remote_tracks, _ = sc_get_playlist_tracks(state, sc_playlist_id)
         remote_sc_ids: set[str] = set()
+
+        remote_sc_ids = {sc_track_id for sc_track_id, _ in remote_tracks}
 
         with get_db_connection() as conn:
             # Get max position in local playlist
@@ -398,33 +398,43 @@ def sync_soundcloud_endpoint(bucket_id: str) -> SyncSoundCloudResponse:
             ).fetchone()
             next_position: int = max_pos_row["max_pos"] + 1
 
-            for sc_track_id, _metadata in remote_tracks:
-                remote_sc_ids.add(sc_track_id)
+            # Batch: resolve all remote SC IDs to local track IDs in one query
+            placeholders = ",".join("?" * len(remote_sc_ids))
+            id_rows = conn.execute(
+                f"SELECT id, soundcloud_id FROM tracks WHERE soundcloud_id IN ({placeholders})",
+                list(remote_sc_ids),
+            ).fetchall()
+            sc_to_local: dict[str, int] = {r["soundcloud_id"]: r["id"] for r in id_rows}
 
-                # Look up local track by soundcloud_id
-                local_row = conn.execute(
-                    "SELECT id FROM tracks WHERE soundcloud_id = ?",
-                    (sc_track_id,),
-                ).fetchone()
+            # Batch: find which local IDs are already in the playlist
+            local_ids = list(sc_to_local.values())
+            if local_ids:
+                placeholders2 = ",".join("?" * len(local_ids))
+                existing_rows = conn.execute(
+                    f"SELECT track_id FROM playlist_tracks WHERE playlist_id = ? AND track_id IN ({placeholders2})",
+                    [linked_playlist_id] + local_ids,
+                ).fetchall()
+                already_in_playlist: set[int] = {r["track_id"] for r in existing_rows}
+            else:
+                already_in_playlist = set()
 
-                if not local_row:
+            for sc_track_id in remote_sc_ids:
+                local_track_id = sc_to_local.get(sc_track_id)
+                if local_track_id is None:
                     continue
-
-                local_track_id: int = local_row["id"]
-
-                # Check if already in local playlist
-                exists = conn.execute(
-                    "SELECT 1 FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?",
-                    (linked_playlist_id, local_track_id),
-                ).fetchone()
-
-                if not exists:
+                if local_track_id not in already_in_playlist:
                     conn.execute(
                         "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, ?)",
                         (linked_playlist_id, local_track_id, next_position),
                     )
                     next_position += 1
                     pulled += 1
+
+            if pulled > 0:
+                conn.execute(
+                    "UPDATE playlists SET track_count = track_count + ? WHERE id = ?",
+                    (pulled, linked_playlist_id),
+                )
 
             conn.commit()
 
@@ -441,12 +451,7 @@ def sync_soundcloud_endpoint(bucket_id: str) -> SyncSoundCloudResponse:
                 (linked_playlist_id,),
             ).fetchall()
 
-        local_sc_ids: set[str] = set()
-        for r in local_rows:
-            if r["soundcloud_id"]:
-                local_sc_ids.add(r["soundcloud_id"])
-            else:
-                skipped += 1
+        local_sc_ids: set[str] = {r["soundcloud_id"] for r in local_rows if r["soundcloud_id"]}
 
         # Additions: in local but not in remote
         additions = local_sc_ids - remote_sc_ids
@@ -470,7 +475,6 @@ def sync_soundcloud_endpoint(bucket_id: str) -> SyncSoundCloudResponse:
             pulled=pulled,
             pushed_adds=pushed_adds,
             pushed_removals=pushed_removals,
-            skipped=skipped,
             errors=errors,
         )
     except HTTPException:

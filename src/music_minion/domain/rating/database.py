@@ -158,75 +158,6 @@ def get_contextual_track_stats(track_id: int, playlist_id: int) -> tuple[int, in
         return (wins, losses)
 
 
-def get_contextual_pair_stats(
-    track_a_id: int, track_b_id: int, playlist_id: int
-) -> tuple[int, int, int, int]:
-    """Calculate contextual wins/losses for both tracks in a pair.
-
-    Single-query batch version of get_contextual_track_stats for two tracks.
-    Counts comparisons from the global history where the opponent is also
-    a current member of the given playlist.
-
-    Args:
-        track_a_id: First track
-        track_b_id: Second track
-        playlist_id: Playlist context
-
-    Returns:
-        Tuple of (a_wins, a_losses, b_wins, b_losses)
-    """
-    with get_db_connection() as conn:
-        cursor = conn.execute(
-            """
-            SELECT
-                SUM(CASE WHEN pch.winner_id = ? AND (pch.track_a_id = ? OR pch.track_b_id = ?)
-                         AND EXISTS (SELECT 1 FROM playlist_tracks pt
-                                     WHERE pt.playlist_id = ?
-                                       AND pt.track_id = CASE WHEN pch.track_a_id = ? THEN pch.track_b_id ELSE pch.track_a_id END)
-                    THEN 1 ELSE 0 END) as a_wins,
-                SUM(CASE WHEN pch.winner_id != ? AND (pch.track_a_id = ? OR pch.track_b_id = ?)
-                         AND EXISTS (SELECT 1 FROM playlist_tracks pt
-                                     WHERE pt.playlist_id = ?
-                                       AND pt.track_id = CASE WHEN pch.track_a_id = ? THEN pch.track_b_id ELSE pch.track_a_id END)
-                    THEN 1 ELSE 0 END) as a_losses,
-                SUM(CASE WHEN pch.winner_id = ? AND (pch.track_a_id = ? OR pch.track_b_id = ?)
-                         AND EXISTS (SELECT 1 FROM playlist_tracks pt
-                                     WHERE pt.playlist_id = ?
-                                       AND pt.track_id = CASE WHEN pch.track_a_id = ? THEN pch.track_b_id ELSE pch.track_a_id END)
-                    THEN 1 ELSE 0 END) as b_wins,
-                SUM(CASE WHEN pch.winner_id != ? AND (pch.track_a_id = ? OR pch.track_b_id = ?)
-                         AND EXISTS (SELECT 1 FROM playlist_tracks pt
-                                     WHERE pt.playlist_id = ?
-                                       AND pt.track_id = CASE WHEN pch.track_a_id = ? THEN pch.track_b_id ELSE pch.track_a_id END)
-                    THEN 1 ELSE 0 END) as b_losses
-            FROM playlist_comparison_history pch
-            WHERE (pch.track_a_id IN (?, ?) OR pch.track_b_id IN (?, ?))
-            """,
-            (
-                # a_wins
-                track_a_id, track_a_id, track_a_id, playlist_id, track_a_id,
-                # a_losses
-                track_a_id, track_a_id, track_a_id, playlist_id, track_a_id,
-                # b_wins
-                track_b_id, track_b_id, track_b_id, playlist_id, track_b_id,
-                # b_losses
-                track_b_id, track_b_id, track_b_id, playlist_id, track_b_id,
-                # WHERE filter
-                track_a_id, track_b_id, track_a_id, track_b_id,
-            ),
-        )
-        row = cursor.fetchone()
-        a_wins = row["a_wins"] or 0
-        a_losses = row["a_losses"] or 0
-        b_wins = row["b_wins"] or 0
-        b_losses = row["b_losses"] or 0
-        logger.debug(
-            f"Contextual pair stats playlist={playlist_id}: "
-            f"track_a={track_a_id} {a_wins}W/{a_losses}L, "
-            f"track_b={track_b_id} {b_wins}W/{b_losses}L"
-        )
-        return (a_wins, a_losses, b_wins, b_losses)
-
 
 def _update_playlist_rating(
     conn,
@@ -449,9 +380,8 @@ def get_next_playlist_pair(playlist_id: int) -> tuple[dict, dict]:
         track_b_id = track_b_row["id"]
 
         # Inject contextual stats (wins/losses against opponents in this playlist)
-        a_wins, a_losses, b_wins, b_losses = get_contextual_pair_stats(
-            track_a_id, track_b_id, playlist_id
-        )
+        a_wins, a_losses = get_contextual_track_stats(track_a_id, playlist_id)
+        b_wins, b_losses = get_contextual_track_stats(track_b_id, playlist_id)
 
         track_a = dict(track_a_row)
         track_b = dict(track_b_row)
