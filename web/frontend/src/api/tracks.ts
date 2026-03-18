@@ -69,6 +69,23 @@ export async function archiveTrack(trackId: number): Promise<void> {
   }
 }
 
+export async function refreshWaveform(trackId: number): Promise<WaveformData> {
+  // Delete backend cache
+  await fetch(`/api/tracks/${trackId}/waveform`, { method: 'DELETE' });
+  // Evict from in-memory cache so getWaveformData re-fetches fresh data
+  waveformCache.delete(trackId);
+  // Re-fetch fresh data
+  return getWaveformData(trackId);
+}
+
+export async function purgeSoundcloudWaveforms(): Promise<{ purged: number }> {
+  const response = await fetch('/api/waveforms/purge-soundcloud', { method: 'POST' });
+  if (!response.ok) throw new Error(`Purge failed: ${response.statusText}`);
+  // Clear entire in-memory cache since we don't know which were SC
+  waveformCache.clear();
+  return response.json() as Promise<{ purged: number }>;
+}
+
 export async function getFolders(parent?: string): Promise<FoldersResponse> {
   const url = parent ? `/api/folders?parent=${encodeURIComponent(parent)}` : '/api/folders';
   const response = await fetch(url);

@@ -14,6 +14,17 @@ import { useReducer, useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '../ui/alert-dialog';
+import {
   getSoundCloudPlaylists,
   matchPlaylist,
   createPlaylistFromMatches,
@@ -23,6 +34,7 @@ import {
   type ScPlaylistMatch,
   type SyncStatus,
 } from '../../api/soundcloud';
+import { purgeSoundcloudWaveforms } from '../../api/tracks';
 import { TrackSearchAutocomplete } from './TrackSearchAutocomplete';
 
 // State types
@@ -653,6 +665,7 @@ export function SoundCloudImportSection(): JSX.Element {
   const [isLoadingPlaylists, setIsLoadingPlaylists] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isPurging, setIsPurging] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [syncResult, setSyncResult] = useState<{ tracks: number; playlists: number; likes: number } | null>(null);
 
@@ -768,6 +781,19 @@ export function SoundCloudImportSection(): JSX.Element {
     }
   };
 
+  const handlePurge = async (): Promise<void> => {
+    setIsPurging(true);
+    try {
+      const result = await purgeSoundcloudWaveforms();
+      toast.success(`Purged ${result.purged} SoundCloud waveforms`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Purge failed';
+      toast.error(message);
+    } finally {
+      setIsPurging(false);
+    }
+  };
+
   const formatLastSync = (iso: string): string => {
     const date = new Date(iso);
     const now = new Date();
@@ -819,6 +845,42 @@ export function SoundCloudImportSection(): JSX.Element {
             Synced {syncResult.tracks} tracks, {syncResult.playlists} playlists, {syncResult.likes} likes
           </p>
         )}
+      </div>
+
+      {/* Waveform Cache Section */}
+      <div className="p-6 bg-slate-800 border border-slate-700 rounded-lg">
+        <h3 className="text-lg font-semibold text-white mb-2">Waveform Cache</h3>
+        <p className="text-sm text-slate-400 mb-4">
+          Re-downloads all SoundCloud waveforms on next view. Use this if waveforms look incorrect.
+        </p>
+
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <button
+              disabled={isPurging}
+              className="px-6 py-2 bg-red-800 hover:bg-red-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
+            >
+              {isPurging ? 'Purging...' : 'Purge SoundCloud Waveforms'}
+            </button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Purge all cached SoundCloud waveforms?</AlertDialogTitle>
+              <AlertDialogDescription>
+                They'll re-download on next view. This does not affect locally-generated waveforms.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handlePurge}
+                className="bg-red-700 hover:bg-red-600 text-white"
+              >
+                Purge
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
 
       {/* Header */}

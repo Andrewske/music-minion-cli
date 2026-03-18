@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import WaveSurfer from 'wavesurfer.js';
-import { getWaveformData, getStreamUrl } from '../api/tracks';
+import { getWaveformData, getStreamUrl, refreshWaveform as apiRefreshWaveform } from '../api/tracks';
 import { formatError } from '../utils/formatError';
 
 interface UseWavesurferOptions {
@@ -63,6 +63,7 @@ export function useWavesurfer({ trackId, isPlaying, onFinish, onReady, onSeek, o
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const lastPositionRef = useRef<number>(0); // Store last playback position
   const lastFinishTimeRef = useRef<number>(0); // Debounce rapid finish triggers
   const prevTrackIdRef = useRef<number>(trackId);
@@ -287,6 +288,22 @@ export function useWavesurfer({ trackId, isPlaying, onFinish, onReady, onSeek, o
     initWavesurfer(abortController.signal);
   }, [initWavesurfer]);
 
+  const refreshWaveformData = useCallback(async (): Promise<void> => {
+    setIsRefreshing(true);
+    try {
+      // Pause playback before re-init to avoid abrupt cutoff
+      wavesurferRef.current?.pause();
+      await apiRefreshWaveform(trackId);
+      // Re-init wavesurfer with fresh data
+      retryLoad();
+    } catch (err) {
+      // Surface auth/network errors to caller for toast display
+      throw err;
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [trackId, retryLoad]);
+
   // Listen for seek commands from IPC
   useEffect(() => {
     const handleSeekPos = () => {
@@ -324,6 +341,8 @@ export function useWavesurfer({ trackId, isPlaying, onFinish, onReady, onSeek, o
     currentTime,
     duration,
     error,
+    isRefreshing,
+    refreshWaveform: refreshWaveformData,
     retryLoad,
     seekToPercent,
     seekRelative,
