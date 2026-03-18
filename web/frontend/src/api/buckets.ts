@@ -56,7 +56,6 @@ export interface SyncSoundCloudResponse {
   pulled: number;
   pushed_adds: number;
   pushed_removals: number;
-  skipped: number;
   errors: string[];
 }
 

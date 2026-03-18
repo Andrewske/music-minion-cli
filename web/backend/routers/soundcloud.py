@@ -743,7 +743,7 @@ async def sync_soundcloud_library(force: bool = False, db=Depends(get_db)) -> Sy
 
                     if (
                         stored_modified is not None
-                        and stored_modified == sc_modified
+                        and str(stored_modified) == str(sc_modified)
                         and stored_count == sc_count
                     ):
                         # Still update name (free, no API call)
@@ -894,7 +894,10 @@ async def sync_soundcloud_library(force: bool = False, db=Depends(get_db)) -> Sy
         # 2. Delta sync likes (only new since last sync)
         # =====================
         try:
-            # Get most recent created_at from existing SC tracks (for delta sync reference)
+            # Get most recent created_at from existing SC tracks (for delta sync reference).
+            # Note: changed from liked_at to created_at — on first run after this migration,
+            # MAX(created_at) may differ from the old liked_at watermark, causing a one-time
+            # full re-fetch of all likes. Subsequent syncs will use the correct watermark.
             cursor = db.execute(
                 """
                 SELECT MAX(created_at) FROM tracks WHERE source = 'soundcloud'
