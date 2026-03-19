@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "Music Minion",
+    "slug": "music-minion",
+    "version": "0.0.1",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "scheme": "music-minion",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#121212"
+      },
+      "package": "com.musicminion.app",
+      "intentFilters": [
+        {
+          "action": "SEND",
+          "category": ["DEFAULT"],
+          "data": [
+            { "mimeType": "text/plain" }
+          ]
+        }
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-share-intent",
+      [
+        "react-native-track-player",
+        {
+          "android": {
+            "stopWithApp": false
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

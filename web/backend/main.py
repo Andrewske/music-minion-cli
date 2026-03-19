@@ -26,11 +26,21 @@ app.mount(
 
 # CORS: Allow environment override for production
 allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
+default_origins = [
+    "http://localhost:5173",   # Vite dev
+    "http://localhost:8081",   # Expo/Metro dev
+]
+
 allowed_origins = (
     allowed_origins_env.split(",")
     if allowed_origins_env
-    else ["http://localhost:5173"]  # Dev default
+    else default_origins
 )
+
+# Auto-allow Tailscale origins (*.ts.net) for mobile app access
+tailscale_origin = os.getenv("TAILSCALE_HOSTNAME", "")
+if tailscale_origin:
+    allowed_origins.append(f"http://{tailscale_origin}:8642")
 
 app.add_middleware(
     CORSMiddleware,
