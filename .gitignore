@@ -44,6 +44,17 @@ config.toml
 *.backup
 *.backup.last_sync
 
+# Node.js (monorepo)
+node_modules/
+.env*.local
+
+# Expo / React Native
+mobile/.expo/
+mobile/android/
+mobile/ios/
+*.apk
+*.aab
+
 # Temporary scripts and data files (keep organized in scripts/ directory)
 /check_*.py
 /debug_*.py

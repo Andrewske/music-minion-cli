@@ -1,0 +1,113 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createPlayerStore, getCurrentPosition } from '../stores/createPlayerStore.js';
+import { createMemoryStorageAdapter } from '../stores/storage.js';
+
+const mockFetch = vi.fn();
+vi.stubGlobal('fetch', mockFetch);
+
+const makeDeps = () => ({
+  storage: createMemoryStorageAdapter(),
+  apiBase: 'http://test:8642/api',
+  getDeviceName: () => 'Test Device',
+  generateDeviceId: () => 'test-device-123',
+  preloadAudio: vi.fn(),
+});
+
+describe('createPlayerStore', () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+  });
+
+  it('creates a store with initial state', () => {
+    const store = createPlayerStore(makeDeps());
+    const state = store.getState();
+
+    expect(state.currentTrack).toBeNull();
+    expect(state.isPlaying).toBe(false);
+    expect(state.thisDeviceId).toBe('test-device-123');
+    expect(state.thisDeviceName).toBe('Test Device');
+    expect(state.queue).toEqual([]);
+  });
+
+  it('reads initial volume from storage', () => {
+    const deps = makeDeps();
+    deps.storage.setItem('music-minion-volume', '0.75');
+    const store = createPlayerStore(deps);
+    expect(store.getState().volume).toBe(0.75);
+  });
+
+  it('reads initial shuffle from storage', () => {
+    const deps = makeDeps();
+    deps.storage.setItem('music-minion-shuffle', 'false');
+    const store = createPlayerStore(deps);
+    expect(store.getState().shuffleEnabled).toBe(false);
+  });
+
+  it('persists volume changes to storage', () => {
+    const deps = makeDeps();
+    const store = createPlayerStore(deps);
+    store.getState().setVolume(0.5);
+    expect(deps.storage.getItem('music-minion-volume')).toBe('0.5');
+    expect(store.getState().volume).toBe(0.5);
+  });
+
+  it('persists mute state to storage', () => {
+    const deps = makeDeps();
+    const store = createPlayerStore(deps);
+    store.getState().setMuted(true);
+    expect(deps.storage.getItem('music-minion-player-muted')).toBe('true');
+    expect(store.getState().isMuted).toBe(true);
+  });
+
+  it('calls preloadAudio on preloadNextTrack', () => {
+    const deps = makeDeps();
+    const store = createPlayerStore(deps);
+
+    store.setState({
+      queue: [
+        { id: 1, title: 'A' },
+        { id: 2, title: 'B' },
+      ] as Parameters<typeof store.getState>['0'] extends never ? never : any,
+      queueIndex: 0,
+    });
+
+    store.getState().preloadNextTrack();
+    expect(deps.preloadAudio).toHaveBeenCalledWith(
+      'http://test:8642/api/tracks/2/stream'
+    );
+  });
+
+  it('renames device and persists to storage', () => {
+    const deps = makeDeps();
+    const store = createPlayerStore(deps);
+    store.getState().renameDevice('My Phone');
+    expect(store.getState().thisDeviceName).toBe('My Phone');
+    expect(deps.storage.getItem('music-minion-device-name')).toBe('My Phone');
+  });
+});
+
+describe('getCurrentPosition', () => {
+  it('returns positionMs when not playing', () => {
+    const state = {
+      isPlaying: false,
+      trackStartedAt: null,
+      positionMs: 5000,
+      clockOffset: 0,
+    } as any;
+    expect(getCurrentPosition(state)).toBe(5000);
+  });
+
+  it('computes position from clock when playing', () => {
+    const now = Date.now();
+    const state = {
+      isPlaying: true,
+      trackStartedAt: now - 2000,
+      positionMs: 1000,
+      clockOffset: 0,
+    } as any;
+    const pos = getCurrentPosition(state);
+    // Should be approximately 3000 (1000 + 2000 elapsed)
+    expect(pos).toBeGreaterThanOrEqual(2900);
+    expect(pos).toBeLessThanOrEqual(3100);
+  });
+});
