@@ -1,45 +1,47 @@
-import type { WaveformData, FoldersResponse } from '../types';
+/**
+ * Track API — web-specific wrapper with DOM-based caching.
+ * Core functions re-exported from shared, web-only additions here.
+ */
+import {
+  getStreamUrl as sharedGetStreamUrl,
+  getWaveformData as sharedGetWaveformData,
+} from '@music-minion/shared';
+import type { WaveformData } from '@music-minion/shared';
 
-// In-memory cache for prefetched waveforms
+// Re-export portable functions
+export {
+  checkStreamAvailable,
+  archiveTrack,
+  purgeSoundcloudWaveforms,
+  getFolders,
+} from '@music-minion/shared';
+
+// In-memory cache for prefetched waveforms (web-only)
 const waveformCache = new Map<number, Promise<WaveformData>>();
 
 export function getStreamUrl(trackId: number): string {
-  return `/api/tracks/${trackId}/stream`;
+  return sharedGetStreamUrl(trackId);
 }
 
 export async function getWaveformData(trackId: number): Promise<WaveformData> {
-  // Check cache first
   const cached = waveformCache.get(trackId);
-  if (cached) {
-    return cached;
-  }
+  if (cached) return cached;
 
-  const promise = fetch(`/api/tracks/${trackId}/waveform`)
-    .then(response => {
-      if (!response.ok) {
-        throw new Error(`Failed to fetch waveform: ${response.statusText}`);
-      }
-      return response.json();
-    });
-
+  const promise = sharedGetWaveformData(trackId);
   waveformCache.set(trackId, promise);
   return promise;
 }
 
 /**
- * Prefetch waveform data in the background (fire and forget).
- * Also prefetches the audio stream to warm up browser cache.
+ * Prefetch waveform data + audio stream (web-only, uses DOM).
  */
 export function prefetchWaveform(trackId: number): void {
-  // Prefetch waveform data
   if (!waveformCache.has(trackId)) {
     getWaveformData(trackId).catch(() => {
-      // Silent fail - waveform will be loaded on demand
       waveformCache.delete(trackId);
     });
   }
 
-  // Prefetch audio stream using link preload
   const streamUrl = getStreamUrl(trackId);
   const existingLink = document.querySelector(`link[href="${streamUrl}"]`);
   if (!existingLink) {
@@ -51,46 +53,9 @@ export function prefetchWaveform(trackId: number): void {
   }
 }
 
-export async function checkStreamAvailable(trackId: number): Promise<boolean> {
-  try {
-    const response = await fetch(`/api/tracks/${trackId}/stream`, { method: 'HEAD' });
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
-
-export async function archiveTrack(trackId: number): Promise<void> {
-  const response = await fetch(`/api/tracks/${trackId}/archive`, {
-    method: 'POST',
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to archive track: ${response.statusText}`);
-  }
-}
-
 export async function refreshWaveform(trackId: number): Promise<WaveformData> {
   // Delete backend cache
-  await fetch(`/api/tracks/${trackId}/waveform`, { method: 'DELETE' });
-  // Evict from in-memory cache so getWaveformData re-fetches fresh data
+  const { refreshWaveform: sharedRefresh } = await import('@music-minion/shared');
   waveformCache.delete(trackId);
-  // Re-fetch fresh data
-  return getWaveformData(trackId);
-}
-
-export async function purgeSoundcloudWaveforms(): Promise<{ purged: number }> {
-  const response = await fetch('/api/waveforms/purge-soundcloud', { method: 'POST' });
-  if (!response.ok) throw new Error(`Purge failed: ${response.statusText}`);
-  // Clear entire in-memory cache since we don't know which were SC
-  waveformCache.clear();
-  return response.json() as Promise<{ purged: number }>;
-}
-
-export async function getFolders(parent?: string): Promise<FoldersResponse> {
-  const url = parent ? `/api/folders?parent=${encodeURIComponent(parent)}` : '/api/folders';
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch folders: ${response.statusText}`);
-  }
-  return response.json();
+  return sharedRefresh(trackId);
 }

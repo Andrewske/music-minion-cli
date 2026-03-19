@@ -1,0 +1,245 @@
+import { getDefaultApiClient } from './client.js';
+
+// Types
+export interface BucketSession {
+  id: string;
+  playlist_id: number;
+  status: 'active' | 'applied' | 'discarded';
+  buckets: Bucket[];
+  unassigned_track_ids: number[];
+}
+
+export interface Bucket {
+  id: string;
+  name: string;
+  emoji_id: string | null;
+  position: number;
+  track_ids: number[];
+  linked_playlist_id: number | null;
+  linked_playlist_name: string | null;
+  linked_playlist_soundcloud_id: string | null;
+}
+
+export interface CreateSessionBody {
+  playlist_id: number;
+}
+
+export interface CreateBucketBody {
+  name: string;
+  emoji_id?: string;
+}
+
+export interface UpdateBucketBody {
+  name?: string;
+  emoji_id?: string | null;
+}
+
+export interface MoveBucketBody {
+  direction: 'up' | 'down';
+}
+
+export interface ReorderTracksBody {
+  track_ids: number[];
+}
+
+export interface LinkBucketBody {
+  playlist_id: number | null;
+}
+
+export interface BucketLinkResponse {
+  playlist_id: number | null;
+}
+
+export interface SyncSoundCloudResponse {
+  pulled: number;
+  pushed_adds: number;
+  pushed_removals: number;
+  errors: string[];
+}
+
+// Helper to get buckets base URL
+const bucketsBase = (): string => `${getDefaultApiClient().getBaseUrl()}/buckets`;
+
+// Session operations
+
+export async function createOrResumeSession(playlistId: number): Promise<BucketSession> {
+  const response = await fetch(`${bucketsBase()}/sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playlist_id: playlistId }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    try {
+      const error = JSON.parse(errorText);
+      throw new Error(error.detail || 'Failed to create/resume session');
+    } catch {
+      throw new Error(`Failed to create/resume session: ${response.status} ${errorText.substring(0, 100)}`);
+    }
+  }
+
+  return response.json();
+}
+
+export async function getSession(sessionId: string): Promise<BucketSession> {
+  return getDefaultApiClient().request<BucketSession>(`/buckets/sessions/${sessionId}`);
+}
+
+export async function discardSession(sessionId: string): Promise<void> {
+  const response = await fetch(`${bucketsBase()}/sessions/${sessionId}`, { method: 'DELETE' });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || 'Failed to discard session');
+  }
+}
+
+export async function applySession(sessionId: string): Promise<void> {
+  const response = await fetch(`${bucketsBase()}/sessions/${sessionId}/apply`, { method: 'POST' });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || 'Failed to apply session');
+  }
+}
+
+export async function finalizeSession(sessionId: string): Promise<void> {
+  const response = await fetch(`${bucketsBase()}/sessions/${sessionId}/finalize`, { method: 'POST' });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || 'Failed to finalize session');
+  }
+}
+
+// Bucket operations
+
+export async function createBucket(sessionId: string, body: CreateBucketBody): Promise<Bucket> {
+  const response = await fetch(`${bucketsBase()}/sessions/${sessionId}/buckets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || 'Failed to create bucket');
+  }
+
+  return response.json();
+}
+
+export async function updateBucket(bucketId: string, body: UpdateBucketBody): Promise<Bucket> {
+  const response = await fetch(`${bucketsBase()}/${bucketId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || 'Failed to update bucket');
+  }
+
+  return response.json();
+}
+
+export async function deleteBucket(bucketId: string): Promise<void> {
+  const response = await fetch(`${bucketsBase()}/${bucketId}`, { method: 'DELETE' });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || 'Failed to delete bucket');
+  }
+}
+
+export async function moveBucket(bucketId: string, direction: 'up' | 'down'): Promise<void> {
+  const response = await fetch(`${bucketsBase()}/${bucketId}/move`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ direction }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || 'Failed to move bucket');
+  }
+}
+
+export async function shuffleBucket(bucketId: string): Promise<number[]> {
+  const response = await fetch(`${bucketsBase()}/${bucketId}/shuffle`, { method: 'POST' });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || 'Failed to shuffle bucket');
+  }
+  const data = await response.json();
+  return data.track_ids;
+}
+
+// Track assignment
+
+export async function assignTrack(bucketId: string, trackId: number): Promise<void> {
+  const response = await fetch(`${bucketsBase()}/${bucketId}/tracks/${trackId}`, { method: 'POST' });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || 'Failed to assign track');
+  }
+}
+
+export async function unassignTrack(bucketId: string, trackId: number): Promise<void> {
+  const response = await fetch(`${bucketsBase()}/${bucketId}/tracks/${trackId}`, { method: 'DELETE' });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || 'Failed to unassign track');
+  }
+}
+
+export async function reorderTracks(bucketId: string, trackIds: number[]): Promise<void> {
+  const response = await fetch(`${bucketsBase()}/${bucketId}/tracks/reorder`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ track_ids: trackIds }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || 'Failed to reorder tracks');
+  }
+}
+
+// Bucket linking
+
+export async function linkBucket(bucketId: string, playlistId: number | null): Promise<void> {
+  const response = await fetch(`${bucketsBase()}/${bucketId}/link`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playlist_id: playlistId }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || 'Failed to link bucket');
+  }
+}
+
+export async function getBucketLink(bucketId: string): Promise<BucketLinkResponse> {
+  const response = await fetch(`${bucketsBase()}/${bucketId}/link`);
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || 'Failed to get bucket link');
+  }
+  return response.json();
+}
+
+export async function syncBucketSoundCloud(bucketId: string): Promise<SyncSoundCloudResponse> {
+  const response = await fetch(`${bucketsBase()}/${bucketId}/sync-soundcloud`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    try {
+      const error = JSON.parse(errorText);
+      throw new Error(error.detail || 'Sync failed');
+    } catch {
+      throw new Error(errorText || 'Sync failed');
+    }
+  }
+  return response.json();
+}

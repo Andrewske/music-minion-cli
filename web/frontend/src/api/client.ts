@@ -1,35 +1,14 @@
+/**
+ * Web API client — initializes shared client with web defaults.
+ * All API modules now live in @music-minion/shared.
+ */
+import { createApiClient, setDefaultApiClient } from '@music-minion/shared';
+
 const API_BASE = '/api';
 
-export class ApiError extends Error {
-  public status: number;
+const webApiClient = createApiClient(API_BASE);
+setDefaultApiClient(webApiClient);
 
-  constructor(status: number, message: string) {
-    super(message);
-    this.name = 'ApiError';
-    this.status = status;
-  }
-}
-
-async function apiRequest<T>(
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<T> {
-  const url = `${API_BASE}${endpoint}`;
-
-  const response = await fetch(url, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-    ...options,
-  });
-
- if (!response.ok) {
-   const errorData = await response.json().catch(() => ({ detail: response.statusText }));
-   throw new ApiError(response.status, errorData.detail || response.statusText);
- }
-
-  return response.json();
-}
-
-export { apiRequest };
+// Re-export for backward compat with any direct imports
+export { ApiError, getDefaultApiClient } from '@music-minion/shared';
+export const apiRequest = webApiClient.request;
