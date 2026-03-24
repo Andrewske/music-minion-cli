@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import type { Track } from '../api/builder.js';
-import type { StorageAdapter } from './storage.js';
+import type { Track } from '../api/builder';
+import type { StorageAdapter } from './storage';
 
 // Re-export Track for convenience
 export type { Track };
@@ -295,6 +295,17 @@ export const createPlayerStore = (deps: PlatformDeps) => {
     },
 
     syncState: (state: PlaybackState & { serverTime: number; sortSpec?: { field: string; direction: 'asc' | 'desc' } | null; currentContext?: PlayContext | null }) => {
+      // Skip if state is already in sync (prevents WebSocket echo causing stutter)
+      const current = get();
+      if (
+        current.currentTrack?.id === state.currentTrack?.id &&
+        current.isPlaying === state.isPlaying &&
+        current.activeDeviceId === state.activeDeviceId &&
+        Math.abs((current.positionMs ?? 0) - (state.positionMs ?? 0)) < 2000
+      ) {
+        return;
+      }
+
       const prevTrackId = get().currentTrack?.id;
       const newTrackId = state.currentTrack?.id;
       const scrobbledThisPlaythrough = prevTrackId === newTrackId ? get().scrobbledThisPlaythrough : false;
