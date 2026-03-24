@@ -58,6 +58,7 @@ export interface PlayerState {
   nextTrackPreloadUrl: string | null;
   needsUserGesture: boolean;
   currentContext: PlayContext | null;
+  lastSeekAt: number;
 }
 
 export interface PlayerActions {
@@ -141,6 +142,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
     nextTrackPreloadUrl: null,
     needsUserGesture: false,
     currentContext: null,
+    lastSeekAt: 0,
   };
 
   return create<PlayerStore>()((set: (partial: Partial<PlayerStore> | ((state: PlayerStore) => Partial<PlayerStore>)) => void, get: () => PlayerStore) => ({
@@ -222,6 +224,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
           body: JSON.stringify({ positionMs: Math.round(positionMs) }),
         });
         if (!response.ok) throw new Error('Failed to seek');
+        set({ lastSeekAt: Date.now() });
       } catch (error) {
         set({ playbackError: error instanceof Error ? error.message : 'Seek failed' });
       }
@@ -316,6 +319,10 @@ export const createPlayerStore = (deps: PlatformDeps) => {
       const sortField = state.sortSpec?.field ?? null;
       const sortDirection = state.sortSpec?.direction ?? null;
 
+      // Detect remote seek: same track but position jumped >3s
+      const isRemoteSeek = prevTrackId === newTrackId &&
+        Math.abs((current.positionMs ?? 0) - (state.positionMs ?? 0)) > 3000;
+
       set({
         currentTrack,
         queue: state.queue,
@@ -331,6 +338,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
         scrobbledThisPlaythrough,
         isThisDeviceActive: state.activeDeviceId === get().thisDeviceId,
         currentContext: state.currentContext ?? get().currentContext,
+        lastSeekAt: isRemoteSeek ? Date.now() : current.lastSeekAt,
       });
     },
 
