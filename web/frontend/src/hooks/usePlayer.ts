@@ -77,18 +77,18 @@ export function usePlayer() {
     }
   }, [audio, store.isThisDeviceActive, store.currentTrack?.id, store.isPlaying, handlePlayError]);
 
-  // Sync audio position on seek operations
+  // Sync audio position on explicit seek operations only (not on track start/state broadcasts)
   useEffect(() => {
     if (!audio || !store.isThisDeviceActive || !store.currentTrack) return;
+    if (store.lastSeekAt === 0) return; // No seek has happened yet
 
     const expectedPosition = getCurrentPosition(store) / 1000;
     const actualPosition = audio.currentTime;
 
-    // If difference > 1s, sync (likely a seek operation, not natural drift)
     if (Math.abs(expectedPosition - actualPosition) > 1) {
       audio.currentTime = expectedPosition;
     }
-  }, [audio, store.positionMs, store.trackStartedAt, store.isThisDeviceActive, store.currentTrack]);
+  }, [audio, store.lastSeekAt, store.isThisDeviceActive, store.currentTrack]);
 
   // Scrobble tracking - fire onTrackPlayed at 50% or 30s (once per playthrough)
   useEffect(() => {
