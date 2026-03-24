@@ -110,7 +110,7 @@ export function PlayerBar(): JSX.Element {
     };
 
     updateProgress();
-    progressIntervalRef.current = setInterval(updateProgress, 250); // UI update only, no state sync
+    progressIntervalRef.current = window.setInterval(updateProgress, 250); // UI update only, no state sync
 
     return () => {
       if (progressIntervalRef.current) {
@@ -123,14 +123,14 @@ export function PlayerBar(): JSX.Element {
   const activeDeviceName =
     availableDevices.find((d) => d.id === activeDeviceId)?.name ?? 'Unknown Device';
 
-  // Dynamic height: h-16 (64px) normally, h-36 (144px) on comparison route
-  const barHeight = isComparisonRoute ? 'h-36' : 'h-16';
+  // Dynamic height: h-16 (64px) normally, md:h-36 on comparison route (desktop only, mobile stays h-16)
+  const barHeight = isComparisonRoute ? 'h-16 md:h-36' : 'h-16';
 
   return (
-    <div className={`fixed bottom-0 left-0 right-0 ${barHeight} bg-obsidian-surface border-t border-obsidian-border flex flex-col z-50`}>
-      {/* Waveform section - only on comparison route */}
+    <div className={`fixed bottom-0 left-0 right-0 ${barHeight} bg-obsidian-surface border-t border-obsidian-border flex flex-col z-50 pb-[env(safe-area-inset-bottom)]`}>
+      {/* Waveform section - only on comparison route, hidden on mobile */}
       {isComparisonRoute && currentTrack && (
-        <div className="h-20 w-full border-b border-obsidian-border py-2 px-4">
+        <div className="hidden md:block h-20 w-full border-b border-obsidian-border py-2 px-4">
           <WaveformPlayer
             track={currentTrack}
             isPlaying={isPlaying}
@@ -140,8 +140,58 @@ export function PlayerBar(): JSX.Element {
         </div>
       )}
 
-      {/* Main controls row */}
-      <div className="flex-1 flex items-center px-4 gap-4">
+      {/* Mobile compact layout */}
+      <div className="md:hidden flex flex-col flex-1">
+        {/* Thin progress bar at top */}
+        {currentTrack && !isComparisonRoute && (
+          <Slider
+            value={[progress]}
+            max={100}
+            onValueChange={([v]) => {
+              if (currentTrack.duration) {
+                seek((v / 100) * currentTrack.duration * 1000);
+              }
+            }}
+            className="w-full h-1"
+          />
+        )}
+        {/* Track info + controls */}
+        <div className="flex items-center gap-3 px-3 flex-1">
+          <div className="flex-1 min-w-0">
+            {currentTrack ? (
+              <>
+                <div className="text-sm font-medium text-white/90 truncate">
+                  {currentTrack.title ?? 'Not playing'}
+                </div>
+                <div className="text-xs text-white/50 truncate">{currentTrack.artist}</div>
+              </>
+            ) : (
+              <div className="text-white/50 text-sm">Not playing</div>
+            )}
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={isPlaying ? pause : resume}
+            className="h-11 w-11 text-white/90 hover:text-white"
+            aria-label={isPlaying ? 'Pause' : 'Play'}
+          >
+            {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={next}
+            className="h-11 w-11 text-white/90 hover:text-white"
+            aria-label="Skip forward"
+          >
+            <SkipForward className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Desktop controls row */}
+      <div className="hidden md:flex flex-1 items-center px-4 gap-4">
         {/* Track info */}
         <div className="flex items-center gap-3 w-64">
           {currentTrack && (

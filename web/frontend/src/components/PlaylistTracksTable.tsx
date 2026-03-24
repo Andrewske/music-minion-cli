@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
+import { ChevronUp, ChevronDown } from 'lucide-react';
 import type { PlaylistTrackEntry } from '../types';
 import { EmojiTrackActions } from './EmojiTrackActions';
 
@@ -90,11 +91,73 @@ export function PlaylistTracksTable({ tracks }: PlaylistTracksTableProps): JSX.E
     );
   }, []);
 
+  const sortFieldLabels: Record<SortField, string> = {
+    rating: 'Rating',
+    title: 'Title',
+    artist: 'Artist',
+    wins: 'Wins',
+    losses: 'Losses',
+    comparison_count: 'Total',
+  };
+
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 md:p-6">
       <h3 className="text-lg font-semibold text-slate-200 mb-4">All Tracks</h3>
 
-      <div className="overflow-x-auto">
+      {/* Mobile card view */}
+      <div className="md:hidden">
+        {/* Sort controls */}
+        <div className="flex items-center gap-2 py-2 mb-2 border-b border-slate-800">
+          <span className="text-white/30 text-xs">Sort:</span>
+          <select
+            value={sortField}
+            onChange={(e) => setSortField(e.target.value as SortField)}
+            className="bg-slate-800 text-slate-200 text-sm rounded px-2 py-1 border border-slate-700"
+          >
+            {(Object.keys(sortFieldLabels) as SortField[]).map((field) => (
+              <option key={field} value={field}>{sortFieldLabels[field]}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')}
+            className="text-slate-400 hover:text-slate-200 p-1"
+            aria-label={`Sort ${sortDirection === 'asc' ? 'descending' : 'ascending'}`}
+          >
+            {sortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </button>
+        </div>
+
+        {/* Cards */}
+        <div className="space-y-0">
+          {sortedTracks.map((track) => (
+            <div key={track.id} className="py-3 border-b border-slate-800/50">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-slate-200 truncate">{track.title}</div>
+                  <div className="text-xs text-slate-400 truncate">{track.artist || 'Unknown Artist'}</div>
+                </div>
+                <div className="text-sm font-mono text-slate-200 shrink-0">{track.rating.toFixed(1)}</div>
+              </div>
+              <div className="flex items-center gap-3 mt-1.5">
+                <EmojiTrackActions
+                  track={{ id: track.id, emojis: track.emojis }}
+                  onUpdate={handleTrackUpdate}
+                  compact
+                />
+                <span className="text-xs font-mono">
+                  <span className="text-green-400">{track.wins}W</span>
+                  <span className="text-slate-600 mx-0.5">-</span>
+                  <span className="text-red-400">{track.losses}L</span>
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Desktop table view */}
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-800">

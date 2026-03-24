@@ -21,7 +21,7 @@ function RootComponent(): JSX.Element {
 
   return (
     <AudioElementProvider>
-      <div className="flex h-screen bg-black">
+      <div className="flex h-screen supports-[height:100dvh]:h-dvh bg-black">
         {/* Mobile header - only on small screens */}
         <MobileHeader>
           <SidebarQuickTag sidebarExpanded={true} />
@@ -39,7 +39,7 @@ function RootComponent(): JSX.Element {
         </div>
 
         {/* Main content area */}
-        <main className={`flex-1 min-w-0 overflow-y-auto pt-12 md:pt-0 ${bottomPadding}`}>
+        <main className={`flex-1 min-w-0 overflow-y-auto pt-[calc(3rem+var(--safe-top,0px))] md:pt-0 ${bottomPadding}`}>
           <Outlet />
         </main>
 
@@ -48,7 +48,7 @@ function RootComponent(): JSX.Element {
 
         {/* Toast notifications */}
         <ToastContainer
-          position="bottom-right"
+          position="top-right"
           autoClose={3000}
           hideProgressBar={false}
           newestOnTop={false}

@@ -340,8 +340,8 @@ export function HistoryPage(): JSX.Element {
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <div className="text-white/60 text-sm whitespace-nowrap">
+                    <div className="shrink-0 text-right max-w-[120px] ml-2">
+                      <div className="text-white/60 text-sm">
                         {new Date(entry.started_at).toLocaleString()}
                       </div>
                     </div>
