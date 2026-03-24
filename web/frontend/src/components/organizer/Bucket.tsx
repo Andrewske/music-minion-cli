@@ -6,7 +6,13 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { ChevronDown, ChevronRight, GripVertical, Loader2, Pencil, RefreshCw, Shuffle, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, GripVertical, Loader2, MoreHorizontal, Pencil, RefreshCw, Shuffle, Trash2 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
 import type { PlaylistTrackEntry } from '../../types';
 import type { Bucket } from '../../api/buckets';
 import { EmojiDisplay } from '../EmojiDisplay';
@@ -228,96 +234,94 @@ export function BucketComponent({
           <kbd className="px-1.5 py-0.5 bg-white/10 rounded">{shortcutNumber}</kbd>
         </div>
 
-        {/* Action buttons */}
-        <div className="flex items-center gap-1">
-          {/* Move up */}
+        {/* Action buttons — desktop */}
+        <div className="hidden sm:flex items-center gap-1">
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onMove('up');
-            }}
+            onClick={(e) => { e.stopPropagation(); onMove('up'); }}
             disabled={bucketIndex === 0}
             className="p-1.5 text-white/40 hover:text-white/80 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             title="Move up"
-          >
-            ↑
-          </button>
-
-          {/* Move down */}
+          >↑</button>
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onMove('down');
-            }}
+            onClick={(e) => { e.stopPropagation(); onMove('down'); }}
             disabled={bucketIndex === totalBuckets - 1}
             className="p-1.5 text-white/40 hover:text-white/80 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             title="Move down"
-          >
-            ↓
-          </button>
-
-          {/* Shuffle */}
+          >↓</button>
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onShuffle();
-            }}
+            onClick={(e) => { e.stopPropagation(); onShuffle(); }}
             disabled={tracks.length < 2}
             className="p-1.5 text-white/40 hover:text-white/80 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             title="Shuffle tracks"
-          >
-            <Shuffle className="w-4 h-4" />
-          </button>
-
-          {/* Sync with SoundCloud */}
+          ><Shuffle className="w-4 h-4" /></button>
           {bucket.linked_playlist_soundcloud_id && (
             <button
               type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onSyncSoundCloud?.();
-              }}
+              onClick={(e) => { e.stopPropagation(); onSyncSoundCloud?.(); }}
               disabled={isSyncingSoundCloud}
               className="p-1.5 text-white/40 hover:text-orange-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               title="Sync with SoundCloud"
             >
-              {isSyncingSoundCloud ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <RefreshCw className="w-4 h-4" />
-              )}
+              {isSyncingSoundCloud ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
             </button>
           )}
-
-          {/* Edit */}
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsEditDialogOpen(true);
-            }}
+            onClick={(e) => { e.stopPropagation(); setIsEditDialogOpen(true); }}
             className="p-1.5 text-white/40 hover:text-white/80 transition-colors"
             title="Edit bucket"
-          >
-            <Pencil className="w-4 h-4" />
-          </button>
-
-          {/* Delete */}
+          ><Pencil className="w-4 h-4" /></button>
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
             disabled={tracks.length > 0}
             className="p-1.5 text-white/40 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             title={tracks.length > 0 ? 'Cannot delete bucket with tracks' : 'Delete bucket'}
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          ><Trash2 className="w-4 h-4" /></button>
+        </div>
+
+        {/* Action buttons — mobile overflow menu */}
+        <div className="sm:hidden" onClick={(e) => e.stopPropagation()}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="h-11 w-11 flex items-center justify-center text-white/40 hover:text-white/80 transition-colors"
+                aria-label="Bucket actions"
+              >
+                <MoreHorizontal className="w-4 h-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem disabled={bucketIndex === 0} onClick={() => onMove('up')}>
+                ↑ Move Up
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={bucketIndex === totalBuckets - 1} onClick={() => onMove('down')}>
+                ↓ Move Down
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={tracks.length < 2} onClick={() => onShuffle()}>
+                Shuffle
+              </DropdownMenuItem>
+              {bucket.linked_playlist_soundcloud_id && (
+                <DropdownMenuItem disabled={isSyncingSoundCloud} onClick={() => onSyncSoundCloud?.()}>
+                  Sync SoundCloud
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onClick={() => setIsEditDialogOpen(true)}>
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={tracks.length > 0}
+                onClick={() => onDelete()}
+                className="text-red-400 focus:text-red-400"
+              >
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 

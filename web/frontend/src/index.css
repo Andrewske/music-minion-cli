@@ -34,6 +34,12 @@ body {
   touch-action: manipulation;
 }
 
+/* Safe area insets for notch/dynamic island devices */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 /* Mobile viewport and safe areas */
 html {
   height: 100%;
@@ -43,6 +49,7 @@ html {
 body {
   min-height: 100vh;
   min-height: -webkit-fill-available;
+  min-height: 100dvh;
   background-color: #020617; /* slate-950 */
   color: #f1f5f9; /* slate-100 */
 }

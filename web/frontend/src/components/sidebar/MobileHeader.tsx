@@ -11,9 +11,10 @@ export function MobileHeader({ children }: MobileHeaderProps): JSX.Element {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 h-12
+    <header className="fixed top-0 left-0 right-0 z-50
                        bg-black border-b border-obsidian-border
-                       flex items-center px-4 md:hidden">
+                       flex items-center px-4 md:hidden
+                       pt-[env(safe-area-inset-top)] h-[calc(3rem+env(safe-area-inset-top,0px))]">
       <Sheet open={isOpen} onOpenChange={setIsOpen}>
         <button
           onClick={() => setIsOpen(!isOpen)}

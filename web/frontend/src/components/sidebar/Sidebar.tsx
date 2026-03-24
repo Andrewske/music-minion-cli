@@ -28,7 +28,7 @@ export function Sidebar({ children, isExpanded: controlledExpanded, isMobile = f
   // Detect comparison route for dynamic height (PlayerBar is h-36/144px on comparison, h-16/64px otherwise)
   const routerState = useRouterState();
   const isComparisonRoute = routerState.location.pathname === '/comparison';
-  const sidebarHeight = isComparisonRoute ? 'h-[calc(100vh-144px)]' : 'h-[calc(100vh-64px)]';
+  const sidebarHeight = isComparisonRoute ? 'h-[calc(100dvh-144px)]' : 'h-[calc(100dvh-64px)]';
 
   // Persist to localStorage (desktop only)
   useEffect(() => {
