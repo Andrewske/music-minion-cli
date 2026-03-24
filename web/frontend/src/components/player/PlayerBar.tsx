@@ -123,6 +123,13 @@ export function PlayerBar(): JSX.Element {
   const activeDeviceName =
     availableDevices.find((d) => d.id === activeDeviceId)?.name ?? 'Unknown Device';
 
+  // Auto-clear playback errors after 5 seconds
+  useEffect(() => {
+    if (!playbackError) return;
+    const timer = setTimeout(() => usePlayerStore.getState().setPlaybackError(null), 5000);
+    return () => clearTimeout(timer);
+  }, [playbackError]);
+
   // Dynamic height: h-16 (64px) normally, md:h-36 on comparison route (desktop only, mobile stays h-16)
   const barHeight = isComparisonRoute ? 'h-16 md:h-36' : 'h-16';
 
@@ -271,11 +278,15 @@ export function PlayerBar(): JSX.Element {
         </div>
       </div>
 
-      {/* Error indicator */}
+      {/* Error indicator — tap to dismiss, auto-clears after 5s */}
       {playbackError && (
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full bg-red-600 text-white text-xs px-2 py-1 rounded-t">
+        <button
+          type="button"
+          onClick={() => usePlayerStore.getState().setPlaybackError(null)}
+          className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full bg-red-600 text-white text-xs px-2 py-1 rounded-t cursor-pointer hover:bg-red-700 transition-colors"
+        >
           {playbackError}
-        </div>
+        </button>
       )}
 
       {/* iOS "tap to play" overlay */}
