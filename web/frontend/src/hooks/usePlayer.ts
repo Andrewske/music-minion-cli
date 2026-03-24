@@ -1,10 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { usePlayerStore, getCurrentPosition } from '../stores/playerStore';
 import { useAudioElement } from '../contexts/AudioElementContext';
 
 export function usePlayer() {
   const store = usePlayerStore();
   const audio = useAudioElement();
+  const lastLoadedTrackIdRef = useRef<number | null>(null);
 
   // Initialize device on mount
   useEffect(() => {
@@ -30,7 +31,16 @@ export function usePlayer() {
     audio.muted = store.isMuted;
   }, [audio, store.isMuted]);
 
-  // Control playback based on device state and track
+  const handlePlayError = useCallback((err: Error) => {
+    if (err.name === 'NotAllowedError') {
+      store.set({ needsUserGesture: true });
+    } else if (err.name !== 'AbortError') {
+      store.setPlaybackError(err.message);
+    }
+  }, [store]);
+
+  // Consolidated playback control — single effect manages src loading + play/pause
+  // Fixes stutter caused by two separate effects racing: one setting src, one calling play()
   useEffect(() => {
     if (!audio) return;
 
@@ -39,14 +49,33 @@ export function usePlayer() {
       return;
     }
 
-    if (store.currentTrack) {
-      const newSrc = `/api/tracks/${store.currentTrack.id}/stream`;
-      if (audio.src !== newSrc) {
-        audio.src = newSrc;
-        audio.currentTime = getCurrentPosition(store) / 1000;
-      }
+    if (!store.currentTrack) return;
+
+    const trackChanged = store.currentTrack.id !== lastLoadedTrackIdRef.current;
+
+    if (trackChanged) {
+      // New track — set src and wait for canplay before playing
+      lastLoadedTrackIdRef.current = store.currentTrack.id;
+      const onCanPlay = (): void => {
+        audio.removeEventListener('canplay', onCanPlay);
+        if (store.isPlaying) {
+          audio.play().catch(handlePlayError);
+        }
+      };
+      audio.addEventListener('canplay', onCanPlay);
+      audio.src = `/api/tracks/${store.currentTrack.id}/stream`;
+      audio.currentTime = getCurrentPosition(store) / 1000;
+
+      return () => audio.removeEventListener('canplay', onCanPlay);
     }
-  }, [audio, store.isThisDeviceActive, store.currentTrack?.id, store.isPlaying]);
+
+    // Same track — just toggle play/pause
+    if (store.isPlaying && audio.paused) {
+      audio.play().catch(handlePlayError);
+    } else if (!store.isPlaying && !audio.paused) {
+      audio.pause();
+    }
+  }, [audio, store.isThisDeviceActive, store.currentTrack?.id, store.isPlaying, handlePlayError]);
 
   // Sync audio position on seek operations
   useEffect(() => {
@@ -94,25 +123,6 @@ export function usePlayer() {
     audio.addEventListener('timeupdate', onTimeUpdate);
     return () => audio.removeEventListener('timeupdate', onTimeUpdate);
   }, [audio, store.currentTrack?.id]);
-
-  // Mobile audio constraints - iOS Safari requires user gesture
-  useEffect(() => {
-    if (!audio) return;
-    if (!store.isThisDeviceActive) return;
-    if (!store.currentTrack || !store.isPlaying) return;
-
-    audio.play().catch((err) => {
-      if (err.name === 'NotAllowedError') {
-        // iOS Safari blocked autoplay - need user gesture
-        store.set({ needsUserGesture: true });
-      } else if (err.name === 'AbortError') {
-        // Expected during track switching - play() interrupted by new load()
-        // No action needed, the new track will play when ready
-      } else {
-        store.setPlaybackError(err.message);
-      }
-    });
-  }, [audio, store.isThisDeviceActive, store.currentTrack, store.isPlaying]);
 
   // Error handling - retry or skip on audio load failure
   useEffect(() => {
