@@ -4,6 +4,7 @@ import { useRouterState } from '@tanstack/react-router';
 import { usePlayer } from '../../hooks/usePlayer';
 import { getCurrentPosition } from '../../stores/playerStore';
 import { usePlayerStore } from '../../stores/playerStore';
+import { useAudioElement } from '../../contexts/AudioElementContext';
 import { useComparisonStore } from '../../stores/comparisonStore';
 import { Button } from '../ui/button';
 import { Slider } from '../ui/slider';
@@ -86,39 +87,37 @@ export function PlayerBar(): JSX.Element {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isPlaying, pause, resume, next, prev]);
 
-  // Progress calculation using interpolation
+  // Progress — read from audio element (ground truth) on active device,
+  // fall back to store interpolation for remote devices
+  const audio = useAudioElement();
   const [progress, setProgress] = useState(0);
-  const progressIntervalRef = useRef<number | null>(null);
 
   useEffect(() => {
-    // Clear existing interval
-    if (progressIntervalRef.current) {
-      clearInterval(progressIntervalRef.current);
-      progressIntervalRef.current = null;
-    }
-
-    // Reset progress if no track or not playing
-    if (!currentTrack?.duration || !isPlaying) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!currentTrack?.duration) {
       setProgress(0);
       return;
     }
 
+    // Keep showing last position when paused (don't reset to 0)
+    if (!isPlaying) return;
+
     const updateProgress = (): void => {
-      const pos = getCurrentPosition(usePlayerStore.getState());
-      setProgress((pos / ((currentTrack.duration ?? 0) * 1000)) * 100);
+      if (isThisDeviceActive && audio) {
+        // Active device: read directly from audio element
+        if (audio.duration > 0) {
+          setProgress((audio.currentTime / audio.duration) * 100);
+        }
+      } else {
+        // Remote device: use store interpolation
+        const pos = getCurrentPosition(usePlayerStore.getState());
+        setProgress((pos / ((currentTrack.duration ?? 0) * 1000)) * 100);
+      }
     };
 
     updateProgress();
-    progressIntervalRef.current = window.setInterval(updateProgress, 250); // UI update only, no state sync
-
-    return () => {
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-        progressIntervalRef.current = null;
-      }
-    };
-  }, [currentTrack?.id, currentTrack?.duration, isPlaying]);
+    const interval = window.setInterval(updateProgress, 250);
+    return () => clearInterval(interval);
+  }, [currentTrack?.id, currentTrack?.duration, isPlaying, isThisDeviceActive, audio]);
 
   const activeDeviceName =
     availableDevices.find((d) => d.id === activeDeviceId)?.name ?? 'Unknown Device';
