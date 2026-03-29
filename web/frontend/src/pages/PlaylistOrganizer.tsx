@@ -553,37 +553,15 @@ export function PlaylistOrganizer({
 
             <div className="flex items-center gap-2">
               {discoverySource && (
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => handleSyncDiscovery(false)}
-                    disabled={isSyncing}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-sm font-medium text-white"
-                    title="Fetch fresh tracks from ranked artists"
-                  >
-                    {isSyncing ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        {syncProgress ?? 'Syncing...'}
-                      </>
-                    ) : (
-                      <>
-                        <Radar className="w-4 h-4" />
-                        Sync Discovery
-                      </>
-                    )}
-                  </button>
-                  {!isSyncing && (
-                    <button
-                      type="button"
-                      onClick={() => handleSyncDiscovery(true)}
-                      className="px-2 py-1.5 rounded-lg text-white/40 hover:text-white/70 text-xs"
-                      title="Preview what would be synced (dry run)"
-                    >
-                      Preview
-                    </button>
-                  )}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => handleSyncDiscovery(false)}
+                  disabled={isSyncing}
+                  className="p-1.5 text-white/40 hover:text-purple-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  title="Sync Discovery"
+                >
+                  {isSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Radar className="w-4 h-4" />}
+                </button>
               )}
               <Button
                 onClick={handleApplyOrder}
