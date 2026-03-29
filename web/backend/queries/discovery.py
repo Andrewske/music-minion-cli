@@ -72,15 +72,16 @@ def seed_artists_from_csv(csv_path: str) -> int:
         except (ValueError, TypeError):
             not_quite = 0
         tracks_dismissed = not_interested + not_quite
-        records.append((slug, tier, hit_rate, rank, tracks_seen, tracks_liked, tracks_dismissed))
+        in_top_200 = 1 if row.get("in_top_200", "").strip() == "True" else 0
+        records.append((slug, tier, hit_rate, rank, tracks_seen, tracks_liked, tracks_dismissed, in_top_200))
 
     inserted = 0
     with get_db_connection() as conn:
         conn.executemany(
             """
             INSERT OR IGNORE INTO discovery_artists
-                (slug, tier, hit_rate, ranking, tracks_seen, tracks_liked, tracks_dismissed)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (slug, tier, hit_rate, ranking, tracks_seen, tracks_liked, tracks_dismissed, in_top_200)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             records,
         )
@@ -111,10 +112,10 @@ def update_artist_sc_id(slug: str, sc_user_id: str, display_name: str) -> None:
 
 
 def get_ranked_artists(include_not_due: bool = False) -> list[dict[str, Any]]:
-    """Get all resolved artists ordered by ranking.
+    """Get resolved top-200 artists ordered by ranking.
 
-    If include_not_due is False (default), skip artists whose last_checked +
-    check_interval_days > now (adaptive check intervals).
+    Args:
+        include_not_due: If True, include artists not yet due for a check.
     """
     with get_db_connection() as conn:
         if include_not_due:
@@ -122,6 +123,7 @@ def get_ranked_artists(include_not_due: bool = False) -> list[dict[str, Any]]:
                 """
                 SELECT * FROM discovery_artists
                 WHERE soundcloud_user_id IS NOT NULL
+                  AND in_top_200 = 1
                 ORDER BY ranking
                 """
             )
@@ -130,6 +132,7 @@ def get_ranked_artists(include_not_due: bool = False) -> list[dict[str, Any]]:
                 """
                 SELECT * FROM discovery_artists
                 WHERE soundcloud_user_id IS NOT NULL
+                  AND in_top_200 = 1
                   AND (
                     last_checked IS NULL
                     OR datetime(last_checked, '+' || check_interval_days || ' days') <= datetime('now')

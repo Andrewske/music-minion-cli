@@ -203,6 +203,7 @@ def _select_tracks_chronological(
     sorted_tracks = sorted(all_tracks, key=_parse_created_at, reverse=True)
 
     counts: dict[int, int] = {}
+    seen_sc_ids: set[str] = set()
     selected: list[dict[str, Any]] = []
 
     for track in sorted_tracks:
@@ -211,11 +212,15 @@ def _select_tracks_chronological(
         artist_id = track.get("artist_id")
         if artist_id is None:
             continue
+        sc_id = str(track.get("id", ""))
+        if sc_id in seen_sc_ids:
+            continue  # Same track reposted by multiple artists
         cap = slot_caps.get(artist_id, 1)
         current = counts.get(artist_id, 0)
         if current < cap:
             selected.append(track)
             counts[artist_id] = current + 1
+            seen_sc_ids.add(sc_id)
 
     return selected
 
