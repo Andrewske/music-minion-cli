@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useState, useMemo, useRef } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   DndContext,
   DragOverlay,
@@ -13,7 +13,9 @@ import {
 } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 import { toast } from 'react-toastify';
-import { GripVertical, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
+import { GripVertical, ChevronDown, ChevronRight, RotateCcw, Radar, Loader2 } from 'lucide-react';
+import { triggerDiscoverySync, getDiscoverySyncStatus } from '../api/discovery';
+import type { DiscoverySyncStatus } from '../api/discovery';
 import { usePlayerStore } from '../stores/playerStore';
 import { usePlaylistOrganizer } from '../hooks/usePlaylistOrganizer';
 import { getPlaylistTracks } from '../api/playlists';
@@ -67,7 +69,9 @@ export function PlaylistOrganizer({
   playlistName,
   playlistType,
   playlistLibrary,
+  discoverySource,
 }: PlaylistOrganizerProps): JSX.Element {
+  const queryClient = useQueryClient();
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const play = usePlayerStore((s) => s.play);
   const shuffleEnabled = usePlayerStore((state) => state.shuffleEnabled);
@@ -136,6 +140,9 @@ export function PlaylistOrganizer({
   const [activeDragType, setActiveDragType] = useState<'unassigned-track' | 'bucket-track' | null>(null);
   const [isUnassignedExpanded, setIsUnassignedExpanded] = useState(true);
   const isDragOperationInProgress = useRef(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<string | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
 
   // Assign/unassign current track to a bucket with toggle behavior (used by keyboard shortcuts and header clicks)
@@ -440,6 +447,55 @@ export function PlaylistOrganizer({
     }
   }, [syncBucketSoundCloud]);
 
+  // Clean up poll interval on unmount
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    };
+  }, []);
+
+  const handleSyncDiscovery = useCallback(async (dryRun: boolean = false): Promise<void> => {
+    setIsSyncing(true);
+    setSyncProgress('Starting sync...');
+    try {
+      const { job_id } = await triggerDiscoverySync(dryRun);
+
+      pollIntervalRef.current = setInterval(async () => {
+        try {
+          const status: DiscoverySyncStatus = await getDiscoverySyncStatus(job_id);
+          if (status.progress_message) setSyncProgress(status.progress_message);
+
+          if (status.status === 'completed') {
+            clearInterval(pollIntervalRef.current!);
+            pollIntervalRef.current = null;
+            setIsSyncing(false);
+            setSyncProgress(null);
+            const r = status.result!;
+            toast.success(
+              `Discovery sync: ${r.tracks_added_to_playlist} tracks added` +
+              (r.mixes_added > 0 ? `, ${r.mixes_added} mixes` : '') +
+              (r.dry_run ? ' (dry run)' : '')
+            );
+            queryClient.invalidateQueries({ queryKey: ['bucket-session'] });
+            queryClient.invalidateQueries({ queryKey: ['playlists'] });
+          } else if (status.status === 'failed') {
+            clearInterval(pollIntervalRef.current!);
+            pollIntervalRef.current = null;
+            setIsSyncing(false);
+            setSyncProgress(null);
+            toast.error(`Sync failed: ${status.error}`);
+          }
+        } catch {
+          // Polling error — continue trying
+        }
+      }, 1000);
+    } catch (error) {
+      setIsSyncing(false);
+      setSyncProgress(null);
+      toast.error(`Failed to start sync: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, [queryClient]);
+
   // Handle applying the order (keeps session active)
   const handleApplyOrder = useCallback(async (): Promise<void> => {
     await applyOrder();
@@ -496,6 +552,39 @@ export function PlaylistOrganizer({
             </div>
 
             <div className="flex items-center gap-2">
+              {discoverySource && (
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleSyncDiscovery(false)}
+                    disabled={isSyncing}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-sm font-medium text-white"
+                    title="Fetch fresh tracks from ranked artists"
+                  >
+                    {isSyncing ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        {syncProgress ?? 'Syncing...'}
+                      </>
+                    ) : (
+                      <>
+                        <Radar className="w-4 h-4" />
+                        Sync Discovery
+                      </>
+                    )}
+                  </button>
+                  {!isSyncing && (
+                    <button
+                      type="button"
+                      onClick={() => handleSyncDiscovery(true)}
+                      className="px-2 py-1.5 rounded-lg text-white/40 hover:text-white/70 text-xs"
+                      title="Preview what would be synced (dry run)"
+                    >
+                      Preview
+                    </button>
+                  )}
+                </div>
+              )}
               <Button
                 onClick={handleApplyOrder}
                 disabled={isApplying || unassignedTrackIds.length > 0}

@@ -50,6 +50,12 @@ export type {
 export { builderApi } from './api/builder';
 export type { Filter, Track, TrackActionResponse } from './api/builder';
 export * from './api/buckets';
+export {
+  triggerDiscoverySync, getDiscoverySyncStatus, getLastSync, seedArtists,
+} from './api/discovery';
+export type {
+  DiscoverySyncJob, DiscoverySyncStatus, LastSync,
+} from './api/discovery';
 
 // Stores
 export { createPlayerStore, getCurrentPosition } from './stores/createPlayerStore';

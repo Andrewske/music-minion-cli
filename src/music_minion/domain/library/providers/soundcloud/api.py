@@ -1183,3 +1183,97 @@ def create_playlist(
         return state, None, f"Network error: {str(e)}"
     except Exception as e:
         return state, None, f"Unexpected error: {str(e)}"
+
+
+def get_user_reposts(
+    state: ProviderState, user_id: str, limit: int = 200
+) -> tuple[ProviderState, list[dict[str, Any]], Optional[str]]:
+    """Fetch a user's track reposts from SoundCloud.
+
+    Uses GET /users/soundcloud:users:{user_id}/reposts/tracks endpoint.
+
+    Args:
+        state: Current provider state
+        user_id: SoundCloud user ID (numeric string)
+        limit: Maximum tracks to fetch (1-200, default 200)
+
+    Returns:
+        (updated_state, tracks_list, error_message_or_None)
+    """
+    state, token_data = _ensure_valid_token(state)
+    if not token_data:
+        return state, [], "Not authenticated"
+
+    url = f"{API_BASE_URL}/users/soundcloud:users:{user_id}/reposts/tracks"
+    params = {"limit": min(limit, 200), "linked_partitioning": "true"}
+    headers = {"Authorization": f"OAuth {token_data['access_token']}"}
+
+    try:
+        response = requests.get(url, params=params, headers=headers, timeout=15)
+
+        if response.status_code == 401:
+            return state, [], "Authentication failed"
+        elif response.status_code == 404:
+            return state, [], f"User {user_id} not found"
+        elif response.status_code == 429:
+            return state, [], "Rate limited"
+        elif not response.ok:
+            return state, [], f"HTTP {response.status_code}"
+
+        data = response.json()
+        collection = data.get("collection", [])
+        logger.debug(f"Fetched {len(collection)} reposts for user {user_id}")
+        return state, collection, None
+
+    except requests.exceptions.Timeout:
+        return state, [], "Request timed out"
+    except requests.exceptions.ConnectionError:
+        return state, [], "Connection error"
+    except json.JSONDecodeError:
+        return state, [], "Invalid JSON response"
+
+
+def resolve_user_by_slug(
+    state: ProviderState, slug: str
+) -> tuple[ProviderState, Optional[dict[str, Any]], Optional[str]]:
+    """Resolve a SoundCloud user slug to user data including their ID.
+
+    Uses GET /resolve?url=https://soundcloud.com/{slug} endpoint.
+
+    Args:
+        state: Current provider state
+        slug: SoundCloud username slug (e.g., "vyharamusic")
+
+    Returns:
+        (updated_state, user_data_dict_or_None, error_message_or_None)
+    """
+    state, token_data = _ensure_valid_token(state)
+    if not token_data:
+        return state, None, "Not authenticated"
+
+    url = f"{API_BASE_URL}/resolve"
+    params = {"url": f"https://soundcloud.com/{slug}"}
+    headers = {"Authorization": f"OAuth {token_data['access_token']}"}
+
+    try:
+        response = requests.get(url, params=params, headers=headers, timeout=15)
+
+        if response.status_code == 401:
+            return state, None, "Authentication failed"
+        elif response.status_code == 404:
+            return state, None, f"User '{slug}' not found"
+        elif response.status_code == 429:
+            return state, None, "Rate limited"
+        elif not response.ok:
+            return state, None, f"HTTP {response.status_code}"
+
+        user_data = response.json()
+        logger.debug(f"Resolved slug '{slug}' to user ID {user_data.get('id')}")
+        return state, user_data, None
+
+    except requests.exceptions.Timeout:
+        return state, None, "Request timed out"
+    except requests.exceptions.ConnectionError:
+        return state, None, "Connection error"
+    except json.JSONDecodeError:
+        return state, None, "Invalid JSON response"

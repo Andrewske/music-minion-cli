@@ -192,6 +192,13 @@ async def finalize_session_endpoint(session_id: str) -> dict[str, bool]:
             raise HTTPException(
                 status_code=404, detail="Session not found or not active"
             )
+
+        # Discovery feedback loop: update hit rates if this is a discovery playlist
+        try:
+            _update_discovery_feedback(session_id)
+        except Exception:
+            logger.exception("Discovery feedback update failed (non-blocking)")
+
         return {"finalized": True}
     except HTTPException:
         raise
@@ -200,6 +207,93 @@ async def finalize_session_endpoint(session_id: str) -> dict[str, bool]:
         raise HTTPException(
             status_code=500, detail=f"Failed to finalize session: {str(e)}"
         )
+
+
+def _update_discovery_feedback(session_id: str) -> None:
+    """Update discovery track statuses based on bucket assignments.
+
+    Convention: tracks in linked buckets → 'liked', tracks in unlinked buckets → 'dismissed'.
+    Unassigned tracks stay 'unseen' in the discovery pool.
+    Only runs for playlists with discovery_source set.
+    """
+    from web.backend.queries import discovery as discovery_queries
+
+    with get_db_connection() as conn:
+        # Get the playlist for this session
+        session = conn.execute(
+            "SELECT playlist_id FROM bucket_sessions WHERE id = ?",
+            (session_id,)
+        ).fetchone()
+        if not session:
+            return
+
+        # Check if this is a discovery playlist
+        playlist = conn.execute(
+            "SELECT discovery_source FROM playlists WHERE id = ?",
+            (session["playlist_id"],)
+        ).fetchone()
+        if not playlist or not playlist["discovery_source"]:
+            return
+
+        logger.info(f"Running discovery feedback for session {session_id}")
+
+        # Get all buckets with their link status
+        buckets = conn.execute(
+            """SELECT b.id, bpl.playlist_id as linked_playlist_id
+            FROM buckets b
+            LEFT JOIN bucket_playlist_links bpl ON bpl.bucket_id = b.id
+            WHERE b.session_id = ?""",
+            (session_id,)
+        ).fetchall()
+
+        liked_sc_ids = []
+        dismissed_sc_ids = []
+
+        for bucket in buckets:
+            # Get tracks in this bucket that have soundcloud_ids
+            tracks = conn.execute(
+                """SELECT t.soundcloud_id FROM bucket_tracks bt
+                JOIN tracks t ON t.id = bt.track_id
+                WHERE bt.bucket_id = ? AND t.soundcloud_id IS NOT NULL""",
+                (bucket["id"],)
+            ).fetchall()
+
+            sc_ids = [row["soundcloud_id"] for row in tracks]
+
+            if bucket["linked_playlist_id"]:
+                liked_sc_ids.extend(sc_ids)
+            else:
+                dismissed_sc_ids.extend(sc_ids)
+
+        # Update discovery track statuses
+        if liked_sc_ids:
+            discovery_queries.mark_tracks_liked(liked_sc_ids)
+            logger.info(f"Marked {len(liked_sc_ids)} tracks as liked")
+
+        if dismissed_sc_ids:
+            discovery_queries.mark_tracks_dismissed(dismissed_sc_ids)
+            logger.info(f"Marked {len(dismissed_sc_ids)} tracks as dismissed")
+
+        # Recalculate artist stats with new feedback
+        if liked_sc_ids or dismissed_sc_ids:
+            discovery_queries.recalculate_artist_stats()
+            logger.info("Recalculated artist stats")
+
+        # Clean up dismissed tracks from the tracks table
+        # Only delete tracks with source='soundcloud' that are dismissed
+        # and not in any active playlist
+        if dismissed_sc_ids:
+            placeholders = ",".join("?" * len(dismissed_sc_ids))
+            conn.execute(
+                f"""DELETE FROM tracks WHERE soundcloud_id IN ({placeholders})
+                AND source = 'soundcloud'
+                AND id NOT IN (
+                    SELECT track_id FROM playlist_tracks
+                )""",
+                dismissed_sc_ids,
+            )
+            conn.commit()
+            logger.info("Cleaned up dismissed tracks from tracks table")
 
 
 # === Bucket Endpoints ===

@@ -38,6 +38,7 @@ export interface Playlist {
   library: string;
   pin_order: number | null;
   soundcloud_playlist_id?: string | null;
+  discovery_source?: string | null;
 }
 
 export interface ComparisonPair {
