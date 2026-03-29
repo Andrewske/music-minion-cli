@@ -150,8 +150,8 @@ def _fetch_all_reposts(
                 if api_error:
                     if "Rate limited" in api_error:
                         raise Exception(api_error)  # Trigger retry logic
-                    logger.warning(f"API error for {slug}: {api_error}")
-                    errors.append(f"{slug}: {api_error}")
+                    logger.warning(f"API error for {artist['slug']}: {api_error}")
+                    errors.append(f"{artist['slug']}: {api_error}")
                     break
                 unseen = [
                     t for t in reposts
@@ -184,43 +184,38 @@ def _fetch_all_reposts(
     return state, artist_tracks, errors
 
 
-def _round_robin_select(
-    artist_tracks: dict[int, list[dict[str, Any]]],
+def _select_tracks_chronological(
+    all_tracks: list[dict[str, Any]],
     slot_caps: dict[int, int],
-    artist_order: list[int],
     target_count: int = 100,
 ) -> list[dict[str, Any]]:
-    """Select tracks via round-robin with quality-weighted slot caps.
+    """Select tracks by recency with per-artist slot caps.
 
-    Cycles through artists by rank. Each artist contributes 1 track per round,
-    up to their slot cap total. Stops at target_count.
+    Sorts all tracks by created_at descending (newest first), then walks
+    the list taking each track unless that artist has hit their cap.
+    Stops at target_count.
 
-    Each returned track dict gets an added 'artist_id' key.
+    Each track dict must have an 'artist_id' key (added during fetch).
     """
-    counts: dict[int, int] = {artist_id: 0 for artist_id in artist_order}
-    # Copy track lists so we can pop without mutating originals
-    queues: dict[int, list[dict[str, Any]]] = {
-        artist_id: list(tracks)
-        for artist_id, tracks in artist_tracks.items()
-    }
+    def _parse_created_at(track: dict[str, Any]) -> str:
+        return track.get("created_at", "1970/01/01 00:00:00 +0000")
+
+    sorted_tracks = sorted(all_tracks, key=_parse_created_at, reverse=True)
+
+    counts: dict[int, int] = {}
     selected: list[dict[str, Any]] = []
 
-    while len(selected) < target_count:
-        made_progress = False
-        for artist_id in artist_order:
-            if len(selected) >= target_count:
-                break
-            cap = slot_caps.get(artist_id, 1)
-            queue = queues.get(artist_id, [])
-            if queue and counts[artist_id] < cap:
-                track = queue.pop(0)
-                track = {**track, "artist_id": artist_id}
-                selected.append(track)
-                counts[artist_id] += 1
-                made_progress = True
-
-        if not made_progress:
+    for track in sorted_tracks:
+        if len(selected) >= target_count:
             break
+        artist_id = track.get("artist_id")
+        if artist_id is None:
+            continue
+        cap = slot_caps.get(artist_id, 1)
+        current = counts.get(artist_id, 0)
+        if current < cap:
+            selected.append(track)
+            counts[artist_id] = current + 1
 
     return selected
 
@@ -409,7 +404,6 @@ def run_discovery_sync(
         logger.warning("No resolved artists found — nothing to fetch")
 
     slot_caps = discovery_queries.compute_slot_caps(artists)
-    artist_order = [a["id"] for a in artists]
 
     # Step 5: Load seen track IDs
     seen_ids = discovery_queries.get_seen_track_ids()
@@ -466,19 +460,12 @@ def run_discovery_sync(
     # Step 8: Split by duration
     short_tracks, mix_tracks = _split_by_duration(all_fetched)
 
-    # Step 9: Round-robin select from short tracks
+    # Step 9: Select tracks chronologically with per-artist caps
     if progress_callback:
         progress_callback("Selecting tracks...", artists_checked, artists_checked)
 
-    # Build per-artist track maps using only short tracks
-    short_by_artist: dict[int, list[dict[str, Any]]] = {}
-    for track in short_tracks:
-        a_id = track.get("artist_id")
-        if a_id is not None:
-            short_by_artist.setdefault(a_id, []).append(track)
-
-    selected_short = _round_robin_select(
-        short_by_artist, slot_caps, artist_order, target_count
+    selected_short = _select_tracks_chronological(
+        short_tracks, slot_caps, target_count
     )
     selected_sc_ids = [str(t["id"]) for t in selected_short]
 
