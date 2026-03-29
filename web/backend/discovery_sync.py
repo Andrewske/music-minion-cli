@@ -146,7 +146,13 @@ def _fetch_all_reposts(
 
         while retries <= 3:
             try:
-                state, reposts = get_user_reposts(state, sc_user_id)
+                state, reposts, api_error = get_user_reposts(state, sc_user_id)
+                if api_error:
+                    if "Rate limited" in api_error:
+                        raise Exception(api_error)  # Trigger retry logic
+                    logger.warning(f"API error for {slug}: {api_error}")
+                    errors.append(f"{slug}: {api_error}")
+                    break
                 unseen = [
                     t for t in reposts
                     if str(t.get("id", "")) not in seen_ids
@@ -310,6 +316,8 @@ def _sync_tracks_to_local_db(
             ) WHERE id = ?""",
             (playlist_id, playlist_id),
         )
+
+        conn.commit()
 
     return synced
 

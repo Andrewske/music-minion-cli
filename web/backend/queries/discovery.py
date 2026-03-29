@@ -84,6 +84,7 @@ def seed_artists_from_csv(csv_path: str) -> int:
             """,
             records,
         )
+        conn.commit()
         inserted = conn.total_changes
 
     logger.info(f"seed_artists_from_csv: inserted {inserted} of {len(records)} artists from {csv_path}")
@@ -106,6 +107,7 @@ def update_artist_sc_id(slug: str, sc_user_id: str, display_name: str) -> None:
             "UPDATE discovery_artists SET soundcloud_user_id = ?, display_name = ? WHERE slug = ?",
             (sc_user_id, display_name, slug),
         )
+        conn.commit()
 
 
 def get_ranked_artists(include_not_due: bool = False) -> list[dict[str, Any]]:
@@ -174,6 +176,7 @@ def insert_discovery_tracks(tracks: list[dict[str, Any]]) -> int:
             """,
             records,
         )
+        conn.commit()
         return conn.total_changes
 
 
@@ -197,6 +200,7 @@ def insert_track_reposters(
             """,
             links,
         )
+        conn.commit()
 
 
 def get_discovery_track_ids_by_sc_ids(sc_ids: list[str]) -> dict[str, int]:
@@ -258,6 +262,7 @@ def mark_tracks_in_playlist(sc_ids: list[str], batch_number: int) -> None:
                 """,
                 [batch_number, *batch],
             )
+        conn.commit()
 
 
 def mark_tracks_liked(sc_ids: list[str]) -> None:
@@ -273,6 +278,7 @@ def mark_tracks_liked(sc_ids: list[str]) -> None:
                 f"UPDATE discovery_tracks SET status = 'liked' WHERE soundcloud_id IN ({placeholders})",
                 batch,
             )
+        conn.commit()
 
 
 def mark_tracks_dismissed(sc_ids: list[str]) -> None:
@@ -288,6 +294,7 @@ def mark_tracks_dismissed(sc_ids: list[str]) -> None:
                 f"UPDATE discovery_tracks SET status = 'dismissed' WHERE soundcloud_id IN ({placeholders})",
                 batch,
             )
+        conn.commit()
 
 
 def update_artist_last_checked(artist_id: int, new_repost_count: int) -> None:
@@ -309,6 +316,7 @@ def update_artist_last_checked(artist_id: int, new_repost_count: int) -> None:
             """,
             (new_repost_count, artist_id),
         )
+        conn.commit()
 
 
 def recalculate_artist_stats() -> None:
@@ -352,6 +360,7 @@ def recalculate_artist_stats() -> None:
             """,
             records,
         )
+        conn.commit()
     logger.info(f"recalculate_artist_stats: updated {len(records)} artists")
 
 
@@ -434,6 +443,7 @@ def log_sync_run(
                 duration_seconds,
             ),
         )
+        conn.commit()
         return cursor.lastrowid  # type: ignore[return-value]
 
 
@@ -454,8 +464,8 @@ def get_resolution_status() -> dict[str, int]:
             """
             SELECT
                 COUNT(*) AS total,
-                SUM(CASE WHEN soundcloud_user_id IS NOT NULL THEN 1 ELSE 0 END) AS resolved,
-                SUM(CASE WHEN soundcloud_user_id IS NULL THEN 1 ELSE 0 END) AS pending
+                COALESCE(SUM(CASE WHEN soundcloud_user_id IS NOT NULL THEN 1 ELSE 0 END), 0) AS resolved,
+                COALESCE(SUM(CASE WHEN soundcloud_user_id IS NULL THEN 1 ELSE 0 END), 0) AS pending
             FROM discovery_artists
             """
         )
