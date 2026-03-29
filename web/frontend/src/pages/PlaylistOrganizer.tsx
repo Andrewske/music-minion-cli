@@ -141,7 +141,6 @@ export function PlaylistOrganizer({
   const [isUnassignedExpanded, setIsUnassignedExpanded] = useState(true);
   const isDragOperationInProgress = useRef(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [syncProgress, setSyncProgress] = useState<string | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
 
@@ -456,20 +455,17 @@ export function PlaylistOrganizer({
 
   const handleSyncDiscovery = useCallback(async (dryRun: boolean = false): Promise<void> => {
     setIsSyncing(true);
-    setSyncProgress('Starting sync...');
     try {
       const { job_id } = await triggerDiscoverySync(dryRun);
 
       pollIntervalRef.current = setInterval(async () => {
         try {
           const status: DiscoverySyncStatus = await getDiscoverySyncStatus(job_id);
-          if (status.progress_message) setSyncProgress(status.progress_message);
 
           if (status.status === 'completed') {
             clearInterval(pollIntervalRef.current!);
             pollIntervalRef.current = null;
             setIsSyncing(false);
-            setSyncProgress(null);
             const r = status.result!;
             toast.success(
               `Discovery sync: ${r.tracks_added_to_playlist} tracks added` +
@@ -482,7 +478,6 @@ export function PlaylistOrganizer({
             clearInterval(pollIntervalRef.current!);
             pollIntervalRef.current = null;
             setIsSyncing(false);
-            setSyncProgress(null);
             toast.error(`Sync failed: ${status.error}`);
           }
         } catch {
@@ -491,7 +486,6 @@ export function PlaylistOrganizer({
       }, 1000);
     } catch (error) {
       setIsSyncing(false);
-      setSyncProgress(null);
       toast.error(`Failed to start sync: ${error instanceof Error ? error.message : String(error)}`);
     }
   }, [queryClient]);
