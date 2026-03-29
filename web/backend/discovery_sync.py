@@ -102,6 +102,32 @@ def prepare_for_sync(playlist_id: int) -> tuple[int, list[int]]:
         kept_track_ids = [row["track_id"] for row in unassigned]
         remaining_slots = max(0, target - len(kept_track_ids))
 
+        # Remove assigned (liked/dismissed) tracks from playlist_tracks
+        # Keep only unassigned tracks — new tracks will be appended by the sync
+        assigned_tracks = conn.execute(
+            """SELECT bt.track_id FROM bucket_tracks bt
+            JOIN buckets b ON b.id = bt.bucket_id
+            WHERE b.session_id = ?""",
+            (session_id,),
+        ).fetchall()
+        assigned_ids = [row["track_id"] for row in assigned_tracks]
+
+        if assigned_ids:
+            placeholders = ",".join("?" * len(assigned_ids))
+            conn.execute(
+                f"DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id IN ({placeholders})",
+                [playlist_id, *assigned_ids],
+            )
+            # Update playlist track count
+            conn.execute(
+                """UPDATE playlists SET track_count = (
+                    SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = ?
+                ) WHERE id = ?""",
+                (playlist_id, playlist_id),
+            )
+            conn.commit()
+            logger.info(f"Removed {len(assigned_ids)} assigned tracks from playlist_tracks")
+
         logger.info(
             f"Partial refill: {len(liked_sc_ids)} liked, {len(dismissed_sc_ids)} dismissed, "
             f"{len(kept_track_ids)} kept, {remaining_slots} slots to fill"
