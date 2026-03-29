@@ -63,6 +63,7 @@ function PlaylistOrganizerRoute(): JSX.Element {
       playlistName={playlist.name}
       playlistType={playlist.type}
       playlistLibrary={playlist.library}
+      discoverySource={playlist.discovery_source}
     />
   );
 }

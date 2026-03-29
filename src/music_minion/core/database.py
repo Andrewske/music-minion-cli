@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 50  # Add global comparison indexes for graceful-snacking-seahorse
+SCHEMA_VERSION = 51  # Add discovery tables for SoundCloud reposts sync
 
 
 # Initial top 50 curated emojis for music reactions
@@ -2261,6 +2261,94 @@ def migrate_database(conn, current_version: int) -> None:
         """)
         conn.commit()
         logger.info("  ✓ Migration to v50 complete: global comparison indexes added")
+
+    if current_version < 51:
+        logger.info("Migrating to v51: Add discovery tables for SoundCloud reposts sync...")
+        try:
+            conn.execute("ALTER TABLE playlists ADD COLUMN discovery_source TEXT DEFAULT NULL")
+        except Exception:
+            pass
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS discovery_artists (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                soundcloud_user_id TEXT,
+                slug TEXT UNIQUE NOT NULL,
+                display_name TEXT,
+                ranking INTEGER NOT NULL,
+                tier TEXT,
+                hit_rate REAL DEFAULT 0,
+                tracks_seen INTEGER DEFAULT 0,
+                tracks_liked INTEGER DEFAULT 0,
+                tracks_dismissed INTEGER DEFAULT 0,
+                last_checked TIMESTAMP,
+                is_following BOOLEAN DEFAULT 1,
+                check_interval_days INTEGER DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS discovery_tracks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                soundcloud_id TEXT UNIQUE NOT NULL,
+                slug TEXT,
+                title TEXT,
+                artist_name TEXT,
+                duration_ms INTEGER,
+                reposted_by_count INTEGER DEFAULT 1,
+                local_track_id INTEGER,
+                first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                status TEXT DEFAULT 'unseen',
+                playlist_batch INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (local_track_id) REFERENCES tracks (id) ON DELETE SET NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS discovery_track_reposters (
+                discovery_track_id INTEGER NOT NULL,
+                discovery_artist_id INTEGER NOT NULL,
+                reposted_at TIMESTAMP,
+                PRIMARY KEY (discovery_track_id, discovery_artist_id),
+                FOREIGN KEY (discovery_track_id) REFERENCES discovery_tracks (id) ON DELETE CASCADE,
+                FOREIGN KEY (discovery_artist_id) REFERENCES discovery_artists (id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS discovery_sync_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                started_at TIMESTAMP NOT NULL,
+                completed_at TIMESTAMP,
+                artists_checked INTEGER DEFAULT 0,
+                tracks_fetched INTEGER DEFAULT 0,
+                tracks_added INTEGER DEFAULT 0,
+                mixes_added INTEGER DEFAULT 0,
+                tracks_skipped INTEGER DEFAULT 0,
+                dry_run BOOLEAN DEFAULT 0,
+                duration_seconds REAL
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_discovery_artists_ranking
+            ON discovery_artists(ranking)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_discovery_artists_slug
+            ON discovery_artists(slug)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_discovery_tracks_soundcloud_id
+            ON discovery_tracks(soundcloud_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_discovery_tracks_status
+            ON discovery_tracks(status)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_discovery_tracks_local_track_id
+            ON discovery_tracks(local_track_id)
+        """)
+        conn.commit()
+        logger.info("  ✓ Migration to v51 complete: discovery tables added")
 
 
 def init_database() -> None:

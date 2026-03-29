@@ -245,7 +245,8 @@ def get_all_playlists(library: Optional[str] = None) -> list[dict[str, Any]]:
                 last_played_at,
                 library,
                 pin_order,
-                soundcloud_playlist_id
+                soundcloud_playlist_id,
+                discovery_source
             FROM playlists
             WHERE library = ?
             ORDER BY (pin_order IS NULL), pin_order, name

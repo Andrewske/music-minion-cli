@@ -3,4 +3,5 @@ export interface PlaylistOrganizerProps {
   playlistName: string;
   playlistType: 'manual' | 'smart';
   playlistLibrary: string;
+  discoverySource?: string | null;
 }
