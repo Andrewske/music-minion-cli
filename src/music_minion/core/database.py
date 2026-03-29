@@ -2282,6 +2282,7 @@ def migrate_database(conn, current_version: int) -> None:
                 tracks_dismissed INTEGER DEFAULT 0,
                 last_checked TIMESTAMP,
                 is_following BOOLEAN DEFAULT 1,
+                in_top_200 BOOLEAN DEFAULT 0,
                 check_interval_days INTEGER DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
