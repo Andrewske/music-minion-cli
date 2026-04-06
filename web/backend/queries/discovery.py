@@ -262,6 +262,7 @@ def get_unplaced_short_tracks(
         rows = conn.execute(
             """
             SELECT dt.soundcloud_id, dt.duration_ms, dt.first_seen,
+                   dt.title, dt.artist_name,
                    dtr.discovery_artist_id
             FROM discovery_tracks dt
             JOIN discovery_track_reposters dtr ON dtr.discovery_track_id = dt.id
@@ -283,6 +284,8 @@ def get_unplaced_short_tracks(
             "artist_id": row["discovery_artist_id"],
             "created_at": row["first_seen"] or "1970/01/01 00:00:00 +0000",
             "duration": row["duration_ms"],
+            "title": row["title"] or "",
+            "user": {"username": row["artist_name"] or "Unknown"},
         })
     return results
 
