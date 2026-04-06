@@ -248,6 +248,45 @@ def get_next_batch_number() -> int:
         return row["next_batch"] if row else 1
 
 
+def get_unplaced_short_tracks(
+    exclude_sc_ids: set[str],
+    limit: int = 500,
+) -> list[dict[str, Any]]:
+    """Get older discovery tracks that never made it to a playlist.
+
+    Returns dicts shaped like SC API tracks so they work with
+    _select_tracks_chronological: {id, artist_id, created_at, duration}.
+    Ordered by first_seen DESC (newest unplaced first).
+    """
+    with get_db_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT dt.soundcloud_id, dt.duration_ms, dt.first_seen,
+                   dtr.discovery_artist_id
+            FROM discovery_tracks dt
+            JOIN discovery_track_reposters dtr ON dtr.discovery_track_id = dt.id
+            WHERE dt.status = 'unseen'
+              AND dt.duration_ms <= 600000
+            ORDER BY dt.first_seen DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    results: list[dict[str, Any]] = []
+    for row in rows:
+        sc_id = row["soundcloud_id"]
+        if sc_id in exclude_sc_ids:
+            continue
+        results.append({
+            "id": sc_id,
+            "artist_id": row["discovery_artist_id"],
+            "created_at": row["first_seen"] or "1970/01/01 00:00:00 +0000",
+            "duration": row["duration_ms"],
+        })
+    return results
+
+
 def mark_tracks_in_playlist(sc_ids: list[str], batch_number: int) -> None:
     """Mark tracks as placed in the discovery playlist."""
     if not sc_ids:

@@ -215,12 +215,12 @@ def _select_tracks_chronological(
     slot_caps: dict[int, int],
     target_count: int = 100,
 ) -> list[dict[str, Any]]:
-    """Select tracks by recency with per-artist slot caps.
+    """Select tracks by recency with per-artist slot caps + backfill.
 
-    Sorts all tracks by created_at descending (newest first), then walks
-    the list taking each track unless that artist has hit their cap.
-    Stops at target_count.
+    Pass 1: Respect per-artist caps (quality weighting).
+    Pass 2: If still under target, ignore caps and fill chronologically.
 
+    Sorts all tracks by created_at descending (newest first).
     Each track dict must have an 'artist_id' key (added during fetch).
     """
     def _parse_created_at(track: dict[str, Any]) -> str:
@@ -232,6 +232,7 @@ def _select_tracks_chronological(
     seen_sc_ids: set[str] = set()
     selected: list[dict[str, Any]] = []
 
+    # Pass 1: capped selection
     for track in sorted_tracks:
         if len(selected) >= target_count:
             break
@@ -240,12 +241,26 @@ def _select_tracks_chronological(
             continue
         sc_id = str(track.get("id", ""))
         if sc_id in seen_sc_ids:
-            continue  # Same track reposted by multiple artists
+            continue
         cap = slot_caps.get(artist_id, 1)
         current = counts.get(artist_id, 0)
         if current < cap:
             selected.append(track)
             counts[artist_id] = current + 1
+            seen_sc_ids.add(sc_id)
+
+    # Pass 2: uncapped backfill from remaining tracks
+    if len(selected) < target_count:
+        for track in sorted_tracks:
+            if len(selected) >= target_count:
+                break
+            sc_id = str(track.get("id", ""))
+            if sc_id in seen_sc_ids:
+                continue
+            artist_id = track.get("artist_id")
+            if artist_id is None:
+                continue
+            selected.append(track)
             seen_sc_ids.add(sc_id)
 
     return selected
@@ -498,6 +513,26 @@ def run_discovery_sync(
     selected_short = _select_tracks_chronological(
         short_tracks, slot_caps, target_count
     )
+
+    # Step 9b: Backfill from older unplaced tracks if still under target
+    backfilled = 0
+    if len(selected_short) < target_count:
+        already_selected = {str(t["id"]) for t in selected_short}
+        remaining = target_count - len(selected_short)
+        backfill_pool = discovery_queries.get_unplaced_short_tracks(
+            exclude_sc_ids=already_selected,
+            limit=remaining * 3,  # fetch extra to account for cap filtering
+        )
+        backfill_selected = _select_tracks_chronological(
+            backfill_pool, slot_caps, remaining
+        )
+        selected_short.extend(backfill_selected)
+        backfilled = len(backfill_selected)
+        logger.info(
+            f"Backfilled {backfilled} tracks from unplaced pool "
+            f"(had {target_count - remaining} from new, now {len(selected_short)} total)"
+        )
+
     selected_sc_ids = [str(t["id"]) for t in selected_short]
 
     # Select mixes (up to a reasonable cap, no round-robin needed)
@@ -516,7 +551,7 @@ def run_discovery_sync(
 
     logger.info(
         f"Discovery sync: {tracks_fetched} fetched, {tracks_new} new, "
-        f"{tracks_added} selected for playlist, {mixes_added} mixes"
+        f"{tracks_added} selected for playlist ({backfilled} backfilled), {mixes_added} mixes"
     )
 
     # Step 10: Push to SC playlists and sync to local DB
