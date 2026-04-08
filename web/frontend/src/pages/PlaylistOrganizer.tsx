@@ -109,6 +109,24 @@ export function PlaylistOrganizer({
   const unassignedSet = new Set(unassignedTrackIds);
   const unassignedTracks = allTracks?.tracks.filter((t) => unassignedSet.has(t.id)) ?? [];
 
+  // Compute date range from all tracks
+  const dateRange = useMemo(() => {
+    const tracks = allTracks?.tracks ?? [];
+    const dates = tracks
+      .map((t) => t.added_at)
+      .filter((d): d is string => Boolean(d))
+      .map((d) => {
+        const normalized = d.replace(/\//g, '-').replace(' +0000', 'Z').replace(' ', 'T');
+        return new Date(normalized);
+      })
+      .filter((d) => !isNaN(d.getTime()));
+    if (dates.length === 0) return null;
+    const oldest = new Date(Math.min(...dates.map((d) => d.getTime())));
+    const newest = new Date(Math.max(...dates.map((d) => d.getTime())));
+    const fmt = (d: Date): string => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return `${fmt(oldest)} – ${fmt(newest)}`;
+  }, [allTracks]);
+
   // Build reverse lookup map for O(1) performance (supports multi-bucket)
   const trackToBucketsMap = useMemo(() => {
     const map = new Map<number, Set<string>>();
@@ -542,6 +560,7 @@ export function PlaylistOrganizer({
               <div className="text-xs text-white/40 mt-1">
                 {playlistType === 'manual' ? 'Manual Playlist' : 'Smart Playlist'} •{' '}
                 {unassignedTrackIds.length} unassigned
+                {dateRange && <> • {dateRange}</>}
               </div>
             </div>
 

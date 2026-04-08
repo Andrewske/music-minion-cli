@@ -145,6 +145,7 @@ export interface PlaylistTrackEntry {
   losses: number;
   comparison_count: number;
   emojis?: string[];
+  added_at?: string;
 }
 
 export interface PlaylistTracksResponse {
