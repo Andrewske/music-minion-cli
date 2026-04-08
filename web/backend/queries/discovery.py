@@ -259,16 +259,28 @@ def get_unplaced_short_tracks(
     Ordered by first_seen DESC (newest unplaced first).
     """
     with get_db_connection() as conn:
+        # Pick the highest-ranked (lowest ranking number) reposter per track
+        # to avoid duplicate rows inflating per-artist counts
         rows = conn.execute(
             """
             SELECT dt.soundcloud_id, dt.duration_ms, dt.first_seen,
                    dt.title, dt.artist_name,
-                   dtr.discovery_artist_id
+                   best.discovery_artist_id, best.reposted_at
             FROM discovery_tracks dt
-            JOIN discovery_track_reposters dtr ON dtr.discovery_track_id = dt.id
+            JOIN (
+                SELECT dtr.discovery_track_id,
+                       dtr.discovery_artist_id,
+                       dtr.reposted_at,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY dtr.discovery_track_id
+                           ORDER BY da.ranking ASC
+                       ) AS rn
+                FROM discovery_track_reposters dtr
+                JOIN discovery_artists da ON da.id = dtr.discovery_artist_id
+            ) best ON best.discovery_track_id = dt.id AND best.rn = 1
             WHERE dt.status = 'unseen'
               AND dt.duration_ms <= 600000
-            ORDER BY dt.first_seen DESC
+            ORDER BY COALESCE(best.reposted_at, dt.first_seen) DESC
             LIMIT ?
             """,
             (limit,),
@@ -282,6 +294,7 @@ def get_unplaced_short_tracks(
         results.append({
             "id": sc_id,
             "artist_id": row["discovery_artist_id"],
+            "reposted_at": row["reposted_at"],
             "created_at": row["first_seen"] or "1970/01/01 00:00:00 +0000",
             "duration": row["duration_ms"],
             "title": row["title"] or "",
@@ -414,21 +427,26 @@ def compute_slot_caps(artists: list[dict[str, Any]]) -> dict[int, int]:
 
     Pure function (no DB access).
 
+    "Rated" means tracks the user actually heard and judged (liked + dismissed).
+    Tracks that were fetched but never shown don't count.
+
     Brackets:
-    - No data (tracks_seen == 0): 3 slots
+    - No rated tracks (liked + dismissed == 0): 3 slots (benefit of doubt)
     - hit_rate > 40%: 8 slots
     - hit_rate 20-40%: 4 slots
     - hit_rate 5-20%: 2 slots
     - hit_rate < 5%: 1 slot
 
     Args:
-        artists: list of artist dicts with 'id', 'hit_rate', and 'tracks_seen' keys
+        artists: list of artist dicts with 'id', 'hit_rate', 'tracks_liked',
+                 'tracks_dismissed' keys
 
     Returns:
         dict mapping artist_id -> max_slots
     """
     def _slots(artist: dict[str, Any]) -> int:
-        if not artist.get("tracks_seen"):
+        rated = (artist.get("tracks_liked") or 0) + (artist.get("tracks_dismissed") or 0)
+        if rated == 0:
             return 3
         rate = artist.get("hit_rate", 0.0) or 0.0
         if rate > 40:

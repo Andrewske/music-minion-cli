@@ -12,6 +12,7 @@ from music_minion.core.database import get_db_connection
 from web.backend.soundcloud_auth import get_web_provider_state
 from music_minion.domain.library.providers.soundcloud.api import (
     add_track_to_playlist as sc_add_track,
+    like_track as sc_like_track,
     remove_track_from_playlist as sc_remove_track,
     get_playlist_tracks as sc_get_playlist_tracks,
 )
@@ -269,6 +270,18 @@ def _update_discovery_feedback(session_id: str) -> None:
         if liked_sc_ids:
             discovery_queries.mark_tracks_liked(liked_sc_ids)
             logger.info(f"Marked {len(liked_sc_ids)} tracks as liked")
+
+            # Auto-like on SoundCloud
+            state = get_web_provider_state()
+            if state:
+                liked_count = 0
+                for sc_id in liked_sc_ids:
+                    state, success, err = sc_like_track(state, sc_id)
+                    if success:
+                        liked_count += 1
+                    else:
+                        logger.warning(f"Failed to like track {sc_id} on SC: {err}")
+                logger.info(f"Liked {liked_count}/{len(liked_sc_ids)} tracks on SoundCloud")
 
         if dismissed_sc_ids:
             discovery_queries.mark_tracks_dismissed(dismissed_sc_ids)

@@ -11,7 +11,10 @@ from typing import Any, Callable, NamedTuple, Optional
 from loguru import logger
 
 from music_minion.core.database import get_db_connection
+import requests
+
 from music_minion.domain.library.providers.soundcloud.api import (
+    _ensure_valid_token,
     add_track_to_playlist,
     get_user_reposts,
     reorder_playlist,
@@ -223,10 +226,14 @@ def _select_tracks_chronological(
     Sorts all tracks by created_at descending (newest first).
     Each track dict must have an 'artist_id' key (added during fetch).
     """
-    def _parse_created_at(track: dict[str, Any]) -> str:
-        return track.get("created_at", "1970/01/01 00:00:00 +0000")
+    def _sort_key(track: dict[str, Any]) -> str:
+        return (
+            track.get("reposted_at")
+            or track.get("created_at")
+            or "1970/01/01 00:00:00 +0000"
+        )
 
-    sorted_tracks = sorted(all_tracks, key=_parse_created_at, reverse=True)
+    sorted_tracks = sorted(all_tracks, key=_sort_key, reverse=True)
 
     counts: dict[int, int] = {}
     seen_sc_ids: set[str] = set()
@@ -249,7 +256,8 @@ def _select_tracks_chronological(
             counts[artist_id] = current + 1
             seen_sc_ids.add(sc_id)
 
-    # Pass 2: uncapped backfill from remaining tracks
+    # Pass 2: relaxed backfill — still cap-aware but with 2x multiplier
+    # Prevents a single low-hit-rate artist from flooding the playlist
     if len(selected) < target_count:
         for track in sorted_tracks:
             if len(selected) >= target_count:
@@ -260,7 +268,12 @@ def _select_tracks_chronological(
             artist_id = track.get("artist_id")
             if artist_id is None:
                 continue
+            cap = slot_caps.get(artist_id, 1) * 2
+            current = counts.get(artist_id, 0)
+            if current >= cap:
+                continue
             selected.append(track)
+            counts[artist_id] = current + 1
             seen_sc_ids.add(sc_id)
 
     return selected
@@ -610,6 +623,13 @@ def run_discovery_sync(
                 logger.warning(msg)
                 errors.append(msg)
 
+    # Step 10b: Enrich repost timestamps from feed
+    try:
+        enriched = enrich_repost_timestamps(state, max_pages=20)
+        logger.info(f"Enriched {enriched} repost timestamps from feed")
+    except Exception as e:
+        logger.warning(f"Feed timestamp enrichment failed (non-blocking): {e}")
+
     # Step 11: Log sync run
     duration_sec = (datetime.now(timezone.utc) - started_at).total_seconds()
     discovery_queries.log_sync_run(
@@ -632,3 +652,123 @@ def run_discovery_sync(
         errors=errors,
         dry_run=dry_run,
     )
+
+
+API_BASE_URL = "https://api.soundcloud.com"
+
+
+def enrich_repost_timestamps(
+    state: Any,
+    max_pages: int = 20,
+    progress_callback: Optional[Callable[[str, int, int], None]] = None,
+) -> int:
+    """Fetch /me/feed and backfill reposted_at timestamps in discovery_track_reposters.
+
+    Cross-references feed items (type=track:repost) against existing discovery tracks
+    by SC track ID + reposter slug. Only updates rows where reposted_at is NULL.
+
+    Args:
+        state: Authenticated SC provider state
+        max_pages: Max feed pages to fetch (200 items each)
+        progress_callback: Optional progress reporter
+
+    Returns:
+        Number of reposted_at timestamps updated
+    """
+    state, token_data = _ensure_valid_token(state)
+    if not token_data:
+        logger.warning("Cannot enrich timestamps: token refresh failed")
+        return 0
+
+    # Load SC IDs that have NULL reposted_at (candidates for enrichment)
+    with get_db_connection() as conn:
+        candidates = conn.execute(
+            """SELECT DISTINCT dt.soundcloud_id
+            FROM discovery_track_reposters dtr
+            JOIN discovery_tracks dt ON dt.id = dtr.discovery_track_id
+            WHERE dtr.reposted_at IS NULL"""
+        ).fetchall()
+    needs_timestamp: set[str] = {r["soundcloud_id"] for r in candidates}
+
+    if not needs_timestamp:
+        logger.info("All repost timestamps already populated")
+        return 0
+
+    logger.info(
+        f"Enriching repost timestamps: {len(needs_timestamp)} candidates, "
+        f"scanning up to {max_pages} feed pages"
+    )
+
+    # Paginate through feed
+    url: Optional[str] = f"{API_BASE_URL}/me/feed"
+    params: dict[str, Any] = {"limit": 200, "linked_partitioning": "true"}
+    updates: list[tuple[str, int, str]] = []  # (sc_id, artist_id, reposted_at)
+    pages_fetched = 0
+
+    while url and pages_fetched < max_pages:
+        headers = {"Authorization": f"OAuth {token_data['access_token']}"}
+
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=15)
+            if resp.status_code == 429:
+                logger.warning("Rate limited during feed fetch, stopping")
+                break
+            resp.raise_for_status()
+        except Exception as e:
+            logger.warning(f"Feed fetch failed: {e}")
+            break
+
+        data = resp.json()
+        collection = data.get("collection", [])
+        pages_fetched += 1
+
+        if progress_callback:
+            progress_callback(
+                f"Scanning feed page {pages_fetched} ({len(updates)} timestamps found)",
+                pages_fetched,
+                max_pages,
+            )
+
+        for item in collection:
+            if item.get("type") != "track:repost":
+                continue
+
+            origin = item.get("origin", {})
+            sc_id = str(origin.get("id", ""))
+            reposted_at = item.get("created_at", "")
+
+            if not sc_id or not reposted_at:
+                continue
+
+            # Feed doesn't include who reposted — match by track SC ID
+            # and update ALL reposter entries for this track
+            if sc_id in needs_timestamp:
+                updates.append((sc_id, reposted_at))
+                needs_timestamp.discard(sc_id)
+
+        # Next page
+        url = data.get("next_href")
+        params = {}  # next_href includes params
+        time.sleep(0.2)
+
+        if not collection:
+            break
+
+    # Batch update reposted_at for all reposter entries of matched tracks
+    if updates:
+        with get_db_connection() as conn:
+            conn.executemany(
+                """UPDATE discovery_track_reposters
+                SET reposted_at = ?
+                WHERE discovery_track_id = (
+                    SELECT id FROM discovery_tracks WHERE soundcloud_id = ?
+                ) AND reposted_at IS NULL""",
+                [(ts, sc_id) for sc_id, ts in updates],
+            )
+            conn.commit()
+
+    logger.info(
+        f"Enriched {len(updates)} repost timestamps "
+        f"({pages_fetched} feed pages scanned)"
+    )
+    return len(updates)
