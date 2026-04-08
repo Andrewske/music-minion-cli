@@ -700,10 +700,12 @@ def enrich_repost_timestamps(
         f"scanning up to {max_pages} feed pages"
     )
 
-    # Paginate through feed
+    # Paginate through feed, collecting the earliest repost date per track.
+    # The feed is reverse-chronological, so the same track may appear multiple
+    # times (once per follower who reposted it). We keep the earliest timestamp.
     url: Optional[str] = f"{API_BASE_URL}/me/feed"
     params: dict[str, Any] = {"limit": 200, "linked_partitioning": "true"}
-    updates: list[tuple[str, int, str]] = []  # (sc_id, artist_id, reposted_at)
+    earliest_by_sc_id: dict[str, str] = {}  # sc_id -> earliest reposted_at
     pages_fetched = 0
 
     while url and pages_fetched < max_pages:
@@ -725,7 +727,7 @@ def enrich_repost_timestamps(
 
         if progress_callback:
             progress_callback(
-                f"Scanning feed page {pages_fetched} ({len(updates)} timestamps found)",
+                f"Scanning feed page {pages_fetched} ({len(earliest_by_sc_id)} tracks found)",
                 pages_fetched,
                 max_pages,
             )
@@ -741,11 +743,14 @@ def enrich_repost_timestamps(
             if not sc_id or not reposted_at:
                 continue
 
-            # Feed doesn't include who reposted — match by track SC ID
-            # and update ALL reposter entries for this track
-            if sc_id in needs_timestamp:
-                updates.append((sc_id, reposted_at))
-                needs_timestamp.discard(sc_id)
+            if sc_id not in needs_timestamp:
+                continue
+
+            # Feed is newest-first, so later pages have older (earlier) dates.
+            # Always keep the oldest timestamp we find for each track.
+            existing = earliest_by_sc_id.get(sc_id)
+            if existing is None or reposted_at < existing:
+                earliest_by_sc_id[sc_id] = reposted_at
 
         # Next page
         url = data.get("next_href")
@@ -756,6 +761,7 @@ def enrich_repost_timestamps(
             break
 
     # Batch update reposted_at for all reposter entries of matched tracks
+    updates = list(earliest_by_sc_id.items())
     if updates:
         with get_db_connection() as conn:
             conn.executemany(
