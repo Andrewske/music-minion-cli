@@ -102,6 +102,22 @@ def get_playlist_tracks_with_ratings(
             pagination_clause = "LIMIT ? OFFSET ?"
             params.extend([limit, offset])
 
+        # Check if this is a discovery playlist (to join reposted_at)
+        discovery_row = conn.execute(
+            "SELECT discovery_source FROM playlists WHERE id = ?",
+            (playlist_id,),
+        ).fetchone()
+        is_discovery = bool(discovery_row and discovery_row["discovery_source"])
+
+        repost_join = ""
+        repost_col = "pt.added_at"
+        if is_discovery:
+            repost_join = """
+                LEFT JOIN discovery_tracks dt ON dt.soundcloud_id = t.soundcloud_id
+                LEFT JOIN discovery_track_reposters dtr ON dtr.discovery_track_id = dt.id
+            """
+            repost_col = "COALESCE(MAX(dtr.reposted_at), pt.added_at)"
+
         query = f"""
             SELECT
                 t.id,
@@ -117,12 +133,15 @@ def get_playlist_tracks_with_ratings(
                 COALESCE(per.comparison_count, 0) as comparison_count,
                 COALESCE(per.wins, 0) as wins,
                 COALESCE(per.comparison_count - per.wins, 0) as losses,
+                {repost_col} as added_at,
                 COUNT(*) OVER() as total_count
             FROM playlist_tracks pt
             JOIN tracks t ON pt.track_id = t.id
             LEFT JOIN playlist_elo_ratings per ON pt.track_id = per.track_id
                 AND per.playlist_id = pt.playlist_id
+            {repost_join}
             WHERE pt.playlist_id = ?
+            {"GROUP BY t.id" if is_discovery else ""}
             ORDER BY {column} {direction}, t.title ASC
             {pagination_clause}
         """

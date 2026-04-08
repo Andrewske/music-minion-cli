@@ -12,6 +12,30 @@ import { useDraggable } from '@dnd-kit/core';
 import { GripVertical } from 'lucide-react';
 import type { PlaylistTrackEntry } from '../../types';
 
+function formatRelativeDate(dateStr: string | undefined): string {
+  if (!dateStr) return '-';
+  // Handle SC format "2026/04/08 20:31:19 +0000" and ISO format
+  const normalized = dateStr.replace(/\//g, '-').replace(' +0000', 'Z').replace(' ', 'T');
+  const date = new Date(normalized);
+  if (isNaN(date.getTime())) return '-';
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (days < 1) return '<1d';
+  if (days < 7) return `${days}d`;
+  if (days < 30) return `${Math.floor(days / 7)}w`;
+  if (days < 365) return `${Math.floor(days / 30)}mo`;
+  return `${Math.floor(days / 365)}y`;
+}
+
+function formatFullDate(dateStr: string | undefined): string {
+  if (!dateStr) return '';
+  const normalized = dateStr.replace(/\//g, '-').replace(' +0000', 'Z').replace(' ', 'T');
+  const date = new Date(normalized);
+  if (isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 interface UnassignedTrackTableProps {
   tracks: PlaylistTrackEntry[];
   currentTrackId: number | null;
@@ -82,6 +106,21 @@ export function UnassignedTrackTable({
         return val ? Math.round(val) : '-';
       },
       size: 70,
+      meta: { fixed: true },
+    },
+    {
+      id: 'added_at',
+      accessorKey: 'added_at',
+      header: 'Date',
+      cell: (info) => {
+        const val = info.getValue() as string | undefined;
+        return (
+          <span title={formatFullDate(val)}>
+            {formatRelativeDate(val)}
+          </span>
+        );
+      },
+      size: 50,
       meta: { fixed: true },
     },
   ], []); // Empty deps - columns definition never changes
