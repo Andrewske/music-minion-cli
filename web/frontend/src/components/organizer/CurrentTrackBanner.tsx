@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { WaveformPlayer } from '../WaveformPlayer';
 import type { Bucket } from '../../api/buckets';
+import type { TrackReposter } from '../../types';
 
 function formatTrackDate(dateStr: string | undefined): string | null {
   if (!dateStr) return null;
@@ -21,9 +22,10 @@ function formatTrackDate(dateStr: string | undefined): string | null {
 interface CurrentTrackBannerProps {
   buckets: Bucket[];
   trackDate?: string;
+  reposters?: TrackReposter[];
 }
 
-export function CurrentTrackBanner({ buckets, trackDate }: CurrentTrackBannerProps): JSX.Element {
+export function CurrentTrackBanner({ buckets, trackDate, reposters }: CurrentTrackBannerProps): JSX.Element {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const pause = usePlayerStore((s) => s.pause);
@@ -62,6 +64,30 @@ export function CurrentTrackBanner({ buckets, trackDate }: CurrentTrackBannerPro
               return dateLabel ? <span className="text-white/30 ml-2">• {dateLabel}</span> : null;
             })()}
           </div>
+          {reposters && reposters.length > 0 && (
+            <div className="flex items-center gap-2 mt-1.5">
+              <span className="text-[10px] uppercase tracking-wider text-white/25">Reposted by</span>
+              <div className="flex items-center gap-1.5">
+                {reposters.map((r) => (
+                  <a
+                    key={r.slug}
+                    href={`https://soundcloud.com/${r.slug}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={r.name}
+                    className="flex items-center gap-1 hover:opacity-80 transition-opacity"
+                  >
+                    <img
+                      src={r.avatar_url?.replace('-large', '-small') ?? ''}
+                      alt={r.name}
+                      className="w-5 h-5 rounded-full"
+                    />
+                    <span className="text-xs text-white/40">{r.name}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

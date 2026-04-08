@@ -162,6 +162,47 @@ def get_playlist_tracks_with_ratings(
             for track in tracks:
                 track["emojis"] = emojis_map.get(track["id"], [])
 
+        # Batch-fetch reposters for discovery playlists
+        if is_discovery and tracks:
+            sc_rows = conn.execute(
+                f"SELECT id, soundcloud_id FROM tracks WHERE id IN ({','.join('?' * len(track_ids))})",
+                track_ids,
+            ).fetchall()
+            sc_id_to_track_id = {}
+            for row in sc_rows:
+                if row["soundcloud_id"]:
+                    sc_id_to_track_id[row["soundcloud_id"]] = row["id"]
+
+            if sc_id_to_track_id:
+                placeholders = ",".join("?" * len(sc_id_to_track_id))
+                reposter_rows = conn.execute(
+                    f"""SELECT dt.soundcloud_id as track_sc_id,
+                           da.slug, da.display_name, da.avatar_url, da.ranking
+                    FROM discovery_track_reposters dtr
+                    JOIN discovery_tracks dt ON dt.id = dtr.discovery_track_id
+                    JOIN discovery_artists da ON da.id = dtr.discovery_artist_id
+                    WHERE dt.soundcloud_id IN ({placeholders})
+                      AND da.in_top_200 = 1
+                    ORDER BY da.ranking ASC""",
+                    list(sc_id_to_track_id.keys()),
+                ).fetchall()
+
+                reposters_map: dict[int, list[dict]] = {}
+                for row in reposter_rows:
+                    tid = sc_id_to_track_id.get(row["track_sc_id"])
+                    if tid is None:
+                        continue
+                    if tid not in reposters_map:
+                        reposters_map[tid] = []
+                    reposters_map[tid].append({
+                        "slug": row["slug"],
+                        "name": row["display_name"] or row["slug"],
+                        "avatar_url": row["avatar_url"],
+                    })
+
+                for track in tracks:
+                    track["reposters"] = reposters_map.get(track["id"], [])
+
         result = (tracks, total)
         _set_cached_tracks(cache_key, result)
         return result
