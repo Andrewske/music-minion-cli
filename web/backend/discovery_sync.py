@@ -493,6 +493,7 @@ def run_discovery_sync(
             "title": t.get("title", ""),
             "artist_name": t.get("user", {}).get("username", "Unknown"),
             "duration_ms": t.get("duration", 0) or 0,
+            "released_at": t.get("created_at"),
         }
         for t in all_fetched
     ]
