@@ -166,6 +166,7 @@ def insert_discovery_tracks(tracks: list[dict[str, Any]]) -> int:
             t.get("title", ""),
             t.get("artist_name", ""),
             t.get("duration_ms", 0),
+            t.get("released_at"),
         )
         for t in tracks
     ]
@@ -174,8 +175,8 @@ def insert_discovery_tracks(tracks: list[dict[str, Any]]) -> int:
         conn.executemany(
             """
             INSERT OR IGNORE INTO discovery_tracks
-                (soundcloud_id, slug, title, artist_name, duration_ms)
-            VALUES (?, ?, ?, ?, ?)
+                (soundcloud_id, slug, title, artist_name, duration_ms, released_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             records,
         )
