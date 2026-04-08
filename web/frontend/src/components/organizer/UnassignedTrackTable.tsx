@@ -74,7 +74,31 @@ export function UnassignedTrackTable({
       id: 'artist',
       accessorKey: 'artist',
       header: 'Artist',
-      cell: (info) => info.getValue() ?? '-',
+      cell: (info) => {
+        const track = info.row.original;
+        const reposters = track.reposters;
+        return (
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="truncate">{info.getValue() as string ?? '-'}</span>
+            {reposters && reposters.length > 0 && (
+              <div className="flex -space-x-1.5 flex-shrink-0">
+                {reposters.slice(0, 4).map((r) => (
+                  <img
+                    key={r.slug}
+                    src={r.avatar_url?.replace('-large', '-small') ?? ''}
+                    alt={r.name}
+                    title={r.name}
+                    className="w-4 h-4 rounded-full ring-1 ring-black"
+                  />
+                ))}
+                {reposters.length > 4 && (
+                  <span className="text-[10px] text-white/30 pl-1">+{reposters.length - 4}</span>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      },
       size: 2,
       meta: { flexible: true },
     },

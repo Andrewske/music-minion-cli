@@ -134,6 +134,12 @@ export interface GenreDistribution {
   percentage: number;
 }
 
+export interface TrackReposter {
+  slug: string;
+  name: string;
+  avatar_url?: string;
+}
+
 export interface PlaylistTrackEntry {
   id: number;
   title: string;
@@ -146,6 +152,7 @@ export interface PlaylistTrackEntry {
   comparison_count: number;
   emojis?: string[];
   added_at?: string;
+  reposters?: TrackReposter[];
 }
 
 export interface PlaylistTracksResponse {

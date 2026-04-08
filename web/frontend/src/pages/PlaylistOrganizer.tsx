@@ -599,6 +599,7 @@ export function PlaylistOrganizer({
           <CurrentTrackBanner
             buckets={buckets}
             trackDate={allTracks?.tracks.find((t) => t.id === currentTrack?.id)?.added_at}
+            reposters={allTracks?.tracks.find((t) => t.id === currentTrack?.id)?.reposters}
           />
 
           {/* Unassigned tracks table */}

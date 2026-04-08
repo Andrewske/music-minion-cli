@@ -4,6 +4,6 @@ export type {
   ComparisonRequest, RecordComparisonRequest, ComparisonResponse,
   WaveformData, GenreStat, FoldersResponse,
   PlaylistBasicStats, PlaylistEloAnalysis, PlaylistQualityMetrics,
-  ArtistStat, GenreDistribution, PlaylistTrackEntry,
+  ArtistStat, GenreDistribution, PlaylistTrackEntry, TrackReposter,
   PlaylistTracksResponse, PlaylistStatsResponse,
 } from '@music-minion/shared';
