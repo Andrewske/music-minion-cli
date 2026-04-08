@@ -16,8 +16,12 @@ import time
 
 from web.backend.queries import discovery as discovery_queries
 from web.backend.soundcloud_auth import get_web_provider_state
-from web.backend.discovery_sync import run_discovery_sync
-from music_minion.domain.library.providers.soundcloud.api import resolve_user_by_slug
+from web.backend.discovery_sync import enrich_repost_timestamps, run_discovery_sync
+from music_minion.domain.library.providers.soundcloud.api import (
+    like_track as sc_like_track,
+    resolve_user_by_slug,
+)
+from music_minion.core.database import get_db_connection
 
 router = APIRouter(prefix="/api/discovery", tags=["discovery"])
 
@@ -248,6 +252,159 @@ async def get_sync_status(job_id: str) -> SyncStatusResponse:
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return SyncStatusResponse(**job)
+
+
+@router.post("/backfill-likes")
+async def backfill_sc_likes(background_tasks: BackgroundTasks) -> dict[str, str]:
+    """Like all tracks from 2026 monthly playlists on SoundCloud.
+
+    Finds tracks in Jan 26, Feb 26, Mar 26, Apr 26 playlists and calls
+    like_track() on SC for each. Also marks them as 'liked' in discovery_tracks.
+    """
+    with _sync_lock:
+        for job in _sync_jobs.values():
+            if job["status"] == "running":
+                raise HTTPException(status_code=409, detail="Sync already in progress")
+
+    job_id = str(uuid.uuid4())[:8]
+    with _sync_lock:
+        _sync_jobs[job_id] = {
+            "status": "running",
+            "progress_message": "Starting backfill...",
+            "progress_current": 0,
+            "progress_total": 0,
+            "result": None,
+            "error": None,
+        }
+
+    background_tasks.add_task(_backfill_likes_background, job_id)
+    return {"job_id": job_id, "status": "started"}
+
+
+def _backfill_likes_background(job_id: str) -> None:
+    """Background task: like all 2026 monthly playlist tracks on SC."""
+    try:
+        state = get_web_provider_state()
+        if state is None:
+            raise RuntimeError("SoundCloud not authenticated")
+
+        # Find 2026 monthly playlists
+        with get_db_connection() as conn:
+            playlists = conn.execute(
+                """SELECT id, name FROM playlists
+                WHERE name LIKE '%26' AND name LIKE '___ 26'
+                ORDER BY name"""
+            ).fetchall()
+
+            sc_ids: list[str] = []
+            for pl in playlists:
+                tracks = conn.execute(
+                    """SELECT t.soundcloud_id FROM playlist_tracks pt
+                    JOIN tracks t ON t.id = pt.track_id
+                    WHERE pt.playlist_id = ? AND t.soundcloud_id IS NOT NULL""",
+                    (pl["id"],),
+                ).fetchall()
+                pl_sc_ids = [r["soundcloud_id"] for r in tracks]
+                logger.info(f"Backfill: {pl['name']} has {len(pl_sc_ids)} tracks")
+                sc_ids.extend(pl_sc_ids)
+
+        # Deduplicate
+        sc_ids = list(dict.fromkeys(sc_ids))
+        total = len(sc_ids)
+        logger.info(f"Backfill: {total} unique tracks to like on SC")
+
+        with _sync_lock:
+            _sync_jobs[job_id]["progress_total"] = total
+
+        liked = 0
+        failed = 0
+        for i, sc_id in enumerate(sc_ids):
+            state, success, err = sc_like_track(state, sc_id)
+            if success:
+                liked += 1
+            else:
+                logger.warning(f"Backfill like failed for {sc_id}: {err}")
+                failed += 1
+
+            if (i + 1) % 10 == 0:
+                with _sync_lock:
+                    _sync_jobs[job_id]["progress_message"] = (
+                        f"Liked {liked}/{i + 1} tracks..."
+                    )
+                    _sync_jobs[job_id]["progress_current"] = i + 1
+
+            # Rate limit: 200ms between likes
+            time.sleep(0.2)
+
+        # Mark these tracks as liked in discovery_tracks too
+        if sc_ids:
+            discovery_queries.mark_tracks_liked(sc_ids)
+            discovery_queries.recalculate_artist_stats()
+
+        with _sync_lock:
+            _sync_jobs[job_id]["status"] = "completed"
+            _sync_jobs[job_id]["progress_current"] = total
+            _sync_jobs[job_id]["result"] = {
+                "total": total,
+                "liked": liked,
+                "failed": failed,
+                "playlists": [pl["name"] for pl in playlists],
+            }
+
+        logger.info(f"Backfill complete: {liked} liked, {failed} failed out of {total}")
+
+    except Exception as e:
+        logger.exception("Backfill likes failed")
+        with _sync_lock:
+            _sync_jobs[job_id]["status"] = "failed"
+            _sync_jobs[job_id]["error"] = str(e)
+
+
+@router.post("/enrich-timestamps")
+async def enrich_timestamps_endpoint(
+    background_tasks: BackgroundTasks, max_pages: int = 20
+) -> dict[str, str]:
+    """Scan /me/feed to backfill reposted_at timestamps for discovery tracks."""
+    job_id = str(uuid.uuid4())[:8]
+    with _sync_lock:
+        _sync_jobs[job_id] = {
+            "status": "running",
+            "progress_message": "Starting feed scan...",
+            "progress_current": 0,
+            "progress_total": max_pages,
+            "result": None,
+            "error": None,
+        }
+
+    background_tasks.add_task(_enrich_timestamps_background, job_id, max_pages)
+    return {"job_id": job_id, "status": "started"}
+
+
+def _enrich_timestamps_background(job_id: str, max_pages: int) -> None:
+    """Background task: enrich repost timestamps from feed."""
+    try:
+        state = get_web_provider_state()
+        if state is None:
+            raise RuntimeError("SoundCloud not authenticated")
+
+        def progress_cb(msg: str, current: int, total: int) -> None:
+            with _sync_lock:
+                if job_id in _sync_jobs:
+                    _sync_jobs[job_id]["progress_message"] = msg
+                    _sync_jobs[job_id]["progress_current"] = current
+
+        updated = enrich_repost_timestamps(state, max_pages=max_pages, progress_callback=progress_cb)
+
+        with _sync_lock:
+            _sync_jobs[job_id]["status"] = "completed"
+            _sync_jobs[job_id]["progress_current"] = max_pages
+            _sync_jobs[job_id]["result"] = {"timestamps_updated": updated}
+
+    except Exception as e:
+        logger.exception("Timestamp enrichment failed")
+        with _sync_lock:
+            _sync_jobs[job_id]["status"] = "failed"
+            _sync_jobs[job_id]["error"] = str(e)
 
 
 @router.post("/update-stats")
