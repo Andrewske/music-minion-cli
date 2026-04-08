@@ -3,11 +3,27 @@ import { usePlayerStore } from '../../stores/playerStore';
 import { WaveformPlayer } from '../WaveformPlayer';
 import type { Bucket } from '../../api/buckets';
 
-interface CurrentTrackBannerProps {
-  buckets: Bucket[];
+function formatTrackDate(dateStr: string | undefined): string | null {
+  if (!dateStr) return null;
+  const normalized = dateStr.replace(/\//g, '-').replace(' +0000', 'Z').replace(' ', 'T');
+  const date = new Date(normalized);
+  if (isNaN(date.getTime())) return null;
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const full = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  if (days < 1) return `Today • ${full}`;
+  if (days < 7) return `${days}d ago • ${full}`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago • ${full}`;
+  return full;
 }
 
-export function CurrentTrackBanner({ buckets }: CurrentTrackBannerProps): JSX.Element {
+interface CurrentTrackBannerProps {
+  buckets: Bucket[];
+  trackDate?: string;
+}
+
+export function CurrentTrackBanner({ buckets, trackDate }: CurrentTrackBannerProps): JSX.Element {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const pause = usePlayerStore((s) => s.pause);
@@ -41,6 +57,10 @@ export function CurrentTrackBanner({ buckets }: CurrentTrackBannerProps): JSX.El
           </div>
           <div className="text-sm text-white/60 truncate">
             {currentTrack.artist ?? 'Unknown Artist'}
+            {(() => {
+              const dateLabel = formatTrackDate(trackDate);
+              return dateLabel ? <span className="text-white/30 ml-2">• {dateLabel}</span> : null;
+            })()}
           </div>
         </div>
       </div>

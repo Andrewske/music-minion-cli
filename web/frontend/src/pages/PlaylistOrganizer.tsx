@@ -596,7 +596,10 @@ export function PlaylistOrganizer({
           </div>
 
           {/* Current track banner */}
-          <CurrentTrackBanner buckets={buckets} />
+          <CurrentTrackBanner
+            buckets={buckets}
+            trackDate={allTracks?.tracks.find((t) => t.id === currentTrack?.id)?.added_at}
+          />
 
           {/* Unassigned tracks table */}
           <div className="mb-6">
