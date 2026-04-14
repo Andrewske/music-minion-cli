@@ -1,13 +1,18 @@
 import type { ReactElement } from 'react';
+import { useState, useMemo } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useArtists, useFollowingsSync } from '../hooks/useArtists';
 import { ArtistCard } from '../components/artists/ArtistCard';
 import { ParetoBanner } from '../components/artists/ParetoBanner';
+import { ArtistFiltersBar } from '../components/artists/ArtistFiltersBar';
 import { Button } from '../components/ui/button';
 
 export const Route = createFileRoute('/artists')({
   component: ArtistsPage,
 });
+
+type ArtistSource = 'all' | 'soundcloud' | 'local' | 'following';
+type ArtistSort = 'name' | 'rank' | 'library' | 'reposts' | 'hit_rate' | 'noise' | 'last_loved';
 
 const DISPLAY_CAP = 500;
 
@@ -68,14 +73,34 @@ function EmptyState(): ReactElement {
 // ---------------------------------------------------------------------------
 
 function ArtistsPage(): ReactElement {
-  const { data: artists, isLoading, error, refetch } = useArtists({});
+  const [search, setSearch] = useState('');
+  const [source, setSource] = useState<ArtistSource>('all');
+  const [sort, setSort] = useState<ArtistSort>('name');
+  const [paretoIds, setParetoIds] = useState<Set<number> | null>(null);
+
+  const { data: artists, isLoading, error, refetch } = useArtists({ source, sort });
+
+  const visibleArtists = useMemo(() => {
+    let list = artists ?? [];
+    if (paretoIds !== null) list = list.filter((a) => a.id != null && paretoIds.has(a.id));
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(
+        (a) =>
+          a.display_name.toLowerCase().includes(q) ||
+          (a.slug ?? '').toLowerCase().includes(q),
+      );
+    }
+    return list.slice(0, DISPLAY_CAP);
+  }, [artists, paretoIds, search]);
 
   if (isLoading) return <LoadingState />;
   if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (!artists || artists.length === 0) return <EmptyState />;
 
-  const visible = artists.slice(0, DISPLAY_CAP);
-  const overflow = artists.length - visible.length;
+  const overflow = (artists.length > DISPLAY_CAP && paretoIds === null && !search.trim())
+    ? artists.length - DISPLAY_CAP
+    : 0;
 
   return (
     <div className="min-h-screen bg-black px-6 py-8">
@@ -87,15 +112,25 @@ function ArtistsPage(): ReactElement {
       </header>
 
       <div className="max-w-7xl mx-auto">
-        <ParetoBanner onReview={(ids) => {
-          // For now, log. Task 13 adds filter state wiring.
-          console.log('pareto review:', ids);
-        }} />
+        <ParetoBanner onReview={(ids) => setParetoIds(new Set(ids))} />
+
+        <ArtistFiltersBar
+          search={search}
+          onSearchChange={setSearch}
+          source={source}
+          onSourceChange={setSource}
+          sort={sort}
+          onSortChange={setSort}
+          paretoActive={paretoIds !== null}
+          onParetoClear={() => setParetoIds(null)}
+          paretoCount={paretoIds?.size ?? 0}
+          resultCount={visibleArtists.length}
+        />
       </div>
 
       {/* TODO: virtualize if >2000 visible cards */}
-      <main className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {visible.map((a) => (
+      <main className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-4">
+        {visibleArtists.map((a) => (
           <ArtistCard key={`${a.id ?? 'local'}-${a.display_name}`} artist={a} />
         ))}
       </main>
