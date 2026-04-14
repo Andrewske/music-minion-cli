@@ -1,9 +1,12 @@
 import type { ReactElement } from 'react';
 import { useState, useMemo } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
-import { useArtists, useFollowingsSync } from '../hooks/useArtists';
+import { toast } from 'react-toastify';
+import { useArtists, useFollowingsSync, useUnfollowArtist } from '../hooks/useArtists';
+import type { ArtistStats } from '../api/artists';
 import { ArtistCard } from '../components/artists/ArtistCard';
 import { ArtistDetailDialog } from '../components/artists/ArtistDetailDialog';
+import { ConfirmUnfollowDialog } from '../components/artists/ConfirmUnfollowDialog';
 import { ParetoBanner } from '../components/artists/ParetoBanner';
 import { ArtistFiltersBar } from '../components/artists/ArtistFiltersBar';
 import { Button } from '../components/ui/button';
@@ -79,6 +82,8 @@ function ArtistsPage(): ReactElement {
   const [sort, setSort] = useState<ArtistSort>('name');
   const [paretoIds, setParetoIds] = useState<Set<number> | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
+  const [confirmArtist, setConfirmArtist] = useState<ArtistStats | null>(null);
+  const unfollowMut = useUnfollowArtist();
 
   const { data: artists, isLoading, error, refetch } = useArtists({ source, sort });
 
@@ -137,6 +142,11 @@ function ArtistsPage(): ReactElement {
             key={`${a.id ?? 'local'}-${a.display_name}`}
             artist={a}
             onDetails={(id) => setDetailId(id)}
+            onUnfollow={(id) => {
+              const found = artists?.find((x) => x.id === id);
+              if (found !== undefined) setConfirmArtist(found);
+            }}
+            isUnfollowing={unfollowMut.isPending && unfollowMut.variables === a.id}
           />
         ))}
       </main>
@@ -145,6 +155,31 @@ function ArtistsPage(): ReactElement {
         artistId={detailId}
         open={detailId !== null}
         onOpenChange={(o) => { if (!o) setDetailId(null); }}
+        onUnfollowRequest={(a) => {
+          setDetailId(null);
+          setConfirmArtist(a);
+        }}
+      />
+
+      <ConfirmUnfollowDialog
+        artist={confirmArtist}
+        open={confirmArtist !== null}
+        onOpenChange={(o) => { if (!o) setConfirmArtist(null); }}
+        isPending={unfollowMut.isPending}
+        onConfirm={() => {
+          if (confirmArtist?.id == null) return;
+          const id = confirmArtist.id;
+          const name = confirmArtist.display_name;
+          unfollowMut.mutate(id, {
+            onSuccess: () => {
+              setConfirmArtist(null);
+              toast.success(`Unfollowed ${name}`);
+            },
+            onError: (err) => {
+              toast.error(err instanceof Error ? err.message : 'Unfollow failed');
+            },
+          });
+        }}
       />
 
       {overflow > 0 && (
