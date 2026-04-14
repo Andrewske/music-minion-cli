@@ -13,6 +13,7 @@ from web.backend.queries.artists import (
     delete_match_override,
     get_artist_detail,
     get_artist_stats,
+    get_pareto_artists,
     mark_artist_unfollowed,
     upsert_match_override,
 )
@@ -57,6 +58,27 @@ async def list_artists(
             return get_artist_stats(conn, source=source, sort=sort)
     except Exception as e:
         logger.exception(f"Failed to fetch artist stats: source={source} sort={sort}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/pareto")
+async def get_pareto() -> dict[str, Any]:
+    """Return artists producing 80% of feed volume over the last 30 days.
+
+    Uses a cumulative-sum window function ordered by event_count DESC.
+    Includes each artist whose predecessor-cumulative was below 80%, so
+    the smallest set of artists whose combined events reach 80% is returned.
+
+    Returns:
+        artists_producing_80pct: number of artists in the pareto set
+        total_events: total feed events in the last 30 days
+        threshold_ids: discovery_artist_id list, ordered by event_count DESC
+    """
+    try:
+        with get_db_connection() as conn:
+            return get_pareto_artists(conn)
+    except Exception as e:
+        logger.exception("Failed to compute pareto artists")
         raise HTTPException(status_code=500, detail=str(e))
 
 

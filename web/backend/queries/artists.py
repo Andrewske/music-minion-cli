@@ -338,6 +338,57 @@ def delete_match_override(conn: sqlite3.Connection, override_id: int) -> bool:
     return cursor.rowcount > 0
 
 
+def get_pareto_artists(conn: sqlite3.Connection) -> dict[str, Any]:
+    """Return artists producing 80% of feed volume in the last 30 days.
+
+    Uses a window-function query with cumulative sum ordered by event_count DESC.
+    The WHERE filter includes each artist whose predecessor-cumulative was below 80%
+    (i.e. (cumulative - event_count) / total < 0.80), which correctly handles:
+    - Single artist producing >80% alone (included as the first to cross threshold)
+    - Ties at the boundary (ROWS frame with tiebreaker avoids over-including)
+    - Empty events (returns zeros with empty list)
+    """
+    sql = """
+    WITH feed_totals AS (
+      SELECT discovery_artist_id, COUNT(*) AS event_count
+      FROM sc_feed_events
+      WHERE seen_at > datetime('now', '-30 days')
+      GROUP BY discovery_artist_id
+    ),
+    ranked AS (
+      SELECT discovery_artist_id,
+             event_count,
+             SUM(event_count) OVER () AS total,
+             SUM(event_count) OVER (
+               ORDER BY event_count DESC, discovery_artist_id ASC
+               ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+             ) AS cumulative
+      FROM feed_totals
+    )
+    SELECT discovery_artist_id, event_count, total
+    FROM ranked
+    WHERE (cumulative - event_count) * 1.0 / total < 0.80
+    ORDER BY event_count DESC, discovery_artist_id ASC
+    """
+    rows = conn.execute(sql).fetchall()
+
+    if not rows:
+        # Check if there are any events at all (to distinguish empty table vs all artists)
+        total_row = conn.execute(
+            "SELECT COUNT(*) FROM sc_feed_events WHERE seen_at > datetime('now', '-30 days')"
+        ).fetchone()
+        total = total_row[0] if total_row else 0
+        return {"artists_producing_80pct": 0, "total_events": total, "threshold_ids": []}
+
+    total = rows[0]["total"]
+    ids = [r["discovery_artist_id"] for r in rows]
+    return {
+        "artists_producing_80pct": len(ids),
+        "total_events": total,
+        "threshold_ids": ids,
+    }
+
+
 def sync_followings(
     conn: sqlite3.Connection,
     followings: list[dict[str, Any]],
