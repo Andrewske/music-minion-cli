@@ -9,7 +9,9 @@ import { ArtistDetailDialog } from '../components/artists/ArtistDetailDialog';
 import { ConfirmUnfollowDialog } from '../components/artists/ConfirmUnfollowDialog';
 import { ParetoBanner } from '../components/artists/ParetoBanner';
 import { ArtistFiltersBar } from '../components/artists/ArtistFiltersBar';
+import { ChipVisibilityMenu } from '../components/artists/ChipVisibilityMenu';
 import { Button } from '../components/ui/button';
+import { useVisibleChips } from '../stores/artistViewStore';
 
 export const Route = createFileRoute('/artists')({
   component: ArtistsPage,
@@ -84,6 +86,7 @@ function ArtistsPage(): ReactElement {
   const [detailId, setDetailId] = useState<number | null>(null);
   const [confirmArtist, setConfirmArtist] = useState<ArtistStats | null>(null);
   const unfollowMut = useUnfollowArtist();
+  const visibleChips = useVisibleChips();
 
   const { data: artists, isLoading, error, refetch } = useArtists({ source, sort });
 
@@ -132,6 +135,7 @@ function ArtistsPage(): ReactElement {
           onParetoClear={() => setParetoIds(null)}
           paretoCount={paretoIds?.size ?? 0}
           resultCount={visibleArtists.length}
+          trailingSlot={<ChipVisibilityMenu />}
         />
       </div>
 
@@ -141,6 +145,7 @@ function ArtistsPage(): ReactElement {
           <ArtistCard
             key={`${a.id ?? 'local'}-${a.display_name}`}
             artist={a}
+            visibleChips={visibleChips}
             onDetails={(id) => setDetailId(id)}
             onUnfollow={(id) => {
               const found = artists?.find((x) => x.id === id);
