@@ -3,7 +3,6 @@ import {
   Music,
   RefreshCw,
   Target,
-  Heart,
   Radio,
   Star,
   Users,
