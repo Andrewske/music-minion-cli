@@ -212,6 +212,94 @@ def get_artist_stats(
     return [_coerce_row(dict(r)) for r in rows]
 
 
+def get_artist_detail(
+    conn: sqlite3.Connection,
+    discovery_artist_id: int,
+) -> dict[str, Any] | None:
+    """Fetch full artist detail: stats row + feed events + library tracks + match overrides.
+
+    Returns None if discovery_artist_id does not exist.
+    """
+    # Verify artist exists and fetch its stats row
+    stats_sql = (
+        f"SELECT * FROM ({ARTISTS_STATS_SQL.strip()}) sub WHERE id = ?"
+    )
+    row = conn.execute(stats_sql, (discovery_artist_id,)).fetchone()
+    if row is None:
+        return None
+
+    artist = _coerce_row(dict(row))
+
+    # Recent feed events (last 50)
+    feed_rows = conn.execute(
+        """
+        SELECT track_sc_id, track_title, track_artist_name, seen_at, reposted_at
+        FROM sc_feed_events
+        WHERE discovery_artist_id = ?
+        ORDER BY seen_at DESC
+        LIMIT 50
+        """,
+        (discovery_artist_id,),
+    ).fetchall()
+    recent_feed_events = [dict(r) for r in feed_rows]
+
+    # Top library tracks via artist_match_resolved view (play_count computed from ratings)
+    track_rows = conn.execute(
+        """
+        SELECT t.id, t.title, t.artist, t.album, t.genre, t.year,
+               t.duration, t.local_path,
+               (SELECT COUNT(*) FROM ratings r
+                WHERE r.track_id = t.id
+                  AND r.rating_type NOT IN ('archive', 'skip')) AS play_count
+        FROM artist_match_resolved amr
+        JOIN tracks t ON t.artist_normalized = amr.local_name
+        WHERE amr.discovery_artist_id = ?
+        ORDER BY play_count DESC, t.title COLLATE NOCASE ASC
+        LIMIT 20
+        """,
+        (discovery_artist_id,),
+    ).fetchall()
+    top_library_tracks = [dict(r) for r in track_rows]
+
+    # Match overrides
+    override_rows = conn.execute(
+        """
+        SELECT id, local_artist_name, action, created_at
+        FROM artist_match_overrides
+        WHERE discovery_artist_id = ?
+        ORDER BY created_at DESC
+        """,
+        (discovery_artist_id,),
+    ).fetchall()
+    match_overrides = [dict(r) for r in override_rows]
+
+    return {
+        "artist": artist,
+        "recent_feed_events": recent_feed_events,
+        "top_library_tracks": top_library_tracks,
+        "match_overrides": match_overrides,
+    }
+
+
+def mark_artist_unfollowed(
+    conn: sqlite3.Connection,
+    discovery_artist_id: int,
+) -> int:
+    """Mark artist as unfollowed and delete all their feed events.
+
+    Runs in a single transaction. Returns number of feed_events deleted.
+    """
+    conn.execute(
+        "UPDATE discovery_artists SET is_following = 0 WHERE id = ?",
+        (discovery_artist_id,),
+    )
+    cursor = conn.execute(
+        "DELETE FROM sc_feed_events WHERE discovery_artist_id = ?",
+        (discovery_artist_id,),
+    )
+    return cursor.rowcount
+
+
 def sync_followings(
     conn: sqlite3.Connection,
     followings: list[dict[str, Any]],

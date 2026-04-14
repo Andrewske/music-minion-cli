@@ -2,11 +2,14 @@
 
 from typing import Any
 
+import requests as _requests
 from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
 
 from music_minion.core.database import get_db_connection
-from web.backend.queries.artists import get_artist_stats
+from music_minion.domain.library.providers.soundcloud.api import unfollow_user
+from web.backend.queries.artists import get_artist_detail, get_artist_stats, mark_artist_unfollowed
+from web.backend.soundcloud_auth import get_web_provider_state
 
 router = APIRouter(prefix="/api/artists", tags=["artists"])
 
@@ -41,3 +44,85 @@ async def list_artists(
     except Exception as e:
         logger.exception(f"Failed to fetch artist stats: source={source} sort={sort}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{discovery_artist_id}")
+async def get_artist(discovery_artist_id: int) -> dict[str, Any]:
+    """Return full detail for a single discovery artist.
+
+    Includes:
+    - artist: ArtistStats fields
+    - recent_feed_events: last 50 feed events ordered by seen_at DESC
+    - top_library_tracks: up to 20 local tracks by this artist ordered by play_count
+    - match_overrides: all artist_match_overrides rows for this artist
+    """
+    try:
+        with get_db_connection() as conn:
+            detail = get_artist_detail(conn, discovery_artist_id)
+        if detail is None:
+            raise HTTPException(status_code=404, detail=f"Artist {discovery_artist_id} not found")
+        return detail
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to fetch artist detail: id={discovery_artist_id}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{discovery_artist_id}/unfollow")
+async def unfollow_artist(discovery_artist_id: int) -> dict[str, Any]:
+    """Unfollow a discovery artist.
+
+    If the artist has a soundcloud_user_id, calls the SC API to unfollow.
+    SC 5xx / timeout → HTTP 503 with NO local state change.
+    SC 403/404 (already unfollowed) → treated as success.
+
+    On success:
+    - Sets is_following = 0 on discovery_artists row (row is NOT deleted).
+    - DELETEs all sc_feed_events for this artist.
+
+    Returns:
+        unfollowed: always True on success
+        sc_called: whether SC API was called
+        feed_events_deleted: number of feed events removed
+    """
+    with get_db_connection() as conn:
+        row = conn.execute(
+            "SELECT id, soundcloud_user_id FROM discovery_artists WHERE id = ?",
+            (discovery_artist_id,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Artist {discovery_artist_id} not found")
+
+        sc_user_id: str | None = row["soundcloud_user_id"]
+
+    # No SC user ID — local-only unfollow
+    if not sc_user_id:
+        with get_db_connection() as conn:
+            feed_events_deleted = mark_artist_unfollowed(conn, discovery_artist_id)
+            conn.commit()
+        return {"unfollowed": True, "sc_called": False, "feed_events_deleted": feed_events_deleted}
+
+    # SC unfollow — must succeed before mutating local state
+    state = get_web_provider_state()
+    if not state or not state.authenticated:
+        raise HTTPException(status_code=401, detail="SoundCloud not authenticated")
+
+    try:
+        _state, _success = unfollow_user(state, sc_user_id)
+    except _requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else 0
+        logger.exception(
+            f"SC unfollow failed for artist {discovery_artist_id} (sc_id={sc_user_id}): HTTP {status}"
+        )
+        raise HTTPException(status_code=503, detail="Unfollow failed, try again")
+    except _requests.Timeout:
+        logger.exception(f"SC unfollow timeout for artist {discovery_artist_id}")
+        raise HTTPException(status_code=503, detail="Unfollow failed, try again")
+
+    # SC call succeeded — update local state in single transaction
+    with get_db_connection() as conn:
+        feed_events_deleted = mark_artist_unfollowed(conn, discovery_artist_id)
+        conn.commit()
+
+    return {"unfollowed": True, "sc_called": True, "feed_events_deleted": feed_events_deleted}
