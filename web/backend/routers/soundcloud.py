@@ -1090,3 +1090,40 @@ async def sync_soundcloud_followings(db=Depends(get_db)) -> dict:
     except Exception as exc:
         logger.exception("Unexpected error during followings-sync")
         raise HTTPException(status_code=500, detail=f"Unexpected error: {exc}")
+
+
+# ============================================================================
+# Feed Sync Endpoints
+# ============================================================================
+
+
+@router.post("/feed-sync")
+async def trigger_feed_sync() -> dict:
+    """Manually trigger a SoundCloud stream feed sync.
+
+    Fetches /me/activities track-repost events since the last run and
+    stores them in sc_feed_events.
+
+    Returns:
+        {events_added, duration_ms, total_events}
+
+    Raises:
+        HTTPException 429: Sync already in progress (daemon holds lock)
+        HTTPException 503: SC rate-limited or upstream error
+    """
+    from web.backend.sc_feed_worker import run_manual_sync
+
+    return run_manual_sync()
+
+
+@router.get("/feed-sync/status")
+async def get_feed_sync_status() -> dict:
+    """Get the current sc_feed_sync_state row.
+
+    Returns:
+        {last_run_at, last_run_status, last_error,
+         events_added_last_run, total_events, last_run_duration_ms}
+    """
+    from web.backend.sc_feed_worker import get_sync_status
+
+    return get_sync_status()
