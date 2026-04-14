@@ -5,7 +5,7 @@ import { X, Music, RefreshCw, Target, Radio, Star, Users } from 'lucide-react';
 import { useArtist, useMatchOverride, useDeleteMatchOverride } from '../../hooks/useArtists';
 import { ArtistStatChip } from './ArtistStatChip';
 import { Button } from '../ui/button';
-import type { MatchOverride } from '../../api/artists';
+import type { MatchOverride, ArtistStats } from '../../api/artists';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -166,9 +166,15 @@ interface ArtistDetailDialogProps {
   artistId: number | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onUnfollowRequest?: (artist: ArtistStats) => void;
 }
 
-function DialogBody({ artistId }: { artistId: number }): ReactElement {
+interface DialogBodyProps {
+  artistId: number;
+  onUnfollowRequest?: (artist: ArtistStats) => void;
+}
+
+function DialogBody({ artistId, onUnfollowRequest }: DialogBodyProps): ReactElement {
   const { data, isLoading, error } = useArtist(artistId);
 
   if (isLoading) {
@@ -334,6 +340,19 @@ function DialogBody({ artistId }: { artistId: number }): ReactElement {
         )}
         <AddOverrideForm artistId={artistId} />
       </div>
+
+      {/* 6. Unfollow action (only when following + handler provided) */}
+      {artist.is_following && onUnfollowRequest !== undefined && (
+        <div className="border-t border-obsidian-border pt-4 flex justify-start">
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => onUnfollowRequest(artist)}
+          >
+            Unfollow
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -346,6 +365,7 @@ export function ArtistDetailDialog({
   artistId,
   open,
   onOpenChange,
+  onUnfollowRequest,
 }: ArtistDetailDialogProps): ReactElement {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -367,7 +387,7 @@ export function ArtistDetailDialog({
           </Dialog.Close>
 
           {open && artistId !== null ? (
-            <DialogBody artistId={artistId} />
+            <DialogBody artistId={artistId} onUnfollowRequest={onUnfollowRequest} />
           ) : null}
 
           {/* Footer */}
