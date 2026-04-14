@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { Search, Check } from 'lucide-react';
 
 type ArtistSource = 'all' | 'soundcloud' | 'local' | 'following';
@@ -15,6 +15,7 @@ interface ArtistFiltersBarProps {
   onParetoClear: () => void;
   paretoCount: number;
   resultCount: number;
+  trailingSlot?: ReactNode;
 }
 
 const SELECT_CLASS =
@@ -31,6 +32,7 @@ export function ArtistFiltersBar({
   onParetoClear,
   paretoCount,
   resultCount,
+  trailingSlot,
 }: ArtistFiltersBarProps): ReactElement {
   return (
     <div className="sticky top-0 z-10 bg-black/80 backdrop-blur-sm border-b border-obsidian-border -mx-6 px-6 py-3 flex items-center gap-3 flex-wrap">
@@ -85,8 +87,9 @@ export function ArtistFiltersBar({
         </button>
       )}
 
-      {/* Result count */}
+      {/* Result count + trailing slot */}
       <span className="ml-auto font-sf-mono text-xs text-white/40">{resultCount} results</span>
+      {trailingSlot}
     </div>
   );
 }
