@@ -3,6 +3,7 @@ import { useState, useMemo } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useArtists, useFollowingsSync } from '../hooks/useArtists';
 import { ArtistCard } from '../components/artists/ArtistCard';
+import { ArtistDetailDialog } from '../components/artists/ArtistDetailDialog';
 import { ParetoBanner } from '../components/artists/ParetoBanner';
 import { ArtistFiltersBar } from '../components/artists/ArtistFiltersBar';
 import { Button } from '../components/ui/button';
@@ -77,6 +78,7 @@ function ArtistsPage(): ReactElement {
   const [source, setSource] = useState<ArtistSource>('all');
   const [sort, setSort] = useState<ArtistSort>('name');
   const [paretoIds, setParetoIds] = useState<Set<number> | null>(null);
+  const [detailId, setDetailId] = useState<number | null>(null);
 
   const { data: artists, isLoading, error, refetch } = useArtists({ source, sort });
 
@@ -131,9 +133,19 @@ function ArtistsPage(): ReactElement {
       {/* TODO: virtualize if >2000 visible cards */}
       <main className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-4">
         {visibleArtists.map((a) => (
-          <ArtistCard key={`${a.id ?? 'local'}-${a.display_name}`} artist={a} />
+          <ArtistCard
+            key={`${a.id ?? 'local'}-${a.display_name}`}
+            artist={a}
+            onDetails={(id) => setDetailId(id)}
+          />
         ))}
       </main>
+
+      <ArtistDetailDialog
+        artistId={detailId}
+        open={detailId !== null}
+        onOpenChange={(o) => { if (!o) setDetailId(null); }}
+      />
 
       {overflow > 0 && (
         <p className="max-w-7xl mx-auto mt-6 font-sf-mono text-xs text-white/30 text-center">
