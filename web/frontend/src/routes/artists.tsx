@@ -2,6 +2,7 @@ import type { ReactElement } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useArtists, useFollowingsSync } from '../hooks/useArtists';
 import { ArtistCard } from '../components/artists/ArtistCard';
+import { ParetoBanner } from '../components/artists/ParetoBanner';
 import { Button } from '../components/ui/button';
 
 export const Route = createFileRoute('/artists')({
@@ -84,6 +85,13 @@ function ArtistsPage(): ReactElement {
           {artists.length} artists · SoundCloud + local library
         </p>
       </header>
+
+      <div className="max-w-7xl mx-auto">
+        <ParetoBanner onReview={(ids) => {
+          // For now, log. Task 13 adds filter state wiring.
+          console.log('pareto review:', ids);
+        }} />
+      </div>
 
       {/* TODO: virtualize if >2000 visible cards */}
       <main className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
