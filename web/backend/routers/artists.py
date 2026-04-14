@@ -5,16 +5,30 @@ from typing import Any
 import requests as _requests
 from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
+from pydantic import BaseModel
 
 from music_minion.core.database import get_db_connection
 from music_minion.domain.library.providers.soundcloud.api import unfollow_user
-from web.backend.queries.artists import get_artist_detail, get_artist_stats, mark_artist_unfollowed
+from web.backend.queries.artists import (
+    delete_match_override,
+    get_artist_detail,
+    get_artist_stats,
+    mark_artist_unfollowed,
+    upsert_match_override,
+)
 from web.backend.soundcloud_auth import get_web_provider_state
 
 router = APIRouter(prefix="/api/artists", tags=["artists"])
 
 _VALID_SOURCES = {"all", "soundcloud", "local", "following"}
 _VALID_SORTS = {"name", "rank", "library", "reposts", "hit_rate", "noise", "last_loved"}
+_VALID_ACTIONS = {"merge", "split"}
+
+
+class MatchOverrideRequest(BaseModel):
+    discovery_artist_id: int
+    local_artist_name: str
+    action: str
 
 
 @router.get("")
@@ -126,3 +140,80 @@ async def unfollow_artist(discovery_artist_id: int) -> dict[str, Any]:
         conn.commit()
 
     return {"unfollowed": True, "sc_called": True, "feed_events_deleted": feed_events_deleted}
+
+
+@router.post("/match-override")
+async def create_match_override(body: MatchOverrideRequest) -> dict[str, Any]:
+    """Upsert an artist match override (merge or split).
+
+    Normalizes local_artist_name using the same formula as tracks.artist_normalized.
+    ON CONFLICT updates the action, so calling with the same artist pair is idempotent.
+    """
+    if body.action not in _VALID_ACTIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid action '{body.action}'. Must be one of: {sorted(_VALID_ACTIONS)}",
+        )
+
+    try:
+        with get_db_connection() as conn:
+            # Validate discovery_artist_id exists
+            row = conn.execute(
+                "SELECT id FROM discovery_artists WHERE id = ?",
+                (body.discovery_artist_id,),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Artist {body.discovery_artist_id} not found",
+                )
+
+            # Compute normalized name via SQL (mirrors tracks.artist_normalized)
+            norm_row = conn.execute(
+                "SELECT LOWER(TRIM(REPLACE(REPLACE(REPLACE(?, '.', ''), '!', ''), '?', '')))",
+                (body.local_artist_name,),
+            ).fetchone()
+            normalized_name: str = norm_row[0] if norm_row else ""
+
+            if not normalized_name:
+                raise HTTPException(
+                    status_code=400,
+                    detail="local_artist_name is empty after normalization",
+                )
+
+            override_id = upsert_match_override(
+                conn, body.discovery_artist_id, body.local_artist_name, body.action
+            )
+            conn.commit()
+
+        return {
+            "override_id": override_id,
+            "discovery_artist_id": body.discovery_artist_id,
+            "local_artist_name": normalized_name,
+            "action": body.action,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(
+            f"Failed to upsert match override: artist={body.discovery_artist_id} "
+            f"name='{body.local_artist_name}' action={body.action}"
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/match-override/{override_id}")
+async def remove_match_override(override_id: int) -> dict[str, Any]:
+    """Delete a match override by id."""
+    try:
+        with get_db_connection() as conn:
+            deleted = delete_match_override(conn, override_id)
+            conn.commit()
+        if not deleted:
+            raise HTTPException(status_code=404, detail=f"Override {override_id} not found")
+        return {"deleted": True, "override_id": override_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to delete match override: id={override_id}")
+        raise HTTPException(status_code=500, detail=str(e))

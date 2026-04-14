@@ -300,6 +300,44 @@ def mark_artist_unfollowed(
     return cursor.rowcount
 
 
+def upsert_match_override(
+    conn: sqlite3.Connection,
+    discovery_artist_id: int,
+    local_artist_name: str,
+    action: str,
+) -> int:
+    """Upsert an artist match override. Returns the row id.
+
+    Normalizes local_artist_name via SQL to match tracks.artist_normalized:
+    LOWER(TRIM(REPLACE(REPLACE(REPLACE(x, '.', ''), '!', ''), '?', '')))
+    """
+    cursor = conn.execute(
+        """
+        INSERT INTO artist_match_overrides (discovery_artist_id, local_artist_name, action)
+        VALUES (
+            ?,
+            LOWER(TRIM(REPLACE(REPLACE(REPLACE(?, '.', ''), '!', ''), '?', ''))),
+            ?
+        )
+        ON CONFLICT(local_artist_name, discovery_artist_id)
+        DO UPDATE SET action = excluded.action
+        RETURNING id
+        """,
+        (discovery_artist_id, local_artist_name, action),
+    )
+    row = cursor.fetchone()
+    return row[0]
+
+
+def delete_match_override(conn: sqlite3.Connection, override_id: int) -> bool:
+    """Delete a match override by id. Returns True if a row was deleted."""
+    cursor = conn.execute(
+        "DELETE FROM artist_match_overrides WHERE id = ?",
+        (override_id,),
+    )
+    return cursor.rowcount > 0
+
+
 def sync_followings(
     conn: sqlite3.Connection,
     followings: list[dict[str, Any]],
