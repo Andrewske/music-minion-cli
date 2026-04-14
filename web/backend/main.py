@@ -106,6 +106,11 @@ async def startup_event():
     # Restore player queue state from database
     await restore_player_queue_state()
 
+    # Start background SC feed-sync daemon
+    from web.backend.sc_feed_worker import start_feed_worker
+
+    start_feed_worker()
+
 
 @app.get("/health")
 async def health_check():
