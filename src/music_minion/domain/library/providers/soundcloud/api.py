@@ -5,10 +5,12 @@ Handles library sync, playlists, likes, and stream URLs.
 """
 
 import json
+import time
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
 import requests
+from requests import Response
 from loguru import logger
 from requests.exceptions import HTTPError
 
@@ -948,7 +950,7 @@ def add_track_to_playlist(
             try:
                 error_detail = e.response.text[:500]  # First 500 chars of error
                 return state, False, f"HTTP {e.response.status_code}: {error_detail}"
-            except:
+            except Exception:
                 return state, False, f"HTTP error: {e.response.status_code}"
     except requests.RequestException as e:
         logger.error(f"Network error adding track to playlist: {str(e)}", exc_info=True)
@@ -1043,7 +1045,7 @@ def remove_track_from_playlist(
             try:
                 error_detail = e.response.text[:500]  # First 500 chars of error
                 return state, False, f"HTTP {e.response.status_code}: {error_detail}"
-            except:
+            except Exception:
                 return state, False, f"HTTP error: {e.response.status_code}"
     except requests.RequestException as e:
         logger.error(
@@ -1125,6 +1127,59 @@ def reorder_playlist(
         return state, False, f"Network error: {str(e)}"
     except Exception as e:
         logger.error(f"Unexpected error reordering playlist: {str(e)}", exc_info=True)
+        return state, False, f"Unexpected error: {str(e)}"
+
+
+def delete_playlist(
+    state: ProviderState, playlist_id: str
+) -> tuple[ProviderState, bool, Optional[str]]:
+    """Delete a SoundCloud playlist.
+
+    Args:
+        state: Current provider state
+        playlist_id: SoundCloud playlist ID
+
+    Returns:
+        (new_state, success, error_message)
+    """
+    if not state.authenticated:
+        return state, False, "Not authenticated with SoundCloud"
+
+    state, token_data = _ensure_valid_token(state)
+    if not token_data:
+        return state, False, "Token expired and refresh failed"
+
+    access_token = token_data["access_token"]
+
+    try:
+        playlist_urn = _format_playlist_urn(playlist_id)
+        url = f"{API_BASE_URL}/playlists/{playlist_urn}"
+        headers = {"Authorization": f"OAuth {access_token}"}
+
+        response = requests.delete(url, headers=headers, timeout=30)
+        response.raise_for_status()
+
+        return state, True, None
+
+    except requests.HTTPError as e:
+        logger.error(f"HTTP error deleting playlist: {e.response.status_code}")
+        if e.response.status_code == 401:
+            return state.with_authenticated(False), False, "Authentication failed (401)"
+        elif e.response.status_code == 404:
+            return state, True, None  # Already deleted
+        elif e.response.status_code == 429:
+            return state, False, "Rate limit exceeded (429)"
+        else:
+            try:
+                error_detail = e.response.text[:500]
+                return state, False, f"HTTP {e.response.status_code}: {error_detail}"
+            except Exception:
+                return state, False, f"HTTP error: {e.response.status_code}"
+    except requests.RequestException as e:
+        logger.error(f"Network error deleting playlist: {str(e)}", exc_info=True)
+        return state, False, f"Network error: {str(e)}"
+    except Exception as e:
+        logger.error(f"Unexpected error deleting playlist: {str(e)}", exc_info=True)
         return state, False, f"Unexpected error: {str(e)}"
 
 
@@ -1277,3 +1332,222 @@ def resolve_user_by_slug(
         return state, None, "Connection error"
     except json.JSONDecodeError:
         return state, None, "Invalid JSON response"
+
+
+# ============================================================================
+# Discovery: followings, unfollow, activity stream
+# ============================================================================
+
+
+def _request_with_backoff(
+    state: ProviderState, method: str, url: str, **kwargs: Any
+) -> tuple[ProviderState, Response]:
+    """Make an authenticated request with 429/5xx retry logic.
+
+    On 429: retries after 2s, 4s, 8s (max 3 retries), then raises.
+    On 5xx: retries once after 5s, then raises.
+    Refreshes token before the first attempt.
+
+    Args:
+        state: Current provider state
+        method: HTTP method ('GET', 'DELETE', etc.)
+        url: Request URL
+        **kwargs: Extra kwargs passed to requests (params, headers, json, etc.)
+
+    Returns:
+        (updated_state, Response)
+
+    Raises:
+        requests.HTTPError: On unrecoverable HTTP errors
+    """
+    state, token_data = _ensure_valid_token(state)
+    if not token_data:
+        raise requests.HTTPError("No valid token available")
+
+    kwargs.setdefault("timeout", 30)
+    kwargs.setdefault("headers", {})
+    kwargs["headers"]["Authorization"] = f"OAuth {token_data['access_token']}"
+
+    backoff_delays = [2, 4, 8]
+    five_xx_retried = False
+
+    for attempt in range(4):  # 1 initial + 3 retries
+        response = requests.request(method, url, **kwargs)
+
+        if response.status_code == 429:
+            if attempt < len(backoff_delays):
+                delay = backoff_delays[attempt]
+                logger.warning(f"SC 429 rate limit on {url}, retrying in {delay}s")
+                time.sleep(delay)
+                continue
+            response.raise_for_status()
+
+        if response.status_code >= 500 and not five_xx_retried:
+            logger.warning(f"SC {response.status_code} on {url}, retrying in 5s")
+            time.sleep(5)
+            five_xx_retried = True
+            continue
+
+        response.raise_for_status()
+        return state, response
+
+    # Exhausted retries — raise on the last response
+    response.raise_for_status()
+    return state, response  # unreachable, satisfies type checker
+
+
+def get_followings(
+    state: ProviderState, limit: int = 200
+) -> tuple[ProviderState, list[dict[str, Any]]]:
+    """Fetch the authenticated user's followings (paginated).
+
+    Args:
+        state: Current provider state
+        limit: Page size per request (max 200, default 200)
+
+    Returns:
+        (updated_state, flat list of user dicts from SC API)
+    """
+    if not state.authenticated:
+        return state, []
+
+    url: Optional[str] = f"{API_BASE_URL}/me/followings"
+    params: dict[str, Any] = {"limit": min(limit, 200), "linked_partitioning": True}
+    results: list[dict[str, Any]] = []
+
+    while url:
+        state, response = _request_with_backoff(state, "GET", url, params=params)
+        data = response.json()
+
+        if isinstance(data, list):
+            results.extend(data)
+            url = None
+        else:
+            results.extend(data.get("collection", []))
+            url = data.get("next_href")
+
+        params = {}  # next_href already contains pagination params
+
+    logger.info(f"Fetched {len(results)} followings")
+    return state, results
+
+
+def unfollow_user(
+    state: ProviderState, user_id: str
+) -> tuple[ProviderState, bool]:
+    """Unfollow a SoundCloud user.
+
+    Treats 403/404 as soft-success (SC may already reflect the unfollow).
+    5xx errors are raised to the caller.
+
+    Args:
+        state: Current provider state
+        user_id: SoundCloud user ID (numeric string)
+
+    Returns:
+        (updated_state, success)
+
+    Raises:
+        requests.HTTPError: On 5xx errors
+    """
+    if not state.authenticated:
+        return state, False
+
+    url = f"{API_BASE_URL}/me/followings/{user_id}"
+
+    try:
+        state, _ = _request_with_backoff(state, "DELETE", url)
+        logger.info(f"Unfollowed SC user {user_id}")
+        return state, True
+    except requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else 0
+        if status in (403, 404):
+            logger.warning(f"SC unfollow {user_id} got {status} — treating as success")
+            return state, True
+        raise
+
+
+def _collect_stream_page(
+    data: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Extract track-repost entries from one page of /me/activities."""
+    collection = data.get("collection", [])
+    return [e for e in collection if e.get("type") == "track-repost"]
+
+
+def get_stream(
+    state: ProviderState,
+    since: Optional[datetime],
+    limit: int = 200,
+) -> tuple[ProviderState, list[dict[str, Any]]]:
+    """Fetch the authenticated user's activity stream, filtered to track reposts.
+
+    Paginates GET /me/activities. Malformed/unexpected JSON on a page is
+    logged and skipped; pagination continues with the next page.
+
+    Args:
+        state: Current provider state
+        since: If provided, only return entries created after this datetime.
+               Filtering is done client-side (SC does not guarantee server-side filtering).
+               Pass None for a cold-start fetch — caller decides the cap.
+        limit: Page size per request (max 200, default 200)
+
+    Returns:
+        (updated_state, list of track-repost activity dicts)
+    """
+    if not state.authenticated:
+        return state, []
+
+    url: Optional[str] = f"{API_BASE_URL}/me/activities"
+    params: dict[str, Any] = {"limit": min(limit, 200)}
+    results: list[dict[str, Any]] = []
+
+    while url:
+        try:
+            state, response = _request_with_backoff(state, "GET", url, params=params)
+            data = response.json()
+        except (json.JSONDecodeError, ValueError):
+            logger.exception(f"Malformed JSON from SC activities page {url}, skipping")
+            break
+
+        try:
+            page_entries = _collect_stream_page(data)
+        except Exception:
+            logger.exception(f"Unexpected shape on SC activities page {url}, skipping")
+            url = data.get("next_href") if isinstance(data, dict) else None
+            params = {}
+            continue
+
+        if since is not None:
+            filtered = [
+                e for e in page_entries
+                if _parse_activity_created_at(e) > since
+            ]
+            results.extend(filtered)
+            # Stop paginating once entries fall before `since`
+            if len(filtered) < len(page_entries):
+                break
+        else:
+            results.extend(page_entries)
+
+        url = data.get("next_href") if isinstance(data, dict) else None
+        params = {}
+
+    logger.info(f"Fetched {len(results)} track-repost stream entries")
+    return state, results
+
+
+def _parse_activity_created_at(entry: dict[str, Any]) -> datetime:
+    """Parse the created_at timestamp from an activity entry.
+
+    SC activity entries have a top-level ``created_at`` field as ISO-8601.
+    Falls back to epoch on parse failure so filtering is conservative.
+    """
+    raw = entry.get("created_at", "")
+    try:
+        # SC timestamps: "2024/01/15 12:34:56 +0000" or ISO-8601
+        raw_clean = raw.replace("/", "-").replace(" +0000", "+00:00")
+        return datetime.fromisoformat(raw_clean)
+    except (ValueError, TypeError):
+        logger.warning(f"Could not parse activity created_at: {raw!r}")
+        return datetime.fromtimestamp(0)
