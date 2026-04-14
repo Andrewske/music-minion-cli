@@ -31,10 +31,12 @@ from music_minion.domain.library.providers.soundcloud.import_handlers import (
 from music_minion.domain.library.providers.soundcloud.api import (
     get_playlists as sc_get_playlists,
     get_playlist_tracks as sc_get_playlist_tracks,
+    get_followings as sc_get_followings,
 )
 from music_minion.domain.library.deduplication import find_best_matches_tfidf
 from web.backend.soundcloud_auth import get_web_provider_state
 from web.backend.deps import get_db
+from web.backend.queries.artists import sync_followings
 from web.backend.schemas import (
     MatchPlaylistResponse,
     ScPlaylistMatch,
@@ -1028,3 +1030,63 @@ async def sync_soundcloud_library(force: bool = False, db=Depends(get_db)) -> Sy
         errors=errors,
         last_synced_at=last_synced_at,
     )
+
+
+# ============================================================================
+# Followings Sync
+# ============================================================================
+
+
+@router.post("/followings-sync")
+async def sync_soundcloud_followings(db=Depends(get_db)) -> dict:
+    """Sync SoundCloud followings into discovery_artists.
+
+    Fetches all accounts the authenticated user follows, then upserts them
+    into discovery_artists:
+    - Artists no longer followed are marked is_following=0.
+    - Active followings are upserted with avatar/follower_count/display_name.
+
+    Returns:
+        followings_synced: total active followings written
+        new_artists: rows inserted (not previously in discovery_artists)
+        unfollowed_remotely: artists that lost their following status this sync
+
+    Raises:
+        HTTPException 401: not authenticated
+        HTTPException 503: SC rate-limit or 5xx (transient, retry)
+        HTTPException 500: unexpected error
+    """
+    import requests as _requests
+
+    state = get_web_provider_state()
+    if not state or not state.authenticated:
+        raise HTTPException(status_code=401, detail="SoundCloud not authenticated")
+
+    try:
+        _state, followings = sc_get_followings(state)
+
+        if not _state.authenticated:
+            raise HTTPException(status_code=401, detail="SoundCloud not authenticated")
+
+        result = sync_followings(db, followings)
+        db.commit()
+        return result
+
+    except HTTPException:
+        raise
+    except _requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else 0
+        if status == 429 or status >= 500:
+            raise HTTPException(
+                status_code=503,
+                detail="SoundCloud API unavailable, please retry later",
+            )
+        logger.exception("SC HTTP error during followings-sync")
+        raise HTTPException(status_code=500, detail=f"SC API error: {exc}")
+    except Timeout:
+        raise HTTPException(
+            status_code=503, detail="SoundCloud API timeout, please retry"
+        )
+    except Exception as exc:
+        logger.exception("Unexpected error during followings-sync")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {exc}")
