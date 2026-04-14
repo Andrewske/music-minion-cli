@@ -10,6 +10,7 @@ import { ConfirmUnfollowDialog } from '../components/artists/ConfirmUnfollowDial
 import { ParetoBanner } from '../components/artists/ParetoBanner';
 import { ArtistFiltersBar } from '../components/artists/ArtistFiltersBar';
 import { ChipVisibilityMenu } from '../components/artists/ChipVisibilityMenu';
+import { SyncStatusHeader } from '../components/artists/SyncStatusHeader';
 import { Button } from '../components/ui/button';
 import { useVisibleChips } from '../stores/artistViewStore';
 
@@ -122,6 +123,7 @@ function ArtistsPage(): ReactElement {
       </header>
 
       <div className="max-w-7xl mx-auto">
+        <SyncStatusHeader />
         <ParetoBanner onReview={(ids) => setParetoIds(new Set(ids))} />
 
         <ArtistFiltersBar
