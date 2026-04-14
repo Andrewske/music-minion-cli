@@ -260,6 +260,7 @@ export function ArtistCard({
           variant="ghost"
           size="sm"
           onClick={handleDetails}
+          disabled={!onDetails || artist.id == null}
         >
           Details
         </Button>
