@@ -51,6 +51,15 @@ export { builderApi } from './api/builder';
 export type { Filter, Track, TrackActionResponse } from './api/builder';
 export * from './api/buckets';
 export {
+  getArtists, getArtist, unfollowArtist, createMatchOverride, deleteMatchOverride,
+  getPareto, syncFollowings, syncFeed, getFeedSyncStatus,
+} from './api/artists';
+export type {
+  ArtistStats, ArtistDetail, FeedEvent, LibraryTrack, MatchOverride,
+  ParetoResult, FeedSyncState, FirstLovedTrack, UnfollowResult, FollowingsSyncResult,
+  GetArtistsOptions, CreateMatchOverrideBody,
+} from './api/artists';
+export {
   triggerDiscoverySync, getDiscoverySyncStatus, getLastSync, seedArtists,
 } from './api/discovery';
 export type {
