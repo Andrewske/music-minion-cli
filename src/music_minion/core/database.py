@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 51  # Add discovery tables for SoundCloud reposts sync
+SCHEMA_VERSION = 52  # Artists page: normalized columns, sc_feed_events, artist_match tables
 
 
 # Initial top 50 curated emojis for music reactions
@@ -146,6 +146,9 @@ def get_db_connection():
 
     # Enable WAL mode for better concurrency (allows reads during writes)
     conn.execute("PRAGMA journal_mode=WAL")
+
+    # Enable FK enforcement (SQLite disables it by default)
+    conn.execute("PRAGMA foreign_keys=ON")
 
     try:
         yield conn
@@ -2350,6 +2353,191 @@ def migrate_database(conn, current_version: int) -> None:
         """)
         conn.commit()
         logger.info("  ✓ Migration to v51 complete: discovery tables added")
+
+    if current_version < 52:
+        logger.info("Migrating to v52: Artists page schema — normalized columns, feed events, match tables...")
+
+        # --- Extend discovery_artists ---
+        # Some columns may already exist on databases that had manual patches applied;
+        # use try/except for each ALTER so the migration is idempotent.
+        for col_ddl in [
+            "ALTER TABLE discovery_artists ADD COLUMN is_following BOOLEAN DEFAULT 0",
+            "ALTER TABLE discovery_artists ADD COLUMN avatar_url TEXT",
+            "ALTER TABLE discovery_artists ADD COLUMN follower_count INTEGER",
+            "ALTER TABLE discovery_artists ADD COLUMN display_name TEXT",
+            "ALTER TABLE discovery_artists ADD COLUMN last_sc_sync_at TIMESTAMP",
+        ]:
+            try:
+                conn.execute(col_ddl)
+            except Exception:
+                pass  # Column already exists — safe to skip
+
+        # Normalized display_name for discovery_artists (used in JOIN with tracks)
+        try:
+            conn.execute(
+                "ALTER TABLE discovery_artists ADD COLUMN display_name_normalized TEXT"
+            )
+        except Exception:
+            pass  # Already exists
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_discovery_artists_display_name_norm"
+            " ON discovery_artists(display_name_normalized)"
+        )
+
+        # Backfill display_name_normalized
+        conn.execute("""
+            UPDATE discovery_artists
+            SET display_name_normalized = LOWER(TRIM(REPLACE(REPLACE(REPLACE(
+                COALESCE(display_name, slug), '.', ''), '!', ''), '?', '')))
+        """)
+
+        # Insert / update triggers for discovery_artists.display_name_normalized
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS discovery_artists_dname_norm_ins
+            AFTER INSERT ON discovery_artists
+            BEGIN
+              UPDATE discovery_artists
+              SET display_name_normalized = LOWER(TRIM(REPLACE(REPLACE(REPLACE(
+                  COALESCE(NEW.display_name, NEW.slug), '.', ''), '!', ''), '?', '')))
+              WHERE id = NEW.id;
+            END
+        """)
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS discovery_artists_dname_norm_upd
+            AFTER UPDATE OF display_name, slug ON discovery_artists
+            BEGIN
+              UPDATE discovery_artists
+              SET display_name_normalized = LOWER(TRIM(REPLACE(REPLACE(REPLACE(
+                  COALESCE(NEW.display_name, NEW.slug), '.', ''), '!', ''), '?', '')))
+              WHERE id = NEW.id;
+            END
+        """)
+
+        # --- Extend tracks with artist_normalized ---
+        try:
+            conn.execute("ALTER TABLE tracks ADD COLUMN artist_normalized TEXT")
+        except Exception:
+            pass  # Already exists
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tracks_artist_normalized"
+            " ON tracks(artist_normalized)"
+        )
+
+        # Backfill artist_normalized
+        conn.execute("""
+            UPDATE tracks
+            SET artist_normalized = LOWER(TRIM(REPLACE(REPLACE(REPLACE(
+                COALESCE(artist, ''), '.', ''), '!', ''), '?', '')))
+        """)
+
+        # Insert / update triggers for tracks.artist_normalized
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS tracks_artist_norm_ins
+            AFTER INSERT ON tracks
+            BEGIN
+              UPDATE tracks
+              SET artist_normalized = LOWER(TRIM(REPLACE(REPLACE(REPLACE(
+                  COALESCE(NEW.artist, ''), '.', ''), '!', ''), '?', '')))
+              WHERE id = NEW.id;
+            END
+        """)
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS tracks_artist_norm_upd
+            AFTER UPDATE OF artist ON tracks
+            BEGIN
+              UPDATE tracks
+              SET artist_normalized = LOWER(TRIM(REPLACE(REPLACE(REPLACE(
+                  COALESCE(NEW.artist, ''), '.', ''), '!', ''), '?', '')))
+              WHERE id = NEW.id;
+            END
+        """)
+
+        # --- New sc_feed_events table ---
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sc_feed_events (
+              id INTEGER PRIMARY KEY,
+              discovery_artist_id INTEGER NOT NULL REFERENCES discovery_artists(id) ON DELETE CASCADE,
+              track_sc_id TEXT NOT NULL,
+              track_title TEXT,
+              track_artist_name TEXT,
+              seen_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              reposted_at TIMESTAMP NOT NULL,
+              raw_json TEXT,
+              UNIQUE(discovery_artist_id, track_sc_id, reposted_at)
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_feed_events_artist_seen"
+            " ON sc_feed_events(discovery_artist_id, seen_at)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_feed_events_sc_id"
+            " ON sc_feed_events(track_sc_id)"
+        )
+
+        # --- New sc_feed_sync_state single-row table ---
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sc_feed_sync_state (
+              id INTEGER PRIMARY KEY CHECK (id = 1),
+              last_run_at TIMESTAMP,
+              last_run_status TEXT,
+              last_error TEXT,
+              events_added_last_run INTEGER DEFAULT 0,
+              total_events INTEGER DEFAULT 0,
+              last_run_duration_ms INTEGER
+            )
+        """)
+        conn.execute("INSERT OR IGNORE INTO sc_feed_sync_state (id) VALUES (1)")
+
+        # --- New artist_match_overrides table ---
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS artist_match_overrides (
+              id INTEGER PRIMARY KEY,
+              discovery_artist_id INTEGER NOT NULL REFERENCES discovery_artists(id) ON DELETE CASCADE,
+              local_artist_name TEXT NOT NULL,
+              action TEXT NOT NULL CHECK (action IN ('merge', 'split')),
+              created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE(local_artist_name, discovery_artist_id)
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_artist_overrides_local"
+            " ON artist_match_overrides(local_artist_name)"
+        )
+
+        # --- New artist_match_resolved VIEW ---
+        conn.execute("DROP VIEW IF EXISTS artist_match_resolved")
+        conn.execute("""
+            CREATE VIEW artist_match_resolved AS
+            -- Merge overrides win
+            SELECT local_artist_name AS local_name, discovery_artist_id
+            FROM artist_match_overrides
+            WHERE action = 'merge'
+            UNION ALL
+            -- Normalized-name matches, minus any split overrides
+            SELECT t.artist_normalized AS local_name, da.id AS discovery_artist_id
+            FROM tracks t
+            INNER JOIN discovery_artists da ON da.display_name_normalized = t.artist_normalized
+            WHERE NOT EXISTS (
+              SELECT 1 FROM artist_match_overrides o
+              WHERE o.action = 'split'
+                AND o.local_artist_name = t.artist_normalized
+                AND o.discovery_artist_id = da.id
+            )
+            -- Don't double-emit if a merge override already covers this pair
+            AND NOT EXISTS (
+              SELECT 1 FROM artist_match_overrides o
+              WHERE o.action = 'merge'
+                AND o.local_artist_name = t.artist_normalized
+                AND o.discovery_artist_id = da.id
+            )
+            GROUP BY t.artist_normalized, da.id
+        """)
+
+        conn.commit()
+        logger.info("  ✓ Migration to v52 complete: artists page schema added")
 
 
 def init_database() -> None:
