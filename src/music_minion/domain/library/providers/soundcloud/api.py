@@ -7,7 +7,7 @@ Handles library sync, playlists, likes, and stream URLs.
 import json
 import time
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import requests
 from requests import Response
@@ -1467,73 +1467,108 @@ def unfollow_user(
         raise
 
 
+REPOST_ACTIVITY_TYPES = frozenset({
+    "track:repost", "track-repost",
+    "playlist:repost", "playlist-repost",
+})
+
+
 def _collect_stream_page(
     data: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Extract track-repost entries from one page of /me/activities."""
+    """Extract repost entries from one page of /me/feed."""
     collection = data.get("collection", [])
-    return [e for e in collection if e.get("type") == "track-repost"]
+    return [e for e in collection if e.get("type") in REPOST_ACTIVITY_TYPES]
 
 
 def get_stream(
     state: ProviderState,
     since: Optional[datetime],
     limit: int = 200,
+    on_page: Optional[Callable[[list[dict[str, Any]]], None]] = None,
 ) -> tuple[ProviderState, list[dict[str, Any]]]:
-    """Fetch the authenticated user's activity stream, filtered to track reposts.
+    """Fetch the authenticated user's feed, filtered to repost entries.
 
-    Paginates GET /me/activities. Malformed/unexpected JSON on a page is
-    logged and skipped; pagination continues with the next page.
+    Paginates GET /me/feed (replaces deprecated /me/activities). Malformed
+    JSON on a page is logged and skipped. Break conditions:
+      - page's oldest entry is older than `since`
+      - page has no entries at all
 
     Args:
         state: Current provider state
         since: If provided, only return entries created after this datetime.
-               Filtering is done client-side (SC does not guarantee server-side filtering).
-               Pass None for a cold-start fetch — caller decides the cap.
         limit: Page size per request (max 200, default 200)
+        on_page: Optional callback invoked with each page's filtered
+                 repost events, for incremental/streaming processing.
 
     Returns:
-        (updated_state, list of track-repost activity dicts)
+        (updated_state, list of repost activity dicts — cumulative across pages)
     """
     if not state.authenticated:
         return state, []
 
-    url: Optional[str] = f"{API_BASE_URL}/me/activities"
+    url: Optional[str] = f"{API_BASE_URL}/me/feed"
     params: dict[str, Any] = {"limit": min(limit, 200)}
     results: list[dict[str, Any]] = []
+    page_num = 0
 
     while url:
+        page_num += 1
         try:
             state, response = _request_with_backoff(state, "GET", url, params=params)
             data = response.json()
         except (json.JSONDecodeError, ValueError):
-            logger.exception(f"Malformed JSON from SC activities page {url}, skipping")
+            logger.exception(f"Malformed JSON from SC feed page {page_num}, stopping")
+            break
+
+        if not isinstance(data, dict):
+            logger.warning(f"SC feed page {page_num} returned non-dict, stopping")
+            break
+
+        raw_collection = data.get("collection", []) or []
+        if not raw_collection:
+            logger.info(f"SC feed page {page_num}: empty collection, stopping")
             break
 
         try:
-            page_entries = _collect_stream_page(data)
+            page_reposts = _collect_stream_page(data)
         except Exception:
-            logger.exception(f"Unexpected shape on SC activities page {url}, skipping")
-            url = data.get("next_href") if isinstance(data, dict) else None
+            logger.exception(f"Unexpected shape on SC feed page {page_num}, skipping")
+            url = data.get("next_href")
             params = {}
             continue
 
         if since is not None:
-            filtered = [
-                e for e in page_entries
+            page_reposts = [
+                e for e in page_reposts
                 if _parse_activity_created_at(e) > since
             ]
-            results.extend(filtered)
-            # Stop paginating once entries fall before `since`
-            if len(filtered) < len(page_entries):
-                break
-        else:
-            results.extend(page_entries)
 
-        url = data.get("next_href") if isinstance(data, dict) else None
+        results.extend(page_reposts)
+        if on_page is not None and page_reposts:
+            on_page(page_reposts)
+
+        logger.info(
+            f"SC feed page {page_num}: {len(raw_collection)} raw, "
+            f"{len(page_reposts)} reposts matching (cumulative={len(results)})"
+        )
+
+        if since is not None:
+            oldest = min(
+                (_parse_activity_created_at(e) for e in raw_collection),
+                default=None,
+            )
+            if oldest is not None and oldest <= since:
+                logger.info(
+                    f"SC feed page {page_num}: oldest entry {oldest.isoformat()} "
+                    f"<= since={since.isoformat()}, stopping"
+                )
+                break
+
+        url = data.get("next_href")
         params = {}
 
-    logger.info(f"Fetched {len(results)} track-repost stream entries")
+    logger.info(f"Fetched {len(results)} repost stream entries across {page_num} pages")
     return state, results
 
 
