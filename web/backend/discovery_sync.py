@@ -158,10 +158,12 @@ def sync_followings_reposts(
         logger.info("sync_followings_reposts: no followed artists due for check")
         return 0, []
 
-    seen_ids = discovery_queries.get_seen_track_ids()
-
+    # Pass empty seen_ids: feed-noise needs ALL reposter relationships, not
+    # just new-to-DB tracks. _fetch_all_reposts filters `unseen` for the
+    # playlist-building path, but that filter drops attribution for tracks
+    # reposted by multiple followed artists.
     state, artist_tracks, errors = _fetch_all_reposts(
-        state, artists, seen_ids, progress_callback
+        state, artists, set(), progress_callback
     )
 
     all_fetched: list[dict[str, Any]] = []
