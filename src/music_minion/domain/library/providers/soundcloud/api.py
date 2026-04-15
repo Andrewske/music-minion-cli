@@ -7,7 +7,7 @@ Handles library sync, playlists, likes, and stream URLs.
 import json
 import time
 from datetime import datetime, timedelta
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 import requests
 from requests import Response
@@ -1240,52 +1240,67 @@ def create_playlist(
         return state, None, f"Unexpected error: {str(e)}"
 
 
+MAX_REPOSTS_PAGES = 3  # Cap pagination per artist (600 reposts max)
+
+
 def get_user_reposts(
     state: ProviderState, user_id: str, limit: int = 200
 ) -> tuple[ProviderState, list[dict[str, Any]], Optional[str]]:
-    """Fetch a user's track reposts from SoundCloud.
+    """Fetch a user's track reposts from SoundCloud, paginated up to MAX_REPOSTS_PAGES.
 
-    Uses GET /users/soundcloud:users:{user_id}/reposts/tracks endpoint.
+    Uses GET /users/soundcloud:users:{user_id}/reposts/tracks. Routes through
+    _request_with_backoff for 429/5xx retry. SC returns newest-first, so the
+    first page always contains the most recent reposts.
 
     Args:
         state: Current provider state
         user_id: SoundCloud user ID (numeric string)
-        limit: Maximum tracks to fetch (1-200, default 200)
+        limit: Page size (1-200, default 200)
 
     Returns:
         (updated_state, tracks_list, error_message_or_None)
     """
-    state, token_data = _ensure_valid_token(state)
-    if not token_data:
-        return state, [], "Not authenticated"
+    url: Optional[str] = f"{API_BASE_URL}/users/soundcloud:users:{user_id}/reposts/tracks"
+    params: dict[str, Any] = {"limit": min(limit, 200), "linked_partitioning": "true"}
+    results: list[dict[str, Any]] = []
+    pages = 0
 
-    url = f"{API_BASE_URL}/users/soundcloud:users:{user_id}/reposts/tracks"
-    params = {"limit": min(limit, 200), "linked_partitioning": "true"}
-    headers = {"Authorization": f"OAuth {token_data['access_token']}"}
+    while url and pages < MAX_REPOSTS_PAGES:
+        pages += 1
+        try:
+            state, response = _request_with_backoff(state, "GET", url, params=params)
+        except HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else 0
+            if status == 401:
+                return state, results, "Authentication failed"
+            if status == 404:
+                return state, results, f"User {user_id} not found"
+            if status == 429:
+                return state, results, "Rate limited"
+            return state, results, f"HTTP {status}"
+        except requests.exceptions.Timeout:
+            return state, results, "Request timed out"
+        except requests.exceptions.ConnectionError:
+            return state, results, "Connection error"
 
-    try:
-        response = requests.get(url, params=params, headers=headers, timeout=15)
+        try:
+            data = response.json()
+        except (json.JSONDecodeError, ValueError):
+            return state, results, "Invalid JSON response"
 
-        if response.status_code == 401:
-            return state, [], "Authentication failed"
-        elif response.status_code == 404:
-            return state, [], f"User {user_id} not found"
-        elif response.status_code == 429:
-            return state, [], "Rate limited"
-        elif not response.ok:
-            return state, [], f"HTTP {response.status_code}"
+        if isinstance(data, list):
+            results.extend(data)
+            url = None
+        else:
+            results.extend(data.get("collection", []) or [])
+            url = data.get("next_href")
 
-        data = response.json()
-        collection = data.get("collection", [])
-        logger.debug(f"Fetched {len(collection)} reposts for user {user_id}")
-        return state, collection, None
+        params = {}  # next_href already contains pagination params
 
-    except requests.exceptions.Timeout:
-        return state, [], "Request timed out"
-    except requests.exceptions.ConnectionError:
-        return state, [], "Connection error"
-    except json.JSONDecodeError:
-        return state, [], "Invalid JSON response"
+    logger.debug(
+        f"Fetched {len(results)} reposts for user {user_id} across {pages} page(s)"
+    )
+    return state, results, None
 
 
 def resolve_user_by_slug(
@@ -1467,122 +1482,3 @@ def unfollow_user(
         raise
 
 
-REPOST_ACTIVITY_TYPES = frozenset({
-    "track:repost", "track-repost",
-    "playlist:repost", "playlist-repost",
-})
-
-
-def _collect_stream_page(
-    data: dict[str, Any],
-) -> list[dict[str, Any]]:
-    """Extract repost entries from one page of /me/feed."""
-    collection = data.get("collection", [])
-    return [e for e in collection if e.get("type") in REPOST_ACTIVITY_TYPES]
-
-
-def get_stream(
-    state: ProviderState,
-    since: Optional[datetime],
-    limit: int = 200,
-    on_page: Optional[Callable[[list[dict[str, Any]]], None]] = None,
-) -> tuple[ProviderState, list[dict[str, Any]]]:
-    """Fetch the authenticated user's feed, filtered to repost entries.
-
-    Paginates GET /me/feed (replaces deprecated /me/activities). Malformed
-    JSON on a page is logged and skipped. Break conditions:
-      - page's oldest entry is older than `since`
-      - page has no entries at all
-
-    Args:
-        state: Current provider state
-        since: If provided, only return entries created after this datetime.
-        limit: Page size per request (max 200, default 200)
-        on_page: Optional callback invoked with each page's filtered
-                 repost events, for incremental/streaming processing.
-
-    Returns:
-        (updated_state, list of repost activity dicts — cumulative across pages)
-    """
-    if not state.authenticated:
-        return state, []
-
-    url: Optional[str] = f"{API_BASE_URL}/me/feed"
-    params: dict[str, Any] = {"limit": min(limit, 200)}
-    results: list[dict[str, Any]] = []
-    page_num = 0
-
-    while url:
-        page_num += 1
-        try:
-            state, response = _request_with_backoff(state, "GET", url, params=params)
-            data = response.json()
-        except (json.JSONDecodeError, ValueError):
-            logger.exception(f"Malformed JSON from SC feed page {page_num}, stopping")
-            break
-
-        if not isinstance(data, dict):
-            logger.warning(f"SC feed page {page_num} returned non-dict, stopping")
-            break
-
-        raw_collection = data.get("collection", []) or []
-        if not raw_collection:
-            logger.info(f"SC feed page {page_num}: empty collection, stopping")
-            break
-
-        try:
-            page_reposts = _collect_stream_page(data)
-        except Exception:
-            logger.exception(f"Unexpected shape on SC feed page {page_num}, skipping")
-            url = data.get("next_href")
-            params = {}
-            continue
-
-        if since is not None:
-            page_reposts = [
-                e for e in page_reposts
-                if _parse_activity_created_at(e) > since
-            ]
-
-        results.extend(page_reposts)
-        if on_page is not None and page_reposts:
-            on_page(page_reposts)
-
-        logger.info(
-            f"SC feed page {page_num}: {len(raw_collection)} raw, "
-            f"{len(page_reposts)} reposts matching (cumulative={len(results)})"
-        )
-
-        if since is not None:
-            oldest = min(
-                (_parse_activity_created_at(e) for e in raw_collection),
-                default=None,
-            )
-            if oldest is not None and oldest <= since:
-                logger.info(
-                    f"SC feed page {page_num}: oldest entry {oldest.isoformat()} "
-                    f"<= since={since.isoformat()}, stopping"
-                )
-                break
-
-        url = data.get("next_href")
-        params = {}
-
-    logger.info(f"Fetched {len(results)} repost stream entries across {page_num} pages")
-    return state, results
-
-
-def _parse_activity_created_at(entry: dict[str, Any]) -> datetime:
-    """Parse the created_at timestamp from an activity entry.
-
-    SC activity entries have a top-level ``created_at`` field as ISO-8601.
-    Falls back to epoch on parse failure so filtering is conservative.
-    """
-    raw = entry.get("created_at", "")
-    try:
-        # SC timestamps: "2024/01/15 12:34:56 +0000" or ISO-8601
-        raw_clean = raw.replace("/", "-").replace(" +0000", "+00:00")
-        return datetime.fromisoformat(raw_clean)
-    except (ValueError, TypeError):
-        logger.warning(f"Could not parse activity created_at: {raw!r}")
-        return datetime.fromtimestamp(0)
