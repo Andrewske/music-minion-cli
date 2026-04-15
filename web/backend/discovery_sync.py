@@ -139,6 +139,77 @@ def prepare_for_sync(playlist_id: int) -> tuple[int, list[int]]:
         return remaining_slots, kept_track_ids
 
 
+def sync_followings_reposts(
+    state: Any,
+    progress_callback: Optional[Callable[[str, int, int], None]] = None,
+) -> tuple[int, list[str]]:
+    """Lightweight sync: fetch reposts from all followed artists due for a check,
+    write rows to discovery_track_reposters with seen_at=now.
+
+    Used for feed-noise metric tracking on the Artists page. Does NOT trigger
+    playlist reorder, slot-cap selection, or push to SC. Inherits the adaptive
+    check_interval_days cadence from the existing discovery pipeline, so quiet
+    artists get checked less often.
+
+    Returns (events_added, errors).
+    """
+    artists = discovery_queries.get_followed_artists_due_for_check()
+    if not artists:
+        logger.info("sync_followings_reposts: no followed artists due for check")
+        return 0, []
+
+    seen_ids = discovery_queries.get_seen_track_ids()
+
+    state, artist_tracks, errors = _fetch_all_reposts(
+        state, artists, seen_ids, progress_callback
+    )
+
+    all_fetched: list[dict[str, Any]] = []
+    for artist_id, tracks in artist_tracks.items():
+        for track in tracks:
+            all_fetched.append({**track, "artist_id": artist_id})
+
+    if not all_fetched:
+        logger.info(f"sync_followings_reposts: checked {len(artists)} artists, 0 new reposts")
+        return 0, errors
+
+    discovery_records = [
+        {
+            "soundcloud_id": str(t["id"]),
+            "slug": t.get("permalink", ""),
+            "title": t.get("title", ""),
+            "artist_name": t.get("user", {}).get("username", "Unknown"),
+            "duration_ms": t.get("duration", 0) or 0,
+            "released_at": t.get("created_at"),
+        }
+        for t in all_fetched
+    ]
+    discovery_queries.insert_discovery_tracks(discovery_records)
+
+    sc_ids_fetched = [str(t["id"]) for t in all_fetched]
+    sc_id_to_discovery_id = discovery_queries.get_discovery_track_ids_by_sc_ids(sc_ids_fetched)
+
+    reposter_links: list[tuple[int, int, Optional[str]]] = []
+    for track in all_fetched:
+        sc_id = str(track["id"])
+        discovery_track_id = sc_id_to_discovery_id.get(sc_id)
+        if discovery_track_id is None:
+            continue
+        artist_id = track.get("artist_id")
+        if artist_id is None:
+            continue
+        reposted_at = track.get("created_at")
+        reposter_links.append((discovery_track_id, artist_id, reposted_at))
+
+    discovery_queries.insert_track_reposters(reposter_links)
+
+    logger.info(
+        f"sync_followings_reposts: checked {len(artists)} artists, "
+        f"{len(all_fetched)} reposts fetched, {len(reposter_links)} attributed"
+    )
+    return len(reposter_links), errors
+
+
 def _fetch_all_reposts(
     state: Any,
     artists: list[dict[str, Any]],
