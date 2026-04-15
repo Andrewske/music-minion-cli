@@ -143,6 +143,32 @@ def get_ranked_artists(include_not_due: bool = False) -> list[dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
 
 
+def get_followed_artists_due_for_check() -> list[dict[str, Any]]:
+    """Get followed artists due for a repost check.
+
+    Like get_ranked_artists() but filters by is_following=1 instead of
+    in_top_200=1. Applies the same adaptive cadence: artists whose
+    last_checked + check_interval_days <= now are returned.
+
+    Used by the feed-noise daemon to track all followings, not just
+    top-200 ranked artists.
+    """
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT * FROM discovery_artists
+            WHERE is_following = 1
+              AND soundcloud_user_id IS NOT NULL
+              AND (
+                last_checked IS NULL
+                OR datetime(last_checked, '+' || COALESCE(check_interval_days, 1) || ' days') <= datetime('now')
+              )
+            ORDER BY ranking IS NULL, ranking
+            """
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
 def get_seen_track_ids() -> set[str]:
     """Get all SoundCloud track IDs that have been seen before (for dedup)."""
     with get_db_connection() as conn:
@@ -187,7 +213,9 @@ def insert_discovery_tracks(tracks: list[dict[str, Any]]) -> int:
 def insert_track_reposters(
     links: list[tuple[int, int, Optional[str]]]
 ) -> None:
-    """Batch insert track-reposter relationships.
+    """Batch insert track-reposter relationships, tagged with seen_at=now.
+
+    INSERT OR IGNORE preserves first-observation seen_at for existing rows.
 
     Args:
         links: list of (discovery_track_id, discovery_artist_id, reposted_at_iso_or_None)
@@ -199,8 +227,8 @@ def insert_track_reposters(
         conn.executemany(
             """
             INSERT OR IGNORE INTO discovery_track_reposters
-                (discovery_track_id, discovery_artist_id, reposted_at)
-            VALUES (?, ?, ?)
+                (discovery_track_id, discovery_artist_id, reposted_at, seen_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
             """,
             links,
         )
