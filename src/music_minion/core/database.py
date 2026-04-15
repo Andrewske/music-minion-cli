@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 52  # Artists page: normalized columns, sc_feed_events, artist_match tables
+SCHEMA_VERSION = 53  # Feed-noise via discovery_track_reposters.seen_at; sc_feed_events dropped
 
 
 # Initial top 50 curated emojis for music reactions
@@ -2538,6 +2538,34 @@ def migrate_database(conn, current_version: int) -> None:
 
         conn.commit()
         logger.info("  ✓ Migration to v52 complete: artists page schema added")
+
+    if current_version < 53:
+        logger.info("Running migration to v53: feed-noise via discovery_track_reposters")
+
+        # SQLite cannot ADD COLUMN with CURRENT_TIMESTAMP default (non-constant).
+        # Add as nullable, backfill to now, then new inserts set seen_at explicitly.
+        try:
+            conn.execute(
+                "ALTER TABLE discovery_track_reposters ADD COLUMN seen_at TIMESTAMP"
+            )
+        except sqlite3.OperationalError as exc:
+            if "duplicate column" not in str(exc).lower():
+                raise
+
+        conn.execute(
+            "UPDATE discovery_track_reposters"
+            " SET seen_at = CURRENT_TIMESTAMP WHERE seen_at IS NULL"
+        )
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dtr_artist_seen"
+            " ON discovery_track_reposters(discovery_artist_id, seen_at)"
+        )
+
+        conn.execute("DROP TABLE IF EXISTS sc_feed_events")
+
+        conn.commit()
+        logger.info("  ✓ Migration to v53 complete: feed-noise uses discovery_track_reposters.seen_at")
 
 
 def init_database() -> None:
