@@ -22,7 +22,7 @@ feed_stats AS (
          COUNT(*) FILTER (WHERE seen_at > datetime('now', '-7 days')) / 7.0 AS noise_7d,
          COUNT(*) FILTER (WHERE seen_at > datetime('now', '-30 days')) / 30.0 AS noise_30d,
          MAX(seen_at) AS last_activity_at
-  FROM sc_feed_events GROUP BY discovery_artist_id
+  FROM discovery_track_reposters GROUP BY discovery_artist_id
 ),
 repost_counts AS (
   SELECT dtr.discovery_artist_id, COUNT(DISTINCT t.id) AS repost_count
@@ -230,13 +230,18 @@ def get_artist_detail(
 
     artist = _coerce_row(dict(row))
 
-    # Recent feed events (last 50)
+    # Recent feed events (last 50) via discovery_track_reposters JOIN discovery_tracks
     feed_rows = conn.execute(
         """
-        SELECT track_sc_id, track_title, track_artist_name, seen_at, reposted_at
-        FROM sc_feed_events
-        WHERE discovery_artist_id = ?
-        ORDER BY seen_at DESC
+        SELECT dt.soundcloud_id AS track_sc_id,
+               dt.title AS track_title,
+               dt.artist_name AS track_artist_name,
+               dtr.seen_at,
+               dtr.reposted_at
+        FROM discovery_track_reposters dtr
+        JOIN discovery_tracks dt ON dt.id = dtr.discovery_track_id
+        WHERE dtr.discovery_artist_id = ?
+        ORDER BY dtr.seen_at DESC
         LIMIT 50
         """,
         (discovery_artist_id,),
@@ -285,19 +290,20 @@ def mark_artist_unfollowed(
     conn: sqlite3.Connection,
     discovery_artist_id: int,
 ) -> int:
-    """Mark artist as unfollowed and delete all their feed events.
+    """Mark artist as unfollowed.
 
-    Runs in a single transaction. Returns number of feed_events deleted.
+    Does NOT delete discovery_track_reposters rows: that data is shared with
+    hit_rate and discovery-pipeline analytics. The feed_noise_7d/30d metric
+    decays naturally since no new reposter rows will be written for this
+    artist after is_following=0 (the sync skips them).
+
+    Returns 0 for response-shape compatibility with the frontend.
     """
     conn.execute(
         "UPDATE discovery_artists SET is_following = 0 WHERE id = ?",
         (discovery_artist_id,),
     )
-    cursor = conn.execute(
-        "DELETE FROM sc_feed_events WHERE discovery_artist_id = ?",
-        (discovery_artist_id,),
-    )
-    return cursor.rowcount
+    return 0
 
 
 def upsert_match_override(
@@ -351,7 +357,7 @@ def get_pareto_artists(conn: sqlite3.Connection) -> dict[str, Any]:
     sql = """
     WITH feed_totals AS (
       SELECT discovery_artist_id, COUNT(*) AS event_count
-      FROM sc_feed_events
+      FROM discovery_track_reposters
       WHERE seen_at > datetime('now', '-30 days')
       GROUP BY discovery_artist_id
     ),
@@ -375,7 +381,7 @@ def get_pareto_artists(conn: sqlite3.Connection) -> dict[str, Any]:
     if not rows:
         # Check if there are any events at all (to distinguish empty table vs all artists)
         total_row = conn.execute(
-            "SELECT COUNT(*) FROM sc_feed_events WHERE seen_at > datetime('now', '-30 days')"
+            "SELECT COUNT(*) FROM discovery_track_reposters WHERE seen_at > datetime('now', '-30 days')"
         ).fetchone()
         total = total_row[0] if total_row else 0
         return {"artists_producing_80pct": 0, "total_events": total, "threshold_ids": []}

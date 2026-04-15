@@ -1099,10 +1099,11 @@ async def sync_soundcloud_followings(db=Depends(get_db)) -> dict:
 
 @router.post("/feed-sync")
 async def trigger_feed_sync() -> dict:
-    """Manually trigger a SoundCloud stream feed sync.
+    """Manually trigger a SoundCloud feed-noise sync.
 
-    Fetches /me/activities track-repost events since the last run and
-    stores them in sc_feed_events.
+    Iterates followed artists due for a check, fetches their recent reposts
+    via /users/{id}/reposts/tracks, and writes reposter rows into
+    discovery_track_reposters with seen_at=now.
 
     Returns:
         {events_added, duration_ms, total_events}

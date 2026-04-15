@@ -115,12 +115,14 @@ async def unfollow_artist(discovery_artist_id: int) -> dict[str, Any]:
 
     On success:
     - Sets is_following = 0 on discovery_artists row (row is NOT deleted).
-    - DELETEs all sc_feed_events for this artist.
+    - discovery_track_reposters rows preserved (shared with hit_rate/discovery
+      analytics). feed_noise metric decays naturally since the artist is no
+      longer polled by sync_followings_reposts.
 
     Returns:
         unfollowed: always True on success
         sc_called: whether SC API was called
-        feed_events_deleted: number of feed events removed
+        feed_events_deleted: always 0 (shape preserved for frontend compat)
     """
     with get_db_connection() as conn:
         row = conn.execute(
