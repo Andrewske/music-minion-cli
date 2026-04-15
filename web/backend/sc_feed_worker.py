@@ -75,6 +75,69 @@ def _upsert_discovery_artist(
     return cursor.lastrowid
 
 
+def _write_events(
+    conn: Any, events: list[dict[str, Any]], now_iso: str
+) -> int:
+    """Write a batch of feed events to the DB. Returns count of new rows inserted."""
+    added = 0
+    for event in events:
+        user = event.get("user") or {}
+        track = event.get("track") or event.get("origin") or {}
+
+        if not user or not track:
+            logger.warning(f"feed_sync: skipping event with missing user/track: {list(event.keys())}")
+            continue
+
+        artist_id = _upsert_discovery_artist(conn, user)
+        if artist_id is None:
+            logger.warning("feed_sync: skipping event — reposter has no SC id")
+            continue
+
+        track_sc_id = str(track.get("id", "")).strip()
+        if not track_sc_id:
+            logger.warning("feed_sync: skipping event — track has no id")
+            continue
+
+        track_title: str | None = track.get("title")
+        track_user = track.get("user") or {}
+        track_artist_name: str | None = (
+            track_user.get("full_name") or track_user.get("username")
+        )
+
+        repost_at_raw: str | None = event.get("created_at")
+        sc_reposted_at: str | None = None
+        if repost_at_raw:
+            try:
+                cleaned = repost_at_raw.replace("/", "-").replace(" +0000", "+00:00")
+                sc_reposted_at = datetime.fromisoformat(cleaned).isoformat()
+            except (ValueError, TypeError):
+                sc_reposted_at = None
+
+        raw_json = json.dumps(event)
+
+        cursor = conn.execute(
+            """
+            INSERT OR IGNORE INTO sc_feed_events
+                (discovery_artist_id, track_sc_id, track_title,
+                 track_artist_name, reposted_at, seen_at, raw_json)
+            VALUES (?, ?, ?, ?, COALESCE(?, ?), ?, ?)
+            """,
+            (
+                artist_id,
+                track_sc_id,
+                track_title,
+                track_artist_name,
+                sc_reposted_at,
+                now_iso,
+                now_iso,
+                raw_json,
+            ),
+        )
+        if cursor.rowcount:
+            added += 1
+    return added
+
+
 def _fetch_feed_locked() -> dict[str, Any]:
     """Core feed sync. Caller must hold _feed_lock.
 
@@ -105,7 +168,7 @@ def _fetch_feed_locked() -> dict[str, Any]:
             since = None
 
     if since is None:
-        since = _now_utc() - timedelta(hours=48)
+        since = _now_utc() - timedelta(hours=24)
 
     logger.info(f"feed_sync_started since={since.isoformat()}")
 
@@ -116,83 +179,37 @@ def _fetch_feed_locked() -> dict[str, Any]:
 
     from music_minion.domain.library.providers.soundcloud.api import get_stream
 
+    now = _now_utc()
+    now_iso = now.isoformat()
+    events_added = 0
+
+    def on_page(page_events: list[dict[str, Any]]) -> None:
+        """Per-page commit: write the batch and commit immediately."""
+        nonlocal events_added
+        try:
+            with get_db_connection() as conn:
+                page_added = _write_events(conn, page_events, now_iso)
+                conn.commit()
+        except Exception:
+            logger.exception("feed_sync: failed to commit page batch")
+            raise
+        events_added += page_added
+        logger.info(f"feed_sync page commit: +{page_added} new (cumulative={events_added})")
+
     try:
-        _updated_state, events = get_stream(provider_state, since=since)
+        get_stream(provider_state, since=since, on_page=on_page)
     except Exception as exc:
         logger.exception("feed_sync_error during get_stream")
         _set_sync_error(str(exc))
         raise
 
-    now = _now_utc()
-    events_added = 0
-
     try:
         with get_db_connection() as conn:
-            for event in events:
-                user = event.get("user") or {}
-                track = event.get("track") or event.get("origin") or {}
-
-                if not user or not track:
-                    logger.warning(f"feed_sync: skipping event with missing user/track: {list(event.keys())}")
-                    continue
-
-                artist_id = _upsert_discovery_artist(conn, user)
-                if artist_id is None:
-                    logger.warning("feed_sync: skipping event — reposter has no SC id")
-                    continue
-
-                track_sc_id = str(track.get("id", "")).strip()
-                if not track_sc_id:
-                    logger.warning("feed_sync: skipping event — track has no id")
-                    continue
-
-                track_title: str | None = track.get("title")
-                track_user = track.get("user") or {}
-                track_artist_name: str | None = (
-                    track_user.get("full_name") or track_user.get("username")
-                )
-
-                # SC created_at is the repost timestamp for activity events
-                repost_at_raw: str | None = event.get("created_at")
-                sc_reposted_at: str | None = None
-                if repost_at_raw:
-                    try:
-                        cleaned = repost_at_raw.replace("/", "-").replace(" +0000", "+00:00")
-                        sc_reposted_at = datetime.fromisoformat(cleaned).isoformat()
-                    except (ValueError, TypeError):
-                        sc_reposted_at = None
-
-                raw_json = json.dumps(event)
-                now_iso = now.isoformat()
-
-                cursor = conn.execute(
-                    """
-                    INSERT OR IGNORE INTO sc_feed_events
-                        (discovery_artist_id, track_sc_id, track_title,
-                         track_artist_name, reposted_at, seen_at, raw_json)
-                    VALUES (?, ?, ?, ?, COALESCE(?, ?), ?, ?)
-                    """,
-                    (
-                        artist_id,
-                        track_sc_id,
-                        track_title,
-                        track_artist_name,
-                        sc_reposted_at,
-                        now_iso,
-                        now_iso,
-                        raw_json,
-                    ),
-                )
-                if cursor.rowcount:
-                    events_added += 1
-
             total_events_row = conn.execute(
                 "SELECT COUNT(*) FROM sc_feed_events"
             ).fetchone()
             total_events: int = total_events_row[0]
-
             duration_ms = int((time.monotonic() - start_ms) * 1000)
-
             conn.execute(
                 """
                 UPDATE sc_feed_sync_state
@@ -204,12 +221,11 @@ def _fetch_feed_locked() -> dict[str, Any]:
                     last_error = NULL
                 WHERE id = 1
                 """,
-                (now.isoformat(), events_added, total_events, duration_ms),
+                (now_iso, events_added, total_events, duration_ms),
             )
             conn.commit()
-
     except Exception as exc:
-        logger.exception("feed_sync_error during DB write")
+        logger.exception("feed_sync_error during final state write")
         _set_sync_error(str(exc))
         raise
 
