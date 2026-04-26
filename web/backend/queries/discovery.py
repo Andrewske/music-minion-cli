@@ -305,7 +305,9 @@ def get_unplaced_short_tracks(
                            ORDER BY da.ranking ASC
                        ) AS rn
                 FROM discovery_track_reposters dtr
-                JOIN discovery_artists da ON da.id = dtr.discovery_artist_id
+                JOIN discovery_artists da
+                  ON da.id = dtr.discovery_artist_id
+                 AND da.in_top_200 = 1
             ) best ON best.discovery_track_id = dt.id AND best.rn = 1
             WHERE dt.status = 'unseen'
               AND dt.duration_ms <= 600000

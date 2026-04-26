@@ -107,7 +107,9 @@ MINIMAL_SCHEMA_SQL = [
         artist_name TEXT,
         duration_ms INTEGER,
         released_at TEXT,
-        status TEXT
+        first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        status TEXT DEFAULT 'unseen',
+        playlist_batch INTEGER
     )""",
     """CREATE TABLE discovery_track_reposters (
         discovery_track_id INTEGER NOT NULL,
@@ -235,6 +237,99 @@ class TestSyncFollowingsReposts:
         with get_db_connection() as conn:
             count = conn.execute("SELECT COUNT(*) FROM discovery_track_reposters").fetchone()[0]
         assert count == 1
+
+
+class TestUnplacedBackfillTopOnly:
+    """Regression: backfill pool must filter to top-200 reposters.
+
+    Bug: feed-noise daemon ingested reposts from all followings, then the
+    backfill query joined discovery_artists without an in_top_200 filter,
+    so the SC reposts playlist filled up with tracks whose only reposters
+    were non-top-200 followings.
+    """
+
+    def test_excludes_tracks_only_reposted_by_non_top_200(self, test_db) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.discovery import get_unplaced_short_tracks
+
+        with get_db_connection() as conn:
+            # top-200 ranked artist
+            conn.execute(
+                "INSERT INTO discovery_artists "
+                "(soundcloud_user_id, slug, display_name, ranking, is_following, in_top_200) "
+                "VALUES ('1', 'top', 'Top', 50, 1, 1)"
+            )
+            # following only — not in top-200, NULL ranking
+            conn.execute(
+                "INSERT INTO discovery_artists "
+                "(soundcloud_user_id, slug, display_name, ranking, is_following, in_top_200) "
+                "VALUES ('2', 'follow', 'Follow', NULL, 1, 0)"
+            )
+            top_id = conn.execute(
+                "SELECT id FROM discovery_artists WHERE slug='top'"
+            ).fetchone()["id"]
+            follow_id = conn.execute(
+                "SELECT id FROM discovery_artists WHERE slug='follow'"
+            ).fetchone()["id"]
+
+            # track A: reposted only by non-top-200 following → must be excluded
+            # track B: reposted only by top-200 → must be included
+            # track C: reposted by both → must be included, attributed to top-200
+            conn.execute(
+                "INSERT INTO discovery_tracks (soundcloud_id, title, artist_name, "
+                "duration_ms, status, first_seen) "
+                "VALUES ('A', 'TrackA', 'X', 200000, 'unseen', '2026-04-01')"
+            )
+            conn.execute(
+                "INSERT INTO discovery_tracks (soundcloud_id, title, artist_name, "
+                "duration_ms, status, first_seen) "
+                "VALUES ('B', 'TrackB', 'Y', 200000, 'unseen', '2026-04-02')"
+            )
+            conn.execute(
+                "INSERT INTO discovery_tracks (soundcloud_id, title, artist_name, "
+                "duration_ms, status, first_seen) "
+                "VALUES ('C', 'TrackC', 'Z', 200000, 'unseen', '2026-04-03')"
+            )
+            track_a = conn.execute(
+                "SELECT id FROM discovery_tracks WHERE soundcloud_id='A'"
+            ).fetchone()["id"]
+            track_b = conn.execute(
+                "SELECT id FROM discovery_tracks WHERE soundcloud_id='B'"
+            ).fetchone()["id"]
+            track_c = conn.execute(
+                "SELECT id FROM discovery_tracks WHERE soundcloud_id='C'"
+            ).fetchone()["id"]
+
+            conn.execute(
+                "INSERT INTO discovery_track_reposters "
+                "(discovery_track_id, discovery_artist_id) VALUES (?, ?)",
+                (track_a, follow_id),
+            )
+            conn.execute(
+                "INSERT INTO discovery_track_reposters "
+                "(discovery_track_id, discovery_artist_id) VALUES (?, ?)",
+                (track_b, top_id),
+            )
+            conn.execute(
+                "INSERT INTO discovery_track_reposters "
+                "(discovery_track_id, discovery_artist_id) VALUES (?, ?)",
+                (track_c, top_id),
+            )
+            conn.execute(
+                "INSERT INTO discovery_track_reposters "
+                "(discovery_track_id, discovery_artist_id) VALUES (?, ?)",
+                (track_c, follow_id),
+            )
+            conn.commit()
+
+        results = get_unplaced_short_tracks(exclude_sc_ids=set(), limit=10)
+        sc_ids = {r["id"] for r in results}
+
+        assert "A" not in sc_ids, "track only reposted by non-top-200 leaked into backfill"
+        assert sc_ids == {"B", "C"}
+
+        for r in results:
+            assert r["artist_id"] == top_id, "non-top-200 artist attributed to track"
 
 
 class TestFeedStatsCTE:
