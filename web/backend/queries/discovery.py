@@ -288,16 +288,54 @@ def get_next_batch_number() -> int:
         return row["next_batch"] if row else 1
 
 
+def get_owned_sc_ids(exclude_playlist_id: int) -> set[str]:
+    """SC IDs the user already has on this device.
+
+    Returns the union of (a) SC IDs of tracks in any playlist except
+    `exclude_playlist_id`, and (b) SC IDs of tracks rated 'love'.
+
+    Used to keep the discovery surface fresh: the reposts playlist should
+    never re-recommend a track the user already filed away or loves.
+    """
+    with get_db_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT t.soundcloud_id
+            FROM tracks t
+            WHERE t.soundcloud_id IS NOT NULL
+              AND (
+                t.id IN (
+                    SELECT track_id FROM playlist_tracks WHERE playlist_id != ?
+                )
+                OR t.id IN (
+                    SELECT track_id FROM ratings WHERE rating_type = 'love'
+                )
+              )
+            """,
+            (exclude_playlist_id,),
+        ).fetchall()
+        return {row["soundcloud_id"] for row in rows}
+
+
 def get_unplaced_short_tracks(
     exclude_sc_ids: set[str],
+    owned_sc_ids: set[str] | None = None,
     limit: int = 500,
 ) -> list[dict[str, Any]]:
     """Get older discovery tracks that never made it to a playlist.
 
     Returns dicts shaped like SC API tracks so they work with
     _select_tracks_chronological: {id, artist_id, created_at, duration}.
-    Ordered by first_seen DESC (newest unplaced first).
+    Ordered by reposted_at DESC, NULLs last.
+
+    Args:
+        exclude_sc_ids: SC IDs already selected this run (avoid dupes).
+        owned_sc_ids: SC IDs the user already has (other playlists, love-rated).
+            Pass via get_owned_sc_ids() to keep one source of truth.
+        limit: max rows to fetch from the DB (filter applies after).
     """
+    if owned_sc_ids is None:
+        owned_sc_ids = set()
     with get_db_connection() as conn:
         # Pick the highest-ranked (lowest ranking number) reposter per track
         # to avoid duplicate rows inflating per-artist counts
@@ -332,6 +370,8 @@ def get_unplaced_short_tracks(
     for row in rows:
         sc_id = row["soundcloud_id"]
         if sc_id in exclude_sc_ids:
+            continue
+        if sc_id in owned_sc_ids:
             continue
         results.append({
             "id": sc_id,

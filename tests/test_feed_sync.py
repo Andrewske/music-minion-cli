@@ -94,6 +94,8 @@ MINIMAL_SCHEMA_SQL = [
         in_top_200 INTEGER DEFAULT 0,
         hit_rate REAL,
         tracks_seen INTEGER DEFAULT 0,
+        tracks_liked INTEGER DEFAULT 0,
+        tracks_dismissed INTEGER DEFAULT 0,
         avatar_url TEXT,
         follower_count INTEGER,
         last_checked TIMESTAMP,
@@ -153,6 +155,37 @@ MINIMAL_SCHEMA_SQL = [
     )""",
     """CREATE VIEW artist_match_resolved AS
        SELECT NULL AS local_name, NULL AS discovery_artist_id WHERE 0""",
+    """CREATE TABLE playlists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        track_count INTEGER DEFAULT 0,
+        soundcloud_playlist_id TEXT,
+        discovery_source TEXT
+    )""",
+    """CREATE TABLE playlist_tracks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        playlist_id INTEGER NOT NULL,
+        track_id INTEGER NOT NULL,
+        position INTEGER,
+        UNIQUE(playlist_id, track_id)
+    )""",
+    """CREATE TABLE bucket_sessions (
+        id TEXT PRIMARY KEY,
+        playlist_id INTEGER NOT NULL,
+        status TEXT DEFAULT 'active'
+    )""",
+    """CREATE TABLE discovery_sync_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        started_at TIMESTAMP,
+        completed_at TIMESTAMP,
+        artists_checked INTEGER DEFAULT 0,
+        tracks_fetched INTEGER DEFAULT 0,
+        tracks_added INTEGER DEFAULT 0,
+        mixes_added INTEGER DEFAULT 0,
+        tracks_skipped INTEGER DEFAULT 0,
+        dry_run INTEGER DEFAULT 0,
+        duration_seconds REAL DEFAULT 0
+    )""",
 ]
 
 
@@ -418,6 +451,225 @@ class TestUnplacedBackfillTopOnly:
 
         for r in results:
             assert r["artist_id"] == top_id, "non-top-200 artist attributed to track"
+
+
+class TestOwnedSCIds:
+    """get_owned_sc_ids: SC IDs in any other playlist + tracks rated 'love'."""
+
+    def test_get_owned_sc_ids(self, test_db) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.discovery import get_owned_sc_ids
+
+        with get_db_connection() as conn:
+            conn.execute(
+                "INSERT INTO playlists (id, name) VALUES (26, 'reposts'), (99, 'other')"
+            )
+            for sc_id, title in [
+                ("A", "in reposts only"),
+                ("B", "in other playlist"),
+                ("C", "love-rated"),
+                ("D", "neither"),
+            ]:
+                conn.execute(
+                    "INSERT INTO tracks (title, soundcloud_id) VALUES (?, ?)",
+                    (title, sc_id),
+                )
+            track_ids = {
+                row["soundcloud_id"]: row["id"]
+                for row in conn.execute(
+                    "SELECT id, soundcloud_id FROM tracks"
+                ).fetchall()
+            }
+            conn.execute(
+                "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, 0)",
+                (26, track_ids["A"]),
+            )
+            conn.execute(
+                "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, 0)",
+                (99, track_ids["B"]),
+            )
+            conn.execute(
+                "INSERT INTO ratings (track_id, rating_type) VALUES (?, 'love')",
+                (track_ids["C"],),
+            )
+            conn.commit()
+
+        owned = get_owned_sc_ids(exclude_playlist_id=26)
+        assert owned == {"B", "C"}, (
+            f"reposts-only track A and unowned D must not appear; got {owned}"
+        )
+
+
+class TestBackfillExcludesOwned:
+    """Regression: backfill must skip tracks the user already has."""
+
+    def test_owned_tracks_filtered(self, test_db) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.discovery import get_unplaced_short_tracks
+
+        with get_db_connection() as conn:
+            conn.execute(
+                "INSERT INTO discovery_artists "
+                "(soundcloud_user_id, slug, display_name, ranking, in_top_200) "
+                "VALUES ('1', 'top', 'Top', 50, 1)"
+            )
+            top_id = conn.execute("SELECT id FROM discovery_artists").fetchone()["id"]
+
+            for sc_id in ["NEW", "OWNED"]:
+                conn.execute(
+                    "INSERT INTO discovery_tracks (soundcloud_id, title, artist_name, "
+                    "duration_ms, status) VALUES (?, ?, 'A', 200000, 'unseen')",
+                    (sc_id, sc_id),
+                )
+            for sc_id in ["NEW", "OWNED"]:
+                track_id = conn.execute(
+                    "SELECT id FROM discovery_tracks WHERE soundcloud_id=?", (sc_id,)
+                ).fetchone()["id"]
+                conn.execute(
+                    "INSERT INTO discovery_track_reposters "
+                    "(discovery_track_id, discovery_artist_id, reposted_at) "
+                    "VALUES (?, ?, '2026-04-25 12:00:00')",
+                    (track_id, top_id),
+                )
+            conn.commit()
+
+        results = get_unplaced_short_tracks(
+            exclude_sc_ids=set(),
+            owned_sc_ids={"OWNED"},
+            limit=10,
+        )
+        sc_ids = {r["id"] for r in results}
+        assert sc_ids == {"NEW"}, (
+            f"OWNED must be filtered; got {sc_ids}"
+        )
+
+
+def _seed_run_discovery_sync_minimum(
+    conn,
+    *,
+    reposts_playlist_id: int = 26,
+    sc_reposts_playlist_id: str = "999",
+) -> int:
+    """Seed the minimum DB state run_discovery_sync needs.
+
+    Returns the top-200 artist's id.
+    """
+    conn.execute(
+        "INSERT INTO playlists (id, name, soundcloud_playlist_id, discovery_source) "
+        "VALUES (?, 'reposts', ?, 'soundcloud_reposts')",
+        (reposts_playlist_id, sc_reposts_playlist_id),
+    )
+    conn.execute(
+        "INSERT INTO discovery_artists "
+        "(soundcloud_user_id, slug, display_name, ranking, in_top_200, "
+        "tracks_seen, tracks_liked, tracks_dismissed, hit_rate) "
+        "VALUES ('1', 'top', 'Top', 50, 1, 0, 0, 0, 0.0)"
+    )
+    artist_id = conn.execute("SELECT id FROM discovery_artists").fetchone()["id"]
+    conn.commit()
+    return artist_id
+
+
+class TestReposterWriteTimestamp:
+    """Regression: run_discovery_sync writes the SC repost timestamp,
+    not None, when storing reposter rows."""
+
+    def test_reposted_at_populated_after_sync(self, test_db) -> None:
+        from music_minion.core.database import get_db_connection
+
+        with get_db_connection() as conn:
+            artist_id = _seed_run_discovery_sync_minimum(conn)
+
+        fake_track = {
+            "id": 8001,
+            "title": "Fresh",
+            "permalink": "fresh",
+            "user": {"username": "Top"},
+            "duration": 200000,
+            "created_at": "2026/04/25 12:00:00 +0000",
+        }
+
+        from web.backend.discovery_sync import run_discovery_sync
+        with patch(
+            "web.backend.discovery_sync.get_web_provider_state",
+            return_value=_auth_state(),
+        ), patch(
+            "web.backend.discovery_sync._fetch_all_reposts",
+            return_value=(_auth_state(), {artist_id: [fake_track]}, []),
+        ):
+            run_discovery_sync(dry_run=True)
+
+        with get_db_connection() as conn:
+            row = conn.execute(
+                "SELECT reposted_at FROM discovery_track_reposters"
+            ).fetchone()
+        assert row is not None, "reposter row not written"
+        assert row["reposted_at"] == "2026/04/25 12:00:00 +0000", (
+            f"expected SC created_at as reposted_at; got {row['reposted_at']!r}"
+        )
+
+
+class TestFreshPathExcludesOwned:
+    """Regression: tracks already owned by the user are dropped from the
+    fresh-fetch result before duration split / chronological selection."""
+
+    def test_owned_track_not_added_to_playlist(self, test_db) -> None:
+        from music_minion.core.database import get_db_connection
+
+        with get_db_connection() as conn:
+            artist_id = _seed_run_discovery_sync_minimum(conn)
+
+            conn.execute(
+                "INSERT INTO tracks (title, soundcloud_id) VALUES ('Owned', 'OWNED')"
+            )
+            owned_local_id = conn.execute(
+                "SELECT id FROM tracks WHERE soundcloud_id='OWNED'"
+            ).fetchone()["id"]
+            conn.execute(
+                "INSERT INTO playlists (id, name) VALUES (99, 'other')"
+            )
+            conn.execute(
+                "INSERT INTO playlist_tracks (playlist_id, track_id, position) "
+                "VALUES (99, ?, 0)",
+                (owned_local_id,),
+            )
+            conn.commit()
+
+        owned_track = {
+            "id": "OWNED",
+            "title": "Owned",
+            "permalink": "owned",
+            "user": {"username": "Top"},
+            "duration": 200000,
+            "created_at": "2026/04/25 12:00:00 +0000",
+        }
+        new_track = {
+            "id": 9001,
+            "title": "Fresh",
+            "permalink": "fresh",
+            "user": {"username": "Top"},
+            "duration": 200000,
+            "created_at": "2026/04/25 12:00:00 +0000",
+        }
+
+        from web.backend.discovery_sync import run_discovery_sync
+        with patch(
+            "web.backend.discovery_sync.get_web_provider_state",
+            return_value=_auth_state(),
+        ), patch(
+            "web.backend.discovery_sync._fetch_all_reposts",
+            return_value=(
+                _auth_state(),
+                {artist_id: [owned_track, new_track]},
+                [],
+            ),
+        ):
+            result = run_discovery_sync(dry_run=True)
+
+        assert result.tracks_added_to_playlist == 1, (
+            f"owned track should be filtered; "
+            f"got tracks_added={result.tracks_added_to_playlist}"
+        )
 
 
 class TestFeedStatsCTE:
