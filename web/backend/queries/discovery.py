@@ -322,7 +322,7 @@ def get_unplaced_short_tracks(
             ) best ON best.discovery_track_id = dt.id AND best.rn = 1
             WHERE dt.status = 'unseen'
               AND dt.duration_ms <= 600000
-            ORDER BY COALESCE(best.reposted_at, dt.first_seen) DESC
+            ORDER BY best.reposted_at IS NULL, best.reposted_at DESC
             LIMIT ?
             """,
             (limit,),

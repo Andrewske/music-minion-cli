@@ -586,7 +586,9 @@ def run_discovery_sync(
             artist_id = track.get("artist_id")
             if artist_id is None:
                 continue
-            reposter_links.append((discovery_track_id, artist_id, None))
+            reposter_links.append(
+                (discovery_track_id, artist_id, track.get("created_at"))
+            )
 
         discovery_queries.insert_track_reposters(reposter_links)
 

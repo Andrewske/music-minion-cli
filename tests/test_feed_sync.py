@@ -239,6 +239,63 @@ class TestSyncFollowingsReposts:
         assert count == 1
 
 
+class TestBackfillNullReposted:
+    """Regression: NULL reposted_at must sort last in backfill ordering.
+
+    Bug: ORDER BY COALESCE(reposted_at, first_seen) DESC pulled tracks with
+    NULL reposted_at into recency rankings via first_seen, surfacing old
+    tracks that the daemon happened to ingest recently.
+    """
+
+    def test_null_reposted_at_sorts_last(self, test_db) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.discovery import get_unplaced_short_tracks
+
+        with get_db_connection() as conn:
+            conn.execute(
+                "INSERT INTO discovery_artists "
+                "(soundcloud_user_id, slug, display_name, ranking, in_top_200) "
+                "VALUES ('1', 'top', 'Top', 50, 1)"
+            )
+            top_id = conn.execute("SELECT id FROM discovery_artists").fetchone()["id"]
+
+            for sc_id, first_seen in [
+                ("RECENT", "2026-04-25"),
+                ("NULL_TS", "2018-01-01"),
+                ("OLD", "2024-01-01"),
+            ]:
+                conn.execute(
+                    "INSERT INTO discovery_tracks (soundcloud_id, title, artist_name, "
+                    "duration_ms, status, first_seen) VALUES (?, ?, 'A', 200000, 'unseen', ?)",
+                    (sc_id, sc_id, first_seen),
+                )
+            ids = {
+                row["soundcloud_id"]: row["id"]
+                for row in conn.execute(
+                    "SELECT id, soundcloud_id FROM discovery_tracks"
+                ).fetchall()
+            }
+
+            for sc_id, reposted_at in [
+                ("RECENT", "2026-04-25 12:00:00"),
+                ("NULL_TS", None),
+                ("OLD", "2024-01-01 12:00:00"),
+            ]:
+                conn.execute(
+                    "INSERT INTO discovery_track_reposters "
+                    "(discovery_track_id, discovery_artist_id, reposted_at) "
+                    "VALUES (?, ?, ?)",
+                    (ids[sc_id], top_id, reposted_at),
+                )
+            conn.commit()
+
+        results = get_unplaced_short_tracks(exclude_sc_ids=set(), limit=10)
+        order = [r["id"] for r in results]
+        assert order == ["RECENT", "OLD", "NULL_TS"], (
+            f"NULL reposted_at should sort last; got {order}"
+        )
+
+
 class TestSeenIdsScope:
     """Regression: get_seen_track_ids must only block classified/placed tracks.
 
