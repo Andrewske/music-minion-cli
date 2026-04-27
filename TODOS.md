@@ -47,3 +47,24 @@
 **Depends on:** graceful-snacking-seahorse must ship first.
 **Effort:** M (human) → S (CC)
 **Added:** 2026-03-18 via /plan-ceo-review
+
+## Discovery: Audit `discovery_tracks.status` enum drift
+**Priority:** P3/Low
+**Context:** `get_seen_track_ids` (`web/backend/queries/discovery.py:172`) hardcodes 4 status values: `'liked'`, `'dismissed'`, `'in_playlist'`, `'unseen'`. If a 5th status is ever added (e.g., `'snoozed'`, `'maybe'`) and the function isn't updated, those tracks will silently be misclassified — likely treated as eligible for fresh fetch when they shouldn't be, or vice versa. Fix options: (1) add a SQLite CHECK constraint pinning allowed values (requires table rebuild via INSERT/DROP/RENAME hack), (2) extract the set of "classified" statuses to a single module-level constant + add a comment in the status column docstring pointing to it.
+**Effort:** S (human) → XS (CC)
+**Depends on:** nothing
+**Added:** 2026-04-26 via /plan-eng-review
+
+## Discovery: Investigate stuck `active` `bucket_sessions`
+**Priority:** P2/Medium
+**Context:** During the reposts playlist nuke, found 17 `bucket_sessions` rows with `status='active'` across various playlists. The active session for the reposts playlist (id=26) was finalized via `/api/buckets/sessions/<id>/finalize`, but the other 16 likely indicate a UI flow that never auto-finalizes — sessions get created on entry to the Playlist Organizer, but never get closed on tab close, navigation away, or completion. Next refresh on any of those playlists will partial-refill (preserving unassigned tracks) instead of full-replace, which may be unexpected. Investigation: (a) when does the frontend call finalize? (b) is there an idle-timeout mechanism? (c) should the backend auto-finalize on session age?
+**Effort:** M (human) → S (CC) — investigation + fix
+**Depends on:** nothing
+**Added:** 2026-04-26 via /plan-eng-review
+
+## Discovery: DB-only repost build path
+**Priority:** P2/Medium
+**Context:** With `sync_followings_reposts` (the feed-noise daemon) continuously populating `discovery_track_reposters` for every following, `run_discovery_sync` no longer needs to call the SC API to fetch reposts — the data already lives in the DB. A DB-only path would: (a) save ~30s and ~200 API calls per sync, (b) eliminate 429 risk during sync, (c) simplify the orchestrator. Tradeoff: changes adaptive cadence behavior (last_checked currently bumps when sync fetches), shifts metric semantics (`tracks_fetched`/`artists_checked` lose meaning), and would need a careful migration. Revisit after 1–2 weeks of post-fix data to confirm Bug A's fix produced the expected fresh fetches before deciding to remove the API path.
+**Effort:** M (human) → ~30min (CC)
+**Depends on:** Bug A fix lands first (current PR). Validate API path works before removing it.
+**Added:** 2026-04-26 via /plan-eng-review
