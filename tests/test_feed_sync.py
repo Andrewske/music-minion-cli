@@ -239,6 +239,37 @@ class TestSyncFollowingsReposts:
         assert count == 1
 
 
+class TestSeenIdsScope:
+    """Regression: get_seen_track_ids must only block classified/placed tracks.
+
+    Bug: function returned every row in discovery_tracks. After feed-noise
+    daemon began ingesting all followings' reposts as status='unseen', the
+    seen_ids set blocked every fresh fetch.
+    """
+
+    def test_unseen_tracks_not_blocked(self, test_db) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.discovery import get_seen_track_ids
+
+        with get_db_connection() as conn:
+            for sc_id, status in [
+                ("L", "liked"),
+                ("D", "dismissed"),
+                ("P", "in_playlist"),
+                ("U", "unseen"),
+            ]:
+                conn.execute(
+                    "INSERT INTO discovery_tracks "
+                    "(soundcloud_id, title, artist_name, duration_ms, status) "
+                    "VALUES (?, 'T', 'A', 100, ?)",
+                    (sc_id, status),
+                )
+            conn.commit()
+
+        seen = get_seen_track_ids()
+        assert seen == {"L", "D", "P"}, "unseen tracks must not be in seen_ids"
+
+
 class TestUnplacedBackfillTopOnly:
     """Regression: backfill pool must filter to top-200 reposters.
 
