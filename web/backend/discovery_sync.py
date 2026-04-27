@@ -592,6 +592,18 @@ def run_discovery_sync(
 
         discovery_queries.insert_track_reposters(reposter_links)
 
+    # Step 7b: Drop tracks the user already has (other playlists, love-rated).
+    # Storage above still records the reposter attribution for hit-rate stats —
+    # only the playlist surfacing is filtered.
+    owned_sc_ids = discovery_queries.get_owned_sc_ids(reposts_playlist_id)
+    if owned_sc_ids:
+        before = len(all_fetched)
+        all_fetched = [t for t in all_fetched if str(t["id"]) not in owned_sc_ids]
+        logger.info(
+            f"Filtered {before - len(all_fetched)} owned tracks "
+            f"from fresh fetch ({len(all_fetched)} remain)"
+        )
+
     # Step 8: Split by duration
     short_tracks, mix_tracks = _split_by_duration(all_fetched)
 
@@ -610,6 +622,7 @@ def run_discovery_sync(
         remaining = target_count - len(selected_short)
         backfill_pool = discovery_queries.get_unplaced_short_tracks(
             exclude_sc_ids=already_selected,
+            owned_sc_ids=owned_sc_ids,
             limit=remaining * 3,  # fetch extra to account for cap filtering
         )
         backfill_selected = _select_tracks_chronological(
