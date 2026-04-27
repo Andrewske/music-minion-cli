@@ -170,9 +170,20 @@ def get_followed_artists_due_for_check() -> list[dict[str, Any]]:
 
 
 def get_seen_track_ids() -> set[str]:
-    """Get all SoundCloud track IDs that have been seen before (for dedup)."""
+    """SC IDs to exclude from fresh fetches: classified or already placed.
+
+    Tracks with status='unseen' (incl. those ingested by sync_followings_reposts)
+    remain eligible — the discovery sync should be free to re-encounter them and
+    promote them to a playlist.
+
+    Status coupling: if a new value is added to discovery_tracks.status,
+    update this WHERE clause too. See TODOS.md.
+    """
     with get_db_connection() as conn:
-        cursor = conn.execute("SELECT soundcloud_id FROM discovery_tracks")
+        cursor = conn.execute(
+            "SELECT soundcloud_id FROM discovery_tracks "
+            "WHERE status IN ('liked', 'dismissed', 'in_playlist')"
+        )
         return {row["soundcloud_id"] for row in cursor.fetchall()}
 
 
