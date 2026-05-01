@@ -72,6 +72,42 @@ def _calculate_final_duration() -> int:
     return duration
 
 
+def advance_queue(s: PlaybackState) -> PlaybackState:
+    """Advance to next track in queue.
+
+    If current_track was displaced from queue (e.g., assigned to a bucket),
+    queue_index already points at the next track to play — don't +1.
+    """
+    current_in_queue = (
+        s.queue_index < len(s.queue)
+        and s.current_track is not None
+        and s.queue[s.queue_index]["id"] == s.current_track["id"]
+    )
+    new_index = s.queue_index + 1 if current_in_queue else s.queue_index
+    if new_index >= len(s.queue):
+        # End of queue
+        return s.model_copy(update={
+            "is_playing": False,
+            "current_track": None,
+            "current_history_id": None
+        })
+
+    from music_minion.domain.radio.history import start_play
+    history_id = start_play(
+        track_id=s.queue[new_index]["id"],
+        source_type=s.queue[new_index].get('source', 'local')
+    )
+
+    return s.model_copy(update={
+        "queue_index": new_index,
+        "current_track": s.queue[new_index],
+        "position_ms": 0,
+        "track_started_at": time.time(),
+        "duration_ms": 0,
+        "current_history_id": history_id
+    })
+
+
 def get_playback_state() -> dict:
     """Get current playback state with server time for clock sync."""
     state_dict = get_state_dict()
@@ -131,8 +167,19 @@ async def update_organizer_queue(session_id: str) -> None:
             try:
                 new_index = next(i for i, t in enumerate(updated_queue) if t["id"] == current_track_id)
             except StopIteration:
-                new_index = 0
-                logger.info(f"Current track {current_track_id} assigned - will finish then skip to next unassigned")
+                # Current track filtered out (just assigned). Find first forward survivor
+                # so the next skip lands on the natural successor instead of jumping to start.
+                updated_ids = {t["id"] for t in updated_queue}
+                forward_ids = [t["id"] for t in current_queue[state.queue_index + 1:]]
+                target_id = next((tid for tid in forward_ids if tid in updated_ids), None)
+                if target_id is not None:
+                    new_index = next(i for i, t in enumerate(updated_queue) if t["id"] == target_id)
+                else:
+                    new_index = len(updated_queue)
+                logger.info(
+                    f"Current track {current_track_id} assigned; "
+                    f"new queue_index={new_index} (target forward={target_id})"
+                )
 
         await update_state({
             "queue": tuple(updated_queue),
@@ -310,33 +357,6 @@ async def next_track(reason: str = "skip", db=Depends(get_db)):
             final_duration = _calculate_final_duration()
             end_play(state.current_history_id, final_duration, reason=reason)
 
-        # Define queue advancement logic
-        def advance_queue(s: PlaybackState) -> PlaybackState:
-            new_index = s.queue_index + 1
-            if new_index >= len(s.queue):
-                # End of queue
-                return s.model_copy(update={
-                    "is_playing": False,
-                    "current_track": None,
-                    "current_history_id": None
-                })
-
-            # Start new history entry
-            from music_minion.domain.radio.history import start_play
-            history_id = start_play(
-                track_id=s.queue[new_index]["id"],
-                source_type=s.queue[new_index].get('source', 'local')
-            )
-
-            return s.model_copy(update={
-                "queue_index": new_index,
-                "current_track": s.queue[new_index],
-                "position_ms": 0,
-                "track_started_at": time.time(),
-                "duration_ms": 0,
-                "current_history_id": history_id
-            })
-
         await update_state(advance_queue)
 
         # Refetch state after advancement
@@ -347,8 +367,13 @@ async def next_track(reason: str = "skip", db=Depends(get_db)):
             tracks_ahead = len(state.queue) - state.queue_index
 
             if tracks_ahead < 50:  # Lookahead threshold
-                # Build exclusion list: all tracks ahead + current
-                exclusion_ids = [t["id"] for t in state.queue[state.queue_index:]]
+                # Build exclusion list. Organizer mode excludes the entire queue so
+                # already-played tracks don't bounce back via random refill — user
+                # hears every unassigned track once before any repeat.
+                if state.current_context and state.current_context.type == "organizer":
+                    exclusion_ids = [t["id"] for t in state.queue]
+                else:
+                    exclusion_ids = [t["id"] for t in state.queue[state.queue_index:]]
 
                 # Pull 1 new track
                 new_track_id = get_next_track(
