@@ -61,8 +61,6 @@ export const usePlayerStore = createPlayerStore({
   apiBase: API_BASE,
   getDeviceName,
   generateDeviceId,
-  // RNTP handles audio preloading natively — no-op here
-  preloadAudio: undefined,
 });
 
 export { getCurrentPosition };

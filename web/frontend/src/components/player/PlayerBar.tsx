@@ -4,7 +4,7 @@ import { useRouterState } from '@tanstack/react-router';
 import { usePlayer } from '../../hooks/usePlayer';
 import { getCurrentPosition } from '../../stores/playerStore';
 import { usePlayerStore } from '../../stores/playerStore';
-import { useAudioElement } from '../../contexts/AudioElementContext';
+import { useActiveAudioElement } from '../../contexts/AudioElementContext';
 import { useComparisonStore } from '../../stores/comparisonStore';
 import { Button } from '../ui/button';
 import { Slider } from '../ui/slider';
@@ -89,7 +89,7 @@ export function PlayerBar(): JSX.Element {
 
   // Progress — read from audio element (ground truth) on active device,
   // fall back to store interpolation for remote devices
-  const audio = useAudioElement();
+  const audio = useActiveAudioElement();
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {

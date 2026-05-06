@@ -55,7 +55,6 @@ export interface PlayerState {
   availableDevices: Device[];
   isThisDeviceActive: boolean;
   playbackError: string | null;
-  nextTrackPreloadUrl: string | null;
   needsUserGesture: boolean;
   currentContext: PlayContext | null;
   lastSeekAt: number;
@@ -78,7 +77,6 @@ export interface PlayerActions {
   syncDevices: (devices: Device[]) => void;
   setPlaybackError: (error: string | null) => void;
   retryPlayback: () => void;
-  preloadNextTrack: () => void;
   onTrackPlayed: (trackId: number, playedMs: number) => void;
   renameDevice: (name: string) => void;
   registerDevice: () => void;
@@ -93,7 +91,6 @@ export interface PlatformDeps {
   apiBase: string;
   getDeviceName: () => string;
   generateDeviceId: () => string;
-  preloadAudio?: (url: string) => void;
 }
 
 export function getCurrentPosition(state: PlayerState): number {
@@ -102,7 +99,7 @@ export function getCurrentPosition(state: PlayerState): number {
 }
 
 export const createPlayerStore = (deps: PlatformDeps) => {
-  const { storage, apiBase, getDeviceName: getDeviceNameFn, generateDeviceId: generateDeviceIdFn, preloadAudio } = deps;
+  const { storage, apiBase, getDeviceName: getDeviceNameFn, generateDeviceId: generateDeviceIdFn } = deps;
 
   const apiPost = async <T = Record<string, unknown>>(endpoint: string, body?: unknown): Promise<T> => {
     const init: RequestInit = {
@@ -139,7 +136,6 @@ export const createPlayerStore = (deps: PlatformDeps) => {
     availableDevices: [],
     isThisDeviceActive: false,
     playbackError: null,
-    nextTrackPreloadUrl: null,
     needsUserGesture: false,
     currentContext: null,
     lastSeekAt: 0,
@@ -358,16 +354,6 @@ export const createPlayerStore = (deps: PlatformDeps) => {
       if (currentTrack) {
         set({ playbackError: null });
         get().play(currentTrack, { type: 'track' });
-      }
-    },
-
-    preloadNextTrack: () => {
-      const { queue, queueIndex } = get();
-      if (queueIndex + 1 < queue.length) {
-        const nextTrack = queue[queueIndex + 1];
-        const preloadUrl = `${apiBase}/tracks/${nextTrack.id}/stream`;
-        set({ nextTrackPreloadUrl: preloadUrl });
-        preloadAudio?.(preloadUrl);
       }
     },
 

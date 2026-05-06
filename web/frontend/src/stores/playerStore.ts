@@ -44,11 +44,6 @@ export const usePlayerStore = createPlayerStore({
   apiBase: API_BASE,
   getDeviceName,
   generateDeviceId,
-  preloadAudio: (url: string) => {
-    const audio = new Audio();
-    audio.src = url;
-    audio.preload = 'auto';
-  },
 });
 
 export { getCurrentPosition };

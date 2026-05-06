@@ -1,96 +1,264 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { usePlayerStore, getCurrentPosition } from '../stores/playerStore';
-import { useAudioElement } from '../contexts/AudioElementContext';
+import { useActiveAudioElement, useAudioPair, type AudioKey } from '../contexts/AudioElementContext';
+
+const HAVE_CURRENT_DATA = 2;
+const PRELOAD_DEBOUNCE_MS = 500;
+const ERROR_WINDOW_MS = 10_000;
+const ERROR_THRESHOLD = 3;
+
+type PlayErrorHandler = (err: Error) => void;
+
+function streamUrlFor(trackId: number): string {
+  return `/api/tracks/${trackId}/stream`;
+}
+
+function swapToReadyInactive(
+  inactive: HTMLAudioElement,
+  setActiveKey: (k: AudioKey) => void,
+  opposite: AudioKey,
+  handlePlayError: PlayErrorHandler,
+): void {
+  setActiveKey(opposite);
+  inactive.currentTime = 0;
+  if (usePlayerStore.getState().isPlaying) {
+    inactive.play().catch(handlePlayError);
+  }
+  if (import.meta.env.DEV) {
+    console.debug('[player] swap', { to: opposite, fastPath: true });
+  }
+}
+
+function loadAndSwap(
+  inactive: HTMLAudioElement,
+  url: string,
+  expectedTrackId: string,
+  signal: AbortSignal,
+  setActiveKey: (k: AudioKey) => void,
+  opposite: AudioKey,
+  handlePlayError: PlayErrorHandler,
+): void {
+  inactive.addEventListener(
+    'canplay',
+    () => {
+      setActiveKey(opposite);
+      // Read isPlaying at fire time, not effect-run time. canplay can fire
+      // 200-400ms after binding; user may have hit pause in that window.
+      if (usePlayerStore.getState().isPlaying) {
+        inactive.play().catch(handlePlayError);
+      }
+      if (import.meta.env.DEV) {
+        console.debug('[player] swap', { to: opposite, fastPath: false });
+      }
+    },
+    { once: true, signal },
+  );
+  inactive.src = url;
+  inactive.dataset.trackId = expectedTrackId;
+  inactive.currentTime = 0;
+}
+
+function bindPreload(
+  inactive: HTMLAudioElement,
+  trackId: number,
+  signal: AbortSignal,
+): void {
+  inactive.pause();
+  inactive.removeAttribute('src');
+  inactive.load();
+  inactive.src = streamUrlFor(trackId);
+  inactive.dataset.trackId = String(trackId);
+  inactive.preload = 'auto';
+
+  // Clear dataset.trackId on preload error so the next swap routes through
+  // load-on-swap rather than trying to swap to a half-loaded element.
+  inactive.addEventListener(
+    'error',
+    () => {
+      delete inactive.dataset.trackId;
+      if (import.meta.env.DEV) {
+        console.warn('[player] preload error', {
+          trackId,
+          code: inactive.error?.code,
+        });
+      }
+    },
+    { once: true, signal },
+  );
+
+  if (import.meta.env.DEV) {
+    console.debug('[player] preload bound', { trackId });
+  }
+}
 
 export function usePlayer() {
   const store = usePlayerStore();
-  const audio = useAudioElement();
+  const activeAudio = useActiveAudioElement();
+  const { audioA, audioB, activeKeyRef, setActiveKey } = useAudioPair();
   const lastLoadedTrackIdRef = useRef<number | null>(null);
+  const errorTimesRef = useRef<number[]>([]);
 
   // Initialize device on mount
   useEffect(() => {
     store.registerDevice();
   }, [store]);
 
-  // Initialize audio volume/mute when audio becomes available
-  useEffect(() => {
-    if (!audio) return;
-    audio.volume = store.volume;
-    audio.muted = store.isMuted;
-  }, [audio]);
+  const handlePlayError = useCallback(
+    (err: Error): void => {
+      if (err.name === 'NotAllowedError') {
+        store.set({ needsUserGesture: true });
+      } else if (err.name !== 'AbortError') {
+        store.setPlaybackError(err.message);
+      }
+    },
+    [store],
+  );
 
-  // Update volume when store changes
+  // Volume/mute apply to BOTH elements every time
   useEffect(() => {
-    if (!audio) return;
-    audio.volume = store.volume;
-  }, [audio, store.volume]);
+    if (audioA) audioA.volume = store.volume;
+    if (audioB) audioB.volume = store.volume;
+  }, [audioA, audioB, store.volume]);
 
-  // Update mute when store changes
   useEffect(() => {
-    if (!audio) return;
-    audio.muted = store.isMuted;
-  }, [audio, store.isMuted]);
+    if (audioA) audioA.muted = store.isMuted;
+    if (audioB) audioB.muted = store.isMuted;
+  }, [audioA, audioB, store.isMuted]);
 
-  const handlePlayError = useCallback((err: Error) => {
-    if (err.name === 'NotAllowedError') {
-      store.set({ needsUserGesture: true });
-    } else if (err.name !== 'AbortError') {
-      store.setPlaybackError(err.message);
+  // Device transfer: when local device becomes inactive, pause and clear both elements
+  useEffect(() => {
+    if (store.isThisDeviceActive) return;
+    if (audioA) {
+      audioA.pause();
+      audioA.removeAttribute('src');
+      audioA.load();
+      delete audioA.dataset.trackId;
     }
-  }, [store]);
+    if (audioB) {
+      audioB.pause();
+      audioB.removeAttribute('src');
+      audioB.load();
+      delete audioB.dataset.trackId;
+    }
+    lastLoadedTrackIdRef.current = null;
+  }, [audioA, audioB, store.isThisDeviceActive]);
 
-  // Consolidated playback control — single effect manages src loading + play/pause
-  // Fixes stutter caused by two separate effects racing: one setting src, one calling play()
+  // Track-change handler: silence old active, swap or load-on-swap to new track.
+  // CRITICAL: activeKeyRef.current is read inside the effect; activeKey is NOT in deps.
+  // Including activeKey would cause setActiveKey() inside the effect to re-fire it,
+  // which would re-evaluate the precondition against a half-loaded element and
+  // trigger swap-back loops.
   useEffect(() => {
-    if (!audio) return;
+    if (!store.isThisDeviceActive) return;
+    if (!store.currentTrack) return;
+    if (!audioA || !audioB) return;
 
-    if (!store.isThisDeviceActive) {
-      audio.pause();
+    const trackId = store.currentTrack.id;
+    if (trackId === lastLoadedTrackIdRef.current) {
+      // Same track — toggle play/pause on the active element
+      const active = activeKeyRef.current === 'A' ? audioA : audioB;
+      if (store.isPlaying && active.paused) {
+        active.play().catch(handlePlayError);
+      } else if (!store.isPlaying && !active.paused) {
+        active.pause();
+      }
       return;
     }
 
-    if (!store.currentTrack) return;
+    lastLoadedTrackIdRef.current = trackId;
+    const activeKey = activeKeyRef.current;
+    const oldActive = activeKey === 'A' ? audioA : audioB;
+    const inactive = activeKey === 'A' ? audioB : audioA;
+    const opposite: AudioKey = activeKey === 'A' ? 'B' : 'A';
+    const controller = new AbortController();
 
-    const trackChanged = store.currentTrack.id !== lastLoadedTrackIdRef.current;
+    // Step 1: silence old active IMMEDIATELY (silence guarantee).
+    // Order matters: pause before removeAttribute before load, all before binding new src.
+    oldActive.pause();
+    oldActive.removeAttribute('src');
+    oldActive.load();
 
-    if (trackChanged) {
-      // New track — set src and wait for canplay before playing
-      lastLoadedTrackIdRef.current = store.currentTrack.id;
-      const onCanPlay = (): void => {
-        audio.removeEventListener('canplay', onCanPlay);
-        if (store.isPlaying) {
-          audio.play().catch(handlePlayError);
-        }
-      };
-      audio.addEventListener('canplay', onCanPlay);
-      audio.src = `/api/tracks/${store.currentTrack.id}/stream`;
-      audio.currentTime = getCurrentPosition(store) / 1000;
+    const expectedTrackId = String(trackId);
+    const url = streamUrlFor(trackId);
 
-      return () => audio.removeEventListener('canplay', onCanPlay);
+    if (
+      inactive.dataset.trackId === expectedTrackId
+      && inactive.readyState >= HAVE_CURRENT_DATA
+    ) {
+      swapToReadyInactive(inactive, setActiveKey, opposite, handlePlayError);
+    } else {
+      loadAndSwap(
+        inactive,
+        url,
+        expectedTrackId,
+        controller.signal,
+        setActiveKey,
+        opposite,
+        handlePlayError,
+      );
     }
 
-    // Same track — just toggle play/pause
-    if (store.isPlaying && audio.paused) {
-      audio.play().catch(handlePlayError);
-    } else if (!store.isPlaying && !audio.paused) {
-      audio.pause();
-    }
-  }, [audio, store.isThisDeviceActive, store.currentTrack?.id, store.isPlaying, handlePlayError]);
+    return () => {
+      controller.abort();
+    };
+  }, [
+    audioA,
+    audioB,
+    activeKeyRef,
+    setActiveKey,
+    store.currentTrack,
+    store.isPlaying,
+    store.isThisDeviceActive,
+    handlePlayError,
+  ]);
 
-  // Sync audio position on explicit seek operations only (not on track start/state broadcasts)
+  // Sync audio position on explicit seek operations
   useEffect(() => {
-    if (!audio || !store.isThisDeviceActive || !store.currentTrack) return;
-    if (store.lastSeekAt === 0) return; // No seek has happened yet
+    if (!activeAudio || !store.isThisDeviceActive || !store.currentTrack) return;
+    if (store.lastSeekAt === 0) return;
 
     const expectedPosition = getCurrentPosition(store) / 1000;
-    const actualPosition = audio.currentTime;
+    const actualPosition = activeAudio.currentTime;
 
     if (Math.abs(expectedPosition - actualPosition) > 1) {
-      audio.currentTime = expectedPosition;
+      activeAudio.currentTime = expectedPosition;
     }
-  }, [audio, store.lastSeekAt, store.isThisDeviceActive, store.currentTrack]);
+  }, [activeAudio, store.lastSeekAt, store.isThisDeviceActive, store.currentTrack, store]);
 
-  // Scrobble tracking - fire onTrackPlayed at 50% or 30s (once per playthrough)
+  // Preload next track on the inactive element. Debounced 500ms to avoid
+  // thrashing the backend SoundCloud resolver on rapid skips.
+  useEffect(() => {
+    if (!store.isThisDeviceActive) return;
+    if (!store.currentTrack) return;
+    if (store.currentContext?.type === 'comparison') return;
+    if (!audioA || !audioB) return;
+
+    const nextTrack = store.queue[store.queueIndex + 1];
+    if (!nextTrack) return;
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      const inactive = activeKeyRef.current === 'A' ? audioB : audioA;
+      if (inactive.dataset.trackId === String(nextTrack.id)) return;
+      bindPreload(inactive, nextTrack.id, controller.signal);
+    }, PRELOAD_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [
+    audioA,
+    audioB,
+    activeKeyRef,
+    store.currentTrack,
+    store.queue,
+    store.queueIndex,
+    store.currentContext?.type,
+    store.isThisDeviceActive,
+  ]);
+
+  // Scrobble tracking: fire onTrackPlayed at 50% or 30s (once per playthrough)
   useEffect(() => {
     if (!store.isPlaying || !store.isThisDeviceActive || !store.currentTrack) return;
     if (store.scrobbledThisPlaythrough) return;
@@ -98,61 +266,80 @@ export function usePlayer() {
     const duration = (store.currentTrack.duration ?? 0) * 1000;
     const threshold = Math.min(duration * 0.5, 30000);
 
-    const checkScrobble = () => {
+    const checkScrobble = (): void => {
       const position = getCurrentPosition(store);
-      if (position >= threshold && !store.scrobbledThisPlaythrough) {
-        store.onTrackPlayed(store.currentTrack!.id, position);
+      if (position >= threshold && !store.scrobbledThisPlaythrough && store.currentTrack) {
+        store.onTrackPlayed(store.currentTrack.id, position);
       }
     };
 
     const timeout = setTimeout(checkScrobble, threshold - store.positionMs);
     return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.currentTrack?.id, store.isPlaying, store.scrobbledThisPlaythrough]);
 
-  // Gapless playback - preload next track 5s before end
+  // Error handler on active element with circuit breaker.
+  // 3 errors within 10s trips the breaker and stops auto-skip cascade.
+  // Reads store via getState() so the effect doesn't re-fire on every state update
+  // (which would clear the in-flight skip timer via cleanup before it can fire).
   useEffect(() => {
-    if (!audio) return;
-    if (!store.isThisDeviceActive || !store.currentTrack) return;
+    if (!activeAudio) return;
 
-    const onTimeUpdate = () => {
-      if (audio.duration - audio.currentTime < 5) {
-        store.preloadNextTrack();
+    let skipTimer: number | null = null;
+    const onError = (): void => {
+      const now = Date.now();
+      errorTimesRef.current = errorTimesRef.current
+        .filter((t) => now - t < ERROR_WINDOW_MS)
+        .concat(now);
+
+      const s = usePlayerStore.getState();
+      if (errorTimesRef.current.length >= ERROR_THRESHOLD) {
+        s.setPlaybackError('Playback unavailable — check connection');
+        if (import.meta.env.DEV) {
+          console.warn('[player] circuit breaker tripped', {
+            errorsInWindow: errorTimesRef.current.length,
+          });
+        }
+        return;
       }
+
+      s.setPlaybackError(`Failed to load: ${s.currentTrack?.title}`);
+      if (skipTimer !== null) return;
+      skipTimer = window.setTimeout(() => {
+        skipTimer = null;
+        usePlayerStore.getState().next();
+      }, 500);
     };
 
-    audio.addEventListener('timeupdate', onTimeUpdate);
-    return () => audio.removeEventListener('timeupdate', onTimeUpdate);
-  }, [audio, store.currentTrack?.id]);
+    const onCanPlay = (): void => {
+      // Sliding window self-recovers on first successful playback
+      errorTimesRef.current = [];
+    };
 
-  // Error handling - retry or skip on audio load failure
+    activeAudio.addEventListener('error', onError);
+    activeAudio.addEventListener('canplay', onCanPlay);
+    return (): void => {
+      if (skipTimer !== null) clearTimeout(skipTimer);
+      activeAudio.removeEventListener('error', onError);
+      activeAudio.removeEventListener('canplay', onCanPlay);
+    };
+  }, [activeAudio]);
+
+  // Track ended: advance to next track (unless in comparison mode, which handles
+  // its own A/B switching via onFinish callback in ComparisonView)
   useEffect(() => {
-    if (!audio) return;
+    if (!activeAudio) return;
 
-    const onError = () => {
-      store.setPlaybackError(`Failed to load: ${store.currentTrack?.title}`);
-      // Auto-skip to next track after 2s
-      setTimeout(() => store.next(), 2000);
+    const onEnded = (): void => {
+      const s = usePlayerStore.getState();
+      if (!s.isThisDeviceActive) return;
+      if (s.currentContext?.type === 'comparison') return;
+      s.next();
     };
 
-    audio.addEventListener('error', onError);
-    return () => audio.removeEventListener('error', onError);
-  }, [audio, store.currentTrack?.id]);
-
-  // Track ended - advance to next track (unless in comparison mode)
-  useEffect(() => {
-    if (!audio) return;
-    if (!store.isThisDeviceActive) return;
-
-    const onEnded = () => {
-      // Comparison mode handles A/B switching via onFinish callback in ComparisonView
-      // Don't auto-advance queue - let the component decide what to play next
-      if (store.currentContext?.type === 'comparison') return;
-      store.next();
-    };
-
-    audio.addEventListener('ended', onEnded);
-    return () => audio.removeEventListener('ended', onEnded);
-  }, [audio, store.currentTrack?.id, store.isThisDeviceActive, store.currentContext?.type]);
+    activeAudio.addEventListener('ended', onEnded);
+    return () => activeAudio.removeEventListener('ended', onEnded);
+  }, [activeAudio]);
 
   return store;
 }
