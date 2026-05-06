@@ -216,7 +216,7 @@ export function useIPCWebSocket(handlers?: IPCWebSocketHandlers) {
         // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, 64s, ...
         const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current - 1), 60000);
 
-        reconnectTimeoutRef.current = setTimeout(() => {
+        reconnectTimeoutRef.current = window.setTimeout(() => {
           connectRef.current?.();
         }, delay);
       };

@@ -10,7 +10,6 @@ const makeDeps = () => ({
   apiBase: 'http://test:8642/api',
   getDeviceName: () => 'Test Device',
   generateDeviceId: () => 'test-device-123',
-  preloadAudio: vi.fn(),
 });
 
 describe('createPlayerStore', () => {
@@ -57,24 +56,6 @@ describe('createPlayerStore', () => {
     store.getState().setMuted(true);
     expect(deps.storage.getItem('music-minion-player-muted')).toBe('true');
     expect(store.getState().isMuted).toBe(true);
-  });
-
-  it('calls preloadAudio on preloadNextTrack', () => {
-    const deps = makeDeps();
-    const store = createPlayerStore(deps);
-
-    store.setState({
-      queue: [
-        { id: 1, title: 'A' },
-        { id: 2, title: 'B' },
-      ] as Parameters<typeof store.getState>['0'] extends never ? never : any,
-      queueIndex: 0,
-    });
-
-    store.getState().preloadNextTrack();
-    expect(deps.preloadAudio).toHaveBeenCalledWith(
-      'http://test:8642/api/tracks/2/stream'
-    );
   });
 
   it('renames device and persists to storage', () => {

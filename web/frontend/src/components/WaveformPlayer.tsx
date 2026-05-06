@@ -2,7 +2,7 @@ import { useEffect, useCallback } from 'react';
 import { RefreshCw, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useWavesurfer } from '../hooks/useWavesurfer';
-import { useAudioElement } from '../contexts/AudioElementContext';
+import { useActiveAudioElement } from '../contexts/AudioElementContext';
 import { usePlayerStore } from '../stores/playerStore';
 
 /** Minimal track interface - both Track and TrackInfo satisfy this */
@@ -22,7 +22,7 @@ interface WaveformPlayerProps {
 }
 
 export function WaveformPlayer({ track, isPlaying, onTogglePlayPause, onFinish }: WaveformPlayerProps) {
-  const sharedAudio = useAudioElement();
+  const sharedAudio = useActiveAudioElement();
   const globalTrackId = usePlayerStore(state => state.currentTrack?.id);
   const { seek } = usePlayerStore();
 
