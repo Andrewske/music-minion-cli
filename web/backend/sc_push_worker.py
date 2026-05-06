@@ -76,15 +76,19 @@ def _worker_loop() -> None:
     while True:
         try:
             task = _queue.get()
-            if isinstance(task, SCPushAdd):
-                _handle_add(task.playlist_id, task.track_id)
-            elif isinstance(task, SCPushRemove):
-                _handle_remove(task.playlist_id, task.track_id)
-            elif isinstance(task, SCPushBulkSync):
-                _handle_bulk_sync(task.playlist_id)
-            _queue.task_done()
+            try:
+                if isinstance(task, SCPushAdd):
+                    _handle_add(task.playlist_id, task.track_id)
+                elif isinstance(task, SCPushRemove):
+                    _handle_remove(task.playlist_id, task.track_id)
+                elif isinstance(task, SCPushBulkSync):
+                    _handle_bulk_sync(task.playlist_id)
+            except Exception:
+                logger.exception("SC push worker error")
+            finally:
+                _queue.task_done()
         except Exception:
-            logger.exception("SC push worker error")
+            logger.exception("SC push worker fatal error")
 
 
 def _handle_add(playlist_id: int, track_id: int) -> None:
