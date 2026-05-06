@@ -128,6 +128,15 @@ def _threaded_scan_worker(ctx: AppContext) -> None:
             updated = 0
             errors = len(tracks)
 
+        if added > 0:
+            from music_minion.domain.playlists.filters import (
+                refresh_all_smart_playlists,
+            )
+            try:
+                refresh_all_smart_playlists()
+            except Exception:
+                pass
+
         # Compute stats
         stats = library.get_library_stats(tracks)
 
@@ -314,6 +323,15 @@ def handle_scan_command(ctx: AppContext) -> tuple[AppContext, bool]:
             errors = len(tracks)
             added = 0
             updated = 0
+
+        if added > 0:
+            from music_minion.domain.playlists.filters import (
+                refresh_all_smart_playlists,
+            )
+            try:
+                refresh_all_smart_playlists()
+            except Exception as e:
+                log(f"  Warning: smart playlist refresh failed: {e}", level="warning")
 
         # Show scan results
         log("\n✅ Scan complete!")
