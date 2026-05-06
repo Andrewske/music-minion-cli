@@ -1,9 +1,9 @@
-import { getDefaultApiClient } from './client.js';
+import { getDefaultApiClient } from './client';
 import type {
   ComparisonRequest,
   ComparisonResponse,
   RecordComparisonRequest,
-} from '../types/index.js';
+} from '../types/index';
 
 export async function startComparison(playlistId: number): Promise<ComparisonResponse> {
   return getDefaultApiClient().request('/comparisons/start', {

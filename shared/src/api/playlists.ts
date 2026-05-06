@@ -1,6 +1,6 @@
-import type { Playlist, PlaylistStatsResponse, PlaylistTracksResponse } from '../types/index.js';
-import type { Filter, Track } from './builder.js';
-import { getDefaultApiClient } from './client.js';
+import type { Playlist, PlaylistStatsResponse, PlaylistTracksResponse } from '../types/index';
+import type { Filter, Track } from './builder';
+import { getDefaultApiClient } from './client';
 
 export async function createPlaylist(name: string, description: string = ''): Promise<Playlist> {
   const baseUrl = getDefaultApiClient().getBaseUrl();
