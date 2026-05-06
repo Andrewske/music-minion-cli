@@ -19,6 +19,7 @@ from music_minion.core.output import log
 from ...provider import ProviderState, TrackList
 from . import auth
 from .auth import TOKEN_URL
+from .exceptions import TrackUnavailableError
 
 # SoundCloud API base URL
 API_BASE_URL = "https://api.soundcloud.com"
@@ -324,6 +325,9 @@ def resolve_stream_url(state: ProviderState, provider_id: str) -> Optional[str]:
 
     Returns:
         Direct CDN stream URL or None
+
+    Raises:
+        TrackUnavailableError: Track removed/private/geo-blocked on SoundCloud (403/404/410)
     """
     if not state.authenticated:
         return None
@@ -341,6 +345,11 @@ def resolve_stream_url(state: ProviderState, provider_id: str) -> Optional[str]:
     try:
         # Get available stream URLs
         response = requests.get(streams_url, headers=headers, timeout=10)
+
+        if response.status_code in (403, 404, 410):
+            raise TrackUnavailableError(
+                f"SoundCloud track {provider_id} unavailable (HTTP {response.status_code})"
+            )
 
         if not response.ok:
             logger.warning(

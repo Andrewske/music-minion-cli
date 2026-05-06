@@ -68,6 +68,17 @@ async def search_tracks(q: str, limit: int = 20, db=Depends(get_db)) -> list[dic
     return [dict(row) for row in cursor.fetchall()]
 
 
+def _mark_track_unavailable(db_conn, track_id: int, reason: str) -> None:
+    """Stamp tracks.unavailable_at + reason so queue manager excludes the track."""
+    db_conn.execute(
+        "UPDATE tracks SET unavailable_at = CURRENT_TIMESTAMP, unavailable_reason = ?"
+        " WHERE id = ?",
+        (reason, track_id),
+    )
+    db_conn.commit()
+    logger.warning(f"Marked track {track_id} unavailable: {reason}")
+
+
 @router.get("/tracks/{track_id}/stream")
 async def stream_audio(
     track_id: int, db=Depends(get_db), config: Config = Depends(get_config)
@@ -87,17 +98,33 @@ async def stream_audio(
 
     # Fallback to SoundCloud streaming for tracks without local files
     cursor = db.execute(
-        "SELECT source, source_url, soundcloud_id FROM tracks WHERE id = ?", (track_id,)
+        "SELECT source, source_url, soundcloud_id, unavailable_at, unavailable_reason"
+        " FROM tracks WHERE id = ?",
+        (track_id,),
     )
     row = cursor.fetchone()
+    if row and row["unavailable_at"]:
+        # Already known dead - short-circuit so client can skip immediately
+        raise HTTPException(
+            410,
+            f"Track unavailable ({row['unavailable_reason'] or 'unknown'})",
+        )
+
     if row and row["source"] == "soundcloud" and (row["soundcloud_id"] or row["source_url"]):
         from web.backend.soundcloud_auth import get_web_provider_state
         from music_minion.domain.library.providers.soundcloud.api import resolve_stream_url as sc_resolve
+        from music_minion.domain.library.providers.soundcloud.exceptions import (
+            TrackUnavailableError,
+        )
 
         state = get_web_provider_state()
         if state and state.authenticated and row["soundcloud_id"]:
-            # Resolve to actual CDN URL for browser playback (~200ms)
-            stream_url = sc_resolve(state, row["soundcloud_id"])
+            try:
+                # Resolve to actual CDN URL for browser playback (~200ms)
+                stream_url = sc_resolve(state, row["soundcloud_id"])
+            except TrackUnavailableError as exc:
+                _mark_track_unavailable(db, track_id, "soundcloud_gone")
+                raise HTTPException(410, str(exc))
             if stream_url:
                 logger.info(f"Resolved SC stream for track {track_id}")
                 return RedirectResponse(stream_url)
@@ -109,6 +136,9 @@ async def stream_audio(
             if stream_url:
                 logger.info(f"Resolved stream via yt-dlp for track {track_id}")
                 return RedirectResponse(stream_url)
+            # yt-dlp also failed → upstream is gone for both paths
+            _mark_track_unavailable(db, track_id, "ytdlp_failed")
+            raise HTTPException(410, "Track unavailable on upstream")
 
         raise HTTPException(503, "Failed to resolve stream URL")
 
