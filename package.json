@@ -4,5 +4,9 @@
     "shared",
     "web/frontend",
     "mobile"
-  ]
+  ],
+  "overrides": {
+    "react-native": "0.76.9",
+    "react-native-safe-area-context": "4.14.1"
+  }
 }
