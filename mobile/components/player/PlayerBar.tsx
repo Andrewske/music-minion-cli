@@ -9,9 +9,11 @@
  */
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlayer } from '../../hooks/usePlayer';
 
 export function PlayerBar() {
+  const insets = useSafeAreaInsets();
   const {
     currentTrack,
     isPlaying,
@@ -24,7 +26,7 @@ export function PlayerBar() {
 
   if (!currentTrack) {
     return (
-      <View style={styles.barEmpty}>
+      <View style={[styles.barEmpty, { paddingBottom: 10 + insets.bottom }]}>
         <Text style={styles.emptyText}>Nothing playing</Text>
       </View>
     );
@@ -50,7 +52,7 @@ export function PlayerBar() {
   };
 
   return (
-    <View style={styles.bar}>
+    <View style={[styles.bar, { paddingBottom: 10 + insets.bottom }]}>
       {/* Track info */}
       <View style={styles.info}>
         <Text style={styles.title} numberOfLines={1}>
@@ -94,16 +96,16 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#333',
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    height: 64,
+    paddingTop: 10,
+    paddingBottom: 10,
   },
   barEmpty: {
     backgroundColor: '#1A1A1A',
     borderTopWidth: 1,
     borderTopColor: '#333',
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    height: 64,
+    paddingTop: 10,
+    paddingBottom: 10,
     justifyContent: 'center',
   },
   emptyText: {

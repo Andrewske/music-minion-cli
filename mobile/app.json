@@ -7,7 +7,7 @@
     "icon": "./assets/icon.png",
     "scheme": "music-minion",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -17,27 +17,30 @@
       "intentFilters": [
         {
           "action": "SEND",
-          "category": ["DEFAULT"],
+          "category": [
+            "DEFAULT"
+          ],
           "data": [
-            { "mimeType": "text/plain" }
+            {
+              "mimeType": "text/plain"
+            }
           ]
         }
       ]
     },
     "plugins": [
-      "expo-router",
-      "expo-share-intent",
-      [
-        "react-native-track-player",
-        {
-          "android": {
-            "stopWithApp": false
-          }
-        }
-      ]
+      "expo-router"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "7e39ff3d-0b77-4ea1-954e-bd7259e70b64"
+      }
     }
   }
 }

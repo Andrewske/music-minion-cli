@@ -3,14 +3,19 @@
   "compilerOptions": {
     "strict": true,
     "paths": {
-      "@music-minion/shared": ["../shared/src/index.ts"],
-      "@music-minion/shared/*": ["../shared/src/*"]
+      "@music-minion/shared": [
+        "../shared/src/index.ts"
+      ],
+      "@music-minion/shared/*": [
+        "../shared/src/*"
+      ]
     }
   },
   "include": [
     "**/*.ts",
     "**/*.tsx",
     ".expo/types/**/*.ts",
-    "expo-env.d.ts"
+    "expo-env.d.ts",
+    "nativewind-env.d.ts"
   ]
 }
