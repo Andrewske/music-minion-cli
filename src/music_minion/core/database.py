@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 53  # Feed-noise via discovery_track_reposters.seen_at; sc_feed_events dropped
+SCHEMA_VERSION = 54  # Track availability tracking: tracks.unavailable_at + unavailable_reason
 
 
 # Initial top 50 curated emojis for music reactions
@@ -2566,6 +2566,27 @@ def migrate_database(conn, current_version: int) -> None:
 
         conn.commit()
         logger.info("  ✓ Migration to v53 complete: feed-noise uses discovery_track_reposters.seen_at")
+
+    if current_version < 54:
+        logger.info("Running migration to v54: track availability tracking")
+
+        for col_sql in (
+            "ALTER TABLE tracks ADD COLUMN unavailable_at TIMESTAMP",
+            "ALTER TABLE tracks ADD COLUMN unavailable_reason TEXT",
+        ):
+            try:
+                conn.execute(col_sql)
+            except sqlite3.OperationalError as exc:
+                if "duplicate column" not in str(exc).lower():
+                    raise
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tracks_unavailable_at"
+            " ON tracks(unavailable_at) WHERE unavailable_at IS NOT NULL"
+        )
+
+        conn.commit()
+        logger.info("  ✓ Migration to v54 complete: tracks.unavailable_at + unavailable_reason added")
 
 
 def init_database() -> None:

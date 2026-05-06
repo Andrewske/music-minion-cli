@@ -638,6 +638,25 @@ def _build_exclusion_list(queue: list[int], queue_index: int) -> list[int]:
     return queue[queue_index:]
 
 
+def _filter_unavailable(track_ids: list[int], db_conn) -> list[int]:
+    """Drop tracks with tracks.unavailable_at set (dead upstream sources).
+
+    Preserves order. No-op if list empty.
+    """
+    if not track_ids:
+        return track_ids
+    placeholders = ",".join("?" * len(track_ids))
+    cursor = db_conn.execute(
+        f"SELECT id FROM tracks WHERE id IN ({placeholders}) AND unavailable_at IS NOT NULL",
+        track_ids,
+    )
+    dead = {row["id"] for row in cursor.fetchall()}
+    if not dead:
+        return track_ids
+    logger.info(f"Excluding {len(dead)} unavailable tracks from queue")
+    return [tid for tid in track_ids if tid not in dead]
+
+
 def _resolve_context_to_track_ids(
     context: PlayContext,
     db_conn
@@ -653,11 +672,12 @@ def _resolve_context_to_track_ids(
         db_conn: Database connection
 
     Returns:
-        List of all track IDs in context (not limited)
+        List of all track IDs in context (not limited).
+        Tracks marked unavailable_at are excluded for non-single-track contexts.
     """
     try:
         if context.type == "track":
-            # Single track playback
+            # Single track playback - honor explicit user request, don't filter
             return [context.track_ids[0]] if context.track_ids else []
 
         elif context.type == "playlist" and context.playlist_id:
@@ -675,7 +695,7 @@ def _resolve_context_to_track_ids(
                 # Smart playlist - evaluate filters dynamically
                 from music_minion.domain.playlists.filters import evaluate_filters
                 tracks = evaluate_filters(context.playlist_id)
-                return [t["id"] for t in tracks]
+                return _filter_unavailable([t["id"] for t in tracks], db_conn)
             else:
                 # Manual playlist - query from playlist_tracks table
                 cursor = db_conn.execute(
@@ -686,7 +706,9 @@ def _resolve_context_to_track_ids(
                     """,
                     (context.playlist_id,)
                 )
-                return [row["track_id"] for row in cursor.fetchall()]
+                return _filter_unavailable(
+                    [row["track_id"] for row in cursor.fetchall()], db_conn
+                )
 
         elif context.type == "builder" and context.builder_id:
             # Builder context is playlist in builder mode
@@ -698,7 +720,9 @@ def _resolve_context_to_track_ids(
                 """,
                 (context.builder_id,)
             )
-            return [row["track_id"] for row in cursor.fetchall()]
+            return _filter_unavailable(
+                [row["track_id"] for row in cursor.fetchall()], db_conn
+            )
 
         elif context.type == "comparison" and context.track_ids:
             return context.track_ids
@@ -714,8 +738,8 @@ def _resolve_context_to_track_ids(
                         None
                     )
                     if bucket:
-                        return bucket["track_ids"]
-                return session["unassigned_track_ids"]
+                        return _filter_unavailable(bucket["track_ids"], db_conn)
+                return _filter_unavailable(session["unassigned_track_ids"], db_conn)
             else:
                 logger.warning(f"Organizer session {context.session_id} not found or inactive")
                 return []
