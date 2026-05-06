@@ -10,15 +10,19 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
 echo "Building frontend..."
-cd web/frontend && npm run build && cd ../..
+(cd web/frontend && npm run build)
 
 echo "Syncing to Pi..."
 rsync -avz --delete \
   --exclude '.venv' \
   --exclude '__pycache__' \
   --exclude '.git' \
+  --exclude '.claude' \
   --exclude 'node_modules' \
-  --exclude 'web/frontend/node_modules' \
+  --exclude 'mobile' \
+  --exclude 'shared' \
+  --exclude 'docs' \
+  --exclude 'scripts' \
   --exclude '*.log' \
   --exclude '.session.json' \
   --exclude '.pytest_cache' \
