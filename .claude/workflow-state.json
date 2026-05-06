@@ -1,0 +1,33 @@
+{
+  "plans": {
+    "graceful-snacking-seahorse": {
+      "path": ".claude/tasks/graceful-snacking-seahorse/",
+      "status": "ready",
+      "handoffAt": "2026-03-10T12:00:00Z"
+    },
+    "merry-honking-meteor": {
+      "path": ".claude/tasks/merry-honking-meteor/",
+      "status": "superseded",
+      "handoffAt": "2026-03-14T00:00:00Z",
+      "supersededBy": "concurrent-squishing-salamander"
+    },
+    "cosmic-conjuring-glacier": {
+      "path": ".claude/tasks/cosmic-conjuring-glacier/",
+      "status": "complete",
+      "handoffAt": "2026-03-17T00:00:00Z",
+      "preImplCommit": "8aa74a5",
+      "startedAt": "2026-03-17T00:00:00Z",
+      "completedAt": "2026-03-17T00:00:00Z"
+    },
+    "concurrent-squishing-salamander": {
+      "path": ".claude/tasks/concurrent-squishing-salamander/",
+      "status": "ready",
+      "handoffAt": "2026-03-17T18:00:00Z"
+    },
+    "reposts-pipeline-simplification": {
+      "path": ".claude/tasks/reposts-pipeline-simplification/",
+      "status": "ready",
+      "handoffAt": "2026-04-27T15:30:00Z"
+    }
+  }
+}
