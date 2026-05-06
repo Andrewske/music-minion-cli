@@ -1,4 +1,4 @@
-import { getDefaultApiClient } from './client.js';
+import { getDefaultApiClient } from './client';
 
 export interface SoundCloudPlaylist {
   id: string;

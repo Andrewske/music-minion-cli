@@ -2,8 +2,8 @@
  * Track API — portable layer (no DOM dependencies).
  * Web-specific features (waveform cache, link prefetch) stay in web/frontend.
  */
-import { getDefaultApiClient } from './client.js';
-import type { WaveformData, FoldersResponse } from '../types/index.js';
+import { getDefaultApiClient } from './client';
+import type { WaveformData, FoldersResponse } from '../types/index';
 
 export function getStreamUrl(trackId: number): string {
   return `${getDefaultApiClient().getBaseUrl()}/tracks/${trackId}/stream`;
