@@ -392,6 +392,37 @@ def evaluate_filters(playlist_id: int) -> list[dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
 
 
+def refresh_all_smart_playlists() -> int:
+    """Refresh materialized tracks for every smart playlist.
+
+    Call after bulk track inserts (library scans, provider imports) so smart
+    playlists pick up newly added tracks without manual filter edits.
+
+    Returns:
+        Number of smart playlists refreshed.
+    """
+    from loguru import logger
+    from music_minion.domain.playlists.crud import get_all_playlists
+
+    playlists = get_all_playlists()
+    smart_playlists = [p for p in playlists if p.get("type") == "smart"]
+
+    if not smart_playlists:
+        return 0
+
+    logger.info(f"Refreshing {len(smart_playlists)} smart playlist(s)")
+    for playlist in smart_playlists:
+        try:
+            count = refresh_smart_playlist_tracks(playlist["id"])
+            logger.debug(f"Refreshed '{playlist['name']}': {count} tracks")
+        except Exception as e:
+            logger.warning(
+                f"Failed to refresh smart playlist '{playlist['name']}': {e}"
+            )
+
+    return len(smart_playlists)
+
+
 def refresh_smart_playlist_tracks(playlist_id: int) -> int:
     """Re-evaluate filters and update playlist_tracks table.
 

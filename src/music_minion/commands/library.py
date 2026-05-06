@@ -41,20 +41,9 @@ def _save_provider_state_to_db(provider_name: str, state: ProviderState) -> None
 
 def _refresh_all_smart_playlists() -> None:
     """Refresh materialized tracks for all smart playlists."""
-    from music_minion.domain.playlists.crud import get_all_playlists
-    from music_minion.domain.playlists.filters import refresh_smart_playlist_tracks
+    from music_minion.domain.playlists.filters import refresh_all_smart_playlists
 
-    playlists = get_all_playlists()
-    smart_playlists = [p for p in playlists if p.get("type") == "smart"]
-
-    if smart_playlists:
-        logger.info(f"Refreshing {len(smart_playlists)} smart playlist(s)")
-        for playlist in smart_playlists:
-            try:
-                count = refresh_smart_playlist_tracks(playlist["id"])
-                logger.debug(f"Refreshed '{playlist['name']}': {count} tracks")
-            except Exception as e:
-                logger.warning(f"Failed to refresh smart playlist '{playlist['name']}': {e}")
+    refresh_all_smart_playlists()
 
 
 def get_sync_state() -> Optional[dict[str, Any]]:
