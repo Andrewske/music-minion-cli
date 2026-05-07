@@ -103,16 +103,17 @@ export function usePlayer() {
     store.registerDevice();
   }, [store]);
 
-  const handlePlayError = useCallback(
-    (err: Error): void => {
-      if (err.name === 'NotAllowedError') {
-        store.set({ needsUserGesture: true });
-      } else if (err.name !== 'AbortError') {
-        store.setPlaybackError(err.message);
-      }
-    },
-    [store],
-  );
+  // Stable identity — reads/writes store via getState/setState so this callback
+  // doesn't churn on every render. A fresh callback each render would put it in
+  // effect dep arrays and re-run them, aborting in-flight canplay listeners
+  // before the browser fires them.
+  const handlePlayError = useCallback((err: Error): void => {
+    if (err.name === 'NotAllowedError') {
+      usePlayerStore.setState({ needsUserGesture: true });
+    } else if (err.name !== 'AbortError') {
+      usePlayerStore.getState().setPlaybackError(err.message);
+    }
+  }, []);
 
   // Volume/mute apply to BOTH elements every time
   useEffect(() => {
@@ -240,6 +241,13 @@ export function usePlayer() {
     const timeout = window.setTimeout(() => {
       const inactive = activeKeyRef.current === 'A' ? audioB : audioA;
       if (inactive.dataset.trackId === String(nextTrack.id)) return;
+      // Swap-pending guard: if inactive holds the current track, it's the
+      // load-on-swap target waiting for canplay. Overwriting its src here
+      // would race the swap and play the preloaded track instead.
+      if (
+        store.currentTrack
+        && inactive.dataset.trackId === String(store.currentTrack.id)
+      ) return;
       bindPreload(inactive, nextTrack.id, controller.signal);
     }, PRELOAD_DEBOUNCE_MS);
 
