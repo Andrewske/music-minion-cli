@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from loguru import logger
 import mimetypes
 import json
@@ -145,6 +145,78 @@ async def stream_audio(
 
     # No local file and not a SoundCloud track - track not found
     raise HTTPException(404, "Track not found or no streamable source")
+
+
+@router.get("/tracks/{track_id}/artwork")
+async def get_track_artwork(track_id: int, db=Depends(get_db)) -> Response:
+    """Return embedded artwork for a track.
+
+    Priority:
+    1. Embedded art from local file (via Mutagen)
+    2. Redirect to artwork_url stored in DB
+    3. 404
+    """
+    cursor = db.execute(
+        "SELECT local_path, artwork_url FROM tracks WHERE id = ?", (track_id,)
+    )
+    row = cursor.fetchone()
+    if not row:
+        raise HTTPException(404, "Track not found")
+
+    local_path = row["local_path"]
+    artwork_url = row["artwork_url"]
+
+    if local_path and Path(local_path).exists():
+        try:
+            from mutagen import File as MutagenFile
+            import base64
+
+            audio = MutagenFile(local_path)
+            img_bytes: Optional[bytes] = None
+
+            if audio is not None:
+                suffix = Path(local_path).suffix.lower()
+
+                if suffix == ".mp3" and audio.tags:
+                    apic_list = audio.tags.getall("APIC")
+                    if apic_list:
+                        img_bytes = apic_list[0].data
+
+                elif suffix in (".opus", ".ogg"):
+                    raw = audio.get("metadata_block_picture")
+                    if raw:
+                        pic_data = base64.b64decode(raw[0])
+                        # FLAC Picture block: skip header bytes to get raw image
+                        # Format: 4-byte type, 4-byte mime_len, mime, 4-byte desc_len, desc,
+                        #         4-byte width, height, color_depth, color_count, 4-byte data_len, data
+                        offset = 4
+                        mime_len = int.from_bytes(pic_data[offset : offset + 4], "big")
+                        offset += 4 + mime_len
+                        desc_len = int.from_bytes(pic_data[offset : offset + 4], "big")
+                        offset += 4 + desc_len + 16  # desc + 4 ints (w/h/depth/count)
+                        data_len = int.from_bytes(pic_data[offset : offset + 4], "big")
+                        offset += 4
+                        img_bytes = pic_data[offset : offset + data_len]
+
+                elif suffix == ".m4a" and audio.tags:
+                    covr = audio.tags.get("covr")
+                    if covr:
+                        img_bytes = bytes(covr[0])
+
+                elif suffix == ".flac":
+                    pics = getattr(audio, "pictures", [])
+                    if pics:
+                        img_bytes = pics[0].data
+
+            if img_bytes:
+                return Response(content=img_bytes, media_type="image/jpeg")
+        except Exception:
+            logger.exception(f"Failed to read embedded art for track {track_id}")
+
+    if artwork_url:
+        return RedirectResponse(url=artwork_url)
+
+    raise HTTPException(404, "No artwork available")
 
 
 @router.get("/tracks/{track_id}/waveform")

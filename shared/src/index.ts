@@ -41,11 +41,13 @@ export type { EmojiInfo, TrackEmoji } from './api/emojis';
 export {
   getSoundCloudPlaylists, matchPlaylist, createPlaylistFromMatches,
   searchTracks, getSoundCloudSyncStatus, syncSoundCloudLibrary,
+  getMatchingCandidates, acceptCandidate, rejectCandidate, getMatchingStats,
 } from './api/soundcloud';
 export type {
   SoundCloudPlaylist, ScPlaylistMatch, MatchPlaylistResponse,
   CreatePlaylistRequest, CreatePlaylistResponse, TrackSearchResult,
   SyncResponse, SyncStatus,
+  MatchCandidate, MatchCandidateTrack, MatchCandidateStats, GetMatchingCandidatesParams,
 } from './api/soundcloud';
 export { builderApi } from './api/builder';
 export type { Filter, Track, TrackActionResponse } from './api/builder';

@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 54  # Track availability tracking: tracks.unavailable_at + unavailable_reason
+SCHEMA_VERSION = 56  # SC track matching: artwork_url + match_candidates table
 
 
 # Initial top 50 curated emojis for music reactions
@@ -2587,6 +2587,40 @@ def migrate_database(conn, current_version: int) -> None:
 
         conn.commit()
         logger.info("  ✓ Migration to v54 complete: tracks.unavailable_at + unavailable_reason added")
+
+    if current_version < 55:
+        logger.info("Running migration to v55: artwork_url for track cover art...")
+        try:
+            conn.execute("ALTER TABLE tracks ADD COLUMN artwork_url TEXT")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column" not in str(exc).lower():
+                raise
+        conn.commit()
+        logger.info("  ✓ Migration to v55 complete: tracks.artwork_url added")
+
+    if current_version < 56:
+        logger.info("Running migration to v56: match_candidates for SC track matching review...")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS match_candidates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                local_track_id INTEGER NOT NULL,
+                sc_track_id INTEGER NOT NULL,
+                score REAL NOT NULL,
+                scoring_path TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                reviewed_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (local_track_id) REFERENCES tracks (id) ON DELETE CASCADE,
+                FOREIGN KEY (sc_track_id) REFERENCES tracks (id) ON DELETE CASCADE,
+                UNIQUE (local_track_id, sc_track_id)
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_match_candidates_status
+            ON match_candidates(status)
+        """)
+        conn.commit()
+        logger.info("  ✓ Migration to v56 complete: match_candidates table created")
 
 
 def init_database() -> None:

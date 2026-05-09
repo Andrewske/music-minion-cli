@@ -10,6 +10,7 @@ import { Button } from '../ui/button';
 import { Slider } from '../ui/slider';
 import { DeviceSelector } from './DeviceSelector';
 import { WaveformPlayer } from '../WaveformPlayer';
+import { TrackArtwork } from '../TrackArtwork';
 
 export function PlayerBar(): JSX.Element {
   const {
@@ -163,6 +164,9 @@ export function PlayerBar(): JSX.Element {
         )}
         {/* Track info + controls */}
         <div className="flex items-center gap-3 px-3 flex-1">
+          {currentTrack && (
+            <TrackArtwork trackId={currentTrack.id} size={40} />
+          )}
           <div className="flex-1 min-w-0">
             {currentTrack ? (
               <>
@@ -202,6 +206,7 @@ export function PlayerBar(): JSX.Element {
         <div className="flex items-center gap-3 w-64">
           {currentTrack && (
             <>
+              <TrackArtwork trackId={currentTrack.id} size={40} className="shrink-0" />
               <div className="truncate">
                 <div className="font-medium text-white/90 truncate">
                   {currentTrack.title ?? 'Not playing'}

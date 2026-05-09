@@ -1093,6 +1093,228 @@ async def sync_soundcloud_followings(db=Depends(get_db)) -> dict:
 
 
 # ============================================================================
+# Match Candidates Review Endpoints
+# ============================================================================
+
+
+class MatchCandidateTrack(BaseModel):
+    """Track info for a match candidate."""
+
+    id: int
+    title: Optional[str]
+    artist: Optional[str]
+
+
+class MatchCandidateResponse(BaseModel):
+    """A single match candidate with both local and SC track info."""
+
+    id: int
+    local_track: MatchCandidateTrack
+    sc_track: MatchCandidateTrack
+    score: float
+    scoring_path: Optional[str]
+
+
+class MatchCandidateStatsResponse(BaseModel):
+    """Counts of candidates by status."""
+
+    pending: int
+    accepted: int
+    rejected: int
+    total: int
+
+
+class AcceptRejectRequest(BaseModel):
+    """Request body for accept/reject actions."""
+
+    candidate_id: int
+
+
+@router.get("/matching/candidates")
+async def get_match_candidates(
+    page: int = 1,
+    page_size: int = 20,
+    min_score: float = 0.0,
+    max_score: float = 1.0,
+    db=Depends(get_db),
+) -> list[MatchCandidateResponse]:
+    """List pending match candidates with local and SC track info.
+
+    Args:
+        page: 1-based page number
+        page_size: records per page (default 20)
+        min_score: minimum score filter (inclusive)
+        max_score: maximum score filter (inclusive)
+
+    Returns:
+        List of candidates with local_track and sc_track details
+    """
+    offset = (page - 1) * page_size
+    cursor = db.execute(
+        """
+        SELECT
+            mc.id,
+            mc.score,
+            mc.scoring_path,
+            lt.id  AS local_id,
+            lt.title AS local_title,
+            lt.artist AS local_artist,
+            st.id  AS sc_id,
+            st.title AS sc_title,
+            st.artist AS sc_artist
+        FROM match_candidates mc
+        JOIN tracks lt ON lt.id = mc.local_track_id
+        JOIN tracks st ON st.id = mc.sc_track_id
+        WHERE mc.status = 'pending'
+          AND mc.score >= ?
+          AND mc.score <= ?
+        ORDER BY mc.score DESC
+        LIMIT ? OFFSET ?
+        """,
+        (min_score, max_score, page_size, offset),
+    )
+    rows = cursor.fetchall()
+    return [
+        MatchCandidateResponse(
+            id=row["id"],
+            local_track=MatchCandidateTrack(
+                id=row["local_id"],
+                title=row["local_title"],
+                artist=row["local_artist"],
+            ),
+            sc_track=MatchCandidateTrack(
+                id=row["sc_id"],
+                title=row["sc_title"],
+                artist=row["sc_artist"],
+            ),
+            score=row["score"],
+            scoring_path=row["scoring_path"],
+        )
+        for row in rows
+    ]
+
+
+@router.post("/matching/accept")
+async def accept_match_candidate(
+    req: AcceptRejectRequest, db=Depends(get_db)
+) -> dict:
+    """Accept a match candidate: link local track to its SC track.
+
+    Sets status='accepted' on the candidate and writes soundcloud_id to the
+    local track record so it can be streamed.
+
+    Args:
+        req: Request with candidate_id
+
+    Returns:
+        {"ok": True}
+
+    Raises:
+        HTTPException: 404 if candidate not found
+    """
+    now = datetime.utcnow().isoformat()
+
+    # Fetch candidate first to get track IDs
+    row = db.execute(
+        "SELECT local_track_id, sc_track_id FROM match_candidates WHERE id = ? AND status = 'pending'",
+        (req.candidate_id,),
+    ).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Candidate not found or already reviewed")
+
+    local_track_id = row["local_track_id"]
+    sc_track_id_db = row["sc_track_id"]
+
+    # Get the soundcloud_id string from the SC track record
+    sc_row = db.execute(
+        "SELECT soundcloud_id FROM tracks WHERE id = ?",
+        (sc_track_id_db,),
+    ).fetchone()
+
+    if not sc_row or not sc_row["soundcloud_id"]:
+        raise HTTPException(
+            status_code=422,
+            detail="SC track has no soundcloud_id — cannot link",
+        )
+
+    soundcloud_id = sc_row["soundcloud_id"]
+
+    # Mark candidate accepted
+    db.execute(
+        "UPDATE match_candidates SET status = 'accepted', reviewed_at = ? WHERE id = ?",
+        (now, req.candidate_id),
+    )
+
+    # Write soundcloud_id to local track (only if not already set)
+    db.execute(
+        "UPDATE tracks SET soundcloud_id = ? WHERE id = ? AND soundcloud_id IS NULL",
+        (soundcloud_id, local_track_id),
+    )
+
+    db.commit()
+    logger.info(
+        f"Accepted match candidate {req.candidate_id}: "
+        f"local_track={local_track_id} → soundcloud_id={soundcloud_id}"
+    )
+    return {"ok": True}
+
+
+@router.post("/matching/reject")
+async def reject_match_candidate(
+    req: AcceptRejectRequest, db=Depends(get_db)
+) -> dict:
+    """Reject a match candidate.
+
+    Args:
+        req: Request with candidate_id
+
+    Returns:
+        {"ok": True}
+
+    Raises:
+        HTTPException: 404 if candidate not found
+    """
+    now = datetime.utcnow().isoformat()
+    result = db.execute(
+        "UPDATE match_candidates SET status = 'rejected', reviewed_at = ? WHERE id = ? AND status = 'pending'",
+        (now, req.candidate_id),
+    )
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Candidate not found or already reviewed")
+
+    db.commit()
+    logger.info(f"Rejected match candidate {req.candidate_id}")
+    return {"ok": True}
+
+
+@router.get("/matching/stats")
+async def get_match_candidate_stats(db=Depends(get_db)) -> MatchCandidateStatsResponse:
+    """Return counts of match candidates by status.
+
+    Returns:
+        Counts: pending, accepted, rejected, total
+    """
+    cursor = db.execute(
+        """
+        SELECT
+            SUM(CASE WHEN status = 'pending'  THEN 1 ELSE 0 END) AS pending,
+            SUM(CASE WHEN status = 'accepted' THEN 1 ELSE 0 END) AS accepted,
+            SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected,
+            COUNT(*)                                               AS total
+        FROM match_candidates
+        """
+    )
+    row = cursor.fetchone()
+    return MatchCandidateStatsResponse(
+        pending=row["pending"] or 0,
+        accepted=row["accepted"] or 0,
+        rejected=row["rejected"] or 0,
+        total=row["total"] or 0,
+    )
+
+
+# ============================================================================
 # Feed Sync Endpoints
 # ============================================================================
 

@@ -27,6 +27,7 @@ export interface TrackInfo {
   // Multi-source fields
   source?: string;
   local_path?: string;
+  artwork_url?: string;
 }
 
 export interface Playlist {

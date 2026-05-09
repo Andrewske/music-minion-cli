@@ -110,13 +110,13 @@ def get_playlist_tracks_with_ratings(
         is_discovery = bool(discovery_row and discovery_row["discovery_source"])
 
         repost_join = ""
-        repost_col = "COALESCE(t.released_at, pt.added_at)"
+        repost_col = "COALESCE(t.released_at, datetime(t.file_mtime, 'unixepoch'), t.created_at, pt.added_at)"
         if is_discovery:
             repost_join = """
                 LEFT JOIN discovery_tracks dt ON dt.soundcloud_id = t.soundcloud_id
                 LEFT JOIN discovery_track_reposters dtr ON dtr.discovery_track_id = dt.id
             """
-            repost_col = "COALESCE(MIN(dtr.reposted_at), t.released_at, dt.released_at, pt.added_at)"
+            repost_col = "COALESCE(MIN(dtr.reposted_at), t.released_at, dt.released_at, datetime(t.file_mtime, 'unixepoch'), t.created_at, pt.added_at)"
 
         query = f"""
             SELECT

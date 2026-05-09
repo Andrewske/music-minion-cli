@@ -106,6 +106,70 @@ export async function getSoundCloudSyncStatus(): Promise<SyncStatus> {
   return getDefaultApiClient().request<SyncStatus>('/soundcloud/sync/status');
 }
 
+// ============================================================================
+// Match Candidates
+// ============================================================================
+
+export interface MatchCandidateTrack {
+  id: number;
+  title: string | null;
+  artist: string | null;
+}
+
+export interface MatchCandidate {
+  id: number;
+  local_track: MatchCandidateTrack;
+  sc_track: MatchCandidateTrack;
+  score: number;
+  scoring_path: string | null;
+}
+
+export interface MatchCandidateStats {
+  pending: number;
+  accepted: number;
+  rejected: number;
+  total: number;
+}
+
+export interface GetMatchingCandidatesParams {
+  page?: number;
+  pageSize?: number;
+  minScore?: number;
+  maxScore?: number;
+}
+
+export async function getMatchingCandidates(
+  params?: GetMatchingCandidatesParams
+): Promise<MatchCandidate[]> {
+  const qs = new URLSearchParams();
+  if (params?.page !== undefined) qs.set('page', String(params.page));
+  if (params?.pageSize !== undefined) qs.set('page_size', String(params.pageSize));
+  if (params?.minScore !== undefined) qs.set('min_score', String(params.minScore));
+  if (params?.maxScore !== undefined) qs.set('max_score', String(params.maxScore));
+  const query = qs.toString() ? `?${qs.toString()}` : '';
+  return getDefaultApiClient().request<MatchCandidate[]>(
+    `/soundcloud/matching/candidates${query}`
+  );
+}
+
+export async function acceptCandidate(candidateId: number): Promise<{ ok: boolean }> {
+  return getDefaultApiClient().request<{ ok: boolean }>('/soundcloud/matching/accept', {
+    method: 'POST',
+    body: JSON.stringify({ candidate_id: candidateId }),
+  });
+}
+
+export async function rejectCandidate(candidateId: number): Promise<{ ok: boolean }> {
+  return getDefaultApiClient().request<{ ok: boolean }>('/soundcloud/matching/reject', {
+    method: 'POST',
+    body: JSON.stringify({ candidate_id: candidateId }),
+  });
+}
+
+export async function getMatchingStats(): Promise<MatchCandidateStats> {
+  return getDefaultApiClient().request<MatchCandidateStats>('/soundcloud/matching/stats');
+}
+
 export async function syncSoundCloudLibrary(): Promise<SyncResponse> {
   try {
     return await getDefaultApiClient().request<SyncResponse>('/soundcloud/sync', {
