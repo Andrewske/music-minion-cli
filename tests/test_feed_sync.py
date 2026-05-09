@@ -712,3 +712,154 @@ class TestFeedStatsCTE:
         stats = matching[0]
         assert stats["feed_noise_7d"] == pytest.approx(2 / 7.0, abs=0.01)
         assert stats["feed_noise_30d"] == pytest.approx(4 / 30.0, abs=0.01)
+
+
+# ---------------------------------------------------------------------------
+# Waterfall selection tests (pure function, no DB)
+# ---------------------------------------------------------------------------
+
+
+from typing import Any
+
+from web.backend.discovery_sync import _select_tracks_waterfall
+
+
+def _make_track(
+    sc_id: str | int, artist_id: int, hit_rate: float = 0.0, reposted_at: str = "2026/04/25 00:00:00 +0000"
+) -> dict[str, Any]:
+    return {
+        "id": sc_id,
+        "artist_id": artist_id,
+        "artist_hit_rate": hit_rate,
+        "reposted_at": reposted_at,
+        "created_at": reposted_at,
+        "duration": 200000,
+        "title": f"Track {sc_id}",
+        "user": {"username": f"Artist {artist_id}"},
+    }
+
+
+class TestWaterfallSelection:
+    def test_fills_to_target_with_caps(self) -> None:
+        tracks = [_make_track(i, i % 10, hit_rate=50.0) for i in range(200)]
+        caps = {a: 20 for a in range(10)}
+        result = _select_tracks_waterfall(tracks, caps, target_count=100)
+        assert len(result) == 100
+
+    def test_hit_rate_sorting(self) -> None:
+        """High hit-rate artist tracks appear before low hit-rate."""
+        tracks = [
+            _make_track(1, 1, hit_rate=60.0),
+            _make_track(2, 2, hit_rate=5.0),
+            _make_track(3, 1, hit_rate=60.0),
+        ]
+        caps = {1: 8, 2: 1}
+        result = _select_tracks_waterfall(tracks, caps, target_count=3)
+        assert result[0]["id"] == 1 or result[0]["id"] == 3
+        assert result[-1]["id"] == 2
+
+    def test_progressive_relaxation_doubles_caps(self) -> None:
+        """50 artists × cap=1 = 50 in round 1, doubled to 100 in round 2."""
+        tracks = []
+        for artist_id in range(50):
+            for j in range(4):
+                tracks.append(_make_track(artist_id * 100 + j, artist_id, hit_rate=30.0))
+        caps = {a: 1 for a in range(50)}
+        result = _select_tracks_waterfall(tracks, caps, target_count=100)
+        assert len(result) == 100
+
+    def test_uncapped_fallback_fills(self) -> None:
+        """5 artists × cap=1 → round 1: 5, round 2: 10, round 3: uncapped to 50."""
+        tracks = []
+        for artist_id in range(5):
+            for j in range(20):
+                tracks.append(_make_track(artist_id * 100 + j, artist_id, hit_rate=10.0))
+        caps = {a: 1 for a in range(5)}
+        result = _select_tracks_waterfall(tracks, caps, target_count=50)
+        assert len(result) == 50
+
+    def test_always_fills_when_pool_sufficient(self) -> None:
+        """500 tracks from 3 artists — must return exactly 100."""
+        tracks = []
+        for j in range(500):
+            tracks.append(_make_track(j, j % 3, hit_rate=25.0))
+        caps = {0: 2, 1: 2, 2: 2}
+        result = _select_tracks_waterfall(tracks, caps, target_count=100)
+        assert len(result) == 100
+
+    def test_pool_exhaustion(self) -> None:
+        """Only 50 tracks available — returns 50, not 100."""
+        tracks = [_make_track(i, i % 5, hit_rate=20.0) for i in range(50)]
+        caps = {a: 8 for a in range(5)}
+        result = _select_tracks_waterfall(tracks, caps, target_count=100)
+        assert len(result) == 50
+
+    def test_dedup_by_sc_id(self) -> None:
+        """Duplicate SC IDs in pool — each appears at most once."""
+        tracks = [
+            _make_track("DUP", 1, hit_rate=50.0),
+            _make_track("DUP", 2, hit_rate=40.0),
+            _make_track("UNIQUE", 1, hit_rate=50.0),
+        ]
+        caps = {1: 8, 2: 8}
+        result = _select_tracks_waterfall(tracks, caps, target_count=10)
+        sc_ids = [str(t["id"]) for t in result]
+        assert len(sc_ids) == len(set(sc_ids))
+        assert len(result) == 2
+
+    def test_empty_slot_caps_still_fills(self) -> None:
+        """When slot_caps={}, artists default to cap=1 but round 3 guarantees fill."""
+        tracks = [_make_track(i, i % 3, hit_rate=20.0) for i in range(200)]
+        result = _select_tracks_waterfall(tracks, {}, target_count=100)
+        assert len(result) == 100
+
+
+class TestWaterfallIntegration:
+    """Integration: run_discovery_sync with waterfall fills to 100."""
+
+    def test_fills_100_when_no_artists_due(self, test_db) -> None:
+        """Regression for Bug 1: all artists already checked today → slot_caps still populated."""
+        from music_minion.core.database import get_db_connection
+
+        with get_db_connection() as conn:
+            _seed_run_discovery_sync_minimum(conn)
+            artist_id = conn.execute("SELECT id FROM discovery_artists").fetchone()["id"]
+            # Mark artist as already checked (not due)
+            conn.execute(
+                "UPDATE discovery_artists SET last_checked = datetime('now'), "
+                "hit_rate = 50.0, tracks_liked = 10, tracks_dismissed = 10"
+            )
+            # Seed 200 unseen backfill tracks
+            for i in range(200):
+                conn.execute(
+                    "INSERT INTO discovery_tracks (soundcloud_id, title, artist_name, "
+                    "duration_ms, status, first_seen) VALUES (?, ?, 'Top', 200000, 'unseen', '2026-04-01')",
+                    (f"BF{i}", f"Backfill {i}"),
+                )
+            track_ids = {
+                row["soundcloud_id"]: row["id"]
+                for row in conn.execute("SELECT id, soundcloud_id FROM discovery_tracks").fetchall()
+            }
+            for sc_id, dt_id in track_ids.items():
+                conn.execute(
+                    "INSERT INTO discovery_track_reposters "
+                    "(discovery_track_id, discovery_artist_id, reposted_at) "
+                    "VALUES (?, ?, '2026-04-20 12:00:00')",
+                    (dt_id, artist_id),
+                )
+            conn.commit()
+
+        from web.backend.discovery_sync import run_discovery_sync
+
+        with patch(
+            "web.backend.discovery_sync.get_web_provider_state",
+            return_value=_auth_state(),
+        ), patch(
+            "web.backend.discovery_sync._fetch_all_reposts",
+            return_value=(_auth_state(), {}, []),
+        ):
+            result = run_discovery_sync(dry_run=True)
+
+        assert result.tracks_added_to_playlist == 100, (
+            f"Expected 100 tracks from backfill; got {result.tracks_added_to_playlist}"
+        )

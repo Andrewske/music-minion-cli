@@ -318,32 +318,32 @@ def get_owned_sc_ids(exclude_playlist_id: int) -> set[str]:
 
 
 def get_unplaced_short_tracks(
-    exclude_sc_ids: set[str],
+    exclude_sc_ids: set[str] | None = None,
     owned_sc_ids: set[str] | None = None,
-    limit: int = 500,
+    limit: int = 20000,
 ) -> list[dict[str, Any]]:
     """Get older discovery tracks that never made it to a playlist.
 
     Returns dicts shaped like SC API tracks so they work with
-    _select_tracks_chronological: {id, artist_id, created_at, duration}.
-    Ordered by reposted_at DESC, NULLs last.
+    _select_tracks_waterfall: {id, artist_id, artist_hit_rate, created_at, duration}.
+    Ordered by hit_rate DESC, reposted_at DESC, NULLs last.
 
     Args:
         exclude_sc_ids: SC IDs already selected this run (avoid dupes).
         owned_sc_ids: SC IDs the user already has (other playlists, love-rated).
-            Pass via get_owned_sc_ids() to keep one source of truth.
-        limit: max rows to fetch from the DB (filter applies after).
+        limit: max rows to fetch from the DB.
     """
+    if exclude_sc_ids is None:
+        exclude_sc_ids = set()
     if owned_sc_ids is None:
         owned_sc_ids = set()
     with get_db_connection() as conn:
-        # Pick the highest-ranked (lowest ranking number) reposter per track
-        # to avoid duplicate rows inflating per-artist counts
         rows = conn.execute(
             """
             SELECT dt.soundcloud_id, dt.duration_ms, dt.first_seen,
                    dt.title, dt.artist_name,
-                   best.discovery_artist_id, best.reposted_at
+                   best.discovery_artist_id, best.reposted_at,
+                   da_best.hit_rate AS artist_hit_rate
             FROM discovery_tracks dt
             JOIN (
                 SELECT dtr.discovery_track_id,
@@ -358,9 +358,10 @@ def get_unplaced_short_tracks(
                   ON da.id = dtr.discovery_artist_id
                  AND da.in_top_200 = 1
             ) best ON best.discovery_track_id = dt.id AND best.rn = 1
+            JOIN discovery_artists da_best ON da_best.id = best.discovery_artist_id
             WHERE dt.status = 'unseen'
               AND dt.duration_ms <= 600000
-            ORDER BY best.reposted_at IS NULL, best.reposted_at DESC
+            ORDER BY da_best.hit_rate DESC, best.reposted_at IS NULL, best.reposted_at DESC
             LIMIT ?
             """,
             (limit,),
@@ -376,6 +377,7 @@ def get_unplaced_short_tracks(
         results.append({
             "id": sc_id,
             "artist_id": row["discovery_artist_id"],
+            "artist_hit_rate": row["artist_hit_rate"] or 0.0,
             "reposted_at": row["reposted_at"],
             "created_at": row["first_seen"] or "1970/01/01 00:00:00 +0000",
             "duration": row["duration_ms"],
