@@ -1477,7 +1477,8 @@ def unfollow_user(
     if not state.authenticated:
         return state, False
 
-    url = f"{API_BASE_URL}/me/followings/{user_id}"
+    user_urn = f"soundcloud:users:{user_id}" if not user_id.startswith("soundcloud:users:") else user_id
+    url = f"{API_BASE_URL}/me/followings/{user_urn}"
 
     try:
         state, _ = _request_with_backoff(state, "DELETE", url)
@@ -1485,9 +1486,11 @@ def unfollow_user(
         return state, True
     except requests.HTTPError as exc:
         status = exc.response.status_code if exc.response is not None else 0
-        if status in (403, 404):
-            logger.warning(f"SC unfollow {user_id} got {status} — treating as success")
+        body = exc.response.text[:300] if exc.response is not None else ""
+        if status in (403, 404, 422):
+            logger.warning(f"SC unfollow {user_id} got {status} — treating as success (body: {body})")
             return state, True
+        logger.error(f"SC unfollow {user_id} failed {status}: {body}")
         raise
 
 
