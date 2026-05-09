@@ -312,7 +312,7 @@ class TestBackfillNullReposted:
             for sc_id, reposted_at in [
                 ("RECENT", "2026-04-25 12:00:00"),
                 ("NULL_TS", None),
-                ("OLD", "2024-01-01 12:00:00"),
+                ("OLD", "2026-01-01 12:00:00"),
             ]:
                 conn.execute(
                     "INSERT INTO discovery_track_reposters "

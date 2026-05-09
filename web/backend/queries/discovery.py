@@ -361,6 +361,8 @@ def get_unplaced_short_tracks(
             JOIN discovery_artists da_best ON da_best.id = best.discovery_artist_id
             WHERE dt.status = 'unseen'
               AND dt.duration_ms <= 600000
+              AND (best.reposted_at IS NULL
+                   OR best.reposted_at > datetime('now', '-1 year'))
             ORDER BY da_best.hit_rate DESC, best.reposted_at IS NULL, best.reposted_at DESC
             LIMIT ?
             """,
