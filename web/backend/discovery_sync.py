@@ -286,51 +286,51 @@ def _fetch_all_reposts(
     return state, artist_tracks, errors
 
 
-def _select_tracks_chronological(
+def _select_tracks_waterfall(
     all_tracks: list[dict[str, Any]],
     slot_caps: dict[int, int],
     target_count: int = 100,
 ) -> list[dict[str, Any]]:
-    """Select tracks by recency with per-artist slot caps + backfill.
+    """Select tracks via progressive cap relaxation — guarantees fill when pool >= target.
 
-    Pass 1: Respect per-artist caps (quality weighting).
-    Pass 2: If still under target, ignore caps and fill chronologically.
-
-    Sorts all tracks by created_at descending (newest first).
-    Each track dict must have an 'artist_id' key (added during fetch).
+    Sorted by (artist_hit_rate DESC, reposted_at DESC).
+    Round 1: respect per-artist caps.
+    Round 2: doubled caps.
+    Round 3: uncapped fill.
     """
-    def _sort_key(track: dict[str, Any]) -> str:
-        return (
-            track.get("reposted_at")
-            or track.get("created_at")
-            or "1970/01/01 00:00:00 +0000"
-        )
-
-    sorted_tracks = sorted(all_tracks, key=_sort_key, reverse=True)
+    sorted_tracks = sorted(
+        all_tracks,
+        key=lambda t: (
+            t.get("artist_hit_rate", 0.0) or 0.0,
+            t.get("reposted_at") or t.get("created_at") or "",
+        ),
+        reverse=True,
+    )
 
     counts: dict[int, int] = {}
     seen_sc_ids: set[str] = set()
     selected: list[dict[str, Any]] = []
 
-    # Pass 1: capped selection
-    for track in sorted_tracks:
+    for cap_multiplier in (1, 2):
+        for track in sorted_tracks:
+            if len(selected) >= target_count:
+                break
+            artist_id = track.get("artist_id")
+            if artist_id is None:
+                continue
+            sc_id = str(track.get("id", ""))
+            if sc_id in seen_sc_ids:
+                continue
+            cap = slot_caps.get(artist_id, 1) * cap_multiplier
+            if counts.get(artist_id, 0) >= cap:
+                continue
+            selected.append(track)
+            counts[artist_id] = counts.get(artist_id, 0) + 1
+            seen_sc_ids.add(sc_id)
         if len(selected) >= target_count:
             break
-        artist_id = track.get("artist_id")
-        if artist_id is None:
-            continue
-        sc_id = str(track.get("id", ""))
-        if sc_id in seen_sc_ids:
-            continue
-        cap = slot_caps.get(artist_id, 1)
-        current = counts.get(artist_id, 0)
-        if current < cap:
-            selected.append(track)
-            counts[artist_id] = current + 1
-            seen_sc_ids.add(sc_id)
 
-    # Pass 2: relaxed backfill — still cap-aware but with 2x multiplier
-    # Prevents a single low-hit-rate artist from flooding the playlist
+    # Round 3: uncapped fill
     if len(selected) < target_count:
         for track in sorted_tracks:
             if len(selected) >= target_count:
@@ -338,16 +338,22 @@ def _select_tracks_chronological(
             sc_id = str(track.get("id", ""))
             if sc_id in seen_sc_ids:
                 continue
-            artist_id = track.get("artist_id")
-            if artist_id is None:
-                continue
-            cap = slot_caps.get(artist_id, 1) * 2
-            current = counts.get(artist_id, 0)
-            if current >= cap:
+            if track.get("artist_id") is None:
                 continue
             selected.append(track)
-            counts[artist_id] = current + 1
             seen_sc_ids.add(sc_id)
+
+    if len(selected) < target_count:
+        if len(all_tracks) >= target_count:
+            logger.error(
+                f"Waterfall BUG: selected {len(selected)} from pool of "
+                f"{len(all_tracks)} (target={target_count})"
+            )
+        else:
+            logger.warning(
+                f"Pool exhausted: {len(all_tracks)} eligible tracks, "
+                f"selected {len(selected)} (target={target_count})"
+            )
 
     return selected
 
@@ -531,21 +537,27 @@ def run_discovery_sync(
     target_count = remaining_slots
 
     # Step 4: Load ranked artists + compute slot caps
-    artists = discovery_queries.get_ranked_artists()
-    if not artists:
+    # artists_to_fetch: only due for API check (cadence-gated)
+    # all_artists: everyone in top-200 (for slot cap computation)
+    artists_to_fetch = discovery_queries.get_ranked_artists()
+    all_artists = discovery_queries.get_ranked_artists(include_not_due=True)
+    if not all_artists:
         logger.warning("No resolved artists found — nothing to fetch")
 
-    slot_caps = discovery_queries.compute_slot_caps(artists)
+    slot_caps = discovery_queries.compute_slot_caps(all_artists)
+    artist_hit_rates: dict[int, float] = {
+        a["id"]: a.get("hit_rate", 0.0) or 0.0 for a in all_artists
+    }
 
     # Step 5: Load seen track IDs
     seen_ids = discovery_queries.get_seen_track_ids()
 
     # Step 6: Fetch reposts
     if progress_callback:
-        progress_callback("Fetching artist reposts...", 0, len(artists))
+        progress_callback("Fetching artist reposts...", 0, len(artists_to_fetch))
 
     state, artist_tracks, fetch_errors = _fetch_all_reposts(
-        state, artists, seen_ids, progress_callback
+        state, artists_to_fetch, seen_ids, progress_callback
     )
     errors.extend(fetch_errors)
 
@@ -607,33 +619,28 @@ def run_discovery_sync(
     # Step 8: Split by duration
     short_tracks, mix_tracks = _split_by_duration(all_fetched)
 
-    # Step 9: Select tracks chronologically with per-artist caps
+    # Step 9: Merge fresh + backfill into one pool, select via waterfall
     if progress_callback:
         progress_callback("Selecting tracks...", artists_checked, artists_checked)
 
-    selected_short = _select_tracks_chronological(
-        short_tracks, slot_caps, target_count
+    fresh_sc_ids = {str(t["id"]) for t in short_tracks}
+    backfill_pool = discovery_queries.get_unplaced_short_tracks(
+        exclude_sc_ids=fresh_sc_ids,
+        owned_sc_ids=owned_sc_ids,
     )
+    combined_pool = short_tracks + backfill_pool
 
-    # Step 9b: Backfill from older unplaced tracks if still under target
-    backfilled = 0
-    if len(selected_short) < target_count:
-        already_selected = {str(t["id"]) for t in selected_short}
-        remaining = target_count - len(selected_short)
-        backfill_pool = discovery_queries.get_unplaced_short_tracks(
-            exclude_sc_ids=already_selected,
-            owned_sc_ids=owned_sc_ids,
-            limit=remaining * 3,  # fetch extra to account for cap filtering
-        )
-        backfill_selected = _select_tracks_chronological(
-            backfill_pool, slot_caps, remaining
-        )
-        selected_short.extend(backfill_selected)
-        backfilled = len(backfill_selected)
-        logger.info(
-            f"Backfilled {backfilled} tracks from unplaced pool "
-            f"(had {target_count - remaining} from new, now {len(selected_short)} total)"
-        )
+    for track in combined_pool:
+        aid = track.get("artist_id")
+        if aid is not None and "artist_hit_rate" not in track:
+            track["artist_hit_rate"] = artist_hit_rates.get(aid, 0.0)
+
+    selected_short = _select_tracks_waterfall(combined_pool, slot_caps, target_count)
+    backfilled = sum(1 for t in selected_short if str(t["id"]) not in fresh_sc_ids)
+    logger.info(
+        f"Waterfall selection: {len(selected_short)} selected "
+        f"({len(short_tracks)} fresh, {backfilled} backfilled from {len(backfill_pool)} pool)"
+    )
 
     selected_sc_ids = [str(t["id"]) for t in selected_short]
 
