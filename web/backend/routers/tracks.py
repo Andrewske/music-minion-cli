@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from loguru import logger
 import mimetypes
@@ -297,3 +298,15 @@ async def list_folders(
     except Exception as e:
         logger.exception("Failed to list folders")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class ScrobbleRequest(BaseModel):
+    played_ms: int
+
+
+@router.post("/tracks/{track_id}/scrobble")
+async def scrobble_track(track_id: int, request: ScrobbleRequest, db=Depends(get_db)):
+    cursor = db.execute("SELECT id FROM tracks WHERE id = ?", (track_id,))
+    if not cursor.fetchone():
+        raise HTTPException(404, "Track not found")
+    return {"ok": True}

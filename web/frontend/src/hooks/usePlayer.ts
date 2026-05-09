@@ -91,6 +91,7 @@ function bindPreload(
   }
 }
 
+/** Single-instance only — must only be called in PlayerBar. Creates audio-loading side-effects tied to shared audio elements. */
 export function usePlayer() {
   const store = usePlayerStore();
   const activeAudio = useActiveAudioElement();

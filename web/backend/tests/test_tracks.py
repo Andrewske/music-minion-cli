@@ -141,3 +141,22 @@ class TestSearchTracks:
         assert response.status_code == 200
         # Empty query should still work (matches everything with %)
         assert isinstance(response.json(), list)
+
+
+class TestScrobbleTrack:
+    """Test scrobble endpoint."""
+
+    def test_scrobble_missing_track_returns_404(self):
+        response = client.post("/api/tracks/99999/scrobble", json={"played_ms": 30000})
+        assert response.status_code == 404
+
+    def test_scrobble_valid_track_returns_200(self):
+        # First check if any track exists in test DB
+        search = client.get("/api/tracks/search?q=&limit=1")
+        if search.status_code == 200 and search.json():
+            track_id = search.json()[0]["id"]
+            response = client.post(f"/api/tracks/{track_id}/scrobble", json={"played_ms": 60000})
+            assert response.status_code == 200
+            assert response.json() == {"ok": True}
+        else:
+            pytest.skip("No tracks in test database")
