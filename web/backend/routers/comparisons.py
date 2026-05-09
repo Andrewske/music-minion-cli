@@ -58,6 +58,7 @@ def _track_to_info(track: dict, emojis: list[str] | None = None) -> TrackInfo:
             global_rating=track.get("global_rating"),
             source=track.get("source"),
             local_path=track.get("local_path"),
+            artwork_url=track.get("artwork_url"),
         )
         logger.debug(f"Converted track {track['id']} to TrackInfo")
         return track_info

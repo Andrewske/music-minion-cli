@@ -4,6 +4,7 @@ import { EmojiTrackActions } from './EmojiTrackActions';
 import { usePlayerStore, type PlayContext } from '../stores/playerStore';
 import { GenreTag } from './GenreTag';
 import { GenreSelectionModal } from './GenreSelectionModal';
+import { TrackArtwork } from './TrackArtwork';
 
 interface TrackCardProps {
   onClick?: () => void;
@@ -115,6 +116,7 @@ export function TrackCard({ track, isPlaying, className = '', onArchive, onWinne
           onClick={handleClick}
           className="cursor-pointer flex flex-col w-full items-center"
         >
+          <TrackArtwork trackId={track.id} size={64} className="mb-3" />
           <div className="flex-1 pt-2">
             {/* Title & Artist */}
             <h3 className="font-bold text-xl text-white/90 leading-tight mb-2 line-clamp-2 flex items-center justify-center gap-2">

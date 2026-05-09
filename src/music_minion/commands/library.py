@@ -684,10 +684,6 @@ def sync_library(
         )
         log(f"  Skipped:  {stats['skipped']} (already synced)", level="info")
         log("", level="info")
-        log(
-            f"💡 Tip: Run 'library match {provider_name}' to link {provider_name} tracks to local files",
-            level="info",
-        )
 
         # Refresh smart playlists if new tracks were added
         if stats["created"] > 0:
@@ -1315,10 +1311,6 @@ def sync_playlists(
             )
             print_if_not_silent(f"    library active {provider_name}")
             print_if_not_silent("")
-            print_if_not_silent(
-                f"💡 To link {provider_name} tracks to local files, run:"
-            )
-            print_if_not_silent(f"    library match {provider_name}")
 
     except Exception as e:
         log(f"❌ Playlist sync failed: {e}", level="error")

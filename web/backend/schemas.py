@@ -25,6 +25,7 @@ class TrackInfo(BaseModel):
     # Multi-source fields
     source: Optional[str] = None
     local_path: Optional[str] = None
+    artwork_url: Optional[str] = None
 
 
 class ComparisonPair(BaseModel):

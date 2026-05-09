@@ -873,8 +873,8 @@ def _normalize_soundcloud_track(track: dict[str, Any]) -> dict[str, Any]:
         except (ValueError, TypeError):
             pass
 
-    # Keep None values for consistent field set across all tracks
-    # This prevents "binding parameter" errors during batch insert
+    metadata["artwork_url"] = track.get("artwork_url")
+
     return metadata
 
 
