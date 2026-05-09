@@ -89,7 +89,7 @@ function ArtistsPage(): ReactElement {
   const unfollowMut = useUnfollowArtist();
   const visibleChips = useVisibleChips();
 
-  const { data: artists, isLoading, error, refetch } = useArtists({ source, sort });
+  const { data: artists, isPending, isPlaceholderData, error, refetch } = useArtists({ source, sort });
 
   const visibleArtists = useMemo(() => {
     let list = artists ?? [];
@@ -105,7 +105,7 @@ function ArtistsPage(): ReactElement {
     return list.slice(0, DISPLAY_CAP);
   }, [artists, paretoIds, search]);
 
-  if (isLoading) return <LoadingState />;
+  if (isPending && !artists) return <LoadingState />;
   if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (!artists || artists.length === 0) return <EmptyState />;
 
@@ -142,7 +142,7 @@ function ArtistsPage(): ReactElement {
       </div>
 
       {/* TODO: virtualize if >2000 visible cards */}
-      <main className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-4">
+      <main className={`max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-4 transition-opacity ${isPlaceholderData ? 'opacity-60' : ''}`}>
         {visibleArtists.map((a) => (
           <ArtistCard
             key={`${a.id ?? 'local'}-${a.display_name}`}
