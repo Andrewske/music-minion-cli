@@ -153,10 +153,15 @@ async def unfollow_artist(discovery_artist_id: int) -> dict[str, Any]:
         logger.exception(
             f"SC unfollow failed for artist {discovery_artist_id} (sc_id={sc_user_id}): HTTP {status}"
         )
-        raise HTTPException(status_code=503, detail="Unfollow failed, try again")
+        if status == 0:
+            raise HTTPException(status_code=401, detail="SoundCloud token expired — re-authenticate")
+        raise HTTPException(status_code=503, detail=f"SoundCloud returned {status} — try again")
     except _requests.Timeout:
         logger.exception(f"SC unfollow timeout for artist {discovery_artist_id}")
-        raise HTTPException(status_code=503, detail="Unfollow failed, try again")
+        raise HTTPException(status_code=503, detail="SoundCloud request timed out — try again")
+    except _requests.ConnectionError:
+        logger.exception(f"SC connection error for artist {discovery_artist_id}")
+        raise HTTPException(status_code=503, detail="Could not reach SoundCloud — try again")
 
     # SC call succeeded — update local state in single transaction
     with get_db_connection() as conn:
