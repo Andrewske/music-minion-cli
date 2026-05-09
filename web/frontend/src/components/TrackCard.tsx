@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import type { TrackInfo } from '../types';
 import { EmojiTrackActions } from './EmojiTrackActions';
-import { usePlayer } from '../hooks/usePlayer';
-import type { PlayContext } from '../stores/playerStore';
+import { usePlayerStore, type PlayContext } from '../stores/playerStore';
 import { GenreTag } from './GenreTag';
 import { GenreSelectionModal } from './GenreSelectionModal';
 
@@ -20,7 +19,7 @@ interface TrackCardProps {
 }
 
 export function TrackCard({ track, isPlaying, className = '', onArchive, onWinner, onClick, isLoading, rankingMode = 'global', onTrackUpdate, context }: TrackCardProps) {
-  const { play } = usePlayer();
+  const { play } = usePlayerStore();
   const [genreModalOpen, setGenreModalOpen] = useState(false);
 
   // Get primary genre (position=1 or first in array, or fall back to genre string)

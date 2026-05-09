@@ -1,3 +1,4 @@
+import asyncio
 import json
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from loguru import logger
@@ -19,6 +20,16 @@ async def sync_websocket(websocket: WebSocket):
             "data": sync_manager.get_current_state(),
         })
 
+        async def send_pings():
+            try:
+                while True:
+                    await asyncio.sleep(20)
+                    await websocket.send_json({"type": "ping"})
+            except Exception:
+                pass
+
+        ping_task = asyncio.create_task(send_pings())
+
         # Handle incoming messages
         while True:
             message = await websocket.receive_text()
@@ -38,9 +49,15 @@ async def sync_websocket(websocket: WebSocket):
                 logger.warning(f"Invalid JSON from WebSocket: {message}")
 
     except WebSocketDisconnect:
+        ping_task.cancel()
         sync_manager.disconnect(websocket)
 
         # Start grace period for device if registered
         if device_id:
             logger.info(f"Device disconnected, starting grace period: {device_id}")
+            await sync_manager.unregister_device(device_id)
+    except Exception:
+        ping_task.cancel()
+        sync_manager.disconnect(websocket)
+        if device_id:
             await sync_manager.unregister_device(device_id)

@@ -1,4 +1,4 @@
-import { usePlayer } from '../hooks/usePlayer';
+import { usePlayerStore } from '../stores/playerStore';
 import type { Track } from '../api/builder';
 
 function formatDuration(seconds: number | null): string {
@@ -33,7 +33,7 @@ function UpNextTrack({ track, index }: UpNextTrackProps): JSX.Element {
 }
 
 export function UpNext(): JSX.Element {
-  const { queue, queueIndex } = usePlayer();
+  const { queue, queueIndex } = usePlayerStore();
 
   // Get upcoming tracks (next 5 after current)
   const upcoming = queue.slice(queueIndex + 1, queueIndex + 6);

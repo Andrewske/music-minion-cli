@@ -300,7 +300,9 @@ export const createPlayerStore = (deps: PlatformDeps) => {
         current.currentTrack?.id === state.currentTrack?.id &&
         current.isPlaying === state.isPlaying &&
         current.activeDeviceId === state.activeDeviceId &&
-        Math.abs((current.positionMs ?? 0) - (state.positionMs ?? 0)) < 2000
+        Math.abs((current.positionMs ?? 0) - (state.positionMs ?? 0)) < 2000 &&
+        current.queueIndex === state.queueIndex &&
+        current.queue.length === state.queue.length
       ) {
         return;
       }

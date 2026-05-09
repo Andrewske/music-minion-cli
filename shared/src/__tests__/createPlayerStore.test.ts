@@ -67,6 +67,40 @@ describe('createPlayerStore', () => {
   });
 });
 
+describe('syncState', () => {
+  it('passes through queue-only updates', () => {
+    const store = createPlayerStore(makeDeps());
+    const track = { id: 1, title: 'Song', artist: 'Artist' };
+    const queue = [track, { id: 2, title: 'Song 2', artist: 'Artist' }];
+
+    store.getState().syncState({
+      currentTrack: track,
+      isPlaying: true,
+      activeDeviceId: 'test-device-123',
+      positionMs: 1000,
+      trackStartedAt: Date.now() - 1000,
+      queue,
+      queueIndex: 0,
+      serverTime: Date.now(),
+    } as any);
+
+    expect(store.getState().queueIndex).toBe(0);
+
+    store.getState().syncState({
+      currentTrack: track,
+      isPlaying: true,
+      activeDeviceId: 'test-device-123',
+      positionMs: 1000,
+      trackStartedAt: Date.now() - 1000,
+      queue,
+      queueIndex: 1,
+      serverTime: Date.now(),
+    } as any);
+
+    expect(store.getState().queueIndex).toBe(1);
+  });
+});
+
 describe('getCurrentPosition', () => {
   it('returns positionMs when not playing', () => {
     const state = {
