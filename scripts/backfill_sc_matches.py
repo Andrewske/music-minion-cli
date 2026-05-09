@@ -15,6 +15,7 @@ Run with:
 
 import argparse
 import re
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -646,6 +647,9 @@ def main() -> None:
     mode_label = "DRY-RUN" if dry_run else "APPLY"
     logger.info(f"backfill_sc_matches starting — mode={mode_label}")
 
+    from music_minion.core.database import init_database
+    init_database()
+
     with get_db_connection() as conn:
         local_tracks = fetch_local_tracks(conn)
         sc_tracks = fetch_sc_tracks(conn)
@@ -714,11 +718,20 @@ def main() -> None:
 
     with get_db_connection() as conn:
         # Auto-links: set soundcloud_id on local track
+        # Use INSERT OR IGNORE pattern to skip duplicates caused by
+        # UNIQUE(source, soundcloud_id) when multiple local tracks
+        # match the same SC track.
+        link_skipped = 0
         for local_id, sc_soundcloud_id in auto_links:
-            conn.execute(
-                "UPDATE tracks SET soundcloud_id = ? WHERE id = ?",
-                (sc_soundcloud_id, local_id),
-            )
+            try:
+                conn.execute(
+                    "UPDATE tracks SET soundcloud_id = ? WHERE id = ?",
+                    (sc_soundcloud_id, local_id),
+                )
+            except sqlite3.IntegrityError:
+                link_skipped += 1
+        if link_skipped:
+            logger.warning(f"Skipped {link_skipped} auto-links due to duplicate soundcloud_id")
 
         # Candidates: insert into match_candidates (ignore duplicates)
         for local_id, sc_id, score, scoring_path in candidates:

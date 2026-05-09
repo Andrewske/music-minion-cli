@@ -33,7 +33,7 @@ from music_minion.domain.library.providers.soundcloud import auth as sc_auth
 # Constants
 # ---------------------------------------------------------------------------
 
-SC_API_TRACK_URL = "https://api-v2.soundcloud.com/tracks/{soundcloud_id}"
+SC_API_TRACK_URL = "https://api.soundcloud.com/tracks/{soundcloud_id}"
 SC_API_DELAY = 0.5  # 2 req/s rate limit
 
 
