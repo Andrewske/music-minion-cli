@@ -10,6 +10,7 @@
  */
 import { useEffect, useRef } from 'react';
 import TrackPlayer, {
+  AppKilledPlaybackBehavior,
   Capability,
   Event,
   useTrackPlayerEvents,
@@ -47,7 +48,7 @@ async function setupPlayer(): Promise<void> {
       ],
       // Android notification
       android: {
-        appKilledPlaybackBehavior: 'StopPlaybackAndRemoveNotification',
+        appKilledPlaybackBehavior: AppKilledPlaybackBehavior.StopPlaybackAndRemoveNotification,
       },
     });
     isSetup = true;

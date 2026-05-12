@@ -1,12 +1,19 @@
 {
   "private": true,
+  "packageManager": "npm@11.12.1",
   "workspaces": [
     "shared",
     "web/frontend",
     "mobile"
   ],
+  "scripts": {
+    "postinstall": "patch-package --patch-dir mobile/patches"
+  },
+  "devDependencies": {
+    "patch-package": "^8.0.1"
+  },
   "overrides": {
-    "react-native": "0.76.9",
-    "react-native-safe-area-context": "4.14.1"
+    "react-native": "0.83.6",
+    "react-native-safe-area-context": "5.6.2"
   }
 }

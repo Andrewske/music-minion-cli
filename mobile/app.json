@@ -6,8 +6,6 @@
     "orientation": "default",
     "icon": "./assets/icon.png",
     "scheme": "music-minion",
-    "userInterfaceStyle": "dark",
-    "newArchEnabled": false,
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -29,7 +27,19 @@
       ]
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true,
+            "kotlinVersion": "2.0.21"
+          }
+        }
+      ],
+      ["expo-share-intent", { "disableIOS": true }],
+      "./plugins/with-gradle-memory",
+      "./plugins/with-gradle-version"
     ],
     "experiments": {
       "typedRoutes": true
