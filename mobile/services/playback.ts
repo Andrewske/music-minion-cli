@@ -1,16 +1,23 @@
-/**
- * RNTP playback service — runs in background even when app is killed.
- * Handles lockscreen controls, audio focus, and notification actions.
- */
-import TrackPlayer, { Event } from 'react-native-track-player';
+import { Event, PlaybackState, type BackgroundEvent } from '@rntp/player';
+import { usePlayerStore } from '../stores/playerStore';
 
-module.exports = async function () {
-  TrackPlayer.addEventListener(Event.RemotePlay, () => TrackPlayer.play());
-  TrackPlayer.addEventListener(Event.RemotePause, () => TrackPlayer.pause());
-  TrackPlayer.addEventListener(Event.RemoteStop, () => TrackPlayer.stop());
-  TrackPlayer.addEventListener(Event.RemoteNext, () => TrackPlayer.skipToNext());
-  TrackPlayer.addEventListener(Event.RemotePrevious, () => TrackPlayer.skipToPrevious());
-  TrackPlayer.addEventListener(Event.RemoteSeek, (event) => {
-    TrackPlayer.seekTo(event.position);
-  });
+module.exports = async function (event: BackgroundEvent): Promise<void> {
+  switch (event.type) {
+    case Event.PlaybackStateChanged: {
+      const { state } = event;
+      if (state === PlaybackState.Ended) {
+        const store = usePlayerStore.getState();
+        if (store.currentContext?.type !== 'comparison') {
+          store.next();
+        }
+      }
+      break;
+    }
+    case Event.PlaybackError: {
+      const trackTitle = usePlayerStore.getState().currentTrack?.title ?? 'Unknown';
+      usePlayerStore.getState().setPlaybackError(`Failed to load: ${trackTitle}`);
+      setTimeout(() => usePlayerStore.getState().next(), 2000);
+      break;
+    }
+  }
 };

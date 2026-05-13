@@ -1,12 +1,18 @@
 /**
  * Mobile player store — injects RN-specific deps into shared factory.
  */
-import { createPlayerStore, getCurrentPosition } from '@music-minion/shared';
+import { createPlayerStore, getCurrentPosition, getDefaultApiClient } from '@music-minion/shared';
 import type { PlayContext, PlayerStore } from '@music-minion/shared';
 import type { StorageAdapter } from '@music-minion/shared';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8642/api';
+const getApiBase = (): string => {
+  try {
+    return getDefaultApiClient().getBaseUrl();
+  } catch {
+    return process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8642/api';
+  }
+};
 
 /**
  * AsyncStorage adapter — caches reads synchronously after initial hydration.
@@ -58,7 +64,7 @@ function getDeviceName(): string {
 
 export const usePlayerStore = createPlayerStore({
   storage: asyncStorageAdapter,
-  apiBase: API_BASE,
+  apiBase: getApiBase,
   getDeviceName,
   generateDeviceId,
 });

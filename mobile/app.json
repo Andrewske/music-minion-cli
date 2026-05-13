@@ -37,7 +37,12 @@
           }
         }
       ],
-      ["expo-share-intent", { "disableIOS": true }],
+      [
+        "expo-share-intent",
+        {
+          "disableIOS": true
+        }
+      ],
       "./plugins/with-gradle-memory",
       "./plugins/with-gradle-version"
     ],
@@ -51,6 +56,7 @@
       "eas": {
         "projectId": "7e39ff3d-0b77-4ea1-954e-bd7259e70b64"
       }
-    }
+    },
+    "owner": "andrewske"
   }
 }

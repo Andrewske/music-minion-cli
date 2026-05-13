@@ -1,10 +1,15 @@
-/**
- * Entry point — registers RNTP playback service before anything else.
- * This MUST be a plain .js file at the project root.
- */
-import 'react-native-get-random-values'; // Polyfill crypto.getRandomValues for Hermes
+import 'react-native-get-random-values';
 
-// Polyfill crypto.randomUUID (uses getRandomValues which is now available)
+if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout !== 'function') {
+  AbortSignal.timeout = (ms) => {
+    const controller = new AbortController();
+    const err = new Error('The operation timed out.');
+    err.name = 'TimeoutError';
+    setTimeout(() => controller.abort(err), ms);
+    return controller.signal;
+  };
+}
+
 if (typeof crypto !== 'undefined' && !crypto.randomUUID) {
   crypto.randomUUID = () => {
     const bytes = new Uint8Array(16);
@@ -22,7 +27,7 @@ if (typeof crypto !== 'undefined' && !crypto.randomUUID) {
   };
 }
 
-import TrackPlayer from 'react-native-track-player';
+import TrackPlayer from '@rntp/player';
 import 'expo-router/entry';
 
-TrackPlayer.registerPlaybackService(() => require('./services/playback'));
+TrackPlayer.registerBackgroundEventHandler(() => require('./services/playback'));

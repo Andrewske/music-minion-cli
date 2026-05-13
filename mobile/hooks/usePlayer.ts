@@ -1,73 +1,45 @@
-/**
- * Mobile player hook — bridges RNTP with shared playerStore.
- *
- * Responsibilities:
- * - RNTP setup (capabilities, queue management)
- * - Track loading when store.currentTrack changes
- * - Scrobble tracking (50% or 30s threshold)
- * - Auto-advance on track end
- * - Error handling with auto-skip
- */
 import { useEffect, useRef } from 'react';
 import TrackPlayer, {
-  AppKilledPlaybackBehavior,
-  Capability,
   Event,
-  useTrackPlayerEvents,
+  PlayerCommand,
   useProgress,
   usePlaybackState,
-} from 'react-native-track-player';
+  PlaybackState,
+} from '@rntp/player';
 import { usePlayerStore, getCurrentPosition } from '../stores/playerStore';
 import { getStreamUrl } from '@music-minion/shared';
 
 let isSetup = false;
 
-async function setupPlayer(): Promise<void> {
+function setupPlayer(): void {
   if (isSetup) return;
   try {
-    await TrackPlayer.setupPlayer({
-      // Buffer config for streaming over Tailscale
-      minBuffer: 15,
-      maxBuffer: 50,
-      playBuffer: 2,
-      backBuffer: 5,
+    TrackPlayer.setupPlayer({
+      contentType: 'music',
     });
-    await TrackPlayer.updateOptions({
+    TrackPlayer.setCommands({
       capabilities: [
-        Capability.Play,
-        Capability.Pause,
-        Capability.SkipToNext,
-        Capability.SkipToPrevious,
-        Capability.SeekTo,
-        Capability.Stop,
+        PlayerCommand.PlayPause,
+        PlayerCommand.Next,
+        PlayerCommand.Previous,
+        PlayerCommand.Seek,
+        PlayerCommand.Stop,
       ],
-      compactCapabilities: [
-        Capability.Play,
-        Capability.Pause,
-        Capability.SkipToNext,
-      ],
-      // Android notification
-      android: {
-        appKilledPlaybackBehavior: AppKilledPlaybackBehavior.StopPlaybackAndRemoveNotification,
-      },
+      handling: 'native',
     });
     isSetup = true;
-  } catch (err) {
-    // Already set up — RNTP throws if called twice
-    if ((err as Error).message?.includes('already been initialized')) {
-      isSetup = true;
-    }
+  } catch {
+    isSetup = true;
   }
 }
 
 export function usePlayer() {
   const store = usePlayerStore();
-  const { position } = useProgress(250); // Update every 250ms
+  const { position } = useProgress(0.25);
   const playbackState = usePlaybackState();
   const lastLoadedTrackIdRef = useRef<number | null>(null);
   const scrobbleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Setup RNTP on mount
   useEffect(() => {
     setupPlayer();
   }, []);
@@ -81,25 +53,23 @@ export function usePlayer() {
     const track = store.currentTrack;
     lastLoadedTrackIdRef.current = track.id;
 
-    const loadTrack = async () => {
+    const loadTrack = (): void => {
       try {
-        await TrackPlayer.reset();
-        await TrackPlayer.add({
-          id: track.id.toString(),
+        TrackPlayer.setMediaItem({
+          mediaId: track.id.toString(),
           url: getStreamUrl(track.id),
           title: track.title,
           artist: track.artist ?? 'Unknown Artist',
           duration: track.duration,
         });
 
-        // Seek to current position if resuming mid-track
         const pos = getCurrentPosition(store) / 1000;
         if (pos > 1) {
-          await TrackPlayer.seekTo(pos);
+          TrackPlayer.seekTo(pos);
         }
 
         if (store.isPlaying) {
-          await TrackPlayer.play();
+          TrackPlayer.play();
         }
       } catch (err) {
         store.setPlaybackError(
@@ -157,27 +127,39 @@ export function usePlayer() {
     };
   }, [store.currentTrack?.id, store.isPlaying, store.scrobbledThisPlaythrough]);
 
-  // Handle track end — auto-advance
-  useTrackPlayerEvents([Event.PlaybackQueueEnded], () => {
-    const state = usePlayerStore.getState();
-    if (state.currentContext?.type === 'comparison') return;
-    state.next();
-  });
+  // Handle track end + playback errors via addEventListener (v5 removed useTrackPlayerEvents)
+  useEffect(() => {
+    const stateListener = TrackPlayer.addEventListener(
+      Event.PlaybackStateChanged,
+      (event) => {
+        if (event.state === PlaybackState.Ended) {
+          const state = usePlayerStore.getState();
+          if (state.currentContext?.type !== 'comparison') {
+            state.next();
+          }
+        }
+      }
+    );
 
-  // Handle playback error — auto-skip after 2s
-  useTrackPlayerEvents([Event.PlaybackError], () => {
-    const trackTitle = usePlayerStore.getState().currentTrack?.title ?? 'Unknown';
-    usePlayerStore.getState().setPlaybackError(`Failed to load: ${trackTitle}`);
-    setTimeout(() => usePlayerStore.getState().next(), 2000);
-  });
+    const errorListener = TrackPlayer.addEventListener(
+      Event.PlaybackError,
+      () => {
+        const trackTitle = usePlayerStore.getState().currentTrack?.title ?? 'Unknown';
+        usePlayerStore.getState().setPlaybackError(`Failed to load: ${trackTitle}`);
+        setTimeout(() => usePlayerStore.getState().next(), 2000);
+      }
+    );
+
+    return () => {
+      stateListener.remove();
+      errorListener.remove();
+    };
+  }, []);
 
   return {
     ...store,
-    /** RNTP position in seconds (for seek slider) */
     rntpPosition: position,
-    /** RNTP playback state */
     rntpState: playbackState,
-    /** Whether RNTP is initialized */
     isPlayerReady: isSetup,
   };
 }

@@ -6,7 +6,7 @@
  */
 import { View, Text, Pressable, StyleSheet, ScrollView } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import TrackPlayer from 'react-native-track-player';
+import TrackPlayer from '@rntp/player';
 import { usePlayer } from '../../hooks/usePlayer';
 import { SeekSlider } from './SeekSlider';
 
