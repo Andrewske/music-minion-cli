@@ -39,9 +39,14 @@ def get_state() -> PlaybackState:
     return _state
 
 def get_state_dict() -> dict:
-    """Get state as dict with server time for API responses."""
+    """Get state as dict with server time for API responses.
+
+    Timestamps are converted to milliseconds for JS Date.now() compatibility.
+    """
     state = _state.model_dump(by_alias=True)
-    state["serverTime"] = time.time()
+    state["serverTime"] = time.time() * 1000
+    if state.get("trackStartedAt") is not None:
+        state["trackStartedAt"] = state["trackStartedAt"] * 1000
     return state
 
 async def update_state(
