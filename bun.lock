@@ -14,6 +14,7 @@
         "@music-minion/shared": "*",
         "@react-native-async-storage/async-storage": "2.2.0",
         "@react-native-community/slider": "5.1.2",
+        "@rntp/player": "^5.0.0",
         "@tanstack/react-query": "^5.51.0",
         "expo": "^55.0.15",
         "expo-build-properties": "~55.0.13",
@@ -32,7 +33,6 @@
         "react-native-safe-area-context": "~5.6.2",
         "react-native-screens": "~4.23.0",
         "react-native-toast-message": "2.3.3",
-        "react-native-track-player": "^4.1.2",
         "react-native-worklets": "0.7.4",
         "zustand": "^4.5.0",
       },
@@ -595,6 +595,8 @@
     "@react-spring/types": ["@react-spring/types@9.7.5", "", {}, ""],
 
     "@react-spring/web": ["@react-spring/web@9.7.5", "", { "dependencies": { "@react-spring/animated": "~9.7.5", "@react-spring/core": "~9.7.5", "@react-spring/shared": "~9.7.5", "@react-spring/types": "~9.7.5" }, "peerDependencies": { "react": "^16.8.0 || ^17.0.0 || ^18.0.0", "react-dom": "^16.8.0 || ^17.0.0 || ^18.0.0" } }, ""],
+
+    "@rntp/player": ["@rntp/player@5.0.0", "", { "peerDependencies": { "react": "*", "react-native": "*" } }, "sha512-fBZ+J+GZx56npFQcuv4XW4fNs2GUYBGISZjlIXl6sPnYrlLfeYppd/RXHIJbri9/X6pVi2jR/0nvw7S8323NxQ=="],
 
     "@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.0-beta.27", "", {}, ""],
 
@@ -1569,8 +1571,6 @@
     "react-native-screens": ["react-native-screens@4.23.0", "", { "dependencies": { "react-freeze": "^1.0.0", "warn-once": "^0.1.0" }, "peerDependencies": { "react": "*", "react-native": "*" } }, "sha512-XhO3aK0UeLpBn4kLecd+J+EDeRRJlI/Ro9Fze06vo1q163VeYtzfU9QS09/VyDFMWR1qxDC1iazCArTPSFFiPw=="],
 
     "react-native-toast-message": ["react-native-toast-message@2.3.3", "", { "peerDependencies": { "react": "*", "react-native": "*" } }, ""],
-
-    "react-native-track-player": ["react-native-track-player@4.1.2", "", { "peerDependencies": { "react": ">=16.8.6", "react-native": ">=0.60.0-rc.2", "react-native-windows": ">=0.63.0", "shaka-player": "^4.7.9" }, "optionalPeers": ["react-native-windows", "shaka-player"] }, ""],
 
     "react-native-worklets": ["react-native-worklets@0.7.4", "", { "dependencies": { "@babel/plugin-transform-arrow-functions": "7.27.1", "@babel/plugin-transform-class-properties": "7.27.1", "@babel/plugin-transform-classes": "7.28.4", "@babel/plugin-transform-nullish-coalescing-operator": "7.27.1", "@babel/plugin-transform-optional-chaining": "7.27.1", "@babel/plugin-transform-shorthand-properties": "7.27.1", "@babel/plugin-transform-template-literals": "7.27.1", "@babel/plugin-transform-unicode-regex": "7.27.1", "@babel/preset-typescript": "7.27.1", "convert-source-map": "2.0.0", "semver": "7.7.3" }, "peerDependencies": { "@babel/core": "*", "react": "*", "react-native": "*" } }, "sha512-NYOdM1MwBb3n+AtMqy1tFy3Mn8DliQtd8sbzAVRf9Gc+uvQ0zRfxN7dS8ZzoyX7t6cyQL5THuGhlnX+iFlQTag=="],
 

@@ -14,17 +14,11 @@
     "preview": {
       "android": {
         "buildType": "apk"
-      },
-      "env": {
-        "EAS_BUILD_PACKAGE_MANAGER": "npm"
       }
     },
     "production": {
       "android": {
         "buildType": "apk"
-      },
-      "env": {
-        "EAS_BUILD_PACKAGE_MANAGER": "npm"
       }
     }
   }

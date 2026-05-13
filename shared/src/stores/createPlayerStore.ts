@@ -88,7 +88,8 @@ export type PlayerStore = PlayerState & PlayerActions;
 /** Platform-specific dependencies injected at app init */
 export interface PlatformDeps {
   storage: StorageAdapter;
-  apiBase: string;
+  /** String or thunk for dynamic resolution (e.g. user-configured URL). */
+  apiBase: string | (() => string);
   getDeviceName: () => string;
   generateDeviceId: () => string;
 }
@@ -100,6 +101,7 @@ export function getCurrentPosition(state: PlayerState): number {
 
 export const createPlayerStore = (deps: PlatformDeps) => {
   const { storage, apiBase, getDeviceName: getDeviceNameFn, generateDeviceId: generateDeviceIdFn } = deps;
+  const getApiBase = (): string => (typeof apiBase === 'function' ? apiBase() : apiBase);
 
   const apiPost = async <T = Record<string, unknown>>(endpoint: string, body?: unknown): Promise<T> => {
     const init: RequestInit = {
@@ -107,7 +109,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
       headers: { 'Content-Type': 'application/json' },
     };
     if (body) init.body = JSON.stringify(body);
-    const response = await fetch(`${apiBase}${endpoint}`, init);
+    const response = await fetch(`${getApiBase()}${endpoint}`, init);
     if (!response.ok) {
       throw new Error(`API request failed: ${response.statusText}`);
     }
@@ -149,7 +151,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
       set({ playbackError: null });
 
       try {
-        const response = await fetch(`${apiBase}/player/play`, {
+        const response = await fetch(`${getApiBase()}/player/play`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -173,7 +175,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
 
     pause: async () => {
       try {
-        const response = await fetch(`${apiBase}/player/pause`, { method: 'POST' });
+        const response = await fetch(`${getApiBase()}/player/pause`, { method: 'POST' });
         if (!response.ok) throw new Error('Failed to pause');
       } catch (error) {
         set({ playbackError: error instanceof Error ? error.message : 'Pause failed' });
@@ -183,7 +185,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
     resume: async () => {
       const { thisDeviceId, activeDeviceId } = get();
       try {
-        const response = await fetch(`${apiBase}/player/resume`, {
+        const response = await fetch(`${getApiBase()}/player/resume`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ target_device_id: activeDeviceId ?? thisDeviceId }),
@@ -196,7 +198,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
 
     next: async () => {
       try {
-        const response = await fetch(`${apiBase}/player/next`, { method: 'POST' });
+        const response = await fetch(`${getApiBase()}/player/next`, { method: 'POST' });
         if (!response.ok) throw new Error('Failed to skip to next track');
       } catch (error) {
         set({ playbackError: error instanceof Error ? error.message : 'Skip failed' });
@@ -205,7 +207,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
 
     prev: async () => {
       try {
-        const response = await fetch(`${apiBase}/player/prev`, { method: 'POST' });
+        const response = await fetch(`${getApiBase()}/player/prev`, { method: 'POST' });
         if (!response.ok) throw new Error('Failed to go to previous track');
       } catch (error) {
         set({ playbackError: error instanceof Error ? error.message : 'Previous failed' });
@@ -214,7 +216,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
 
     seek: async (positionMs: number) => {
       try {
-        const response = await fetch(`${apiBase}/player/seek`, {
+        const response = await fetch(`${getApiBase()}/player/seek`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ positionMs: Math.round(positionMs) }),
@@ -244,7 +246,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
       set({ shuffleEnabled: newShuffleEnabled });
 
       if (currentContext && currentTrack) {
-        fetch(`${apiBase}/player/play`, {
+        fetch(`${getApiBase()}/player/play`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -283,7 +285,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
 
     setActiveDevice: async (deviceId: string) => {
       try {
-        await fetch(`${apiBase}/player/transfer`, {
+        await fetch(`${getApiBase()}/player/transfer`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ device_id: deviceId }),
@@ -362,7 +364,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
     onTrackPlayed: async (trackId: number, playedMs: number) => {
       set({ scrobbledThisPlaythrough: true });
       try {
-        await fetch(`${apiBase}/tracks/${trackId}/scrobble`, {
+        await fetch(`${getApiBase()}/tracks/${trackId}/scrobble`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ played_ms: Math.round(playedMs) }),

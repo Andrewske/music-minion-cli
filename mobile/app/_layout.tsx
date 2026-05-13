@@ -2,8 +2,8 @@
  * Root layout — providers, API client init, WebSocket sync, PlayerBar.
  */
 import { useEffect } from 'react';
-import { View } from 'react-native';
-import { Stack } from 'expo-router';
+import { View, ActivityIndicator } from 'react-native';
+import { Stack, Redirect, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -14,6 +14,11 @@ import { useServerUrl } from '../hooks/useServerUrl';
 import { useSyncWebSocket } from '../hooks/useSyncWebSocket';
 import { PlayerBar } from '../components/player/PlayerBar';
 import '../global.css';
+import { verifyInstallation } from 'nativewind';
+
+if (__DEV__) {
+  verifyInstallation();
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,7 +30,8 @@ const queryClient = new QueryClient({
 });
 
 function AppContent() {
-  const { serverUrl, isConfigured } = useServerUrl();
+  const { serverUrl, isConfigured, isLoading } = useServerUrl();
+  const pathname = usePathname();
 
   // Init API client when server URL is available
   useEffect(() => {
@@ -38,23 +44,25 @@ function AppContent() {
   // WebSocket sync for player + device state
   useSyncWebSocket({ serverUrl });
 
-  if (!isConfigured) {
+  if (isLoading) {
     return (
       <View style={{ flex: 1, backgroundColor: '#121212', justifyContent: 'center', alignItems: 'center' }}>
-        <StatusBar style="light" />
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="setup" />
-        </Stack>
+        <ActivityIndicator color="#7C4DFF" />
       </View>
     );
+  }
+
+  if (!isConfigured && pathname !== '/setup') {
+    return <Redirect href="/setup" />;
   }
 
   return (
     <View style={{ flex: 1, backgroundColor: '#121212' }}>
       <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="setup" />
         <Stack.Screen name="(tabs)" />
       </Stack>
-      <PlayerBar />
+      {isConfigured && <PlayerBar />}
     </View>
   );
 }
