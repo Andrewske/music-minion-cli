@@ -50,10 +50,26 @@ class TestGetState:
 class TestGetStateDict:
     """Tests for get_state_dict() function."""
 
-    def test_includes_server_time(self):
+    def test_server_time_in_milliseconds(self):
         state_dict = get_state_dict()
         assert "serverTime" in state_dict
         assert isinstance(state_dict["serverTime"], float)
+        assert state_dict["serverTime"] > 1_000_000_000_000
+
+    @pytest.mark.asyncio
+    async def test_track_started_at_converted_to_milliseconds(self, monkeypatch):
+        import time
+        monkeypatch.setattr(
+            "backend.sync_manager.sync_manager.broadcast",
+            lambda *args: asyncio.sleep(0)
+        )
+        await update_state({"track_started_at": time.time()}, broadcast=False)
+        state_dict = get_state_dict()
+        assert state_dict["trackStartedAt"] > 1_000_000_000_000
+
+    def test_track_started_at_null_safe(self):
+        state_dict = get_state_dict()
+        assert state_dict["trackStartedAt"] is None
 
     def test_uses_camel_case_aliases(self):
         state_dict = get_state_dict()

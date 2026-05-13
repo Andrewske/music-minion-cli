@@ -225,7 +225,8 @@ export function usePlayer() {
     if (Math.abs(expectedPosition - actualPosition) > 1) {
       activeAudio.currentTime = expectedPosition;
     }
-  }, [activeAudio, store.lastSeekAt, store.isThisDeviceActive, store.currentTrack, store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeAudio, store.lastSeekAt, store.isThisDeviceActive, store.currentTrack]);
 
   // Preload next track on the inactive element. Debounced 500ms to avoid
   // thrashing the backend SoundCloud resolver on rapid skips.
