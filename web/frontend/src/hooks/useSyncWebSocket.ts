@@ -11,7 +11,6 @@ export function useSyncWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef(0);
-  const maxReconnectAttempts = 20;
 
   const handleMessage = useCallback((event: MessageEvent) => {
     try {
@@ -148,13 +147,11 @@ export function useSyncWebSocket() {
 
         reconnectAttemptsRef.current += 1;
 
-        if (reconnectAttemptsRef.current > maxReconnectAttempts) {
-          console.log('Max reconnect attempts reached, giving up');
-          return;
-        }
-
+        // Retry indefinitely with exponential backoff capped at 60s. The
+        // counter resets to 0 on a successful onopen, so a transient outage
+        // never permanently kills sync (which would freeze the player).
         const delay = Math.min(
-          1000 * Math.pow(2, reconnectAttemptsRef.current - 1),
+          1000 * Math.pow(2, Math.min(reconnectAttemptsRef.current - 1, 6)),
           60000
         );
         console.log(`Reconnecting in ${delay}ms...`);
