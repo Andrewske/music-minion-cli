@@ -365,7 +365,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
         await fetch(`${apiBase}/tracks/${trackId}/scrobble`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ played_ms: playedMs }),
+          body: JSON.stringify({ played_ms: Math.round(playedMs) }),
         });
       } catch {
         // Ignore scrobble errors
