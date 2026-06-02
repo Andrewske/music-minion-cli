@@ -33,16 +33,17 @@ class DiscoverySyncResult(NamedTuple):
     dry_run: bool
 
 
-def prepare_for_sync(playlist_id: int) -> tuple[int, list[int]]:
+def prepare_for_sync(playlist_id: int) -> int:
     """Prepare for sync by processing any active organizer session.
 
-    If an organizer session is active for this playlist:
-    1. Count unassigned tracks (these stay in the playlist)
-    2. Process bucket assignments — linked bucket tracks → 'liked', unlinked → 'dismissed'
-    3. Return (remaining_slots, kept_track_ids) where remaining_slots = 100 - unassigned_count
+    Always a full rebuild: every sync wipes the playlist and refills all slots.
 
-    If no active session:
-    Returns (100, []) — full replacement
+    If an organizer session is active for this playlist:
+    1. Process bucket assignments — linked bucket tracks → 'liked', unlinked → 'dismissed'
+    2. Reset undecided (non-organized) tracks to 'unseen' so they stay recyclable
+    3. Clear the entire playlist
+
+    Returns the number of slots to fill (always the full target).
     """
     target = 100
 
@@ -53,7 +54,7 @@ def prepare_for_sync(playlist_id: int) -> tuple[int, list[int]]:
         ).fetchone()
 
         if not session:
-            return target, []
+            return target
 
         session_id = session["id"]
 
@@ -91,9 +92,15 @@ def prepare_for_sync(playlist_id: int) -> tuple[int, list[int]]:
         if liked_sc_ids or dismissed_sc_ids:
             discovery_queries.recalculate_artist_stats()
 
+        # Undecided (non-organized) tracks: in playlist but assigned to no bucket.
+        # Full rebuild wipes these too — reset them to 'unseen' so they stay
+        # recyclable (eligible for future fetch/backfill) without counting as a
+        # dismissal against the reposting artist.
         unassigned = conn.execute(
-            """SELECT pt.track_id FROM playlist_tracks pt
+            """SELECT t.soundcloud_id FROM playlist_tracks pt
+            JOIN tracks t ON t.id = pt.track_id
             WHERE pt.playlist_id = ?
+            AND t.soundcloud_id IS NOT NULL
             AND pt.track_id NOT IN (
                 SELECT bt.track_id FROM bucket_tracks bt
                 JOIN buckets b ON b.id = bt.bucket_id
@@ -101,42 +108,29 @@ def prepare_for_sync(playlist_id: int) -> tuple[int, list[int]]:
             )""",
             (playlist_id, session_id),
         ).fetchall()
+        unassigned_sc_ids = [row["soundcloud_id"] for row in unassigned]
 
-        kept_track_ids = [row["track_id"] for row in unassigned]
-        remaining_slots = max(0, target - len(kept_track_ids))
+        if unassigned_sc_ids:
+            discovery_queries.mark_tracks_unseen(unassigned_sc_ids)
 
-        # Remove assigned (liked/dismissed) tracks from playlist_tracks
-        # Keep only unassigned tracks — new tracks will be appended by the sync
-        assigned_tracks = conn.execute(
-            """SELECT bt.track_id FROM bucket_tracks bt
-            JOIN buckets b ON b.id = bt.bucket_id
-            WHERE b.session_id = ?""",
-            (session_id,),
-        ).fetchall()
-        assigned_ids = [row["track_id"] for row in assigned_tracks]
-
-        if assigned_ids:
-            placeholders = ",".join("?" * len(assigned_ids))
-            conn.execute(
-                f"DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id IN ({placeholders})",
-                [playlist_id, *assigned_ids],
-            )
-            # Update playlist track count
-            conn.execute(
-                """UPDATE playlists SET track_count = (
-                    SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = ?
-                ) WHERE id = ?""",
-                (playlist_id, playlist_id),
-            )
-            conn.commit()
-            logger.info(f"Removed {len(assigned_ids)} assigned tracks from playlist_tracks")
+        # Full rebuild: clear the entire playlist. Bucket decisions are already
+        # persisted above (liked/dismissed); the sync refills all 100 slots fresh.
+        conn.execute(
+            "DELETE FROM playlist_tracks WHERE playlist_id = ?",
+            (playlist_id,),
+        )
+        conn.execute(
+            "UPDATE playlists SET track_count = 0 WHERE id = ?",
+            (playlist_id,),
+        )
+        conn.commit()
 
         logger.info(
-            f"Partial refill: {len(liked_sc_ids)} liked, {len(dismissed_sc_ids)} dismissed, "
-            f"{len(kept_track_ids)} kept, {remaining_slots} slots to fill"
+            f"Full rebuild: {len(liked_sc_ids)} liked, {len(dismissed_sc_ids)} dismissed, "
+            f"{len(unassigned_sc_ids)} undecided reset to unseen, {target} slots to fill"
         )
 
-        return remaining_slots, kept_track_ids
+        return target
 
 
 def sync_followings_reposts(
@@ -490,7 +484,7 @@ def run_discovery_sync(
     Steps:
     1. Get SC auth
     2. Get discovery playlist IDs
-    3. prepare_for_sync() — handle active session, get remaining_slots and kept_track_ids
+    3. prepare_for_sync() — handle active session, wipe playlist, get slot count
     4. Load ranked artists + compute slot caps
     5. Load seen track IDs for dedup
     6. Fetch reposts from all artists
@@ -531,10 +525,8 @@ def run_discovery_sync(
             ).fetchone()
             sc_mixes_playlist_id = mixes_row["soundcloud_playlist_id"] if mixes_row else None
 
-    # Step 3: Handle active organizer session
-    remaining_slots, kept_track_ids = prepare_for_sync(reposts_playlist_id)
-    is_partial = len(kept_track_ids) > 0
-    target_count = remaining_slots
+    # Step 3: Handle active organizer session (always a full rebuild)
+    target_count = prepare_for_sync(reposts_playlist_id)
 
     # Step 4: Load ranked artists + compute slot caps
     # artists_to_fetch: only due for API check (cadence-gated)
@@ -666,35 +658,20 @@ def run_discovery_sync(
     # Step 10: Push to SC playlists and sync to local DB
     if not dry_run:
         if selected_short and sc_reposts_playlist_id:
-            # Partial refill: new tracks at beginning, kept tracks shift down
-            # Local DB: new tracks at 0..N, kept tracks already exist starting at N
+            # Full rebuild: replace the entire local playlist with the fresh selection
             synced = _sync_tracks_to_local_db(
                 selected_short,
                 reposts_playlist_id,
-                replace=not is_partial,
+                replace=True,
                 position_offset=0,
             )
             logger.info(f"Synced {synced} tracks to local reposts playlist")
 
-            # For SC: combine new sc IDs + kept SC IDs (kept tracks need SC IDs looked up)
-            if is_partial:
-                with get_db_connection() as conn:
-                    kept_sc_ids_rows = conn.execute(
-                        f"""SELECT t.soundcloud_id FROM tracks t
-                        WHERE t.id IN ({','.join('?' * len(kept_track_ids))})
-                        AND t.soundcloud_id IS NOT NULL""",
-                        kept_track_ids,
-                    ).fetchall()
-                kept_sc_ids = [r["soundcloud_id"] for r in kept_sc_ids_rows]
-                full_sc_ids = selected_sc_ids + kept_sc_ids
-            else:
-                full_sc_ids = selected_sc_ids
-
             state, success, err = _push_to_sc_playlist(
-                state, sc_reposts_playlist_id, full_sc_ids, replace=True
+                state, sc_reposts_playlist_id, selected_sc_ids, replace=True
             )
             if success:
-                logger.info(f"Pushed {len(full_sc_ids)} tracks to SC reposts playlist")
+                logger.info(f"Pushed {len(selected_sc_ids)} tracks to SC reposts playlist")
             else:
                 msg = f"SC reposts playlist push failed: {err}"
                 logger.warning(msg)

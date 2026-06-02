@@ -441,6 +441,26 @@ def mark_tracks_dismissed(sc_ids: list[str]) -> None:
         conn.commit()
 
 
+def mark_tracks_unseen(sc_ids: list[str]) -> None:
+    """Reset tracks to unseen (undecided tracks wiped from discovery inbox).
+
+    Makes them eligible for fresh-fetch and the backfill pool again, without
+    counting as a dismissal against the reposting artist's hit_rate.
+    """
+    if not sc_ids:
+        return
+
+    with get_db_connection() as conn:
+        for i in range(0, len(sc_ids), _SQLITE_BATCH_SIZE):
+            batch = sc_ids[i : i + _SQLITE_BATCH_SIZE]
+            placeholders = ",".join("?" * len(batch))
+            conn.execute(
+                f"UPDATE discovery_tracks SET status = 'unseen' WHERE soundcloud_id IN ({placeholders})",
+                batch,
+            )
+        conn.commit()
+
+
 def update_artist_last_checked(artist_id: int, new_repost_count: int) -> None:
     """Update artist's last_checked timestamp and adaptive interval.
 
