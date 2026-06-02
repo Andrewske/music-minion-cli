@@ -280,6 +280,43 @@ def _fetch_all_reposts(
     return state, artist_tracks, errors
 
 
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _parse_sc_datetime(value: Any) -> Optional[datetime]:
+    """Parse SoundCloud / SQLite timestamp strings into aware UTC datetimes.
+
+    Handles SC slash format ('2026/03/17 05:26:30 +0000'), SQLite format
+    ('2026-03-17 05:26:30', assumed UTC), and ISO 8601 ('...Z' / '+00:00').
+    Returns None if the value is empty or unparseable. SQLite cannot parse the
+    slash format, so recency ordering must happen here in Python.
+    """
+    if not value or not isinstance(value, str):
+        return None
+    for fmt in ("%Y/%m/%d %H:%M:%S %z", "%Y-%m-%d %H:%M:%S"):
+        try:
+            dt = datetime.strptime(value, fmt)
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _track_recency(track: dict[str, Any]) -> datetime:
+    """Recency signal for selection: repost date (curation event) first, then
+    track release date, then ingest time. Falls back to epoch when undatable so
+    such tracks sort last."""
+    for key in ("reposted_at", "released_at", "created_at"):
+        dt = _parse_sc_datetime(track.get(key))
+        if dt:
+            return dt
+    return _EPOCH
+
+
 def _select_tracks_waterfall(
     all_tracks: list[dict[str, Any]],
     slot_caps: dict[int, int],
@@ -287,19 +324,26 @@ def _select_tracks_waterfall(
 ) -> list[dict[str, Any]]:
     """Select tracks via progressive cap relaxation — guarantees fill when pool >= target.
 
-    Sorted by (artist_hit_rate DESC, reposted_at DESC).
+    Recency wins: sorted by (recency week DESC, artist_hit_rate DESC, exact time DESC).
+    Tracks are bucketed into rolling 7-day age tiers from now — the most recent
+    tier fills first, then older tiers; within a tier the best artists win. Per-artist
+    caps then prevent any one prolific reposter from flooding the playlist.
     Round 1: respect per-artist caps.
     Round 2: doubled caps.
     Round 3: uncapped fill.
     """
-    sorted_tracks = sorted(
-        all_tracks,
-        key=lambda t: (
-            t.get("artist_hit_rate", 0.0) or 0.0,
-            t.get("reposted_at") or t.get("created_at") or "",
-        ),
-        reverse=True,
-    )
+    now = datetime.now(timezone.utc)
+
+    def _sort_key(track: dict[str, Any]) -> tuple[int, float, float]:
+        dt = _track_recency(track)
+        age_weeks = max(0, (now - dt).days) // 7
+        return (
+            -age_weeks,  # 0 = most recent 7 days, sorts first under reverse=True
+            track.get("artist_hit_rate", 0.0) or 0.0,
+            dt.timestamp(),
+        )
+
+    sorted_tracks = sorted(all_tracks, key=_sort_key, reverse=True)
 
     counts: dict[int, int] = {}
     seen_sc_ids: set[str] = set()

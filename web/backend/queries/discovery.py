@@ -340,7 +340,7 @@ def get_unplaced_short_tracks(
     with get_db_connection() as conn:
         rows = conn.execute(
             """
-            SELECT dt.soundcloud_id, dt.duration_ms, dt.first_seen,
+            SELECT dt.soundcloud_id, dt.duration_ms, dt.first_seen, dt.released_at,
                    dt.title, dt.artist_name,
                    best.discovery_artist_id, best.reposted_at,
                    da_best.hit_rate AS artist_hit_rate
@@ -361,8 +361,6 @@ def get_unplaced_short_tracks(
             JOIN discovery_artists da_best ON da_best.id = best.discovery_artist_id
             WHERE dt.status = 'unseen'
               AND dt.duration_ms <= 600000
-              AND (best.reposted_at IS NULL
-                   OR best.reposted_at > datetime('now', '-1 year'))
             ORDER BY da_best.hit_rate DESC, best.reposted_at IS NULL, best.reposted_at DESC
             LIMIT ?
             """,
@@ -381,6 +379,7 @@ def get_unplaced_short_tracks(
             "artist_id": row["discovery_artist_id"],
             "artist_hit_rate": row["artist_hit_rate"] or 0.0,
             "reposted_at": row["reposted_at"],
+            "released_at": row["released_at"],
             "created_at": row["first_seen"] or "1970/01/01 00:00:00 +0000",
             "duration": row["duration_ms"],
             "title": row["title"] or "",
