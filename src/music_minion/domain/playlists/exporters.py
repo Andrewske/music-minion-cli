@@ -212,6 +212,20 @@ def export_serato_crate(
         if syncthing_config and syncthing_config.enabled:
             PosixPath.resolve = original_resolve
 
+    # pyserato writes to "SubCrates" (capital C), but Serato reads "Subcrates".
+    # Move the crate into the correct folder so Serato can see it.
+    wrong_dir = serato_dir / "SubCrates"
+    correct_dir = serato_dir / "Subcrates"
+    wrong_file = wrong_dir / f"{pl['name']}.crate"
+    if wrong_file.exists():
+        correct_dir.mkdir(parents=True, exist_ok=True)
+        os.replace(wrong_file, correct_dir / f"{pl['name']}.crate")
+        # Remove the stray SubCrates dir if now empty
+        try:
+            wrong_dir.rmdir()
+        except OSError:
+            pass  # not empty, leave it
+
     return len(tracks)
 
 
@@ -379,7 +393,7 @@ def export_playlist(
             syncthing_config=syncthing_config,
         )
         # Update output_path to reflect the actual .crate file location
-        output_path = output_path / "_Serato_" / "SubCrates" / f"{pl['name']}.crate"
+        output_path = output_path / "_Serato_" / "Subcrates" / f"{pl['name']}.crate"
     elif format_type == "csv":
         tracks_exported = export_csv(playlist_id=pl["id"], output_path=output_path)
     else:
