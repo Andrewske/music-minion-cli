@@ -1,133 +1,145 @@
-#!/usr/bin/env python3
-"""
-Convert opus files in playlist to MP3 format.
+"""Convert .opus library tracks to MP3 320 (Serato-compatible).
 
-Preserves all metadata and replaces .opus files with .mp3 versions.
+Opus files in this library carry no embedded tags; all metadata lives in the
+music-minion DB. So we transcode opus -> mp3 320 CBR, write the DB's title/
+artist/album/genre/year into the new file's ID3 tags (so Serato shows real
+names, not filenames), copy any attached album art, verify the output, update
+the DB local_path, then delete the original opus.
+
+Usage:
+    uv run python scripts/convert_opus_to_mp3.py --test    # 2 files -> /tmp, no DB change
+    uv run python scripts/convert_opus_to_mp3.py --dry-run # list what would convert
+    uv run python scripts/convert_opus_to_mp3.py --apply   # do it for real
 """
 
+import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
 
-from music_minion.domain.playlists.crud import get_playlist_by_name, get_playlist_tracks
+from music_minion.core import database as db
 
 
-def convert_opus_to_mp3(opus_path: Path) -> tuple[bool, str]:
-    """
-    Convert an opus file to MP3 using ffmpeg.
+def get_opus_tracks() -> list[dict]:
+    """Return DB tracks whose local_path is a .opus file that exists on disk."""
+    with db.get_db_connection() as conn:
+        rows = conn.execute(
+            """SELECT id, title, artist, album, genre, year, bpm, local_path
+               FROM tracks WHERE lower(local_path) LIKE '%.opus'"""
+        ).fetchall()
+    tracks = [dict(r) for r in rows]
+    return [t for t in tracks if os.path.exists(t["local_path"])]
 
-    Args:
-        opus_path: Path to the .opus file
 
-    Returns:
-        Tuple of (success: bool, message: str)
-    """
-    if not opus_path.exists():
-        return False, f"File not found: {opus_path}"
+def build_ffmpeg_cmd(src: Path, dst: Path, meta: dict) -> list[str]:
+    """ffmpeg command: opus -> mp3 320 CBR, DB tags, optional album art."""
+    cmd = ["ffmpeg", "-y", "-i", str(src)]
+    # audio stream first, optional attached picture second (? = skip if absent)
+    cmd += ["-map", "0:a:0", "-map", "0:v:0?"]
+    cmd += ["-c:a", "libmp3lame", "-b:a", "320k", "-c:v", "copy"]
+    cmd += ["-id3v2_version", "3", "-map_metadata", "-1"]
+    for key, val in (
+        ("title", meta.get("title")),
+        ("artist", meta.get("artist")),
+        ("album", meta.get("album")),
+        ("genre", meta.get("genre")),
+        ("date", meta.get("year")),
+    ):
+        if val:
+            cmd += ["-metadata", f"{key}={val}"]
+    if meta.get("bpm"):
+        cmd += ["-metadata", f"TBPM={int(meta['bpm'])}"]
+    cmd.append(str(dst))
+    return cmd
 
-    # Output path: same name but .mp3 extension
-    mp3_path = opus_path.with_suffix(".mp3")
 
-    # Don't overwrite existing MP3
-    if mp3_path.exists():
-        return False, f"MP3 already exists: {mp3_path}"
-
-    # Convert using ffmpeg with high quality settings
-    # -q:a 0 = highest quality VBR MP3 (equivalent to V0)
-    cmd = [
-        "ffmpeg",
-        "-i",
-        str(opus_path),
-        "-q:a",
-        "0",  # Highest quality VBR
-        "-map_metadata",
-        "0",  # Copy all metadata
-        "-id3v2_version",
-        "3",  # Use ID3v2.3 for better compatibility
-        str(mp3_path),
-        "-y",  # Overwrite without asking
-    ]
-
+def verify_mp3(path: Path) -> bool:
+    """True if file exists and ffprobe reports a positive audio duration."""
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+    res = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
+        capture_output=True, text=True,
+    )
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, check=True, timeout=60
+        return float(res.stdout.strip()) > 0
+    except ValueError:
+        return False
+
+
+def convert_one(src: Path, dst: Path, meta: dict) -> bool:
+    """Convert a single file; return True if the output is valid."""
+    res = subprocess.run(
+        build_ffmpeg_cmd(src, dst, meta), capture_output=True, text=True
+    )
+    if res.returncode != 0:
+        tail = res.stderr.strip().splitlines()[-1:] or ["unknown error"]
+        print(f"  FFMPEG FAIL {src.name}: {tail[0]}")
+        return False
+    return verify_mp3(dst)
+
+
+def update_db_path(track_id: int, new_path: str) -> None:
+    with db.get_db_connection() as conn:
+        conn.execute(
+            "UPDATE tracks SET local_path = ?, file_mtime = ? WHERE id = ?",
+            (new_path, os.path.getmtime(new_path), track_id),
         )
-        # Delete original opus file after successful conversion
-        opus_path.unlink()
-        return True, f"Converted: {opus_path.name} -> {mp3_path.name}"
-    except subprocess.CalledProcessError as e:
-        return False, f"ffmpeg error: {e.stderr}"
-    except subprocess.TimeoutExpired:
-        return False, "Conversion timed out (>60s)"
-    except Exception as e:
-        return False, f"Error: {e}"
+        conn.commit()
 
 
-def main():
-    playlist_name = sys.argv[1] if len(sys.argv) > 1 else "nye_25_final"
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    g = ap.add_mutually_exclusive_group(required=True)
+    g.add_argument("--test", action="store_true", help="2 files -> /tmp, no DB change")
+    g.add_argument("--dry-run", action="store_true", help="list candidates")
+    g.add_argument("--apply", action="store_true", help="convert for real")
+    args = ap.parse_args()
 
-    print(f"Converting opus files in playlist: {playlist_name}\n")
+    tracks = get_opus_tracks()
+    print(f"opus tracks on disk: {len(tracks)}")
 
-    # Get playlist
-    pl = get_playlist_by_name(playlist_name)
-    if not pl:
-        print(f"Error: Playlist '{playlist_name}' not found")
-        sys.exit(1)
+    if args.dry_run:
+        for t in tracks[:10]:
+            print(" ", t["local_path"])
+        if len(tracks) > 10:
+            print(f"  ... and {len(tracks) - 10} more")
+        return 0
 
-    # Get tracks
-    tracks = get_playlist_tracks(pl["id"])
+    if args.test:
+        tmp = Path("/tmp/opus_convert_test")
+        tmp.mkdir(exist_ok=True)
+        for t in tracks[:2]:
+            src = Path(t["local_path"])
+            dst = tmp / (src.stem + ".mp3")
+            ok = convert_one(src, dst, t)
+            kb = dst.stat().st_size // 1024 if dst.exists() else 0
+            print(f"  {'OK ' if ok else 'BAD'} {dst.name} ({kb} KB)")
+        print("Inspect /tmp/opus_convert_test/ then run --apply")
+        return 0
 
-    # Filter opus files
-    opus_tracks = [t for t in tracks if Path(t["local_path"]).suffix.lower() == ".opus"]
-
-    print(f"Found {len(opus_tracks)} opus files to convert\n")
-
-    if not opus_tracks:
-        print("No opus files to convert!")
-        sys.exit(0)
-
-    # Check if ffmpeg is available
-    try:
-        subprocess.run(
-            ["ffmpeg", "-version"],
-            capture_output=True,
-            check=True,
-            timeout=5,
-        )
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        print("Error: ffmpeg is not installed")
-        print("Install with: sudo pacman -S ffmpeg")
-        sys.exit(1)
-
-    # Convert each file
-    success_count = 0
-    failed_count = 0
-
-    for idx, track in enumerate(opus_tracks, 1):
-        opus_path = Path(track["local_path"])
-        print(f"[{idx}/{len(opus_tracks)}] {opus_path.name}...", end=" ")
-
-        success, message = convert_opus_to_mp3(opus_path)
-
-        if success:
-            print(f"✓ {message}")
-            success_count += 1
+    # --apply
+    ok_count = fail_count = 0
+    failed: list[str] = []
+    for i, t in enumerate(tracks, 1):
+        src = Path(t["local_path"])
+        dst = src.with_suffix(".mp3")
+        if convert_one(src, dst, t):
+            update_db_path(t["id"], str(dst))
+            src.unlink()  # delete opus only after verified output + DB update
+            ok_count += 1
         else:
-            print(f"✗ {message}")
-            failed_count += 1
-
-    # Summary
-    print(f"\n{'='*60}")
-    print(f"Conversion complete:")
-    print(f"  Success: {success_count}")
-    print(f"  Failed:  {failed_count}")
-    print(f"  Total:   {len(opus_tracks)}")
-
-    if success_count > 0:
-        print(f"\nNext steps:")
-        print(f"1. Run 'sync incremental' to update database with new MP3 files")
-        print(f"2. Re-export playlist: 'playlist export {playlist_name} crate'")
+            fail_count += 1
+            failed.append(str(src))
+        if i % 25 == 0:
+            print(f"  {i}/{len(tracks)} ({ok_count} ok, {fail_count} fail)")
+    print(f"DONE: {ok_count} converted, {fail_count} failed")
+    for f in failed:
+        print("  FAILED:", f)
+    return 0 if fail_count == 0 else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
