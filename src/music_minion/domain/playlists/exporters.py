@@ -108,125 +108,80 @@ def export_serato_crate(
     """
     Export a playlist to Serato .crate format.
 
-    Note: Serato crates are stored in a _Serato_/SubCrates/ directory structure.
-    This function creates the proper Serato directory structure and exports the crate.
+    Serato crates live in a _Serato_/Subcrates/ directory. We build the crate
+    binary directly with the serato-crate library, whose utf-16-be encoder
+    correctly emits surrogate pairs for non-BMP filename characters (e.g.
+    Mathematical Script glyphs). The previously-used pyserato corrupts those,
+    truncating the crate when Serato reads it.
 
     Args:
         playlist_id: ID of the playlist to export
-        output_path: Directory where _Serato_ folder structure will be created
-        library_root: Root directory of music library
+        output_path: Directory where the _Serato_ folder structure is created
+        library_root: Root directory of music library (unused; kept for parity)
+        syncthing_config: Syncthing config for Linux->Windows path translation
 
     Returns:
         Number of tracks exported
 
     Raises:
         ValueError: If playlist doesn't exist or is empty
-        ImportError: If pyserato is not installed
+        ImportError: If serato-crate is not installed
     """
     try:
-        from pyserato.builder import Builder
-        from pyserato.model.crate import Crate
-        from pyserato.model.track import Track
+        from serato_crate import SeratoCrate
     except ImportError:
         raise ImportError(
-            "pyserato library not installed. Install with: uv pip install pyserato"
+            "serato-crate library not installed. Install with: "
+            "uv pip install 'serato-crate @ git+https://github.com/stephanlensky/python-serato-crates.git'"
         )
 
-    # Get playlist info
     pl = get_playlist_by_id(playlist_id)
     if not pl:
         raise ValueError(f"Playlist with ID {playlist_id} not found")
 
-    # Get tracks
     tracks = get_playlist_tracks(playlist_id)
     if not tracks:
         raise ValueError(f"Playlist '{pl['name']}' is empty")
 
-    # Create Serato directory structure
-    # pyserato expects a _Serato_ directory and will create SubCrates/ inside it
-    serato_dir = output_path / "_Serato_"
-    serato_dir.mkdir(parents=True, exist_ok=True)
+    # Serato reads "Subcrates" (lowercase c); ensure the directory exists.
+    crate_dir = output_path / "_Serato_" / "Subcrates"
+    crate_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create Serato crate
-    crate = Crate(pl["name"])
-
-    # Add tracks to crate
-    added_count = 0
-    failed_count = 0
+    # Build crate_data: version + column defs + one otrk record per track.
+    crate_data: list = [
+        ("vrsn", "1.0/Serato ScratchLive Crate"),
+        ("ovct", [("tvcn", "track"), ("tvcw", "0")]),
+        ("ovct", [("tvcn", "artist"), ("tvcw", "0")]),
+        ("ovct", [("tvcn", "album"), ("tvcw", "0")]),
+        ("ovct", [("tvcn", "length"), ("tvcw", "0")]),
+    ]
+    # Dedupe paths, preserving first-seen order (Serato shows duplicates twice).
+    seen: set[str] = set()
     for track in tracks:
-        try:
-            track_path = Path(track["local_path"]).absolute()
+        path_str = _serato_track_path(track["local_path"], syncthing_config)
+        if path_str in seen:
+            continue
+        seen.add(path_str)
+        crate_data.append(("otrk", [("ptrk", path_str)]))
 
-            # Translate path to Windows format if Syncthing is enabled
-            if syncthing_config and syncthing_config.enabled:
-                # Translate to Windows path string (without drive letter)
-                path_str = syncthing_config.translate_to_windows(str(track_path))
-                # Pass as string - our monkey-patched resolve() will preserve it
-                serato_track = Track(path=path_str)
-            else:
-                # Use Path object for Linux paths
-                serato_track = Track(path=track_path)
+    crate = SeratoCrate(crate_data)
+    crate.write(crate_dir / f"{pl['name']}.crate")
 
-            crate.add_track(serato_track)
-            added_count += 1
-        except Exception as e:
-            # Log errors but continue processing
-            failed_count += 1
-            if failed_count <= 5:  # Only log first 5 failures
-                from loguru import logger
-                logger.warning(f"Failed to add track to crate: {track.get('local_path', 'unknown')} - {e}")
+    return len(seen)
 
-    if failed_count > 0:
-        from loguru import logger
-        logger.warning(f"Crate export: {added_count} tracks added, {failed_count} tracks failed")
 
-    # Save crate using pyserato builder
-    # Builder.save() will create SubCrates/<crate_name>.crate inside the _Serato_ directory
-    #
-    # IMPORTANT: pyserato calls Path(track.path).resolve() which treats Windows paths
-    # as relative on Linux. Monkey-patch PosixPath.resolve() to preserve Windows paths.
+def _serato_track_path(local_path: str, syncthing_config=None) -> str:
+    """Convert a local track path to a Serato crate path string.
+
+    Serato stores volume-relative paths without a leading slash (e.g.
+    'Users/kevin/Music/...'). With Syncthing enabled, translate the Linux
+    path to its Windows equivalent (drive letter stripped); otherwise strip
+    the leading slash from the absolute Linux path.
+    """
+    abs_path = str(Path(local_path).absolute())
     if syncthing_config and syncthing_config.enabled:
-        from pathlib import PosixPath
-
-        original_resolve = PosixPath.resolve
-
-        def patched_resolve(self, strict=False):
-            path_str = str(self)
-            # Detect Windows-style path (with or without drive letter)
-            is_windows = (
-                (len(path_str) >= 3 and path_str[1:3] == ":/")
-                or path_str.startswith("Users/")
-                or path_str.startswith("Program Files/")
-            )
-            if is_windows:
-                # Return self unchanged - don't resolve Windows paths on Linux
-                return self
-            return original_resolve(self, strict=strict)
-
-        PosixPath.resolve = patched_resolve
-
-    try:
-        builder = Builder()
-        builder.save(crate, serato_dir, overwrite=True)
-    finally:
-        if syncthing_config and syncthing_config.enabled:
-            PosixPath.resolve = original_resolve
-
-    # pyserato writes to "SubCrates" (capital C), but Serato reads "Subcrates".
-    # Move the crate into the correct folder so Serato can see it.
-    wrong_dir = serato_dir / "SubCrates"
-    correct_dir = serato_dir / "Subcrates"
-    wrong_file = wrong_dir / f"{pl['name']}.crate"
-    if wrong_file.exists():
-        correct_dir.mkdir(parents=True, exist_ok=True)
-        os.replace(wrong_file, correct_dir / f"{pl['name']}.crate")
-        # Remove the stray SubCrates dir if now empty
-        try:
-            wrong_dir.rmdir()
-        except OSError:
-            pass  # not empty, leave it
-
-    return len(tracks)
+        return syncthing_config.translate_to_windows(abs_path)
+    return abs_path.lstrip("/")
 
 
 def export_csv(
