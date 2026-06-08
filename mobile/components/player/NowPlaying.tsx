@@ -1,14 +1,19 @@
 /**
  * Expanded Now Playing view — full-screen bottom sheet.
  *
- * Shows: album art placeholder, track title/artist, seek slider,
+ * Shows: album art, track title/artist, seek slider,
  * prev/play/next controls (56dp), shuffle toggle, queue info.
  */
-import { View, Text, Pressable, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, Pressable, StyleSheet, ScrollView, Image } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import TrackPlayer from '@rntp/player';
+import { getDefaultApiClient } from '@music-minion/shared';
 import { usePlayer } from '../../hooks/usePlayer';
 import { SeekSlider } from './SeekSlider';
+
+/** Backend artwork URL — baseUrl already includes the `/api` prefix. */
+function getArtworkUrl(trackId: number): string {
+  return `${getDefaultApiClient().getBaseUrl()}/tracks/${trackId}/artwork`;
+}
 
 interface NowPlayingProps {
   onCollapse: () => void;
@@ -49,8 +54,10 @@ export function NowPlaying({ onCollapse }: NowPlayingProps) {
   };
 
   const handleSeek = (seconds: number) => {
+    // seek() POSTs to backend and sets lastSeekAt; usePlayer's lastSeekAt
+    // effect applies TrackPlayer.seekTo. Do NOT seek locally here too —
+    // that double-applies and fights the WS echo of the same seek.
     seek(seconds * 1000);
-    TrackPlayer.seekTo(seconds);
   };
 
   const handleShuffle = () => {
@@ -65,13 +72,14 @@ export function NowPlaying({ onCollapse }: NowPlayingProps) {
         <View style={styles.handle} />
       </Pressable>
 
-      {/* Album art placeholder */}
+      {/* Album art */}
       <View style={styles.artContainer}>
-        <View style={styles.art}>
-          <Text style={styles.artEmoji}>
-            {currentTrack.emojis?.[0] ?? '♪'}
-          </Text>
-        </View>
+        <Image
+          source={{ uri: getArtworkUrl(currentTrack.id) }}
+          style={styles.art}
+          resizeMode="cover"
+          accessibilityLabel={`Artwork for ${currentTrack.title}`}
+        />
       </View>
 
       {/* Track info */}
@@ -157,11 +165,6 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 16,
     backgroundColor: '#1E1E1E',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  artEmoji: {
-    fontSize: 72,
   },
   title: {
     color: '#E0E0E0',

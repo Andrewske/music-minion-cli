@@ -7,13 +7,16 @@
  * Phone: fixed bottom bar, full width
  * Tablet: same for now (sidebar footer in Phase 5)
  */
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { useState } from 'react';
+import { View, Text, Pressable, StyleSheet, Modal } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlayer } from '../../hooks/usePlayer';
+import { NowPlaying } from './NowPlaying';
 
 export function PlayerBar() {
   const insets = useSafeAreaInsets();
+  const [expanded, setExpanded] = useState(false);
   const {
     currentTrack,
     isPlaying,
@@ -51,10 +54,15 @@ export function PlayerBar() {
     next();
   };
 
+  const handleExpand = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setExpanded(true);
+  };
+
   return (
     <View style={[styles.bar, { paddingBottom: 10 + insets.bottom }]}>
-      {/* Track info */}
-      <View style={styles.info}>
+      {/* Track info — tap to expand NowPlaying sheet */}
+      <Pressable style={styles.info} onPress={handleExpand}>
         <Text style={styles.title} numberOfLines={1}>
           {currentTrack.title}
         </Text>
@@ -62,7 +70,17 @@ export function PlayerBar() {
           {currentTrack.artist ?? 'Unknown Artist'}
           {!isThisDeviceActive && ' · Playing elsewhere'}
         </Text>
-      </View>
+      </Pressable>
+
+      {/* Expanded NowPlaying sheet (built-in Modal, swipe-down via collapse) */}
+      <Modal
+        visible={expanded}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setExpanded(false)}
+      >
+        <NowPlaying onCollapse={() => setExpanded(false)} />
+      </Modal>
 
       {/* Controls */}
       <View style={styles.controls}>
