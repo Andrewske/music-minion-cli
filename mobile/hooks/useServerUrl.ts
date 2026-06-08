@@ -7,7 +7,20 @@ import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const STORAGE_KEY = 'music-minion-server-url';
-const ENV_URL = process.env.EXPO_PUBLIC_API_URL;
+
+/**
+ * Returns the env URL only if it is a usable remote address.
+ * Blank or localhost/127.0.0.1 values are unreachable from a physical
+ * device, so they fall through to null → mandatory setup gate.
+ */
+const usableEnvUrl = (): string | null => {
+  const raw = process.env.EXPO_PUBLIC_API_URL?.trim();
+  if (!raw) return null;
+  if (/(?:localhost|127\.0\.0\.1)/i.test(raw)) return null;
+  return raw;
+};
+
+const ENV_URL = usableEnvUrl();
 
 interface ServerUrlState {
   serverUrl: string | null;
@@ -33,7 +46,8 @@ const setShared = (next: SharedState): void => {
 const hydrate = (): Promise<void> => {
   if (hydratePromise) return hydratePromise;
   hydratePromise = AsyncStorage.getItem(STORAGE_KEY).then((stored) => {
-    setShared({ serverUrl: stored ?? ENV_URL ?? null, isLoading: false });
+    const saved = stored?.trim() || null;
+    setShared({ serverUrl: saved ?? ENV_URL ?? null, isLoading: false });
   });
   return hydratePromise;
 };
