@@ -6,7 +6,6 @@ import {
   View,
   Text,
   Pressable,
-  FlatList,
   TextInput,
   Alert,
   ActivityIndicator,
@@ -17,22 +16,27 @@ import { useQuery } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import Toast from 'react-native-toast-message';
 import { getSession, getPlaylistTracks } from '@music-minion/shared';
-import type { BucketSession } from '@music-minion/shared';
 import { usePlaylistOrganizer } from '../../../hooks/usePlaylistOrganizer';
 import { BucketCard } from '../../../components/organizer/BucketCard';
 
 export default function SessionScreen() {
-  const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
+  const { sessionId, playlistId: playlistIdParam } = useLocalSearchParams<{
+    sessionId: string;
+    playlistId?: string;
+  }>();
   const [newBucketName, setNewBucketName] = useState('');
 
-  // Fetch session to get playlistId
+  // playlistId may arrive via navigation param (preferred, avoids a fetch).
+  // Fall back to fetching the session by id when it is not passed through.
+  const paramPlaylistId = playlistIdParam ? Number(playlistIdParam) : 0;
+
   const { data: sessionData, isLoading: sessionLoading } = useQuery({
     queryKey: ['organizer', 'session-raw', sessionId],
     queryFn: () => getSession(sessionId),
-    enabled: !!sessionId,
+    enabled: !!sessionId && !paramPlaylistId,
   });
 
-  const playlistId = sessionData?.playlist_id ?? 0;
+  const playlistId = paramPlaylistId || (sessionData?.playlist_id ?? 0);
 
   const organizer = usePlaylistOrganizer({
     playlistId,
@@ -108,8 +112,10 @@ export default function SessionScreen() {
     }
   }, [organizer]);
 
-  // Assign track to first available bucket on tap
-  const handleAssignTrack = useCallback(async (trackId: number) => {
+  // Assign track to first available bucket on tap.
+  // Guard against double-taps: ignore while an assign is already in flight.
+  const handleAssignTrack = useCallback(async (trackId: number): Promise<void> => {
+    if (organizer.isAssigning) return;
     if (organizer.buckets.length === 0) {
       Toast.show({ type: 'info', text1: 'Create a bucket first' });
       return;
@@ -201,6 +207,7 @@ export default function SessionScreen() {
               key={trackId}
               className="bg-surface rounded-lg px-4 py-3 mb-1 active:opacity-70"
               onPress={() => handleAssignTrack(trackId)}
+              disabled={organizer.isAssigning}
             >
               <Text className="text-text-primary text-sm" numberOfLines={1}>
                 {trackTitles.get(trackId) ?? `Track #${trackId}`}
