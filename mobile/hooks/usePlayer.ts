@@ -7,9 +7,17 @@ import TrackPlayer, {
   PlaybackState,
 } from '@rntp/player';
 import { usePlayerStore, getCurrentPosition } from '../stores/playerStore';
-import { getStreamUrl } from '@music-minion/shared';
+import { getStreamUrl, getDefaultApiClient } from '@music-minion/shared';
 
 let isSetup = false;
+
+/**
+ * Backend artwork URL for a track. Mirrors getStreamUrl: baseUrl already
+ * includes the `/api` prefix. Used for lockscreen art via setMediaItem.
+ */
+function getArtworkUrl(trackId: number): string {
+  return `${getDefaultApiClient().getBaseUrl()}/tracks/${trackId}/artwork`;
+}
 
 function setupPlayer(): void {
   if (isSetup) return;
@@ -61,6 +69,7 @@ export function usePlayer() {
           title: track.title,
           artist: track.artist ?? 'Unknown Artist',
           duration: track.duration,
+          artwork: getArtworkUrl(track.id),
         });
 
         const pos = getCurrentPosition(store) / 1000;
@@ -98,6 +107,16 @@ export function usePlayer() {
       TrackPlayer.pause();
     }
   }, [store.isThisDeviceActive]);
+
+  // Apply seeks to RNTP. Single source of truth for both local seeks
+  // (seek() sets lastSeekAt) and remote WS seeks (syncState sets lastSeekAt),
+  // mirroring web's lastSeekAt guard. Avoids double-applying a local seek.
+  useEffect(() => {
+    if (!store.isThisDeviceActive || !store.currentTrack || !isSetup) return;
+    if (store.lastSeekAt === 0) return;
+
+    TrackPlayer.seekTo(getCurrentPosition(store) / 1000);
+  }, [store.lastSeekAt, store.isThisDeviceActive]);
 
   // Scrobble tracking
   useEffect(() => {
