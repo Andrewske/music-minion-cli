@@ -10,12 +10,24 @@ import { usePlayerStore } from '../stores/playerStore';
 const MIN_BACKOFF = 1000;
 const MAX_BACKOFF = 30000;
 
+export type ConnectionStatus = 'connected' | 'connecting' | 'offline';
+
 interface UseSyncWebSocketOptions {
   serverUrl: string | null;
 }
 
-export const useSyncWebSocket = ({ serverUrl }: UseSyncWebSocketOptions) => {
-  const [isConnected, setIsConnected] = useState(false);
+interface UseSyncWebSocketResult {
+  isConnected: boolean;
+  status: ConnectionStatus;
+  retry: () => void;
+}
+
+export const useSyncWebSocket = (
+  { serverUrl }: UseSyncWebSocketOptions
+): UseSyncWebSocketResult => {
+  const [status, setStatus] = useState<ConnectionStatus>(
+    serverUrl ? 'connecting' : 'offline'
+  );
   const wsRef = useRef<WebSocket | null>(null);
   const backoffRef = useRef(MIN_BACKOFF);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -73,7 +85,10 @@ export const useSyncWebSocket = ({ serverUrl }: UseSyncWebSocketOptions) => {
   }, []);
 
   const connect = useCallback(() => {
-    if (!serverUrl) return;
+    if (!serverUrl) {
+      setStatus('offline');
+      return;
+    }
     if (
       wsRef.current?.readyState === WebSocket.OPEN ||
       wsRef.current?.readyState === WebSocket.CONNECTING
@@ -86,12 +101,14 @@ export const useSyncWebSocket = ({ serverUrl }: UseSyncWebSocketOptions) => {
       .replace(/^http/, 'ws')
       .replace(/\/api$/, '/ws/sync');
 
+    setStatus('connecting');
+
     try {
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        setIsConnected(true);
+        setStatus('connected');
         backoffRef.current = MIN_BACKOFF;
 
         // Register device
@@ -106,7 +123,7 @@ export const useSyncWebSocket = ({ serverUrl }: UseSyncWebSocketOptions) => {
       ws.onmessage = handleMessage;
 
       ws.onclose = () => {
-        setIsConnected(false);
+        setStatus('offline');
         wsRef.current = null;
         scheduleReconnect();
       };
@@ -127,6 +144,16 @@ export const useSyncWebSocket = ({ serverUrl }: UseSyncWebSocketOptions) => {
       reconnectTimerRef.current = null;
       connect();
     }, delay);
+  }, [connect]);
+
+  // Manual retry — cancel pending backoff timer and reconnect immediately
+  const retry = useCallback(() => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    backoffRef.current = MIN_BACKOFF;
+    connect();
   }, [connect]);
 
   // Reconnect when app returns to foreground
@@ -175,5 +202,5 @@ export const useSyncWebSocket = ({ serverUrl }: UseSyncWebSocketOptions) => {
     });
   }, []);
 
-  return { isConnected };
+  return { isConnected: status === 'connected', status, retry };
 };

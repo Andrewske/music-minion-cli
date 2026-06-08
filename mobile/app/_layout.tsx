@@ -13,6 +13,7 @@ import { createApiClient, setDefaultApiClient } from '@music-minion/shared';
 import { useServerUrl } from '../hooks/useServerUrl';
 import { useSyncWebSocket } from '../hooks/useSyncWebSocket';
 import { PlayerBar } from '../components/player/PlayerBar';
+import { ConnectionStatus } from '../components/ConnectionStatus';
 import '../global.css';
 import { verifyInstallation } from 'nativewind';
 
@@ -42,7 +43,7 @@ function AppContent() {
   }, [serverUrl]);
 
   // WebSocket sync for player + device state
-  useSyncWebSocket({ serverUrl });
+  const { status, retry } = useSyncWebSocket({ serverUrl });
 
   if (isLoading) {
     return (
@@ -62,6 +63,7 @@ function AppContent() {
         <Stack.Screen name="setup" />
         <Stack.Screen name="(tabs)" />
       </Stack>
+      <ConnectionStatus status={status} retry={retry} />
       {isConfigured && <PlayerBar />}
     </View>
   );
