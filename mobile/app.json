@@ -6,6 +6,13 @@
     "orientation": "default",
     "icon": "./assets/icon.png",
     "scheme": "music-minion",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/7e39ff3d-0b77-4ea1-954e-bd7259e70b64",
+      "fallbackToCacheTimeout": 0
+    },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
