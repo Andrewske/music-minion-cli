@@ -17,8 +17,8 @@ export default function OrganizerPickerScreen() {
 
   const startSession = useMutation({
     mutationFn: (playlistId: number) => createOrResumeSession(playlistId),
-    onSuccess: (session) => {
-      router.push(`/(tabs)/organizer/${session.id}`);
+    onSuccess: (session, playlistId) => {
+      router.push(`/(tabs)/organizer/${session.id}?playlistId=${playlistId}`);
     },
     onError: (err) => {
       Toast.show({
