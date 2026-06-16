@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 56  # SC track matching: artwork_url + match_candidates table
+SCHEMA_VERSION = 57  # bucket_tracks de-dupe + UNIQUE(bucket_id, track_id) idempotency
 
 
 # Initial top 50 curated emojis for music reactions
@@ -2621,6 +2621,32 @@ def migrate_database(conn, current_version: int) -> None:
         """)
         conn.commit()
         logger.info("  ✓ Migration to v56 complete: match_candidates table created")
+
+    if current_version < 57:
+        logger.info(
+            "Running migration to v57: de-dupe bucket_tracks and add UNIQUE(bucket_id, track_id)..."
+        )
+        # Step 1: De-duplicate existing rows (keep lowest rowid per bucket_id+track_id).
+        # Pre-v40 databases may have CREATE TABLE without the UNIQUE constraint, so
+        # the constraint/index below would fail to build on duplicate data.
+        conn.execute("""
+            DELETE FROM bucket_tracks
+            WHERE rowid NOT IN (
+                SELECT MIN(rowid)
+                FROM bucket_tracks
+                GROUP BY bucket_id, track_id
+            )
+        """)
+        # Step 2: Add the uniqueness via a unique index (idempotent, no table rebuild).
+        # ON CONFLICT(bucket_id, track_id) resolves against this index.
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_bucket_tracks_unique
+            ON bucket_tracks(bucket_id, track_id)
+        """)
+        conn.commit()
+        logger.info(
+            "  ✓ Migration to v57 complete: bucket_tracks de-duped, unique index added"
+        )
 
 
 def init_database() -> None:

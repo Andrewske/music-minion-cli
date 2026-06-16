@@ -1,7 +1,7 @@
 /**
  * Bucket session view — manage buckets and assign tracks.
  */
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -112,19 +112,26 @@ export default function SessionScreen() {
     }
   }, [organizer]);
 
+  // Synchronous in-flight guard. `organizer.isAssigning` is render-derived
+  // (mutation.isPending) so two taps in the same tick both read it as false
+  // and double-fire. A ref flips synchronously, before the await boundary.
+  const assigningRef = useRef(false);
+
   // Assign track to first available bucket on tap.
-  // Guard against double-taps: ignore while an assign is already in flight.
   const handleAssignTrack = useCallback(async (trackId: number): Promise<void> => {
-    if (organizer.isAssigning) return;
+    if (assigningRef.current) return;
     if (organizer.buckets.length === 0) {
       Toast.show({ type: 'info', text1: 'Create a bucket first' });
       return;
     }
+    assigningRef.current = true;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       await organizer.assignTrack(organizer.buckets[0].id, trackId);
     } catch {
       Toast.show({ type: 'error', text1: 'Failed to assign' });
+    } finally {
+      assigningRef.current = false;
     }
   }, [organizer]);
 
