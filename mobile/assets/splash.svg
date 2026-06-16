@@ -1,0 +1,29 @@
+<svg width="1284" height="2778" viewBox="0 0 1284 2778" xmlns="http://www.w3.org/2000/svg">
+  <!-- Splash: dark #121212 bg, centered purple logo + wordmark -->
+  <defs>
+    <linearGradient id="accentS" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9B6BFF"/>
+      <stop offset="1" stop-color="#7C4DFF"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1284" height="2778" fill="#121212"/>
+
+  <!-- centered logo group -->
+  <g transform="translate(642 1300)">
+    <g fill="url(#accentS)">
+      <rect x="-212" y="-82" width="64" height="164" rx="32"/>
+      <rect x="-108" y="-162" width="64" height="324" rx="32"/>
+      <rect x="44"  y="-212" width="64" height="424" rx="32"/>
+      <rect x="148" y="-82" width="64" height="164" rx="32"/>
+    </g>
+    <circle cx="0" cy="0" r="92" fill="#121212"/>
+    <circle cx="0" cy="0" r="92" fill="none" stroke="url(#accentS)" stroke-width="20"/>
+    <path d="M-24 -42 L48 0 L-24 42 Z" fill="url(#accentS)"/>
+  </g>
+
+  <!-- wordmark -->
+  <text x="642" y="1560" text-anchor="middle"
+        font-family="Helvetica, Arial, sans-serif" font-size="92"
+        font-weight="600" letter-spacing="4" fill="#F5F3FF">Music Minion</text>
+</svg>

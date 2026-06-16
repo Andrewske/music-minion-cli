@@ -1,0 +1,22 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Android adaptive icon FOREGROUND. backgroundColor (#121212) set in app.json.
+       Glyph kept inside the ~66% safe zone (center 672x672) to survive masking. -->
+  <defs>
+    <linearGradient id="accentA" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9B6BFF"/>
+      <stop offset="1" stop-color="#7C4DFF"/>
+    </linearGradient>
+  </defs>
+
+  <!-- transparent background; only the foreground glyph -->
+  <g fill="url(#accentA)">
+    <rect x="352" y="452" width="52" height="120" rx="26"/>
+    <rect x="436" y="392" width="52" height="240" rx="26"/>
+    <rect x="560" y="356" width="52" height="312" rx="26"/>
+    <rect x="644" y="452" width="52" height="120" rx="26"/>
+  </g>
+
+  <circle cx="512" cy="512" r="76" fill="#121212"/>
+  <circle cx="512" cy="512" r="76" fill="none" stroke="url(#accentA)" stroke-width="16"/>
+  <path d="M492 478 L552 512 L492 546 Z" fill="url(#accentA)"/>
+</svg>

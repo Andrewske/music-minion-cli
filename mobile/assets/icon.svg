@@ -1,0 +1,26 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Music Minion app icon: dark bg, purple music-curation glyph -->
+  <defs>
+    <linearGradient id="accent" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9B6BFF"/>
+      <stop offset="1" stop-color="#7C4DFF"/>
+    </linearGradient>
+  </defs>
+
+  <!-- background -->
+  <rect width="1024" height="1024" rx="224" fill="#121212"/>
+  <rect width="1024" height="1024" rx="224" fill="none" stroke="#1F1F1F" stroke-width="2"/>
+
+  <!-- equalizer / sound bars motif (curation = arranging sound) -->
+  <g fill="url(#accent)">
+    <rect x="300" y="430" width="64" height="164" rx="32"/>
+    <rect x="404" y="350" width="64" height="324" rx="32"/>
+    <rect x="556" y="300" width="64" height="424" rx="32"/>
+    <rect x="660" y="430" width="64" height="164" rx="32"/>
+  </g>
+
+  <!-- center play / curation marker -->
+  <circle cx="512" cy="512" r="92" fill="#121212"/>
+  <circle cx="512" cy="512" r="92" fill="none" stroke="url(#accent)" stroke-width="20"/>
+  <path d="M488 470 L560 512 L488 554 Z" fill="url(#accent)"/>
+</svg>
