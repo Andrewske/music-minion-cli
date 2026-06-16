@@ -1,13 +1,12 @@
 /**
- * Handle Android Share Target — receives URLs from other apps.
- * Routes to settings screen with the shared URL pre-filled.
+ * Consume the share intent from the root ShareIntentProvider context.
  *
- * expo-share-intent provides useShareIntent() hook directly.
- * We wrap it to extract URLs and handle navigation.
+ * Navigation to this screen is handled in app/_layout.tsx (where the provider
+ * is always mounted, so cold-start share intents work). This hook only extracts
+ * the shared URL and exposes it, resetting the intent once consumed.
  */
 import { useEffect, useState } from 'react';
-import { router } from 'expo-router';
-import { useShareIntent as useExpoShareIntent } from 'expo-share-intent';
+import { useShareIntentContext } from 'expo-share-intent';
 
 interface ShareIntentState {
   pendingUrl: string | null;
@@ -16,20 +15,19 @@ interface ShareIntentState {
 
 export const useShareIntent = (): ShareIntentState => {
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
-  const { shareIntent, resetShareIntent } = useExpoShareIntent();
+  const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntentContext();
 
   useEffect(() => {
-    if (shareIntent?.text) {
-      const urlMatch = shareIntent.text.match(/https?:\/\/[^\s]+/);
-      if (urlMatch) {
-        setPendingUrl(urlMatch[0]);
-        router.push('/(tabs)/settings');
-      }
-      resetShareIntent();
+    if (!hasShareIntent) return;
+    const candidate = shareIntent.webUrl ?? shareIntent.text ?? null;
+    const urlMatch = candidate?.match(/https?:\/\/[^\s]+/);
+    if (urlMatch) {
+      setPendingUrl(urlMatch[0]);
     }
-  }, [shareIntent, resetShareIntent]);
+    resetShareIntent();
+  }, [hasShareIntent, shareIntent, resetShareIntent]);
 
-  const clearPendingUrl = () => setPendingUrl(null);
+  const clearPendingUrl = (): void => setPendingUrl(null);
 
   return { pendingUrl, clearPendingUrl };
 };

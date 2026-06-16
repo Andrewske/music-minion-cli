@@ -3,8 +3,9 @@
  */
 import { useEffect } from 'react';
 import { View, ActivityIndicator } from 'react-native';
-import { Stack, Redirect, usePathname } from 'expo-router';
+import { Stack, Redirect, usePathname, router, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { ShareIntentProvider, useShareIntentContext } from 'expo-share-intent';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -33,6 +34,7 @@ const queryClient = new QueryClient({
 function AppContent() {
   const { serverUrl, isConfigured, isLoading } = useServerUrl();
   const pathname = usePathname();
+  const { hasShareIntent } = useShareIntentContext();
 
   // Init API client when server URL is available
   useEffect(() => {
@@ -41,6 +43,14 @@ function AppContent() {
       setDefaultApiClient(client);
     }
   }, [serverUrl]);
+
+  // Route shared URLs to the settings screen. Works on cold start because the
+  // ShareIntentProvider is always mounted at the root layout.
+  useEffect(() => {
+    if (hasShareIntent && isConfigured) {
+      router.push('/(tabs)/settings');
+    }
+  }, [hasShareIntent, isConfigured]);
 
   // WebSocket sync for player + device state
   const { status, retry } = useSyncWebSocket({ serverUrl });
@@ -70,15 +80,24 @@ function AppContent() {
 }
 
 export default function RootLayout() {
+  const appRouter = useRouter();
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <QueryClientProvider client={queryClient}>
-          <StatusBar style="light" />
-          <AppContent />
-          <Toast />
-        </QueryClientProvider>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <ShareIntentProvider
+      options={{
+        debug: __DEV__,
+        resetOnBackground: true,
+        onResetShareIntent: () => appRouter.replace('/(tabs)'),
+      }}
+    >
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <QueryClientProvider client={queryClient}>
+            <StatusBar style="light" />
+            <AppContent />
+            <Toast />
+          </QueryClientProvider>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    </ShareIntentProvider>
   );
 }
