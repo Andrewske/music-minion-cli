@@ -1,0 +1,20 @@
+# Comparison — open a playlist and confirm we enter the ranking flow.
+# Non-destructive: we do NOT cast a vote (that would mutate live ELO data).
+# Asserting the picker disappeared is robust to both outcomes (a votable pair
+# OR an already-"All caught up!" playlist) and to vote buttons sitting below
+# the scroll fold.
+appId: com.musicminion.app
+---
+- launchApp
+- tapOn:
+    id: "tab-compare"
+- extendedWaitUntil:
+    visible:
+      id: "comparison-playlist-option"
+    timeout: 30000
+- tapOn:
+    id: "comparison-playlist-option"
+- extendedWaitUntil:
+    notVisible:
+      id: "comparison-playlist-option"
+    timeout: 30000

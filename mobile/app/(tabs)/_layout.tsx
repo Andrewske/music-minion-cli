@@ -47,6 +47,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Home',
+          tabBarButtonTestID: 'tab-home',
           tabBarIcon: ({ color }) => <TabIcon name="♫" color={color} />,
         }}
       />
@@ -54,6 +55,7 @@ export default function TabLayout() {
         name="comparison"
         options={{
           title: 'Compare',
+          tabBarButtonTestID: 'tab-compare',
           tabBarIcon: ({ color }) => <TabIcon name="⚖" color={color} />,
         }}
       />
@@ -61,6 +63,7 @@ export default function TabLayout() {
         name="organizer"
         options={{
           title: 'Organize',
+          tabBarButtonTestID: 'tab-organize',
           tabBarIcon: ({ color }) => <TabIcon name="☰" color={color} />,
         }}
       />
@@ -68,6 +71,7 @@ export default function TabLayout() {
         name="history"
         options={{
           title: 'History',
+          tabBarButtonTestID: 'tab-history',
           tabBarIcon: ({ color }) => <TabIcon name="⏱" color={color} />,
         }}
       />
@@ -75,6 +79,7 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: 'Settings',
+          tabBarButtonTestID: 'tab-settings',
           tabBarIcon: ({ color }) => <TabIcon name="⚙" color={color} />,
         }}
       />

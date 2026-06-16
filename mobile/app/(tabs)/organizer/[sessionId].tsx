@@ -161,6 +161,7 @@ export default function SessionScreen() {
       {/* Create bucket input */}
       <View className="px-4 flex-row gap-2 mb-4">
         <TextInput
+          testID="bucket-name-input"
           className="flex-1 bg-surface text-text-primary rounded-lg px-4 py-2 border border-neutral-700"
           placeholder="New bucket name..."
           placeholderTextColor="#666"
@@ -170,6 +171,7 @@ export default function SessionScreen() {
           returnKeyType="done"
         />
         <Pressable
+          testID="create-bucket-btn"
           className="bg-primary rounded-lg px-4 justify-center"
           onPress={handleCreateBucket}
         >
@@ -209,9 +211,10 @@ export default function SessionScreen() {
           <Text className="text-text-secondary text-xs mb-3">
             Tap a track to assign it to the first bucket
           </Text>
-          {organizer.unassignedTrackIds.slice(0, 50).map((trackId) => (
+          {organizer.unassignedTrackIds.slice(0, 50).map((trackId, index) => (
             <Pressable
               key={trackId}
+              testID={index === 0 ? 'track-row' : undefined}
               className="bg-surface rounded-lg px-4 py-3 mb-1 active:opacity-70"
               onPress={() => handleAssignTrack(trackId)}
               disabled={organizer.isAssigning}

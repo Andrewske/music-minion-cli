@@ -1,0 +1,23 @@
+# Organizer — start a session, create a bucket, assign one track.
+appId: com.musicminion.app
+---
+- launchApp
+- tapOn:
+    id: "tab-organize"
+- assertVisible:
+    id: "organizer-playlist-option"
+- tapOn:
+    id: "organizer-playlist-option"
+# Session screen: create a bucket.
+- assertVisible:
+    id: "bucket-name-input"
+- tapOn:
+    id: "bucket-name-input"
+- inputText: "Test Bucket"
+- tapOn:
+    id: "create-bucket-btn"
+- assertVisible:
+    text: "Test Bucket"
+# Assign the first unassigned track into the bucket.
+- tapOn:
+    id: "track-row"

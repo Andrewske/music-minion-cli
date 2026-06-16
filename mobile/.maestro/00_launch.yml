@@ -1,0 +1,11 @@
+# Cold launch — app is pre-configured (URL baked into bundle via .env),
+# so it must land on the tab bar, NOT the setup gate.
+# Guards the server-url setup-gate fallthrough regression.
+appId: com.musicminion.app
+---
+- launchApp
+# Cold start has to load the JS bundle + initial render before the tabs mount.
+- extendedWaitUntil:
+    visible:
+      id: "tab-home"
+    timeout: 30000

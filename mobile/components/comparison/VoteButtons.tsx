@@ -33,6 +33,7 @@ export function VoteButtons({
   return (
     <View style={styles.container}>
       <Pressable
+        testID="vote-a"
         style={[styles.button, styles.buttonA, disabled && styles.disabled]}
         onPress={handleVoteA}
         disabled={disabled}
@@ -45,6 +46,7 @@ export function VoteButtons({
       </Pressable>
 
       <Pressable
+        testID="vote-b"
         style={[styles.button, styles.buttonB, disabled && styles.disabled]}
         onPress={handleVoteB}
         disabled={disabled}

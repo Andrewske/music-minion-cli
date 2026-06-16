@@ -1,0 +1,19 @@
+# Browse + play — search a track and start playback.
+appId: com.musicminion.app
+---
+- launchApp
+- tapOn:
+    id: "tab-home"
+- tapOn:
+    id: "home-search-input"
+- inputText: "a"
+# 2+ chars trigger the debounced search query.
+- eraseText
+- inputText: "the"
+- assertVisible:
+    id: "track-card"
+- tapOn:
+    id: "track-card"
+# Playback started → persistent player bar shows the track title.
+- assertVisible:
+    id: "player-track-title"

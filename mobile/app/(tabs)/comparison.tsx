@@ -178,8 +178,9 @@ export default function ComparisonScreen() {
           data={localPlaylists}
           keyExtractor={(item) => item.id.toString()}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
-          renderItem={({ item }) => (
+          renderItem={({ item, index }) => (
             <Pressable
+              testID={index === 0 ? 'comparison-playlist-option' : undefined}
               className="bg-surface rounded-lg px-4 py-4 mb-2 flex-row justify-between items-center active:opacity-70"
               onPress={() => handleSelectPlaylist(item.id)}
               disabled={startMutation.isPending}

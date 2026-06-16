@@ -63,8 +63,9 @@ export default function OrganizerPickerScreen() {
         data={playlists?.filter((p: Playlist) => p.track_count > 0) ?? []}
         keyExtractor={(item) => item.id.toString()}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
-        renderItem={({ item }) => (
+        renderItem={({ item, index }) => (
           <Pressable
+            testID={index === 0 ? 'organizer-playlist-option' : undefined}
             className="bg-surface rounded-lg px-4 py-4 mb-2 flex-row justify-between items-center active:opacity-70"
             onPress={() => startSession.mutate(item.id)}
             disabled={startSession.isPending}
