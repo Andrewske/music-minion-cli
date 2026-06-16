@@ -577,6 +577,7 @@ def assign_track_to_bucket(bucket_id: str, track_id: int) -> dict[str, Any] | No
             """
             INSERT INTO bucket_tracks (id, bucket_id, track_id, position)
             VALUES (?, ?, ?, ?)
+            ON CONFLICT(bucket_id, track_id) DO NOTHING
             """,
             (bucket_track_id, bucket_id, track_id, next_position),
         )
