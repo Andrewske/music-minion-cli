@@ -23,20 +23,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#121212"
       },
-      "package": "com.musicminion.app",
-      "intentFilters": [
-        {
-          "action": "SEND",
-          "category": [
-            "DEFAULT"
-          ],
-          "data": [
-            {
-              "mimeType": "text/plain"
-            }
-          ]
-        }
-      ]
+      "package": "com.musicminion.app"
     },
     "plugins": [
       "expo-router",
@@ -52,7 +39,8 @@
       [
         "expo-share-intent",
         {
-          "disableIOS": true
+          "disableIOS": true,
+          "androidIntentFilters": ["text/*"]
         }
       ],
       "./plugins/with-gradle-memory",

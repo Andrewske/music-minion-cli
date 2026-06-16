@@ -25,7 +25,7 @@
     "expo-haptics": "~55.0.14",
     "expo-linking": "~55.0.13",
     "expo-router": "~55.0.12",
-    "expo-share-intent": "~6.1.0",
+    "expo-share-intent": "~6.1.1",
     "expo-status-bar": "~55.0.5",
     "nativewind": "4.2.3",
     "react": "19.2.0",
