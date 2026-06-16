@@ -1,0 +1,5 @@
+# Shared Maestro config for all Music Minion flows.
+# Run a single flow:   maestro test .maestro/00_launch.yml
+# Run the whole suite:  maestro test .maestro/
+flows:
+  - "*.yml"

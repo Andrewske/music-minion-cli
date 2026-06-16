@@ -11,6 +11,7 @@ interface TrackCardProps {
   isPlaying?: boolean;
   onPress: () => void;
   onLongPress?: () => void;
+  testID?: string;
 }
 
 const formatDuration = (seconds?: number): string => {
@@ -20,7 +21,7 @@ const formatDuration = (seconds?: number): string => {
   return `${m}:${s.toString().padStart(2, '0')}`;
 };
 
-export function TrackCard({ track, isPlaying, onPress, onLongPress }: TrackCardProps) {
+export function TrackCard({ track, isPlaying, onPress, onLongPress, testID }: TrackCardProps) {
   const handleLongPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onLongPress?.();
@@ -28,6 +29,7 @@ export function TrackCard({ track, isPlaying, onPress, onLongPress }: TrackCardP
 
   return (
     <Pressable
+      testID={testID}
       style={[styles.card, isPlaying && styles.cardPlaying]}
       onPress={onPress}
       onLongPress={handleLongPress}

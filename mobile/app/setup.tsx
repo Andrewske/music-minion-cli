@@ -72,6 +72,7 @@ export default function SetupScreen() {
 
       <Text className="text-text-secondary text-sm mb-2">Server URL</Text>
       <TextInput
+        testID="setup-url-input"
         className="bg-surface text-text-primary rounded-lg px-4 py-3 text-base border border-neutral-700 mb-4"
         placeholder="my-server.tailnet.ts.net:8642"
         placeholderTextColor="#666"
@@ -97,6 +98,7 @@ export default function SetupScreen() {
       )}
 
       <Pressable
+        testID="setup-test-btn"
         className="bg-primary rounded-lg py-4 items-center"
         onPress={testConnection}
         disabled={testing}

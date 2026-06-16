@@ -60,10 +60,10 @@ export function PlayerBar() {
   };
 
   return (
-    <View style={[styles.bar, { paddingBottom: 10 + insets.bottom }]}>
+    <View testID="player-bar" style={[styles.bar, { paddingBottom: 10 + insets.bottom }]}>
       {/* Track info — tap to expand NowPlaying sheet */}
       <Pressable style={styles.info} onPress={handleExpand}>
-        <Text style={styles.title} numberOfLines={1}>
+        <Text testID="player-track-title" style={styles.title} numberOfLines={1}>
           {currentTrack.title}
         </Text>
         <Text style={styles.artist} numberOfLines={1}>

@@ -1,0 +1,15 @@
+# Config fallthrough — EXPO_PUBLIC_API_URL is baked into the release bundle,
+# so even after wiping AsyncStorage the app falls through to the env URL and
+# must still land on Home (never the setup gate). Guards the setup-gate
+# fallthrough logic in hooks/useServerUrl.ts.
+#
+# NOTE: to exercise the *actual* setup screen (setup-url-input, setup-test-btn),
+# build WITHOUT EXPO_PUBLIC_API_URL set, then assert the gate is shown.
+appId: com.musicminion.app
+---
+- clearState
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "tab-home"
+    timeout: 30000

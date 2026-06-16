@@ -72,6 +72,7 @@ export default function HomeScreen() {
       <View className="px-4 pt-12 pb-3">
         <View className="flex-row items-center bg-surface rounded-lg border border-neutral-700">
           <TextInput
+            testID="home-search-input"
             className="flex-1 text-text-primary px-4 py-3 text-base"
             placeholder="Search tracks..."
             placeholderTextColor="#666"
@@ -110,6 +111,7 @@ export default function HomeScreen() {
         windowSize={10}
         renderItem={({ item, index }) => (
           <TrackCard
+            testID={index === 0 ? 'track-card' : undefined}
             track={item}
             isPlaying={currentTrack?.id === item.id}
             onPress={() => handlePlayTrack(item, index)}
