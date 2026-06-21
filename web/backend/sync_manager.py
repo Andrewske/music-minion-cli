@@ -11,9 +11,15 @@ class SyncManager:
     Handles device registry with grace period for disconnects.
     """
 
+    # Seconds a device may stay offline before eviction (overridable in tests)
+    grace_period: float = 30
+
     def __init__(self):
         self.connections: list[WebSocket] = []
-        # Device registry: {device_id: {id, name, connected_at, ws}}
+        # Device registry: {device_id: {id, name, connected_at, connections}}
+        # `connections` is the set of live websockets for that device — one
+        # machine can open several tabs/apps that all share the same persisted
+        # device-id, so a device is online while ANY of them is connected.
         self.devices: dict[str, dict[str, Any]] = {}
         # Disconnect grace timers: {device_id: asyncio.Task}
         self.disconnect_timers: dict[str, asyncio.Task] = {}
@@ -47,51 +53,78 @@ class SyncManager:
     async def register_device(
         self, device_id: str, device_name: str, ws: WebSocket
     ) -> None:
-        """Register a device or reconnect existing device (cancels grace timer)."""
+        """Register a device or add a connection to an existing one."""
         # Cancel pending disconnect timer if reconnecting
         if device_id in self.disconnect_timers:
             self.disconnect_timers[device_id].cancel()
             del self.disconnect_timers[device_id]
 
-        # Register device
+        existing = self.devices.get(device_id)
+        connections: set[WebSocket] = existing["connections"] if existing else set()
+        connections.add(ws)
+
         self.devices[device_id] = {
             "id": device_id,
             "name": device_name,
-            "connected_at": time.time(),
-            "ws": ws,
+            "connected_at": existing["connected_at"] if existing else time.time(),
+            "connections": connections,
         }
 
         # Broadcast updated device list
         await self.broadcast_device_list()
 
-    async def unregister_device(self, device_id: str) -> None:
-        """Start grace period for device disconnect (30s)."""
+    async def unregister_device(
+        self, device_id: str, ws: WebSocket | None = None
+    ) -> None:
+        """Drop one connection; start grace period only when none remain.
+
+        A device with another live connection (e.g. a second tab sharing the
+        same persisted device-id) stays online — so a closing tab can't evict
+        it or pause playback.
+        """
+        device = self.devices.get(device_id)
+        if device is None:
+            return
+
+        if ws is not None:
+            device["connections"].discard(ws)
+
+        # Still has live connections — device is online, nothing to do.
+        if device["connections"]:
+            return
+
+        # No connections left: (re)start grace timer before eviction.
+        if device_id in self.disconnect_timers:
+            self.disconnect_timers[device_id].cancel()
 
         async def remove_after_grace():
-            """Remove device after 30s grace period."""
-            await asyncio.sleep(30)
-            if device_id in self.devices:
-                del self.devices[device_id]
-                await self.broadcast_device_list()
+            """Remove device after the grace period if it didn't reconnect."""
+            await asyncio.sleep(self.grace_period)
+            dev = self.devices.get(device_id)
+            if dev is None or dev["connections"]:
+                return  # already gone, or reconnected during grace
 
-                # Auto-pause if this was the active device
-                from .player_state import get_state, update_state
+            del self.devices[device_id]
+            await self.broadcast_device_list()
 
-                state = get_state()
-                if state.active_device_id == device_id:
-                    elapsed_ms = 0
-                    if state.track_started_at:
-                        elapsed_ms = int((time.time() - state.track_started_at) * 1000)
+            # Auto-pause if the genuinely-active device went offline
+            from .player_state import get_state, update_state
 
-                    await update_state(
-                        {
-                            "is_playing": False,
-                            "active_device_id": None,
-                            "position_ms": state.position_ms + elapsed_ms,
-                            "track_started_at": None,
-                        }
-                    )
-                    # Note: broadcast happens inside update_state()
+            state = get_state()
+            if state.active_device_id == device_id:
+                elapsed_ms = 0
+                if state.track_started_at:
+                    elapsed_ms = int((time.time() - state.track_started_at) * 1000)
+
+                await update_state(
+                    {
+                        "is_playing": False,
+                        "active_device_id": None,
+                        "position_ms": state.position_ms + elapsed_ms,
+                        "track_started_at": None,
+                    }
+                )
+                # Note: broadcast happens inside update_state()
 
         # Start grace timer
         self.disconnect_timers[device_id] = asyncio.create_task(remove_after_grace())

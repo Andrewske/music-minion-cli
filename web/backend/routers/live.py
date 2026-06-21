@@ -55,9 +55,9 @@ async def sync_websocket(websocket: WebSocket):
         # Start grace period for device if registered
         if device_id:
             logger.info(f"Device disconnected, starting grace period: {device_id}")
-            await sync_manager.unregister_device(device_id)
+            await sync_manager.unregister_device(device_id, websocket)
     except Exception:
         ping_task.cancel()
         sync_manager.disconnect(websocket)
         if device_id:
-            await sync_manager.unregister_device(device_id)
+            await sync_manager.unregister_device(device_id, websocket)

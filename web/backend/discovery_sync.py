@@ -307,10 +307,10 @@ def _parse_sc_datetime(value: Any) -> Optional[datetime]:
 
 
 def _track_recency(track: dict[str, Any]) -> datetime:
-    """Recency signal for selection: repost date (curation event) first, then
-    track release date, then ingest time. Falls back to epoch when undatable so
+    """Recency signal for selection: track release date (UI-visible age) first,
+    then repost date, then ingest time. Falls back to epoch when undatable so
     such tracks sort last."""
-    for key in ("reposted_at", "released_at", "created_at"):
+    for key in ("released_at", "reposted_at", "created_at"):
         dt = _parse_sc_datetime(track.get(key))
         if dt:
             return dt

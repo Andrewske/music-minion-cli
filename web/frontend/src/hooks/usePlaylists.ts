@@ -17,5 +17,8 @@ export function usePlaylists(library?: string) {
       const data = await response.json();
       return data.playlists;
     },
+    refetchInterval: 15_000, // poll for live counts while tab focused
+    staleTime: 10_000, // override 5-min global default for this query
+    // refetchIntervalInBackground defaults false → no polling on hidden tabs
   });
 }

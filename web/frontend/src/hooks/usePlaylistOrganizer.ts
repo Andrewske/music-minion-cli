@@ -121,6 +121,7 @@ export function usePlaylistOrganizer(
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey });
+      queryClient.invalidateQueries({ queryKey: ['playlists'] });
     },
   });
 
