@@ -63,3 +63,7 @@ mobile/ios/
 /*.m3u8
 /nye*.md
 /*_sc_ids.txt
+
+# Machine-local Claude state
+/.claude/scheduled_tasks.lock
+/.claude/worktrees/

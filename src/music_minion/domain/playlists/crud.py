@@ -10,7 +10,7 @@ from loguru import logger
 
 from music_minion.core.database import get_db_connection
 
-from . import filters, sync
+from . import sync
 
 
 def create_playlist(
@@ -75,7 +75,14 @@ def create_playlist(
 
 
 def update_playlist_track_count(playlist_id: int) -> None:
-    """Update the track_count field for a playlist (works for both types)."""
+    """Update the track_count field for a playlist (works for both types).
+
+    NOTE: playlists.track_count is NOT authoritative for display. All listing
+    queries (get_all_playlists, get_playlists_sorted_by_recent) compute the
+    count live from playlist_tracks. This column is kept only for SoundCloud
+    change-detection and incremental add/remove bookkeeping; it may drift and
+    that is intentionally tolerated.
+    """
     with get_db_connection() as conn:
         cursor = conn.execute(
             "SELECT COUNT(*) as count FROM playlist_tracks WHERE playlist_id = ?",
@@ -239,7 +246,7 @@ def get_all_playlists(library: Optional[str] = None) -> list[dict[str, Any]]:
                 name,
                 type,
                 description,
-                track_count,
+                (SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = playlists.id) AS track_count,
                 created_at,
                 updated_at,
                 last_played_at,
@@ -309,7 +316,7 @@ def get_playlists_sorted_by_recent(
                 name,
                 type,
                 description,
-                track_count,
+                (SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = playlists.id) AS track_count,
                 created_at,
                 updated_at,
                 last_played_at,
