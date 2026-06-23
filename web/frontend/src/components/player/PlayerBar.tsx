@@ -1,7 +1,8 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Shuffle } from 'lucide-react';
 import { useRouterState } from '@tanstack/react-router';
 import { usePlayer } from '../../hooks/usePlayer';
+import { useMediaSession } from '../../hooks/useMediaSession';
 import { getCurrentPosition } from '../../stores/playerStore';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useActiveAudioElement } from '../../contexts/AudioElementContext';
@@ -41,6 +42,15 @@ export function PlayerBar(): JSX.Element {
   // Comparison mode state for track auto-switching
   const { currentPair, isComparisonMode } = useComparisonStore();
   const { play } = usePlayerStore();
+
+  // Media Session: expose track metadata + transport controls to the browser
+  // notification (e.g. Android Chrome). Memoize actions so the handler effect
+  // doesn't re-bind on every render.
+  const mediaSessionActions = useMemo(
+    () => ({ play: resume, pause, next, prev }),
+    [resume, pause, next, prev],
+  );
+  useMediaSession(currentTrack, isPlaying, mediaSessionActions);
 
   // Ref for currentTrack to avoid stale closure in handleTrackFinish
   const currentTrackRef = useRef(currentTrack);
