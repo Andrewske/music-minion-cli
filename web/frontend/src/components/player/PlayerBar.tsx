@@ -98,10 +98,20 @@ export function PlayerBar(): JSX.Element {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isPlaying, pause, resume, next, prev]);
 
-  // Progress — read from audio element (ground truth) on active device,
-  // fall back to store interpolation for remote devices
+  // Progress — read from audio element (ground truth) whenever it is locally
+  // serving the current track, falling back to store interpolation only for
+  // genuinely remote playback.
   const audio = useActiveAudioElement();
   const [progress, setProgress] = useState(0);
+
+  // The local audio element is the source of truth when it holds the current
+  // track. We key on dataset.trackId (set in usePlayer) rather than the
+  // `isThisDeviceActive` flag: a queue-change broadcast (e.g. bucket assignment
+  // while organizing) can momentarily flip that flag, which previously made the
+  // seekbar fall back to the near-zero store position and snap to 0:00 even
+  // though local audio kept playing. Reading the element directly is immune.
+  const audioServesCurrentTrack =
+    !!audio && !!currentTrack && audio.dataset.trackId === String(currentTrack.id);
 
   useEffect(() => {
     if (!currentTrack?.duration) {
@@ -113,8 +123,8 @@ export function PlayerBar(): JSX.Element {
     if (!isPlaying) return;
 
     const updateProgress = (): void => {
-      if (isThisDeviceActive && audio) {
-        // Active device: read directly from audio element
+      if (audioServesCurrentTrack && audio) {
+        // Local element is playing this track: read directly from it.
         if (audio.duration > 0) {
           setProgress((audio.currentTime / audio.duration) * 100);
         }
@@ -128,7 +138,7 @@ export function PlayerBar(): JSX.Element {
     updateProgress();
     const interval = window.setInterval(updateProgress, 250);
     return () => clearInterval(interval);
-  }, [currentTrack?.id, currentTrack?.duration, isPlaying, isThisDeviceActive, audio]);
+  }, [currentTrack?.id, currentTrack?.duration, isPlaying, audioServesCurrentTrack, audio]);
 
   const activeDeviceName =
     availableDevices.find((d) => d.id === activeDeviceId)?.name ?? 'Unknown Device';
