@@ -22,7 +22,6 @@ import { getPlaylistTracks, pinPlaylist, unpinPlaylist, reorderPinnedPlaylist } 
 import { usePlaylists } from '../../hooks/usePlaylists';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useComparisonStore } from '../../stores/comparisonStore';
-import { useStartComparison } from '../../hooks/useComparison';
 import { SidebarSection } from './SidebarSection';
 import type { Playlist } from '../../types';
 import { useLibraryStore } from '../../stores/libraryStore';
@@ -40,10 +39,9 @@ export function SidebarPlaylists({ sidebarExpanded }: SidebarPlaylistsProps): JS
   const play = usePlayerStore((s) => s.play);
 
   const isOnHome = location.pathname === '/';
-  const isOnComparison = location.pathname === '/comparison';
+  const isOnComparison = location.pathname.startsWith('/comparison');
   const isOnOrganizer = location.pathname.startsWith('/playlist-organizer');
 
-  const startComparisonMutation = useStartComparison();
   const { selectedPlaylistId: comparisonPlaylistId, isComparisonMode } = useComparisonStore();
 
   const activePlaylistId = isOnComparison && isComparisonMode
@@ -95,8 +93,9 @@ export function SidebarPlaylists({ sidebarExpanded }: SidebarPlaylistsProps): JS
         play(track, { type: 'playlist', playlist_id: playlistId });
       }
     } else if (isOnComparison) {
-      // Start comparison with this playlist
-      startComparisonMutation.mutate(playlistId);
+      // Navigate to comparison with this playlist; the route starts the session
+      // (keeps the URL in sync, mirroring the Playlist Organizer pattern).
+      navigate({ to: '/comparison/$playlistId', params: { playlistId: String(playlistId) } });
     } else if (isOnOrganizer) {
       // Navigate to organizer
       navigate({ to: '/playlist-organizer/$playlistId', params: { playlistId: String(playlistId) } });
