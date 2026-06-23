@@ -161,7 +161,8 @@ def _render_footer(term: Terminal, builder, y: int) -> int:
 
     position_text = f"[{pos}/{total}]"
     help_text = (
-        "j/k nav  Space toggle  p play  s sort  f edit filters  d del filter  Esc exit"
+        "j/k nav  Space toggle  p play  s sort  1-6 quick-sort  "
+        "f edit filters  d del filter  Esc exit"
     )
 
     footer = f"   {position_text} {help_text}"
