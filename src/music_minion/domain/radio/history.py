@@ -14,10 +14,96 @@ from loguru import logger
 from music_minion.core.db_adapter import get_radio_db_connection
 from music_minion.domain.library.models import Track
 
+# Default dedup window: consecutive plays of the same track within this many
+# minutes count as a single play. Chosen in the 10-30 min acceptance range to
+# absorb back-and-forth comparison and forgotten loops without merging genuine
+# re-listens later in a session.
+DEFAULT_DEDUP_WINDOW_MINUTES = 15
 
-def start_play(track_id: int, source_type: str = "local") -> int:
-    """Insert a new history entry when a track starts playing. Returns history_id."""
+
+def should_skip_duplicate_play(
+    last_started_at: Optional[datetime],
+    now: datetime,
+    window_minutes: int = DEFAULT_DEDUP_WINDOW_MINUTES,
+) -> bool:
+    """Decide whether a new play of a track is a duplicate within the dedup window.
+
+    Pure function (no I/O) so it can be unit-tested with mocked timestamps.
+
+    Args:
+        last_started_at: started_at of the most recent play of the same track,
+            or None if the track has never been played.
+        now: timestamp of the incoming play.
+        window_minutes: dedup window length. Non-positive disables dedup.
+
+    Returns:
+        True if the incoming play falls within `window_minutes` of the last play
+        (and should therefore be skipped), False otherwise.
+
+    Examples:
+        >>> from datetime import datetime
+        >>> last = datetime(2026, 1, 1, 12, 0, 0)
+        >>> should_skip_duplicate_play(last, datetime(2026, 1, 1, 12, 5, 0), 15)
+        True
+        >>> should_skip_duplicate_play(last, datetime(2026, 1, 1, 12, 20, 0), 15)
+        False
+        >>> should_skip_duplicate_play(None, datetime(2026, 1, 1, 12, 0, 0), 15)
+        False
+    """
+    if last_started_at is None or window_minutes <= 0:
+        return False
+    elapsed = now - last_started_at
+    return timedelta(0) <= elapsed < timedelta(minutes=window_minutes)
+
+
+def _get_last_play(conn, track_id: int) -> Optional[tuple[int, datetime]]:
+    """Return (history_id, started_at) of the most recent play of a track, or None."""
+    cursor = conn.execute(
+        """
+        SELECT id, started_at
+        FROM radio_history
+        WHERE track_id = ?
+        ORDER BY started_at DESC, id DESC
+        LIMIT 1
+        """,
+        (track_id,)
+    )
+    row = cursor.fetchone()
+    if row is None:
+        return None
+    return row["id"], _parse_timestamp(row["started_at"])
+
+
+def start_play(
+    track_id: int,
+    source_type: str = "local",
+    window_minutes: int = DEFAULT_DEDUP_WINDOW_MINUTES,
+    now: Optional[datetime] = None,
+) -> int:
+    """Insert a new history entry when a track starts playing. Returns history_id.
+
+    Deduplicates at write time: if the same track was played within
+    `window_minutes`, no new row is inserted and the existing history_id is
+    returned. Dedup is forward-only — existing history rows are never modified.
+
+    Args:
+        track_id: Track being played.
+        source_type: Playback source ('local', 'soundcloud', etc.).
+        window_minutes: Dedup window. Non-positive disables dedup.
+        now: Override for the current time (testing). Defaults to local now.
+    """
+    now = now or datetime.now()
     with get_radio_db_connection() as conn:
+        last_play = _get_last_play(conn, track_id)
+        if last_play is not None:
+            last_id, last_started_at = last_play
+            if should_skip_duplicate_play(last_started_at, now, window_minutes):
+                logger.debug(
+                    f"Skipping duplicate play of track {track_id} "
+                    f"within {window_minutes}min window (reusing history {last_id})"
+                )
+                return last_id
+
         cursor = conn.execute(
             """
             INSERT INTO radio_history (track_id, source_type, started_at)
