@@ -2058,6 +2058,41 @@ def select_builder_sort_field(state: UIState) -> UIState:
     )
 
 
+def quick_sort_builder_by_index(state: UIState, index: int) -> UIState:
+    """Quick-sort the builder by the Nth field in ``BUILDER_SORT_FIELDS``.
+
+    Used by numeric shortcuts (keys 1-6) to jump straight to a sort field
+    without opening the dropdown. Repeating the same field toggles direction,
+    matching ``select_builder_sort_field`` semantics. Out-of-range indices are
+    ignored (state returned unchanged).
+    """
+    if index < 0 or index >= len(BUILDER_SORT_FIELDS):
+        return state
+
+    field = BUILDER_SORT_FIELDS[index]
+    # Toggle direction if same field, otherwise default to asc
+    direction = (
+        "desc"
+        if field == state.builder.sort_field and state.builder.sort_direction == "asc"
+        else "asc"
+    )
+
+    # Re-sort displayed tracks
+    displayed = _apply_builder_sort(state.builder.displayed_tracks, field, direction)
+
+    return replace(
+        state,
+        builder=replace(
+            state.builder,
+            sort_field=field,
+            sort_direction=direction,
+            displayed_tracks=displayed,
+            selected_index=0,
+            scroll_offset=0,
+        ),
+    )
+
+
 def remove_builder_filter(state: UIState, index: int = -1) -> UIState:
     """Remove filter at index (default: last)."""
     if not state.builder.filters:

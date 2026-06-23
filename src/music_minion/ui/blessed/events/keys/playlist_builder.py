@@ -9,6 +9,7 @@ from music_minion.ui.blessed.state import (
     show_builder_sort_dropdown,
     move_builder_dropdown_selection,
     select_builder_sort_field,
+    quick_sort_builder_by_index,
     toggle_filter_editor_mode,
     move_filter_editor_selection,
     start_editing_filter,
@@ -87,12 +88,13 @@ def _handle_main_builder_key(
             data={"track_id": track["id"] if track else None},
         )
 
-    # Numeric keys 0-9: Jump to percentage of track
-    if event_type == "char" and char and char.isdigit():
-        percentage = int(char) * 10
-        return state, InternalCommand(
-            action="seek_percentage", data={"percentage": percentage}
-        )
+    # Numeric keypad shortcuts 1-6: Quick-sort by field (title/artist/year/
+    # album/genre/bpm). Repeating the same key toggles asc/desc. These map to
+    # BUILDER_SORT_FIELDS by 1-based index and let you re-sort without opening
+    # the sort dropdown. Digit '0' (and 7-9) are intentionally unbound here so
+    # they remain available for future builder actions.
+    if event_type == "char" and char in ("1", "2", "3", "4", "5", "6"):
+        return quick_sort_builder_by_index(state, int(char) - 1), None
 
     # Sort dropdown
     if char == "s":
