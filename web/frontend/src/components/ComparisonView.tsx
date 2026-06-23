@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { useComparisonStore } from '../stores/comparisonStore';
 import { usePlayerStore } from '../stores/playerStore';
 import { useStartComparison, useRecordComparison, useArchiveTrack } from '../hooks/useComparison';
@@ -14,7 +15,18 @@ import { ErrorState } from './ErrorState';
 import { ErrorBoundary } from './ErrorBoundary';
 import { StatsModal } from './StatsModal';
 
-export function ComparisonView() {
+interface ComparisonViewProps {
+  /**
+   * Playlist ID from the URL (/comparison/$playlistId).
+   * When provided, the comparison session is (re)started for this playlist
+   * so direct navigation and reloads load the correct playlist's comparison.
+   */
+  playlistId?: number;
+}
+
+export function ComparisonView({ playlistId }: ComparisonViewProps = {}) {
+  const navigate = useNavigate();
+
   // Player state from global playerStore
   const { currentTrack, isPlaying, play, pause, resume } = usePlayerStore();
 
@@ -41,6 +53,16 @@ export function ComparisonView() {
   // Stats modal state
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
 
+  // Start (or restore) the comparison session for the playlist in the URL.
+  // Runs on direct navigation to /comparison/$playlistId and on reload, so the
+  // selected playlist is preserved instead of resetting to the picker.
+  const startMutate = startComparison.mutate;
+  useEffect(() => {
+    if (playlistId === undefined) return;
+    if (selectedPlaylistId === playlistId && isComparisonMode) return;
+    startMutate(playlistId);
+  }, [playlistId, selectedPlaylistId, isComparisonMode, startMutate]);
+
   // Activate comparison mode on mount, deactivate on unmount
   // This tells the CLI backend that web-winner/web-archive should route to comparison
   useEffect(() => {
@@ -53,8 +75,9 @@ export function ComparisonView() {
     }
   }, [isComparisonMode]);
 
-  const handleSelectPlaylist = (playlistId: number) => {
-    startComparison.mutate(playlistId);
+  // Selecting a playlist updates the URL; the effect above starts the session.
+  const handleSelectPlaylist = (id: number) => {
+    navigate({ to: '/comparison/$playlistId', params: { playlistId: String(id) } });
   };
 
   const handleTrackTap = (track: TrackInfo) => {
@@ -119,6 +142,16 @@ export function ComparisonView() {
     );
   }
 
+  // A playlist is in the URL but its session hasn't loaded yet (direct nav / reload).
+  // Show a loading state instead of flashing the picker before startComparison resolves.
+  if (playlistId !== undefined && !currentPair && !isComparisonMode) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center p-4">
+        <div className="text-white/40 text-sm font-mono">Loading comparison...</div>
+      </div>
+    );
+  }
+
   if (!currentPair && isComparisonMode) {
     // Ranking complete
     return (
@@ -138,7 +171,10 @@ export function ComparisonView() {
             </div>
           )}
           <button
-            onClick={() => useComparisonStore.getState().reset()}
+            onClick={() => {
+              useComparisonStore.getState().reset();
+              navigate({ to: '/comparison' });
+            }}
             className="w-full bg-indigo-600 text-white px-6 py-4 font-bold text-lg hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-900/50"
           >
             Start New Comparison
