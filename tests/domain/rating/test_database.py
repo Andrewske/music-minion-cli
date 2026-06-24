@@ -150,7 +150,6 @@ def test_record_comparison_column_names():
         'track_a_playlist_rating_after',
         'track_b_playlist_rating_before',
         'track_b_playlist_rating_after',
-        'affects_global',
     }
     assert required.issubset(cols), f"Missing columns: {required - cols}"
 
@@ -219,7 +218,6 @@ def test_playlist():
                 track_b_id INTEGER NOT NULL,
                 winner_id INTEGER NOT NULL,
                 playlist_id INTEGER NOT NULL,
-                affects_global BOOLEAN,
                 track_a_playlist_rating_before REAL,
                 track_a_playlist_rating_after REAL,
                 track_b_playlist_rating_before REAL,
@@ -279,7 +277,7 @@ def two_playlist_setup():
     with get_db_connection() as conn:
         conn.execute("CREATE TABLE IF NOT EXISTS playlists (id INTEGER PRIMARY KEY, name TEXT NOT NULL, filter_source TEXT, filter_genre TEXT, filter_year INTEGER)")
         conn.execute("CREATE TABLE IF NOT EXISTS playlist_elo_ratings (track_id INTEGER NOT NULL, playlist_id INTEGER NOT NULL, rating REAL DEFAULT 1500.0, comparison_count INTEGER DEFAULT 0, wins INTEGER DEFAULT 0, losses INTEGER DEFAULT 0, last_compared TIMESTAMP, PRIMARY KEY (track_id, playlist_id))")
-        conn.execute("CREATE TABLE IF NOT EXISTS playlist_comparison_history (id INTEGER PRIMARY KEY AUTOINCREMENT, track_a_id INTEGER NOT NULL, track_b_id INTEGER NOT NULL, winner_id INTEGER NOT NULL, playlist_id INTEGER NOT NULL, affects_global BOOLEAN, track_a_playlist_rating_before REAL, track_a_playlist_rating_after REAL, track_b_playlist_rating_before REAL, track_b_playlist_rating_after REAL, track_a_global_rating_before REAL, track_a_global_rating_after REAL, track_b_global_rating_before REAL, track_b_global_rating_after REAL, session_id TEXT NOT NULL DEFAULT '', timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)")
+        conn.execute("CREATE TABLE IF NOT EXISTS playlist_comparison_history (id INTEGER PRIMARY KEY AUTOINCREMENT, track_a_id INTEGER NOT NULL, track_b_id INTEGER NOT NULL, winner_id INTEGER NOT NULL, playlist_id INTEGER NOT NULL, track_a_playlist_rating_before REAL, track_a_playlist_rating_after REAL, track_b_playlist_rating_before REAL, track_b_playlist_rating_after REAL, track_a_global_rating_before REAL, track_a_global_rating_after REAL, track_b_global_rating_before REAL, track_b_global_rating_after REAL, session_id TEXT NOT NULL DEFAULT '', timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)")
         conn.execute("CREATE TABLE IF NOT EXISTS playlist_tracks (playlist_id INTEGER NOT NULL, track_id INTEGER NOT NULL, PRIMARY KEY (playlist_id, track_id))")
 
         # Playlist A has tracks 1, 2, 3
