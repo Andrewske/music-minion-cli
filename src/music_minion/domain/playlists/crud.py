@@ -4,6 +4,7 @@ Functional approach with explicit state passing
 """
 
 import json
+from sqlite3 import Connection
 from typing import Any, Optional
 
 from loguru import logger
@@ -13,8 +14,28 @@ from music_minion.core.database import get_db_connection
 from . import sync
 
 
+def _insert_playlist(
+    conn: Connection, name: str, playlist_type: str, description: Optional[str], library: str
+) -> int:
+    """Insert a playlist row and return its id (raises ValueError on duplicate)."""
+    try:
+        cursor = conn.execute(
+            "INSERT INTO playlists (name, type, description, library) VALUES (?, ?, ?, ?)",
+            (name, playlist_type, description, library),
+        )
+        conn.commit()
+        return cursor.lastrowid
+    except Exception as e:
+        if "UNIQUE constraint failed" in str(e):
+            raise ValueError(f"Playlist '{name}' already exists in {library} library")
+        raise
+
+
 def create_playlist(
-    name: str, playlist_type: str, description: Optional[str] = None
+    name: str,
+    playlist_type: str,
+    description: Optional[str] = None,
+    conn: Optional[Connection] = None,
 ) -> int:
     """
     Create a new playlist in the current active library.
@@ -26,6 +47,7 @@ def create_playlist(
         name: Playlist name (must be unique within library)
         playlist_type: 'manual' or 'smart'
         description: Optional description
+        conn: Optional shared connection for the insert. If None, opens its own.
 
     Returns:
         Playlist ID
@@ -41,23 +63,11 @@ def create_playlist(
     # Get active library to assign playlist to it
     active_library = sync.get_active_library()
 
-    with get_db_connection() as conn:
-        try:
-            cursor = conn.execute(
-                """
-                INSERT INTO playlists (name, type, description, library)
-                VALUES (?, ?, ?, ?)
-            """,
-                (name, playlist_type, description, active_library),
-            )
-            conn.commit()
-            playlist_id = cursor.lastrowid
-        except Exception as e:
-            if "UNIQUE constraint failed" in str(e):
-                raise ValueError(
-                    f"Playlist '{name}' already exists in {active_library} library"
-                )
-            raise
+    if conn is not None:
+        playlist_id = _insert_playlist(conn, name, playlist_type, description, active_library)
+    else:
+        with get_db_connection() as c:
+            playlist_id = _insert_playlist(c, name, playlist_type, description, active_library)
 
     # If active library is SoundCloud, create remote playlist and link it
     if active_library == "soundcloud":
@@ -101,32 +111,34 @@ def update_playlist_track_count(playlist_id: int) -> None:
         conn.commit()
 
 
-def delete_playlist(playlist_id: int) -> bool:
+def delete_playlist(playlist_id: int, conn: Optional[Connection] = None) -> bool:
     """
     Delete a playlist and all associated data.
 
     Args:
         playlist_id: ID of playlist to delete
+        conn: Optional shared connection. If None, opens its own.
 
     Returns:
         True if playlist was deleted, False if not found
     """
-    with get_db_connection() as conn:
+    def _delete(c: Connection) -> bool:
         # Begin explicit transaction for atomicity
-        conn.execute("BEGIN")
+        c.execute("BEGIN")
         try:
-            # Clear active playlist entry if this is active (CASCADE handles this via FK constraint)
-            # No manual deletion needed - FK ON DELETE SET NULL will handle it
-
-            # Delete playlist (CASCADE will handle playlist_tracks and filters)
-            cursor = conn.execute("DELETE FROM playlists WHERE id = ?", (playlist_id,))
+            # Delete playlist (CASCADE handles playlist_tracks, filters, active_playlist)
+            cursor = c.execute("DELETE FROM playlists WHERE id = ?", (playlist_id,))
             deleted = cursor.rowcount > 0
-
-            conn.commit()
+            c.commit()
             return deleted
         except Exception:
-            conn.rollback()
+            c.rollback()
             raise
+
+    if conn is not None:
+        return _delete(conn)
+    with get_db_connection() as c:
+        return _delete(c)
 
 
 def rename_playlist(playlist_id: int, new_name: str) -> bool:
@@ -224,22 +236,23 @@ def reorder_playlist_by_elo(playlist_id: int) -> bool:
         return True
 
 
-def get_all_playlists(library: Optional[str] = None) -> list[dict[str, Any]]:
+def get_all_playlists(
+    library: Optional[str] = None, conn: Optional[Connection] = None
+) -> list[dict[str, Any]]:
     """
     Get all playlists with metadata for the active library.
 
     Args:
         library: Library to filter by. If None, uses active library from database.
+        conn: Optional shared connection. If None, opens its own.
 
     Returns:
         List of playlist dicts with id, name, type, description, created_at, updated_at, track_count
     """
-    with get_db_connection() as conn:
-        # Get active library if not specified
-        if library is None:
-            library = sync.get_active_library()
+    lib = library if library is not None else sync.get_active_library()
 
-        cursor = conn.execute(
+    def _query(c: Connection) -> list[dict[str, Any]]:
+        cursor = c.execute(
             """
             SELECT
                 id,
@@ -258,9 +271,14 @@ def get_all_playlists(library: Optional[str] = None) -> list[dict[str, Any]]:
             WHERE library = ?
             ORDER BY (pin_order IS NULL), pin_order, name
         """,
-            (library,),
+            (lib,),
         )
         return [dict(row) for row in cursor.fetchall()]
+
+    if conn is not None:
+        return _query(conn)
+    with get_db_connection() as c:
+        return _query(c)
 
 
 def get_playlists_sorted_by_recent(
@@ -332,7 +350,7 @@ def get_playlists_sorted_by_recent(
 
 
 def get_playlist_by_name(
-    name: str, library: Optional[str] = None
+    name: str, library: Optional[str] = None, conn: Optional[Connection] = None
 ) -> Optional[dict[str, Any]]:
     """
     Get playlist by name, filtered by library.
@@ -340,51 +358,62 @@ def get_playlist_by_name(
     Args:
         name: Playlist name
         library: Library to filter by. If None, uses active library from database.
+        conn: Optional shared connection. If None, opens its own.
 
     Returns:
         Playlist dict or None if not found (includes all columns)
     """
-    with get_db_connection() as conn:
-        # Get active library if not specified
-        if library is None:
-            library = sync.get_active_library()
+    lib = library if library is not None else sync.get_active_library()
 
-        cursor = conn.execute(
-            """
-            SELECT * FROM playlists
-            WHERE name = ? AND library = ?
-        """,
-            (name, library),
+    def _query(c: Connection) -> Optional[dict[str, Any]]:
+        cursor = c.execute(
+            "SELECT * FROM playlists WHERE name = ? AND library = ?",
+            (name, lib),
         )
         row = cursor.fetchone()
         return dict(row) if row else None
 
+    if conn is not None:
+        return _query(conn)
+    with get_db_connection() as c:
+        return _query(c)
 
-def get_playlist_by_id(playlist_id: int) -> Optional[dict[str, Any]]:
+
+def get_playlist_by_id(
+    playlist_id: int, conn: Optional[Connection] = None
+) -> Optional[dict[str, Any]]:
     """
     Get playlist by ID.
 
     Args:
         playlist_id: Playlist ID
+        conn: Optional shared connection. If None, opens its own.
 
     Returns:
         Playlist dict or None if not found (includes all columns including provider IDs)
     """
-    with get_db_connection() as conn:
-        cursor = conn.execute(
-            """
-            SELECT * FROM playlists WHERE id = ?
-        """,
-            (playlist_id,),
-        )
+    def _query(c: Connection) -> Optional[dict[str, Any]]:
+        cursor = c.execute("SELECT * FROM playlists WHERE id = ?", (playlist_id,))
         row = cursor.fetchone()
         return dict(row) if row else None
 
+    if conn is not None:
+        return _query(conn)
+    with get_db_connection() as c:
+        return _query(c)
 
-def get_playlist_tracks(playlist_id: int) -> list[dict[str, Any]]:
-    """Get all tracks in a playlist (works for both manual and smart)."""
-    with get_db_connection() as conn:
-        cursor = conn.execute(
+
+def get_playlist_tracks(
+    playlist_id: int, conn: Optional[Connection] = None
+) -> list[dict[str, Any]]:
+    """Get all tracks in a playlist (works for both manual and smart).
+
+    Args:
+        playlist_id: Playlist ID
+        conn: Optional shared connection. If None, opens its own.
+    """
+    def _query(c: Connection) -> list[dict[str, Any]]:
+        cursor = c.execute(
             """
             SELECT
                 t.*,
@@ -403,6 +432,11 @@ def get_playlist_tracks(playlist_id: int) -> list[dict[str, Any]]:
         )
         return [dict(row) for row in cursor.fetchall()]
 
+    if conn is not None:
+        return _query(conn)
+    with get_db_connection() as c:
+        return _query(c)
+
 
 def get_playlist_track_count(playlist_id: int) -> int:
     """Get the number of tracks in a playlist (works for both types)."""
@@ -415,13 +449,59 @@ def get_playlist_track_count(playlist_id: int) -> int:
         return row["count"] if row else 0
 
 
-def add_track_to_playlist(playlist_id: int, track_id: int) -> bool:
+def _track_needs_add(c: Connection, playlist_id: int, track_id: int) -> Optional[bool]:
+    """Return whether track has a soundcloud_id, or None if already present/missing."""
+    cursor = c.execute(
+        """
+        SELECT soundcloud_id FROM tracks
+        WHERE id = ? AND NOT EXISTS (
+            SELECT 1 FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?
+        )
+        """,
+        (track_id, playlist_id, track_id),
+    )
+    row = cursor.fetchone()
+    return None if not row else row["soundcloud_id"] is not None
+
+
+def _add_track_local(c: Connection, playlist_id: int, track_id: int) -> bool:
+    """Insert a track into a playlist locally. Returns False if already present."""
+    cursor = c.execute(
+        "SELECT id FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?",
+        (playlist_id, track_id),
+    )
+    if cursor.fetchone():
+        return False  # Already in playlist
+
+    cursor = c.execute(
+        "SELECT COALESCE(MAX(position) + 1, 0) as next_position FROM playlist_tracks WHERE playlist_id = ?",
+        (playlist_id,),
+    )
+    next_position = cursor.fetchone()["next_position"]
+    c.execute(
+        "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, ?)",
+        (playlist_id, track_id, next_position),
+    )
+    c.execute(
+        "UPDATE playlists SET updated_at = CURRENT_TIMESTAMP, track_count = track_count + 1 WHERE id = ?",
+        (playlist_id,),
+    )
+    c.commit()
+    logger.info(f"Successfully added track {track_id} to local database")
+    return True
+
+
+def add_track_to_playlist(
+    playlist_id: int, track_id: int, conn: Optional[Connection] = None
+) -> bool:
     """
     Add a track to a manual playlist.
 
     Args:
         playlist_id: Playlist ID
         track_id: Track ID to add
+        conn: Optional shared connection for the local DB path. If None, opens its own.
+            The SoundCloud sync path manages its own connections regardless.
 
     Returns:
         True if added successfully, False if already in playlist or playlist not found
@@ -429,31 +509,19 @@ def add_track_to_playlist(playlist_id: int, track_id: int) -> bool:
     Raises:
         ValueError: If trying to add to a smart playlist
     """
-    playlist = get_playlist_by_id(playlist_id)
+    playlist = get_playlist_by_id(playlist_id, conn=conn)
     if not playlist:
         return False
-
     if playlist["type"] != "manual":
         raise ValueError("Cannot manually add tracks to smart playlists")
 
-    # Check if track is already in playlist and get soundcloud_id (SoundCloud-first approach)
-    with get_db_connection() as conn:
-        cursor = conn.execute(
-            """
-            SELECT soundcloud_id FROM tracks
-            WHERE id = ? AND NOT EXISTS (
-                SELECT 1 FROM playlist_tracks
-                WHERE playlist_id = ? AND track_id = ?
-            )
-        """,
-            (track_id, playlist_id, track_id),
-        )
-        track_row = cursor.fetchone()
-
-        if not track_row:
-            return False  # Already in playlist or track doesn't exist
-
-        has_soundcloud_id = track_row["soundcloud_id"] is not None
+    if conn is not None:
+        has_soundcloud_id = _track_needs_add(conn, playlist_id, track_id)
+    else:
+        with get_db_connection() as c:
+            has_soundcloud_id = _track_needs_add(c, playlist_id, track_id)
+    if has_soundcloud_id is None:
+        return False  # Already in playlist or track doesn't exist
 
     # If this needs SoundCloud sync and track is on SoundCloud, sync FIRST
     if sync.should_sync_to_soundcloud(playlist_id) and has_soundcloud_id:
@@ -462,66 +530,77 @@ def add_track_to_playlist(playlist_id: int, track_id: int) -> bool:
         if not success:
             logger.error(f"Failed to add track to SoundCloud: {error}")
             return False
-        # Success - sync function already updated database via post-sync
         logger.info(f"Successfully added track {track_id} to SoundCloud and database")
         return True
 
     # Local-only playlist or local-only track: update database only
-    with get_db_connection() as conn:
-        # Double-check track is not already in playlist (for local-only path)
-        cursor = conn.execute(
-            """
-            SELECT id FROM playlist_tracks
-            WHERE playlist_id = ? AND track_id = ?
+    if conn is not None:
+        return _add_track_local(conn, playlist_id, track_id)
+    with get_db_connection() as c:
+        return _add_track_local(c, playlist_id, track_id)
+
+
+def _track_in_playlist_has_sc(c: Connection, playlist_id: int, track_id: int) -> Optional[bool]:
+    """Return whether an in-playlist track has a soundcloud_id, or None if not present."""
+    cursor = c.execute(
+        """
+        SELECT soundcloud_id FROM tracks
+        WHERE id = ? AND EXISTS (
+            SELECT 1 FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?
+        )
         """,
+        (track_id, playlist_id, track_id),
+    )
+    row = cursor.fetchone()
+    return None if not row else row["soundcloud_id"] is not None
+
+
+def _remove_track_local(c: Connection, playlist_id: int, track_id: int) -> bool:
+    """Delete a track from a playlist locally and resequence positions."""
+    c.execute("BEGIN")
+    try:
+        cursor = c.execute(
+            "DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?",
             (playlist_id, track_id),
         )
-        if cursor.fetchone():
-            return False  # Already in playlist
+        if cursor.rowcount == 0:
+            c.rollback()
+            return False  # Track wasn't in playlist
 
-        # Get next position (0 if playlist is empty, otherwise max + 1)
-        cursor = conn.execute(
-            """
-            SELECT COALESCE(MAX(position) + 1, 0) as next_position
-            FROM playlist_tracks
-            WHERE playlist_id = ?
-        """,
+        # Reorder remaining tracks to fill gap (O(n) instead of O(n²))
+        cursor = c.execute(
+            "SELECT id FROM playlist_tracks WHERE playlist_id = ? ORDER BY position",
             (playlist_id,),
         )
-        next_position = cursor.fetchone()["next_position"]
-
-        # Add track
-        conn.execute(
-            """
-            INSERT INTO playlist_tracks (playlist_id, track_id, position)
-            VALUES (?, ?, ?)
-        """,
-            (playlist_id, track_id, next_position),
-        )
-
-        # Update playlist updated_at and track_count
-        conn.execute(
-            """
-            UPDATE playlists
-            SET updated_at = CURRENT_TIMESTAMP, track_count = track_count + 1
-            WHERE id = ?
-        """,
+        remaining_track_ids = [row["id"] for row in cursor.fetchall()]
+        for new_position, playlist_track_id in enumerate(remaining_track_ids):
+            c.execute(
+                "UPDATE playlist_tracks SET position = ? WHERE id = ?",
+                (new_position, playlist_track_id),
+            )
+        c.execute(
+            "UPDATE playlists SET updated_at = CURRENT_TIMESTAMP, track_count = track_count - 1 WHERE id = ?",
             (playlist_id,),
         )
+        c.commit()
+        logger.info(f"Successfully removed track {track_id} from local database")
+        return True
+    except Exception:
+        c.rollback()
+        raise
 
-        conn.commit()
-        logger.info(f"Successfully added track {track_id} to local database")
 
-    return True
-
-
-def remove_track_from_playlist(playlist_id: int, track_id: int) -> bool:
+def remove_track_from_playlist(
+    playlist_id: int, track_id: int, conn: Optional[Connection] = None
+) -> bool:
     """
     Remove a track from a manual playlist.
 
     Args:
         playlist_id: Playlist ID
         track_id: Track ID to remove
+        conn: Optional shared connection for the local DB path. If None, opens its own.
+            The SoundCloud sync path manages its own connections regardless.
 
     Returns:
         True if removed successfully, False if not in playlist
@@ -529,10 +608,9 @@ def remove_track_from_playlist(playlist_id: int, track_id: int) -> bool:
     Raises:
         ValueError: If trying to remove from a smart playlist
     """
-    playlist = get_playlist_by_id(playlist_id)
+    playlist = get_playlist_by_id(playlist_id, conn=conn)
     if not playlist:
         return False
-
     if playlist["type"] != "manual":
         raise ValueError("Cannot manually remove tracks from smart playlists")
 
@@ -540,98 +618,29 @@ def remove_track_from_playlist(playlist_id: int, track_id: int) -> bool:
 
     # Check if this needs SoundCloud sync (SoundCloud-first approach)
     if sync.should_sync_to_soundcloud(playlist_id):
-        # Verify track exists in playlist before attempting SoundCloud sync
-        with get_db_connection() as conn:
-            cursor = conn.execute(
-                """
-                SELECT soundcloud_id FROM tracks
-                WHERE id = ? AND EXISTS (
-                    SELECT 1 FROM playlist_tracks
-                    WHERE playlist_id = ? AND track_id = ?
-                )
-            """,
-                (track_id, playlist_id, track_id),
-            )
-            track_row = cursor.fetchone()
-
-            if not track_row:
-                return False  # Track not in playlist
-
-            has_soundcloud_id = track_row["soundcloud_id"] is not None
+        if conn is not None:
+            has_soundcloud_id = _track_in_playlist_has_sc(conn, playlist_id, track_id)
+        else:
+            with get_db_connection() as c:
+                has_soundcloud_id = _track_in_playlist_has_sc(c, playlist_id, track_id)
+        if has_soundcloud_id is None:
+            return False  # Track not in playlist
 
         # If track is on SoundCloud, sync there FIRST
         if has_soundcloud_id:
-            logger.info(
-                f"Removing track {track_id} from SoundCloud playlist {playlist_id}"
-            )
-            success, error = sync.remove_track_from_soundcloud_playlist(
-                playlist_id, track_id
-            )
+            logger.info(f"Removing track {track_id} from SoundCloud playlist {playlist_id}")
+            success, error = sync.remove_track_from_soundcloud_playlist(playlist_id, track_id)
             if not success:
                 logger.error(f"Failed to remove track from SoundCloud: {error}")
                 return False
-            # Success - sync function already updated database via post-sync
-            logger.info(
-                f"Successfully removed track {track_id} from SoundCloud and database"
-            )
+            logger.info(f"Successfully removed track {track_id} from SoundCloud and database")
             return True
 
     # Local-only playlist or local-only track: update database only
-    with get_db_connection() as conn:
-        # Begin explicit transaction for atomicity
-        conn.execute("BEGIN")
-        try:
-            # Remove track
-            cursor = conn.execute(
-                """
-                DELETE FROM playlist_tracks
-                WHERE playlist_id = ? AND track_id = ?
-            """,
-                (playlist_id, track_id),
-            )
-
-            if cursor.rowcount == 0:
-                conn.rollback()
-                return False  # Track wasn't in playlist
-
-            # Reorder remaining tracks to fill gap (O(n) instead of O(n²))
-            cursor = conn.execute(
-                """
-                SELECT id FROM playlist_tracks
-                WHERE playlist_id = ?
-                ORDER BY position
-            """,
-                (playlist_id,),
-            )
-            remaining_track_ids = [row["id"] for row in cursor.fetchall()]
-
-            # Update positions in order
-            for new_position, playlist_track_id in enumerate(remaining_track_ids):
-                conn.execute(
-                    """
-                    UPDATE playlist_tracks
-                    SET position = ?
-                    WHERE id = ?
-                """,
-                    (new_position, playlist_track_id),
-                )
-
-            # Update playlist updated_at and track_count
-            conn.execute(
-                """
-                UPDATE playlists
-                SET updated_at = CURRENT_TIMESTAMP, track_count = track_count - 1
-                WHERE id = ?
-            """,
-                (playlist_id,),
-            )
-
-            conn.commit()
-            logger.info(f"Successfully removed track {track_id} from local database")
-            return True
-        except Exception:
-            conn.rollback()
-            raise
+    if conn is not None:
+        return _remove_track_local(conn, playlist_id, track_id)
+    with get_db_connection() as c:
+        return _remove_track_local(c, playlist_id, track_id)
 
 
 def reorder_playlist_track(playlist_id: int, from_pos: int, to_pos: int) -> bool:
@@ -697,37 +706,30 @@ def reorder_playlist_track(playlist_id: int, from_pos: int, to_pos: int) -> bool
             raise
 
 
-def set_active_playlist(playlist_id: int) -> bool:
+def set_active_playlist(playlist_id: int, conn: Optional[Connection] = None) -> bool:
     """
     Set a playlist as the active playlist for the current library.
     Also updates last_played_at timestamp on the playlist.
 
     Args:
         playlist_id: Playlist ID to activate
+        conn: Optional shared connection. If None, opens its own.
 
     Returns:
         True if set successfully, False if playlist not found
     """
     # Verify playlist exists and get its library
-    playlist = get_playlist_by_id(playlist_id)
+    playlist = get_playlist_by_id(playlist_id, conn=conn)
     if not playlist:
         return False
-
     library = playlist["library"]
 
-    with get_db_connection() as conn:
-        # Update last_played_at on the playlist
-        conn.execute(
-            """
-            UPDATE playlists
-            SET last_played_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        """,
+    def _activate(c: Connection) -> bool:
+        c.execute(
+            "UPDATE playlists SET last_played_at = CURRENT_TIMESTAMP WHERE id = ?",
             (playlist_id,),
         )
-
-        # Insert or update active playlist for this library
-        conn.execute(
+        c.execute(
             """
             INSERT INTO active_playlist (library, playlist_id, activated_at)
             VALUES (?, ?, CURRENT_TIMESTAMP)
@@ -737,8 +739,13 @@ def set_active_playlist(playlist_id: int) -> bool:
         """,
             (library, playlist_id),
         )
-        conn.commit()
+        c.commit()
         return True
+
+    if conn is not None:
+        return _activate(conn)
+    with get_db_connection() as c:
+        return _activate(c)
 
 
 def get_active_playlist(library: Optional[str] = None) -> Optional[dict[str, Any]]:
@@ -813,46 +820,52 @@ def get_available_playlist_tracks(playlist_id: int) -> list[str]:
 # Playlist Pinning Functions
 
 
-def pin_playlist(playlist_id: int, position: int | None = None) -> bool:
+def pin_playlist(
+    playlist_id: int, position: int | None = None, conn: Optional[Connection] = None
+) -> bool:
     """
     Pin a playlist to the top of the list.
 
     Args:
         playlist_id: ID of playlist to pin
         position: Optional position (1-indexed). If None, appends to end of pinned list.
+        conn: Optional shared connection. If None, opens its own.
 
     Returns:
         True if successful
     """
-    with get_db_connection() as conn:
-        if position is None:
-            # Get next available position
-            cursor = conn.execute(
+    def _pin(c: Connection) -> bool:
+        pos = position
+        if pos is None:
+            cursor = c.execute(
                 "SELECT COALESCE(MAX(pin_order), 0) + 1 FROM playlists WHERE pin_order IS NOT NULL"
             )
-            position = cursor.fetchone()[0]
-
-        conn.execute(
-            "UPDATE playlists SET pin_order = ? WHERE id = ?",
-            (position, playlist_id)
+            pos = cursor.fetchone()[0]
+        c.execute(
+            "UPDATE playlists SET pin_order = ? WHERE id = ?", (pos, playlist_id)
         )
-        conn.commit()
+        c.commit()
         return True
 
+    if conn is not None:
+        return _pin(conn)
+    with get_db_connection() as c:
+        return _pin(c)
 
-def unpin_playlist(playlist_id: int) -> bool:
+
+def unpin_playlist(playlist_id: int, conn: Optional[Connection] = None) -> bool:
     """
     Unpin a playlist and reorder remaining pinned playlists.
 
     Args:
         playlist_id: ID of playlist to unpin
+        conn: Optional shared connection. If None, opens its own.
 
     Returns:
         True if successful
     """
-    with get_db_connection() as conn:
-        # Get current pin_order before unpinning
-        cursor = conn.execute(
+    def _unpin(c: Connection) -> bool:
+        cursor = c.execute(
             "SELECT pin_order FROM playlists WHERE id = ?", (playlist_id,)
         )
         row = cursor.fetchone()
@@ -860,33 +873,36 @@ def unpin_playlist(playlist_id: int) -> bool:
             return False  # Already unpinned
 
         old_position = row[0]
-
-        # Unpin the playlist
-        conn.execute("UPDATE playlists SET pin_order = NULL WHERE id = ?", (playlist_id,))
-
-        # Shift down all playlists that were after this one
-        conn.execute(
+        c.execute("UPDATE playlists SET pin_order = NULL WHERE id = ?", (playlist_id,))
+        c.execute(
             "UPDATE playlists SET pin_order = pin_order - 1 WHERE pin_order > ?",
-            (old_position,)
+            (old_position,),
         )
-        conn.commit()
+        c.commit()
         return True
 
+    if conn is not None:
+        return _unpin(conn)
+    with get_db_connection() as c:
+        return _unpin(c)
 
-def reorder_pinned_playlist(playlist_id: int, new_position: int) -> bool:
+
+def reorder_pinned_playlist(
+    playlist_id: int, new_position: int, conn: Optional[Connection] = None
+) -> bool:
     """
     Move a pinned playlist to a new position.
 
     Args:
         playlist_id: ID of playlist to move
         new_position: New 1-indexed position
+        conn: Optional shared connection. If None, opens its own.
 
     Returns:
         True if successful
     """
-    with get_db_connection() as conn:
-        # Get current position
-        cursor = conn.execute(
+    def _reorder(c: Connection) -> bool:
+        cursor = c.execute(
             "SELECT pin_order FROM playlists WHERE id = ?", (playlist_id,)
         )
         row = cursor.fetchone()
@@ -898,27 +914,25 @@ def reorder_pinned_playlist(playlist_id: int, new_position: int) -> bool:
             return True  # No change needed
 
         if new_position > old_position:
-            # Moving down: shift items between old+1 and new up by 1
-            conn.execute(
-                """UPDATE playlists SET pin_order = pin_order - 1
-                   WHERE pin_order > ? AND pin_order <= ?""",
-                (old_position, new_position)
+            c.execute(
+                "UPDATE playlists SET pin_order = pin_order - 1 WHERE pin_order > ? AND pin_order <= ?",
+                (old_position, new_position),
             )
         else:
-            # Moving up: shift items between new and old-1 down by 1
-            conn.execute(
-                """UPDATE playlists SET pin_order = pin_order + 1
-                   WHERE pin_order >= ? AND pin_order < ?""",
-                (new_position, old_position)
+            c.execute(
+                "UPDATE playlists SET pin_order = pin_order + 1 WHERE pin_order >= ? AND pin_order < ?",
+                (new_position, old_position),
             )
-
-        # Set new position
-        conn.execute(
-            "UPDATE playlists SET pin_order = ? WHERE id = ?",
-            (new_position, playlist_id)
+        c.execute(
+            "UPDATE playlists SET pin_order = ? WHERE id = ?", (new_position, playlist_id)
         )
-        conn.commit()
+        c.commit()
         return True
+
+    if conn is not None:
+        return _reorder(conn)
+    with get_db_connection() as c:
+        return _reorder(c)
 
 
 # Playlist Builder State Functions
