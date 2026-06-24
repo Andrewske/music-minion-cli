@@ -12,6 +12,33 @@ from music_minion.core.database import get_db_connection
 # SQLite has a limit of 999 variables per query; use batches of 900 to be safe
 _SQLITE_BATCH_SIZE = 900
 
+# Canonical set of valid discovery_tracks.status values. This is the single
+# source of truth — every writer must validate against it, and the fresh
+# CREATE TABLE in core/database.py mirrors it as a CHECK constraint.
+#   - 'unseen':      ingested but never classified; eligible for fetch/backfill
+#   - 'in_playlist': placed in the discovery reposts playlist (awaiting decision)
+#   - 'liked':       user kept it (added to a monthly/linked playlist)
+#   - 'dismissed':   user passed; counts against the reposting artist's hit_rate
+# Adding a new value here REQUIRES updating get_seen_track_ids()'s WHERE clause.
+DISCOVERY_STATUSES: tuple[str, ...] = (
+    "unseen",
+    "in_playlist",
+    "liked",
+    "dismissed",
+)
+
+
+def _validate_status(status: str) -> None:
+    """Reject unknown discovery_tracks.status values before any write.
+
+    Guards existing DBs (which lack a CHECK constraint) against enum drift.
+    """
+    if status not in DISCOVERY_STATUSES:
+        raise ValueError(
+            f"Invalid discovery_tracks.status {status!r}; "
+            f"valid values are {DISCOVERY_STATUSES}"
+        )
+
 _TIER_PRIORITY: dict[str, int] = {"S": 1, "A": 2, "B": 3, "C": 4, "D": 5}
 
 
@@ -176,13 +203,16 @@ def get_seen_track_ids() -> set[str]:
     remain eligible — the discovery sync should be free to re-encounter them and
     promote them to a playlist.
 
-    Status coupling: if a new value is added to discovery_tracks.status,
-    update this WHERE clause too. See TODOS.md.
+    Status coupling: if a new value is added to DISCOVERY_STATUSES,
+    decide whether it belongs in this exclusion set too. See TODOS.md.
     """
+    excluded = ("liked", "dismissed", "in_playlist")
+    placeholders = ",".join("?" * len(excluded))
     with get_db_connection() as conn:
         cursor = conn.execute(
-            "SELECT soundcloud_id FROM discovery_tracks "
-            "WHERE status IN ('liked', 'dismissed', 'in_playlist')"
+            f"SELECT soundcloud_id FROM discovery_tracks "
+            f"WHERE status IN ({placeholders})",
+            excluded,
         )
         return {row["soundcloud_id"] for row in cursor.fetchall()}
 
@@ -393,6 +423,8 @@ def mark_tracks_in_playlist(sc_ids: list[str], batch_number: int) -> None:
     if not sc_ids:
         return
 
+    status = "in_playlist"
+    _validate_status(status)
     with get_db_connection() as conn:
         for i in range(0, len(sc_ids), _SQLITE_BATCH_SIZE):
             batch = sc_ids[i : i + _SQLITE_BATCH_SIZE]
@@ -400,44 +432,39 @@ def mark_tracks_in_playlist(sc_ids: list[str], batch_number: int) -> None:
             conn.execute(
                 f"""
                 UPDATE discovery_tracks
-                SET status = 'in_playlist', playlist_batch = ?
+                SET status = ?, playlist_batch = ?
                 WHERE soundcloud_id IN ({placeholders})
                 """,
-                [batch_number, *batch],
+                [status, batch_number, *batch],
+            )
+        conn.commit()
+
+
+def _set_track_status(sc_ids: list[str], status: str) -> None:
+    """Batch-update discovery_tracks.status, validating against the constant."""
+    _validate_status(status)
+    if not sc_ids:
+        return
+    with get_db_connection() as conn:
+        for i in range(0, len(sc_ids), _SQLITE_BATCH_SIZE):
+            batch = sc_ids[i : i + _SQLITE_BATCH_SIZE]
+            placeholders = ",".join("?" * len(batch))
+            conn.execute(
+                f"UPDATE discovery_tracks SET status = ? "
+                f"WHERE soundcloud_id IN ({placeholders})",
+                [status, *batch],
             )
         conn.commit()
 
 
 def mark_tracks_liked(sc_ids: list[str]) -> None:
     """Mark tracks as liked (user added to monthly playlist)."""
-    if not sc_ids:
-        return
-
-    with get_db_connection() as conn:
-        for i in range(0, len(sc_ids), _SQLITE_BATCH_SIZE):
-            batch = sc_ids[i : i + _SQLITE_BATCH_SIZE]
-            placeholders = ",".join("?" * len(batch))
-            conn.execute(
-                f"UPDATE discovery_tracks SET status = 'liked' WHERE soundcloud_id IN ({placeholders})",
-                batch,
-            )
-        conn.commit()
+    _set_track_status(sc_ids, "liked")
 
 
 def mark_tracks_dismissed(sc_ids: list[str]) -> None:
     """Mark tracks as dismissed (user passed)."""
-    if not sc_ids:
-        return
-
-    with get_db_connection() as conn:
-        for i in range(0, len(sc_ids), _SQLITE_BATCH_SIZE):
-            batch = sc_ids[i : i + _SQLITE_BATCH_SIZE]
-            placeholders = ",".join("?" * len(batch))
-            conn.execute(
-                f"UPDATE discovery_tracks SET status = 'dismissed' WHERE soundcloud_id IN ({placeholders})",
-                batch,
-            )
-        conn.commit()
+    _set_track_status(sc_ids, "dismissed")
 
 
 def mark_tracks_unseen(sc_ids: list[str]) -> None:
@@ -446,18 +473,7 @@ def mark_tracks_unseen(sc_ids: list[str]) -> None:
     Makes them eligible for fresh-fetch and the backfill pool again, without
     counting as a dismissal against the reposting artist's hit_rate.
     """
-    if not sc_ids:
-        return
-
-    with get_db_connection() as conn:
-        for i in range(0, len(sc_ids), _SQLITE_BATCH_SIZE):
-            batch = sc_ids[i : i + _SQLITE_BATCH_SIZE]
-            placeholders = ",".join("?" * len(batch))
-            conn.execute(
-                f"UPDATE discovery_tracks SET status = 'unseen' WHERE soundcloud_id IN ({placeholders})",
-                batch,
-            )
-        conn.commit()
+    _set_track_status(sc_ids, "unseen")
 
 
 def update_artist_last_checked(artist_id: int, new_repost_count: int) -> None:
