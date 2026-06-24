@@ -2299,7 +2299,11 @@ def migrate_database(conn, current_version: int) -> None:
                 reposted_by_count INTEGER DEFAULT 1,
                 local_track_id INTEGER,
                 first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                status TEXT DEFAULT 'unseen',
+                -- status enum is centralized in web/backend/queries/discovery.py
+                -- (DISCOVERY_STATUSES). Keep this CHECK list in sync with it.
+                -- 'unseen' | 'in_playlist' | 'liked' | 'dismissed'
+                status TEXT DEFAULT 'unseen'
+                    CHECK (status IN ('unseen', 'in_playlist', 'liked', 'dismissed')),
                 playlist_batch INTEGER,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (local_track_id) REFERENCES tracks (id) ON DELETE SET NULL
