@@ -21,7 +21,7 @@ export function useIPCWebSocket(handlers?: IPCWebSocketHandlers) {
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
-  const connectRef = useRef<() => void>();
+  const connectRef = useRef<(() => void) | undefined>(undefined);
   const wasConnectedRef = useRef(false);  // Track if we ever successfully connected
   const reconnectAttemptsRef = useRef(0);  // Track reconnection attempts for backoff
   const maxReconnectAttempts = 10;  // Stop trying after 10 failed attempts
