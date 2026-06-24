@@ -472,18 +472,68 @@ def set_input_text(state: UIState, text: str) -> UIState:
     return replace(state, input_text=text, cursor_pos=len(text))
 
 
+def _clamp_cursor(pos: int, text: str) -> int:
+    """Clamp cursor position to valid bounds (0..len(text))."""
+    return max(0, min(pos, len(text)))
+
+
+def move_cursor_left(state: UIState) -> UIState:
+    """Move text cursor left by one character."""
+    return replace(
+        state, cursor_pos=_clamp_cursor(state.cursor_pos - 1, state.input_text)
+    )
+
+
+def move_cursor_right(state: UIState) -> UIState:
+    """Move text cursor right by one character."""
+    return replace(
+        state, cursor_pos=_clamp_cursor(state.cursor_pos + 1, state.input_text)
+    )
+
+
+def move_cursor_home(state: UIState) -> UIState:
+    """Jump text cursor to start of input."""
+    return replace(state, cursor_pos=0)
+
+
+def move_cursor_end(state: UIState) -> UIState:
+    """Jump text cursor to end of input."""
+    return replace(state, cursor_pos=len(state.input_text))
+
+
+def insert_char_at_cursor(state: UIState, char: str) -> UIState:
+    """Insert character at cursor position and advance cursor."""
+    pos = _clamp_cursor(state.cursor_pos, state.input_text)
+    new_text = state.input_text[:pos] + char + state.input_text[pos:]
+    return replace(state, input_text=new_text, cursor_pos=pos + len(char))
+
+
+def delete_char_before_cursor(state: UIState) -> UIState:
+    """Delete character before cursor (backspace)."""
+    pos = _clamp_cursor(state.cursor_pos, state.input_text)
+    if pos == 0:
+        return state
+    new_text = state.input_text[: pos - 1] + state.input_text[pos:]
+    return replace(state, input_text=new_text, cursor_pos=pos - 1)
+
+
+def delete_char_at_cursor(state: UIState) -> UIState:
+    """Delete character at cursor (delete key); cursor stays put."""
+    pos = _clamp_cursor(state.cursor_pos, state.input_text)
+    if pos >= len(state.input_text):
+        return state
+    new_text = state.input_text[:pos] + state.input_text[pos + 1 :]
+    return replace(state, input_text=new_text, cursor_pos=pos)
+
+
 def append_input_char(state: UIState, char: str) -> UIState:
-    """Append character to input text."""
-    new_text = state.input_text + char
-    return replace(state, input_text=new_text, cursor_pos=len(new_text))
+    """Insert character at cursor position (cursor-aware)."""
+    return insert_char_at_cursor(state, char)
 
 
 def delete_input_char(state: UIState) -> UIState:
-    """Delete last character from input text (backspace)."""
-    if not state.input_text:
-        return state
-    new_text = state.input_text[:-1]
-    return replace(state, input_text=new_text, cursor_pos=len(new_text))
+    """Delete character before cursor (backspace, cursor-aware)."""
+    return delete_char_before_cursor(state)
 
 
 def toggle_palette(state: UIState) -> UIState:

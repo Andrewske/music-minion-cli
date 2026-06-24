@@ -5,6 +5,11 @@ from music_minion.ui.blessed.state import (
     InternalCommand,
     append_input_char,
     delete_input_char,
+    delete_char_at_cursor,
+    move_cursor_left,
+    move_cursor_right,
+    move_cursor_home,
+    move_cursor_end,
     set_input_text,
     show_palette,
     hide_palette,
@@ -124,6 +129,39 @@ def _is_idle_mode(state: UIState) -> bool:
         and not state.review_mode
         and not state.input_text
     )
+
+
+def _is_editing_command_text(state: UIState) -> bool:
+    """Check if user is editing command-bar text (input present, no list nav modal).
+
+    When True, left/right/home/end move the text cursor. When False, those keys
+    fall through to seek controls (idle) or list navigation (palette/modals).
+    """
+    return bool(state.input_text) and not state.palette_visible
+
+
+def _handle_cursor_movement(
+    state: UIState, event: dict
+) -> tuple[UIState, None] | None:
+    """Move text cursor within command-bar input (left/right/home/end).
+
+    Only active while editing command text; otherwise returns None so the keys
+    fall through to seek controls or history scrolling.
+    """
+    if not _is_editing_command_text(state):
+        return None
+
+    cursor_map = {
+        "arrow_left": move_cursor_left,
+        "arrow_right": move_cursor_right,
+        "home": move_cursor_home,
+        "end": move_cursor_end,
+    }
+    move_fn = cursor_map.get(event["type"])
+    if move_fn is not None:
+        return move_fn(state), None
+
+    return None
 
 
 def _handle_history_scrolling(
@@ -373,8 +411,8 @@ def _handle_delete_key(state: UIState, event: dict) -> tuple[UIState, None] | No
             )
         return state, None
     else:
-        # Normal delete (backspace)
-        state = delete_input_char(state)
+        # Forward delete (remove char at cursor)
+        state = delete_char_at_cursor(state)
         state = reset_history_navigation(state)
         state = _update_palette_filter(state)
         return state, None
@@ -530,6 +568,11 @@ def handle_normal_mode_key(
         return state, "QUIT"
     if event["type"] == "ctrl_l":
         return clear_history(state), None
+
+    # Cursor movement within command-bar text (left/right/home/end while editing)
+    result = _handle_cursor_movement(state, event)
+    if result is not None:
+        return result
 
     # History scrolling
     result = _handle_history_scrolling(state, event)
