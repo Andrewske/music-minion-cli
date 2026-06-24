@@ -241,17 +241,17 @@ async def create_playlist(request: CreatePlaylistRequest):
     """Create a new manual playlist."""
     try:
         from music_minion.domain.playlists.crud import create_playlist as create_playlist_fn
-
-        # Create playlist in active library
-        playlist_id = create_playlist_fn(
-            name=request.name,
-            playlist_type="manual",
-            description=request.description
-        )
-
-        # Get created playlist data
         from music_minion.core.database import get_db_connection
+
+        # Share one connection across the insert and the read-back to avoid
+        # opening (and lock-contending on) a second SQLite connection.
         with get_db_connection() as conn:
+            playlist_id = create_playlist_fn(
+                name=request.name,
+                playlist_type="manual",
+                description=request.description,
+                conn=conn,
+            )
             cursor = conn.execute(
                 "SELECT id, name, type, description, track_count, library FROM playlists WHERE id = ?",
                 (playlist_id,)
@@ -489,11 +489,14 @@ class ReorderPinRequest(BaseModel):
 async def pin_playlist_endpoint(playlist_id: int):
     """Pin a playlist to the top of the sidebar."""
     from music_minion.domain.playlists import crud
+    from music_minion.core.database import get_db_connection
 
-    success = crud.pin_playlist(playlist_id)
-    if not success:
-        raise HTTPException(status_code=404, detail="Playlist not found")
-    playlist = crud.get_playlist_by_id(playlist_id)
+    # Share one connection across the write and the read-back.
+    with get_db_connection() as conn:
+        success = crud.pin_playlist(playlist_id, conn=conn)
+        if not success:
+            raise HTTPException(status_code=404, detail="Playlist not found")
+        playlist = crud.get_playlist_by_id(playlist_id, conn=conn)
     return {"playlist": playlist}
 
 
