@@ -207,17 +207,23 @@ Analyze each track individually based on its specific characteristics.
 
 ## Focus Areas
 - Genre/subgenre specifics (not just "electronic" but "deep-house", "synthwave", etc.)
-- Energy and tempo feel (based on actual BPM if available)
-- Musical key mood implications (minor keys often darker, major brighter)
+- Mood and vibe (melancholic, euphoric, brooding, driving)
+- Energy and tempo feel (describe the feel, NOT the raw BPM number)
+- Musical key mood implications (describe the mood, NOT the key notation)
 - Distinctive elements mentioned in user notes
 - Production style and instrumentation
+
+## Do NOT Tag
+- Year (e.g. "2020") - already stored in a dedicated field
+- BPM numbers (e.g. "140") - already stored in a dedicated field
+- Musical key notations (e.g. "am", "c#", "8a") - already stored in a dedicated field
 
 ## Output
 Return ONLY a comma-separated list of 3-6 specific tags.
 Use lowercase, be precise, avoid generic terms.
 
-Example good tags: deep-house, melancholic, driving-bass, minor-key, synth-heavy
-Example bad tags: good, nice, music, song, electronic, rock
+Example good tags: deep-house, melancholic, driving-bass, synth-heavy, atmospheric
+Example bad tags: good, nice, music, song, electronic, rock, 140, 2020, am
 """
 
 

@@ -11,6 +11,8 @@ This domain handles:
 
 from .client import (
     AIError,
+    is_redundant_tag,
+    filter_redundant_tags,
     get_api_key,
     store_api_key,
     get_user_prompt,
@@ -39,6 +41,8 @@ from .prompt_manager import (
 
 __all__ = [
     "AIError",
+    "is_redundant_tag",
+    "filter_redundant_tags",
     "get_api_key",
     "store_api_key",
     "get_user_prompt",

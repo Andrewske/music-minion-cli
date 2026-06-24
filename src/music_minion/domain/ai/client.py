@@ -3,9 +3,12 @@ AI integration for Music Minion CLI using OpenAI Responses API
 """
 
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any, Optional
+
+from loguru import logger
 
 from music_minion.core.config import get_config_dir
 from music_minion.core.database import (
@@ -22,6 +25,37 @@ class AIError(Exception):
     """Custom exception for AI-related errors."""
 
     pass
+
+
+# Musical key notations the model should never emit as a free-form tag.
+# These are already stored in dedicated track fields (year/bpm/key).
+_MUSICAL_KEY_RE = re.compile(
+    r"^[a-g][#b]?(?:[\s-]?(?:m|maj|min|major|minor))?$", re.IGNORECASE
+)
+_CAMELOT_KEY_RE = re.compile(r"^(?:1[0-2]|[1-9])[ab]$", re.IGNORECASE)
+
+
+def is_redundant_tag(tag: str) -> bool:
+    """Return True if a tag duplicates a dedicated field (year/BPM/key)."""
+    token = tag.strip().lower()
+    if not token:
+        return True
+    if token.isdigit():  # pure numbers: years (2020) and BPM (140)
+        return True
+    if _MUSICAL_KEY_RE.match(token):  # e.g. "am", "c#", "f minor"
+        return True
+    if _CAMELOT_KEY_RE.match(token):  # Camelot wheel keys, e.g. "8a", "12b"
+        return True
+    return False
+
+
+def filter_redundant_tags(tags: list[str]) -> list[str]:
+    """Strip year/BPM/key-like tags the model may still return (safety net)."""
+    kept = [tag for tag in tags if not is_redundant_tag(tag)]
+    dropped = [tag for tag in tags if is_redundant_tag(tag)]
+    if dropped:
+        logger.info(f"Filtered redundant AI tags (year/BPM/key): {dropped}")
+    return kept
 
 
 def get_api_key() -> Optional[str]:
@@ -110,17 +144,23 @@ Analyze each track individually based on its specific characteristics.
 
 ## Focus Areas
 - Genre/subgenre specifics (not just "electronic" but "deep-house", "synthwave", etc.)
-- Energy and tempo feel (based on actual BPM if available)
-- Musical key mood implications (minor keys often darker, major brighter)
+- Mood and vibe (melancholic, euphoric, brooding, driving)
+- Energy and tempo feel (describe the feel, NOT the raw BPM number)
+- Musical key mood implications (describe the mood, NOT the key notation)
 - Distinctive elements mentioned in user notes
 - Production style and instrumentation
+
+## Do NOT Tag
+- Year (e.g. "2020") - already stored in a dedicated field
+- BPM numbers (e.g. "140") - already stored in a dedicated field
+- Musical key notations (e.g. "am", "c#", "8a") - already stored in a dedicated field
 
 ## Output
 Return ONLY a comma-separated list of 3-6 specific tags.
 Use lowercase, be precise, avoid generic terms.
 
-Example good tags: deep-house, melancholic, driving-bass, minor-key, synth-heavy
-Example bad tags: good, nice, music, song, electronic, rock
+Example good tags: deep-house, melancholic, driving-bass, synth-heavy, atmospheric
+Example bad tags: good, nice, music, song, electronic, rock, 140, 2020, am
 """
 
     # Create default prompt file
@@ -243,7 +283,9 @@ def analyze_track_with_ai(
         if return_reasoning:
             # New format: Return JSON with tag:reasoning pairs
             instructions = """Analyze this specific track and suggest 3-6 relevant tags based on the actual metadata, genre, BPM, key, and user notes provided.
-Focus on what makes THIS track distinctive. Be specific to the actual track data, not generic.
+Focus on genre/subgenre, mood, vibe, and instrumentation - what makes THIS track distinctive. Be specific to the actual track data, not generic.
+
+Do NOT output the year, BPM, or musical key as tags - these are already stored in dedicated fields and are redundant. You may reference them in your reasoning, but never as a tag name itself (no pure numbers like "140" or "2020", and no key notations like "am", "c#", or "8a").
 
 Return a JSON object where each key is a tag and each value is a brief explanation (5-10 words) of WHY you chose that tag based on the track's specific characteristics.
 
@@ -298,7 +340,7 @@ Use lowercase for tag names. Be specific and reference actual track data."""
             # Legacy format: Simple comma-separated tags
             response = client.responses.create(
                 model="gpt-4o-mini",
-                instructions="Analyze this specific track and suggest 3-6 relevant tags based on the actual metadata, genre, BPM, key, and user notes provided. Focus on what makes THIS track distinctive. Return ONLY a comma-separated list of tags, nothing else. Be specific to the actual track data, not generic.",
+                instructions="Analyze this specific track and suggest 3-6 relevant tags based on the actual metadata, genre, BPM, key, and user notes provided. Focus on genre/subgenre, mood, vibe, and instrumentation - what makes THIS track distinctive. Do NOT output the year, BPM, or musical key as tags - they are redundant (no pure numbers like '140' or '2020', no key notations like 'am' or '8a'). Return ONLY a comma-separated list of tags, nothing else. Be specific to the actual track data, not generic.",
                 input=input_text,
             )
 
@@ -316,6 +358,11 @@ Use lowercase for tag names. Be specific and reference actual track data."""
                 tags = []
 
             reasoning = None
+
+        # Safety net: strip year/BPM/key tags the model may still return
+        tags = filter_redundant_tags(tags)
+        if reasoning is not None:
+            reasoning = {tag: reasoning[tag] for tag in tags if tag in reasoning}
 
         # Log successful request
         request_metadata = {
