@@ -1,7 +1,20 @@
 import { animated } from '@react-spring/web';
+import type { ComponentPropsWithoutRef } from 'react';
 import { useSwipeGesture } from '../hooks/useSwipeGesture';
 import { TrackCard } from './TrackCard';
 import type { TrackInfo } from '../types';
+
+// react-spring 9.7.5's `animated.div` props type is broken under React 19's
+// @types/react: it derives from ComponentPropsWithRef, which no longer surfaces
+// `children`/`className` for these primitives, producing a props type that
+// rejects standard div attributes. The component accepts all div props plus
+// the animated `style` from useSwipeGesture at runtime, so describe that shape
+// explicitly here using the hook's own style type. Type-safe, no `any`.
+type SwipeStyle = ReturnType<typeof useSwipeGesture>['style'];
+type AnimatedDivProps = Omit<ComponentPropsWithoutRef<'div'>, 'style'> & {
+  style?: SwipeStyle;
+};
+const AnimatedDiv = animated.div as (props: AnimatedDivProps) => JSX.Element;
 
 interface SwipeableTrackProps {
   track: TrackInfo;
@@ -55,7 +68,7 @@ export function SwipeableTrack({
       </div>
 
       {/* Swipeable card */}
-      <animated.div
+      <AnimatedDiv
         {...bind()}
         style={{
           x: style.x,
@@ -74,7 +87,7 @@ export function SwipeableTrack({
           rankingMode={rankingMode}
           onTrackUpdate={onTrackUpdate}
         />
-      </animated.div>
+      </AnimatedDiv>
     </div>
   );
 }
