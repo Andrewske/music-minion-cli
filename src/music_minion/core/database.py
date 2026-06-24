@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 57  # bucket_tracks de-dupe + UNIQUE(bucket_id, track_id) idempotency
+SCHEMA_VERSION = 58  # drop dead column from playlist_comparison_history
 
 
 # Initial top 50 curated emojis for music reactions
@@ -1007,7 +1007,6 @@ def migrate_database(conn, current_version: int) -> None:
                 track_b_id TEXT NOT NULL,
                 winner_id TEXT NOT NULL,
                 playlist_id INTEGER NOT NULL,
-                affects_global BOOLEAN NOT NULL,
                 track_a_playlist_rating_before REAL,
                 track_a_playlist_rating_after REAL,
                 track_b_playlist_rating_before REAL,
@@ -1412,7 +1411,7 @@ def migrate_database(conn, current_version: int) -> None:
             conn.execute(
                 """
                 INSERT INTO playlist_comparison_history (
-                    playlist_id, track_a_id, track_b_id, winner_id, affects_global,
+                    playlist_id, track_a_id, track_b_id, winner_id,
                     track_a_playlist_rating_before, track_a_playlist_rating_after,
                     track_b_playlist_rating_before, track_b_playlist_rating_after,
                     track_a_global_rating_before, track_a_global_rating_after,
@@ -1422,7 +1421,6 @@ def migrate_database(conn, current_version: int) -> None:
                 SELECT
                     ? as playlist_id,
                     ch.track_a_id, ch.track_b_id, ch.winner_id,
-                    1 as affects_global,
                     ch.track_a_rating_before, ch.track_a_rating_after,
                     ch.track_b_rating_before, ch.track_b_rating_after,
                     ch.track_a_rating_before, ch.track_a_rating_after,
@@ -2646,6 +2644,26 @@ def migrate_database(conn, current_version: int) -> None:
         conn.commit()
         logger.info(
             "  ✓ Migration to v57 complete: bucket_tracks de-duped, unique index added"
+        )
+
+    if current_version < 58:
+        logger.info(
+            "Running migration to v58: drop dead column from playlist_comparison_history..."
+        )
+        # The dropped column was always False in the global-graph model — dead.
+        # SQLite 3.35.0+ supports DROP COLUMN; the bundled runtime is well past that.
+        # Legacy DBs have the column; fresh DBs (v26+) never created it, so the
+        # "no such column" case is expected and harmless.
+        try:
+            conn.execute(
+                "ALTER TABLE playlist_comparison_history DROP COLUMN affects_global"
+            )
+        except sqlite3.OperationalError as exc:
+            if "no such column" not in str(exc).lower():
+                raise
+        conn.commit()
+        logger.info(
+            "  ✓ Migration to v58 complete: dead column dropped from playlist_comparison_history"
         )
 
 

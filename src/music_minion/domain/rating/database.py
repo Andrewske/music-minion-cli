@@ -237,20 +237,18 @@ def record_playlist_comparison(
                 """
                 INSERT INTO playlist_comparison_history (
                     playlist_id, track_a_id, track_b_id, winner_id,
-                    affects_global,
                     track_a_playlist_rating_before, track_b_playlist_rating_before,
                     track_a_playlist_rating_after, track_b_playlist_rating_after,
                     track_a_global_rating_before, track_a_global_rating_after,
                     track_b_global_rating_before, track_b_global_rating_after,
                     session_id, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """,
                 (
                     playlist_id,
                     track_a_id,
                     track_b_id,
                     winner_id,
-                    False,  # affects_global is always False in the global graph model
                     track_a_rating_before,
                     track_b_rating_before,
                     track_a_rating_after,
