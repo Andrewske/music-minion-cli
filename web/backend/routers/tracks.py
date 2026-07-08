@@ -125,6 +125,8 @@ async def stream_audio(
                 stream_url = sc_resolve(state, row["soundcloud_id"])
             except TrackUnavailableError as exc:
                 _mark_track_unavailable(db, track_id, "soundcloud_gone")
+                from web.backend.routers.player import prune_track_from_live_queue
+                await prune_track_from_live_queue(track_id)
                 raise HTTPException(410, str(exc))
             if stream_url:
                 logger.info(f"Resolved SC stream for track {track_id}")
@@ -139,6 +141,8 @@ async def stream_audio(
                 return RedirectResponse(stream_url)
             # yt-dlp also failed → upstream is gone for both paths
             _mark_track_unavailable(db, track_id, "ytdlp_failed")
+            from web.backend.routers.player import prune_track_from_live_queue
+            await prune_track_from_live_queue(track_id)
             raise HTTPException(410, "Track unavailable on upstream")
 
         raise HTTPException(503, "Failed to resolve stream URL")

@@ -198,6 +198,8 @@ export function UnassignedTrackTable({
     // ONLY virtual scrolling transform - drag visuals handled by DragOverlay
     const virtualTransform = `translateY(${virtualRow.start}px)`;
 
+    const unavailable = track.available === false;
+
     const rowClasses = `cursor-pointer hover:bg-white/5 transition-colors ${
       isPlaying ? 'bg-obsidian-accent/10 border-l-2 border-l-obsidian-accent' : ''
     }`;
@@ -213,9 +215,14 @@ export function UnassignedTrackTable({
           transform: virtualTransform,
           width: '100%',
           height: `${virtualRow.size}px`,
-          opacity: isDragging ? 0 : 1,
+          opacity: isDragging ? 0 : unavailable ? 0.5 : 1,
         }}
       >
+        {unavailable && (
+          <span className="absolute right-2 top-1/2 -translate-y-1/2 z-10 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/30">
+            Unavailable
+          </span>
+        )}
         {/* Drag handle */}
         <td
           className="px-3 py-2 border-b border-obsidian-border/50"
