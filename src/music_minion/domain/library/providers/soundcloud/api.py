@@ -397,6 +397,10 @@ def resolve_stream_url(state: ProviderState, provider_id: str) -> Optional[str]:
         )
         return None
 
+    except TrackUnavailableError:
+        # Dead upstream (403/404/410) — propagate so the caller can mark + skip the track,
+        # rather than swallowing it into a generic None (which returns a 503 and loops).
+        raise
     except Exception as e:
         logger.warning(f"Failed to resolve SC stream {provider_id}: {e}")
         return None

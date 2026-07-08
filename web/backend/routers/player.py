@@ -16,6 +16,7 @@ from ..queue_manager import (
     rebuild_queue,
     save_queue_state,
     load_queue_state,
+    get_unavailable_ids,
     _resolve_context_to_track_ids,
 )
 from ..player_state import get_state, get_state_dict, update_state, PlaybackState
@@ -26,6 +27,7 @@ router = APIRouter()
 # Pydantic models
 class PlayRequest(BaseModel):
     """Request to start playback."""
+
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     track_id: int
@@ -35,6 +37,7 @@ class PlayRequest(BaseModel):
 
 class SeekRequest(BaseModel):
     """Request to seek to a specific position."""
+
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     position_ms: int
@@ -42,6 +45,7 @@ class SeekRequest(BaseModel):
 
 class SetSortRequest(BaseModel):
     """Request to set manual sort order."""
+
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     field: str  # 'title', 'artist', 'bpm', 'year', 'elo_rating'
@@ -50,6 +54,7 @@ class SetSortRequest(BaseModel):
 
 class DeviceInfo(BaseModel):
     """Device information."""
+
     id: str
     name: str
     connected_at: float
@@ -84,28 +89,43 @@ def advance_queue(s: PlaybackState) -> PlaybackState:
         and s.queue[s.queue_index]["id"] == s.current_track["id"]
     )
     new_index = s.queue_index + 1 if current_in_queue else s.queue_index
+
+    # Skip over dead upstream tracks already sitting in the live queue (built before
+    # they were marked unavailable). Prevents a dead track being served as "next".
+    from music_minion.core.database import get_db_connection
+
+    with get_db_connection() as conn:
+        dead = get_unavailable_ids([t["id"] for t in s.queue], conn)
+    while new_index < len(s.queue) and s.queue[new_index]["id"] in dead:
+        new_index += 1
+
     if new_index >= len(s.queue):
         # End of queue
-        return s.model_copy(update={
-            "is_playing": False,
-            "current_track": None,
-            "current_history_id": None
-        })
+        return s.model_copy(
+            update={
+                "is_playing": False,
+                "current_track": None,
+                "current_history_id": None,
+            }
+        )
 
     from music_minion.domain.radio.history import start_play
+
     history_id = start_play(
         track_id=s.queue[new_index]["id"],
-        source_type=s.queue[new_index].get('source', 'local')
+        source_type=s.queue[new_index].get("source", "local"),
     )
 
-    return s.model_copy(update={
-        "queue_index": new_index,
-        "current_track": s.queue[new_index],
-        "position_ms": 0,
-        "track_started_at": time.time(),
-        "duration_ms": 0,
-        "current_history_id": history_id
-    })
+    return s.model_copy(
+        update={
+            "queue_index": new_index,
+            "current_track": s.queue[new_index],
+            "position_ms": 0,
+            "track_started_at": time.time(),
+            "duration_ms": 0,
+            "current_history_id": history_id,
+        }
+    )
 
 
 def get_playback_state() -> dict:
@@ -147,33 +167,59 @@ async def update_organizer_queue(session_id: str) -> None:
     async with _next_lock:
         state = get_state()
         current_queue = state.queue
-        current_track_id = state.current_track.get("id") if state.current_track else None
+        current_track_id = (
+            state.current_track.get("id") if state.current_track else None
+        )
 
-        # Filter queue to only include unassigned tracks
-        updated_queue = [track for track in current_queue if track["id"] in new_unassigned_set]
+        # Drop dead upstream tracks so they never resurface as the "next" track
+        with get_db_connection() as db_conn:
+            dead_ids = get_unavailable_ids(
+                [t["id"] for t in current_queue] + list(new_unassigned_set), db_conn
+            )
+
+        # Filter queue to only include unassigned, still-available tracks
+        updated_queue = [
+            track
+            for track in current_queue
+            if track["id"] in new_unassigned_set and track["id"] not in dead_ids
+        ]
 
         # Detect newly unassigned tracks and append them
         current_queue_ids = {t["id"] for t in current_queue}
-        newly_unassigned_ids = [tid for tid in new_unassigned_set if tid not in current_queue_ids]
+        newly_unassigned_ids = [
+            tid
+            for tid in new_unassigned_set
+            if tid not in current_queue_ids and tid not in dead_ids
+        ]
 
         if newly_unassigned_ids:
             with get_db_connection() as db_conn:
-                newly_unassigned_tracks = batch_fetch_tracks_with_metadata(newly_unassigned_ids, db_conn)
+                newly_unassigned_tracks = batch_fetch_tracks_with_metadata(
+                    newly_unassigned_ids, db_conn
+                )
                 updated_queue.extend(newly_unassigned_tracks)
 
         # Recalculate queue index
         new_index = state.queue_index
         if current_track_id:
             try:
-                new_index = next(i for i, t in enumerate(updated_queue) if t["id"] == current_track_id)
+                new_index = next(
+                    i
+                    for i, t in enumerate(updated_queue)
+                    if t["id"] == current_track_id
+                )
             except StopIteration:
                 # Current track filtered out (just assigned). Find first forward survivor
                 # so the next skip lands on the natural successor instead of jumping to start.
                 updated_ids = {t["id"] for t in updated_queue}
-                forward_ids = [t["id"] for t in current_queue[state.queue_index + 1:]]
-                target_id = next((tid for tid in forward_ids if tid in updated_ids), None)
+                forward_ids = [t["id"] for t in current_queue[state.queue_index + 1 :]]
+                target_id = next(
+                    (tid for tid in forward_ids if tid in updated_ids), None
+                )
                 if target_id is not None:
-                    new_index = next(i for i, t in enumerate(updated_queue) if t["id"] == target_id)
+                    new_index = next(
+                        i for i, t in enumerate(updated_queue) if t["id"] == target_id
+                    )
                 else:
                     new_index = len(updated_queue)
                 logger.info(
@@ -181,12 +227,55 @@ async def update_organizer_queue(session_id: str) -> None:
                     f"new queue_index={new_index} (target forward={target_id})"
                 )
 
-        await update_state({
-            "queue": tuple(updated_queue),
-            "queue_index": new_index
-        })
+        await update_state({"queue": tuple(updated_queue), "queue_index": new_index})
 
-    logger.info(f"Updated organizer queue: {len(updated_queue)} unassigned tracks remaining")
+    logger.info(
+        f"Updated organizer queue: {len(updated_queue)} unassigned tracks remaining"
+    )
+
+
+async def prune_track_from_live_queue(track_id: int) -> None:
+    """Remove a now-dead track from the live playback queue and broadcast.
+
+    Called when a track is marked unavailable mid-session (e.g. stream returns 410) so
+    it stops resurfacing as the "next" track. If it's the current track, advance past it
+    first (advance_queue skips further dead ids), then drop every instance from the queue
+    and keep queue_index pointing at the surviving current track.
+    """
+    async with _next_lock:
+        state = get_state()
+        if not state.queue or not any(t["id"] == track_id for t in state.queue):
+            return
+
+        is_current = (
+            state.current_track is not None and state.current_track["id"] == track_id
+        )
+        if is_current:
+            await update_state(advance_queue)
+            state = get_state()
+
+        new_queue = [t for t in state.queue if t["id"] != track_id]
+        if len(new_queue) == len(state.queue):
+            return
+
+        current_id = state.current_track["id"] if state.current_track else None
+        new_index = min(state.queue_index, len(new_queue))
+        if current_id is not None:
+            try:
+                new_index = next(
+                    i for i, t in enumerate(new_queue) if t["id"] == current_id
+                )
+            except StopIteration:
+                pass
+
+        await update_state(
+            {
+                "queue": tuple(new_queue),
+                "queue_index": new_index,
+            }
+        )
+
+    logger.info(f"Pruned unavailable track {track_id} from live queue")
 
 
 @router.post("/play")
@@ -200,19 +289,26 @@ async def play(request: PlayRequest, db=Depends(get_db)):
     # Validate organizer session exists and is active
     if request.context.type == "organizer":
         from ..queries.buckets import get_session_with_data
+
         session = get_session_with_data(request.context.session_id)
         if not session:
-            raise HTTPException(404, f"Organizer session {request.context.session_id} not found")
+            raise HTTPException(
+                404, f"Organizer session {request.context.session_id} not found"
+            )
         if session["status"] != "active":
-            raise HTTPException(400, f"Organizer session is {session['status']}, cannot play")
+            raise HTTPException(
+                400, f"Organizer session is {session['status']}, cannot play"
+            )
 
     # 1. Initialize queue using queue_manager (not resolve_queue)
     queue_ids = initialize_queue(
         context=request.context,
         db_conn=db,
         window_size=100,  # Changed from 50
-        shuffle=request.context.shuffle if hasattr(request.context, 'shuffle') else True,
-        sort_spec=None
+        shuffle=request.context.shuffle
+        if hasattr(request.context, "shuffle")
+        else True,
+        sort_spec=None,
     )
 
     # 2. Fetch full track metadata
@@ -237,42 +333,50 @@ async def play(request: PlayRequest, db=Depends(get_db)):
     state = get_state()
     if state.current_history_id:
         from music_minion.domain.radio.history import end_play
+
         final_duration = _calculate_final_duration()
         end_play(state.current_history_id, final_duration, reason="new_play")
 
     # 5. Start new history entry
     from music_minion.domain.radio.history import start_play
+
     history_id = start_play(
         track_id=queue_tracks[queue_index]["id"],
-        source_type=queue_tracks[queue_index].get('source', 'local')
+        source_type=queue_tracks[queue_index].get("source", "local"),
     )
 
     # 6. Update global state
     now = time.time()
-    await update_state({
-        "current_track": queue_tracks[queue_index],
-        "queue": tuple(queue_tracks),
-        "queue_index": queue_index,
-        "position_ms": 0,
-        "track_started_at": now,
-        "is_playing": True,
-        "active_device_id": active_device_id,
-        "current_context": request.context,
-        "shuffle_enabled": request.context.shuffle if hasattr(request.context, 'shuffle') else True,
-        "sort_spec": None,
-        "position_in_playlist": 0,
-        "duration_ms": 0,
-        "current_history_id": history_id
-    })
+    await update_state(
+        {
+            "current_track": queue_tracks[queue_index],
+            "queue": tuple(queue_tracks),
+            "queue_index": queue_index,
+            "position_ms": 0,
+            "track_started_at": now,
+            "is_playing": True,
+            "active_device_id": active_device_id,
+            "current_context": request.context,
+            "shuffle_enabled": request.context.shuffle
+            if hasattr(request.context, "shuffle")
+            else True,
+            "sort_spec": None,
+            "position_in_playlist": 0,
+            "duration_ms": 0,
+            "current_history_id": history_id,
+        }
+    )
 
     # 7. Persist queue state
     save_queue_state(
         context=request.context,
         queue_ids=queue_ids,
         queue_index=queue_index,
-        shuffle=request.context.shuffle if hasattr(request.context, 'shuffle') else True,
+        shuffle=request.context.shuffle
+        if hasattr(request.context, "shuffle")
+        else True,
         sort_spec=None,
-        db_conn=db
+        db_conn=db,
     )
 
     return {
@@ -295,18 +399,21 @@ async def pause():
     if state.track_started_at:
         elapsed_ms = int((time.time() - state.track_started_at) * 1000)
 
-    await update_state({
-        "duration_ms": state.duration_ms + elapsed_ms,
-        "position_ms": state.position_ms + elapsed_ms,
-        "is_playing": False,
-        "track_started_at": None
-    })
+    await update_state(
+        {
+            "duration_ms": state.duration_ms + elapsed_ms,
+            "position_ms": state.position_ms + elapsed_ms,
+            "is_playing": False,
+            "track_started_at": None,
+        }
+    )
 
     return {"message": "Paused"}
 
 
 class ResumeRequest(BaseModel):
     """Resume playback request."""
+
     target_device_id: str | None = None
 
 
@@ -328,11 +435,13 @@ async def resume(request: ResumeRequest | None = None):
     elif not active_device_id and sync_manager.devices:
         active_device_id = next(iter(sync_manager.devices.keys()))
 
-    await update_state({
-        "is_playing": True,
-        "track_started_at": time.time(),
-        "active_device_id": active_device_id
-    })
+    await update_state(
+        {
+            "is_playing": True,
+            "track_started_at": time.time(),
+            "active_device_id": active_device_id,
+        }
+    )
 
     return {"message": "Resumed", "active_device_id": active_device_id}
 
@@ -354,6 +463,7 @@ async def next_track(reason: str = "skip", db=Depends(get_db)):
         # Close current history entry
         if state.current_history_id:
             from music_minion.domain.radio.history import end_play
+
             final_duration = _calculate_final_duration()
             end_play(state.current_history_id, final_duration, reason=reason)
 
@@ -373,7 +483,7 @@ async def next_track(reason: str = "skip", db=Depends(get_db)):
                 if state.current_context and state.current_context.type == "organizer":
                     exclusion_ids = [t["id"] for t in state.queue]
                 else:
-                    exclusion_ids = [t["id"] for t in state.queue[state.queue_index:]]
+                    exclusion_ids = [t["id"] for t in state.queue[state.queue_index :]]
 
                 # Pull 1 new track
                 new_track_id = get_next_track(
@@ -382,13 +492,19 @@ async def next_track(reason: str = "skip", db=Depends(get_db)):
                     db_conn=db,
                     shuffle=state.shuffle_enabled,
                     sort_spec=state.sort_spec,
-                    position_in_sorted=state.position_in_playlist
+                    position_in_sorted=state.position_in_playlist,
                 )
 
                 # Handle organizer loop restart
-                if new_track_id is None and state.current_context and state.current_context.type == "organizer":
+                if (
+                    new_track_id is None
+                    and state.current_context
+                    and state.current_context.type == "organizer"
+                ):
                     # Queue exhausted - rebuild for loop restart
-                    logger.info("Organizer queue exhausted, rebuilding for loop restart")
+                    logger.info(
+                        "Organizer queue exhausted, rebuilding for loop restart"
+                    )
 
                     new_queue_ids = rebuild_queue(
                         context=state.current_context,
@@ -397,7 +513,7 @@ async def next_track(reason: str = "skip", db=Depends(get_db)):
                         queue_index=state.queue_index,
                         db_conn=db,
                         shuffle=state.shuffle_enabled,
-                        sort_spec=state.sort_spec
+                        sort_spec=state.sort_spec,
                     )
 
                     if new_queue_ids:
@@ -406,19 +522,22 @@ async def next_track(reason: str = "skip", db=Depends(get_db)):
 
                         # Start history entry for first track of new loop
                         from music_minion.domain.radio.history import start_play
+
                         history_id = start_play(
                             track_id=new_tracks[0]["id"],
-                            source_type=new_tracks[0].get('source', 'local')
+                            source_type=new_tracks[0].get("source", "local"),
                         )
 
-                        await update_state({
-                            "queue": tuple(new_tracks),
-                            "queue_index": 0,
-                            "current_track": new_tracks[0],
-                            "position_ms": 0,
-                            "track_started_at": time.time(),
-                            "current_history_id": history_id
-                        })
+                        await update_state(
+                            {
+                                "queue": tuple(new_tracks),
+                                "queue_index": 0,
+                                "current_track": new_tracks[0],
+                                "position_ms": 0,
+                                "track_started_at": time.time(),
+                                "current_history_id": history_id,
+                            }
+                        )
 
                         # Save state
                         save_queue_state(
@@ -427,7 +546,7 @@ async def next_track(reason: str = "skip", db=Depends(get_db)):
                             queue_index=0,
                             shuffle=state.shuffle_enabled,
                             sort_spec=state.sort_spec,
-                            db_conn=db
+                            db_conn=db,
                         )
 
                 elif new_track_id:
@@ -439,13 +558,19 @@ async def next_track(reason: str = "skip", db=Depends(get_db)):
                         # Update position for sorted mode
                         if not state.shuffle_enabled:
                             # Get total playlist size for modulo
-                            total_size = len(_resolve_context_to_track_ids(state.current_context, db))
-                            new_position = (state.position_in_playlist + 100) % total_size
+                            total_size = len(
+                                _resolve_context_to_track_ids(state.current_context, db)
+                            )
+                            new_position = (
+                                state.position_in_playlist + 100
+                            ) % total_size
 
-                        await update_state({
-                            "queue": state.queue + tuple(new_tracks),
-                            "position_in_playlist": new_position
-                        })
+                        await update_state(
+                            {
+                                "queue": state.queue + tuple(new_tracks),
+                                "position_in_playlist": new_position,
+                            }
+                        )
 
                         # Save updated state
                         state = get_state()
@@ -456,7 +581,7 @@ async def next_track(reason: str = "skip", db=Depends(get_db)):
                             queue_index=state.queue_index,
                             shuffle=state.shuffle_enabled,
                             sort_spec=state.sort_spec,
-                            db_conn=db
+                            db_conn=db,
                         )
 
         return {"status": "next"}
@@ -472,10 +597,12 @@ async def prev_track():
 
     # If more than 3 seconds in, restart current track
     if state.position_ms > 3000:
-        await update_state({
-            "position_ms": 0,
-            "track_started_at": time.time() if state.is_playing else None
-        })
+        await update_state(
+            {
+                "position_ms": 0,
+                "track_started_at": time.time() if state.is_playing else None,
+            }
+        )
     else:
         # Go to previous track
         new_index = max(0, state.queue_index - 1)
@@ -485,30 +612,36 @@ async def prev_track():
             # Close current history entry
             if state.current_history_id:
                 from music_minion.domain.radio.history import end_play
+
                 final_duration = _calculate_final_duration()
                 end_play(state.current_history_id, final_duration, reason="prev")
 
             # Start new history entry
             from music_minion.domain.radio.history import start_play
+
             history_id = start_play(
                 track_id=state.queue[new_index]["id"],
-                source_type=state.queue[new_index].get('source', 'local')
+                source_type=state.queue[new_index].get("source", "local"),
             )
 
-            await update_state({
-                "queue_index": new_index,
-                "current_track": state.queue[new_index],
-                "position_ms": 0,
-                "track_started_at": time.time() if state.is_playing else None,
-                "duration_ms": 0,
-                "current_history_id": history_id
-            })
+            await update_state(
+                {
+                    "queue_index": new_index,
+                    "current_track": state.queue[new_index],
+                    "position_ms": 0,
+                    "track_started_at": time.time() if state.is_playing else None,
+                    "duration_ms": 0,
+                    "current_history_id": history_id,
+                }
+            )
         else:
             # At start of queue, just restart current track
-            await update_state({
-                "position_ms": 0,
-                "track_started_at": time.time() if state.is_playing else None
-            })
+            await update_state(
+                {
+                    "position_ms": 0,
+                    "track_started_at": time.time() if state.is_playing else None,
+                }
+            )
 
     return {"message": "Previous track"}
 
@@ -526,11 +659,13 @@ async def seek(request: SeekRequest):
     if state.track_started_at:
         elapsed_ms = int((time.time() - state.track_started_at) * 1000)
 
-    await update_state({
-        "duration_ms": state.duration_ms + elapsed_ms,
-        "position_ms": request.position_ms,
-        "track_started_at": time.time() if state.is_playing else None
-    })
+    await update_state(
+        {
+            "duration_ms": state.duration_ms + elapsed_ms,
+            "position_ms": request.position_ms,
+            "track_started_at": time.time() if state.is_playing else None,
+        }
+    )
 
     return {"message": "Seeked"}
 
@@ -559,17 +694,19 @@ async def toggle_shuffle(db=Depends(get_db)):
         queue_index=state.queue_index,
         db_conn=db,
         shuffle=new_shuffle,
-        sort_spec=sort_spec
+        sort_spec=sort_spec,
     )
 
     # Fetch full track metadata
     new_queue = batch_fetch_tracks_with_metadata(new_queue_ids, db, preserve_order=True)
 
-    await update_state({
-        "queue": tuple(new_queue),
-        "shuffle_enabled": new_shuffle,
-        "sort_spec": sort_spec
-    })
+    await update_state(
+        {
+            "queue": tuple(new_queue),
+            "shuffle_enabled": new_shuffle,
+            "sort_spec": sort_spec,
+        }
+    )
 
     # Persist state
     save_queue_state(
@@ -578,13 +715,10 @@ async def toggle_shuffle(db=Depends(get_db)):
         queue_index=state.queue_index,
         shuffle=new_shuffle,
         sort_spec=sort_spec,
-        db_conn=db
+        db_conn=db,
     )
 
-    return {
-        "shuffle_enabled": new_shuffle,
-        "queue_size": len(new_queue)
-    }
+    return {"shuffle_enabled": new_shuffle, "queue_size": len(new_queue)}
 
 
 @router.post("/set-sort")
@@ -607,17 +741,19 @@ async def set_sort(request: SetSortRequest, db=Depends(get_db)):
         queue_index=state.queue_index,
         db_conn=db,
         shuffle=False,
-        sort_spec=sort_spec
+        sort_spec=sort_spec,
     )
 
     new_queue = batch_fetch_tracks_with_metadata(new_queue_ids, db, preserve_order=True)
 
-    await update_state({
-        "shuffle_enabled": False,
-        "sort_spec": sort_spec,
-        "position_in_playlist": 100,
-        "queue": tuple(new_queue)
-    })
+    await update_state(
+        {
+            "shuffle_enabled": False,
+            "sort_spec": sort_spec,
+            "position_in_playlist": 100,
+            "queue": tuple(new_queue),
+        }
+    )
 
     # Refetch state for persistence
     state = get_state()
@@ -630,17 +766,15 @@ async def set_sort(request: SetSortRequest, db=Depends(get_db)):
         shuffle=False,
         sort_spec=sort_spec,
         position_in_playlist=state.position_in_playlist,
-        db_conn=db
+        db_conn=db,
     )
 
-    return {
-        "queue_size": len(new_queue),
-        "sort": sort_spec
-    }
+    return {"queue_size": len(new_queue), "sort": sort_spec}
 
 
 class TransferRequest(BaseModel):
     """Request to transfer playback to a different device."""
+
     device_id: str
 
 
@@ -700,9 +834,13 @@ async def restore_player_queue_state():
                 context = state["context"]
                 # Check if playlist/builder still exists
                 if context.type == "playlist":
-                    cursor = db.execute("SELECT id FROM playlists WHERE id = ?", (context.playlist_id,))
+                    cursor = db.execute(
+                        "SELECT id FROM playlists WHERE id = ?", (context.playlist_id,)
+                    )
                     if not cursor.fetchone():
-                        logger.warning(f"Saved queue referenced deleted playlist {context.playlist_id}, clearing queue")
+                        logger.warning(
+                            f"Saved queue referenced deleted playlist {context.playlist_id}, clearing queue"
+                        )
                         return
                 # Add similar checks for other context types
             except Exception as e:
@@ -725,16 +863,19 @@ async def restore_player_queue_state():
             if state["queue_index"] < len(queue_tracks):
                 current_track = queue_tracks[state["queue_index"]]
 
-            await update_state({
-                "queue": tuple(queue_tracks),
-                "queue_index": state["queue_index"],
-                "shuffle_enabled": state["shuffle_enabled"],
-                "sort_spec": state.get("sort_spec"),
-                "position_in_playlist": state.get("position_in_playlist", 0),
-                "current_context": state["context"],
-                "current_track": current_track,
-                "is_playing": False,  # Don't auto-resume
-            }, broadcast=False)  # No clients connected at startup
+            await update_state(
+                {
+                    "queue": tuple(queue_tracks),
+                    "queue_index": state["queue_index"],
+                    "shuffle_enabled": state["shuffle_enabled"],
+                    "sort_spec": state.get("sort_spec"),
+                    "position_in_playlist": state.get("position_in_playlist", 0),
+                    "current_context": state["context"],
+                    "current_track": current_track,
+                    "is_playing": False,  # Don't auto-resume
+                },
+                broadcast=False,
+            )  # No clients connected at startup
 
             logger.info("Queue state restored successfully")
     except Exception:

@@ -21,7 +21,7 @@ def initialize_queue(
     db_conn,
     window_size: int = 100,
     shuffle: bool = True,
-    sort_spec: Optional[dict] = None
+    sort_spec: Optional[dict] = None,
 ) -> list[int]:
     """Generate initial queue of track IDs.
 
@@ -81,7 +81,7 @@ def get_next_track(
     db_conn,
     shuffle: bool = True,
     sort_spec: Optional[dict] = None,
-    position_in_sorted: Optional[int] = None
+    position_in_sorted: Optional[int] = None,
 ) -> Optional[int]:
     """Pull 1 track from playlist, respecting exclusions.
 
@@ -138,7 +138,7 @@ def rebuild_queue(
     queue_index: int,
     db_conn,
     shuffle: bool,
-    sort_spec: Optional[dict] = None
+    sort_spec: Optional[dict] = None,
 ) -> list[int]:
     """Rebuild queue preserving current track and history.
 
@@ -159,7 +159,7 @@ def rebuild_queue(
     """
     try:
         # Preserve history: tracks already played + current track
-        preserved = queue[0:queue_index + 1]
+        preserved = queue[0 : queue_index + 1]
         logger.info(f"Preserving {len(preserved)} tracks (history + current)")
 
         # Build exclusion list from preserved tracks
@@ -189,7 +189,11 @@ def rebuild_queue(
             if sort_spec:
                 # Get sorted tracks, filter exclusions, take new_future_size
                 sorted_ids = _get_sorted_tracks_from_playlist(
-                    context, sort_spec, limit=len(all_track_ids), offset=0, db_conn=db_conn
+                    context,
+                    sort_spec,
+                    limit=len(all_track_ids),
+                    offset=0,
+                    db_conn=db_conn,
                 )
                 filtered = [tid for tid in sorted_ids if tid not in exclusion_ids]
                 new_tracks = filtered[:new_future_size]
@@ -199,13 +203,15 @@ def rebuild_queue(
 
         # Concatenate preserved + new tracks
         rebuilt = preserved + new_tracks
-        logger.info(f"Rebuilt queue: {len(preserved)} preserved + {len(new_tracks)} new = {len(rebuilt)} total")
+        logger.info(
+            f"Rebuilt queue: {len(preserved)} preserved + {len(new_tracks)} new = {len(rebuilt)} total"
+        )
         return rebuilt
 
     except Exception as e:
         logger.exception(f"Error rebuilding queue: {e}")
         # Return preserved tracks on error
-        return queue[0:queue_index + 1]
+        return queue[0 : queue_index + 1]
 
 
 def save_queue_state(
@@ -215,7 +221,7 @@ def save_queue_state(
     shuffle: bool,
     sort_spec: Optional[dict],
     db_conn,
-    position_in_playlist: Optional[int] = None
+    position_in_playlist: Optional[int] = None,
 ) -> None:
     """Persist queue state to database.
 
@@ -258,11 +264,13 @@ def save_queue_state(
                 queue_json,
                 queue_index,
                 position_in_playlist,
-                context.session_id if context.type == "organizer" else None
-            )
+                context.session_id if context.type == "organizer" else None,
+            ),
         )
         db_conn.commit()
-        logger.info(f"Saved queue state: {len(queue_ids)} tracks, index={queue_index}, shuffle={shuffle}")
+        logger.info(
+            f"Saved queue state: {len(queue_ids)} tracks, index={queue_index}, shuffle={shuffle}"
+        )
 
     except sqlite3.Error as e:
         logger.exception("Failed to save queue state")
@@ -300,7 +308,7 @@ def load_queue_state(db_conn) -> Optional[dict]:
         if row["sort_field"]:
             sort_spec = {
                 "field": row["sort_field"],
-                "direction": row["sort_direction"] or "asc"
+                "direction": row["sort_direction"] or "asc",
             }
 
         # Reconstruct PlayContext
@@ -308,7 +316,7 @@ def load_queue_state(db_conn) -> Optional[dict]:
             row["context_type"],
             row["context_id"],
             row["shuffle_enabled"],
-            row["context_session_id"]
+            row["context_session_id"],
         )
 
         state = {
@@ -317,10 +325,12 @@ def load_queue_state(db_conn) -> Optional[dict]:
             "shuffle_enabled": bool(row["shuffle_enabled"]),
             "sort_spec": sort_spec,
             "context": context,
-            "position_in_playlist": row["position_in_playlist"]
+            "position_in_playlist": row["position_in_playlist"],
         }
 
-        logger.info(f"Loaded queue state: {len(queue_ids)} tracks, index={row['queue_index']}")
+        logger.info(
+            f"Loaded queue state: {len(queue_ids)} tracks, index={row['queue_index']}"
+        )
         return state
 
     except sqlite3.Error as e:
@@ -347,17 +357,21 @@ def _build_random_query_with_exclusions(playlist_id: int, exclusion_ids: list[in
     if exclusion_ids:
         placeholders = ",".join("?" * len(exclusion_ids))
         query = f"""
-            SELECT track_id FROM playlist_tracks
-            WHERE playlist_id = ?
-            AND track_id NOT IN ({placeholders})
+            SELECT pt.track_id FROM playlist_tracks pt
+            JOIN tracks t ON pt.track_id = t.id
+            WHERE pt.playlist_id = ?
+            AND t.unavailable_at IS NULL
+            AND pt.track_id NOT IN ({placeholders})
             ORDER BY RANDOM()
             LIMIT 1
         """
         params = [playlist_id] + exclusion_ids
     else:
         query = """
-            SELECT track_id FROM playlist_tracks
-            WHERE playlist_id = ?
+            SELECT pt.track_id FROM playlist_tracks pt
+            JOIN tracks t ON pt.track_id = t.id
+            WHERE pt.playlist_id = ?
+            AND t.unavailable_at IS NULL
             ORDER BY RANDOM()
             LIMIT 1
         """
@@ -365,7 +379,9 @@ def _build_random_query_with_exclusions(playlist_id: int, exclusion_ids: list[in
     return query, params
 
 
-def _get_random_from_smart_playlist(playlist_id: int, exclusion_ids: list[int]) -> Optional[int]:
+def _get_random_from_smart_playlist(
+    playlist_id: int, exclusion_ids: list[int]
+) -> Optional[int]:
     """Get random track from smart playlist using filter evaluation.
 
     Args:
@@ -376,13 +392,16 @@ def _get_random_from_smart_playlist(playlist_id: int, exclusion_ids: list[int]) 
         Random track ID or None
     """
     from music_minion.domain.playlists.filters import evaluate_filters
+
     tracks = evaluate_filters(playlist_id)
     track_ids = [t["id"] for t in tracks]
     available = [tid for tid in track_ids if tid not in exclusion_ids]
     return random.choice(available) if available else None
 
 
-def _get_random_from_manual_playlist(playlist_id: int, exclusion_ids: list[int], db_conn) -> Optional[int]:
+def _get_random_from_manual_playlist(
+    playlist_id: int, exclusion_ids: list[int], db_conn
+) -> Optional[int]:
     """Get random track from manual playlist using SQL.
 
     Args:
@@ -399,7 +418,9 @@ def _get_random_from_manual_playlist(playlist_id: int, exclusion_ids: list[int],
     return row["track_id"] if row else None
 
 
-def _get_random_from_comparison(track_ids: list[int], exclusion_ids: list[int]) -> Optional[int]:
+def _get_random_from_comparison(
+    track_ids: list[int], exclusion_ids: list[int]
+) -> Optional[int]:
     """Get random track from comparison context.
 
     Args:
@@ -414,9 +435,7 @@ def _get_random_from_comparison(track_ids: list[int], exclusion_ids: list[int]) 
 
 
 def _get_random_track_from_playlist(
-    context: PlayContext,
-    exclusion_ids: list[int],
-    db_conn
+    context: PlayContext, exclusion_ids: list[int], db_conn
 ) -> Optional[int]:
     """SQL: ORDER BY RANDOM() with exclusions.
 
@@ -432,20 +451,25 @@ def _get_random_track_from_playlist(
         if context.type == "playlist" and context.playlist_id:
             # Check if smart playlist
             cursor = db_conn.execute(
-                "SELECT type FROM playlists WHERE id = ?",
-                (context.playlist_id,)
+                "SELECT type FROM playlists WHERE id = ?", (context.playlist_id,)
             )
             row = cursor.fetchone()
             if not row:
                 return None
 
             if row["type"] == "smart":
-                return _get_random_from_smart_playlist(context.playlist_id, exclusion_ids)
+                return _get_random_from_smart_playlist(
+                    context.playlist_id, exclusion_ids
+                )
             else:
-                return _get_random_from_manual_playlist(context.playlist_id, exclusion_ids, db_conn)
+                return _get_random_from_manual_playlist(
+                    context.playlist_id, exclusion_ids, db_conn
+                )
 
         elif context.type == "builder" and context.builder_id:
-            return _get_random_from_manual_playlist(context.builder_id, exclusion_ids, db_conn)
+            return _get_random_from_manual_playlist(
+                context.builder_id, exclusion_ids, db_conn
+            )
 
         elif context.type == "comparison" and context.track_ids:
             return _get_random_from_comparison(context.track_ids, exclusion_ids)
@@ -453,18 +477,25 @@ def _get_random_track_from_playlist(
         elif context.type == "organizer" and context.session_id:
             # Organizer shuffle mode
             from .queries.buckets import get_session_with_data
+
             session = get_session_with_data(context.session_id)
             if session and session["status"] == "active":
                 # Determine track pool based on bucket_id
                 if context.bucket_id:
                     bucket = next(
                         (b for b in session["buckets"] if b["id"] == context.bucket_id),
-                        None
+                        None,
                     )
-                    track_pool = bucket["track_ids"] if bucket else session["unassigned_track_ids"]
+                    track_pool = (
+                        bucket["track_ids"]
+                        if bucket
+                        else session["unassigned_track_ids"]
+                    )
                 else:
                     track_pool = session["unassigned_track_ids"]
 
+                # Drop dead upstream tracks so shuffle never lands on them
+                track_pool = _filter_unavailable(track_pool, db_conn)
                 available = [tid for tid in track_pool if tid not in exclusion_ids]
                 if not available and track_pool:
                     # Loop restart - return None to signal queue rebuild needed
@@ -484,11 +515,7 @@ def _get_random_track_from_playlist(
 
 
 def _get_sorted_tracks_from_playlist(
-    context: PlayContext,
-    sort_spec: dict,
-    limit: int,
-    offset: int,
-    db_conn
+    context: PlayContext, sort_spec: dict, limit: int, offset: int, db_conn
 ) -> list[int]:
     """Apply sort spec (field + direction), return track IDs.
 
@@ -513,7 +540,7 @@ def _get_sorted_tracks_from_playlist(
             "bpm": "COALESCE(tracks.bpm, 120)",
             "year": "COALESCE(tracks.year, 0)",
             "elo_rating": "COALESCE(track_ratings.elo_rating, 1500)",
-            "track_number": "tracks.track_number"
+            "track_number": "tracks.track_number",
         }
 
         sql_field = field_mapping.get(sort_field, "tracks.track_number")
@@ -522,8 +549,7 @@ def _get_sorted_tracks_from_playlist(
         if context.type == "playlist" and context.playlist_id:
             # Check if smart playlist
             cursor = db_conn.execute(
-                "SELECT type FROM playlists WHERE id = ?",
-                (context.playlist_id,)
+                "SELECT type FROM playlists WHERE id = ?", (context.playlist_id,)
             )
             row = cursor.fetchone()
             if not row:
@@ -532,6 +558,7 @@ def _get_sorted_tracks_from_playlist(
             if row["type"] == "smart":
                 # Smart playlist: evaluate filters then sort in Python
                 from music_minion.domain.playlists.filters import evaluate_filters
+
                 tracks = evaluate_filters(context.playlist_id)
                 track_ids = [t["id"] for t in tracks]
 
@@ -547,7 +574,7 @@ def _get_sorted_tracks_from_playlist(
                     LEFT JOIN track_ratings ON tracks.id = track_ratings.track_id
                     WHERE tracks.id IN ({placeholders})
                     """,
-                    track_ids
+                    track_ids,
                 )
                 rows = cursor.fetchall()
 
@@ -555,10 +582,10 @@ def _get_sorted_tracks_from_playlist(
                 sorted_rows = sorted(
                     rows,
                     key=lambda r: r["sort_value"],
-                    reverse=(sort_direction == "DESC")
+                    reverse=(sort_direction == "DESC"),
                 )
                 sorted_ids = [r["id"] for r in sorted_rows]
-                return sorted_ids[offset:offset + limit]
+                return sorted_ids[offset : offset + limit]
 
             else:
                 # Manual playlist
@@ -599,21 +626,21 @@ def _get_sorted_tracks_from_playlist(
                 LEFT JOIN track_ratings ON tracks.id = track_ratings.track_id
                 WHERE tracks.id IN ({placeholders})
                 """,
-                context.track_ids
+                context.track_ids,
             )
             rows = cursor.fetchall()
 
             # Sort in Python
             sorted_rows = sorted(
-                rows,
-                key=lambda r: r["sort_value"],
-                reverse=(sort_direction == "DESC")
+                rows, key=lambda r: r["sort_value"], reverse=(sort_direction == "DESC")
             )
             sorted_ids = [r["id"] for r in sorted_rows]
-            return sorted_ids[offset:offset + limit]
+            return sorted_ids[offset : offset + limit]
 
         else:
-            logger.warning(f"Unsupported context type for sorted tracks: {context.type}")
+            logger.warning(
+                f"Unsupported context type for sorted tracks: {context.type}"
+            )
             return []
 
         # Fetch results for SQL-based queries
@@ -638,29 +665,34 @@ def _build_exclusion_list(queue: list[int], queue_index: int) -> list[int]:
     return queue[queue_index:]
 
 
-def _filter_unavailable(track_ids: list[int], db_conn) -> list[int]:
-    """Drop tracks with tracks.unavailable_at set (dead upstream sources).
+def get_unavailable_ids(track_ids: list[int], db_conn) -> set[int]:
+    """Return the subset of track_ids marked tracks.unavailable_at (dead upstream).
 
-    Preserves order. No-op if list empty.
+    Empty set if list empty or none dead.
     """
     if not track_ids:
-        return track_ids
+        return set()
     placeholders = ",".join("?" * len(track_ids))
     cursor = db_conn.execute(
         f"SELECT id FROM tracks WHERE id IN ({placeholders}) AND unavailable_at IS NOT NULL",
         track_ids,
     )
-    dead = {row["id"] for row in cursor.fetchall()}
+    return {row["id"] for row in cursor.fetchall()}
+
+
+def _filter_unavailable(track_ids: list[int], db_conn) -> list[int]:
+    """Drop tracks with tracks.unavailable_at set (dead upstream sources).
+
+    Preserves order. No-op if list empty.
+    """
+    dead = get_unavailable_ids(track_ids, db_conn)
     if not dead:
         return track_ids
     logger.info(f"Excluding {len(dead)} unavailable tracks from queue")
     return [tid for tid in track_ids if tid not in dead]
 
 
-def _resolve_context_to_track_ids(
-    context: PlayContext,
-    db_conn
-) -> list[int]:
+def _resolve_context_to_track_ids(context: PlayContext, db_conn) -> list[int]:
     """Handle playlist/builder/smart playlist context.
 
     For smart playlists: Evaluate filters dynamically.
@@ -683,8 +715,7 @@ def _resolve_context_to_track_ids(
         elif context.type == "playlist" and context.playlist_id:
             # Check if it's a smart playlist
             cursor = db_conn.execute(
-                "SELECT type FROM playlists WHERE id = ?",
-                (context.playlist_id,)
+                "SELECT type FROM playlists WHERE id = ?", (context.playlist_id,)
             )
             row = cursor.fetchone()
             if not row:
@@ -694,6 +725,7 @@ def _resolve_context_to_track_ids(
             if row["type"] == "smart":
                 # Smart playlist - evaluate filters dynamically
                 from music_minion.domain.playlists.filters import evaluate_filters
+
                 tracks = evaluate_filters(context.playlist_id)
                 return _filter_unavailable([t["id"] for t in tracks], db_conn)
             else:
@@ -704,7 +736,7 @@ def _resolve_context_to_track_ids(
                     WHERE playlist_id = ?
                     ORDER BY position
                     """,
-                    (context.playlist_id,)
+                    (context.playlist_id,),
                 )
                 return _filter_unavailable(
                     [row["track_id"] for row in cursor.fetchall()], db_conn
@@ -718,7 +750,7 @@ def _resolve_context_to_track_ids(
                 WHERE playlist_id = ?
                 ORDER BY position
                 """,
-                (context.builder_id,)
+                (context.builder_id,),
             )
             return _filter_unavailable(
                 [row["track_id"] for row in cursor.fetchall()], db_conn
@@ -730,18 +762,21 @@ def _resolve_context_to_track_ids(
         elif context.type == "organizer" and context.session_id:
             # Organizer context - return bucket tracks or unassigned tracks
             from .queries.buckets import get_session_with_data
+
             session = get_session_with_data(context.session_id)
             if session and session["status"] == "active":
                 if context.bucket_id:
                     bucket = next(
                         (b for b in session["buckets"] if b["id"] == context.bucket_id),
-                        None
+                        None,
                     )
                     if bucket:
                         return _filter_unavailable(bucket["track_ids"], db_conn)
                 return _filter_unavailable(session["unassigned_track_ids"], db_conn)
             else:
-                logger.warning(f"Organizer session {context.session_id} not found or inactive")
+                logger.warning(
+                    f"Organizer session {context.session_id} not found or inactive"
+                )
                 return []
 
         elif context.type == "search":
@@ -779,7 +814,7 @@ def _reconstruct_play_context(
     context_type: str,
     context_id: Optional[int],
     shuffle: bool,
-    context_session_id: Optional[str] = None
+    context_session_id: Optional[str] = None,
 ) -> PlayContext:
     """Reconstruct PlayContext from database fields.
 
@@ -793,24 +828,12 @@ def _reconstruct_play_context(
         PlayContext instance
     """
     if context_type == "playlist":
-        return PlayContext(
-            type="playlist",
-            playlist_id=context_id,
-            shuffle=shuffle
-        )
+        return PlayContext(type="playlist", playlist_id=context_id, shuffle=shuffle)
     elif context_type == "builder":
-        return PlayContext(
-            type="builder",
-            builder_id=context_id,
-            shuffle=shuffle
-        )
+        return PlayContext(type="builder", builder_id=context_id, shuffle=shuffle)
     elif context_type == "comparison":
         # Note: track_ids not persisted, will need to be refreshed
-        return PlayContext(
-            type="comparison",
-            track_ids=[],
-            shuffle=shuffle
-        )
+        return PlayContext(type="comparison", track_ids=[], shuffle=shuffle)
     elif context_type == "organizer":
         # Reconstruct organizer context with session_id from database
         # (requires context_session_id column added in task 00)
@@ -824,20 +847,15 @@ def _reconstruct_play_context(
                     type="organizer",
                     playlist_id=context_id,
                     session_id=context_session_id,
-                    shuffle=shuffle
+                    shuffle=shuffle,
                 )
             else:
-                logger.warning(f"Organizer session {context_session_id} no longer active, falling back to playlist")
+                logger.warning(
+                    f"Organizer session {context_session_id} no longer active, falling back to playlist"
+                )
 
         # Fallback to regular playlist if session invalid/missing
-        return PlayContext(
-            type="playlist",
-            playlist_id=context_id,
-            shuffle=shuffle
-        )
+        return PlayContext(type="playlist", playlist_id=context_id, shuffle=shuffle)
     else:
         # Default to playlist
-        return PlayContext(
-            type="playlist",
-            shuffle=shuffle
-        )
+        return PlayContext(type="playlist", shuffle=shuffle)

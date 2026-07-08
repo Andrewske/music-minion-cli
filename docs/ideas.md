@@ -151,3 +151,31 @@ Support multiple named playlist-organizer sessions selectable via dropdown. Defa
 
 **Context**: `web/frontend/src/pages/PlaylistOrganizer.tsx`, `web/frontend/src/hooks/usePlaylistOrganizer.ts`, session state persistence
 
+
+## Playlist Organizer play modes: top-to-bottom or true shuffle - 2026-07-07
+
+Playing through the organizer should offer exactly two modes: sequential top-to-bottom, or shuffle that is fully random and never resets (keeps pulling random tracks indefinitely). Shuffle button appears broken currently.
+
+**Context**: web frontend playlist organizer — `web/frontend/src/hooks/usePlaylistOrganizer.ts`, player/queue logic (`web/backend/routers/player.py`, `test_organizer_queue.py`)
+
+## Auto-skip on playback failure with visual note - 2026-07-07
+
+When a song fails to play, show a visual indicator (error toast/marker on the track) and automatically advance to the next song instead of stalling.
+
+**Context**: player/queue logic — `web/frontend/src/stores/playerStore.ts`, `web/frontend/src/components/player/PlayerBar.tsx`, `web/backend/routers/player.py`
+
+**Repro (2026-07-07)**: Track "pAPi wiTH tOKisCha" fails to play. Playing another song, then when it ends, playback jumps back to this broken track. Auto-advance re-selects the failing track instead of skipping past it permanently.
+
+**Verified (2026-07-07 DB+code dig)**:
+- Broken track = id 27669 "pAPi wiTH tOKisCha", sits at **index 0** of persisted queue (72-track discovery batch, consecutive ids 27669..). Shuffle OFF.
+- Advance is purely positional: `queueIndex + 1` in both frontend preload (`usePlayer.ts:239`) and backend `advance_queue` (`player.py:86`). Shuffle only orders the array once at build (`queue_manager.py:51-61`); it never re-randomizes per step → shuffle button effectively dead for playback stepping.
+- `play()` store action (`createPlayerStore.ts:149`) ignores the `/play` response's `queue`/`queue_index`; queue state only arrives via WS `syncState`, which has a de-dup guard comparing queue **length** not contents (`createPlayerStore.ts:301-310`).
+- No failed-track exclusion anywhere → broken track never removed from its slot.
+- Exact "broken always plays second regardless of click" mechanism NOT reproduced statically (index+1 can't put an index-0 track second) — needs live repro; app was not running, logs stale (June 2).
+
+**ROOT CAUSE (confirmed via live piserver docker logs 2026-07-07)**:
+- Track 27669 = SoundCloud id 2342663888 → HTTP 403 "unavailable" (dead upstream: deleted/private/geo-blocked). `/api/tracks/27669/stream` → 503.
+- It sits at index 0 (front) of the unassigned organizer queue, shuffle OFF. Trapped there because: (a) no failed-track exclusion, (b) can't audition a dead track to assign it to a bucket → never leaves front. Every advance resolves forward-survivor back to 27669.
+- Deployment: web runs in docker on piserver (`~/music-minion/docker/pi-deployment`), NOT local. Real DB/logs live there.
+
+**Fix directions**: (1) detect 403/unavailable on stream resolve → mark track unavailable in DB, exclude from queue resolution + auto-advance past. (2) Show visual "unavailable" badge in organizer list so dead tracks are obvious. (3) Per-step shuffle (separate bug). (4) `play()` should apply response queue/index; fix syncState guard to compare queue identity not length.

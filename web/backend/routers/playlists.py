@@ -128,6 +128,7 @@ def get_playlist_tracks_with_ratings(
                 t.year,
                 t.bpm,
                 t.key_signature,
+                (t.unavailable_at IS NULL) as available,
                 COALESCE(per.rating, 1500.0) as rating,
                 COALESCE(per.rating, 1500.0) as elo_rating,
                 COALESCE(per.comparison_count, 0) as comparison_count,
@@ -154,6 +155,9 @@ def get_playlist_tracks_with_ratings(
             {k: v for k, v in dict(row).items() if k != "total_count"}
             for row in rows
         ]
+        # SQLite returns the boolean expr as 0/1 — coerce to a real bool for the API
+        for track in tracks:
+            track["available"] = bool(track.get("available", 1))
 
         # Batch-fetch emojis for paginated tracks only
         if tracks:

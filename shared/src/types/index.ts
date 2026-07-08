@@ -154,6 +154,8 @@ export interface PlaylistTrackEntry {
   emojis?: string[];
   added_at?: string;
   reposters?: TrackReposter[];
+  /** False when the upstream source is dead (tracks.unavailable_at set). */
+  available?: boolean;
 }
 
 export interface PlaylistTracksResponse {
