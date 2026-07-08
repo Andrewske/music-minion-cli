@@ -446,6 +446,56 @@ async def resume(request: ResumeRequest | None = None):
     return {"message": "Resumed", "active_device_id": active_device_id}
 
 
+async def _restart_organizer_loop(db) -> None:
+    """Re-initialize the organizer pool once it has been fully walked.
+
+    Organizer plays a finite pool of unassigned tracks. When advance_queue runs off the
+    end it clears current_track; we rebuild the whole pool fresh (dead tracks already
+    filtered by initialize_queue) and start over from the top. Called ONLY at the true
+    end of the queue — never mid-queue, which previously snapped playback back to
+    queue[0] on every skip.
+    """
+    from ..queries.tracks import batch_fetch_tracks_with_metadata
+    from music_minion.domain.radio.history import start_play
+
+    state = get_state()
+    new_queue_ids = initialize_queue(
+        state.current_context,
+        db,
+        shuffle=state.shuffle_enabled,
+        sort_spec=state.sort_spec,
+    )
+    if not new_queue_ids:
+        logger.info("Organizer loop restart: no available tracks")
+        return
+
+    new_tracks = batch_fetch_tracks_with_metadata(new_queue_ids, db)
+    history_id = start_play(
+        track_id=new_tracks[0]["id"],
+        source_type=new_tracks[0].get("source", "local"),
+    )
+    await update_state(
+        {
+            "queue": tuple(new_tracks),
+            "queue_index": 0,
+            "current_track": new_tracks[0],
+            "position_ms": 0,
+            "track_started_at": time.time(),
+            "is_playing": True,
+            "current_history_id": history_id,
+        }
+    )
+    save_queue_state(
+        context=state.current_context,
+        queue_ids=new_queue_ids,
+        queue_index=0,
+        shuffle=state.shuffle_enabled,
+        sort_spec=state.sort_spec,
+        db_conn=db,
+    )
+    logger.info(f"Organizer loop restarted: {len(new_tracks)} tracks")
+
+
 @router.post("/next")
 async def next_track(reason: str = "skip", db=Depends(get_db)):
     """Skip to next track.
@@ -472,20 +522,19 @@ async def next_track(reason: str = "skip", db=Depends(get_db)):
         # Refetch state after advancement
         state = get_state()
 
-        # Check lookahead buffer and refill
-        if state.current_track:
+        # Refill / loop depending on context.
+        if state.current_context and state.current_context.type == "organizer":
+            # Organizer plays a fixed pool of unassigned tracks. Walk it positionally;
+            # advance_queue clears current_track only when we run off the end. Rebuild a
+            # fresh loop ONLY there — never mid-queue, which used to snap playback back to
+            # queue[0] on every skip (the "same song over and over" bug).
+            if state.current_track is None and state.queue:
+                await _restart_organizer_loop(db)
+        elif state.current_track:
+            # Rolling-window contexts: keep ~50 tracks buffered ahead of the cursor.
             tracks_ahead = len(state.queue) - state.queue_index
-
-            if tracks_ahead < 50:  # Lookahead threshold
-                # Build exclusion list. Organizer mode excludes the entire queue so
-                # already-played tracks don't bounce back via random refill — user
-                # hears every unassigned track once before any repeat.
-                if state.current_context and state.current_context.type == "organizer":
-                    exclusion_ids = [t["id"] for t in state.queue]
-                else:
-                    exclusion_ids = [t["id"] for t in state.queue[state.queue_index :]]
-
-                # Pull 1 new track
+            if tracks_ahead < 50:
+                exclusion_ids = [t["id"] for t in state.queue[state.queue_index :]]
                 new_track_id = get_next_track(
                     context=state.current_context,
                     exclusion_ids=exclusion_ids,
@@ -494,70 +543,14 @@ async def next_track(reason: str = "skip", db=Depends(get_db)):
                     sort_spec=state.sort_spec,
                     position_in_sorted=state.position_in_playlist,
                 )
-
-                # Handle organizer loop restart
-                if (
-                    new_track_id is None
-                    and state.current_context
-                    and state.current_context.type == "organizer"
-                ):
-                    # Queue exhausted - rebuild for loop restart
-                    logger.info(
-                        "Organizer queue exhausted, rebuilding for loop restart"
-                    )
-
-                    new_queue_ids = rebuild_queue(
-                        context=state.current_context,
-                        current_track_id=state.current_track["id"],
-                        queue=[t["id"] for t in state.queue],
-                        queue_index=state.queue_index,
-                        db_conn=db,
-                        shuffle=state.shuffle_enabled,
-                        sort_spec=state.sort_spec,
-                    )
-
-                    if new_queue_ids:
-                        # Fetch metadata for new queue
-                        new_tracks = batch_fetch_tracks_with_metadata(new_queue_ids, db)
-
-                        # Start history entry for first track of new loop
-                        from music_minion.domain.radio.history import start_play
-
-                        history_id = start_play(
-                            track_id=new_tracks[0]["id"],
-                            source_type=new_tracks[0].get("source", "local"),
-                        )
-
-                        await update_state(
-                            {
-                                "queue": tuple(new_tracks),
-                                "queue_index": 0,
-                                "current_track": new_tracks[0],
-                                "position_ms": 0,
-                                "track_started_at": time.time(),
-                                "current_history_id": history_id,
-                            }
-                        )
-
-                        # Save state
-                        save_queue_state(
-                            context=state.current_context,
-                            queue_ids=new_queue_ids,
-                            queue_index=0,
-                            shuffle=state.shuffle_enabled,
-                            sort_spec=state.sort_spec,
-                            db_conn=db,
-                        )
-
-                elif new_track_id:
-                    # Normal case: append new track to queue
+                if new_track_id:
+                    # Append the new track to the rolling window
                     new_tracks = batch_fetch_tracks_with_metadata([new_track_id], db)
                     if new_tracks:  # Defensive check
                         new_position = state.position_in_playlist
 
                         # Update position for sorted mode
                         if not state.shuffle_enabled:
-                            # Get total playlist size for modulo
                             total_size = len(
                                 _resolve_context_to_track_ids(state.current_context, db)
                             )
