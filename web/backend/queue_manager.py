@@ -158,8 +158,10 @@ def rebuild_queue(
         New complete queue (history + current + new future tracks)
     """
     try:
-        # Preserve history: tracks already played + current track
-        preserved = queue[0 : queue_index + 1]
+        # Preserve history: tracks already played + current track, minus any that went
+        # dead upstream mid-session (else a dead track survives every rebuild + replays).
+        dead = get_unavailable_ids(queue[0 : queue_index + 1], db_conn)
+        preserved = [tid for tid in queue[0 : queue_index + 1] if tid not in dead]
         logger.info(f"Preserving {len(preserved)} tracks (history + current)")
 
         # Build exclusion list from preserved tracks

@@ -234,6 +234,29 @@ def test_rebuild_queue_preserves_history(test_db, mock_context):
     assert len(new_queue) >= 100
 
 
+def test_rebuild_queue_drops_dead_tracks_from_preserved(test_db, mock_context):
+    """Dead upstream tracks in history/current must not survive rebuild and replay."""
+    test_db.execute("UPDATE tracks SET unavailable_at = '2026-01-01' WHERE id IN (3, 51)")
+    test_db.commit()
+
+    original_queue = list(range(1, 101))
+    queue_index = 50  # preserved slice = tracks 1..51, includes dead 3 and 51
+
+    new_queue = queue_manager.rebuild_queue(
+        mock_context,
+        51,
+        original_queue,
+        queue_index,
+        test_db,
+        shuffle=True,
+        sort_spec=None,
+    )
+
+    # Dead tracks pruned from the preserved history, never resurface downstream either
+    assert 3 not in new_queue
+    assert 51 not in new_queue
+
+
 def test_rebuild_queue_generates_new_future(test_db, mock_context):
     """Should generate different tracks ahead after rebuild."""
     original_queue = list(range(1, 101))
