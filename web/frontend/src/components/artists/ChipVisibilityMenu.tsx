@@ -7,6 +7,8 @@ import { useArtistViewStore } from '../../stores/artistViewStore';
 
 const CHIP_LABELS: Record<ChipKey, string> = {
   library: 'Library count',
+  liked: 'Liked tracks',
+  playlists: 'Tracks in playlists',
   reposts: 'Reposts in library',
   hit_rate: 'Hit rate',
   first_loved: 'First loved',

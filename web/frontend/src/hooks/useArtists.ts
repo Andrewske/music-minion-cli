@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import type { UseQueryResult, UseMutationResult } from '@tanstack/react-query';
 import * as artistsApi from '../api/artists';
 import type {
-  ArtistStats, ArtistDetail, ParetoResult, FeedSyncState,
+  ArtistStats, ArtistDetail, ArtistLibraryTrack, ArtistConnection, ParetoResult, FeedSyncState,
   GetArtistsOptions, CreateMatchOverrideBody, MatchOverride,
   UnfollowResult, FollowingsSyncResult,
 } from '../api/artists';
@@ -25,6 +25,24 @@ export function useArtist(id: number | null): UseQueryResult<ArtistDetail> {
     queryKey: ['artists', 'detail', id],
     queryFn: () => artistsApi.getArtist(id as number),
     enabled: id != null,
+  });
+}
+
+export function useArtistLibraryTracks(id: number | null): UseQueryResult<ArtistLibraryTrack[]> {
+  return useQuery({
+    queryKey: ['artists', 'library-tracks', id],
+    queryFn: () => artistsApi.getArtistLibraryTracks(id as number),
+    enabled: id != null,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useArtistConnections(id: number | null): UseQueryResult<ArtistConnection[]> {
+  return useQuery({
+    queryKey: ['artists', 'connections', id],
+    queryFn: () => artistsApi.getArtistConnections(id as number),
+    enabled: id != null,
+    staleTime: 5 * 60 * 1000,
   });
 }
 

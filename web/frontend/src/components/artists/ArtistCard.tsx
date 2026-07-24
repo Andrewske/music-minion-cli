@@ -1,5 +1,8 @@
 import type { ReactElement } from 'react';
+import { Link } from '@tanstack/react-router';
 import {
+  Heart,
+  ListMusic,
   Music,
   RefreshCw,
   Target,
@@ -46,7 +49,8 @@ const ACTIVITY_DOT: Record<ArtistStats['activity_state'], string> = {
 };
 
 const ALL_CHIPS = new Set<ChipKey>([
-  'library', 'reposts', 'hit_rate', 'first_loved', 'feed_noise', 'activity', 'elo', 'followers',
+  'library', 'liked', 'playlists', 'reposts', 'hit_rate', 'first_loved', 'feed_noise',
+  'activity', 'elo', 'followers',
 ]);
 
 // ---------------------------------------------------------------------------
@@ -131,7 +135,23 @@ export function ArtistCard({
 
         <div className="flex-1 min-w-0">
           <div className="font-inter font-medium text-sm text-white/90 truncate">
-            {artist.display_name}
+            {artist.id !== null ? (
+              <Link
+                to="/artists/$artistId"
+                params={{ artistId: String(artist.id) }}
+                className="hover:text-obsidian-accent transition-colors"
+              >
+                {artist.display_name}
+              </Link>
+            ) : (
+              <Link
+                to="/artists/local/$name"
+                params={{ name: artist.display_name }}
+                className="hover:text-obsidian-accent transition-colors"
+              >
+                {artist.display_name}
+              </Link>
+            )}
           </div>
           {artist.slug && (
             <div className="font-sf-mono text-xs text-white/50 truncate">
@@ -160,8 +180,8 @@ export function ArtistCard({
 
       {/* Stats */}
       <div className="border-t border-obsidian-border px-4 py-3 space-y-1.5">
-        {/* Row 1: library, reposts, hit_rate */}
-        {(show('library') || show('reposts') || show('hit_rate')) && (
+        {/* Row 1: library, liked, playlists, reposts, hit_rate */}
+        {(show('library') || show('liked') || show('playlists') || show('reposts') || show('hit_rate')) && (
           <div className="flex flex-wrap gap-3">
             {show('library') && (
               <ArtistStatChip
@@ -169,6 +189,23 @@ export function ArtistCard({
                 label=""
                 value={`${artist.library_track_count} tracks`}
                 tooltip="tracks in your library from this artist"
+              />
+            )}
+            {show('liked') && (
+              <ArtistStatChip
+                icon={Heart}
+                label=""
+                value={`${artist.sc_liked_count} liked`}
+                tooltip="tracks from this artist you liked"
+                accent={artist.sc_liked_count > 0}
+              />
+            )}
+            {show('playlists') && (
+              <ArtistStatChip
+                icon={ListMusic}
+                label=""
+                value={`${artist.playlist_track_count} in playlists`}
+                tooltip="tracks from this artist in your playlists"
               />
             )}
             {show('reposts') && (

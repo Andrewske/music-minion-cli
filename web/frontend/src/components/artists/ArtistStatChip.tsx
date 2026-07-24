@@ -7,6 +7,8 @@ import type { LucideIcon } from 'lucide-react';
 
 export const CHIP_KEYS = [
   'library',
+  'liked',
+  'playlists',
   'reposts',
   'hit_rate',
   'first_loved',
