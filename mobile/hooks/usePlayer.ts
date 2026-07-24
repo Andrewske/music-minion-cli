@@ -1,13 +1,15 @@
 import { useEffect, useRef } from 'react';
 import TrackPlayer, {
-  Event,
   PlayerCommand,
   useProgress,
   usePlaybackState,
-  PlaybackState,
 } from '@rntp/player';
 import { usePlayerStore, getCurrentPosition } from '../stores/playerStore';
 import { getStreamUrl, getDefaultApiClient } from '@music-minion/shared';
+import {
+  registerForegroundPlaybackListeners,
+  resetRetryTracking,
+} from '../services/playbackEvents';
 
 let isSetup = false;
 
@@ -50,6 +52,10 @@ export function usePlayer() {
 
   useEffect(() => {
     setupPlayer();
+    // End/error handling lives in services/playbackEvents.ts (shared with the
+    // background headless handler); registration is module-guarded so multiple
+    // usePlayer mounts (PlayerBar + NowPlaying) register listeners only once.
+    registerForegroundPlaybackListeners();
   }, []);
 
   // Load track into RNTP when currentTrack changes and this device is active
@@ -60,6 +66,8 @@ export function usePlayer() {
 
     const track = store.currentTrack;
     lastLoadedTrackIdRef.current = track.id;
+    // New playthrough — this track gets one in-place retry before skip
+    resetRetryTracking();
 
     const loadTrack = (): void => {
       try {
@@ -69,7 +77,7 @@ export function usePlayer() {
           title: track.title,
           artist: track.artist ?? 'Unknown Artist',
           duration: track.duration,
-          artwork: getArtworkUrl(track.id),
+          artworkUrl: getArtworkUrl(track.id),
         });
 
         const pos = getCurrentPosition(store) / 1000;
@@ -108,6 +116,12 @@ export function usePlayer() {
     }
   }, [store.isThisDeviceActive]);
 
+  // Sync store volume/mute to RNTP (setVolume range is 0.0-1.0, same as store)
+  useEffect(() => {
+    if (!isSetup) return;
+    TrackPlayer.setVolume(store.isMuted ? 0 : store.volume);
+  }, [store.volume, store.isMuted]);
+
   // Apply seeks to RNTP. Single source of truth for both local seeks
   // (seek() sets lastSeekAt) and remote WS seeks (syncState sets lastSeekAt),
   // mirroring web's lastSeekAt guard. Avoids double-applying a local seek.
@@ -145,35 +159,6 @@ export function usePlayer() {
       if (scrobbleTimerRef.current) clearTimeout(scrobbleTimerRef.current);
     };
   }, [store.currentTrack?.id, store.isPlaying, store.scrobbledThisPlaythrough]);
-
-  // Handle track end + playback errors via addEventListener (v5 removed useTrackPlayerEvents)
-  useEffect(() => {
-    const stateListener = TrackPlayer.addEventListener(
-      Event.PlaybackStateChanged,
-      (event) => {
-        if (event.state === PlaybackState.Ended) {
-          const state = usePlayerStore.getState();
-          if (state.currentContext?.type !== 'comparison') {
-            state.next();
-          }
-        }
-      }
-    );
-
-    const errorListener = TrackPlayer.addEventListener(
-      Event.PlaybackError,
-      () => {
-        const trackTitle = usePlayerStore.getState().currentTrack?.title ?? 'Unknown';
-        usePlayerStore.getState().setPlaybackError(`Failed to load: ${trackTitle}`);
-        setTimeout(() => usePlayerStore.getState().next(), 2000);
-      }
-    );
-
-    return () => {
-      stateListener.remove();
-      errorListener.remove();
-    };
-  }, []);
 
   return {
     ...store,

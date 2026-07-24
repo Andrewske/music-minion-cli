@@ -13,6 +13,7 @@ import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlayer } from '../../hooks/usePlayer';
 import { NowPlaying } from './NowPlaying';
+import { PlaybackErrorBanner } from './PlaybackErrorBanner';
 
 export function PlayerBar() {
   const insets = useSafeAreaInsets();
@@ -29,9 +30,13 @@ export function PlayerBar() {
 
   if (!currentTrack) {
     return (
-      <View style={[styles.barEmpty, { paddingBottom: 10 + insets.bottom }]}>
-        <Text style={styles.emptyText}>Nothing playing</Text>
-      </View>
+      <>
+        {/* Play/control POSTs can fail before any track loads (offline) */}
+        <PlaybackErrorBanner />
+        <View style={[styles.barEmpty, { paddingBottom: 10 + insets.bottom }]}>
+          <Text style={styles.emptyText}>Nothing playing</Text>
+        </View>
+      </>
     );
   }
 
@@ -60,49 +65,52 @@ export function PlayerBar() {
   };
 
   return (
-    <View testID="player-bar" style={[styles.bar, { paddingBottom: 10 + insets.bottom }]}>
-      {/* Track info — tap to expand NowPlaying sheet */}
-      <Pressable style={styles.info} onPress={handleExpand}>
-        <Text testID="player-track-title" style={styles.title} numberOfLines={1}>
-          {currentTrack.title}
-        </Text>
-        <Text style={styles.artist} numberOfLines={1}>
-          {currentTrack.artist ?? 'Unknown Artist'}
-          {!isThisDeviceActive && ' · Playing elsewhere'}
-        </Text>
-      </Pressable>
-
-      {/* Expanded NowPlaying sheet (built-in Modal, swipe-down via collapse) */}
-      <Modal
-        visible={expanded}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setExpanded(false)}
-      >
-        <NowPlaying onCollapse={() => setExpanded(false)} />
-      </Modal>
-
-      {/* Controls */}
-      <View style={styles.controls}>
-        <Pressable style={styles.controlBtn} onPress={handlePrev} hitSlop={8}>
-          <Text style={styles.controlIcon}>⏮</Text>
-        </Pressable>
-
-        <Pressable
-          style={[styles.controlBtn, styles.playBtn]}
-          onPress={handlePlayPause}
-          hitSlop={8}
-        >
-          <Text style={styles.playIcon}>
-            {isPlaying ? '⏸' : '▶'}
+    <>
+      <PlaybackErrorBanner />
+      <View testID="player-bar" style={[styles.bar, { paddingBottom: 10 + insets.bottom }]}>
+        {/* Track info — tap to expand NowPlaying sheet */}
+        <Pressable style={styles.info} onPress={handleExpand}>
+          <Text testID="player-track-title" style={styles.title} numberOfLines={1}>
+            {currentTrack.title}
+          </Text>
+          <Text style={styles.artist} numberOfLines={1}>
+            {currentTrack.artist ?? 'Unknown Artist'}
+            {!isThisDeviceActive && ' · Playing elsewhere'}
           </Text>
         </Pressable>
 
-        <Pressable style={styles.controlBtn} onPress={handleNext} hitSlop={8}>
-          <Text style={styles.controlIcon}>⏭</Text>
-        </Pressable>
+        {/* Expanded NowPlaying sheet (built-in Modal, swipe-down via collapse) */}
+        <Modal
+          visible={expanded}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setExpanded(false)}
+        >
+          <NowPlaying onCollapse={() => setExpanded(false)} />
+        </Modal>
+
+        {/* Controls */}
+        <View style={styles.controls}>
+          <Pressable style={styles.controlBtn} onPress={handlePrev} hitSlop={8}>
+            <Text style={styles.controlIcon}>⏮</Text>
+          </Pressable>
+
+          <Pressable
+            style={[styles.controlBtn, styles.playBtn]}
+            onPress={handlePlayPause}
+            hitSlop={8}
+          >
+            <Text style={styles.playIcon}>
+              {isPlaying ? '⏸' : '▶'}
+            </Text>
+          </Pressable>
+
+          <Pressable style={styles.controlBtn} onPress={handleNext} hitSlop={8}>
+            <Text style={styles.controlIcon}>⏭</Text>
+          </Pressable>
+        </View>
       </View>
-    </View>
+    </>
   );
 }
 

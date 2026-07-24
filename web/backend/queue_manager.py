@@ -13,13 +13,75 @@ from loguru import logger
 from .schemas import PlayContext
 
 
+# Rolling-window sizing (shared by player.py — do not re-hardcode these numbers).
+WINDOW_SIZE = 100  # target number of tracks materialized in the queue window
+REFILL_THRESHOLD = 50  # refill back up to WINDOW_SIZE when fewer than this remain ahead
+
+
+# ---------------------------------------------------------------------------
+# Resolved-context cache
+#
+# _resolve_context_to_track_ids() is expensive for smart playlists (runs
+# evaluate_filters over the whole library) and was previously re-run on every
+# skip (once for the refill pick, again for total_size in sorted mode). Cache
+# the resolved track-id list for the single active context.
+#
+# Write-through refresh: initialize_queue() and rebuild_queue() always resolve
+# fresh and overwrite the cache, so /play, toggle-shuffle, set-sort and
+# organizer loop restarts all repopulate it. A context-key mismatch (context
+# change) also triggers a fresh resolve. invalidate_context_cache() is called
+# by player.py when a track is pruned as dead or an organizer pool changes.
+# ---------------------------------------------------------------------------
+_context_cache_key: Optional[tuple] = None
+_context_cache_ids: list[int] = []
+
+
+def _context_cache_signature(context: PlayContext) -> tuple:
+    """Hashable identity of a playback context for cache keying.
+
+    getattr defaults keep this tolerant of test doubles that omit fields.
+    """
+    track_ids = getattr(context, "track_ids", None)
+    return (
+        context.type,
+        getattr(context, "playlist_id", None),
+        getattr(context, "builder_id", None),
+        getattr(context, "session_id", None),
+        getattr(context, "bucket_id", None),
+        tuple(track_ids) if track_ids else None,
+    )
+
+
+def invalidate_context_cache() -> None:
+    """Drop the cached resolved context (next access re-resolves)."""
+    global _context_cache_key, _context_cache_ids
+    _context_cache_key = None
+    _context_cache_ids = []
+
+
+def _refresh_context_ids(context: PlayContext, db_conn) -> list[int]:
+    """Resolve context fresh and overwrite the cache (write-through)."""
+    global _context_cache_key, _context_cache_ids
+    ids = _resolve_context_to_track_ids(context, db_conn)
+    _context_cache_key = _context_cache_signature(context)
+    _context_cache_ids = ids
+    return ids
+
+
+def _get_context_ids_cached(context: PlayContext, db_conn) -> list[int]:
+    """Return resolved track IDs for context, using the cache when the context matches."""
+    if _context_cache_key == _context_cache_signature(context):
+        return _context_cache_ids
+    return _refresh_context_ids(context, db_conn)
+
+
 # Public API Functions
 
 
 def initialize_queue(
     context: PlayContext,
     db_conn,
-    window_size: int = 100,
+    window_size: int = WINDOW_SIZE,
     shuffle: bool = True,
     sort_spec: Optional[dict] = None,
 ) -> list[int]:
@@ -39,8 +101,8 @@ def initialize_queue(
         List of track IDs (max window_size tracks)
     """
     try:
-        # Resolve context to all available track IDs
-        all_track_ids = _resolve_context_to_track_ids(context, db_conn)
+        # Resolve context to all available track IDs (refreshes the context cache)
+        all_track_ids = _refresh_context_ids(context, db_conn)
 
         if not all_track_ids:
             logger.warning(f"No tracks found for context: {context.type}")
@@ -104,9 +166,10 @@ def get_next_track(
             # Random selection with exclusions
             return _get_random_track_from_playlist(context, exclusion_ids, db_conn)
         else:
-            # Get next in sorted sequence
+            # Get next in sorted sequence. position_in_sorted IS the offset of
+            # the next row to read (see get_next_tracks invariant) — no +1.
             if sort_spec:
-                offset = position_in_sorted + 1 if position_in_sorted is not None else 0
+                offset = position_in_sorted if position_in_sorted is not None else 0
                 sorted_ids = _get_sorted_tracks_from_playlist(
                     context, sort_spec, limit=1, offset=offset, db_conn=db_conn
                 )
@@ -129,6 +192,87 @@ def get_next_track(
     except Exception as e:
         logger.exception(f"Error fetching next track: {e}")
         return None
+
+
+def get_next_tracks(
+    context: PlayContext,
+    count: int,
+    exclusion_ids: list[int],
+    db_conn,
+    shuffle: bool = True,
+    sort_spec: Optional[dict] = None,
+    position_in_sorted: Optional[int] = None,
+) -> tuple[list[int], Optional[int]]:
+    """Pull up to `count` tracks from the context in ONE query — batch refill.
+
+    Replaces per-skip get_next_track() calls: player.py calls this once when
+    the window drops below REFILL_THRESHOLD and tops it back up to WINDOW_SIZE.
+
+    SORTED-MODE INVARIANT (position_in_playlist / position_in_sorted):
+        position = number of rows of the context's sorted order already
+        materialized into the queue window, i.e. the exact SQL OFFSET at which
+        the NEXT refill must read. It advances by the number of rows FETCHED
+        (not by a fixed window) and wraps modulo the context's total size so
+        the playlist loops.
+
+        The old code violated this twice: get_next_track read at OFFSET
+        position+1 (skipping one row), and player.py then advanced position by
+        +100 per single-track refill — so after the first refill each
+        subsequent refill jumped 100 rows ahead, skipping ~99 of every 100
+        tracks in sorted mode.
+
+    Shuffle mode:
+        Manual playlist/builder: single ORDER BY RANDOM() LIMIT count with
+        NOT IN exclusions and unavailable_at filtering.
+        Smart playlist / comparison / organizer: random.sample over the cached
+        resolved ids (no evaluate_filters per pick).
+
+    Args:
+        context: Playback context
+        count: Max tracks to return
+        exclusion_ids: Track IDs to exclude (upcoming queue window)
+        db_conn: Database connection
+        shuffle: Whether to randomize selection
+        sort_spec: Optional sort specification
+        position_in_sorted: Sorted-order offset per the invariant above
+
+    Returns:
+        (track_ids, new_position_in_sorted). new_position is None in shuffle
+        mode (caller keeps its current value). In sorted mode it advances by
+        rows fetched even if all fetched rows were excluded, so the cursor
+        never stalls.
+    """
+    if count <= 0:
+        return [], None if shuffle else position_in_sorted
+
+    try:
+        if shuffle:
+            return _get_random_tracks_from_context(
+                context, exclusion_ids, count, db_conn
+            ), None
+
+        # Sorted mode
+        all_track_ids = _get_context_ids_cached(context, db_conn)
+        total = len(all_track_ids)
+        if total == 0:
+            return [], position_in_sorted
+
+        position = (position_in_sorted or 0) % total
+        if sort_spec:
+            fetched = _get_sorted_tracks_from_playlist(
+                context, sort_spec, limit=count, offset=position, db_conn=db_conn
+            )
+        else:
+            # Default order: context position order (same order initialize_queue used)
+            fetched = all_track_ids[position : position + count]
+
+        new_position = (position + len(fetched)) % total if fetched else position
+        excluded = set(exclusion_ids)
+        return [tid for tid in fetched if tid not in excluded], new_position
+
+    except Exception:
+        logger.exception("Error fetching next tracks batch")
+        return [], None if shuffle else position_in_sorted
 
 
 def rebuild_queue(
@@ -167,14 +311,14 @@ def rebuild_queue(
         # Build exclusion list from preserved tracks
         exclusion_ids = preserved.copy()
 
-        # Generate new future tracks (~99 tracks to reach window_size=100)
-        new_future_size = 100 - len(preserved)
+        # Generate new future tracks to reach WINDOW_SIZE
+        new_future_size = WINDOW_SIZE - len(preserved)
         if new_future_size <= 0:
             # Queue is already full with history
             return preserved
 
-        # Use initialize_queue logic but with exclusions
-        all_track_ids = _resolve_context_to_track_ids(context, db_conn)
+        # Use initialize_queue logic but with exclusions (refreshes context cache)
+        all_track_ids = _refresh_context_ids(context, db_conn)
         available_ids = [tid for tid in all_track_ids if tid not in exclusion_ids]
 
         if not available_ids:
@@ -274,8 +418,32 @@ def save_queue_state(
             f"Saved queue state: {len(queue_ids)} tracks, index={queue_index}, shuffle={shuffle}"
         )
 
-    except sqlite3.Error as e:
+    except sqlite3.Error:
         logger.exception("Failed to save queue state")
+        # Don't raise - persistence failing shouldn't crash playback
+
+
+def update_queue_position(
+    queue_index: int, position_in_playlist: Optional[int], db_conn
+) -> None:
+    """Persist only the queue cursor — cheap per-skip write.
+
+    save_queue_state() reserializes the entire queue-ID JSON; doing that on
+    every skip is the bulk of per-skip DB churn. Skips that don't change the
+    queue contents only need the two cursor columns updated.
+    """
+    try:
+        db_conn.execute(
+            """
+            UPDATE player_queue_state
+            SET queue_index = ?, position_in_playlist = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = 1
+            """,
+            (queue_index, position_in_playlist),
+        )
+        db_conn.commit()
+    except sqlite3.Error:
+        logger.exception("Failed to update queue position")
         # Don't raise - persistence failing shouldn't crash playback
 
 
@@ -335,10 +503,10 @@ def load_queue_state(db_conn) -> Optional[dict]:
         )
         return state
 
-    except sqlite3.Error as e:
+    except sqlite3.Error:
         logger.exception("Error loading queue state")
         return None
-    except (json.JSONDecodeError, KeyError) as e:
+    except (json.JSONDecodeError, KeyError):
         logger.exception("Error deserializing queue state")
         return None
 
@@ -346,12 +514,15 @@ def load_queue_state(db_conn) -> Optional[dict]:
 # Internal Helper Functions
 
 
-def _build_random_query_with_exclusions(playlist_id: int, exclusion_ids: list[int]):
+def _build_random_query_with_exclusions(
+    playlist_id: int, exclusion_ids: list[int], limit: int = 1
+):
     """Build SQL query for random track selection with exclusions.
 
     Args:
         playlist_id: Playlist or builder ID
         exclusion_ids: Track IDs to exclude
+        limit: Max tracks to select
 
     Returns:
         Tuple of (query_string, params_list)
@@ -365,9 +536,9 @@ def _build_random_query_with_exclusions(playlist_id: int, exclusion_ids: list[in
             AND t.unavailable_at IS NULL
             AND pt.track_id NOT IN ({placeholders})
             ORDER BY RANDOM()
-            LIMIT 1
+            LIMIT ?
         """
-        params = [playlist_id] + exclusion_ids
+        params = [playlist_id] + exclusion_ids + [limit]
     else:
         query = """
             SELECT pt.track_id FROM playlist_tracks pt
@@ -375,145 +546,110 @@ def _build_random_query_with_exclusions(playlist_id: int, exclusion_ids: list[in
             WHERE pt.playlist_id = ?
             AND t.unavailable_at IS NULL
             ORDER BY RANDOM()
-            LIMIT 1
+            LIMIT ?
         """
-        params = [playlist_id]
+        params = [playlist_id, limit]
     return query, params
 
 
-def _get_random_from_smart_playlist(
-    playlist_id: int, exclusion_ids: list[int]
-) -> Optional[int]:
-    """Get random track from smart playlist using filter evaluation.
-
-    Args:
-        playlist_id: Smart playlist ID
-        exclusion_ids: Track IDs to exclude
-
-    Returns:
-        Random track ID or None
-    """
-    from music_minion.domain.playlists.filters import evaluate_filters
-
-    tracks = evaluate_filters(playlist_id)
-    track_ids = [t["id"] for t in tracks]
-    available = [tid for tid in track_ids if tid not in exclusion_ids]
-    return random.choice(available) if available else None
-
-
 def _get_random_from_manual_playlist(
-    playlist_id: int, exclusion_ids: list[int], db_conn
-) -> Optional[int]:
-    """Get random track from manual playlist using SQL.
+    playlist_id: int, exclusion_ids: list[int], db_conn, limit: int = 1
+) -> list[int]:
+    """Get random tracks from manual playlist in a single SQL query.
 
     Args:
         playlist_id: Playlist ID
         exclusion_ids: Track IDs to exclude
         db_conn: Database connection
+        limit: Max tracks to select
 
     Returns:
-        Random track ID or None
+        Up to `limit` random track IDs (may be empty)
     """
-    query, params = _build_random_query_with_exclusions(playlist_id, exclusion_ids)
+    query, params = _build_random_query_with_exclusions(
+        playlist_id, exclusion_ids, limit
+    )
     cursor = db_conn.execute(query, params)
-    row = cursor.fetchone()
-    return row["track_id"] if row else None
+    return [row["track_id"] for row in cursor.fetchall()]
 
 
-def _get_random_from_comparison(
-    track_ids: list[int], exclusion_ids: list[int]
-) -> Optional[int]:
-    """Get random track from comparison context.
-
-    Args:
-        track_ids: Available track IDs in comparison
-        exclusion_ids: Track IDs to exclude
-
-    Returns:
-        Random track ID or None
-    """
-    available = [tid for tid in track_ids if tid not in exclusion_ids]
-    return random.choice(available) if available else None
+def _sample_excluding(
+    track_ids: list[int], exclusion_ids: list[int], count: int
+) -> list[int]:
+    """Random sample of up to `count` ids from track_ids minus exclusions."""
+    excluded = set(exclusion_ids)
+    available = [tid for tid in track_ids if tid not in excluded]
+    if not available:
+        return []
+    return random.sample(available, min(count, len(available)))
 
 
-def _get_random_track_from_playlist(
-    context: PlayContext, exclusion_ids: list[int], db_conn
-) -> Optional[int]:
-    """SQL: ORDER BY RANDOM() with exclusions.
+def _get_random_tracks_from_context(
+    context: PlayContext, exclusion_ids: list[int], count: int, db_conn
+) -> list[int]:
+    """Random selection of up to `count` tracks from a context, one query max.
 
-    Args:
-        context: Playback context
-        exclusion_ids: Track IDs to exclude
-        db_conn: Database connection
+    Manual playlist/builder: single ORDER BY RANDOM() LIMIT count SQL query
+    (unavailable_at filtered in SQL). Smart playlist / comparison / organizer:
+    random.sample over the cached resolved ids (already unavailable-filtered
+    by _resolve_context_to_track_ids) — no evaluate_filters per pick.
 
     Returns:
-        Random track ID, or None if no tracks available
+        Up to `count` random track IDs (empty when exhausted/unsupported)
     """
     try:
         if context.type == "playlist" and context.playlist_id:
-            # Check if smart playlist
             cursor = db_conn.execute(
                 "SELECT type FROM playlists WHERE id = ?", (context.playlist_id,)
             )
             row = cursor.fetchone()
             if not row:
-                return None
+                return []
 
             if row["type"] == "smart":
-                return _get_random_from_smart_playlist(
-                    context.playlist_id, exclusion_ids
+                return _sample_excluding(
+                    _get_context_ids_cached(context, db_conn), exclusion_ids, count
                 )
-            else:
-                return _get_random_from_manual_playlist(
-                    context.playlist_id, exclusion_ids, db_conn
-                )
+            return _get_random_from_manual_playlist(
+                context.playlist_id, exclusion_ids, db_conn, limit=count
+            )
 
         elif context.type == "builder" and context.builder_id:
             return _get_random_from_manual_playlist(
-                context.builder_id, exclusion_ids, db_conn
+                context.builder_id, exclusion_ids, db_conn, limit=count
             )
 
         elif context.type == "comparison" and context.track_ids:
-            return _get_random_from_comparison(context.track_ids, exclusion_ids)
+            return _sample_excluding(context.track_ids, exclusion_ids, count)
 
         elif context.type == "organizer" and context.session_id:
-            # Organizer shuffle mode
-            from .queries.buckets import get_session_with_data
-
-            session = get_session_with_data(context.session_id)
-            if session and session["status"] == "active":
-                # Determine track pool based on bucket_id
-                if context.bucket_id:
-                    bucket = next(
-                        (b for b in session["buckets"] if b["id"] == context.bucket_id),
-                        None,
-                    )
-                    track_pool = (
-                        bucket["track_ids"]
-                        if bucket
-                        else session["unassigned_track_ids"]
-                    )
-                else:
-                    track_pool = session["unassigned_track_ids"]
-
-                # Drop dead upstream tracks so shuffle never lands on them
-                track_pool = _filter_unavailable(track_pool, db_conn)
-                available = [tid for tid in track_pool if tid not in exclusion_ids]
-                if not available and track_pool:
-                    # Loop restart - return None to signal queue rebuild needed
-                    # Caller (player.py) should detect None and call rebuild_queue()
-                    logger.info("Organizer loop exhausted - triggering queue rebuild")
-                    return None
-                return random.choice(available) if available else None
-            return None
+            # Organizer pool (unassigned or bucket tracks) resolved+filtered by
+            # _resolve_context_to_track_ids; cache invalidated on pool changes.
+            return _sample_excluding(
+                _get_context_ids_cached(context, db_conn), exclusion_ids, count
+            )
 
         else:
-            logger.warning(f"Unsupported context type for random track: {context.type}")
-            return None
+            logger.warning(
+                f"Unsupported context type for random tracks: {context.type}"
+            )
+            return []
 
-    except Exception as e:
-        logger.exception(f"Error getting random track: {e}")
-        return None
+    except Exception:
+        logger.exception("Error getting random tracks")
+        return []
+
+
+def _get_random_track_from_playlist(
+    context: PlayContext, exclusion_ids: list[int], db_conn
+) -> Optional[int]:
+    """Single random track from context, respecting exclusions.
+
+    Returns:
+        Random track ID, or None if no tracks available
+    """
+    ids = _get_random_tracks_from_context(context, exclusion_ids, 1, db_conn)
+    return ids[0] if ids else None
 
 
 def _get_sorted_tracks_from_playlist(
@@ -558,11 +694,10 @@ def _get_sorted_tracks_from_playlist(
                 return []
 
             if row["type"] == "smart":
-                # Smart playlist: evaluate filters then sort in Python
-                from music_minion.domain.playlists.filters import evaluate_filters
-
-                tracks = evaluate_filters(context.playlist_id)
-                track_ids = [t["id"] for t in tracks]
+                # Smart playlist: sort the cached resolved ids in Python
+                # (avoids re-running evaluate_filters; ids already
+                # unavailable-filtered so offsets match the resolved total)
+                track_ids = _get_context_ids_cached(context, db_conn)
 
                 # Fetch sort field values for sorting
                 if not track_ids:
@@ -590,13 +725,15 @@ def _get_sorted_tracks_from_playlist(
                 return sorted_ids[offset : offset + limit]
 
             else:
-                # Manual playlist
+                # Manual playlist (unavailable_at filtered so LIMIT/OFFSET
+                # positions line up with _resolve_context_to_track_ids counts)
                 query = f"""
                     SELECT pt.track_id
                     FROM playlist_tracks pt
                     JOIN tracks ON pt.track_id = tracks.id
                     LEFT JOIN track_ratings ON tracks.id = track_ratings.track_id
                     WHERE pt.playlist_id = ?
+                    AND tracks.unavailable_at IS NULL
                     ORDER BY {sql_field} {sort_direction}
                     LIMIT ? OFFSET ?
                 """
@@ -610,6 +747,7 @@ def _get_sorted_tracks_from_playlist(
                 JOIN tracks ON pt.track_id = tracks.id
                 LEFT JOIN track_ratings ON tracks.id = track_ratings.track_id
                 WHERE pt.playlist_id = ?
+                AND tracks.unavailable_at IS NULL
                 ORDER BY {sql_field} {sort_direction}
                 LIMIT ? OFFSET ?
             """
@@ -758,7 +896,7 @@ def _resolve_context_to_track_ids(context: PlayContext, db_conn) -> list[int]:
                 [row["track_id"] for row in cursor.fetchall()], db_conn
             )
 
-        elif context.type == "comparison" and context.track_ids:
+        elif context.type in ("comparison", "feed") and context.track_ids:
             return context.track_ids
 
         elif context.type == "organizer" and context.session_id:

@@ -67,3 +67,4 @@ mobile/ios/
 # Machine-local Claude state
 /.claude/scheduled_tasks.lock
 /.claude/worktrees/
+.gstack/

@@ -17,6 +17,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { href: '/(tabs)', label: 'Home', icon: '♫' },
+  { href: '/(tabs)/feed', label: 'Feed', icon: '☁' },
   { href: '/(tabs)/comparison', label: 'Compare', icon: '⚖' },
   { href: '/(tabs)/organizer', label: 'Organize', icon: '☰' },
   { href: '/(tabs)/history', label: 'History', icon: '⏱' },

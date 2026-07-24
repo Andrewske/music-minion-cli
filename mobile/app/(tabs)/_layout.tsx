@@ -52,6 +52,14 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="feed"
+        options={{
+          title: 'Feed',
+          tabBarButtonTestID: 'tab-feed',
+          tabBarIcon: ({ color }) => <TabIcon name="☁" color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="comparison"
         options={{
           title: 'Compare',

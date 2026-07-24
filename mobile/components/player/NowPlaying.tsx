@@ -9,6 +9,7 @@ import * as Haptics from 'expo-haptics';
 import { getDefaultApiClient } from '@music-minion/shared';
 import { usePlayer } from '../../hooks/usePlayer';
 import { SeekSlider } from './SeekSlider';
+import { PlaybackErrorBanner } from './PlaybackErrorBanner';
 
 /** Backend artwork URL — baseUrl already includes the `/api` prefix. */
 function getArtworkUrl(trackId: number): string {
@@ -71,6 +72,11 @@ export function NowPlaying({ onCollapse }: NowPlayingProps) {
       <Pressable style={styles.handleArea} onPress={onCollapse}>
         <View style={styles.handle} />
       </Pressable>
+
+      {/* Playback error (dead track, offline, circuit breaker) */}
+      <View style={styles.bannerWrap}>
+        <PlaybackErrorBanner />
+      </View>
 
       {/* Album art */}
       <View style={styles.artContainer}>
@@ -155,6 +161,10 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     backgroundColor: '#555',
+  },
+  bannerWrap: {
+    // Parent content container centers children; banner must span full width
+    width: '100%',
   },
   artContainer: {
     marginTop: 24,

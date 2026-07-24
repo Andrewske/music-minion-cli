@@ -222,8 +222,8 @@ class PlayContext(BaseModel):
     """Playback context for queue generation."""
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
-    type: Literal["playlist", "track", "builder", "search", "comparison", "organizer"]
-    track_ids: Optional[list[int]] = None  # For comparison context
+    type: Literal["playlist", "track", "builder", "search", "comparison", "organizer", "feed"]
+    track_ids: Optional[list[int]] = None  # For comparison/feed context
     playlist_id: Optional[int] = None
     builder_id: Optional[int] = None
     query: Optional[str] = None

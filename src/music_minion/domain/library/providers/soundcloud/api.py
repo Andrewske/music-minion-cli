@@ -19,43 +19,49 @@ from music_minion.core.output import log
 from ...provider import ProviderState, TrackList
 from . import auth
 from .auth import TOKEN_URL
-from .exceptions import TrackUnavailableError
+from .exceptions import AuthenticationError, TrackUnavailableError
 
 # SoundCloud API base URL
 API_BASE_URL = "https://api.soundcloud.com"
 
 
 def _ensure_valid_token(
-    state: ProviderState,
+    state: ProviderState, raise_on_reauth: bool = False
 ) -> tuple[ProviderState, Optional[dict[str, Any]]]:
-    """Ensure access token is valid, refreshing if expired.
+    """Ensure access token is valid, refreshing (single-flight) if expired.
 
-    Handles token expiry check and automatic refresh. Returns None if
-    token cannot be refreshed, triggering re-authentication.
+    Delegates to auth.ensure_fresh_tokens() which serializes refreshes across
+    threads and re-reads the token file before refreshing.
 
     Args:
         state: Current provider state
+        raise_on_reauth: If True, propagate AuthenticationError when the
+            refresh token is revoked (invalid_grant) instead of swallowing it
 
     Returns:
         (updated_state, token_data or None)
         - token_data is None if refresh failed (requires re-auth)
+
+    Raises:
+        AuthenticationError: Only when raise_on_reauth=True and re-auth needed
     """
     token_data = state.cache.get("token_data")
     if not token_data:
         return state, None
 
-    if not auth.is_token_expired(token_data):
-        return state, token_data
+    try:
+        fresh_data = auth.ensure_fresh_tokens(token_data)
+    except AuthenticationError:
+        if raise_on_reauth:
+            raise
+        return state.with_authenticated(False), None
 
-    # Token expired - attempt refresh
-    new_token_data = auth.refresh_token(token_data)
-    if new_token_data:
-        auth._save_user_tokens(new_token_data)
-        state = state.with_cache(token_data=new_token_data)
-        return state, new_token_data
-    else:
+    if not fresh_data:
         # Refresh failed - mark as unauthenticated
         return state.with_authenticated(False), None
+    if fresh_data is not token_data:
+        state = state.with_cache(token_data=fresh_data)
+    return state, fresh_data
 
 
 def _format_track_urn(track_id: str) -> str:
@@ -258,66 +264,58 @@ def search(
         return state, []
 
 
-def get_stream_url(state: ProviderState, provider_id: str) -> Optional[str]:
-    """Get SoundCloud stream URL for MPV playback.
-
-    Uses the /streams endpoint to get full track URLs (not previews).
-    Returns a URL that MPV can follow to get the actual stream.
-
-    Args:
-        state: Current provider state
-        provider_id: SoundCloud track ID
-
-    Returns:
-        Stream URL or None
-    """
-    if not state.authenticated:
-        return None
-
-    # Ensure token is valid, refresh if needed
-    state, token_data = _ensure_valid_token(state)
-    if not token_data:
-        return None
-
-    access_token = token_data["access_token"]
-
-    # Use /streams endpoint to get full track URLs
-    streams_url = f"{API_BASE_URL}/tracks/{provider_id}/streams"
-    headers = {"Authorization": f"OAuth {access_token}"}
-
-    try:
-        response = requests.get(streams_url, headers=headers, timeout=10)
-        if not response.ok:
-            logger.warning(f"Failed to get streams for {provider_id}: HTTP {response.status_code}")
-            return None
-
-        streams = response.json()
-
-        # Prefer http_mp3_128_url for MPV compatibility
-        stream_url = (
-            streams.get("http_mp3_128_url")
-            or streams.get("hls_mp3_128_url")
-            or streams.get("hls_aac_160_url")
-            or streams.get("preview_mp3_128_url")  # Fallback to preview
-        )
-
+def _pick_stream_url(streams: dict[str, Any], provider_id: str) -> Optional[str]:
+    """Pick the best stream URL from a /streams response (browser-friendly first)."""
+    stream_url = (
+        streams.get("http_mp3_128_url")
+        or streams.get("hls_mp3_128_url")
+        or streams.get("hls_aac_160_url")
+    )
+    if not stream_url:
+        # Last resort: preview (30 seconds)
+        stream_url = streams.get("preview_mp3_128_url")
         if stream_url:
-            logger.debug(f"Got stream URL for {provider_id}")
-            return stream_url
-
+            logger.warning(f"Only preview available for track {provider_id}")
+    if not stream_url:
         logger.warning(f"No stream URLs available for track {provider_id}")
+    return stream_url
+
+
+def _follow_stream_redirect(
+    state: ProviderState, stream_url: str, provider_id: str
+) -> Optional[str]:
+    """Follow the /streams URL redirect to the actual CDN URL (with 429 backoff)."""
+    try:
+        state, response = _request_with_backoff(
+            state, "GET", stream_url, allow_redirects=False, timeout=10
+        )
+    except Exception as e:
+        logger.warning(f"Failed to resolve SC stream {provider_id}: {e}")
         return None
 
-    except Exception as e:
-        logger.warning(f"Failed to get stream URL for {provider_id}: {e}")
-        return None
+    if response.status_code in (301, 302, 303, 307, 308):
+        cdn_url = response.headers.get("Location")
+        if cdn_url:
+            logger.debug(f"Resolved SC stream {provider_id} to CDN URL")
+            return cdn_url
+
+    # If no redirect, the URL itself might be playable
+    if response.status_code == 200:
+        logger.debug(f"SC stream {provider_id} returned direct content")
+        return stream_url
+
+    logger.warning(
+        f"Unexpected status {response.status_code} resolving SC stream {provider_id}"
+    )
+    return None
 
 
 def resolve_stream_url(state: ProviderState, provider_id: str) -> Optional[str]:
     """Resolve SoundCloud stream to actual CDN URL (for browsers).
 
     Uses the /streams endpoint to get full track streaming URLs (not previews).
-    Prefers http_mp3_128_url for broad browser compatibility.
+    Both HTTP calls go through _request_with_backoff so 429s are retried
+    (2s/4s/8s) instead of surfacing as a generic failure.
 
     Args:
         state: Current provider state
@@ -328,82 +326,42 @@ def resolve_stream_url(state: ProviderState, provider_id: str) -> Optional[str]:
 
     Raises:
         TrackUnavailableError: Track removed/private/geo-blocked on SoundCloud (403/404/410)
+        AuthenticationError: Refresh token revoked - user must re-auth
     """
     if not state.authenticated:
         return None
 
-    # Ensure token is valid, refresh if needed
-    state, token_data = _ensure_valid_token(state)
+    # Ensure token is valid up-front; surface revoked-refresh-token distinctly
+    state, token_data = _ensure_valid_token(state, raise_on_reauth=True)
     if not token_data:
         return None
 
-    access_token = token_data["access_token"]
     # Use /streams endpoint (plural) to get full track URLs, not /stream which returns previews
     streams_url = f"{API_BASE_URL}/tracks/{provider_id}/streams"
-    headers = {"Authorization": f"OAuth {access_token}"}
 
     try:
-        # Get available stream URLs
-        response = requests.get(streams_url, headers=headers, timeout=10)
-
-        if response.status_code in (403, 404, 410):
-            raise TrackUnavailableError(
-                f"SoundCloud track {provider_id} unavailable (HTTP {response.status_code})"
-            )
-
-        if not response.ok:
-            logger.warning(
-                f"Failed to get streams for {provider_id}: HTTP {response.status_code}"
-            )
-            return None
-
+        state, response = _request_with_backoff(state, "GET", streams_url, timeout=10)
         streams = response.json()
-
-        # Prefer http_mp3_128_url for browser compatibility, fall back to others
-        stream_url = (
-            streams.get("http_mp3_128_url")
-            or streams.get("hls_mp3_128_url")
-            or streams.get("hls_aac_160_url")
-        )
-
-        if not stream_url:
-            # Last resort: preview (30 seconds)
-            stream_url = streams.get("preview_mp3_128_url")
-            if stream_url:
-                logger.warning(f"Only preview available for track {provider_id}")
-
-        if not stream_url:
-            logger.warning(f"No stream URLs available for track {provider_id}")
-            return None
-
-        # Follow redirect to get actual CDN URL
-        redirect_response = requests.get(
-            stream_url, headers=headers, allow_redirects=False, timeout=10
-        )
-
-        if redirect_response.status_code in (301, 302, 303, 307, 308):
-            cdn_url = redirect_response.headers.get("Location")
-            if cdn_url:
-                logger.debug(f"Resolved SC stream {provider_id} to CDN URL")
-                return cdn_url
-
-        # If no redirect, the URL itself might be playable
-        if redirect_response.status_code == 200:
-            logger.debug(f"SC stream {provider_id} returned direct content")
-            return stream_url
-
-        logger.warning(
-            f"Unexpected status {redirect_response.status_code} resolving SC stream {provider_id}"
-        )
+    except HTTPError as e:
+        status = e.response.status_code if e.response is not None else None
+        if status in (403, 404, 410):
+            # Dead upstream — propagate so the caller can mark + skip the track,
+            # rather than swallowing it into a generic None (503 + queue loop).
+            raise TrackUnavailableError(
+                f"SoundCloud track {provider_id} unavailable (HTTP {status})"
+            ) from e
+        logger.warning(f"Failed to get streams for {provider_id}: {e}")
         return None
-
-    except TrackUnavailableError:
-        # Dead upstream (403/404/410) — propagate so the caller can mark + skip the track,
-        # rather than swallowing it into a generic None (which returns a 503 and loops).
-        raise
     except Exception as e:
         logger.warning(f"Failed to resolve SC stream {provider_id}: {e}")
         return None
+
+    stream_url = _pick_stream_url(streams, provider_id)
+    if not stream_url:
+        return None
+
+    # Follow redirect to get actual CDN URL
+    return _follow_stream_redirect(state, stream_url, provider_id)
 
 
 def get_playlists(
@@ -1312,6 +1270,70 @@ def get_user_reposts(
 
     logger.debug(
         f"Fetched {len(results)} reposts for user {user_id} across {pages} page(s)"
+    )
+    return state, results, None
+
+
+MAX_UPLOAD_PAGES = 2  # Cap pagination per artist (400 uploads max on backfill)
+
+
+def get_user_tracks(
+    state: ProviderState, user_id: str, limit: int = 200, max_pages: int = MAX_UPLOAD_PAGES
+) -> tuple[ProviderState, list[dict[str, Any]], Optional[str]]:
+    """Fetch a user's own track uploads from SoundCloud, paginated.
+
+    Uses GET /users/soundcloud:users:{user_id}/tracks. Items are bare track
+    dicts (no repost wrapper), newest-first. Routes through
+    _request_with_backoff for 429/5xx retry.
+
+    Args:
+        state: Current provider state
+        user_id: SoundCloud user ID (numeric string)
+        limit: Page size (1-200, default 200)
+        max_pages: Pagination cap (backfill uses 1: 200 newest is plenty)
+
+    Returns:
+        (updated_state, tracks_list, error_message_or_None)
+    """
+    url: Optional[str] = f"{API_BASE_URL}/users/soundcloud:users:{user_id}/tracks"
+    params: dict[str, Any] = {"limit": min(limit, 200), "linked_partitioning": "true"}
+    results: list[dict[str, Any]] = []
+    pages = 0
+
+    while url and pages < max_pages:
+        pages += 1
+        try:
+            state, response = _request_with_backoff(state, "GET", url, params=params)
+        except HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else 0
+            if status == 401:
+                return state, results, "Authentication failed"
+            if status == 404:
+                return state, results, f"User {user_id} not found"
+            if status == 429:
+                return state, results, "Rate limited"
+            return state, results, f"HTTP {status}"
+        except requests.exceptions.Timeout:
+            return state, results, "Request timed out"
+        except requests.exceptions.ConnectionError:
+            return state, results, "Connection error"
+
+        try:
+            data = response.json()
+        except (json.JSONDecodeError, ValueError):
+            return state, results, "Invalid JSON response"
+
+        if isinstance(data, list):
+            results.extend(data)
+            url = None
+        else:
+            results.extend(data.get("collection", []) or [])
+            url = data.get("next_href")
+
+        params = {}  # next_href already contains pagination params
+
+    logger.debug(
+        f"Fetched {len(results)} uploads for user {user_id} across {pages} page(s)"
     )
     return state, results, None
 

@@ -1,9 +1,11 @@
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from loguru import logger
 import mimetypes
 import json
+import time
 from pathlib import Path
 from typing import Optional
 from ..waveform import has_cached_waveform, generate_waveform, get_waveform_path, get_waveform_cache_dir, fetch_soundcloud_waveform
@@ -69,6 +71,32 @@ async def search_tracks(q: str, limit: int = 20, db=Depends(get_db)) -> list[dic
     return [dict(row) for row in cursor.fetchall()]
 
 
+# SC CDN URLs expire after ~15 min; cache well under that so we never
+# hand out a stale URL. Keyed by soundcloud_id.
+SC_STREAM_CACHE_TTL_SECONDS: float = 300.0  # 5 minutes
+_sc_stream_cache: dict[str, tuple[str, float]] = {}  # id -> (cdn_url, expires_at)
+
+
+def _get_cached_sc_stream(soundcloud_id: str) -> Optional[str]:
+    """Return cached CDN URL for a SoundCloud track, or None if missing/expired."""
+    entry = _sc_stream_cache.get(soundcloud_id)
+    if entry is None:
+        return None
+    cdn_url, expires_at = entry
+    if time.monotonic() >= expires_at:
+        del _sc_stream_cache[soundcloud_id]
+        return None
+    return cdn_url
+
+
+def _cache_sc_stream(soundcloud_id: str, cdn_url: str) -> None:
+    """Cache a resolved SoundCloud CDN URL with a TTL (successful resolves only)."""
+    _sc_stream_cache[soundcloud_id] = (
+        cdn_url,
+        time.monotonic() + SC_STREAM_CACHE_TTL_SECONDS,
+    )
+
+
 def _mark_track_unavailable(db_conn, track_id: int, reason: str) -> None:
     """Stamp tracks.unavailable_at + reason so queue manager excludes the track."""
     db_conn.execute(
@@ -115,27 +143,42 @@ async def stream_audio(
         from web.backend.soundcloud_auth import get_web_provider_state
         from music_minion.domain.library.providers.soundcloud.api import resolve_stream_url as sc_resolve
         from music_minion.domain.library.providers.soundcloud.exceptions import (
+            AuthenticationError,
             TrackUnavailableError,
         )
 
-        state = get_web_provider_state()
+        # Token load does file I/O - keep it off the event loop
+        state = await run_in_threadpool(get_web_provider_state)
         if state and state.authenticated and row["soundcloud_id"]:
+            sc_id = str(row["soundcloud_id"])
+            cached_url = _get_cached_sc_stream(sc_id)
+            if cached_url:
+                logger.debug(f"SC stream cache hit for track {track_id}")
+                return RedirectResponse(cached_url)
             try:
-                # Resolve to actual CDN URL for browser playback (~200ms)
-                stream_url = sc_resolve(state, row["soundcloud_id"])
+                # Resolve to actual CDN URL for browser playback (~200ms).
+                # Two blocking requests.get calls inside - run in threadpool
+                # so a hung SC endpoint can't stall the event loop.
+                stream_url = await run_in_threadpool(sc_resolve, state, sc_id)
             except TrackUnavailableError as exc:
                 _mark_track_unavailable(db, track_id, "soundcloud_gone")
                 from web.backend.routers.player import prune_track_from_live_queue
                 await prune_track_from_live_queue(track_id)
                 raise HTTPException(410, str(exc))
+            except AuthenticationError:
+                # Refresh token revoked - distinct signal so clients can
+                # prompt for SoundCloud re-auth instead of auto-skipping
+                logger.warning(f"SC reauth required while streaming track {track_id}")
+                raise HTTPException(503, "soundcloud_reauth_required")
             if stream_url:
+                _cache_sc_stream(sc_id, stream_url)
                 logger.info(f"Resolved SC stream for track {track_id}")
                 return RedirectResponse(stream_url)
 
-        # Fallback: yt-dlp for unauthenticated or API failure (~2-3s)
+        # Fallback: yt-dlp for unauthenticated or API failure (~2-3s, blocking)
         if row["source_url"]:
             from music_minion.domain.radio.stream_resolver import resolve_stream_url
-            stream_url = resolve_stream_url(row["source_url"])
+            stream_url = await run_in_threadpool(resolve_stream_url, row["source_url"])
             if stream_url:
                 logger.info(f"Resolved stream via yt-dlp for track {track_id}")
                 return RedirectResponse(stream_url)

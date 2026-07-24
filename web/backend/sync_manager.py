@@ -2,6 +2,7 @@ import asyncio
 import time
 from typing import Any
 from fastapi import WebSocket
+from loguru import logger
 
 
 class SyncManager:
@@ -13,9 +14,13 @@ class SyncManager:
 
     # Seconds a device may stay offline before eviction (overridable in tests)
     grace_period: float = 30
+    # Per-connection send timeout during broadcast (overridable in tests)
+    send_timeout: float = 2.0
 
     def __init__(self):
-        self.connections: list[WebSocket] = []
+        # Set (not list): cleanup uses discard(), so two overlapping broadcasts
+        # can both drop the same dead connection without a ValueError race.
+        self.connections: set[WebSocket] = set()
         # Device registry: {device_id: {id, name, connected_at, connections}}
         # `connections` is the set of live websockets for that device — one
         # machine can open several tabs/apps that all share the same persisted
@@ -27,12 +32,11 @@ class SyncManager:
     async def connect(self, ws: WebSocket) -> None:
         """Accept and store a new WebSocket connection."""
         await ws.accept()
-        self.connections.append(ws)
+        self.connections.add(ws)
 
     def disconnect(self, ws: WebSocket) -> None:
-        """Remove a WebSocket connection."""
-        if ws in self.connections:
-            self.connections.remove(ws)
+        """Remove a WebSocket connection (idempotent)."""
+        self.connections.discard(ws)
 
     async def broadcast_comparison_update(
         self, playlist_id: int, progress: dict
@@ -158,23 +162,35 @@ class SyncManager:
         ]
         await self.broadcast("devices:updated", devices)
 
+    async def _send_to(self, conn: WebSocket, message: dict) -> bool:
+        """Send to one connection with a timeout. Returns True on success."""
+        try:
+            await asyncio.wait_for(conn.send_json(message), timeout=self.send_timeout)
+            return True
+        except Exception:
+            return False
+
     async def broadcast(self, event_type: str, data: dict) -> None:
-        """Send a message to all connected clients."""
+        """Send a message to all connected clients.
+
+        Sends run concurrently with a per-send timeout so one slow/half-open
+        client can't stall the others. Failed or timed-out connections are
+        discarded (safe under overlapping broadcasts — connections is a set).
+        """
         message = {
             "type": event_type,
             "data": data,
             "ts": time.time(),
         }
-        dead_connections: list[WebSocket] = []
+        conns = list(self.connections)
+        if not conns:
+            return
 
-        for conn in self.connections:
-            try:
-                await conn.send_json(message)
-            except Exception:
-                dead_connections.append(conn)
-
-        for conn in dead_connections:
-            self.connections.remove(conn)
+        results = await asyncio.gather(*(self._send_to(c, message) for c in conns))
+        for conn, ok in zip(conns, results):
+            if not ok:
+                logger.warning("Dropping dead/unresponsive WebSocket from broadcast")
+                self.connections.discard(conn)
 
 
 # Singleton instance

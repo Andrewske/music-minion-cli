@@ -7,6 +7,7 @@ Handles PKCE flow, token refresh, and secure token storage.
 import base64
 import hashlib
 import json
+import os
 import secrets
 import threading
 import webbrowser
@@ -17,11 +18,13 @@ from typing import Any, Dict, Optional, Tuple
 from urllib.parse import parse_qs, quote, urlparse
 
 import requests
+from loguru import logger
 from requests.exceptions import HTTPError
 
 from music_minion.core.output import log
 
 from ...provider import ProviderState
+from .exceptions import AuthenticationError
 
 # SoundCloud OAuth URLs
 AUTHORIZE_URL = "https://secure.soundcloud.com/authorize"
@@ -295,14 +298,23 @@ def _load_user_tokens() -> Optional[Dict[str, Any]]:
 
 
 def _save_user_tokens(token_data: Dict[str, Any]) -> None:
-    """Save user OAuth tokens to file with secure permissions."""
+    """Atomically save user OAuth tokens to file with secure permissions.
+
+    Writes to a temp file in the same directory then os.replace()s it over
+    the real file, so concurrent readers never see a partial/corrupt write.
+    """
     tokens_file = _get_tokens_dir() / "user_tokens.json"
+    temp_file = tokens_file.with_suffix(".json.tmp")
 
-    with open(tokens_file, "w") as f:
-        json.dump(token_data, f, indent=2)
-
-    # Set file permissions to 0600 (owner read/write only)
-    tokens_file.chmod(0o600)
+    try:
+        with open(temp_file, "w") as f:
+            json.dump(token_data, f, indent=2)
+        # Set file permissions to 0600 (owner read/write only) before publish
+        temp_file.chmod(0o600)
+        os.replace(temp_file, tokens_file)  # Atomic
+    except Exception:
+        temp_file.unlink(missing_ok=True)
+        raise
 
 
 def is_token_expired(token_data: Dict[str, Any]) -> bool:
@@ -316,6 +328,40 @@ def is_token_expired(token_data: Dict[str, Any]) -> bool:
     return datetime.now() >= (expires_at - buffer)
 
 
+# Single-flight guard: near expiry, concurrent stream resolves/preloads must
+# not each fire a refresh — SoundCloud ROTATES refresh tokens, so a losing
+# concurrent refresh gets its rotated token invalidated (forced full re-auth).
+_refresh_lock = threading.Lock()
+
+
+def ensure_fresh_tokens(token_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Return non-expired token data, refreshing (single-flight) if needed.
+
+    Fast path: token still valid — returned as-is, no lock taken.
+    Slow path: acquire the process-wide refresh lock, RE-READ tokens from
+    disk (another thread may have just refreshed and rotated the refresh
+    token), and only refresh if the on-disk tokens are still expired.
+
+    Args:
+        token_data: Current token data (may be stale)
+
+    Returns:
+        Valid token data, or None if refresh failed
+
+    Raises:
+        AuthenticationError: Refresh token invalid/revoked — user must re-auth
+    """
+    if not is_token_expired(token_data):
+        return token_data
+
+    with _refresh_lock:
+        disk_data = _load_user_tokens()
+        if disk_data and not is_token_expired(disk_data):
+            logger.debug("SoundCloud token already refreshed by another thread")
+            return disk_data
+        return refresh_token(disk_data or token_data)
+
+
 def refresh_token(token_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Refresh expired OAuth token.
 
@@ -324,6 +370,10 @@ def refresh_token(token_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
     Returns:
         New token data or None if refresh fails
+
+    Raises:
+        AuthenticationError: Refresh token invalid/revoked (invalid_grant) —
+            re-authentication is required, retrying is pointless
     """
     # Load config to get client credentials
     from music_minion.core.config import load_config
@@ -363,9 +413,6 @@ def refresh_token(token_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return new_token_data
 
     except HTTPError as e:
-        # Log HTTP errors with details for debugging
-        from loguru import logger
-
         error_body = ""
         try:
             error_body = e.response.json()
@@ -377,21 +424,22 @@ def refresh_token(token_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             and isinstance(error_body, dict)
             and error_body.get("error") == "invalid_grant"
         ):
-            # Specific handling for invalid_grant - refresh token expired/revoked
+            # Refresh token expired/revoked - re-auth required, don't retry
             logger.warning(
-                f"SoundCloud refresh token invalid or expired (HTTP 400: invalid_grant). "
-                f"User must re-authenticate with: library auth soundcloud"
+                "SoundCloud refresh token invalid or expired (HTTP 400: invalid_grant). "
+                "User must re-authenticate with: library auth soundcloud"
             )
-        else:
-            # Other HTTP errors
-            logger.error(
-                f"SoundCloud token refresh failed (HTTP {e.response.status_code}): {error_body}"
-            )
+            raise AuthenticationError(
+                "SoundCloud refresh token invalid or revoked (invalid_grant) - "
+                "re-authenticate with: library auth soundcloud"
+            ) from e
 
+        # Other HTTP errors
+        logger.error(
+            f"SoundCloud token refresh failed (HTTP {e.response.status_code}): {error_body}"
+        )
         return None
     except Exception as e:
         # Network errors, JSON parsing errors, etc.
-        from loguru import logger
-
         logger.error(f"SoundCloud token refresh error: {e}")
         return None
