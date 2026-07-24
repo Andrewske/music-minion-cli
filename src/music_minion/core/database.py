@@ -9,7 +9,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-import emoji
 from loguru import logger
 
 from .config import get_data_dir
@@ -17,7 +16,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 58  # drop dead column from playlist_comparison_history
+SCHEMA_VERSION = 59  # sc_artist_uploads feed + sc_monthly_playlists cache
 
 
 # Initial top 50 curated emojis for music reactions
@@ -2669,6 +2668,63 @@ def migrate_database(conn, current_version: int) -> None:
         logger.info(
             "  ✓ Migration to v58 complete: dead column dropped from playlist_comparison_history"
         )
+
+    if current_version < 59:
+        logger.info("Running migration to v59: sc_artist_uploads feed tables...")
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sc_artist_uploads (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                discovery_artist_id INTEGER NOT NULL
+                    REFERENCES discovery_artists(id) ON DELETE CASCADE,
+                soundcloud_id TEXT UNIQUE NOT NULL,
+                title TEXT,
+                permalink_url TEXT,
+                artwork_url TEXT,
+                duration_ms INTEGER DEFAULT 0,
+                uploaded_at TIMESTAMP NOT NULL,
+                local_track_id INTEGER REFERENCES tracks(id) ON DELETE SET NULL,
+                status TEXT NOT NULL DEFAULT 'visible'
+                    CHECK (status IN ('visible', 'hidden', 'dismissed', 'liked')),
+                rated_at TIMESTAMP,
+                sc_like_done BOOLEAN DEFAULT 0,
+                sc_playlist_done BOOLEAN DEFAULT 0,
+                first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sc_uploads_feed"
+            " ON sc_artist_uploads(status, uploaded_at DESC, id DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sc_uploads_artist"
+            " ON sc_artist_uploads(discovery_artist_id)"
+        )
+
+        # Cache of monthly SC playlist ids ("Jul 26" -> sc playlist id) so the
+        # +1 rating flow doesn't scan GET /me/playlists on every rating.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sc_monthly_playlists (
+                name TEXT PRIMARY KEY,
+                sc_playlist_id TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        for col_sql in (
+            "ALTER TABLE sc_feed_sync_state ADD COLUMN uploads_last_run_at TIMESTAMP",
+            "ALTER TABLE sc_feed_sync_state ADD COLUMN uploads_last_status TEXT",
+            "ALTER TABLE sc_feed_sync_state ADD COLUMN uploads_last_error TEXT",
+            "ALTER TABLE sc_feed_sync_state ADD COLUMN uploads_added_last_run INTEGER DEFAULT 0",
+        ):
+            try:
+                conn.execute(col_sql)
+            except sqlite3.OperationalError as exc:
+                if "duplicate column" not in str(exc).lower():
+                    raise
+
+        conn.commit()
+        logger.info("  ✓ Migration to v59 complete: sc_artist_uploads + sc_monthly_playlists")
 
 
 def init_database() -> None:

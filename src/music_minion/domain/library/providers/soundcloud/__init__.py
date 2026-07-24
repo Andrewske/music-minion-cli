@@ -5,9 +5,7 @@ Implements OAuth 2.0 authentication and API access for SoundCloud.
 Adapted from soundcloud-discovery project.
 """
 
-from typing import Tuple
-
-from ...provider import ProviderConfig, ProviderState, TrackList
+from ...provider import ProviderConfig, ProviderState
 
 # Import from submodules
 from . import api, auth
@@ -41,8 +39,13 @@ def init_provider(config: ProviderConfig) -> ProviderState:
 
     # Check if token is expired
     if auth.is_token_expired(token_data):
+        from .exceptions import AuthenticationError
+
         logger.info("SoundCloud token expired, attempting refresh")
-        refreshed_token = auth.refresh_token(token_data)
+        try:
+            refreshed_token = auth.ensure_fresh_tokens(token_data)
+        except AuthenticationError:
+            refreshed_token = None
 
         if refreshed_token:
             logger.info("Successfully refreshed SoundCloud token")
@@ -76,7 +79,6 @@ authenticate = auth.authenticate
 # Re-export API functions
 sync_library = api.sync_library
 search = api.search
-get_stream_url = api.get_stream_url
 get_playlists = api.get_playlists
 get_playlist_tracks = api.get_playlist_tracks
 like_track = api.like_track
@@ -91,7 +93,6 @@ __all__ = [
     "authenticate",
     "sync_library",
     "search",
-    "get_stream_url",
     "get_playlists",
     "get_playlist_tracks",
     "like_track",

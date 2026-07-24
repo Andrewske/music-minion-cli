@@ -498,25 +498,39 @@ def update_artist_last_checked(artist_id: int, new_repost_count: int) -> None:
         conn.commit()
 
 
-def recalculate_artist_stats() -> None:
-    """Recalculate hit_rate, tracks_seen, tracks_liked, tracks_dismissed for all artists.
+def recalculate_artist_stats(artist_id: int | None = None) -> None:
+    """Recalculate hit_rate, tracks_seen, tracks_liked, tracks_dismissed.
 
-    Joins discovery_track_reposters -> discovery_tracks to count by status.
+    Aggregates two sources per artist:
+    - reposts: discovery_track_reposters -> discovery_tracks status
+    - uploads: sc_artist_uploads status (feed -1/+1 ratings)
+    'hidden' uploads count toward tracks_seen only (no penalty, no credit).
     hit_rate = liked / max(1, liked + dismissed) * 100
+
+    Pass artist_id for a targeted single-artist recalc (feed rate endpoint).
     """
     with get_db_connection() as conn:
         cursor = conn.execute(
             """
+            WITH combined AS (
+                SELECT dtr.discovery_artist_id AS artist_id, dt.status AS status
+                FROM discovery_track_reposters dtr
+                JOIN discovery_tracks dt ON dt.id = dtr.discovery_track_id
+                UNION ALL
+                SELECT u.discovery_artist_id, u.status
+                FROM sc_artist_uploads u
+            )
             SELECT
                 da.id,
                 COUNT(*) AS tracks_seen,
-                SUM(CASE WHEN dt.status = 'liked' THEN 1 ELSE 0 END) AS tracks_liked,
-                SUM(CASE WHEN dt.status = 'dismissed' THEN 1 ELSE 0 END) AS tracks_dismissed
+                SUM(CASE WHEN c.status = 'liked' THEN 1 ELSE 0 END) AS tracks_liked,
+                SUM(CASE WHEN c.status = 'dismissed' THEN 1 ELSE 0 END) AS tracks_dismissed
             FROM discovery_artists da
-            JOIN discovery_track_reposters dtr ON dtr.discovery_artist_id = da.id
-            JOIN discovery_tracks dt ON dt.id = dtr.discovery_track_id
+            JOIN combined c ON c.artist_id = da.id
+            WHERE (? IS NULL OR da.id = ?)
             GROUP BY da.id
-            """
+            """,
+            (artist_id, artist_id),
         )
         stats = cursor.fetchall()
 

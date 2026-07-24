@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Shuffle } from 'lucide-react';
 import { useRouterState } from '@tanstack/react-router';
+import { SOUNDCLOUD_REAUTH_MESSAGE } from '@music-minion/shared';
 import { usePlayer } from '../../hooks/usePlayer';
 import { useMediaSession } from '../../hooks/useMediaSession';
 import { getCurrentPosition } from '../../stores/playerStore';
@@ -143,9 +144,12 @@ export function PlayerBar(): JSX.Element {
   const activeDeviceName =
     availableDevices.find((d) => d.id === activeDeviceId)?.name ?? 'Unknown Device';
 
-  // Auto-clear playback errors after 5 seconds
+  // Auto-clear playback errors after 5 seconds. The SoundCloud reauth
+  // message is persistent — the condition won't fix itself, so it stays
+  // until the user dismisses it or re-authenticates.
   useEffect(() => {
     if (!playbackError) return;
+    if (playbackError === SOUNDCLOUD_REAUTH_MESSAGE) return;
     const timer = setTimeout(() => usePlayerStore.getState().setPlaybackError(null), 5000);
     return () => clearTimeout(timer);
   }, [playbackError]);
@@ -302,15 +306,24 @@ export function PlayerBar(): JSX.Element {
         </div>
       </div>
 
-      {/* Error indicator — tap to dismiss, auto-clears after 5s */}
+      {/* Error indicator — tap message to dismiss, Retry re-resolves, auto-clears after 5s */}
       {playbackError && (
-        <button
-          type="button"
-          onClick={() => usePlayerStore.getState().setPlaybackError(null)}
-          className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full bg-red-600 text-white text-xs px-2 py-1 rounded-t cursor-pointer hover:bg-red-700 transition-colors"
-        >
-          {playbackError}
-        </button>
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full flex items-stretch bg-red-600 text-white text-xs rounded-t overflow-hidden">
+          <button
+            type="button"
+            onClick={() => usePlayerStore.getState().setPlaybackError(null)}
+            className="px-2 py-1 cursor-pointer hover:bg-red-700 transition-colors"
+          >
+            {playbackError}
+          </button>
+          <button
+            type="button"
+            onClick={() => usePlayerStore.getState().retryPlayback()}
+            className="px-2 py-1 font-semibold border-l border-red-500 cursor-pointer hover:bg-red-700 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
       )}
 
       {/* iOS "tap to play" overlay */}

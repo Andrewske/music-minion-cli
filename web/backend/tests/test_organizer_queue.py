@@ -66,7 +66,7 @@ async def test_queue_update_removes_assigned_track():
     with patch("backend.player_state.get_state", return_value=initial_state), \
          patch("backend.queries.buckets.get_session_with_data", return_value=mock_session), \
          patch("backend.player_state.update_state", new_callable=AsyncMock) as mock_update, \
-         patch("backend.routers.player._next_lock", real_lock), \
+         patch("backend.routers.player._player_lock", real_lock), \
          patch("music_minion.core.database.get_db_connection", return_value=mock_db_conn):
 
         await update_organizer_queue("test-session-123")
@@ -124,7 +124,7 @@ async def test_queue_update_adds_unassigned_track():
          patch("backend.queries.buckets.get_session_with_data", return_value=mock_session), \
          patch("backend.queries.tracks.batch_fetch_tracks_with_metadata", return_value=[{"id": 2, "title": "Track 2"}]), \
          patch("backend.player_state.update_state", new_callable=AsyncMock) as mock_update, \
-         patch("backend.routers.player._next_lock", real_lock), \
+         patch("backend.routers.player._player_lock", real_lock), \
          patch("music_minion.core.database.get_db_connection", return_value=mock_db_conn):
 
         await update_organizer_queue("test-session-123")

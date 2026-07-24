@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from unittest.mock import AsyncMock
 from web.backend.sync_manager import SyncManager
@@ -49,6 +51,28 @@ async def test_broadcast_removes_dead_connections():
     await manager.broadcast("test:event", {})
     assert ws_alive in manager.connections
     assert ws_dead not in manager.connections
+
+
+@pytest.mark.anyio
+async def test_broadcast_drops_slow_connection_without_stalling_others():
+    """A hung client is dropped after send_timeout; fast clients still receive."""
+    manager = SyncManager()
+    manager.send_timeout = 0.01
+    ws_fast = AsyncMock()
+    ws_slow = AsyncMock()
+
+    async def hang(message):
+        await asyncio.sleep(5)
+
+    ws_slow.send_json = hang
+    await manager.connect(ws_fast)
+    await manager.connect(ws_slow)
+
+    await manager.broadcast("test:event", {})
+
+    ws_fast.send_json.assert_called_once()
+    assert ws_fast in manager.connections
+    assert ws_slow not in manager.connections
 
 
 @pytest.mark.anyio

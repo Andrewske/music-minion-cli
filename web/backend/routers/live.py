@@ -12,6 +12,9 @@ async def sync_websocket(websocket: WebSocket):
     """WebSocket endpoint for real-time state synchronization."""
     await sync_manager.connect(websocket)
     device_id = None
+    # Initialized before try: the initial send below can raise before the ping
+    # task is created, and the except blocks reference ping_task.
+    ping_task: asyncio.Task | None = None
 
     try:
         # Send current state immediately (stateful - includes comparison/radio)
@@ -49,7 +52,8 @@ async def sync_websocket(websocket: WebSocket):
                 logger.warning(f"Invalid JSON from WebSocket: {message}")
 
     except WebSocketDisconnect:
-        ping_task.cancel()
+        if ping_task is not None:
+            ping_task.cancel()
         sync_manager.disconnect(websocket)
 
         # Start grace period for device if registered
@@ -57,7 +61,8 @@ async def sync_websocket(websocket: WebSocket):
             logger.info(f"Device disconnected, starting grace period: {device_id}")
             await sync_manager.unregister_device(device_id, websocket)
     except Exception:
-        ping_task.cancel()
+        if ping_task is not None:
+            ping_task.cancel()
         sync_manager.disconnect(websocket)
         if device_id:
             await sync_manager.unregister_device(device_id, websocket)

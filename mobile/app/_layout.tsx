@@ -1,7 +1,7 @@
 /**
  * Root layout — providers, API client init, WebSocket sync, PlayerBar.
  */
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { Stack, Redirect, usePathname, router, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -11,6 +11,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { createApiClient, setDefaultApiClient } from '@music-minion/shared';
+import { hydrateStorage } from '../stores/playerStore';
 import { useServerUrl } from '../hooks/useServerUrl';
 import { useSyncWebSocket } from '../hooks/useSyncWebSocket';
 import { PlayerBar } from '../components/player/PlayerBar';
@@ -81,6 +82,31 @@ function AppContent() {
 
 export default function RootLayout() {
   const appRouter = useRouter();
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  // Hydrate persisted store values (device ID, volume, mute, shuffle) from
+  // AsyncStorage BEFORE mounting AppContent — useSyncWebSocket sends
+  // device:register with thisDeviceId, which must be the persisted ID.
+  useEffect(() => {
+    let cancelled = false;
+    hydrateStorage()
+      .catch(() => undefined) // AsyncStorage failure: proceed with in-memory defaults
+      .then(() => {
+        if (!cancelled) setIsHydrated(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!isHydrated) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#121212', justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator color="#7C4DFF" />
+      </View>
+    );
+  }
+
   return (
     <ShareIntentProvider
       options={{
