@@ -25,6 +25,8 @@ export interface ArtistStats {
   tracks_seen: number;
   library_track_count: number;
   repost_in_library_count: number;
+  sc_liked_count: number;
+  playlist_track_count: number;
   feed_noise_7d: number;
   feed_noise_30d: number;
   last_loved_at: string | null;
@@ -54,6 +56,43 @@ export interface LibraryTrack {
   play_count: number;
 }
 
+export type PlaylistLibrary = 'local' | 'soundcloud' | 'spotify';
+
+export interface PlaylistRef {
+  name: string;
+  library: PlaylistLibrary;
+}
+
+export interface ArtistLibraryTrack extends LibraryTrack {
+  is_liked: boolean;
+  playlists: PlaylistRef[];
+}
+
+export type ConnectionRelation =
+  | 'collab'
+  | 'features'
+  | 'featured_on'
+  | 'remixed'
+  | 'remixed_by';
+
+export interface ConnectionTrack {
+  track_id: number;
+  title: string | null;
+  artist: string | null;
+  relation: ConnectionRelation;
+  is_local: boolean;
+}
+
+export interface ArtistConnection {
+  artist_id: number | null;
+  display_name: string;
+  avatar_url: string | null;
+  slug: string | null;
+  is_following: boolean | null;
+  shared_count: number;
+  tracks: ConnectionTrack[];
+}
+
 export interface MatchOverride {
   id: number;
   local_artist_name: string;
@@ -75,6 +114,16 @@ export interface ParetoResult {
 }
 
 export interface FeedSyncState {
+  last_run_at?: string | null;
+  last_run_status?: string | null;
+  last_error?: string | null;
+  events_added_last_run?: number;
+  total_events?: number;
+  last_run_duration_ms?: number | null;
+  uploads_last_run_at?: string | null;
+  uploads_last_status?: string | null;
+  uploads_last_error?: string | null;
+  uploads_added_last_run?: number;
   [key: string]: unknown;
 }
 
@@ -139,6 +188,26 @@ export async function getArtist(id: number): Promise<ArtistDetail> {
   const response = await fetch(`${artistsBase()}/${id}`);
   if (!response.ok) await parseErrorResponse(response, 'Failed to fetch artist');
   return response.json() as Promise<ArtistDetail>;
+}
+
+export async function getArtistLibraryTracks(id: number): Promise<ArtistLibraryTrack[]> {
+  const response = await fetch(`${artistsBase()}/${id}/library-tracks`);
+  if (!response.ok) await parseErrorResponse(response, 'Failed to fetch artist library tracks');
+  return response.json() as Promise<ArtistLibraryTrack[]>;
+}
+
+export async function getLocalArtistLibraryTracks(name: string): Promise<ArtistLibraryTrack[]> {
+  const response = await fetch(
+    `${artistsBase()}/local/library-tracks?name=${encodeURIComponent(name)}`,
+  );
+  if (!response.ok) await parseErrorResponse(response, 'Failed to fetch local artist tracks');
+  return response.json() as Promise<ArtistLibraryTrack[]>;
+}
+
+export async function getArtistConnections(id: number): Promise<ArtistConnection[]> {
+  const response = await fetch(`${artistsBase()}/${id}/connections`);
+  if (!response.ok) await parseErrorResponse(response, 'Failed to fetch artist connections');
+  return response.json() as Promise<ArtistConnection[]>;
 }
 
 export async function unfollowArtist(id: number): Promise<UnfollowResult> {

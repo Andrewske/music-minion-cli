@@ -11,8 +11,11 @@ from music_minion.core.database import get_db_connection
 from music_minion.domain.library.providers.soundcloud.api import unfollow_user
 from web.backend.queries.artists import (
     delete_match_override,
+    get_artist_connections,
     get_artist_detail,
+    get_artist_library_tracks,
     get_artist_stats,
+    get_local_artist_library_tracks,
     get_pareto_artists,
     mark_artist_unfollowed,
     upsert_match_override,
@@ -82,6 +85,23 @@ async def get_pareto() -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/local/library-tracks")
+async def get_local_library_tracks(
+    name: str = Query(description="Local artist display name"),
+) -> list[dict[str, Any]]:
+    """Return ALL library tracks for a local-only artist (matched by name).
+
+    Same shape and saved-first sort as the discovery-artist variant. Must be
+    declared before /{discovery_artist_id} so 'local' isn't parsed as an id.
+    """
+    try:
+        with get_db_connection() as conn:
+            return get_local_artist_library_tracks(conn, name)
+    except Exception as e:
+        logger.exception(f"Failed to fetch local artist library tracks: name={name!r}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/{discovery_artist_id}")
 async def get_artist(discovery_artist_id: int) -> dict[str, Any]:
     """Return full detail for a single discovery artist.
@@ -102,6 +122,46 @@ async def get_artist(discovery_artist_id: int) -> dict[str, Any]:
         raise
     except Exception as e:
         logger.exception(f"Failed to fetch artist detail: id={discovery_artist_id}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{discovery_artist_id}/library-tracks")
+async def get_library_tracks(discovery_artist_id: int) -> list[dict[str, Any]]:
+    """Return ALL library tracks for a discovery artist.
+
+    Liked/loved tracks and tracks in playlists sort to the top, then by
+    play_count. Each row carries is_liked and the list of playlist names.
+    """
+    try:
+        with get_db_connection() as conn:
+            tracks = get_artist_library_tracks(conn, discovery_artist_id)
+        if tracks is None:
+            raise HTTPException(status_code=404, detail=f"Artist {discovery_artist_id} not found")
+        return tracks
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to fetch artist library tracks: id={discovery_artist_id}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{discovery_artist_id}/connections")
+async def get_connections(discovery_artist_id: int) -> list[dict[str, Any]]:
+    """Return artists connected via co-reposted tracks, with the shared tracks.
+
+    Sorted by shared track count DESC. Each shared track carries
+    library_track_id (in library) and is_local (file on disk).
+    """
+    try:
+        with get_db_connection() as conn:
+            connections = get_artist_connections(conn, discovery_artist_id)
+        if connections is None:
+            raise HTTPException(status_code=404, detail=f"Artist {discovery_artist_id} not found")
+        return connections
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to fetch artist connections: id={discovery_artist_id}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -25,6 +25,8 @@ export {
   getStreamUrl, getWaveformData, checkStreamAvailable, archiveTrack,
   refreshWaveform, purgeSoundcloudWaveforms, getFolders,
 } from './api/tracks';
+export { fetchPlayerQueue } from './api/player';
+export type { QueuePage } from './api/player';
 export { getHistory, getStats, getTopTracks } from './api/history';
 export type { HistoryEntry, TopTrack, Stats, SourceFilter } from './api/history';
 export type { TrackInfo as HistoryTrackInfo } from './api/history';
@@ -53,11 +55,13 @@ export { builderApi } from './api/builder';
 export type { Filter, Track, TrackActionResponse } from './api/builder';
 export * from './api/buckets';
 export {
-  getArtists, getArtist, unfollowArtist, createMatchOverride, deleteMatchOverride,
-  getPareto, syncFollowings, syncFeed, getFeedSyncStatus,
+  getArtists, getArtist, getArtistLibraryTracks, getLocalArtistLibraryTracks,
+  getArtistConnections, unfollowArtist, createMatchOverride,
+  deleteMatchOverride, getPareto, syncFollowings, syncFeed, getFeedSyncStatus,
 } from './api/artists';
 export type {
-  ArtistStats, ArtistDetail, FeedEvent, LibraryTrack, MatchOverride,
+  ArtistStats, ArtistDetail, ArtistLibraryTrack, FeedEvent, LibraryTrack, MatchOverride,
+  PlaylistRef, PlaylistLibrary, ConnectionTrack, ConnectionRelation, ArtistConnection,
   ParetoResult, FeedSyncState, FirstLovedTrack, UnfollowResult, FollowingsSyncResult,
   GetArtistsOptions, CreateMatchOverrideBody,
 } from './api/artists';
@@ -67,9 +71,28 @@ export {
 export type {
   DiscoverySyncJob, DiscoverySyncStatus, LastSync,
 } from './api/discovery';
+export { getFeed, rateFeedItem, startFeedBackfill } from './api/feed';
+export type {
+  FeedRating, FeedItemStatus, FeedArtist, FeedItem, FeedPage,
+  GetFeedParams, RateFeedItemResponse,
+} from './api/feed';
+
+// Playback error policy (shared window/breaker/retry decision logic)
+export {
+  recordError, clearErrorWindow, isBreakerTripped, decidePlaybackError,
+  initialErrorWindow, ERROR_WINDOW_MS, ERROR_THRESHOLD, PLAYBACK_BREAKER_MESSAGE,
+  shouldSuppressPrunedSkip, PRUNE_SUPPRESSION_WINDOW_MS,
+} from './playback/errorPolicy';
+export type { ErrorWindowState, PlaybackErrorDecision } from './playback/errorPolicy';
+
+// SoundCloud reauth detection (503 stream probe on playback error)
+export {
+  probeStreamForReauth, isReauthDetail,
+  SOUNDCLOUD_REAUTH_DETAIL, SOUNDCLOUD_REAUTH_MESSAGE, REAUTH_PROBE_TIMEOUT_MS,
+} from './playback/reauthProbe';
 
 // Stores
 export { createPlayerStore, getCurrentPosition } from './stores/createPlayerStore';
-export type { PlatformDeps, PlayerStore, PlayerState, PlayerActions, PlayContext, Device } from './stores/createPlayerStore';
+export type { PlatformDeps, PlayerStore, PlayerState, PlayerActions, PlayContext, Device, SyncStatePayload } from './stores/createPlayerStore';
 export { createWebStorageAdapter, createMemoryStorageAdapter } from './stores/storage';
 export type { StorageAdapter } from './stores/storage';
