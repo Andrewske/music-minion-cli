@@ -51,13 +51,14 @@ def get_feed_page(
     cursor_id: Optional[int] = None,
     top200: bool = False,
     in_library: bool = False,
+    show_hidden: bool = False,
 ) -> list[dict[str, Any]]:
     """Fetch one feed page, newest uploads first, keyset-paginated.
 
     Cursor is the (uploaded_at, id) of the last row of the previous page —
     immune to new rows being inserted by the sync mid-scroll. Excludes
-    hidden/dismissed. in_library requires an actually saved local file
-    (local_path NOT NULL), not just a streaming import row.
+    hidden/dismissed unless show_hidden. in_library requires an actually
+    saved local file (local_path NOT NULL), not just a streaming import row.
     """
     with get_db_connection() as conn:
         rows = conn.execute(
@@ -86,7 +87,9 @@ def get_feed_page(
                    ) AS in_playlists
             FROM sc_artist_uploads u
             JOIN discovery_artists da ON da.id = u.discovery_artist_id
-            WHERE u.status IN ('visible', 'liked')
+            WHERE (? = 1 OR u.status IN ('visible', 'liked'))
+              -- Go+ preview snips (30s) and geo-blocked tracks are unplayable
+              AND (u.access IS NULL OR u.access = 'playable')
               AND (
                     ? IS NULL
                     OR u.uploaded_at < ?
@@ -102,6 +105,7 @@ def get_feed_page(
             LIMIT ?
             """,
             (
+                int(show_hidden),
                 cursor_uploaded_at,
                 cursor_uploaded_at,
                 cursor_uploaded_at,

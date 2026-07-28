@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { MouseEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getWaveformData } from '../../api/tracks';
 import { usePlayerStore, getCurrentPosition } from '../../stores/playerStore';
@@ -47,6 +48,8 @@ function drawBars(
 interface FeedWaveformProps {
   localTrackId: number | null;
   durationMs: number;
+  /** Called when the waveform is clicked while this row is NOT the playing track. */
+  onActivate?: () => void;
 }
 
 /**
@@ -56,7 +59,11 @@ interface FeedWaveformProps {
  * progress fill ticks along. NOT wavesurfer — one instance per row of that
  * would sink an infinite list.
  */
-export function FeedWaveform({ localTrackId, durationMs }: FeedWaveformProps): JSX.Element {
+export function FeedWaveform({
+  localTrackId,
+  durationMs,
+  onActivate,
+}: FeedWaveformProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const barsRef = useRef<number[]>([]);
   const [progress, setProgress] = useState(0);
@@ -64,6 +71,21 @@ export function FeedWaveform({ localTrackId, durationMs }: FeedWaveformProps): J
   const isCurrent = usePlayerStore(
     (s) => s.currentTrack !== null && s.currentTrack.id === localTrackId
   );
+  const seek = usePlayerStore((s) => s.seek);
+
+  const playable = localTrackId !== null;
+
+  const handleClick = (e: MouseEvent<HTMLCanvasElement>): void => {
+    if (!playable) return;
+    if (isCurrent && durationMs > 0) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const fraction = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+      setProgress(fraction); // instant visual feedback; tick interval corrects drift
+      void seek(fraction * durationMs);
+    } else {
+      onActivate?.();
+    }
+  };
 
   const { data } = useQuery({
     queryKey: ['feed-waveform', localTrackId],
@@ -101,8 +123,11 @@ export function FeedWaveform({ localTrackId, durationMs }: FeedWaveformProps): J
       ref={canvasRef}
       width={480}
       height={40}
-      className="w-full h-10"
-      aria-hidden="true"
+      onClick={handleClick}
+      role={playable ? 'button' : undefined}
+      aria-label={playable ? (isCurrent ? 'Seek' : 'Play from here') : undefined}
+      aria-hidden={playable ? undefined : 'true'}
+      className={`w-full h-10 ${playable ? 'cursor-pointer' : ''}`}
     />
   );
 }

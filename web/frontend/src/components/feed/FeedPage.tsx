@@ -42,14 +42,14 @@ function formatLastSync(iso: string | null | undefined): string {
 }
 
 export function FeedPage(): JSX.Element {
-  const { top200 = false, inLibrary = false } = routeApi.useSearch();
+  const { top200 = false, inLibrary = false, showHidden = false } = routeApi.useSearch();
   const navigate = useNavigate({ from: '/feed' });
   const queryClient = useQueryClient();
   const play = usePlayerStore((s) => s.play);
   const currentTrackId = usePlayerStore((s) => s.currentTrack?.id ?? null);
   const parentRef = useRef<HTMLDivElement>(null);
 
-  const feedQueryKey = ['feed', { top200, inLibrary }] as const;
+  const feedQueryKey = ['feed', { top200, inLibrary, showHidden }] as const;
 
   const {
     data,
@@ -61,7 +61,7 @@ export function FeedPage(): JSX.Element {
   } = useInfiniteQuery({
     queryKey: feedQueryKey,
     queryFn: ({ pageParam }) =>
-      getFeed({ cursor: pageParam, limit: PAGE_SIZE, top200, inLibrary }),
+      getFeed({ cursor: pageParam, limit: PAGE_SIZE, top200, inLibrary, showHidden }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
   });
@@ -103,7 +103,14 @@ export function FeedPage(): JSX.Element {
                 ? page.items.map((i) =>
                     i.id === item.id ? { ...i, status: 'liked' as const } : i
                   )
-                : page.items.filter((i) => i.id !== item.id),
+                : showHidden
+                  ? // Hidden rows stay visible in this mode — just flip status.
+                    page.items.map((i) =>
+                      i.id === item.id
+                        ? { ...i, status: value === -1 ? ('dismissed' as const) : ('hidden' as const) }
+                        : i
+                    )
+                  : page.items.filter((i) => i.id !== item.id),
           })),
         };
       });
@@ -166,9 +173,9 @@ export function FeedPage(): JSX.Element {
     [items, play]
   );
 
-  const toggleFilter = (key: 'top200' | 'inLibrary'): void => {
+  const toggleFilter = (key: 'top200' | 'inLibrary' | 'showHidden'): void => {
     navigate({
-      search: (prev: { top200?: boolean; inLibrary?: boolean }) => ({
+      search: (prev: { top200?: boolean; inLibrary?: boolean; showHidden?: boolean }) => ({
         ...prev,
         [key]: prev[key] ? undefined : true,
       }),
@@ -178,7 +185,7 @@ export function FeedPage(): JSX.Element {
   return (
     <div className="h-full flex flex-col px-4 md:px-6 pt-4">
       {/* Header */}
-      <div className="flex flex-wrap items-center gap-3 pb-4">
+      <div className="flex flex-wrap items-center gap-3 pb-4 w-full max-w-4xl mx-auto">
         <h1 className="text-xl font-semibold text-white flex items-center gap-2">
           <Rss className="w-5 h-5 text-obsidian-accent" />
           Feed
@@ -203,6 +210,16 @@ export function FeedPage(): JSX.Element {
             }`}
           >
             In library
+          </button>
+          <button
+            onClick={() => toggleFilter('showHidden')}
+            className={`px-3 py-1 rounded-full text-xs border transition-colors ${
+              showHidden
+                ? 'bg-obsidian-accent/15 border-obsidian-accent text-obsidian-accent'
+                : 'border-obsidian-border text-white/60 hover:text-white'
+            }`}
+          >
+            Show hidden
           </button>
         </div>
         <div className="ml-auto flex items-center gap-2 text-xs text-white/40">
@@ -249,7 +266,7 @@ export function FeedPage(): JSX.Element {
       ) : (
         <div ref={parentRef} className="flex-1 overflow-y-auto pb-4">
           <div
-            className="relative w-full"
+            className="relative w-full max-w-4xl mx-auto"
             style={{ height: virtualizer.getTotalSize() }}
           >
             {virtualItems.map((virtualRow) => {

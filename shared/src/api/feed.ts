@@ -40,6 +40,7 @@ export interface GetFeedParams {
   limit?: number;
   top200?: boolean;
   inLibrary?: boolean;
+  showHidden?: boolean;
 }
 
 export interface RateFeedItemResponse {
@@ -55,6 +56,7 @@ export async function getFeed(params: GetFeedParams = {}): Promise<FeedPage> {
   if (params.limit) queryParams.set('limit', String(params.limit));
   if (params.top200) queryParams.set('top200', 'true');
   if (params.inLibrary) queryParams.set('in_library', 'true');
+  if (params.showHidden) queryParams.set('show_hidden', 'true');
 
   const query = queryParams.toString();
   return getDefaultApiClient().request<FeedPage>(`/feed${query ? `?${query}` : ''}`);

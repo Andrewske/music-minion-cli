@@ -38,6 +38,7 @@ export function FeedTrackCard({
   const [artworkFailed, setArtworkFailed] = useState(false);
   const playable = item.local_track_id !== null;
   const liked = item.status === 'liked';
+  const hidden = item.status === 'hidden' || item.status === 'dismissed';
   const alreadySaved = item.in_likes || item.in_playlists;
 
   return (
@@ -46,7 +47,7 @@ export function FeedTrackCard({
         isPlaying
           ? 'bg-obsidian-accent/10 border-obsidian-accent/40'
           : 'bg-obsidian-surface border-obsidian-border hover:border-white/20'
-      }`}
+      } ${hidden ? 'opacity-50' : ''}`}
     >
       {/* Artwork — click to play */}
       <button
@@ -112,10 +113,20 @@ export function FeedTrackCard({
         </div>
       </div>
 
-      {/* Waveform */}
+      {/* Waveform — click seeks when playing, plays otherwise */}
       <div className="flex-1 min-w-0 hidden md:block">
-        <FeedWaveform localTrackId={item.local_track_id} durationMs={item.duration_ms} />
+        <FeedWaveform
+          localTrackId={item.local_track_id}
+          durationMs={item.duration_ms}
+          onActivate={() => playable && onPlay(item)}
+        />
       </div>
+
+      {hidden && (
+        <span className="shrink-0 px-1.5 py-0.5 rounded font-sf-mono text-[10px] uppercase tracking-wide text-white/40 bg-white/5">
+          {item.status}
+        </span>
+      )}
 
       <span className="text-xs text-white/40 font-sf-mono shrink-0 hidden sm:block">
         {formatDuration(item.duration_ms)}

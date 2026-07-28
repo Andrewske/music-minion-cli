@@ -47,6 +47,7 @@ def get_feed(
     cursor: Optional[str] = None,
     top200: bool = False,
     in_library: bool = False,
+    show_hidden: bool = False,
 ) -> dict[str, Any]:
     cursor_uploaded_at, cursor_id = _decode_cursor(cursor)
     items = feed_queries.get_feed_page(
@@ -55,6 +56,7 @@ def get_feed(
         cursor_id=cursor_id,
         top200=top200,
         in_library=in_library,
+        show_hidden=show_hidden,
     )
     next_cursor = _encode_cursor(items[-1]) if len(items) == limit else None
     return {"items": items, "next_cursor": next_cursor}
