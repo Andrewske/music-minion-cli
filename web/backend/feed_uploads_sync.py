@@ -98,8 +98,8 @@ def _insert_uploads(records: list[dict[str, Any]]) -> int:
             cursor = conn.execute(
                 """INSERT OR IGNORE INTO sc_artist_uploads
                     (discovery_artist_id, soundcloud_id, title, permalink_url,
-                     artwork_url, duration_ms, uploaded_at, local_track_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                     artwork_url, duration_ms, uploaded_at, local_track_id, access)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     rec["artist_id"],
                     str(rec["track"]["id"]),
@@ -109,11 +109,34 @@ def _insert_uploads(records: list[dict[str, Any]]) -> int:
                     rec["track"].get("duration", 0) or 0,
                     rec["uploaded_at"],
                     local_id,
+                    rec["track"].get("access"),
                 ),
             )
             inserted += cursor.rowcount
         conn.commit()
     return inserted
+
+
+def _update_known_access(tracks: list[dict[str, Any]]) -> None:
+    """Refresh access tier for already-known uploads (populates legacy NULLs).
+
+    SC can also flip a track between playable and preview (Go+ windows), so
+    update on every sighting, not just when NULL.
+    """
+    updates = [
+        (t.get("access"), str(t["id"]))
+        for t in tracks
+        if t.get("id") and t.get("access")
+    ]
+    if not updates:
+        return
+    with get_db_connection() as conn:
+        conn.executemany(
+            """UPDATE sc_artist_uploads SET access = ?1
+            WHERE soundcloud_id = ?2 AND (access IS NULL OR access != ?1)""",
+            updates,
+        )
+        conn.commit()
 
 
 def _collect_new_uploads(
@@ -190,6 +213,7 @@ def sync_followings_uploads(
             added += _insert_uploads(
                 _collect_new_uploads(tracks, artist["id"], known_ids)
             )
+            _update_known_access(tracks)
         except Exception as exc:
             logger.exception(f"feed_uploads: failed for {artist['slug']}")
             errors.append(f"{artist['slug']}: {exc}")

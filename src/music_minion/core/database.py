@@ -16,7 +16,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 59  # sc_artist_uploads feed + sc_monthly_playlists cache
+SCHEMA_VERSION = 60  # sc_artist_uploads.access (preview/snip filtering)
 
 
 # Initial top 50 curated emojis for music reactions
@@ -2725,6 +2725,20 @@ def migrate_database(conn, current_version: int) -> None:
 
         conn.commit()
         logger.info("  ✓ Migration to v59 complete: sc_artist_uploads + sc_monthly_playlists")
+
+    if current_version < 60:
+        logger.info("Running migration to v60: sc_artist_uploads.access...")
+
+        # SC access tier: 'playable' | 'preview' (Go+ 30s snip) | 'blocked'.
+        # NULL = not yet fetched (legacy rows); feed treats NULL as playable.
+        try:
+            conn.execute("ALTER TABLE sc_artist_uploads ADD COLUMN access TEXT")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column" not in str(exc).lower():
+                raise
+
+        conn.commit()
+        logger.info("  ✓ Migration to v60 complete: sc_artist_uploads.access")
 
 
 def init_database() -> None:

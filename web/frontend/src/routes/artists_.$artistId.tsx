@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import type { ReactElement } from 'react';
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { ArrowLeft, HardDrive, Music, Users } from 'lucide-react';
-import { useArtist, useArtistLibraryTracks } from '../hooks/useArtists';
+import { ArrowLeft, HardDrive, Music, UserMinus, Users } from 'lucide-react';
+import { toast } from 'sonner';
+import { useArtist, useArtistLibraryTracks, useUnfollowArtist } from '../hooks/useArtists';
 import { usePlayerStore } from '../stores/playerStore';
 import { ArtistTrackSections } from '../components/artists/ArtistTrackSections';
 import { ArtistConnections } from '../components/artists/ArtistConnections';
+import { ConfirmUnfollowDialog } from '../components/artists/ConfirmUnfollowDialog';
 
 type ArtistTab = 'tracks' | 'connections';
 
@@ -47,6 +49,8 @@ function ArtistPage(): ReactElement {
   const { artistId } = Route.useParams();
   const id = Number(artistId);
   const [tab, setTab] = useState<ArtistTab>('tracks');
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const unfollowMutation = useUnfollowArtist();
   const { data: detail, isPending: detailPending, error: detailError } = useArtist(
     Number.isFinite(id) ? id : null,
   );
@@ -78,6 +82,16 @@ function ArtistPage(): ReactElement {
   }
 
   const artist = detail.artist;
+
+  const handleUnfollow = (): void => {
+    unfollowMutation.mutate(id, {
+      onSuccess: () => {
+        setConfirmOpen(false);
+        toast.success(`Unfollowed ${artist.display_name}`);
+      },
+      onError: (err) => toast.error(`Unfollow failed: ${err.message}`),
+    });
+  };
 
   return (
     <div className="min-h-screen bg-black px-4 md:px-6 py-6">
@@ -119,6 +133,16 @@ function ArtistPage(): ReactElement {
               <span>{artist.playlist_track_count} in playlists</span>
             </div>
           </div>
+          {artist.is_following && (
+            <button
+              onClick={() => setConfirmOpen(true)}
+              disabled={unfollowMutation.isPending}
+              className="ml-auto shrink-0 inline-flex items-center gap-1.5 font-sf-mono text-xs uppercase tracking-widest px-3 py-1.5 border border-obsidian-border text-white/50 hover:text-red-400 hover:border-red-400/50 transition-colors disabled:opacity-50"
+            >
+              <UserMinus className="w-3.5 h-3.5" />
+              Unfollow
+            </button>
+          )}
         </header>
 
         {/* Tabs */}
@@ -153,6 +177,14 @@ function ArtistPage(): ReactElement {
           <ArtistConnections artistId={id} />
         )}
       </div>
+
+      <ConfirmUnfollowDialog
+        artist={artist}
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        onConfirm={handleUnfollow}
+        isPending={unfollowMutation.isPending}
+      />
     </div>
   );
 }
