@@ -9,9 +9,11 @@ import {
   PLAYBACK_BREAKER_MESSAGE,
   SOUNDCLOUD_REAUTH_MESSAGE,
   type ErrorWindowState,
+  type Track,
 } from '@music-minion/shared';
 import { usePlayerStore, getCurrentPosition } from '../stores/playerStore';
 import { useActiveAudioElement, useAudioPair, type AudioKey } from '../contexts/AudioElementContext';
+import { bindTrackSource, clearTrackSource, streamUrlFor } from '../lib/audioSource';
 
 const HAVE_CURRENT_DATA = 2;
 const PRELOAD_DEBOUNCE_MS = 500;
@@ -20,10 +22,6 @@ const PRELOAD_DEBOUNCE_MS = 500;
 const PRELOAD_MAX_AGE_MS = 10 * 60_000;
 
 type PlayErrorHandler = (err: Error) => void;
-
-function streamUrlFor(trackId: number): string {
-  return `/api/tracks/${trackId}/stream`;
-}
 
 function swapToReadyInactive(
   inactive: HTMLAudioElement,
@@ -43,8 +41,7 @@ function swapToReadyInactive(
 
 function loadAndSwap(
   inactive: HTMLAudioElement,
-  url: string,
-  expectedTrackId: string,
+  track: Track,
   signal: AbortSignal,
   setActiveKey: (k: AudioKey) => void,
   opposite: AudioKey,
@@ -65,8 +62,8 @@ function loadAndSwap(
     },
     { once: true, signal },
   );
-  inactive.src = url;
-  inactive.dataset.trackId = expectedTrackId;
+  bindTrackSource(inactive, track);
+  inactive.dataset.trackId = String(track.id);
   inactive.dataset.srcBoundAt = String(Date.now());
   inactive.currentTime = 0;
 }
@@ -79,14 +76,13 @@ function loadAndSwap(
  */
 function retrySameTrack(
   el: HTMLAudioElement,
-  trackId: number,
+  track: Track,
   signal: AbortSignal,
   handlePlayError: PlayErrorHandler,
 ): void {
   const resumeAt = el.currentTime;
   el.pause();
-  el.removeAttribute('src');
-  el.load();
+  clearTrackSource(el);
   el.addEventListener(
     'canplay',
     () => {
@@ -97,12 +93,12 @@ function retrySameTrack(
     },
     { once: true, signal },
   );
-  el.src = streamUrlFor(trackId);
-  el.dataset.trackId = String(trackId);
+  bindTrackSource(el, track);
+  el.dataset.trackId = String(track.id);
   el.dataset.srcBoundAt = String(Date.now());
   if (import.meta.env.DEV) {
     console.debug('[player] audio error — retrying same track with fresh stream URL', {
-      trackId,
+      trackId: track.id,
       resumeAt,
     });
   }
@@ -141,14 +137,13 @@ function tryGaplessSwap(
 
 function bindPreload(
   inactive: HTMLAudioElement,
-  trackId: number,
+  track: Track,
   signal: AbortSignal,
 ): void {
   inactive.pause();
-  inactive.removeAttribute('src');
-  inactive.load();
-  inactive.src = streamUrlFor(trackId);
-  inactive.dataset.trackId = String(trackId);
+  clearTrackSource(inactive);
+  bindTrackSource(inactive, track);
+  inactive.dataset.trackId = String(track.id);
   inactive.dataset.srcBoundAt = String(Date.now());
   inactive.preload = 'auto';
 
@@ -161,7 +156,7 @@ function bindPreload(
       delete inactive.dataset.srcBoundAt;
       if (import.meta.env.DEV) {
         console.warn('[player] preload error', {
-          trackId,
+          trackId: track.id,
           code: inactive.error?.code,
         });
       }
@@ -170,7 +165,7 @@ function bindPreload(
   );
 
   if (import.meta.env.DEV) {
-    console.debug('[player] preload bound', { trackId });
+    console.debug('[player] preload bound', { trackId: track.id });
   }
 }
 
@@ -218,15 +213,13 @@ export function usePlayer() {
     if (store.isThisDeviceActive) return;
     if (audioA) {
       audioA.pause();
-      audioA.removeAttribute('src');
-      audioA.load();
+      clearTrackSource(audioA);
       delete audioA.dataset.trackId;
       delete audioA.dataset.srcBoundAt;
     }
     if (audioB) {
       audioB.pause();
-      audioB.removeAttribute('src');
-      audioB.load();
+      clearTrackSource(audioB);
       delete audioB.dataset.trackId;
       delete audioB.dataset.srcBoundAt;
     }
@@ -257,6 +250,7 @@ export function usePlayer() {
 
     lastLoadedTrackIdRef.current = trackId;
     retriedTrackIdRef.current = null;
+    const track = store.currentTrack;
     const activeKey = activeKeyRef.current;
     const oldActive = activeKey === 'A' ? audioA : audioB;
     const inactive = activeKey === 'A' ? audioB : audioA;
@@ -264,13 +258,11 @@ export function usePlayer() {
     const controller = new AbortController();
 
     // Step 1: silence old active IMMEDIATELY (silence guarantee).
-    // Order matters: pause before removeAttribute before load, all before binding new src.
+    // Order matters: pause before unbinding src, all before binding new src.
     oldActive.pause();
-    oldActive.removeAttribute('src');
-    oldActive.load();
+    clearTrackSource(oldActive);
 
     const expectedTrackId = String(trackId);
-    const url = streamUrlFor(trackId);
 
     // Preload staleness: the browser captured the signed CDN URL (via the
     // proxy 302) when the preload src was bound; if that was too long ago the
@@ -289,16 +281,14 @@ export function usePlayer() {
         // Clear the stale binding so the src assignment in loadAndSwap
         // triggers a fresh load (fresh 302 → fresh CDN URL).
         inactive.pause();
-        inactive.removeAttribute('src');
-        inactive.load();
+        clearTrackSource(inactive);
         if (import.meta.env.DEV) {
           console.debug('[player] stale preload — re-resolving before swap', { trackId });
         }
       }
       loadAndSwap(
         inactive,
-        url,
-        expectedTrackId,
+        track,
         controller.signal,
         setActiveKey,
         opposite,
@@ -356,7 +346,7 @@ export function usePlayer() {
         store.currentTrack
         && inactive.dataset.trackId === String(store.currentTrack.id)
       ) return;
-      bindPreload(inactive, nextTrack.id, controller.signal);
+      bindPreload(inactive, nextTrack, controller.signal);
     }, PRELOAD_DEBOUNCE_MS);
 
     return () => {
@@ -455,11 +445,19 @@ export function usePlayer() {
         return;
       }
 
-      // Retry the SAME track once before skipping.
+      // Retry the SAME track once before skipping. Needs the full track
+      // object (source drives HLS vs progressive binding); a server prune may
+      // have advanced currentTrack, so fall back to a queue lookup.
       if (decision === 'retry' && retryableTrackId != null) {
-        retriedTrackIdRef.current = retryableTrackId;
-        retrySameTrack(activeAudio, retryableTrackId, controller.signal, handlePlayError);
-        return;
+        const retryTrack =
+          s.currentTrack?.id === retryableTrackId
+            ? s.currentTrack
+            : s.queue.find((t) => t.id === retryableTrackId);
+        if (retryTrack) {
+          retriedTrackIdRef.current = retryableTrackId;
+          retrySameTrack(activeAudio, retryTrack, controller.signal, handlePlayError);
+          return;
+        }
       }
 
       s.setPlaybackError(`Failed to load: ${s.currentTrack?.title}`);

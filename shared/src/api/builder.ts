@@ -17,6 +17,8 @@ export interface Track {
   bpm?: number;
   key_signature?: string;
   duration?: number;
+  /** Provider: 'local' | 'soundcloud' | 'spotify' — drives stream binding (SC = HLS). */
+  source?: string;
   local_path?: string;
   elo_rating?: number;
   emojis?: string[];
