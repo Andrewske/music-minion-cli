@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { type ReactNode } from 'react';
+import { type JSX, type ReactNode } from 'react';
 import { usePlayer } from './usePlayer';
 import { usePlayerStore } from '../stores/playerStore';
 import { AudioElementProvider } from '../contexts/AudioElementContext';
@@ -96,8 +96,10 @@ describe('usePlayer dual-element swap', () => {
       captured.handler?.();
     });
 
-    // Step 2: simulate preload of TRACK_B onto element A (the now-inactive element)
+    // Step 2: simulate preload of TRACK_B onto element A (the now-inactive element).
+    // srcBoundAt must be fresh — a stale preload is re-resolved instead of swapped.
     a.dataset.trackId = String(TRACK_B.id);
+    a.dataset.srcBoundAt = String(Date.now());
     setReadyState(a, 4);
 
     const setSrcOnASpy = vi.spyOn(a, 'src', 'set');
@@ -203,7 +205,7 @@ describe('usePlayer dual-element swap', () => {
     const { result } = renderHook(() => usePlayer(), { wrapper });
     void result;
 
-    const [, b] = getAudioElements();
+    const [a, b] = getAudioElements();
 
     act(() => {
       usePlayerStore.setState({
@@ -214,15 +216,22 @@ describe('usePlayer dual-element swap', () => {
       });
     });
 
+    // Complete the load-on-swap: canplay flips activeKey to B, so element A
+    // becomes the preload target. (The swap-pending guard blocks preload from
+    // overwriting the swap target while the swap is still in flight.)
+    act(() => {
+      b.dispatchEvent(new Event('canplay'));
+    });
+
     // Before debounce fires, inactive should not yet be bound to TRACK_B
-    expect(b.dataset.trackId).not.toBe(String(TRACK_B.id));
+    expect(a.dataset.trackId).not.toBe(String(TRACK_B.id));
 
     act(() => {
       vi.advanceTimersByTime(600);
     });
 
-    expect(b.dataset.trackId).toBe(String(TRACK_B.id));
-    expect(b.getAttribute('src')).toContain(`/api/tracks/${TRACK_B.id}/stream`);
+    expect(a.dataset.trackId).toBe(String(TRACK_B.id));
+    expect(a.getAttribute('src')).toContain(`/api/tracks/${TRACK_B.id}/stream`);
   });
 
   it('5. preload skipped in comparison mode (no preload of next-track)', () => {
@@ -306,7 +315,7 @@ describe('usePlayer dual-element swap', () => {
     expect(b.muted).toBe(true);
   });
 
-  it('8. circuit breaker: 3 errors within 10s stops auto-skip cascade; canplay resets', () => {
+  it('8. circuit breaker: 3 errors within 10s stops auto-skip cascade; canplay resets', async () => {
     vi.useFakeTimers();
     const nextSpy = vi.fn(() => Promise.resolve());
     usePlayerStore.setState({ next: nextSpy });
@@ -319,9 +328,13 @@ describe('usePlayer dual-element swap', () => {
     });
 
     const [a] = getAudioElements();
+    // TRACK_A loaded onto the inactive element, so the ACTIVE element's
+    // dataset.trackId never matches — the error policy treats the track as
+    // non-retryable and every error goes straight to skip (until breaker).
+    // Error handling is async (reauth probe runs first), hence async act.
 
     // Fire 3 errors in quick succession
-    act(() => {
+    await act(async () => {
       a.dispatchEvent(new Event('error'));
     });
     act(() => {
@@ -329,7 +342,7 @@ describe('usePlayer dual-element swap', () => {
     });
     expect(nextSpy).toHaveBeenCalledTimes(1);
 
-    act(() => {
+    await act(async () => {
       a.dispatchEvent(new Event('error'));
     });
     act(() => {
@@ -338,7 +351,7 @@ describe('usePlayer dual-element swap', () => {
     expect(nextSpy).toHaveBeenCalledTimes(2);
 
     nextSpy.mockClear();
-    act(() => {
+    await act(async () => {
       a.dispatchEvent(new Event('error'));
     });
     act(() => {
@@ -352,7 +365,7 @@ describe('usePlayer dual-element swap', () => {
     act(() => {
       a.dispatchEvent(new Event('canplay'));
     });
-    act(() => {
+    await act(async () => {
       a.dispatchEvent(new Event('error'));
     });
     act(() => {
@@ -367,7 +380,7 @@ describe('usePlayer dual-element swap', () => {
     const { result } = renderHook(() => usePlayer(), { wrapper });
     void result;
 
-    const [, b] = getAudioElements();
+    const [a, b] = getAudioElements();
 
     act(() => {
       usePlayerStore.setState({
@@ -376,16 +389,20 @@ describe('usePlayer dual-element swap', () => {
         queueIndex: 0,
       });
     });
+    // Complete the swap so the preload targets element A (see test 4)
+    act(() => {
+      b.dispatchEvent(new Event('canplay'));
+    });
     act(() => {
       vi.advanceTimersByTime(600);
     });
-    expect(b.dataset.trackId).toBe(String(TRACK_B.id));
+    expect(a.dataset.trackId).toBe(String(TRACK_B.id));
 
     act(() => {
-      b.dispatchEvent(new Event('error'));
+      a.dispatchEvent(new Event('error'));
     });
 
-    expect(b.dataset.trackId).toBeUndefined();
+    expect(a.dataset.trackId).toBeUndefined();
   });
 
   it('10. canplay handler reads isPlaying at fire time, not effect-run time', () => {
@@ -426,7 +443,7 @@ describe('usePlayer dual-element swap', () => {
     expect(playMock).not.toHaveBeenCalled();
   });
 
-  it('11. circuit breaker errorTimes is per-hook-instance (useRef isolation)', () => {
+  it('11. circuit breaker errorTimes is per-hook-instance (useRef isolation)', async () => {
     vi.useFakeTimers();
     const nextSpy = vi.fn(() => Promise.resolve());
     usePlayerStore.setState({ next: nextSpy, currentTrack: TRACK_A, isPlaying: true });
@@ -436,7 +453,7 @@ describe('usePlayer dual-element swap', () => {
     let [a1] = getAudioElements();
 
     for (let i = 0; i < 3; i += 1) {
-      act(() => {
+      await act(async () => {
         a1.dispatchEvent(new Event('error'));
       });
       act(() => {
@@ -455,7 +472,7 @@ describe('usePlayer dual-element swap', () => {
     [a1] = getAudioElements();
 
     // Single error in fresh instance triggers auto-skip (breaker has not tripped)
-    act(() => {
+    await act(async () => {
       a1.dispatchEvent(new Event('error'));
     });
     act(() => {

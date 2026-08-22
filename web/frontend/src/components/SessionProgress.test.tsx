@@ -13,10 +13,10 @@ describe('SessionProgress', () => {
     expect(screen.getByText('+5')).toBeInTheDocument();
   });
 
-  it('renders without priorityPath and defaults to 2025', () => {
+  it('renders without priorityPath and defaults to Full Library', () => {
     render(<SessionProgress completed={10} folders={mockFolders} />);
 
-    expect(screen.getByText('2025')).toBeInTheDocument();
+    expect(screen.getByText('Full Library')).toBeInTheDocument();
     expect(screen.getByText('+10')).toBeInTheDocument();
   });
 
@@ -34,19 +34,20 @@ describe('SessionProgress', () => {
     expect(screen.getByText('+7')).toBeInTheDocument();
   });
 
-  it('handles root path and defaults to 2025', () => {
+  it('handles root path and defaults to Full Library', () => {
     render(<SessionProgress completed={1} priorityPath="/" folders={mockFolders} />);
 
-    expect(screen.getByText('2025')).toBeInTheDocument();
+    expect(screen.getByText('Full Library')).toBeInTheDocument();
     expect(screen.getByText('+1')).toBeInTheDocument();
   });
 
   it('opens dropdown when clicked and shows folder options', () => {
     render(<SessionProgress completed={5} folders={mockFolders} />);
 
-    const dropdownButton = screen.getByText('2025');
+    const dropdownButton = screen.getByText('Full Library');
     fireEvent.click(dropdownButton);
 
+    expect(screen.getByText('2025')).toBeInTheDocument();
     expect(screen.getByText('2024')).toBeInTheDocument();
     expect(screen.getByText('2023')).toBeInTheDocument();
   });
@@ -56,7 +57,7 @@ describe('SessionProgress', () => {
 
     render(<SessionProgress completed={5} onPriorityChange={mockOnPriorityChange} folders={mockFolders} />);
 
-    const dropdownButton = screen.getByText('2025');
+    const dropdownButton = screen.getByText('Full Library');
     fireEvent.click(dropdownButton);
 
     const folderOption = screen.getByText('2024');
@@ -82,7 +83,7 @@ describe('SessionProgress', () => {
   it('closes dropdown when clicking outside', () => {
     render(<SessionProgress completed={5} folders={mockFolders} />);
 
-    const dropdownButton = screen.getByText('2025');
+    const dropdownButton = screen.getByText('Full Library');
     fireEvent.click(dropdownButton);
 
     expect(screen.getByText('2024')).toBeInTheDocument();
@@ -96,15 +97,15 @@ describe('SessionProgress', () => {
   it('handles empty folders gracefully', () => {
     render(<SessionProgress completed={5} folders={{ root: '/music', folders: [] }} />);
 
-    expect(screen.getByText('All')).toBeInTheDocument();
+    expect(screen.getByText('Full Library')).toBeInTheDocument();
     expect(screen.getByText('+5')).toBeInTheDocument();
   });
 
-  it('defaults to All when 2025 not in folders', () => {
+  it('defaults to Full Library regardless of folder list contents', () => {
     const foldersWithout2025: FoldersResponse = { root: '/music', folders: ['2024', '2023'] };
 
     render(<SessionProgress completed={5} folders={foldersWithout2025} />);
 
-    expect(screen.getByText('All')).toBeInTheDocument();
+    expect(screen.getByText('Full Library')).toBeInTheDocument();
   });
 });
