@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { MouseEvent } from 'react';
+import type { KeyboardEvent, MouseEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getWaveformData } from '../../api/tracks';
 import { usePlayerStore, getCurrentPosition } from '../../stores/playerStore';
@@ -87,6 +87,25 @@ export function FeedWaveform({
     }
   };
 
+  const handleKeyDown = (event: KeyboardEvent<HTMLCanvasElement>): void => {
+    if (!playable) return;
+    if (isCurrent && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+      event.preventDefault();
+      const delta = event.key === 'ArrowRight' ? 5_000 : -5_000;
+      const nextPosition = Math.min(
+        durationMs,
+        Math.max(0, getCurrentPosition(usePlayerStore.getState()) + delta)
+      );
+      setProgress(durationMs > 0 ? nextPosition / durationMs : 0);
+      void seek(nextPosition);
+      return;
+    }
+    if (!isCurrent && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+      onActivate?.();
+    }
+  };
+
   const { data } = useQuery({
     queryKey: ['feed-waveform', localTrackId],
     queryFn: () => getWaveformData(localTrackId as number),
@@ -97,10 +116,7 @@ export function FeedWaveform({
   });
 
   useEffect(() => {
-    if (!isCurrent) {
-      setProgress(0);
-      return;
-    }
+    if (!isCurrent) return;
     const tick = (): void => {
       if (durationMs > 0) {
         const pos = getCurrentPosition(usePlayerStore.getState());
@@ -115,8 +131,8 @@ export function FeedWaveform({
   useEffect(() => {
     if (!data || !canvasRef.current) return;
     barsRef.current = downsamplePeaks(data.peaks);
-    drawBars(canvasRef.current, barsRef.current, progress);
-  }, [data, progress]);
+    drawBars(canvasRef.current, barsRef.current, isCurrent ? progress : 0);
+  }, [data, isCurrent, progress]);
 
   return (
     <canvas
@@ -124,8 +140,10 @@ export function FeedWaveform({
       width={480}
       height={40}
       onClick={handleClick}
+      onKeyDown={handleKeyDown}
       role={playable ? 'button' : undefined}
-      aria-label={playable ? (isCurrent ? 'Seek' : 'Play from here') : undefined}
+      tabIndex={playable ? 0 : undefined}
+      aria-label={playable ? (isCurrent ? 'Seek with left and right arrow keys' : 'Play from here') : undefined}
       aria-hidden={playable ? undefined : 'true'}
       className={`w-full h-10 ${playable ? 'cursor-pointer' : ''}`}
     />

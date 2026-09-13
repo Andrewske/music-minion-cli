@@ -1,14 +1,22 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
-import { Cloud, EyeOff, Heart, Music, ThumbsDown } from 'lucide-react';
-import type { FeedItem, FeedRating } from '../../api/feed';
+import { AlertCircle, Cloud, EyeOff, Heart, Loader2, Music, ThumbsDown } from 'lucide-react';
+import {
+  getFeedEventAt,
+  getFeedItemBestRank,
+  getFeedItemDecision,
+  getFeedItemUploader,
+  isFeedSyncFailed,
+  isFeedSyncPending,
+} from '../../api/feed';
+import type { FeedArtist, FeedDecision, FeedItem } from '../../api/feed';
 import { ArtistHoverCard } from './ArtistHoverCard';
 import { FeedWaveform } from './FeedWaveform';
 
-function formatRelativeDate(dateStr: string): string {
+function formatFeedRelativeDate(dateStr: string): string {
   const date = new Date(dateStr);
-  if (isNaN(date.getTime())) return '-';
-  const days = Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24));
+  if (Number.isNaN(date.getTime())) return '-';
+  const days = Math.floor((Date.now() - date.getTime()) / 86_400_000);
   if (days < 1) return '<1d';
   if (days < 7) return `${days}d`;
   if (days < 30) return `${Math.floor(days / 7)}w`;
@@ -17,158 +25,178 @@ function formatRelativeDate(dateStr: string): string {
 
 function formatDuration(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
-  const min = Math.floor(totalSec / 60);
-  const sec = totalSec % 60;
-  return `${min}:${String(sec).padStart(2, '0')}`;
+  return `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`;
+}
+
+function ArtistName({ artist }: { artist: FeedArtist }): JSX.Element {
+  const name = artist.display_name ?? artist.slug;
+  if (artist.id === null || artist.id === undefined) return <span>{name}</span>;
+  return (
+    <ArtistHoverCard artist={artist}>
+      <Link
+        to="/artists/$artistId"
+        params={{ artistId: String(artist.id) }}
+        className="underline decoration-dotted decoration-white/20 underline-offset-2 hover:text-white/80"
+      >
+        {name}
+      </Link>
+    </ArtistHoverCard>
+  );
+}
+
+function Attribution({ item }: { item: FeedItem }): JSX.Element {
+  const uploader = getFeedItemUploader(item);
+  const firstReposter = item.reposters[0];
+  const otherReposters = Math.max(0, item.reposter_count - (firstReposter ? 1 : 0));
+  const bestRank = getFeedItemBestRank(item);
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-white/50">
+      {item.sources.includes('release') && uploader && (
+        <span className="truncate">Uploaded by <ArtistName artist={uploader} /></span>
+      )}
+      {item.sources.includes('repost') && firstReposter && (
+        <span className="truncate">
+          Reposted by <ArtistName artist={firstReposter} />
+          {otherReposters > 0 && ` +${otherReposters} other reposter${otherReposters === 1 ? '' : 's'}`}
+        </span>
+      )}
+      {bestRank !== null && (
+        <span className="shrink-0 rounded bg-white/5 px-1.5 py-0.5 font-sf-mono text-[10px] text-white/60">
+          #{bestRank}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function SoundCloudSyncState({ item }: { item: FeedItem }): JSX.Element | null {
+  const state = item.action_state;
+  const failed = isFeedSyncFailed(state);
+  if (!failed && !isFeedSyncPending(state)) return null;
+  const label = failed ? 'SoundCloud sync failed' : 'SoundCloud sync pending';
+  return (
+    <span
+      role="status"
+      title={state?.error ?? label}
+      className={`flex shrink-0 items-center gap-1 text-[11px] ${failed ? 'text-red-400' : 'text-amber-300'}`}
+    >
+      {failed ? <AlertCircle className="h-3.5 w-3.5" /> : <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+      <span className="hidden lg:inline">{label}</span>
+    </span>
+  );
 }
 
 interface FeedTrackCardProps {
   item: FeedItem;
   isPlaying: boolean;
+  isUpdating?: boolean;
   onPlay: (item: FeedItem) => void;
-  onRate: (item: FeedItem, value: FeedRating) => void;
+  onDecide: (item: FeedItem, decision: FeedDecision) => void;
+}
+
+function ActionButton({
+  label,
+  title,
+  active,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string;
+  title: string;
+  active?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      aria-pressed={active}
+      title={title}
+      className={`min-h-10 min-w-10 rounded p-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-obsidian-accent disabled:opacity-50 ${
+        active ? 'bg-obsidian-accent/15 text-obsidian-accent' : 'text-white/45 hover:bg-white/10 hover:text-white'
+      }`}
+    >
+      {children}
+    </button>
+  );
 }
 
 export function FeedTrackCard({
   item,
   isPlaying,
+  isUpdating = false,
   onPlay,
-  onRate,
+  onDecide,
 }: FeedTrackCardProps): JSX.Element {
   const [artworkFailed, setArtworkFailed] = useState(false);
-  const playable = item.local_track_id !== null;
-  const liked = item.status === 'liked';
-  const hidden = item.status === 'hidden' || item.status === 'dismissed';
-  const alreadySaved = item.in_likes || item.in_playlists;
+  const decision = getFeedItemDecision(item);
+  const hidden = decision === 'hide' || decision === 'nope';
+  const playable = item.access !== 'blocked';
+  const eventAt = getFeedEventAt(item);
 
   return (
-    <div
-      className={`flex items-center gap-3 px-3 py-2 rounded border transition-colors ${
+    <article
+      aria-label={`${item.title ?? 'Untitled'} feed item`}
+      className={`flex min-h-[84px] items-center gap-3 rounded border px-3 py-2 transition-colors ${
         isPlaying
-          ? 'bg-obsidian-accent/10 border-obsidian-accent/40'
-          : 'bg-obsidian-surface border-obsidian-border hover:border-white/20'
-      } ${hidden ? 'opacity-50' : ''}`}
+          ? 'border-obsidian-accent/40 bg-obsidian-accent/10'
+          : 'border-obsidian-border bg-obsidian-surface hover:border-white/20'
+      } ${hidden ? 'opacity-60' : ''}`}
     >
-      {/* Artwork — click to play */}
       <button
+        type="button"
         onClick={() => playable && onPlay(item)}
         disabled={!playable}
         aria-label={`Play ${item.title ?? 'track'}`}
-        className="shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
+        className="shrink-0 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-obsidian-accent disabled:cursor-not-allowed disabled:opacity-40"
       >
         {item.artwork_url && !artworkFailed ? (
-          <img
-            src={item.artwork_url}
-            alt=""
-            width={48}
-            height={48}
-            loading="lazy"
-            onError={() => setArtworkFailed(true)}
-            className="w-12 h-12 rounded object-cover"
-          />
+          <img src={item.artwork_url} alt="" width={52} height={52} loading="lazy" onError={() => setArtworkFailed(true)} className="h-[52px] w-[52px] rounded object-cover" />
         ) : (
-          <div className="w-12 h-12 rounded bg-gradient-to-br from-obsidian-accent/20 to-obsidian-surface flex items-center justify-center">
-            <Music className="w-5 h-5 text-white/40" />
-          </div>
+          <span className="flex h-[52px] w-[52px] items-center justify-center rounded bg-gradient-to-br from-obsidian-accent/20 to-obsidian-surface">
+            <Music className="h-5 w-5 text-white/40" />
+          </span>
         )}
       </button>
 
-      {/* Title / artist / date */}
-      <div className="min-w-0 w-56 shrink-0 text-left">
-        <button
-          onClick={() => playable && onPlay(item)}
-          disabled={!playable}
-          className="block w-full text-left disabled:cursor-not-allowed"
-        >
-          <div
-            className={`text-sm truncate ${isPlaying ? 'text-obsidian-accent' : 'text-white'}`}
-            title={item.title ?? undefined}
-          >
+      <div className="min-w-0 flex-1 text-left md:w-64 md:flex-none">
+        <button type="button" onClick={() => playable && onPlay(item)} disabled={!playable} className="block w-full rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent disabled:cursor-not-allowed">
+          <span className={`block truncate text-sm ${isPlaying ? 'text-obsidian-accent' : 'text-white'}`} title={item.title ?? undefined}>
             {item.title ?? 'Untitled'}
-            {!playable && <Cloud className="inline w-3 h-3 ml-1 text-white/40" />}
-          </div>
-        </button>
-        <div className="flex items-center gap-1.5 text-xs text-white/50">
-          {item.artist.avatar_url && (
-            <img
-              src={item.artist.avatar_url}
-              alt=""
-              className="w-4 h-4 rounded-full shrink-0"
-              loading="lazy"
-            />
-          )}
-          <ArtistHoverCard artist={item.artist}>
-            <Link
-              to="/artists/$artistId"
-              params={{ artistId: String(item.artist.id) }}
-              className="truncate underline decoration-dotted decoration-white/20 underline-offset-2 hover:text-white/80 transition-colors"
-            >
-              {item.artist.display_name ?? item.artist.slug}
-            </Link>
-          </ArtistHoverCard>
-          <span className="text-white/30 shrink-0">·</span>
-          <span className="shrink-0" title={new Date(item.uploaded_at).toLocaleString()}>
-            {formatRelativeDate(item.uploaded_at)}
+            {!playable && <Cloud className="ml-1 inline h-3 w-3 text-white/40" />}
           </span>
+        </button>
+        <Attribution item={item} />
+        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-white/35">
+          <span title={eventAt ? new Date(eventAt).toLocaleString() : undefined}>{formatFeedRelativeDate(eventAt)}</span>
+          {item.genre && <><span>·</span><span className="truncate">{item.genre}</span></>}
         </div>
       </div>
 
-      {/* Waveform — click seeks when playing, plays otherwise */}
-      <div className="flex-1 min-w-0 hidden md:block">
-        <FeedWaveform
-          localTrackId={item.local_track_id}
-          durationMs={item.duration_ms}
-          onActivate={() => playable && onPlay(item)}
-        />
+      <div className="hidden min-w-0 flex-1 md:block">
+        <FeedWaveform localTrackId={item.local_track_id} durationMs={item.duration_ms} onActivate={() => playable && onPlay(item)} />
       </div>
 
-      {hidden && (
-        <span className="shrink-0 px-1.5 py-0.5 rounded font-sf-mono text-[10px] uppercase tracking-wide text-white/40 bg-white/5">
-          {item.status}
-        </span>
-      )}
+      <SoundCloudSyncState item={item} />
+      <span className="hidden shrink-0 font-sf-mono text-xs text-white/40 sm:block">{formatDuration(item.duration_ms)}</span>
 
-      <span className="text-xs text-white/40 font-sf-mono shrink-0 hidden sm:block">
-        {formatDuration(item.duration_ms)}
-      </span>
-
-      {/* Rating buttons */}
-      <div className="flex items-center gap-1 shrink-0">
-        <button
-          onClick={() => onRate(item, -1)}
-          aria-label="Dismiss (counts against artist)"
-          title="-1 · hide + counts against artist"
-          className="p-2 rounded text-white/40 hover:text-red-400 hover:bg-red-400/10 transition-colors"
-        >
-          <ThumbsDown className="w-4 h-4" />
-        </button>
-        <button
-          onClick={() => onRate(item, 0)}
-          aria-label="Hide"
-          title="0 · just hide"
-          className="p-2 rounded text-white/40 hover:text-white hover:bg-white/10 transition-colors"
-        >
-          <EyeOff className="w-4 h-4" />
-        </button>
-        <button
-          onClick={() => !liked && onRate(item, 1)}
-          aria-label="Like (adds to monthly playlist)"
-          title={
-            alreadySaved
-              ? `already in your ${item.in_likes ? 'SoundCloud likes' : 'playlists'}`
-              : '+1 · like on SoundCloud + add to monthly playlist'
-          }
-          className={`p-2 rounded transition-colors ${
-            alreadySaved
-              ? 'text-red-500'
-              : liked
-                ? 'text-obsidian-accent'
-                : 'text-white/40 hover:text-obsidian-accent hover:bg-obsidian-accent/10'
-          }`}
-        >
-          <Heart className={`w-4 h-4 ${alreadySaved || liked ? 'fill-current' : ''}`} />
-        </button>
+      <div className="flex shrink-0 items-center gap-0.5" aria-label="Feed decisions">
+        <ActionButton label="Nope; hide and count against this recommendation" title="Nope" active={decision === 'nope'} disabled={isUpdating} onClick={() => onDecide(item, 'nope')}>
+          <ThumbsDown className="h-4 w-4" />
+        </ActionButton>
+        <ActionButton label="Hide without affecting recommendations" title="Hide" active={decision === 'hide'} disabled={isUpdating} onClick={() => onDecide(item, 'hide')}>
+          <EyeOff className="h-4 w-4" />
+        </ActionButton>
+        <ActionButton label="Keep; like on SoundCloud and add to monthly playlist" title="Heart" active={decision === 'keep'} disabled={isUpdating || decision === 'keep'} onClick={() => onDecide(item, 'keep')}>
+          <Heart className={`h-4 w-4 ${decision === 'keep' ? 'fill-current' : ''}`} />
+        </ActionButton>
       </div>
-    </div>
+    </article>
   );
 }
