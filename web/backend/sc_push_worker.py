@@ -56,9 +56,14 @@ class SCPushBulkSync(NamedTuple):
     playlist_id: int
 
 
+class SCPushFeedActions(NamedTuple):
+    """Drain durable feed actions through this single-writer queue."""
+
+
 _queue: queue.Queue = queue.Queue()
 _worker_thread: threading.Thread | None = None
 _worker_lock = threading.Lock()
+_feed_retry_timer: threading.Timer | None = None
 
 
 def _is_transient_error(err: str | None) -> bool:
@@ -158,6 +163,21 @@ def enqueue_sc_push_bulk_sync(playlist_id: int) -> None:
     _queue.put(SCPushBulkSync(playlist_id))
 
 
+def enqueue_feed_action_drain() -> None:
+    """Wake the single SC writer to process all currently-due feed jobs."""
+    _ensure_worker()
+    _queue.put(SCPushFeedActions())
+
+
+def recover_feed_actions() -> int:
+    """Recover persisted jobs after restart and schedule reconciliation."""
+    from web.backend.queries.feed import recover_interrupted_actions
+
+    recovered = recover_interrupted_actions()
+    enqueue_feed_action_drain()
+    return recovered
+
+
 def _worker_loop() -> None:
     """Process SC push tasks from the queue. Runs as daemon thread."""
     threading.current_thread().silent_logging = True
@@ -182,6 +202,38 @@ def _dispatch(task: object) -> None:
         _run_with_retry(lambda: _handle_remove(task.playlist_id, task.track_id), "remove")
     elif isinstance(task, SCPushBulkSync):
         _run_with_retry(lambda: _handle_bulk_sync(task.playlist_id), "bulk_sync")
+    elif isinstance(task, SCPushFeedActions):
+        _handle_feed_actions()
+
+
+def _handle_feed_actions() -> None:
+    """Execute durable feed jobs on the same thread as every playlist mutation."""
+    from web.backend.feed_rating import drain_pending_feed_actions
+    from web.backend.queries.feed import get_next_action_delay
+
+    state = get_web_provider_state()
+    if state is None:
+        logger.warning("SC push: feed actions pending; provider is not authenticated")
+        _schedule_feed_retry(300)
+        return
+    drain_pending_feed_actions(state)
+    delay = get_next_action_delay()
+    if delay is not None:
+        _schedule_feed_retry(max(1, delay))
+
+
+def _schedule_feed_retry(delay_seconds: float) -> None:
+    """Schedule one wake-up without blocking the serialized mutation worker."""
+    global _feed_retry_timer
+    with _worker_lock:
+        if _feed_retry_timer is not None and _feed_retry_timer.is_alive():
+            return
+        _feed_retry_timer = threading.Timer(
+            delay_seconds, enqueue_feed_action_drain
+        )
+        _feed_retry_timer.daemon = True
+        _retry_timer = _feed_retry_timer
+    _retry_timer.start()
 
 
 def _handle_add(playlist_id: int, track_id: int) -> tuple[bool, str | None]:

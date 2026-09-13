@@ -18,9 +18,10 @@ from loguru import logger
 
 from music_minion.core.database import get_db_connection
 from web.backend.discovery_sync import sync_followings_reposts
-from web.backend.feed_rating import sync_pending_feed_likes
 from web.backend.feed_uploads_sync import sync_followings_uploads
 from web.backend.queries import discovery as discovery_queries
+from web.backend.queries import feed as feed_queries
+from web.backend.sc_push_worker import enqueue_feed_action_drain, recover_feed_actions
 from web.backend.soundcloud_auth import get_web_provider_state
 
 _feed_lock = threading.Lock()
@@ -142,12 +143,9 @@ def _fetch_feed_locked() -> dict[str, Any]:
         _set_sync_error(str(exc))
         raise
 
-    # Retry sweep: finish SC-side work (like + monthly playlist) for +1
-    # ratings whose background task failed (e.g. SC 429).
-    try:
-        sync_pending_feed_likes(provider_state)
-    except Exception:
-        logger.exception("feed_sync_error during sync_pending_feed_likes (continuing)")
+    # Wake the single SC mutation writer. Jobs are durable and remain queued
+    # across provider outages and process restarts.
+    enqueue_feed_action_drain()
 
     # Pull likes made outside the feed (SC app/web) into the local library so
     # the feed's in_likes flag stays accurate.
@@ -219,6 +217,9 @@ def start_feed_worker() -> None:
     """Start the feed-sync daemon thread. Called from FastAPI startup."""
 
     _reset_stale_running_status()
+    recovered = recover_feed_actions()
+    if recovered:
+        logger.info(f"feed_sync: recovered {recovered} interrupted SC actions")
 
     def _loop() -> None:
         threading.current_thread().silent_logging = True  # type: ignore[attr-defined]
@@ -298,7 +299,11 @@ def run_manual_sync() -> dict[str, Any]:
 
 
 def get_sync_status() -> dict[str, Any]:
-    """Return the sc_feed_sync_state row as a dict."""
+    """Return the sc_feed_sync_state row plus durable SC action-job counts."""
+    return {**_sync_state_row(), "action_jobs": feed_queries.get_action_counts()}
+
+
+def _sync_state_row() -> dict[str, Any]:
     with get_db_connection() as conn:
         row = conn.execute(
             """
