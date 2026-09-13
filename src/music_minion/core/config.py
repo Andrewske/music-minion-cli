@@ -173,6 +173,9 @@ class SoundCloudConfig:
     redirect_uri: str = "http://localhost:8080/callback"
     sync_likes: bool = True
     sync_playlists: bool = True
+    # IANA zone for feed calendar labels (monthly playlist month). Empty means
+    # the machine's local zone.
+    feed_timezone: str = ""
 
 
 @dataclass
@@ -457,6 +460,10 @@ sync_likes = true
 # Sync user's playlists
 sync_playlists = true
 
+# IANA timezone for feed calendar labels (monthly SoundCloud playlist month).
+# Empty = machine local zone. Set this when the server runs in UTC.
+feed_timezone = ""
+
 [ipc]
 # Enable IPC (Inter-Process Communication) for external commands
 enabled = true
@@ -680,6 +687,9 @@ def load_config() -> Config:
                 sync_playlists=soundcloud_data.get(
                     "sync_playlists", config.soundcloud.sync_playlists
                 ),
+                feed_timezone=soundcloud_data.get(
+                    "feed_timezone", config.soundcloud.feed_timezone
+                ),
             )
 
         # Override SoundCloud credentials with environment variables if present
@@ -816,7 +826,8 @@ console_output = {config.logging.console_output!r}"""
 enabled = {config.soundcloud.enabled!r}
 redirect_uri = "{config.soundcloud.redirect_uri}"
 sync_likes = {config.soundcloud.sync_likes!r}
-sync_playlists = {config.soundcloud.sync_playlists!r}"""
+sync_playlists = {config.soundcloud.sync_playlists!r}
+feed_timezone = {config.soundcloud.feed_timezone!r}"""
 
         if config.soundcloud.client_id:
             toml_content += f'\nclient_id = "{config.soundcloud.client_id}"'

@@ -342,9 +342,9 @@ def _backfill_likes_background(job_id: str) -> None:
             # Rate limit: 200ms between likes
             time.sleep(0.2)
 
-        # Mark these tracks as liked in discovery_tracks too
+        # Record the canonical keep decision for every liked track
         if sc_ids:
-            discovery_queries.mark_tracks_liked(sc_ids)
+            discovery_queries.mark_tracks_liked(sc_ids, surface="sc_likes_backfill")
             discovery_queries.recalculate_artist_stats()
 
         with _sync_lock:

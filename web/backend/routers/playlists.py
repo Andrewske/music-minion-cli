@@ -108,12 +108,11 @@ def get_playlist_tracks_with_ratings(
 
         repost_join = ""
         repost_col = "COALESCE(t.released_at, datetime(t.file_mtime, 'unixepoch'), t.created_at, pt.added_at)"
-        # Liked via either flow: discovery (reposts) or the artist-uploads feed
-        sc_liked_col = """(
-            EXISTS(SELECT 1 FROM discovery_tracks dtx
-                   WHERE dtx.soundcloud_id = t.soundcloud_id AND dtx.status = 'liked')
-            OR EXISTS(SELECT 1 FROM sc_artist_uploads saux
-                      WHERE saux.soundcloud_id = t.soundcloud_id AND saux.status = 'liked')
+        # Current canonical keep decision (feed heart or repost builder)
+        sc_liked_col = """EXISTS(
+            SELECT 1 FROM sc_track_decisions d
+            WHERE d.soundcloud_id = t.soundcloud_id
+              AND d.is_current = 1 AND d.decision = 'keep'
         ) as sc_liked"""
         # Direct permalink when known; tracks.source_url may hold a synthetic
         # soundcloud.com/tracks/<id> form SC won't resolve, so unknowns go through

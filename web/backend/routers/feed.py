@@ -1,85 +1,101 @@
-"""SoundCloud uploads feed API endpoints.
+"""Deduplicated SoundCloud releases/reposts feed API."""
 
-Paginated feed of followed artists' newest uploads plus the -1/0/+1 rating
-flow. The +1 SC side (like + monthly playlist) runs in BackgroundTasks so
-the response returns as soon as the DB write lands.
-"""
-
+import base64
+import binascii
+import json
 import threading
 from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
 from pydantic import BaseModel
 
-from web.backend.feed_rating import run_sc_like_flow
+from web.backend.feed_rating import monthly_playlist_name
 from web.backend.feed_uploads_sync import run_uploads_backfill
 from web.backend.queries import discovery as discovery_queries
 from web.backend.queries import feed as feed_queries
+from web.backend.sc_push_worker import enqueue_feed_action_drain
 from web.backend.soundcloud_auth import get_web_provider_state
 
 router = APIRouter(prefix="/api/feed", tags=["feed"])
 
-_RATING_TO_STATUS: dict[int, str] = {-1: "dismissed", 0: "hidden", 1: "liked"}
+_RATING_TO_DECISION = {-1: "nope", 0: "hide", 1: "keep"}
 
 
 class RateRequest(BaseModel):
-    value: Literal[-1, 0, 1]
+    """Either `decision` (canonical) or legacy `value` (-1/0/+1) must be set."""
+
+    decision: Optional[Literal["keep", "nope", "hide"]] = None
+    value: Optional[Literal[-1, 0, 1]] = None
+    surface: str = "web_feed"
+    model_version: Optional[str] = None
+    feature_snapshot: Optional[dict[str, Any]] = None
+
+
+def _resolve_decision(body: RateRequest) -> str:
+    if body.decision is not None:
+        return body.decision
+    if body.value is not None:
+        return _RATING_TO_DECISION[body.value]
+    raise HTTPException(status_code=422, detail="decision or value is required")
 
 
 def _encode_cursor(item: dict[str, Any]) -> str:
-    return f"{item['uploaded_at']}|{item['id']}"
+    payload = json.dumps(
+        [item["event_at"], item["soundcloud_id"]], separators=(",", ":")
+    ).encode()
+    return base64.urlsafe_b64encode(payload).decode().rstrip("=")
 
 
-def _decode_cursor(cursor: Optional[str]) -> tuple[Optional[str], Optional[int]]:
+def _decode_cursor(cursor: Optional[str]) -> tuple[Optional[str], Optional[str]]:
     if not cursor:
         return None, None
     try:
-        uploaded_at, raw_id = cursor.rsplit("|", 1)
-        return uploaded_at, int(raw_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail=f"Invalid cursor: {cursor!r}")
+        padding = "=" * (-len(cursor) % 4)
+        event_at, soundcloud_id = json.loads(
+            base64.urlsafe_b64decode(cursor + padding).decode()
+        )
+        if not isinstance(event_at, str) or not isinstance(soundcloud_id, str):
+            raise ValueError("cursor values must be strings")
+        return event_at, soundcloud_id
+    except (
+        ValueError,
+        TypeError,
+        UnicodeDecodeError,
+        binascii.Error,
+        json.JSONDecodeError,
+    ):
+        raise HTTPException(status_code=400, detail="Invalid feed cursor")
 
 
 @router.get("")
 def get_feed(
     limit: int = Query(default=30, ge=1, le=100),
     cursor: Optional[str] = None,
-    top200: bool = False,
+    source: Literal["all", "releases", "reposts"] = "all",
+    max_rank: Optional[int] = Query(default=None, ge=1),
     in_library: bool = False,
     show_hidden: bool = False,
+    top200: bool = False,
 ) -> dict[str, Any]:
-    cursor_uploaded_at, cursor_id = _decode_cursor(cursor)
+    cursor_event_at, cursor_soundcloud_id = _decode_cursor(cursor)
     items = feed_queries.get_feed_page(
         limit=limit,
-        cursor_uploaded_at=cursor_uploaded_at,
-        cursor_id=cursor_id,
-        top200=top200,
+        cursor_event_at=cursor_event_at,
+        cursor_soundcloud_id=cursor_soundcloud_id,
+        source=source,
+        max_rank=max_rank,
         in_library=in_library,
         show_hidden=show_hidden,
+        top200=top200,
     )
     next_cursor = _encode_cursor(items[-1]) if len(items) == limit else None
     return {"items": items, "next_cursor": next_cursor}
 
 
-def _run_sc_like_background(upload: dict[str, Any]) -> None:
-    state = get_web_provider_state()
-    if state is None:
-        logger.warning("feed: +1 SC side skipped — provider not authenticated")
-        return
-    try:
-        run_sc_like_flow(state, upload)
-    except Exception:
-        logger.exception(f"feed: +1 SC flow failed for upload {upload['id']}")
-
-
 @router.post("/backfill")
 def start_backfill() -> dict[str, Any]:
-    """Kick off the one-time uploads backfill (all followed artists, uploads
-    since Jan 2026) in a background thread. Poll
-    GET /api/soundcloud/feed-sync/status (uploads_* fields) for progress —
-    uploads_last_status flips 'running' -> 'ok'/'partial'.
-    """
+    """Kick off the one-time uploads backfill in a background thread."""
     from web.backend.sc_feed_worker import _feed_lock
 
     state = get_web_provider_state()
@@ -101,19 +117,77 @@ def start_backfill() -> dict[str, Any]:
     return {"started": True}
 
 
-@router.post("/{upload_id}/rate")
-def rate_upload(
-    upload_id: int, body: RateRequest, background_tasks: BackgroundTasks
-) -> dict[str, Any]:
-    status = _RATING_TO_STATUS[body.value]
-    updated = feed_queries.set_upload_status(upload_id, status)
+def _resolve_compat_identifier(identifier: str) -> str:
+    """Accept a legacy numeric upload-row id during the API transition."""
+    if feed_queries.get_feed_track(identifier) is not None:
+        return identifier
+    if identifier.isdigit():
+        upload = feed_queries.get_upload(int(identifier))
+        if upload:
+            return upload["soundcloud_id"]
+    return identifier
+
+
+@router.post("/{soundcloud_id}/rate")
+def rate_track(soundcloud_id: str, body: RateRequest) -> dict[str, Any]:
+    soundcloud_id = _resolve_compat_identifier(soundcloud_id)
+    decision = _resolve_decision(body)
+    updated = feed_queries.record_decision(
+        soundcloud_id,
+        decision,
+        body.surface,
+        body.model_version,
+        body.feature_snapshot,
+    )
     if updated is None:
-        raise HTTPException(status_code=404, detail=f"Upload {upload_id} not found")
+        raise HTTPException(
+            status_code=404, detail=f"SoundCloud track {soundcloud_id} not found"
+        )
 
-    if body.value != 0:
-        # -1 and +1 both feed the artist hit_rate; 0 is penalty-free.
-        discovery_queries.recalculate_artist_stats(updated["discovery_artist_id"])
-    if body.value == 1:
-        background_tasks.add_task(_run_sc_like_background, updated)
+    local_track_id = None
+    if decision == "keep":
+        local_track_id = feed_queries.materialize_feed_track(soundcloud_id)
+        feed_queries.enqueue_keep_actions(soundcloud_id, monthly_playlist_name())
+        enqueue_feed_action_drain()
+    else:
+        feed_queries.cancel_pending_actions(soundcloud_id)
 
-    return {"id": upload_id, "status": status}
+    # A re-rating can remove as well as add a training label, so refresh every
+    # artist who contributed this track (uploader + reposters).
+    for artist_id in feed_queries.get_contributing_artist_ids(soundcloud_id):
+        discovery_queries.recalculate_artist_stats(artist_id)
+    return {
+        "soundcloud_id": soundcloud_id,
+        "current_decision": decision,
+        "status": {"keep": "liked", "nope": "dismissed", "hide": "hidden"}[decision],
+        "decided_at": updated["decided_at"],
+        "local_track_id": local_track_id,
+        "action_state": feed_queries.get_action_state(soundcloud_id),
+    }
+
+
+@router.post("/{soundcloud_id}/materialize")
+def materialize_track(soundcloud_id: str) -> dict[str, Any]:
+    soundcloud_id = _resolve_compat_identifier(soundcloud_id)
+    local_track_id = feed_queries.materialize_feed_track(soundcloud_id)
+    if local_track_id is None:
+        raise HTTPException(
+            status_code=404, detail=f"SoundCloud track {soundcloud_id} not found"
+        )
+    return {"soundcloud_id": soundcloud_id, "local_track_id": local_track_id}
+
+
+@router.get("/{soundcloud_id}/decisions")
+def get_decision_history(soundcloud_id: str) -> dict[str, Any]:
+    soundcloud_id = _resolve_compat_identifier(soundcloud_id)
+    return {
+        "soundcloud_id": soundcloud_id,
+        "history": feed_queries.get_decision_history(soundcloud_id),
+    }
+
+
+@router.post("/actions/reconcile")
+def reconcile_actions(soundcloud_id: Optional[str] = None) -> dict[str, Any]:
+    reset = feed_queries.reconcile_actions(soundcloud_id)
+    enqueue_feed_action_drain()
+    return {"reset": reset}
