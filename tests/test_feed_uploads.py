@@ -98,7 +98,22 @@ MINIMAL_SCHEMA_SQL = [
         rated_at TIMESTAMP,
         sc_like_done BOOLEAN DEFAULT 0,
         sc_playlist_done BOOLEAN DEFAULT 0,
-        first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        access TEXT
+    )""",
+    """CREATE TABLE ratings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        track_id INTEGER NOT NULL,
+        rating_type TEXT NOT NULL,
+        source TEXT,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""",
+    """CREATE TABLE playlist_tracks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        playlist_id INTEGER NOT NULL,
+        track_id INTEGER NOT NULL,
+        position INTEGER,
+        UNIQUE(playlist_id, track_id)
     )""",
     """CREATE TABLE sc_monthly_playlists (
         name TEXT PRIMARY KEY,
