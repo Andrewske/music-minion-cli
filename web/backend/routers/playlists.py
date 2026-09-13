@@ -212,7 +212,7 @@ def get_playlist_tracks_with_ratings(
                     JOIN discovery_tracks dt ON dt.id = dtr.discovery_track_id
                     JOIN discovery_artists da ON da.id = dtr.discovery_artist_id
                     WHERE dt.soundcloud_id IN ({placeholders})
-                      AND da.in_top_200 = 1
+                      AND da.ranking <= 200
                     ORDER BY da.ranking ASC""",
                     list(sc_id_to_track_id.keys()),
                 ).fetchall()

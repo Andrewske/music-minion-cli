@@ -14,6 +14,7 @@ import {
 import type { ArtistStats } from '../../api/artists';
 import { Button } from '../ui/button';
 import { ArtistStatChip } from './ArtistStatChip';
+import { formatKeepRates, keepRateAccent } from './keep-rates';
 import type { ChipKey } from './ArtistStatChip';
 import { RankTierMenu } from './RankTierMenu';
 
@@ -107,7 +108,7 @@ export function ArtistCard({
     ? `last active ${relativeTime(artist.last_activity_at)}`
     : 'no activity';
 
-  const hitRateValue = `up ${Math.round(artist.upload_keep_rate * 100)}% (${Math.round(artist.upload_rated_count)}) · re ${Math.round(artist.repost_keep_rate * 100)}% (${artist.repost_rated_count.toFixed(1)})`;
+  const hitRateValue = formatKeepRates(artist);
 
   const feedNoiseValue =
     artist.feed_noise_7d === 0 && artist.last_activity_at === null
@@ -217,7 +218,7 @@ export function ArtistCard({
                 label="hit"
                 value={hitRateValue}
                 tooltip="Bayesian-smoothed uploader and reposter keep rates (rated samples)"
-                accent={artist.repost_keep_rate >= 0.22}
+                accent={keepRateAccent(artist)}
               />
             )}
           </div>

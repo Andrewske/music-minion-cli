@@ -16,7 +16,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 61  # metadata-rich SoundCloud feed ingestion
+SCHEMA_VERSION = 62  # role-specific artist keep rates
 
 
 # Initial top 50 curated emojis for music reactions
@@ -2304,7 +2304,11 @@ def migrate_database(conn, current_version: int) -> None:
                 is_following BOOLEAN DEFAULT 1,
                 in_top_200 BOOLEAN DEFAULT 0,
                 check_interval_days INTEGER DEFAULT 1,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                upload_keep_rate REAL,
+                upload_rated_count REAL NOT NULL DEFAULT 0,
+                repost_keep_rate REAL,
+                repost_rated_count REAL NOT NULL DEFAULT 0
             )
         """)
         conn.execute("""
@@ -2927,6 +2931,28 @@ def migrate_database(conn, current_version: int) -> None:
         logger.info(
             "  ✓ Migration to v61 complete: SoundCloud feed metadata and checkpoints"
         )
+
+    if current_version < 62:
+        logger.info("Running migration to v62: role-specific artist keep rates...")
+
+        # Uploader quality and reposter quality are separate Bayesian-smoothed
+        # rates, each paired with its rated sample weight. NULL means "never
+        # rated in this role"; readers fall back to the population prior.
+        # ranking/tier stay editorial and are never touched by the recalc.
+        for col_sql in (
+            "ALTER TABLE discovery_artists ADD COLUMN upload_keep_rate REAL",
+            "ALTER TABLE discovery_artists ADD COLUMN upload_rated_count REAL NOT NULL DEFAULT 0",
+            "ALTER TABLE discovery_artists ADD COLUMN repost_keep_rate REAL",
+            "ALTER TABLE discovery_artists ADD COLUMN repost_rated_count REAL NOT NULL DEFAULT 0",
+        ):
+            try:
+                conn.execute(col_sql)
+            except sqlite3.OperationalError as exc:
+                if "duplicate column" not in str(exc).lower():
+                    raise
+
+        conn.commit()
+        logger.info("  ✓ Migration to v62 complete: role-specific artist keep rates")
 
 
 def init_database() -> None:

@@ -26,9 +26,11 @@ export interface ArtistStats {
   in_top_200: boolean;
   hit_rate: number | null;
   tracks_seen: number;
-  upload_keep_rate: number;
+  /** Bayesian-smoothed keep rate as uploader; null until rated in that role. */
+  upload_keep_rate: number | null;
   upload_rated_count: number;
-  repost_keep_rate: number;
+  /** Bayesian-smoothed keep rate as reposter (fractional track credit); null until rated. */
+  repost_keep_rate: number | null;
   repost_rated_count: number;
   library_track_count: number;
   repost_in_library_count: number;
