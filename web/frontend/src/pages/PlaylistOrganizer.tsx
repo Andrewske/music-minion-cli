@@ -596,11 +596,19 @@ export function PlaylistOrganizer({
           </div>
 
           {/* Current track banner */}
-          <CurrentTrackBanner
-            buckets={buckets}
-            trackDate={allTracks?.tracks.find((t) => t.id === currentTrack?.id)?.added_at}
-            reposters={allTracks?.tracks.find((t) => t.id === currentTrack?.id)?.reposters}
-          />
+          {(() => {
+            const entry = allTracks?.tracks.find((t) => t.id === currentTrack?.id);
+            return (
+              <CurrentTrackBanner
+                buckets={buckets}
+                trackDate={entry?.added_at}
+                reposters={entry?.reposters}
+                artworkUrl={entry?.artwork_url}
+                scLiked={entry?.sc_liked}
+                soundcloudUrl={entry?.soundcloud_url}
+              />
+            );
+          })()}
 
           {/* Unassigned tracks table */}
           <div className="mb-6">

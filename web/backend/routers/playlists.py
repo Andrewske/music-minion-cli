@@ -2,7 +2,6 @@ from fastapi import APIRouter, HTTPException
 from typing import List, Optional, Tuple
 from pydantic import BaseModel
 from time import time
-from ..deps import get_db
 from ..queries.emojis import batch_fetch_track_emojis
 from ..schemas import (
     CreatePlaylistRequest,
@@ -10,8 +9,6 @@ from ..schemas import (
     FilterResponse,
     SmartFiltersResponse,
     PlaylistStatsResponse,
-    PlaylistTrackEntry,
-    PlaylistTracksResponse,
 )
 
 router = APIRouter()
@@ -111,6 +108,26 @@ def get_playlist_tracks_with_ratings(
 
         repost_join = ""
         repost_col = "COALESCE(t.released_at, datetime(t.file_mtime, 'unixepoch'), t.created_at, pt.added_at)"
+        # Liked via either flow: discovery (reposts) or the artist-uploads feed
+        sc_liked_col = """(
+            EXISTS(SELECT 1 FROM discovery_tracks dtx
+                   WHERE dtx.soundcloud_id = t.soundcloud_id AND dtx.status = 'liked')
+            OR EXISTS(SELECT 1 FROM sc_artist_uploads saux
+                      WHERE saux.soundcloud_id = t.soundcloud_id AND saux.status = 'liked')
+        ) as sc_liked"""
+        # Direct permalink when known; tracks.source_url may hold a synthetic
+        # soundcloud.com/tracks/<id> form SC won't resolve, so unknowns go through
+        # the lazy-resolving redirect endpoint (which repairs source_url on click).
+        sc_url_col = """COALESCE(
+            CASE WHEN t.source_url IS NOT NULL
+                  AND t.source_url NOT LIKE 'https://soundcloud.com/tracks/%'
+                 THEN t.source_url END,
+            (SELECT sau.permalink_url FROM sc_artist_uploads sau
+             WHERE sau.soundcloud_id = t.soundcloud_id),
+            CASE WHEN t.soundcloud_id IS NOT NULL THEN
+                '/api/tracks/' || t.id || '/soundcloud'
+            END
+        ) as soundcloud_url"""
         if is_discovery:
             repost_join = """
                 LEFT JOIN discovery_tracks dt ON dt.soundcloud_id = t.soundcloud_id
@@ -129,6 +146,9 @@ def get_playlist_tracks_with_ratings(
                 t.bpm,
                 t.key_signature,
                 (t.unavailable_at IS NULL) as available,
+                t.artwork_url,
+                {sc_url_col},
+                {sc_liked_col},
                 COALESCE(per.rating, 1500.0) as rating,
                 COALESCE(per.rating, 1500.0) as elo_rating,
                 COALESCE(per.comparison_count, 0) as comparison_count,
@@ -155,9 +175,15 @@ def get_playlist_tracks_with_ratings(
             {k: v for k, v in dict(row).items() if k != "total_count"}
             for row in rows
         ]
-        # SQLite returns the boolean expr as 0/1 — coerce to a real bool for the API
+        # SQLite returns boolean exprs as 0/1 — coerce to real bools for the API
         for track in tracks:
             track["available"] = bool(track.get("available", 1))
+            track["sc_liked"] = bool(track.get("sc_liked") or 0)
+            # Permalinks from the SC API carry utm tracking junk; widget URLs need
+            # their query string, so only strip when tracking params are present
+            sc_url = track.get("soundcloud_url")
+            if sc_url and "utm_" in sc_url:
+                track["soundcloud_url"] = sc_url.split("?", 1)[0]
 
         # Batch-fetch emojis for paginated tracks only
         if tracks:
@@ -229,7 +255,6 @@ def get_playlist_name(playlist_id: int) -> Optional[str]:
 async def get_playlists(library: Optional[str] = None):
     """Get all playlists, optionally filtered by library."""
     try:
-        from music_minion.core.database import get_db_connection
         from music_minion.domain.playlists.crud import get_all_playlists
 
         playlists = get_all_playlists(library=library)

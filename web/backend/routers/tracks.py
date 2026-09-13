@@ -8,9 +8,16 @@ import json
 import time
 from pathlib import Path
 from typing import Optional
+import requests
+
 from ..waveform import has_cached_waveform, generate_waveform, get_waveform_path, get_waveform_cache_dir, fetch_soundcloud_waveform
 from ..deps import get_db, get_config
+from ..soundcloud_auth import get_web_provider_state
 from music_minion.core.config import Config
+from music_minion.domain.library.providers.soundcloud.api import (
+    API_BASE_URL as SC_API_BASE_URL,
+    _ensure_valid_token,
+)
 
 router = APIRouter()
 
@@ -40,6 +47,67 @@ def get_mime_type(file_path: Path) -> str:
         return mime
     guessed, _ = mimetypes.guess_type(str(file_path))
     return guessed or "application/octet-stream"
+
+
+def resolve_sc_permalink(soundcloud_id: str) -> Optional[str]:
+    """Fetch the track's permalink_url from the SoundCloud API.
+
+    Returns None on any failure (unauthenticated, network, private track).
+    """
+    state = get_web_provider_state()
+    if not state:
+        logger.warning(f"SC permalink resolve skipped for {soundcloud_id}: not authenticated")
+        return None
+    state, token_data = _ensure_valid_token(state)
+    if not token_data:
+        logger.warning(f"SC permalink resolve skipped for {soundcloud_id}: token refresh failed")
+        return None
+    try:
+        resp = requests.get(
+            f"{SC_API_BASE_URL}/tracks/{soundcloud_id}",
+            headers={"Authorization": f"OAuth {token_data['access_token']}"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        permalink = resp.json().get("permalink_url")
+        return permalink.split("?", 1)[0] if permalink else None
+    except (requests.RequestException, ValueError):
+        logger.exception(f"SC permalink resolve failed for track {soundcloud_id}")
+        return None
+
+
+# Synthetic form written by import code; soundcloud.com does not resolve it
+SYNTHETIC_SC_URL_PREFIX = "https://soundcloud.com/tracks/"
+
+
+@router.get("/tracks/{track_id}/soundcloud")
+async def soundcloud_redirect(track_id: int, db=Depends(get_db)) -> RedirectResponse:
+    """Redirect to the track's SoundCloud page.
+
+    Lazily resolves the real permalink via the SC API on first hit and caches
+    it into tracks.source_url (repairing the synthetic /tracks/<id> form).
+    """
+    row = db.execute(
+        "SELECT soundcloud_id, source_url FROM tracks WHERE id = ?", (track_id,)
+    ).fetchone()
+    if not row or not row["soundcloud_id"]:
+        raise HTTPException(status_code=404, detail=f"Track {track_id} has no SoundCloud id")
+
+    cached = row["source_url"]
+    if cached and not cached.startswith(SYNTHETIC_SC_URL_PREFIX):
+        return RedirectResponse(cached)
+
+    permalink = await run_in_threadpool(resolve_sc_permalink, row["soundcloud_id"])
+    if permalink:
+        db.execute("UPDATE tracks SET source_url = ? WHERE id = ?", (permalink, track_id))
+        db.commit()
+        return RedirectResponse(permalink)
+
+    # Last resort: the widget player accepts raw track ids
+    return RedirectResponse(
+        "https://w.soundcloud.com/player/?url=https%3A%2F%2Fapi.soundcloud.com%2Ftracks%2F"
+        + str(row["soundcloud_id"])
+    )
 
 
 @router.get("/tracks/search")
