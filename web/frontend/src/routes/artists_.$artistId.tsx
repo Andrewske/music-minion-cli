@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import type { ReactElement } from 'react';
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { ArrowLeft, HardDrive, Music, UserMinus, Users } from 'lucide-react';
+import { ArrowLeft, ExternalLink, HardDrive, Music, UserMinus, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { useArtist, useArtistLibraryTracks, useUnfollowArtist } from '../hooks/useArtists';
 import { usePlayerStore } from '../stores/playerStore';
 import { ArtistTrackSections } from '../components/artists/ArtistTrackSections';
 import { ArtistConnections } from '../components/artists/ArtistConnections';
 import { ConfirmUnfollowDialog } from '../components/artists/ConfirmUnfollowDialog';
+import { RankTierMenu } from '../components/artists/RankTierMenu';
 
 type ArtistTab = 'tracks' | 'connections';
 
@@ -118,9 +119,12 @@ function ArtistPage(): ReactElement {
             </div>
           )}
           <div className="min-w-0">
-            <h1 className="font-inter text-2xl font-semibold text-white tracking-tight truncate">
-              {artist.display_name}
-            </h1>
+            <div className="flex items-center gap-2">
+              <h1 className="font-inter text-2xl font-semibold text-white tracking-tight truncate">
+                {artist.display_name}
+              </h1>
+              <RankTierMenu artist={artist} />
+            </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 font-sf-mono text-xs text-white/50">
               {artist.follower_count != null && (
                 <span className="flex items-center gap-1">
@@ -131,6 +135,28 @@ function ArtistPage(): ReactElement {
               <span>{artist.library_track_count} in library</span>
               <span className="text-red-400/80">{artist.sc_liked_count} liked</span>
               <span>{artist.playlist_track_count} in playlists</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 font-sf-mono text-xs">
+              {artist.slug && (
+                <a
+                  href={`https://soundcloud.com/${artist.slug}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1 text-orange-400/80 hover:text-orange-400 transition-colors"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  SoundCloud
+                </a>
+              )}
+              <a
+                href={`https://open.spotify.com/search/${encodeURIComponent(artist.display_name)}/artists`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1 text-green-500/80 hover:text-green-400 transition-colors"
+              >
+                <ExternalLink className="w-3 h-3" />
+                Spotify
+              </a>
             </div>
           </div>
           {artist.is_following && (
