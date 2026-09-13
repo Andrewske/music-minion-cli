@@ -107,9 +107,7 @@ export function ArtistCard({
     ? `last active ${relativeTime(artist.last_activity_at)}`
     : 'no activity';
 
-  const hitRateValue = artist.hit_rate !== null
-    ? `${Math.round(artist.hit_rate * 100)}%`
-    : '—';
+  const hitRateValue = `up ${Math.round(artist.upload_keep_rate * 100)}% (${Math.round(artist.upload_rated_count)}) · re ${Math.round(artist.repost_keep_rate * 100)}% (${artist.repost_rated_count.toFixed(1)})`;
 
   const feedNoiseValue =
     artist.feed_noise_7d === 0 && artist.last_activity_at === null
@@ -163,7 +161,7 @@ export function ArtistCard({
 
         <div className="flex items-center gap-2 shrink-0">
           <RankTierMenu artist={artist} />
-          {artist.in_top_200 && (
+          {artist.ranking !== null && artist.ranking <= 200 && (
             <span className="font-sf-mono text-xs px-1.5 py-0.5 bg-obsidian-accent/10 text-obsidian-accent border border-obsidian-accent/30">
               Top200
             </span>
@@ -218,8 +216,8 @@ export function ArtistCard({
                 icon={Target}
                 label="hit"
                 value={hitRateValue}
-                tooltip="proportion of feed tracks loved"
-                accent={artist.hit_rate !== null && artist.hit_rate >= 0.15}
+                tooltip="Bayesian-smoothed uploader and reposter keep rates (rated samples)"
+                accent={artist.repost_keep_rate >= 0.22}
               />
             )}
           </div>

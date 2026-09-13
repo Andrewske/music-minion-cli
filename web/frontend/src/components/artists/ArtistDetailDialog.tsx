@@ -197,9 +197,7 @@ function DialogBody({ artistId, onUnfollowRequest }: DialogBodyProps): ReactElem
 
   const { artist, recent_feed_events, top_library_tracks, match_overrides } = data;
 
-  const hitRateValue = artist.hit_rate !== null
-    ? `${Math.round(artist.hit_rate * 100)}%`
-    : '—';
+  const hitRateValue = `up ${Math.round(artist.upload_keep_rate * 100)}% (${Math.round(artist.upload_rated_count)}) · re ${Math.round(artist.repost_keep_rate * 100)}% (${artist.repost_rated_count.toFixed(1)})`;
 
   const feedNoiseValue =
     artist.feed_noise_7d === 0 && artist.last_activity_at === null
@@ -235,7 +233,7 @@ function DialogBody({ artistId, onUnfollowRequest }: DialogBodyProps): ReactElem
             {artist.ranking !== null && (
               <span className="font-sf-mono text-xs text-white/50">#{artist.ranking}</span>
             )}
-            {artist.in_top_200 && (
+            {artist.ranking !== null && artist.ranking <= 200 && (
               <span className="font-sf-mono text-xs px-1.5 py-0.5 bg-obsidian-accent/10 text-obsidian-accent border border-obsidian-accent/30">
                 Top200
               </span>
@@ -263,7 +261,7 @@ function DialogBody({ artistId, onUnfollowRequest }: DialogBodyProps): ReactElem
           label="hit"
           value={hitRateValue}
           tooltip="proportion of feed tracks loved"
-          accent={artist.hit_rate !== null && artist.hit_rate >= 0.15}
+          accent={artist.repost_keep_rate >= 0.22}
         />
         <ArtistStatChip
           icon={Radio}

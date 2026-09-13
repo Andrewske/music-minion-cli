@@ -78,6 +78,8 @@ playlist_counts AS (
 SELECT da.id, da.soundcloud_user_id, da.slug, da.display_name, da.avatar_url,
        da.follower_count, da.is_following, da.ranking, da.tier, da.in_top_200,
        da.hit_rate, da.tracks_seen,
+       da.upload_keep_rate, da.upload_rated_count,
+       da.repost_keep_rate, da.repost_rated_count,
        COALESCE(lc.library_count, 0) AS library_track_count,
        COALESCE(rc.repost_count, 0) AS repost_in_library_count,
        COALESCE(fs.noise_7d, 0) AS feed_noise_7d,
@@ -104,6 +106,7 @@ UNION ALL
 -- Local-only artists (tracks with artist_normalized that never resolves to a discovery_artists row)
 SELECT NULL AS id, NULL, NULL, t.artist AS display_name, NULL,
        NULL, 0, NULL, NULL, 0, NULL, 0,
+       NULL, 0, NULL, 0,
        COUNT(DISTINCT t.id) AS library_track_count,
        0, 0, 0, NULL,
        NULL, NULL, NULL, NULL,
@@ -133,7 +136,7 @@ _SORT_CLAUSES: dict[str, str] = {
     "rank": "ORDER BY ranking ASC NULLS LAST, display_name COLLATE NOCASE ASC",
     "library": "ORDER BY library_track_count DESC, display_name COLLATE NOCASE ASC",
     "reposts": "ORDER BY repost_in_library_count DESC, display_name COLLATE NOCASE ASC",
-    "hit_rate": "ORDER BY hit_rate DESC NULLS LAST, display_name COLLATE NOCASE ASC",
+    "hit_rate": "ORDER BY repost_keep_rate DESC NULLS LAST, display_name COLLATE NOCASE ASC",
     "noise": "ORDER BY feed_noise_7d DESC, display_name COLLATE NOCASE ASC",
     "last_loved": "ORDER BY last_loved_at DESC NULLS LAST, display_name COLLATE NOCASE ASC",
 }
@@ -207,6 +210,10 @@ def _coerce_row(row: dict[str, Any]) -> dict[str, Any]:
         "in_top_200": bool(row["in_top_200"]),
         "hit_rate": row["hit_rate"],
         "tracks_seen": row["tracks_seen"],
+        "upload_keep_rate": row["upload_keep_rate"],
+        "upload_rated_count": row["upload_rated_count"],
+        "repost_keep_rate": row["repost_keep_rate"],
+        "repost_rated_count": row["repost_rated_count"],
         "library_track_count": row["library_track_count"],
         "repost_in_library_count": row["repost_in_library_count"],
         "sc_liked_count": row["sc_liked_count"],
@@ -264,9 +271,7 @@ def get_artist_detail(
     Returns None if discovery_artist_id does not exist.
     """
     # Verify artist exists and fetch its stats row
-    stats_sql = (
-        f"SELECT * FROM ({ARTISTS_STATS_SQL.strip()}) sub WHERE id = ?"
-    )
+    stats_sql = f"SELECT * FROM ({ARTISTS_STATS_SQL.strip()}) sub WHERE id = ?"
     row = conn.execute(stats_sql, (discovery_artist_id,)).fetchone()
     if row is None:
         return None
@@ -542,14 +547,18 @@ def set_artist_ranking(
 # Artist connections — shared song credits (collabs, feats, remixes)
 # ---------------------------------------------------------------------------
 
-_FEAT_RE = re.compile(r"\b(?:feat|ft)\.?\s+([^()\[\]]+)|\bfeaturing\s+([^()\[\]]+)", re.IGNORECASE)
+_FEAT_RE = re.compile(
+    r"\b(?:feat|ft)\.?\s+([^()\[\]]+)|\bfeaturing\s+([^()\[\]]+)", re.IGNORECASE
+)
 _REMIX_WORDS = r"(?:remix|refix|edit|flip|bootleg|vip|rework|remake)"
 _TITLE_REMIX_RE = re.compile(
     rf"[(\[]([^()\[\]]*?)\s+{_REMIX_WORDS}\s*[)\]]",
     re.IGNORECASE,
 )
 _DASH_REMIX_RE = re.compile(rf"-\s*([^-()\[\]]+?)\s+{_REMIX_WORDS}\s*$", re.IGNORECASE)
-_CREDIT_SPLIT_RE = re.compile(r"\s*(?:,|&|\+|\bx\b|\bvs\.?\b|\band\b|\bb2b\b)\s*", re.IGNORECASE)
+_CREDIT_SPLIT_RE = re.compile(
+    r"\s*(?:,|&|\+|\bx\b|\bvs\.?\b|\band\b|\bb2b\b)\s*", re.IGNORECASE
+)
 _NORM_STRIP = str.maketrans("", "", ".!?")
 
 
@@ -560,7 +569,9 @@ def _normalize_name(name: str) -> str:
 
 def _split_credits(credit: str) -> list[str]:
     """Split a credit string on collab separators (, & + x vs and b2b)."""
-    return [p.strip(" .,-–") for p in _CREDIT_SPLIT_RE.split(credit) if p.strip(" .,-–")]
+    return [
+        p.strip(" .,-–") for p in _CREDIT_SPLIT_RE.split(credit) if p.strip(" .,-–")
+    ]
 
 
 def _parse_title_remixers(title: str) -> list[str]:
@@ -580,7 +591,9 @@ def _parse_track_credits(
     """
     primaries = _split_credits(artist)
     feat_match = _FEAT_RE.search(title or "")
-    feats = _split_credits(feat_match.group(1) or feat_match.group(2)) if feat_match else []
+    feats = (
+        _split_credits(feat_match.group(1) or feat_match.group(2)) if feat_match else []
+    )
     # remix_artist duplicating the whole artist string marks a non-remix row
     remixers: list[str] = []
     if remix_artist and _normalize_name(remix_artist) != _normalize_name(artist):
@@ -601,7 +614,11 @@ def _connection_partners(
     The artist string is only split into collab partners when the page artist
     matches one of its parts — protects duo names like 'Chase & Status'.
     """
-    primaries, feats, remixers = credits["primaries"], credits["feats"], credits["remixers"]
+    primaries, feats, remixers = (
+        credits["primaries"],
+        credits["feats"],
+        credits["remixers"],
+    )
     prim_norms = {_normalize_name(p) for p in primaries}
     remix_norms = {_normalize_name(r) for r in remixers}
     whole_is_page = _normalize_name(artist) in names
@@ -689,8 +706,12 @@ def _build_connections(
     by_partner: dict[str, dict[str, Any]] = {}
     for row in candidates:
         d = dict(row)
-        credits = _parse_track_credits(d["artist"] or "", d["title"] or "", d["remix_artist"])
-        for partner, relation in _connection_partners(d["artist"] or "", credits, names):
+        credits = _parse_track_credits(
+            d["artist"] or "", d["title"] or "", d["remix_artist"]
+        )
+        for partner, relation in _connection_partners(
+            d["artist"] or "", credits, names
+        ):
             norm = _normalize_name(partner)
             if not norm:
                 continue
@@ -743,7 +764,8 @@ def get_artist_connections(
     Returns None if the artist does not exist.
     """
     row = conn.execute(
-        "SELECT display_name FROM discovery_artists WHERE id = ?", (discovery_artist_id,)
+        "SELECT display_name FROM discovery_artists WHERE id = ?",
+        (discovery_artist_id,),
     ).fetchone()
     if row is None:
         return None
@@ -922,7 +944,11 @@ def get_pareto_artists(conn: sqlite3.Connection) -> dict[str, Any]:
             "SELECT COUNT(*) FROM discovery_track_reposters WHERE seen_at > datetime('now', '-30 days')"
         ).fetchone()
         total = total_row[0] if total_row else 0
-        return {"artists_producing_80pct": 0, "total_events": total, "threshold_ids": []}
+        return {
+            "artists_producing_80pct": 0,
+            "total_events": total,
+            "threshold_ids": [],
+        }
 
     total = rows[0]["total"]
     ids = [r["discovery_artist_id"] for r in rows]
