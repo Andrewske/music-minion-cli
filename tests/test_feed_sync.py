@@ -43,7 +43,10 @@ class TestFeedMetadataMigration:
             );
             CREATE TABLE discovery_tracks (
                 id INTEGER PRIMARY KEY,
-                soundcloud_id TEXT UNIQUE
+                soundcloud_id TEXT UNIQUE,
+                status TEXT DEFAULT 'unseen',
+                first_seen TIMESTAMP,
+                created_at TIMESTAMP
             );
             CREATE TABLE discovery_track_reposters (
                 discovery_track_id INTEGER,
@@ -56,7 +59,12 @@ class TestFeedMetadataMigration:
                 id INTEGER PRIMARY KEY,
                 discovery_artist_id INTEGER,
                 soundcloud_id TEXT UNIQUE,
-                uploaded_at TEXT
+                uploaded_at TEXT,
+                status TEXT DEFAULT 'visible',
+                rated_at TIMESTAMP,
+                first_seen TIMESTAMP,
+                sc_like_done INTEGER DEFAULT 0,
+                sc_playlist_done INTEGER DEFAULT 0
             );
             CREATE TABLE sc_feed_sync_state (id INTEGER PRIMARY KEY);
             INSERT INTO discovery_track_reposters
@@ -206,8 +214,10 @@ MINIMAL_SCHEMA_SQL = [
         access TEXT,
         uploaded_at TEXT,
         released_at TEXT,
-        metadata_updated_at TEXT,
         first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        local_track_id INTEGER,
+        metadata_updated_at TIMESTAMP,
+        workflow_state TEXT DEFAULT 'unseen',
         status TEXT DEFAULT 'unseen',
         playlist_batch INTEGER
     )""",
@@ -232,13 +242,17 @@ MINIMAL_SCHEMA_SQL = [
         year INTEGER,
         duration REAL,
         local_path TEXT,
-        elo_rating REAL
+        elo_rating REAL,
+        artwork_url TEXT,
+        source TEXT,
+        source_url TEXT,
+        soundcloud_synced_at TIMESTAMP
     )""",
     """CREATE TABLE ratings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         track_id INTEGER NOT NULL,
         rating_type TEXT NOT NULL,
-        source TEXT,
+        source TEXT DEFAULT 'user',
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )""",
     """CREATE TABLE playlist_elo_ratings (
@@ -292,11 +306,16 @@ MINIMAL_SCHEMA_SQL = [
     """CREATE TABLE sc_artist_uploads (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         discovery_artist_id INTEGER NOT NULL,
-        soundcloud_id TEXT UNIQUE,
-        local_track_id INTEGER,
+        soundcloud_id TEXT UNIQUE NOT NULL,
         title TEXT,
-        status TEXT DEFAULT 'visible',
+        permalink_url TEXT,
+        artwork_url TEXT,
+        duration_ms INTEGER DEFAULT 0,
         uploaded_at TIMESTAMP,
+        local_track_id INTEGER,
+        status TEXT DEFAULT 'visible',
+        rated_at TIMESTAMP,
+        first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         access TEXT,
         event_type TEXT DEFAULT 'upload',
         uploader_soundcloud_id TEXT,
@@ -311,6 +330,18 @@ MINIMAL_SCHEMA_SQL = [
         metadata_backfill_last_error TEXT,
         metadata_backfill_completed_at TIMESTAMP
     )""",
+    """CREATE TABLE sc_track_decisions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        soundcloud_id TEXT NOT NULL,
+        decision TEXT NOT NULL,
+        decided_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        surface TEXT NOT NULL,
+        model_version TEXT,
+        feature_snapshot TEXT,
+        is_current INTEGER NOT NULL DEFAULT 1
+    )""",
+    """CREATE UNIQUE INDEX idx_sc_track_decisions_current
+        ON sc_track_decisions(soundcloud_id) WHERE is_current = 1""",
 ]
 
 
@@ -560,10 +591,21 @@ class TestSeenIdsScope:
             ]:
                 conn.execute(
                     "INSERT INTO discovery_tracks "
-                    "(soundcloud_id, title, artist_name, duration_ms, status) "
-                    "VALUES (?, 'T', 'A', 100, ?)",
-                    (sc_id, status),
+                    "(soundcloud_id, title, artist_name, duration_ms, status, workflow_state) "
+                    "VALUES (?, 'T', 'A', 100, ?, ?)",
+                    (
+                        sc_id,
+                        status,
+                        "in_playlist" if status == "in_playlist" else "unseen",
+                    ),
                 )
+                if status in ("liked", "dismissed"):
+                    conn.execute(
+                        """INSERT INTO sc_track_decisions
+                        (soundcloud_id, decision, surface)
+                        VALUES (?, ?, 'test')""",
+                        (sc_id, "keep" if status == "liked" else "nope"),
+                    )
             conn.commit()
 
         seen = get_seen_track_ids()

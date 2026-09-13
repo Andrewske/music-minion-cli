@@ -72,19 +72,22 @@ MINIMAL_SCHEMA_SQL = [
     """CREATE TABLE discovery_tracks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         soundcloud_id TEXT UNIQUE,
+        slug TEXT,
         title TEXT,
         artist_name TEXT,
         duration_ms INTEGER,
+        released_at TIMESTAMP,
+        uploaded_at TIMESTAMP,
         first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         playlist_batch INTEGER,
+        local_track_id INTEGER,
         uploader_soundcloud_id TEXT,
         genre TEXT,
         artwork_url TEXT,
         permalink_url TEXT,
         access TEXT,
-        uploaded_at TIMESTAMP,
-        released_at TIMESTAMP,
         metadata_updated_at TIMESTAMP,
+        workflow_state TEXT DEFAULT 'unseen',
         status TEXT DEFAULT 'unseen'
     )""",
     """CREATE TABLE discovery_track_reposters (
@@ -104,12 +107,13 @@ MINIMAL_SCHEMA_SQL = [
         artist_normalized TEXT,
         soundcloud_id TEXT UNIQUE,
         duration REAL,
+        genre TEXT,
         local_path TEXT,
         artwork_url TEXT,
+        source TEXT,
         source_url TEXT,
-        genre TEXT,
         updated_at TIMESTAMP,
-        source TEXT
+        soundcloud_synced_at TIMESTAMP
     )""",
     """CREATE TABLE sc_artist_uploads (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -169,11 +173,41 @@ MINIMAL_SCHEMA_SQL = [
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )""",
     """CREATE TABLE playlist_tracks (
+        playlist_id INTEGER,
+        track_id INTEGER,
+        position INTEGER
+    )""",
+    """CREATE TABLE sc_track_decisions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        playlist_id INTEGER NOT NULL,
-        track_id INTEGER NOT NULL,
-        position INTEGER,
-        UNIQUE(playlist_id, track_id)
+        soundcloud_id TEXT NOT NULL,
+        decision TEXT NOT NULL,
+        decided_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        surface TEXT NOT NULL,
+        model_version TEXT,
+        feature_snapshot TEXT,
+        is_current INTEGER NOT NULL DEFAULT 1
+    )""",
+    """CREATE UNIQUE INDEX idx_sc_track_decisions_current
+        ON sc_track_decisions(soundcloud_id) WHERE is_current = 1""",
+    """CREATE VIEW sc_current_training_decisions AS
+        SELECT soundcloud_id, decision, decided_at, surface,
+               model_version, feature_snapshot
+        FROM sc_track_decisions
+        WHERE is_current = 1 AND decision IN ('keep', 'nope')""",
+    """CREATE TABLE sc_feed_action_jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        soundcloud_id TEXT NOT NULL,
+        action_type TEXT NOT NULL,
+        target_key TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL DEFAULT 5,
+        next_attempt_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        last_error TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        completed_at TIMESTAMP,
+        UNIQUE(soundcloud_id, action_type, target_key)
     )""",
 ]
 
@@ -192,13 +226,13 @@ def test_db(tmp_path, monkeypatch):
     yield db_path
 
 
-def _insert_artist(conn, slug="artist-a", top200=0, name="Artist A") -> int:
+def _insert_artist(conn, slug="artist-a", top200=0, name="Artist A", rank=1) -> int:
     cursor = conn.execute(
         """INSERT INTO discovery_artists
         (soundcloud_user_id, slug, display_name, display_name_normalized,
          ranking, in_top_200, is_following)
-        VALUES (?, ?, ?, ?, 1, ?, 1)""",
-        (str(abs(hash(slug)) % 10**6), slug, name, name.lower(), top200),
+        VALUES (?, ?, ?, ?, ?, ?, 1)""",
+        (str(abs(hash(slug)) % 10**6), slug, name, name.lower(), rank, top200),
     )
     return cursor.lastrowid
 
@@ -212,6 +246,14 @@ def _insert_upload(
         VALUES (?, ?, ?, ?, ?)""",
         (artist_id, sc_id, title, uploaded_at, status),
     )
+    decision = {"liked": "keep", "dismissed": "nope", "hidden": "hide"}.get(status)
+    if decision:
+        conn.execute(
+            """INSERT INTO sc_track_decisions
+            (soundcloud_id, decision, decided_at, surface)
+            VALUES (?, ?, ?, 'test')""",
+            (sc_id, decision, uploaded_at),
+        )
     return cursor.lastrowid
 
 
@@ -571,7 +613,9 @@ class TestGetFeedPage:
 
         last = page1[-1]
         page2 = get_feed_page(
-            limit=3, cursor_uploaded_at=last["uploaded_at"], cursor_id=last["id"]
+            limit=3,
+            cursor_event_at=last["event_at"],
+            cursor_soundcloud_id=last["soundcloud_id"],
         )
         assert [i["soundcloud_id"] for i in page2] == ["3", "2", "1"]
 
@@ -582,13 +626,18 @@ class TestGetFeedPage:
         ts = "2026-07-01T00:00:00+00:00"
         with get_db_connection() as conn:
             aid = _insert_artist(conn)
-            ids = [_insert_upload(conn, aid, str(n), ts) for n in range(3)]
+            for n in range(3):
+                _insert_upload(conn, aid, str(n), ts)
             conn.commit()
 
         page1 = get_feed_page(limit=2)
-        assert [i["id"] for i in page1] == [ids[2], ids[1]]
-        page2 = get_feed_page(limit=2, cursor_uploaded_at=ts, cursor_id=ids[1])
-        assert [i["id"] for i in page2] == [ids[0]]
+        assert [i["id"] for i in page1] == ["2", "1"]
+        page2 = get_feed_page(
+            limit=2,
+            cursor_event_at=page1[-1]["event_at"],
+            cursor_soundcloud_id=page1[-1]["soundcloud_id"],
+        )
+        assert [i["id"] for i in page2] == ["0"]
 
     def test_top200_filter(self, test_db) -> None:
         from music_minion.core.database import get_db_connection
@@ -596,7 +645,7 @@ class TestGetFeedPage:
 
         with get_db_connection() as conn:
             top = _insert_artist(conn, "top", top200=1, name="Top")
-            other = _insert_artist(conn, "other", top200=0, name="Other")
+            other = _insert_artist(conn, "other", top200=0, name="Other", rank=201)
             _insert_upload(conn, top, "1", "2026-07-01T00:00:00+00:00")
             _insert_upload(conn, other, "2", "2026-07-02T00:00:00+00:00")
             conn.commit()
@@ -687,33 +736,15 @@ class TestRateUpload:
         assert artist["tracks_dismissed"] == 0
         assert artist["tracks_liked"] == 0
 
-    def test_plus_one_likes_and_runs_sc_flow(self, client) -> None:
+    def test_plus_one_commits_and_enqueues_sc_flow(self, client) -> None:
         from music_minion.core.database import get_db_connection
 
         aid, uid = self._seed()
-        with (
-            patch(
-                "web.backend.routers.feed.get_web_provider_state",
-                return_value=_auth_state(),
-            ),
-            patch(
-                "web.backend.feed_rating.like_track",
-                return_value=(_auth_state(), True, None),
-            ) as mock_like,
-            patch(
-                "web.backend.feed_rating.get_or_create_monthly_sc_playlist",
-                return_value=(_auth_state(), "PL1", None),
-            ),
-            patch(
-                "web.backend.feed_rating.add_track_to_playlist",
-                return_value=(_auth_state(), True, None),
-            ) as mock_add,
-        ):
+        with patch("web.backend.routers.feed.enqueue_feed_action_drain") as wake:
             resp = client.post(f"/api/feed/{uid}/rate", json={"value": 1})
 
         assert resp.status_code == 200
-        mock_like.assert_called_once()
-        mock_add.assert_called_once()
+        wake.assert_called_once()
         with get_db_connection() as conn:
             row = conn.execute(
                 "SELECT * FROM sc_artist_uploads WHERE id = ?", (uid,)
@@ -721,35 +752,35 @@ class TestRateUpload:
             artist = conn.execute(
                 "SELECT * FROM discovery_artists WHERE id = ?", (aid,)
             ).fetchone()
+            jobs = conn.execute(
+                "SELECT action_type, status FROM sc_feed_action_jobs ORDER BY action_type"
+            ).fetchall()
         assert row["status"] == "liked"
-        assert row["sc_like_done"] == 1
-        assert row["sc_playlist_done"] == 1
+        assert [(job["action_type"], job["status"]) for job in jobs] == [
+            ("like", "pending"),
+            ("monthly_playlist", "pending"),
+        ]
         assert artist["tracks_liked"] == 1
         assert artist["hit_rate"] == 100
 
-    def test_sc_failure_leaves_flags_for_sweep(self, client) -> None:
-        from web.backend.queries.feed import get_unsynced_liked_uploads
+    def test_duplicate_keep_does_not_duplicate_jobs(self, client) -> None:
+        from music_minion.core.database import get_db_connection
 
         _, uid = self._seed()
-        with (
-            patch(
-                "web.backend.routers.feed.get_web_provider_state",
-                return_value=_auth_state(),
-            ),
-            patch(
-                "web.backend.feed_rating.like_track",
-                return_value=(_auth_state(), False, "Rate limited"),
-            ),
-            patch(
-                "web.backend.feed_rating.get_or_create_monthly_sc_playlist",
-                return_value=(_auth_state(), None, "Rate limited"),
-            ),
-        ):
-            resp = client.post(f"/api/feed/{uid}/rate", json={"value": 1})
-
-        assert resp.status_code == 200
-        pending = get_unsynced_liked_uploads()
-        assert [p["id"] for p in pending] == [uid]
+        with patch("web.backend.routers.feed.enqueue_feed_action_drain"):
+            assert (
+                client.post(f"/api/feed/{uid}/rate", json={"value": 1}).status_code
+                == 200
+            )
+            assert (
+                client.post(f"/api/feed/{uid}/rate", json={"value": 1}).status_code
+                == 200
+            )
+        with get_db_connection() as conn:
+            count = conn.execute("SELECT COUNT(*) FROM sc_feed_action_jobs").fetchone()[
+                0
+            ]
+        assert count == 2
 
     def test_invalid_value_rejected(self, client) -> None:
         _, uid = self._seed()
@@ -832,14 +863,18 @@ class TestMonthlyPlaylist:
 class TestRetrySweep:
     def test_sweep_finishes_pending_rows(self, test_db) -> None:
         from music_minion.core.database import get_db_connection
-        from web.backend.feed_rating import sync_pending_feed_likes
+        from web.backend.feed_rating import drain_pending_feed_actions
 
         with get_db_connection() as conn:
             aid = _insert_artist(conn)
-            uid = _insert_upload(
+            _insert_upload(
                 conn, aid, "9001", "2026-07-01T00:00:00+00:00", status="liked"
             )
             conn.commit()
+
+        from web.backend.queries.feed import enqueue_keep_actions
+
+        enqueue_keep_actions("9001", "Jul 26")
 
         with (
             patch(
@@ -855,12 +890,630 @@ class TestRetrySweep:
                 return_value=(_auth_state(), True, None),
             ),
         ):
-            processed = sync_pending_feed_likes(_auth_state())
+            processed = drain_pending_feed_actions(_auth_state())
 
-        assert processed == 1
+        assert processed == 2
+        with get_db_connection() as conn:
+            statuses = [
+                row["status"]
+                for row in conn.execute(
+                    "SELECT status FROM sc_feed_action_jobs ORDER BY action_type"
+                ).fetchall()
+            ]
+        assert statuses == ["complete", "complete"]
+
+
+class TestUnifiedFeed:
+    @staticmethod
+    def _insert_repost(conn, artist_id: int, sc_id: str, event_at: str) -> int:
+        cursor = conn.execute(
+            """INSERT INTO discovery_tracks
+            (soundcloud_id, title, artist_name, duration_ms, released_at,
+             permalink_url, genre, access, uploader_soundcloud_id)
+            VALUES (?, ?, 'Uploader', 120000, '2026-06-01', ?, 'house',
+                    'playable', 'uploader-1')""",
+            (sc_id, f"Track {sc_id}", f"https://soundcloud.com/u/{sc_id}"),
+        )
+        conn.execute(
+            """INSERT INTO discovery_track_reposters
+            (discovery_track_id, discovery_artist_id, reposted_at,
+             repost_time_precision) VALUES (?, ?, ?, 'exact')""",
+            (cursor.lastrowid, artist_id, event_at),
+        )
+        return cursor.lastrowid
+
+    def test_deduplicates_release_and_repost_and_filters_source(self, test_db) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.feed import get_feed_page
+
+        with get_db_connection() as conn:
+            uploader = _insert_artist(conn, "uploader", rank=80, name="Uploader")
+            reposter = _insert_artist(conn, "reposter", rank=20, name="Reposter")
+            _insert_upload(conn, uploader, "same", "2026-07-01T00:00:00+00:00")
+            self._insert_repost(conn, reposter, "same", "2026-07-03T00:00:00+00:00")
+            conn.commit()
+
+        all_items = get_feed_page(source="all")
+        assert len(all_items) == 1
+        assert all_items[0]["sources"] == ["release", "repost"]
+        assert all_items[0]["event_at"] == "2026-07-03T00:00:00Z"
+        assert all_items[0]["best_reposter_rank"] == 20
+        assert all_items[0]["reposter_count"] == 1
+        assert all_items[0]["reposters"][0]["repost_time_precision"] == "exact"
+        assert get_feed_page(source="releases")[0]["sources"] == ["release"]
+        assert get_feed_page(source="reposts")[0]["sources"] == ["repost"]
+
+    def test_rank_uses_current_ranking_and_unfollowed_events_are_excluded(
+        self, test_db
+    ) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.feed import get_feed_page
+
+        with get_db_connection() as conn:
+            rank_200 = _insert_artist(conn, "rank200", top200=0, rank=200)
+            rank_201 = _insert_artist(conn, "rank201", top200=1, rank=201)
+            unfollowed = _insert_artist(conn, "gone", rank=1)
+            conn.execute(
+                "UPDATE discovery_artists SET is_following = 0 WHERE id = ?",
+                (unfollowed,),
+            )
+            _insert_upload(conn, rank_200, "yes", "2026-07-03")
+            _insert_upload(conn, rank_201, "no", "2026-07-02")
+            _insert_upload(conn, unfollowed, "gone", "2026-07-01")
+            conn.commit()
+
+        assert [item["soundcloud_id"] for item in get_feed_page(max_rank=200)] == [
+            "yes"
+        ]
+
+    def test_lazy_materialization_creates_only_requested_repost(self, test_db) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.feed import materialize_feed_track
+
+        with get_db_connection() as conn:
+            reposter = _insert_artist(conn, "reposter", rank=1)
+            self._insert_repost(conn, reposter, "one", "2026-07-03")
+            self._insert_repost(conn, reposter, "two", "2026-07-02")
+            conn.commit()
+
+        first = materialize_feed_track("one")
+        again = materialize_feed_track("one")
+        assert first == again
+        with get_db_connection() as conn:
+            rows = conn.execute(
+                "SELECT id, soundcloud_id, local_path FROM tracks"
+            ).fetchall()
+        assert [
+            (row["id"], row["soundcloud_id"], row["local_path"]) for row in rows
+        ] == [(first, "one", None)]
+
+
+class TestCanonicalDecisionLedger:
+    def test_rerating_preserves_history_and_one_training_label(self, test_db) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.feed import get_decision_history, record_decision
+
+        with get_db_connection() as conn:
+            artist = _insert_artist(conn)
+            _insert_upload(conn, artist, "track", "2026-07-01")
+            conn.commit()
+
+        record_decision("track", "keep", "web_feed", "model-1", {"uploader_rank": 1})
+        record_decision("track", "hide", "mobile_feed")
+        record_decision("track", "nope", "repost_builder")
+        history = get_decision_history("track")
+        assert [row["decision"] for row in history] == ["keep", "hide", "nope"]
+        assert sum(row["is_current"] for row in history) == 1
+        assert history[-1]["feature_snapshot"] is None
+        with get_db_connection() as conn:
+            training = conn.execute(
+                """SELECT soundcloud_id, decision FROM sc_track_decisions
+                WHERE is_current = 1 AND decision IN ('keep', 'nope')"""
+            ).fetchall()
+        assert [tuple(row) for row in training] == [("track", "nope")]
+
+
+class TestDurableFeedActions:
+    def test_partial_failure_retry_and_already_done_are_idempotent(
+        self, test_db
+    ) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.feed_rating import drain_pending_feed_actions
+        from web.backend.queries.feed import enqueue_keep_actions, reconcile_actions
+
+        enqueue_keep_actions("track", "Jul 26")
+        with (
+            patch(
+                "web.backend.feed_rating.like_track",
+                return_value=(_auth_state(), False, "Already liked"),
+            ),
+            patch(
+                "web.backend.feed_rating.get_or_create_monthly_sc_playlist",
+                return_value=(_auth_state(), "PL1", None),
+            ),
+            patch(
+                "web.backend.feed_rating.add_track_to_playlist",
+                return_value=(_auth_state(), False, "Rate limited"),
+            ),
+        ):
+            assert drain_pending_feed_actions(_auth_state()) == 2
+
+        with get_db_connection() as conn:
+            states = {
+                row["action_type"]: row["status"]
+                for row in conn.execute("SELECT * FROM sc_feed_action_jobs")
+            }
+        assert states == {"like": "complete", "monthly_playlist": "error"}
+
+        assert reconcile_actions("track") == 1
+        with (
+            patch(
+                "web.backend.feed_rating.get_or_create_monthly_sc_playlist",
+                return_value=(_auth_state(), "PL1", None),
+            ),
+            patch(
+                "web.backend.feed_rating.add_track_to_playlist",
+                return_value=(_auth_state(), False, "Already in playlist"),
+            ),
+        ):
+            assert drain_pending_feed_actions(_auth_state()) == 1
+        with get_db_connection() as conn:
+            assert {
+                row["status"]
+                for row in conn.execute("SELECT status FROM sc_feed_action_jobs")
+            } == {"complete"}
+
+    def test_restart_recovers_running_job(self, test_db) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.feed import (
+            enqueue_keep_actions,
+            recover_interrupted_actions,
+        )
+
+        enqueue_keep_actions("track", "Jul 26")
+        with get_db_connection() as conn:
+            conn.execute(
+                "UPDATE sc_feed_action_jobs SET status = 'running' "
+                "WHERE action_type = 'like'"
+            )
+            conn.commit()
+        assert recover_interrupted_actions() == 1
+        with get_db_connection() as conn:
+            status = conn.execute(
+                "SELECT status FROM sc_feed_action_jobs WHERE action_type = 'like'"
+            ).fetchone()["status"]
+        assert status == "pending"
+
+
+# ---------------------------------------------------------------------------
+# Unified releases + reposts API (#57) and heart flow by SoundCloud id (#58)
+# ---------------------------------------------------------------------------
+
+
+def _insert_repost_track(
+    conn,
+    artist_id: int,
+    sc_id: str,
+    reposted_at: str | None = None,
+    seen_at: str = "2026-01-01 00:00:00",
+    uploader_sc_id: str = "uploader-1",
+) -> int:
+    """Repost-only track. reposted_at NULL means only the observation time is known."""
+    cursor = conn.execute(
+        """INSERT INTO discovery_tracks
+        (soundcloud_id, title, artist_name, duration_ms, permalink_url, genre,
+         access, uploader_soundcloud_id, first_seen)
+        VALUES (?, ?, 'Uploader', 120000, ?, 'house', 'playable', ?, ?)""",
+        (
+            sc_id,
+            f"Track {sc_id}",
+            f"https://soundcloud.com/u/{sc_id}",
+            uploader_sc_id,
+            seen_at,
+        ),
+    )
+    conn.execute(
+        """INSERT INTO discovery_track_reposters
+        (discovery_track_id, discovery_artist_id, reposted_at, seen_at,
+         repost_time_precision)
+        VALUES (?, ?, ?, ?, ?)""",
+        (
+            cursor.lastrowid,
+            artist_id,
+            reposted_at,
+            seen_at,
+            "exact" if reposted_at else "approximate",
+        ),
+    )
+    return cursor.lastrowid
+
+
+def _link_reposter(conn, track_row_id: int, artist_id: int, reposted_at: str) -> None:
+    conn.execute(
+        """INSERT INTO discovery_track_reposters
+        (discovery_track_id, discovery_artist_id, reposted_at, seen_at,
+         repost_time_precision) VALUES (?, ?, ?, ?, 'exact')""",
+        (track_row_id, artist_id, reposted_at, reposted_at),
+    )
+
+
+def _fetch_all_pages(client, limit: int, **params) -> list[dict]:
+    items: list[dict] = []
+    cursor = None
+    for _ in range(50):
+        query = {"limit": limit, **params}
+        if cursor:
+            query["cursor"] = cursor
+        resp = client.get("/api/feed", params=query)
+        assert resp.status_code == 200, resp.text
+        page = resp.json()
+        items.extend(page["items"])
+        cursor = page["next_cursor"]
+        if cursor is None:
+            return items
+    raise AssertionError("pagination never terminated")
+
+
+class TestUnifiedFeedApi:
+    def test_mixed_timestamp_formats_order_by_instant(self, test_db) -> None:
+        """Uploads store ISO, SQLite stores 'YYYY-MM-DD HH:MM:SS', exact reposts
+        keep SoundCloud's raw 'YYYY/MM/DD ... +0000'. Ordering must follow the
+        instant, not the separator character."""
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.feed import get_feed_page
+
+        with get_db_connection() as conn:
+            uploader = _insert_artist(conn, "up", name="Up")
+            reposter = _insert_artist(conn, "re", name="Re")
+            _insert_upload(conn, uploader, "iso", "2026-07-02T00:00:00+00:00")
+            _insert_repost_track(conn, reposter, "raw", "2026/07/03 00:00:00 +0000")
+            _insert_repost_track(conn, reposter, "seen", None, "2026-07-01 00:00:00")
+            conn.commit()
+
+        items = get_feed_page(limit=10)
+        assert [i["soundcloud_id"] for i in items] == ["raw", "iso", "seen"]
+        assert [i["event_at"] for i in items] == [
+            "2026-07-03T00:00:00Z",
+            "2026-07-02T00:00:00Z",
+            "2026-07-01T00:00:00Z",
+        ]
+        assert items[0]["reposters"][0]["reposted_at"] == "2026-07-03T00:00:00Z"
+
+    def test_cursor_round_trip_has_no_gaps_or_duplicates(self, client) -> None:
+        from music_minion.core.database import get_db_connection
+
+        with get_db_connection() as conn:
+            uploader = _insert_artist(conn, "up", name="Up")
+            reposter = _insert_artist(conn, "re", name="Re")
+            for day in range(1, 5):
+                _insert_upload(
+                    conn, uploader, f"u{day}", f"2026-07-0{day}T12:00:00+00:00"
+                )
+                _insert_repost_track(
+                    conn, reposter, f"r{day}", f"2026/07/0{day} 12:00:00 +0000"
+                )
+            conn.commit()
+
+        items = _fetch_all_pages(client, limit=3)
+        ids = [i["soundcloud_id"] for i in items]
+        assert len(ids) == 8 and len(set(ids)) == 8
+        # Same-instant pairs tie-break on soundcloud_id DESC, so the sequence
+        # must be non-increasing on (event_at, soundcloud_id).
+        keys = [(i["event_at"], i["soundcloud_id"]) for i in items]
+        assert keys == sorted(keys, reverse=True)
+
+    def test_max_rank_repost_qualifies_via_any_followed_reposter(self, test_db) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.feed import get_feed_page
+
+        with get_db_connection() as conn:
+            close = _insert_artist(conn, "close", rank=50, name="Close")
+            far = _insert_artist(conn, "far", rank=300, name="Far")
+            gone = _insert_artist(conn, "gone", rank=1, name="Gone")
+            conn.execute(
+                "UPDATE discovery_artists SET is_following = 0 WHERE id = ?", (gone,)
+            )
+            both = _insert_repost_track(conn, far, "both", "2026/07/03 00:00:00 +0000")
+            _link_reposter(conn, both, close, "2026/07/02 00:00:00 +0000")
+            _insert_repost_track(conn, far, "far-only", "2026/07/04 00:00:00 +0000")
+            only_gone = _insert_repost_track(
+                conn, gone, "gone-only", "2026/07/05 00:00:00 +0000"
+            )
+            assert only_gone
+            conn.commit()
+
+        items = get_feed_page(max_rank=200)
+        assert [i["soundcloud_id"] for i in items] == ["both"]
+        assert items[0]["best_reposter_rank"] == 50
+        assert items[0]["reposter_count"] == 1
+        assert [r["display_name"] for r in items[0]["reposters"]] == ["Close"]
+
+        unfiltered = {i["soundcloud_id"]: i for i in get_feed_page()}
+        assert set(unfiltered) == {"both", "far-only"}
+        assert unfiltered["both"]["reposter_count"] == 2
+
+    def test_nope_and_hide_hidden_unless_show_hidden(self, test_db) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.feed import get_feed_page, record_decision
+
+        with get_db_connection() as conn:
+            reposter = _insert_artist(conn, "re", name="Re")
+            for sc_id in ("kept", "noped", "hidden", "fresh"):
+                _insert_repost_track(
+                    conn, reposter, sc_id, f"2026/07/0{len(sc_id)} 00:00:00 +0000"
+                )
+            conn.commit()
+        record_decision("kept", "keep", "test")
+        record_decision("noped", "nope", "test")
+        record_decision("hidden", "hide", "test")
+
+        visible = {i["soundcloud_id"]: i for i in get_feed_page()}
+        assert set(visible) == {"kept", "fresh"}
+        assert visible["kept"]["current_decision"] == "keep"
+        assert visible["kept"]["status"] == "liked"
+        assert visible["fresh"]["current_decision"] is None
+
+        everything = {
+            i["soundcloud_id"]: i["status"] for i in get_feed_page(show_hidden=True)
+        }
+        assert everything == {
+            "kept": "liked",
+            "noped": "dismissed",
+            "hidden": "hidden",
+            "fresh": "visible",
+        }
+
+    def test_limit_and_cursor_validation(self, client) -> None:
+        assert client.get("/api/feed", params={"limit": 101}).status_code == 422
+        assert client.get("/api/feed", params={"source": "bogus"}).status_code == 422
+        assert (
+            client.get("/api/feed", params={"cursor": "not-a-cursor"}).status_code
+            == 400
+        )
+        resp = client.get(
+            "/api/feed", params={"limit": 100, "source": "reposts", "max_rank": 200}
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"items": [], "next_cursor": None}
+
+
+class TestHeartBySoundcloudId:
+    def _seed_repost(self) -> int:
+        from music_minion.core.database import get_db_connection
+
+        with get_db_connection() as conn:
+            reposter = _insert_artist(conn, "re", rank=10, name="Re")
+            _insert_repost_track(conn, reposter, "555", "2026/07/03 00:00:00 +0000")
+            conn.commit()
+        return reposter
+
+    def test_keep_repost_materializes_enqueues_and_trains_reposter(
+        self, client
+    ) -> None:
+        from music_minion.core.database import get_db_connection
+
+        reposter = self._seed_repost()
+        with patch("web.backend.routers.feed.enqueue_feed_action_drain") as wake:
+            resp = client.post(
+                "/api/feed/555/rate", json={"decision": "keep", "surface": "mobile"}
+            )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["current_decision"] == "keep"
+        assert body["status"] == "liked"
+        assert body["local_track_id"] is not None
+        assert body["action_state"] == {
+            "like": "pending",
+            "monthly_playlist": "pending",
+            "error": None,
+        }
+        wake.assert_called_once()
+
+        with get_db_connection() as conn:
+            track = conn.execute(
+                "SELECT * FROM tracks WHERE id = ?", (body["local_track_id"],)
+            ).fetchone()
+            artist = conn.execute(
+                "SELECT * FROM discovery_artists WHERE id = ?", (reposter,)
+            ).fetchone()
+            workflow = conn.execute(
+                "SELECT workflow_state, local_track_id FROM discovery_tracks WHERE soundcloud_id = '555'"
+            ).fetchone()
+        assert track["soundcloud_id"] == "555" and track["local_path"] is None
+        assert artist["tracks_liked"] == 1 and artist["tracks_seen"] == 1
+        assert tuple(workflow) == ("processed", body["local_track_id"])
+
+    def test_unknown_track_is_404(self, client) -> None:
+        resp = client.post("/api/feed/does-not-exist/rate", json={"decision": "keep"})
+        assert resp.status_code == 404
+
+    def test_missing_decision_is_422(self, client) -> None:
+        self._seed_repost()
+        assert (
+            client.post("/api/feed/555/rate", json={"surface": "x"}).status_code == 422
+        )
+
+    def test_nope_after_keep_cancels_pending_jobs_and_keeps_history(
+        self, client
+    ) -> None:
+        from music_minion.core.database import get_db_connection
+
+        self._seed_repost()
+        with patch("web.backend.routers.feed.enqueue_feed_action_drain"):
+            client.post("/api/feed/555/rate", json={"decision": "keep"})
+            resp = client.post("/api/feed/555/rate", json={"value": -1})
+        assert resp.json()["action_state"] == {
+            "like": None,
+            "monthly_playlist": None,
+            "error": None,
+        }
+        with get_db_connection() as conn:
+            assert (
+                conn.execute("SELECT COUNT(*) FROM sc_feed_action_jobs").fetchone()[0]
+                == 0
+            )
+
+        history = client.get("/api/feed/555/decisions").json()["history"]
+        assert [h["decision"] for h in history] == ["keep", "nope"]
+        assert [h["is_current"] for h in history] == [0, 1]
+
+    def test_materialize_endpoint_is_idempotent(self, client) -> None:
+        self._seed_repost()
+        first = client.post("/api/feed/555/materialize").json()["local_track_id"]
+        second = client.post("/api/feed/555/materialize").json()["local_track_id"]
+        assert first == second
+        assert client.post("/api/feed/nope/materialize").status_code == 404
+
+    def test_reconcile_endpoint_resets_errored_jobs(self, client) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.feed import (
+            claim_due_action,
+            enqueue_keep_actions,
+            fail_action,
+        )
+
+        self._seed_repost()
+        enqueue_keep_actions("555", "Jul 26")
+        job = claim_due_action()
+        fail_action(job["id"], "Rate limit exceeded (429)", 5, 5)
+        with get_db_connection() as conn:
+            assert (
+                conn.execute(
+                    "SELECT status FROM sc_feed_action_jobs WHERE id = ?", (job["id"],)
+                ).fetchone()[0]
+                == "error"
+            )
+
+        with patch("web.backend.routers.feed.enqueue_feed_action_drain") as wake:
+            resp = client.post(
+                "/api/feed/actions/reconcile", params={"soundcloud_id": "555"}
+            )
+        # The errored job and its still-pending sibling are both made due.
+        assert resp.json() == {"reset": 2}
+        wake.assert_called_once()
+        claimed = {claim_due_action()["id"], claim_due_action()["id"]}
+        assert job["id"] in claimed
+
+    def test_rapid_concurrent_hearts_keep_one_current_row_and_two_jobs(
+        self, test_db
+    ) -> None:
+        from concurrent.futures import ThreadPoolExecutor
+
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.feed import enqueue_keep_actions, record_decision
+
+        self._seed_repost()
+
+        def heart(n: int) -> None:
+            record_decision("555", "keep", f"thread-{n}")
+            enqueue_keep_actions("555", "Jul 26")
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            list(pool.map(heart, range(8)))
+
+        with get_db_connection() as conn:
+            rows = conn.execute(
+                "SELECT COUNT(*), SUM(is_current) FROM sc_track_decisions WHERE soundcloud_id = '555'"
+            ).fetchone()
+            jobs = conn.execute("SELECT COUNT(*) FROM sc_feed_action_jobs").fetchone()[
+                0
+            ]
+        assert tuple(rows) == (8, 1)
+        assert jobs == 2
+
+
+class TestTrainingDedup:
+    def test_release_plus_multiple_reposts_is_one_training_example(
+        self, test_db
+    ) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.discovery import recalculate_artist_stats
+        from web.backend.queries.feed import record_decision
+
+        with get_db_connection() as conn:
+            uploader = _insert_artist(conn, "up", name="Up")
+            r1 = _insert_artist(conn, "r1", name="R1")
+            r2 = _insert_artist(conn, "r2", name="R2")
+            _insert_upload(conn, uploader, "same", "2026-07-01T00:00:00+00:00")
+            row = _insert_repost_track(conn, r1, "same", "2026/07/02 00:00:00 +0000")
+            _link_reposter(conn, row, r2, "2026/07/03 00:00:00 +0000")
+            _link_reposter(conn, row, uploader, "2026/07/04 00:00:00 +0000")
+            conn.commit()
+
+        record_decision("same", "keep", "web_feed")
+        recalculate_artist_stats()
+
+        with get_db_connection() as conn:
+            training = conn.execute(
+                "SELECT COUNT(*) FROM sc_current_training_decisions"
+            ).fetchone()[0]
+            stats = conn.execute(
+                "SELECT slug, tracks_seen, tracks_liked FROM discovery_artists ORDER BY slug"
+            ).fetchall()
+        assert training == 1
+        # The uploader both released and reposted it: still one contribution.
+        assert [tuple(r) for r in stats] == [("r1", 1, 1), ("r2", 1, 1), ("up", 1, 1)]
+
+
+class TestActionBackoff:
+    def test_backoff_is_bounded_and_terminal_after_max_attempts(self, test_db) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.feed import (
+            claim_due_action,
+            enqueue_keep_actions,
+            fail_action,
+            get_next_action_delay,
+        )
+
+        enqueue_keep_actions("t", "Jul 26")
+        with get_db_connection() as conn:
+            conn.execute("UPDATE sc_feed_action_jobs SET max_attempts = 2")
+            conn.commit()
+
+        first = claim_due_action()
+        second = claim_due_action()
+        assert {first["action_type"], second["action_type"]} == {
+            "like",
+            "monthly_playlist",
+        }
+        assert claim_due_action() is None  # both running
+
+        fail_action(first["id"], "Network error", first["attempt_count"], 2)
+        fail_action(second["id"], "Network error", second["attempt_count"], 2)
+        assert claim_due_action() is None  # not due yet
+        assert 0 < get_next_action_delay() <= 30
+
+        with get_db_connection() as conn:
+            conn.execute(
+                "UPDATE sc_feed_action_jobs SET next_attempt_at = datetime('now', '-1 second')"
+            )
+            conn.commit()
+        retry = claim_due_action()
+        assert retry["attempt_count"] == 2
+        fail_action(retry["id"], "Network error", 2, 2)
         with get_db_connection() as conn:
             row = conn.execute(
-                "SELECT sc_like_done, sc_playlist_done FROM sc_artist_uploads WHERE id = ?",
-                (uid,),
+                "SELECT * FROM sc_feed_action_jobs WHERE id = ?", (retry["id"],)
             ).fetchone()
-        assert row["sc_like_done"] == 1 and row["sc_playlist_done"] == 1
+        assert row["status"] == "error" and row["last_error"] == "Network error"
+        # Terminal: never claimed again, but stays visible for reconciliation.
+        assert claim_due_action()["id"] != retry["id"]
+        assert claim_due_action() is None
+
+
+class TestMonthlyTimezone:
+    def test_month_follows_configured_timezone_not_utc(self, monkeypatch) -> None:
+        from zoneinfo import ZoneInfo
+
+        from web.backend.feed_rating import monthly_playlist_name
+
+        late_night_utc = datetime(2026, 8, 1, 3, 0, tzinfo=timezone.utc)
+        monkeypatch.setattr(
+            "web.backend.feed_rating.configured_feed_timezone",
+            lambda: ZoneInfo("America/Los_Angeles"),
+        )
+        assert monthly_playlist_name(late_night_utc) == "Jul 26"
+        monkeypatch.setattr(
+            "web.backend.feed_rating.configured_feed_timezone", lambda: timezone.utc
+        )
+        assert monthly_playlist_name(late_night_utc) == "Aug 26"

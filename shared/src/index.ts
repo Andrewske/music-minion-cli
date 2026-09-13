@@ -71,10 +71,19 @@ export {
 export type {
   DiscoverySyncJob, DiscoverySyncStatus, LastSync,
 } from './api/discovery';
-export { getFeed, rateFeedItem, startFeedBackfill } from './api/feed';
+export {
+  FEED_PAGE_SIZE, FEED_RANK_PRESETS, feedRatingToDecision,
+  getFeedItemDecision, getFeedItemUploader, getFeedEventAt,
+  getFeedItemBestRank, normalizeFeedItem, applyFeedDecision, mergeFeedDecisionResponse,
+  isFeedSyncPending, isFeedSyncFailed, hasPendingFeedSync,
+  getFeed, rateFeedItem, materializeFeedItem,
+  startFeedBackfill,
+} from './api/feed';
 export type {
-  FeedRating, FeedItemStatus, FeedArtist, FeedItem, FeedPage,
-  GetFeedParams, RateFeedItemResponse,
+  FeedSource, FeedRankPreset, FeedRating, FeedDecision, FeedItemStatus,
+  FeedActionStatus, FeedArtist, FeedActionState, FeedItem, FeedPage,
+  GetFeedParams, RateFeedItemOptions, RateFeedItemResponse,
+  MaterializeFeedItemResponse,
 } from './api/feed';
 
 // Playback error policy (shared window/breaker/retry decision logic)

@@ -5,18 +5,19 @@ SQLite database operations for Music Minion CLI
 import sqlite3
 import unicodedata
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 from loguru import logger
 
 from .config import get_data_dir
+from .local_time import configured_feed_timezone, month_label
 from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 62  # role-specific artist keep rates
+SCHEMA_VERSION = 63  # role-specific artist keep rates on top of the SC ledger
 
 
 # Initial top 50 curated emojis for music reactions
@@ -165,6 +166,183 @@ def get_active_provider() -> str:
         cursor = conn.execute("SELECT provider FROM active_library WHERE id = 1")
         row = cursor.fetchone()
         return row["provider"] if row else "local"
+
+
+def _add_column_if_missing(conn, table: str, column_ddl: str) -> None:
+    try:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column_ddl}")
+    except sqlite3.OperationalError as exc:
+        if "duplicate column" not in str(exc).lower():
+            raise
+
+
+def _migrate_v62_workflow_state(conn) -> None:
+    """Split discovery workflow state from the preference label (#56).
+
+    `status` stays as a compatibility projection for older readers;
+    workflow_state is the only pipeline state new code consults.
+    """
+    _add_column_if_missing(
+        conn, "discovery_tracks", "workflow_state TEXT NOT NULL DEFAULT 'unseen'"
+    )
+    conn.execute("""
+        UPDATE discovery_tracks
+        SET workflow_state = CASE status
+            WHEN 'in_playlist' THEN 'in_playlist'
+            WHEN 'liked' THEN 'processed'
+            WHEN 'dismissed' THEN 'processed'
+            ELSE 'unseen'
+        END
+    """)
+
+
+def _migrate_v62_decision_ledger(conn) -> None:
+    """Append-only per-SoundCloud-track decision ledger with one current row."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS sc_track_decisions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            soundcloud_id TEXT NOT NULL,
+            decision TEXT NOT NULL CHECK (decision IN ('keep', 'nope', 'hide')),
+            decided_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            surface TEXT NOT NULL,
+            model_version TEXT,
+            feature_snapshot TEXT,
+            is_current BOOLEAN NOT NULL DEFAULT 1 CHECK (is_current IN (0, 1))
+        )
+    """)
+    # Every legacy label becomes a history event (liked->keep, dismissed->nope,
+    # hidden->hide). The NOT EXISTS guards make a re-run idempotent.
+    conn.execute("""
+        INSERT INTO sc_track_decisions
+            (soundcloud_id, decision, decided_at, surface, is_current)
+        SELECT soundcloud_id,
+               CASE status WHEN 'liked' THEN 'keep'
+                           WHEN 'dismissed' THEN 'nope' ELSE 'hide' END,
+               COALESCE(rated_at, first_seen, CURRENT_TIMESTAMP),
+               'upload_feed_migration', 0
+        FROM sc_artist_uploads
+        WHERE status IN ('liked', 'dismissed', 'hidden')
+          AND NOT EXISTS (
+              SELECT 1 FROM sc_track_decisions d
+              WHERE d.soundcloud_id = sc_artist_uploads.soundcloud_id
+                AND d.surface = 'upload_feed_migration'
+          )
+    """)
+    conn.execute("""
+        INSERT INTO sc_track_decisions
+            (soundcloud_id, decision, decided_at, surface, is_current)
+        SELECT soundcloud_id,
+               CASE status WHEN 'liked' THEN 'keep' ELSE 'nope' END,
+               COALESCE(first_seen, created_at, CURRENT_TIMESTAMP),
+               'repost_builder_migration', 0
+        FROM discovery_tracks
+        WHERE status IN ('liked', 'dismissed')
+          AND NOT EXISTS (
+              SELECT 1 FROM sc_track_decisions d
+              WHERE d.soundcloud_id = discovery_tracks.soundcloud_id
+                AND d.surface = 'repost_builder_migration'
+          )
+    """)
+    # Current = newest by timestamp, then insertion id (deterministic).
+    conn.execute("UPDATE sc_track_decisions SET is_current = 0")
+    conn.execute("""
+        UPDATE sc_track_decisions SET is_current = 1
+        WHERE id IN (
+            SELECT id FROM (
+                SELECT id, ROW_NUMBER() OVER (
+                    PARTITION BY soundcloud_id ORDER BY decided_at DESC, id DESC
+                ) AS rn
+                FROM sc_track_decisions
+            ) WHERE rn = 1
+        )
+    """)
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_sc_track_decisions_current
+        ON sc_track_decisions(soundcloud_id) WHERE is_current = 1
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_sc_track_decisions_training
+        ON sc_track_decisions(decision, soundcloud_id) WHERE is_current = 1
+    """)
+    conn.execute("DROP VIEW IF EXISTS sc_current_training_decisions")
+    conn.execute("""
+        CREATE VIEW sc_current_training_decisions AS
+        SELECT soundcloud_id, decision, decided_at, surface,
+               model_version, feature_snapshot
+        FROM sc_track_decisions
+        WHERE is_current = 1 AND decision IN ('keep', 'nope')
+    """)
+
+
+def _migrate_v62_action_jobs(conn) -> None:
+    """Durable, idempotent SoundCloud side-effect jobs for keep decisions (#58)."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS sc_feed_action_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            soundcloud_id TEXT NOT NULL,
+            action_type TEXT NOT NULL
+                CHECK (action_type IN ('like', 'monthly_playlist')),
+            target_key TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending', 'running', 'complete', 'error')),
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            max_attempts INTEGER NOT NULL DEFAULT 5,
+            next_attempt_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_error TEXT,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP,
+            UNIQUE(soundcloud_id, action_type, target_key)
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_sc_feed_action_jobs_due
+        ON sc_feed_action_jobs(status, next_attempt_at, id)
+    """)
+    # Legacy per-row done flags become jobs. The playlist month comes from the
+    # decision instant in the user's calendar, not the server's UTC clock.
+    liked = conn.execute("""
+        SELECT u.soundcloud_id, u.sc_like_done, u.sc_playlist_done,
+               COALESCE(d.decided_at, u.rated_at, u.first_seen) AS decided_at
+        FROM sc_artist_uploads u
+        LEFT JOIN sc_track_decisions d
+          ON d.soundcloud_id = u.soundcloud_id AND d.is_current = 1
+        WHERE u.status = 'liked'
+    """).fetchall()
+    tz = configured_feed_timezone()
+    jobs = []
+    for row in liked:
+        decided = _parse_migration_timestamp(row["decided_at"])
+        month = month_label(decided, tz)
+        for action, done, target in (
+            ("like", row["sc_like_done"], ""),
+            ("monthly_playlist", row["sc_playlist_done"], month),
+        ):
+            status = "complete" if done else "pending"
+            jobs.append((row["soundcloud_id"], action, target, status, bool(done)))
+    conn.executemany(
+        """INSERT OR IGNORE INTO sc_feed_action_jobs
+            (soundcloud_id, action_type, target_key, status, completed_at)
+        VALUES (?, ?, ?, ?, CASE WHEN ? THEN CURRENT_TIMESTAMP END)""",
+        jobs,
+    )
+
+
+def _parse_migration_timestamp(value: Optional[str]) -> datetime:
+    """Best-effort parse of legacy SQLite/ISO/SoundCloud timestamps as UTC."""
+    if value:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S %z"):
+            try:
+                parsed = datetime.strptime(value, fmt)
+                return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        except ValueError:
+            pass
+    return datetime.now(timezone.utc)
 
 
 def migrate_database(conn, current_version: int) -> None:
@@ -2933,26 +3111,34 @@ def migrate_database(conn, current_version: int) -> None:
         )
 
     if current_version < 62:
-        logger.info("Running migration to v62: role-specific artist keep rates...")
+        logger.info("Running migration to v62: canonical SoundCloud feed decisions...")
+        # A savepoint keeps the ALTER TABLE inside the transaction, so a failed
+        # legacy copy rolls back to a clean v61 schema instead of a half-applied one.
+        conn.execute("SAVEPOINT migrate_feed_v62")
+        _migrate_v62_workflow_state(conn)
+        _migrate_v62_decision_ledger(conn)
+        _migrate_v62_action_jobs(conn)
+        conn.execute("RELEASE SAVEPOINT migrate_feed_v62")
+        conn.commit()
+        logger.info("  ✓ Migration to v62 complete: canonical decisions + action jobs")
+
+    if current_version < 63:
+        logger.info("Running migration to v63: role-specific artist keep rates...")
 
         # Uploader quality and reposter quality are separate Bayesian-smoothed
         # rates, each paired with its rated sample weight. NULL means "never
         # rated in this role"; readers fall back to the population prior.
         # ranking/tier stay editorial and are never touched by the recalc.
-        for col_sql in (
-            "ALTER TABLE discovery_artists ADD COLUMN upload_keep_rate REAL",
-            "ALTER TABLE discovery_artists ADD COLUMN upload_rated_count REAL NOT NULL DEFAULT 0",
-            "ALTER TABLE discovery_artists ADD COLUMN repost_keep_rate REAL",
-            "ALTER TABLE discovery_artists ADD COLUMN repost_rated_count REAL NOT NULL DEFAULT 0",
+        for column_ddl in (
+            "upload_keep_rate REAL",
+            "upload_rated_count REAL NOT NULL DEFAULT 0",
+            "repost_keep_rate REAL",
+            "repost_rated_count REAL NOT NULL DEFAULT 0",
         ):
-            try:
-                conn.execute(col_sql)
-            except sqlite3.OperationalError as exc:
-                if "duplicate column" not in str(exc).lower():
-                    raise
+            _add_column_if_missing(conn, "discovery_artists", column_ddl)
 
         conn.commit()
-        logger.info("  ✓ Migration to v62 complete: role-specific artist keep rates")
+        logger.info("  ✓ Migration to v63 complete: role-specific artist keep rates")
 
 
 def init_database() -> None:
