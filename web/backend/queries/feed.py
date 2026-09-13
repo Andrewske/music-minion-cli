@@ -31,6 +31,11 @@ def _row_to_feed_item(row: Any) -> dict[str, Any]:
         "permalink_url": row["permalink_url"],
         "duration_ms": row["duration_ms"],
         "uploaded_at": row["uploaded_at"],
+        "released_at": row["released_at"],
+        "genre": row["genre"],
+        "access": row["access"],
+        "event_type": row["event_type"],
+        "uploader_soundcloud_id": row["uploader_soundcloud_id"],
         "status": row["status"],
         "in_likes": bool(row["in_likes"]),
         "in_playlists": bool(row["in_playlists"]),
@@ -66,7 +71,9 @@ def get_feed_page(
         rows = conn.execute(
             """
             SELECT u.id, u.soundcloud_id, u.title, u.permalink_url, u.artwork_url,
-                   u.duration_ms, u.uploaded_at, u.local_track_id, u.status,
+                   u.duration_ms, u.uploaded_at, u.released_at, u.genre, u.access,
+                   u.event_type, u.uploader_soundcloud_id,
+                   u.local_track_id, u.status,
                    da.id AS artist_id, da.display_name, da.slug AS artist_slug,
                    da.avatar_url, da.in_top_200,
                    EXISTS(

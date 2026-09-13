@@ -19,7 +19,7 @@ from loguru import logger
 from music_minion.core.database import get_db_connection
 from web.backend.discovery_sync import sync_followings_reposts
 from web.backend.feed_rating import sync_pending_feed_likes
-from web.backend.feed_uploads_sync import run_uploads_backfill, sync_followings_uploads
+from web.backend.feed_uploads_sync import sync_followings_uploads
 from web.backend.queries import discovery as discovery_queries
 from web.backend.soundcloud_auth import get_web_provider_state
 
@@ -86,6 +86,14 @@ def _reset_stale_running_status() -> None:
                 WHERE id = 1 AND uploads_last_status = 'running'
                 """
             )
+            conn.execute(
+                """
+                UPDATE sc_feed_sync_state
+                SET metadata_backfill_status = 'error',
+                    metadata_backfill_last_error = 'interrupted by restart'
+                WHERE id = 1 AND metadata_backfill_status = 'running'
+                """
+            )
             conn.commit()
     except Exception:
         logger.exception("feed_sync: failed to reset stale running status")
@@ -111,25 +119,14 @@ def _fetch_feed_locked() -> dict[str, Any]:
         _set_sync_error("SC provider state unavailable (not authenticated)")
         raise RuntimeError("SC provider state unavailable")
 
-    # Snapshot due artists BEFORE reposts sync runs: reposts sync bumps
-    # last_checked, which would empty the due list for the uploads pass.
-    # Uploads sync never touches last_checked. First run (empty uploads
-    # table) sweeps ALL followed artists instead — the due-cadence belongs
-    # to reposts, so a fresh deploy would otherwise start with a feed that
-    # only fills as artists happen to come due.
+    # Uploads have a dedicated per-artist checkpoint. They must not inherit the
+    # adaptive repost cadence, which can stretch to 30 days for quiet artists.
     uploads_added = 0
     try:
-        with get_db_connection() as conn:
-            has_uploads = conn.execute(
-                "SELECT EXISTS(SELECT 1 FROM sc_artist_uploads)"
-            ).fetchone()[0]
-        if has_uploads:
-            due_artists = discovery_queries.get_followed_artists_due_for_check()
-            uploads_added, upload_errors = sync_followings_uploads(
-                provider_state, due_artists
-            )
-        else:
-            uploads_added, upload_errors = run_uploads_backfill(provider_state)
+        due_artists = discovery_queries.get_followed_artists_due_for_upload_check()
+        uploads_added, upload_errors = sync_followings_uploads(
+            provider_state, due_artists
+        )
         if upload_errors:
             logger.warning(
                 f"feed_sync: {len(upload_errors)} artist-level upload errors (continuing)"
@@ -278,7 +275,9 @@ def start_feed_worker() -> None:
 def run_manual_sync() -> dict[str, Any]:
     """Trigger an immediate feed sync. Called from POST /api/soundcloud/feed-sync."""
     if not _feed_lock.acquire(blocking=False):
-        raise HTTPException(status_code=429, detail="sync in progress, try again shortly")
+        raise HTTPException(
+            status_code=429, detail="sync in progress, try again shortly"
+        )
     try:
         return _fetch_feed_locked()
     except HTTPException:
@@ -286,9 +285,13 @@ def run_manual_sync() -> dict[str, Any]:
     except Exception as exc:
         status_code = getattr(getattr(exc, "response", None), "status_code", None)
         if status_code == 429:
-            raise HTTPException(status_code=503, detail="SC rate-limited, retry in 5 minutes")
+            raise HTTPException(
+                status_code=503, detail="SC rate-limited, retry in 5 minutes"
+            )
         if status_code is not None and status_code >= 500:
-            raise HTTPException(status_code=503, detail="SC upstream error, retry later")
+            raise HTTPException(
+                status_code=503, detail="SC upstream error, retry later"
+            )
         raise HTTPException(status_code=503, detail=f"Feed sync failed: {exc}") from exc
     finally:
         _feed_lock.release()
@@ -302,7 +305,9 @@ def get_sync_status() -> dict[str, Any]:
             SELECT id, last_run_at, last_run_status, last_error,
                    events_added_last_run, total_events, last_run_duration_ms,
                    uploads_last_run_at, uploads_last_status, uploads_last_error,
-                   uploads_added_last_run
+                   uploads_added_last_run, metadata_backfill_cursor,
+                   metadata_backfill_status, metadata_backfill_last_error,
+                   metadata_backfill_completed_at
             FROM sc_feed_sync_state
             WHERE id = 1
             """
@@ -320,6 +325,10 @@ def get_sync_status() -> dict[str, Any]:
             "uploads_last_status": None,
             "uploads_last_error": None,
             "uploads_added_last_run": 0,
+            "metadata_backfill_cursor": 0,
+            "metadata_backfill_status": None,
+            "metadata_backfill_last_error": None,
+            "metadata_backfill_completed_at": None,
         }
 
     return {
@@ -333,4 +342,8 @@ def get_sync_status() -> dict[str, Any]:
         "uploads_last_status": row["uploads_last_status"],
         "uploads_last_error": row["uploads_last_error"],
         "uploads_added_last_run": row["uploads_added_last_run"],
+        "metadata_backfill_cursor": row["metadata_backfill_cursor"],
+        "metadata_backfill_status": row["metadata_backfill_status"],
+        "metadata_backfill_last_error": row["metadata_backfill_last_error"],
+        "metadata_backfill_completed_at": row["metadata_backfill_completed_at"],
     }

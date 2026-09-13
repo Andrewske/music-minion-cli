@@ -16,7 +16,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 60  # sc_artist_uploads.access (preview/snip filtering)
+SCHEMA_VERSION = 61  # metadata-rich SoundCloud feed ingestion
 
 
 # Initial top 50 curated emojis for music reactions
@@ -1961,7 +1961,9 @@ def migrate_database(conn, current_version: int) -> None:
         """)
 
         # Create indexes
-        conn.execute("CREATE INDEX idx_track_genres_track ON track_genres(track_id, position)")
+        conn.execute(
+            "CREATE INDEX idx_track_genres_track ON track_genres(track_id, position)"
+        )
         conn.execute("CREATE INDEX idx_track_genres_genre ON track_genres(genre_id)")
 
         # Create trigger: sync tracks.genre from track_genres position=1 (INSERT)
@@ -2023,7 +2025,9 @@ def migrate_database(conn, current_version: int) -> None:
         ).fetchall()
         for (genre,) in rows:
             normalized = normalize_genre_name(genre)
-            conn.execute("INSERT OR IGNORE INTO genres (name) VALUES (?)", (normalized,))
+            conn.execute(
+                "INSERT OR IGNORE INTO genres (name) VALUES (?)", (normalized,)
+            )
 
         # Populate track_genres from tracks.genre
         # Need to normalize each track's genre during migration
@@ -2039,7 +2043,9 @@ def migrate_database(conn, current_version: int) -> None:
         logger.info("  ✓ Migration to v41 complete: Genre tables and triggers")
 
     if current_version < 42:
-        logger.info("Migrating to v42: Composite unique index for provider playlist IDs...")
+        logger.info(
+            "Migrating to v42: Composite unique index for provider playlist IDs..."
+        )
 
         # Drop old unique indexes (only unique on provider ID)
         conn.execute("DROP INDEX IF EXISTS idx_playlists_soundcloud_id")
@@ -2060,7 +2066,9 @@ def migrate_database(conn, current_version: int) -> None:
         """)
 
         conn.commit()
-        logger.info("  ✓ Migration to v42 complete: Composite unique index for provider playlist IDs")
+        logger.info(
+            "  ✓ Migration to v42 complete: Composite unique index for provider playlist IDs"
+        )
 
     if current_version < 44:
         logger.info("Migrating to v44: Content-based metadata sync...")
@@ -2120,7 +2128,9 @@ def migrate_database(conn, current_version: int) -> None:
         logger.info("  ✓ Migration to v46 complete: Added enriched_at to tracks")
 
     if current_version < 47:
-        logger.info("Migrating to v47: Composite unique index for track provider IDs...")
+        logger.info(
+            "Migrating to v47: Composite unique index for track provider IDs..."
+        )
 
         # Drop old single-column unique indexes
         conn.execute("DROP INDEX IF EXISTS idx_tracks_soundcloud_id")
@@ -2174,10 +2184,14 @@ def migrate_database(conn, current_version: int) -> None:
         """)
 
         conn.commit()
-        logger.info("  ✓ Migration to v48 complete: bucket_playlist_links table created")
+        logger.info(
+            "  ✓ Migration to v48 complete: bucket_playlist_links table created"
+        )
 
     if current_version < 49:
-        logger.info("Migrating to v49: Change playlists unique constraint to (name, library)...")
+        logger.info(
+            "Migrating to v49: Change playlists unique constraint to (name, library)..."
+        )
 
         # SQLite doesn't support ALTER CONSTRAINT, so we recreate the table
         # 1. Create new table with correct constraint
@@ -2241,7 +2255,9 @@ def migrate_database(conn, current_version: int) -> None:
         """)
 
         conn.commit()
-        logger.info("  ✓ Migration to v49 complete: playlists unique constraint changed to (name, library)")
+        logger.info(
+            "  ✓ Migration to v49 complete: playlists unique constraint changed to (name, library)"
+        )
 
     if current_version < 50:
         logger.info(
@@ -2263,9 +2279,13 @@ def migrate_database(conn, current_version: int) -> None:
         logger.info("  ✓ Migration to v50 complete: global comparison indexes added")
 
     if current_version < 51:
-        logger.info("Migrating to v51: Add discovery tables for SoundCloud reposts sync...")
+        logger.info(
+            "Migrating to v51: Add discovery tables for SoundCloud reposts sync..."
+        )
         try:
-            conn.execute("ALTER TABLE playlists ADD COLUMN discovery_source TEXT DEFAULT NULL")
+            conn.execute(
+                "ALTER TABLE playlists ADD COLUMN discovery_source TEXT DEFAULT NULL"
+            )
         except Exception:
             pass
         conn.execute("""
@@ -2356,7 +2376,9 @@ def migrate_database(conn, current_version: int) -> None:
         logger.info("  ✓ Migration to v51 complete: discovery tables added")
 
     if current_version < 52:
-        logger.info("Migrating to v52: Artists page schema — normalized columns, feed events, match tables...")
+        logger.info(
+            "Migrating to v52: Artists page schema — normalized columns, feed events, match tables..."
+        )
 
         # --- Extend discovery_artists ---
         # Some columns may already exist on databases that had manual patches applied;
@@ -2541,7 +2563,9 @@ def migrate_database(conn, current_version: int) -> None:
         logger.info("  ✓ Migration to v52 complete: artists page schema added")
 
     if current_version < 53:
-        logger.info("Running migration to v53: feed-noise via discovery_track_reposters")
+        logger.info(
+            "Running migration to v53: feed-noise via discovery_track_reposters"
+        )
 
         # SQLite cannot ADD COLUMN with CURRENT_TIMESTAMP default (non-constant).
         # Add as nullable, backfill to now, then new inserts set seen_at explicitly.
@@ -2566,7 +2590,9 @@ def migrate_database(conn, current_version: int) -> None:
         conn.execute("DROP TABLE IF EXISTS sc_feed_events")
 
         conn.commit()
-        logger.info("  ✓ Migration to v53 complete: feed-noise uses discovery_track_reposters.seen_at")
+        logger.info(
+            "  ✓ Migration to v53 complete: feed-noise uses discovery_track_reposters.seen_at"
+        )
 
     if current_version < 54:
         logger.info("Running migration to v54: track availability tracking")
@@ -2587,7 +2613,9 @@ def migrate_database(conn, current_version: int) -> None:
         )
 
         conn.commit()
-        logger.info("  ✓ Migration to v54 complete: tracks.unavailable_at + unavailable_reason added")
+        logger.info(
+            "  ✓ Migration to v54 complete: tracks.unavailable_at + unavailable_reason added"
+        )
 
     if current_version < 55:
         logger.info("Running migration to v55: artwork_url for track cover art...")
@@ -2600,7 +2628,9 @@ def migrate_database(conn, current_version: int) -> None:
         logger.info("  ✓ Migration to v55 complete: tracks.artwork_url added")
 
     if current_version < 56:
-        logger.info("Running migration to v56: match_candidates for SC track matching review...")
+        logger.info(
+            "Running migration to v56: match_candidates for SC track matching review..."
+        )
         conn.execute("""
             CREATE TABLE IF NOT EXISTS match_candidates (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2724,7 +2754,9 @@ def migrate_database(conn, current_version: int) -> None:
                     raise
 
         conn.commit()
-        logger.info("  ✓ Migration to v59 complete: sc_artist_uploads + sc_monthly_playlists")
+        logger.info(
+            "  ✓ Migration to v59 complete: sc_artist_uploads + sc_monthly_playlists"
+        )
 
     if current_version < 60:
         logger.info("Running migration to v60: sc_artist_uploads.access...")
@@ -2739,6 +2771,162 @@ def migrate_database(conn, current_version: int) -> None:
 
         conn.commit()
         logger.info("  ✓ Migration to v60 complete: sc_artist_uploads.access")
+
+    if current_version < 61:
+        logger.info(
+            "Running migration to v61: metadata-rich SoundCloud feed ingestion..."
+        )
+
+        # Upload polling must not share the adaptive repost checkpoint. A quiet
+        # reposter can have a 30-day repost interval while still releasing a new
+        # track tomorrow.
+        for col_sql in (
+            "ALTER TABLE discovery_artists ADD COLUMN uploads_last_checked TIMESTAMP",
+            "ALTER TABLE discovery_artists ADD COLUMN upload_check_interval_hours INTEGER NOT NULL DEFAULT 24",
+        ):
+            try:
+                conn.execute(col_sql)
+            except sqlite3.OperationalError as exc:
+                if "duplicate column" not in str(exc).lower():
+                    raise
+
+        for col_sql in (
+            "ALTER TABLE discovery_tracks ADD COLUMN uploader_soundcloud_id TEXT",
+            "ALTER TABLE discovery_tracks ADD COLUMN genre TEXT",
+            "ALTER TABLE discovery_tracks ADD COLUMN artwork_url TEXT",
+            "ALTER TABLE discovery_tracks ADD COLUMN permalink_url TEXT",
+            "ALTER TABLE discovery_tracks ADD COLUMN access TEXT",
+            "ALTER TABLE discovery_tracks ADD COLUMN uploaded_at TIMESTAMP",
+            "ALTER TABLE discovery_tracks ADD COLUMN released_at TIMESTAMP",
+            "ALTER TABLE discovery_tracks ADD COLUMN metadata_updated_at TIMESTAMP",
+        ):
+            try:
+                conn.execute(col_sql)
+            except sqlite3.OperationalError as exc:
+                if "duplicate column" not in str(exc).lower():
+                    raise
+
+        for col_sql in (
+            "ALTER TABLE discovery_track_reposters ADD COLUMN event_type TEXT NOT NULL DEFAULT 'repost'",
+            "ALTER TABLE discovery_track_reposters ADD COLUMN raw_reposted_at TEXT",
+            "ALTER TABLE discovery_track_reposters ADD COLUMN repost_time_precision TEXT NOT NULL DEFAULT 'approximate'",
+        ):
+            try:
+                conn.execute(col_sql)
+            except sqlite3.OperationalError as exc:
+                if "duplicate column" not in str(exc).lower():
+                    raise
+
+        for col_sql in (
+            "ALTER TABLE sc_artist_uploads ADD COLUMN event_type TEXT NOT NULL DEFAULT 'upload'",
+            "ALTER TABLE sc_artist_uploads ADD COLUMN uploader_soundcloud_id TEXT",
+            "ALTER TABLE sc_artist_uploads ADD COLUMN genre TEXT",
+            "ALTER TABLE sc_artist_uploads ADD COLUMN released_at TIMESTAMP",
+            "ALTER TABLE sc_artist_uploads ADD COLUMN metadata_updated_at TIMESTAMP",
+        ):
+            try:
+                conn.execute(col_sql)
+            except sqlite3.OperationalError as exc:
+                if "duplicate column" not in str(exc).lower():
+                    raise
+
+        for col_sql in (
+            "ALTER TABLE sc_feed_sync_state ADD COLUMN metadata_backfill_cursor INTEGER DEFAULT 0",
+            "ALTER TABLE sc_feed_sync_state ADD COLUMN metadata_backfill_status TEXT",
+            "ALTER TABLE sc_feed_sync_state ADD COLUMN metadata_backfill_last_error TEXT",
+            "ALTER TABLE sc_feed_sync_state ADD COLUMN metadata_backfill_completed_at TIMESTAMP",
+        ):
+            try:
+                conn.execute(col_sql)
+            except sqlite3.OperationalError as exc:
+                if "duplicate column" not in str(exc).lower():
+                    raise
+
+        # Keyset feed pages, per-actor filtering, upload due checks, and
+        # resumable metadata scans all stay index-backed at Pi scale.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_discovery_artists_upload_due "
+            "ON discovery_artists(is_following, uploads_last_checked)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_discovery_artists_follow_rank "
+            "ON discovery_artists(is_following, ranking)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_discovery_tracks_feed_time "
+            "ON discovery_tracks(uploaded_at DESC, id DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_discovery_tracks_metadata_backfill "
+            "ON discovery_tracks(id) WHERE metadata_updated_at IS NULL"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dtr_repost_feed "
+            "ON discovery_track_reposters(reposted_at DESC, discovery_track_id, discovery_artist_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dtr_actor_repost_feed "
+            "ON discovery_track_reposters(discovery_artist_id, reposted_at DESC, discovery_track_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sc_uploads_actor_feed "
+            "ON sc_artist_uploads(discovery_artist_id, uploaded_at DESC, id DESC)"
+        )
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS dtr_event_semantics_insert
+            BEFORE INSERT ON discovery_track_reposters
+            WHEN NEW.event_type != 'repost'
+              OR NEW.repost_time_precision NOT IN ('exact', 'approximate')
+            BEGIN
+              SELECT RAISE(ABORT, 'invalid repost event semantics');
+            END
+        """)
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS dtr_event_semantics_update
+            BEFORE UPDATE OF event_type, repost_time_precision
+            ON discovery_track_reposters
+            WHEN NEW.event_type != 'repost'
+              OR NEW.repost_time_precision NOT IN ('exact', 'approximate')
+            BEGIN
+              SELECT RAISE(ABORT, 'invalid repost event semantics');
+            END
+        """)
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS upload_event_semantics_insert
+            BEFORE INSERT ON sc_artist_uploads
+            WHEN NEW.event_type != 'upload'
+            BEGIN
+              SELECT RAISE(ABORT, 'invalid upload event semantics');
+            END
+        """)
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS upload_event_semantics_update
+            BEFORE UPDATE OF event_type ON sc_artist_uploads
+            WHEN NEW.event_type != 'upload'
+            BEGIN
+              SELECT RAISE(ABORT, 'invalid upload event semantics');
+            END
+        """)
+
+        # Existing reposter rows only have an observation time (seen_at). Their
+        # old reposted_at was populated from the track's creation timestamp, so
+        # it must not be represented as an exact repost time.
+        conn.execute(
+            """UPDATE discovery_track_reposters
+            SET raw_reposted_at = reposted_at,
+                reposted_at = NULL,
+                repost_time_precision = 'approximate',
+                event_type = 'repost'
+            WHERE repost_time_precision = 'approximate'"""
+        )
+        conn.execute(
+            "UPDATE sc_artist_uploads SET event_type = 'upload' WHERE event_type != 'upload'"
+        )
+
+        conn.commit()
+        logger.info(
+            "  ✓ Migration to v61 complete: SoundCloud feed metadata and checkpoints"
+        )
 
 
 def init_database() -> None:

@@ -1231,7 +1231,9 @@ def get_user_reposts(
     Returns:
         (updated_state, tracks_list, error_message_or_None)
     """
-    url: Optional[str] = f"{API_BASE_URL}/users/soundcloud:users:{user_id}/reposts/tracks"
+    url: Optional[str] = (
+        f"{API_BASE_URL}/users/soundcloud:users:{user_id}/reposts/tracks"
+    )
     params: dict[str, Any] = {"limit": min(limit, 200), "linked_partitioning": "true"}
     results: list[dict[str, Any]] = []
     pages = 0
@@ -1278,7 +1280,10 @@ MAX_UPLOAD_PAGES = 2  # Cap pagination per artist (400 uploads max on backfill)
 
 
 def get_user_tracks(
-    state: ProviderState, user_id: str, limit: int = 200, max_pages: int = MAX_UPLOAD_PAGES
+    state: ProviderState,
+    user_id: str,
+    limit: int = 200,
+    max_pages: int = MAX_UPLOAD_PAGES,
 ) -> tuple[ProviderState, list[dict[str, Any]], Optional[str]]:
     """Fetch a user's own track uploads from SoundCloud, paginated.
 
@@ -1336,6 +1341,47 @@ def get_user_tracks(
         f"Fetched {len(results)} uploads for user {user_id} across {pages} page(s)"
     )
     return state, results, None
+
+
+def get_tracks_by_ids(
+    state: ProviderState, track_ids: list[str]
+) -> tuple[ProviderState, list[dict[str, Any]], Optional[str]]:
+    """Fetch current metadata for a bounded batch of SoundCloud track IDs.
+
+    SoundCloud's GET /tracks endpoint accepts a comma-separated ids filter.
+    Keeping this operation explicit makes the discovery metadata backfill
+    resumable without coupling it to artist repost pagination.
+    """
+    if not track_ids:
+        return state, [], None
+
+    url = f"{API_BASE_URL}/tracks"
+    params = {
+        "ids": ",".join(str(track_id) for track_id in track_ids),
+        "access": "[playable, preview, blocked]",
+    }
+    try:
+        state, response = _request_with_backoff(state, "GET", url, params=params)
+    except HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else 0
+        if status == 401:
+            return state, [], "Authentication failed"
+        if status == 429:
+            return state, [], "Rate limited"
+        return state, [], f"HTTP {status}"
+    except requests.exceptions.Timeout:
+        return state, [], "Request timed out"
+    except requests.exceptions.ConnectionError:
+        return state, [], "Connection error"
+
+    try:
+        data = response.json()
+    except (json.JSONDecodeError, ValueError):
+        return state, [], "Invalid JSON response"
+
+    if isinstance(data, list):
+        return state, data, None
+    return state, data.get("collection", []) or [], None
 
 
 def resolve_user_by_slug(
@@ -1482,9 +1528,7 @@ def get_followings(
     return state, results
 
 
-def unfollow_user(
-    state: ProviderState, user_id: str
-) -> tuple[ProviderState, bool]:
+def unfollow_user(state: ProviderState, user_id: str) -> tuple[ProviderState, bool]:
     """Unfollow a SoundCloud user.
 
     Treats 403/404 as soft-success (SC may already reflect the unfollow).
@@ -1503,7 +1547,11 @@ def unfollow_user(
     if not state.authenticated:
         return state, False
 
-    user_urn = f"soundcloud:users:{user_id}" if not user_id.startswith("soundcloud:users:") else user_id
+    user_urn = (
+        f"soundcloud:users:{user_id}"
+        if not user_id.startswith("soundcloud:users:")
+        else user_id
+    )
     url = f"{API_BASE_URL}/me/followings/{user_urn}"
 
     try:
@@ -1514,9 +1562,9 @@ def unfollow_user(
         status = exc.response.status_code if exc.response is not None else 0
         body = exc.response.text[:300] if exc.response is not None else ""
         if status in (403, 404, 422):
-            logger.warning(f"SC unfollow {user_id} got {status} — treating as success (body: {body})")
+            logger.warning(
+                f"SC unfollow {user_id} got {status} — treating as success (body: {body})"
+            )
             return state, True
         logger.error(f"SC unfollow {user_id} failed {status}: {body}")
         raise
-
-

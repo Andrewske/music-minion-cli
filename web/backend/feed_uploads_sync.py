@@ -3,8 +3,7 @@
 Fetches followed artists' own track uploads (not reposts) into
 sc_artist_uploads, importing each as a streaming-only local track so the
 feed is instantly playable. Runs inside the feed worker BEFORE the reposts
-sync: the reposts sync owns the adaptive last_checked cadence, so this
-module must never touch last_checked.
+sync, with its own uploads_last_checked checkpoint and hourly cadence.
 """
 
 import time
@@ -16,8 +15,11 @@ from loguru import logger
 from music_minion.core.database import get_db_connection
 from music_minion.domain.library.providers.soundcloud.api import get_user_tracks
 
-from web.backend.discovery_sync import _parse_sc_datetime
 from web.backend.queries import discovery as discovery_queries
+from web.backend.soundcloud_metadata import (
+    parse_soundcloud_datetime,
+    track_metadata,
+)
 
 # Feed floor: uploads older than this are never ingested. Keeps the first
 # backfill bounded and the tracks table from bloating with ancient uploads.
@@ -32,13 +34,6 @@ def _get_known_upload_ids() -> set[str]:
     with get_db_connection() as conn:
         rows = conn.execute("SELECT soundcloud_id FROM sc_artist_uploads").fetchall()
     return {row["soundcloud_id"] for row in rows}
-
-
-def _upgrade_artwork_url(url: Optional[str]) -> Optional[str]:
-    """SC artwork defaults to -large (100x100); t500x500 exists for all tracks."""
-    if not url:
-        return None
-    return url.replace("-large.", "-t500x500.")
 
 
 def _fetch_artist_uploads(
@@ -64,22 +59,53 @@ def _fetch_artist_uploads(
 
 
 def _import_upload_to_library(conn: Any, track: dict[str, Any]) -> Optional[int]:
-    """Insert SC track as streaming-only local track, return local track id."""
+    """Upsert an owned SC streaming track and return its local track id."""
     sc_id = str(track["id"])
+    metadata = track_metadata(track)
     conn.execute(
         """INSERT OR IGNORE INTO tracks
-            (title, artist, duration, soundcloud_id, artwork_url, source)
-        VALUES (?, ?, ?, ?, ?, 'soundcloud')""",
+            (title, artist, duration, soundcloud_id, artwork_url, source_url,
+             genre, source)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'soundcloud')""",
         (
-            track.get("title", ""),
-            track.get("user", {}).get("username", "Unknown"),
-            (track.get("duration", 0) or 0) / 1000.0,
+            metadata["title"],
+            metadata["artist_name"],
+            metadata["duration_ms"] / 1000.0,
             sc_id,
-            _upgrade_artwork_url(track.get("artwork_url")),
+            metadata["artwork_url"],
+            metadata["permalink_url"],
+            metadata["genre"],
+        ),
+    )
+    # Only update provider-owned rows; never overwrite metadata on a user's
+    # local-file track that happens to carry the same SoundCloud ID.
+    conn.execute(
+        """UPDATE tracks
+        SET title = COALESCE(NULLIF(?, ''), title),
+            artist = COALESCE(NULLIF(?, ''), artist),
+            duration = CASE WHEN ? > 0 THEN ? ELSE duration END,
+            artwork_url = COALESCE(?, artwork_url),
+            source_url = COALESCE(?, source_url),
+            genre = COALESCE(NULLIF(?, ''), genre),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE soundcloud_id = ? AND source = 'soundcloud'""",
+        (
+            metadata["title"],
+            metadata["artist_name"],
+            metadata["duration_ms"],
+            metadata["duration_ms"] / 1000.0,
+            metadata["artwork_url"],
+            metadata["permalink_url"],
+            metadata["genre"],
+            sc_id,
         ),
     )
     row = conn.execute(
-        "SELECT id FROM tracks WHERE soundcloud_id = ?", (sc_id,)
+        """SELECT id FROM tracks
+        WHERE soundcloud_id = ?
+        ORDER BY source = 'soundcloud' DESC
+        LIMIT 1""",
+        (sc_id,),
     ).fetchone()
     if not row:
         logger.warning(f"feed_uploads: no local track after insert sc_id={sc_id}")
@@ -88,69 +114,100 @@ def _import_upload_to_library(conn: Any, track: dict[str, Any]) -> Optional[int]
 
 
 def _insert_uploads(records: list[dict[str, Any]]) -> int:
-    """Import to library + insert sc_artist_uploads rows in one transaction."""
+    """Import to library + upsert sc_artist_uploads rows in one transaction."""
     if not records:
         return 0
     inserted = 0
     with get_db_connection() as conn:
+        sc_ids = [str(rec["track"]["id"]) for rec in records]
+        placeholders = ",".join("?" * len(sc_ids))
+        existing = {
+            row["soundcloud_id"]
+            for row in conn.execute(
+                f"SELECT soundcloud_id FROM sc_artist_uploads "
+                f"WHERE soundcloud_id IN ({placeholders})",
+                sc_ids,
+            ).fetchall()
+        }
         for rec in records:
+            metadata = track_metadata(rec["track"])
             local_id = _import_upload_to_library(conn, rec["track"])
-            cursor = conn.execute(
-                """INSERT OR IGNORE INTO sc_artist_uploads
+            conn.execute(
+                """INSERT INTO sc_artist_uploads
                     (discovery_artist_id, soundcloud_id, title, permalink_url,
-                     artwork_url, duration_ms, uploaded_at, local_track_id, access)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                     artwork_url, duration_ms, uploaded_at, local_track_id, access,
+                     event_type, uploader_soundcloud_id, genre, released_at,
+                     metadata_updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'upload', ?, ?, ?, ?)
+                ON CONFLICT(soundcloud_id) DO UPDATE SET
+                    discovery_artist_id = excluded.discovery_artist_id,
+                    title = COALESCE(NULLIF(excluded.title, ''), sc_artist_uploads.title),
+                    permalink_url = COALESCE(
+                        excluded.permalink_url, sc_artist_uploads.permalink_url
+                    ),
+                    artwork_url = COALESCE(
+                        excluded.artwork_url, sc_artist_uploads.artwork_url
+                    ),
+                    duration_ms = CASE
+                        WHEN excluded.duration_ms > 0 THEN excluded.duration_ms
+                        ELSE sc_artist_uploads.duration_ms
+                    END,
+                    uploaded_at = COALESCE(
+                        excluded.uploaded_at, sc_artist_uploads.uploaded_at
+                    ),
+                    local_track_id = COALESCE(
+                        excluded.local_track_id, sc_artist_uploads.local_track_id
+                    ),
+                    access = COALESCE(excluded.access, sc_artist_uploads.access),
+                    event_type = 'upload',
+                    uploader_soundcloud_id = COALESCE(
+                        excluded.uploader_soundcloud_id,
+                        sc_artist_uploads.uploader_soundcloud_id
+                    ),
+                    genre = COALESCE(
+                        NULLIF(excluded.genre, ''), sc_artist_uploads.genre
+                    ),
+                    released_at = COALESCE(
+                        excluded.released_at, sc_artist_uploads.released_at
+                    ),
+                    metadata_updated_at = excluded.metadata_updated_at""",
                 (
                     rec["artist_id"],
-                    str(rec["track"]["id"]),
-                    rec["track"].get("title", ""),
-                    rec["track"].get("permalink_url"),
-                    _upgrade_artwork_url(rec["track"].get("artwork_url")),
-                    rec["track"].get("duration", 0) or 0,
+                    metadata["soundcloud_id"],
+                    metadata["title"],
+                    metadata["permalink_url"],
+                    metadata["artwork_url"],
+                    metadata["duration_ms"],
                     rec["uploaded_at"],
                     local_id,
-                    rec["track"].get("access"),
+                    metadata["access"],
+                    metadata["uploader_soundcloud_id"],
+                    metadata["genre"],
+                    metadata["released_at"],
+                    metadata["metadata_updated_at"],
                 ),
             )
-            inserted += cursor.rowcount
+            if metadata["soundcloud_id"] not in existing:
+                inserted += 1
+                existing.add(metadata["soundcloud_id"])
         conn.commit()
     return inserted
 
 
-def _update_known_access(tracks: list[dict[str, Any]]) -> None:
-    """Refresh access tier for already-known uploads (populates legacy NULLs).
-
-    SC can also flip a track between playable and preview (Go+ windows), so
-    update on every sighting, not just when NULL.
-    """
-    updates = [
-        (t.get("access"), str(t["id"]))
-        for t in tracks
-        if t.get("id") and t.get("access")
-    ]
-    if not updates:
-        return
-    with get_db_connection() as conn:
-        conn.executemany(
-            """UPDATE sc_artist_uploads SET access = ?1
-            WHERE soundcloud_id = ?2 AND (access IS NULL OR access != ?1)""",
-            updates,
-        )
-        conn.commit()
-
-
-def _collect_new_uploads(
+def _collect_uploads(
     tracks: list[dict[str, Any]], artist_id: int, known_ids: set[str]
 ) -> list[dict[str, Any]]:
-    """Filter one artist's uploads to new-to-DB tracks within the age cutoff."""
+    """Keep known rows for metadata updates and bound only brand-new uploads."""
     cutoff = _upload_cutoff()
     records = []
     for track in tracks:
         sc_id = str(track.get("id", ""))
-        if not sc_id or sc_id in known_ids:
+        if not sc_id:
             continue
-        uploaded = _parse_sc_datetime(track.get("created_at"))
-        if uploaded is None or uploaded < cutoff:
+        uploaded = parse_soundcloud_datetime(track.get("created_at"))
+        if uploaded is None:
+            continue
+        if sc_id not in known_ids and uploaded < cutoff:
             continue
         known_ids.add(sc_id)
         records.append(
@@ -183,8 +240,8 @@ def sync_followings_uploads(
 ) -> tuple[int, list[str]]:
     """Fetch new uploads from the given (pre-snapshotted) followed artists.
 
-    Never touches discovery_artists.last_checked — the reposts sync that runs
-    after this owns the adaptive cadence.
+    Advances discovery_artists.uploads_last_checked after each successful API
+    fetch and never touches the repost-only last_checked field.
 
     Returns (uploads_added, errors).
     """
@@ -198,9 +255,9 @@ def sync_followings_uploads(
     added = 0
     total = len(artists)
 
-    # Insert per artist (not one big end-of-run transaction): a killed run —
-    # e.g. uvicorn auto-reload mid-backfill — keeps its progress, and the
-    # known_ids skip makes the next run resume where it stopped.
+    # Insert and checkpoint per artist (not one big end-of-run transaction):
+    # a killed run keeps completed artists and rows, while idempotent upserts
+    # make replaying the interrupted artist safe.
     for i, artist in enumerate(artists):
         if progress_callback:
             progress_callback(
@@ -210,10 +267,9 @@ def sync_followings_uploads(
             state, tracks, api_error = _fetch_artist_uploads(state, artist, max_pages)
             if api_error:
                 errors.append(f"{artist['slug']}: {api_error}")
-            added += _insert_uploads(
-                _collect_new_uploads(tracks, artist["id"], known_ids)
-            )
-            _update_known_access(tracks)
+            added += _insert_uploads(_collect_uploads(tracks, artist["id"], known_ids))
+            if api_error is None:
+                discovery_queries.update_artist_uploads_last_checked(artist["id"])
         except Exception as exc:
             logger.exception(f"feed_uploads: failed for {artist['slug']}")
             errors.append(f"{artist['slug']}: {exc}")
@@ -250,8 +306,8 @@ def run_uploads_backfill(
     """One-time backfill: sweep ALL followed artists for uploads since
     UPLOAD_CUTOFF (Jan 2026), one 200-track page per artist. ~0.5s/artist.
 
-    The daily incremental sync only sees artists as they come due, so without
-    this the feed starts empty and fills over ~30 days.
+    The normal incremental sync uses the independent upload cadence; this
+    explicit sweep remains useful for a fresh installation or manual repair.
     """
     artists = get_all_followed_artists()
     logger.info(f"feed_uploads: backfill starting over {len(artists)} artists")
