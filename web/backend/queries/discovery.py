@@ -12,9 +12,8 @@ from music_minion.core.database import get_db_connection
 # SQLite has a limit of 999 variables per query; use batches of 900 to be safe
 _SQLITE_BATCH_SIZE = 900
 
-# Canonical set of valid discovery_tracks.status values. This is the single
-# source of truth — every writer must validate against it, and the fresh
-# CREATE TABLE in core/database.py mirrors it as a CHECK constraint.
+# Legacy discovery_tracks.status compatibility values. Preference labels now
+# live only in sc_track_decisions; workflow_state owns playlist progression.
 #   - 'unseen':      ingested but never classified; eligible for fetch/backfill
 #   - 'in_playlist': placed in the discovery reposts playlist (awaiting decision)
 #   - 'liked':       user kept it (added to a monthly/linked playlist)
@@ -245,7 +244,7 @@ def get_followed_artists_due_for_upload_check() -> list[dict[str, Any]]:
 
 
 def get_seen_track_ids() -> set[str]:
-    """SC IDs to exclude from fresh fetches: classified or already placed.
+    """SC IDs to exclude from fresh fetches: decided or already placed.
 
     Tracks with status='unseen' (incl. those ingested by sync_followings_reposts)
     remain eligible — the discovery sync should be free to re-encounter them and
@@ -254,14 +253,16 @@ def get_seen_track_ids() -> set[str]:
     Status coupling: if a new value is added to DISCOVERY_STATUSES,
     decide whether it belongs in this exclusion set too. See TODOS.md.
     """
-    excluded = ("liked", "dismissed", "in_playlist")
-    placeholders = ",".join("?" * len(excluded))
     with get_db_connection() as conn:
-        cursor = conn.execute(
-            f"SELECT soundcloud_id FROM discovery_tracks "
-            f"WHERE status IN ({placeholders})",
-            excluded,
-        )
+        cursor = conn.execute("""
+            SELECT dt.soundcloud_id FROM discovery_tracks dt
+            WHERE dt.workflow_state IN ('in_playlist', 'processed')
+               OR EXISTS (
+                   SELECT 1 FROM sc_track_decisions d
+                   WHERE d.soundcloud_id = dt.soundcloud_id AND d.is_current = 1
+                     AND d.decision IN ('keep', 'nope')
+               )
+        """)
         return {row["soundcloud_id"] for row in cursor.fetchall()}
 
 
@@ -542,7 +543,7 @@ def get_unplaced_short_tracks(
                  AND da.is_following = 1
             ) best ON best.discovery_track_id = dt.id AND best.rn = 1
             JOIN discovery_artists da_best ON da_best.id = best.discovery_artist_id
-            WHERE dt.status = 'unseen'
+            WHERE dt.workflow_state = 'unseen'
               AND dt.duration_ms <= 600000
             ORDER BY da_best.repost_keep_rate DESC,
                      best.reposted_at IS NULL, best.reposted_at DESC
@@ -590,7 +591,7 @@ def mark_tracks_in_playlist(sc_ids: list[str], batch_number: int) -> None:
             conn.execute(
                 f"""
                 UPDATE discovery_tracks
-                SET status = ?, playlist_batch = ?
+                SET status = ?, workflow_state = 'in_playlist', playlist_batch = ?
                 WHERE soundcloud_id IN ({placeholders})
                 """,
                 [status, batch_number, *batch],
@@ -615,14 +616,18 @@ def _set_track_status(sc_ids: list[str], status: str) -> None:
         conn.commit()
 
 
-def mark_tracks_liked(sc_ids: list[str]) -> None:
-    """Mark tracks as liked (user added to monthly playlist)."""
-    _set_track_status(sc_ids, "liked")
+def mark_tracks_liked(sc_ids: list[str], surface: str = "repost_builder") -> None:
+    """Record canonical keep decisions (default surface: the repost builder)."""
+    from web.backend.queries.feed import record_decisions
+
+    record_decisions(sc_ids, "keep", surface)
 
 
 def mark_tracks_dismissed(sc_ids: list[str]) -> None:
-    """Mark tracks as dismissed (user passed)."""
-    _set_track_status(sc_ids, "dismissed")
+    """Record canonical nope decisions from the repost builder."""
+    from web.backend.queries.feed import record_decisions
+
+    record_decisions(sc_ids, "nope", "repost_builder")
 
 
 def mark_tracks_unseen(sc_ids: list[str]) -> None:
@@ -631,7 +636,18 @@ def mark_tracks_unseen(sc_ids: list[str]) -> None:
     Makes them eligible for fresh-fetch and the backfill pool again, without
     counting as a dismissal against the reposting artist's hit_rate.
     """
-    _set_track_status(sc_ids, "unseen")
+    if not sc_ids:
+        return
+    with get_db_connection() as conn:
+        for i in range(0, len(sc_ids), _SQLITE_BATCH_SIZE):
+            batch = sc_ids[i : i + _SQLITE_BATCH_SIZE]
+            placeholders = ",".join("?" * len(batch))
+            conn.execute(
+                f"UPDATE discovery_tracks SET status = 'unseen', "
+                f"workflow_state = 'unseen' WHERE soundcloud_id IN ({placeholders})",
+                batch,
+            )
+        conn.commit()
 
 
 def update_artist_last_checked(artist_id: int, new_repost_count: int) -> None:
@@ -673,38 +689,43 @@ def update_artist_uploads_last_checked(artist_id: int) -> None:
 def recalculate_artist_stats(artist_id: int | None = None) -> None:
     """Recalculate hit_rate, tracks_seen, tracks_liked, tracks_dismissed.
 
-    Aggregates two sources per artist:
-    - reposts: discovery_track_reposters -> discovery_tracks status
-    - uploads: sc_artist_uploads status (feed -1/+1 ratings)
-    'hidden' uploads count toward tracks_seen only (no penalty, no credit).
+    Each artist/track pair is counted once even when that artist both uploaded
+    and reposted it. Only canonical current keep/nope decisions train quality;
+    hide is deliberately absent from liked/dismissed counts.
     hit_rate = liked / max(1, liked + dismissed) * 100
 
     Pass artist_id for a targeted single-artist recalc (feed rate endpoint).
     """
     with get_db_connection() as conn:
-        cursor = conn.execute(
+        rows = conn.execute(
             """
-            WITH combined AS (
-                SELECT dtr.discovery_artist_id AS artist_id, dt.status AS status
+            WITH contributions AS (
+                SELECT dtr.discovery_artist_id AS artist_id, dt.soundcloud_id
                 FROM discovery_track_reposters dtr
                 JOIN discovery_tracks dt ON dt.id = dtr.discovery_track_id
-                UNION ALL
-                SELECT u.discovery_artist_id, u.status
+                UNION
+                SELECT u.discovery_artist_id, u.soundcloud_id
                 FROM sc_artist_uploads u
+            ), labeled AS (
+                SELECT c.artist_id, c.soundcloud_id, d.decision
+                FROM contributions c
+                JOIN sc_track_decisions d
+                  ON d.soundcloud_id = c.soundcloud_id AND d.is_current = 1
             )
             SELECT
                 da.id,
-                COUNT(*) AS tracks_seen,
-                SUM(CASE WHEN c.status = 'liked' THEN 1 ELSE 0 END) AS tracks_liked,
-                SUM(CASE WHEN c.status = 'dismissed' THEN 1 ELSE 0 END) AS tracks_dismissed
+                COUNT(l.soundcloud_id) AS tracks_seen,
+                COALESCE(SUM(CASE WHEN l.decision = 'keep' THEN 1 ELSE 0 END), 0)
+                    AS tracks_liked,
+                COALESCE(SUM(CASE WHEN l.decision = 'nope' THEN 1 ELSE 0 END), 0)
+                    AS tracks_dismissed
             FROM discovery_artists da
-            JOIN combined c ON c.artist_id = da.id
+            LEFT JOIN labeled l ON l.artist_id = da.id
             WHERE (? IS NULL OR da.id = ?)
             GROUP BY da.id
             """,
             (artist_id, artist_id),
-        )
-        stats = cursor.fetchall()
+        ).fetchall()
 
         records = [
             (
@@ -716,7 +737,7 @@ def recalculate_artist_stats(artist_id: int | None = None) -> None:
                 * 100,
                 row["id"],
             )
-            for row in stats
+            for row in rows
         ]
 
         conn.executemany(
