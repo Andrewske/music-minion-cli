@@ -166,7 +166,9 @@ def sync_followings_reposts(
             all_fetched.append({**track, "artist_id": artist_id})
 
     if not all_fetched:
-        logger.info(f"sync_followings_reposts: checked {len(artists)} artists, 0 new reposts")
+        logger.info(
+            f"sync_followings_reposts: checked {len(artists)} artists, 0 new reposts"
+        )
         return 0, errors
 
     discovery_records = [
@@ -183,7 +185,9 @@ def sync_followings_reposts(
     discovery_queries.insert_discovery_tracks(discovery_records)
 
     sc_ids_fetched = [str(t["id"]) for t in all_fetched]
-    sc_id_to_discovery_id = discovery_queries.get_discovery_track_ids_by_sc_ids(sc_ids_fetched)
+    sc_id_to_discovery_id = discovery_queries.get_discovery_track_ids_by_sc_ids(
+        sc_ids_fetched
+    )
 
     reposter_links: list[tuple[int, int, Optional[str]]] = []
     for track in all_fetched:
@@ -249,10 +253,7 @@ def _fetch_all_reposts(
                     logger.warning(f"API error for {artist['slug']}: {api_error}")
                     errors.append(f"{artist['slug']}: {api_error}")
                     break
-                unseen = [
-                    t for t in reposts
-                    if str(t.get("id", "")) not in seen_ids
-                ]
+                unseen = [t for t in reposts if str(t.get("id", "")) not in seen_ids]
                 artist_tracks[artist_id] = unseen
                 discovery_queries.update_artist_last_checked(artist_id, len(unseen))
                 break
@@ -324,7 +325,8 @@ def _select_tracks_waterfall(
 ) -> list[dict[str, Any]]:
     """Select tracks via progressive cap relaxation — guarantees fill when pool >= target.
 
-    Recency wins: sorted by (recency week DESC, artist_hit_rate DESC, exact time DESC).
+    Recency wins: sorted by (recency week DESC, reposter keep rate DESC,
+    exact time DESC).
     Tracks are bucketed into rolling 7-day age tiers from now — the most recent
     tier fills first, then older tiers; within a tier the best artists win. Per-artist
     caps then prevent any one prolific reposter from flooding the playlist.
@@ -339,7 +341,7 @@ def _select_tracks_waterfall(
         age_weeks = max(0, (now - dt).days) // 7
         return (
             -age_weeks,  # 0 = most recent 7 days, sorts first under reverse=True
-            track.get("artist_hit_rate", 0.0) or 0.0,
+            track.get("artist_repost_keep_rate", 0.22) or 0.0,
             dt.timestamp(),
         )
 
@@ -460,7 +462,9 @@ def _sync_tracks_to_local_db(
             ).fetchone()
 
             if not row:
-                logger.warning(f"Could not find local track after insert: sc_id={sc_id}")
+                logger.warning(
+                    f"Could not find local track after insert: sc_id={sc_id}"
+                )
                 continue
 
             local_id = row["id"]
@@ -545,9 +549,13 @@ def run_discovery_sync(
     if state is None:
         raise RuntimeError("SoundCloud not authenticated — cannot run discovery sync")
 
-    reposts_playlist_id = discovery_queries.get_discovery_playlist_id("soundcloud_reposts")
+    reposts_playlist_id = discovery_queries.get_discovery_playlist_id(
+        "soundcloud_reposts"
+    )
     if reposts_playlist_id is None:
-        raise RuntimeError("No discovery playlist configured (discovery_source='soundcloud_reposts')")
+        raise RuntimeError(
+            "No discovery playlist configured (discovery_source='soundcloud_reposts')"
+        )
 
     mixes_playlist_id = discovery_queries.get_mixes_playlist_id()
 
@@ -567,7 +575,9 @@ def run_discovery_sync(
                 "SELECT soundcloud_playlist_id FROM playlists WHERE id = ?",
                 (mixes_playlist_id,),
             ).fetchone()
-            sc_mixes_playlist_id = mixes_row["soundcloud_playlist_id"] if mixes_row else None
+            sc_mixes_playlist_id = (
+                mixes_row["soundcloud_playlist_id"] if mixes_row else None
+            )
 
     # Step 3: Handle active organizer session (always a full rebuild)
     target_count = prepare_for_sync(reposts_playlist_id)
@@ -575,14 +585,20 @@ def run_discovery_sync(
     # Step 4: Load ranked artists + compute slot caps
     # artists_to_fetch: only due for API check (cadence-gated)
     # all_artists: everyone in top-200 (for slot cap computation)
-    artists_to_fetch = discovery_queries.get_ranked_artists()
-    all_artists = discovery_queries.get_ranked_artists(include_not_due=True)
+    from web.backend.preference_scoring import builder_all_followed_enabled
+
+    with get_db_connection() as conn:
+        max_rank = None if builder_all_followed_enabled(conn) else 200
+    artists_to_fetch = discovery_queries.get_ranked_artists(max_rank=max_rank)
+    all_artists = discovery_queries.get_ranked_artists(
+        include_not_due=True, max_rank=max_rank
+    )
     if not all_artists:
         logger.warning("No resolved artists found — nothing to fetch")
 
     slot_caps = discovery_queries.compute_slot_caps(all_artists)
-    artist_hit_rates: dict[int, float] = {
-        a["id"]: a.get("hit_rate", 0.0) or 0.0 for a in all_artists
+    artist_repost_keep_rates: dict[int, float] = {
+        a["id"]: a.get("repost_keep_rate", 0.22) or 0.22 for a in all_artists
     }
 
     # Step 5: Load seen track IDs
@@ -623,7 +639,9 @@ def run_discovery_sync(
     # Store track-reposter relationships
     if all_fetched:
         sc_ids_fetched = [str(t["id"]) for t in all_fetched]
-        sc_id_to_discovery_id = discovery_queries.get_discovery_track_ids_by_sc_ids(sc_ids_fetched)
+        sc_id_to_discovery_id = discovery_queries.get_discovery_track_ids_by_sc_ids(
+            sc_ids_fetched
+        )
 
         reposter_links: list[tuple[int, int, Optional[str]]] = []
         for track in all_fetched:
@@ -663,13 +681,14 @@ def run_discovery_sync(
     backfill_pool = discovery_queries.get_unplaced_short_tracks(
         exclude_sc_ids=fresh_sc_ids,
         owned_sc_ids=owned_sc_ids,
+        max_rank=max_rank,
     )
     combined_pool = short_tracks + backfill_pool
 
     for track in combined_pool:
         aid = track.get("artist_id")
-        if aid is not None and "artist_hit_rate" not in track:
-            track["artist_hit_rate"] = artist_hit_rates.get(aid, 0.0)
+        if aid is not None and "artist_repost_keep_rate" not in track:
+            track["artist_repost_keep_rate"] = artist_repost_keep_rates.get(aid, 0.22)
 
     selected_short = _select_tracks_waterfall(combined_pool, slot_caps, target_count)
     backfilled = sum(1 for t in selected_short if str(t["id"]) not in fresh_sc_ids)
@@ -715,7 +734,9 @@ def run_discovery_sync(
                 state, sc_reposts_playlist_id, selected_sc_ids, replace=True
             )
             if success:
-                logger.info(f"Pushed {len(selected_sc_ids)} tracks to SC reposts playlist")
+                logger.info(
+                    f"Pushed {len(selected_sc_ids)} tracks to SC reposts playlist"
+                )
             else:
                 msg = f"SC reposts playlist push failed: {err}"
                 logger.warning(msg)
@@ -734,7 +755,9 @@ def run_discovery_sync(
                 state, sc_mixes_playlist_id, selected_mix_sc_ids, replace=True
             )
             if success:
-                logger.info(f"Pushed {len(selected_mix_sc_ids)} tracks to SC mixes playlist")
+                logger.info(
+                    f"Pushed {len(selected_mix_sc_ids)} tracks to SC mixes playlist"
+                )
             else:
                 msg = f"SC mixes playlist push failed: {err}"
                 logger.warning(msg)

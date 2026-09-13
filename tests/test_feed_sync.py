@@ -2,6 +2,7 @@
 sync_followings_reposts writes, dedup, and feed_stats CTE windowing."""
 
 import sqlite3
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,6 +12,7 @@ from music_minion.domain.library.providers.soundcloud.api import (
     MAX_REPOSTS_PAGES,
     get_user_reposts,
 )
+from web.backend.discovery_sync import _select_tracks_waterfall
 
 
 def _auth_state() -> ProviderState:
@@ -18,8 +20,11 @@ def _auth_state() -> ProviderState:
     return ProviderState(
         config=ProviderConfig(name="soundcloud"),
         authenticated=True,
-        cache={"client_id": "test", "client_secret": "test",
-               "token_data": {"access_token": "tok", "expires_at": 9999999999}},
+        cache={
+            "client_id": "test",
+            "client_secret": "test",
+            "token_data": {"access_token": "tok", "expires_at": 9999999999},
+        },
     )
 
 
@@ -43,10 +48,15 @@ class TestGetUserReposts:
 
         def fake_request(state, method, url, **kw):
             call_count["n"] += 1
-            return state, _mock_response(200, {
-                "collection": [{"id": call_count["n"] * 100 + j} for j in range(200)],
-                "next_href": "https://api.soundcloud.com/next",
-            })
+            return state, _mock_response(
+                200,
+                {
+                    "collection": [
+                        {"id": call_count["n"] * 100 + j} for j in range(200)
+                    ],
+                    "next_href": "https://api.soundcloud.com/next",
+                },
+            )
 
         with patch(
             "music_minion.domain.library.providers.soundcloud.api._request_with_backoff",
@@ -61,6 +71,7 @@ class TestGetUserReposts:
     def test_429_returns_rate_limited_error(self) -> None:
         """_request_with_backoff HTTPError(429) surfaces as 'Rate limited' string."""
         from requests import HTTPError
+
         err_response = MagicMock()
         err_response.status_code = 429
         err = HTTPError(response=err_response)
@@ -90,9 +101,14 @@ MINIMAL_SCHEMA_SQL = [
         display_name TEXT,
         display_name_normalized TEXT,
         ranking INTEGER,
+        tier TEXT,
         is_following INTEGER DEFAULT 0,
         in_top_200 INTEGER DEFAULT 0,
         hit_rate REAL,
+        upload_keep_rate REAL DEFAULT 0.22,
+        upload_rated_count REAL DEFAULT 0,
+        repost_keep_rate REAL DEFAULT 0.22,
+        repost_rated_count REAL DEFAULT 0,
         tracks_seen INTEGER DEFAULT 0,
         tracks_liked INTEGER DEFAULT 0,
         tracks_dismissed INTEGER DEFAULT 0,
@@ -137,6 +153,7 @@ MINIMAL_SCHEMA_SQL = [
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         track_id INTEGER NOT NULL,
         rating_type TEXT NOT NULL,
+        source TEXT,
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )""",
     """CREATE TABLE playlist_elo_ratings (
@@ -160,7 +177,8 @@ MINIMAL_SCHEMA_SQL = [
         name TEXT,
         track_count INTEGER DEFAULT 0,
         soundcloud_playlist_id TEXT,
-        discovery_source TEXT
+        discovery_source TEXT,
+        updated_at TIMESTAMP
     )""",
     """CREATE TABLE playlist_tracks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -186,6 +204,15 @@ MINIMAL_SCHEMA_SQL = [
         dry_run INTEGER DEFAULT 0,
         duration_seconds REAL DEFAULT 0
     )""",
+    """CREATE TABLE sc_artist_uploads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        discovery_artist_id INTEGER NOT NULL,
+        soundcloud_id TEXT UNIQUE,
+        local_track_id INTEGER,
+        title TEXT,
+        status TEXT DEFAULT 'visible',
+        uploaded_at TIMESTAMP
+    )""",
 ]
 
 
@@ -209,6 +236,7 @@ def test_db(tmp_path, monkeypatch):
 class TestSyncFollowingsReposts:
     def test_writes_rows_with_seen_at(self, test_db) -> None:
         from music_minion.core.database import get_db_connection
+
         with get_db_connection() as conn:
             conn.execute(
                 "INSERT INTO discovery_artists (soundcloud_user_id, slug, display_name, ranking, is_following) "
@@ -218,13 +246,26 @@ class TestSyncFollowingsReposts:
             aid = conn.execute("SELECT id FROM discovery_artists").fetchone()["id"]
 
         fake_tracks = [
-            {"id": 1001, "title": "A", "permalink": "a", "user": {"username": "artist"},
-             "duration": 180000, "created_at": "2026/04/15 00:00:00 +0000"},
-            {"id": 1002, "title": "B", "permalink": "b", "user": {"username": "artist"},
-             "duration": 200000, "created_at": "2026/04/14 00:00:00 +0000"},
+            {
+                "id": 1001,
+                "title": "A",
+                "permalink": "a",
+                "user": {"username": "artist"},
+                "duration": 180000,
+                "created_at": "2026/04/15 00:00:00 +0000",
+            },
+            {
+                "id": 1002,
+                "title": "B",
+                "permalink": "b",
+                "user": {"username": "artist"},
+                "duration": 200000,
+                "created_at": "2026/04/14 00:00:00 +0000",
+            },
         ]
 
         from web.backend.discovery_sync import sync_followings_reposts
+
         with patch(
             "web.backend.discovery_sync.get_user_reposts",
             return_value=(_auth_state(), fake_tracks, None),
@@ -246,6 +287,7 @@ class TestSyncFollowingsReposts:
     def test_dedup_via_primary_key(self, test_db) -> None:
         """Running sync twice with same response leaves row count flat."""
         from music_minion.core.database import get_db_connection
+
         with get_db_connection() as conn:
             conn.execute(
                 "INSERT INTO discovery_artists (soundcloud_user_id, slug, display_name, ranking, is_following) "
@@ -253,10 +295,19 @@ class TestSyncFollowingsReposts:
             )
             conn.commit()
 
-        fake = [{"id": 2001, "title": "T", "permalink": "t", "user": {"username": "x"},
-                 "duration": 100, "created_at": "2026/04/15 00:00:00 +0000"}]
+        fake = [
+            {
+                "id": 2001,
+                "title": "T",
+                "permalink": "t",
+                "user": {"username": "x"},
+                "duration": 100,
+                "created_at": "2026/04/15 00:00:00 +0000",
+            }
+        ]
 
         from web.backend.discovery_sync import sync_followings_reposts
+
         with patch(
             "web.backend.discovery_sync.get_user_reposts",
             return_value=(_auth_state(), fake, None),
@@ -268,7 +319,9 @@ class TestSyncFollowingsReposts:
             sync_followings_reposts(_auth_state())
 
         with get_db_connection() as conn:
-            count = conn.execute("SELECT COUNT(*) FROM discovery_track_reposters").fetchone()[0]
+            count = conn.execute(
+                "SELECT COUNT(*) FROM discovery_track_reposters"
+            ).fetchone()[0]
         assert count == 1
 
 
@@ -287,8 +340,8 @@ class TestBackfillNullReposted:
         with get_db_connection() as conn:
             conn.execute(
                 "INSERT INTO discovery_artists "
-                "(soundcloud_user_id, slug, display_name, ranking, in_top_200) "
-                "VALUES ('1', 'top', 'Top', 50, 1)"
+                "(soundcloud_user_id, slug, display_name, ranking, is_following, in_top_200) "
+                "VALUES ('1', 'top', 'Top', 50, 1, 1)"
             )
             top_id = conn.execute("SELECT id FROM discovery_artists").fetchone()["id"]
 
@@ -446,7 +499,9 @@ class TestUnplacedBackfillTopOnly:
         results = get_unplaced_short_tracks(exclude_sc_ids=set(), limit=10)
         sc_ids = {r["id"] for r in results}
 
-        assert "A" not in sc_ids, "track only reposted by non-top-200 leaked into backfill"
+        assert "A" not in sc_ids, (
+            "track only reposted by non-top-200 leaked into backfill"
+        )
         assert sc_ids == {"B", "C"}
 
         for r in results:
@@ -510,8 +565,8 @@ class TestBackfillExcludesOwned:
         with get_db_connection() as conn:
             conn.execute(
                 "INSERT INTO discovery_artists "
-                "(soundcloud_user_id, slug, display_name, ranking, in_top_200) "
-                "VALUES ('1', 'top', 'Top', 50, 1)"
+                "(soundcloud_user_id, slug, display_name, ranking, is_following, in_top_200) "
+                "VALUES ('1', 'top', 'Top', 50, 1, 1)"
             )
             top_id = conn.execute("SELECT id FROM discovery_artists").fetchone()["id"]
 
@@ -539,9 +594,7 @@ class TestBackfillExcludesOwned:
             limit=10,
         )
         sc_ids = {r["id"] for r in results}
-        assert sc_ids == {"NEW"}, (
-            f"OWNED must be filtered; got {sc_ids}"
-        )
+        assert sc_ids == {"NEW"}, f"OWNED must be filtered; got {sc_ids}"
 
 
 def _seed_run_discovery_sync_minimum(
@@ -561,9 +614,9 @@ def _seed_run_discovery_sync_minimum(
     )
     conn.execute(
         "INSERT INTO discovery_artists "
-        "(soundcloud_user_id, slug, display_name, ranking, in_top_200, "
+        "(soundcloud_user_id, slug, display_name, ranking, is_following, in_top_200, "
         "tracks_seen, tracks_liked, tracks_dismissed, hit_rate) "
-        "VALUES ('1', 'top', 'Top', 50, 1, 0, 0, 0, 0.0)"
+        "VALUES ('1', 'top', 'Top', 50, 1, 1, 0, 0, 0, 0.0)"
     )
     artist_id = conn.execute("SELECT id FROM discovery_artists").fetchone()["id"]
     conn.commit()
@@ -590,12 +643,16 @@ class TestReposterWriteTimestamp:
         }
 
         from web.backend.discovery_sync import run_discovery_sync
-        with patch(
-            "web.backend.discovery_sync.get_web_provider_state",
-            return_value=_auth_state(),
-        ), patch(
-            "web.backend.discovery_sync._fetch_all_reposts",
-            return_value=(_auth_state(), {artist_id: [fake_track]}, []),
+
+        with (
+            patch(
+                "web.backend.discovery_sync.get_web_provider_state",
+                return_value=_auth_state(),
+            ),
+            patch(
+                "web.backend.discovery_sync._fetch_all_reposts",
+                return_value=(_auth_state(), {artist_id: [fake_track]}, []),
+            ),
         ):
             run_discovery_sync(dry_run=True)
 
@@ -625,9 +682,7 @@ class TestFreshPathExcludesOwned:
             owned_local_id = conn.execute(
                 "SELECT id FROM tracks WHERE soundcloud_id='OWNED'"
             ).fetchone()["id"]
-            conn.execute(
-                "INSERT INTO playlists (id, name) VALUES (99, 'other')"
-            )
+            conn.execute("INSERT INTO playlists (id, name) VALUES (99, 'other')")
             conn.execute(
                 "INSERT INTO playlist_tracks (playlist_id, track_id, position) "
                 "VALUES (99, ?, 0)",
@@ -653,15 +708,19 @@ class TestFreshPathExcludesOwned:
         }
 
         from web.backend.discovery_sync import run_discovery_sync
-        with patch(
-            "web.backend.discovery_sync.get_web_provider_state",
-            return_value=_auth_state(),
-        ), patch(
-            "web.backend.discovery_sync._fetch_all_reposts",
-            return_value=(
-                _auth_state(),
-                {artist_id: [owned_track, new_track]},
-                [],
+
+        with (
+            patch(
+                "web.backend.discovery_sync.get_web_provider_state",
+                return_value=_auth_state(),
+            ),
+            patch(
+                "web.backend.discovery_sync._fetch_all_reposts",
+                return_value=(
+                    _auth_state(),
+                    {artist_id: [owned_track, new_track]},
+                    [],
+                ),
             ),
         ):
             result = run_discovery_sync(dry_run=True)
@@ -676,6 +735,7 @@ class TestFeedStatsCTE:
     def test_feed_noise_windowing(self, test_db) -> None:
         """feed_noise_7d/30d reflect correct counts divided by window."""
         from music_minion.core.database import get_db_connection
+
         with get_db_connection() as conn:
             conn.execute(
                 "INSERT INTO discovery_artists (soundcloud_user_id, slug, display_name, ranking, is_following) "
@@ -689,7 +749,10 @@ class TestFeedStatsCTE:
                     "VALUES (?, ?, ?, 'Y', 100)",
                     (f"3000{i}", f"t{i}", f"Track {i}"),
                 )
-            track_ids = [r["id"] for r in conn.execute("SELECT id FROM discovery_tracks").fetchall()]
+            track_ids = [
+                r["id"]
+                for r in conn.execute("SELECT id FROM discovery_tracks").fetchall()
+            ]
 
             # 2 rows within 7 days (1d, 3d ago)
             # 2 more within 30d but outside 7 (15d, 25d ago)
@@ -704,6 +767,7 @@ class TestFeedStatsCTE:
             conn.commit()
 
         from web.backend.queries.artists import get_artist_stats
+
         with get_db_connection() as conn:
             rows = get_artist_stats(conn, source="soundcloud", sort="noise")
 
@@ -719,18 +783,16 @@ class TestFeedStatsCTE:
 # ---------------------------------------------------------------------------
 
 
-from typing import Any
-
-from web.backend.discovery_sync import _select_tracks_waterfall
-
-
 def _make_track(
-    sc_id: str | int, artist_id: int, hit_rate: float = 0.0, reposted_at: str = "2026/04/25 00:00:00 +0000"
+    sc_id: str | int,
+    artist_id: int,
+    hit_rate: float = 0.0,
+    reposted_at: str = "2026/04/25 00:00:00 +0000",
 ) -> dict[str, Any]:
     return {
         "id": sc_id,
         "artist_id": artist_id,
-        "artist_hit_rate": hit_rate,
+        "artist_repost_keep_rate": hit_rate,
         "reposted_at": reposted_at,
         "created_at": reposted_at,
         "duration": 200000,
@@ -763,7 +825,9 @@ class TestWaterfallSelection:
         tracks = []
         for artist_id in range(50):
             for j in range(4):
-                tracks.append(_make_track(artist_id * 100 + j, artist_id, hit_rate=30.0))
+                tracks.append(
+                    _make_track(artist_id * 100 + j, artist_id, hit_rate=30.0)
+                )
         caps = {a: 1 for a in range(50)}
         result = _select_tracks_waterfall(tracks, caps, target_count=100)
         assert len(result) == 100
@@ -773,7 +837,9 @@ class TestWaterfallSelection:
         tracks = []
         for artist_id in range(5):
             for j in range(20):
-                tracks.append(_make_track(artist_id * 100 + j, artist_id, hit_rate=10.0))
+                tracks.append(
+                    _make_track(artist_id * 100 + j, artist_id, hit_rate=10.0)
+                )
         caps = {a: 1 for a in range(5)}
         result = _select_tracks_waterfall(tracks, caps, target_count=50)
         assert len(result) == 50
@@ -823,11 +889,14 @@ class TestWaterfallIntegration:
 
         with get_db_connection() as conn:
             _seed_run_discovery_sync_minimum(conn)
-            artist_id = conn.execute("SELECT id FROM discovery_artists").fetchone()["id"]
+            artist_id = conn.execute("SELECT id FROM discovery_artists").fetchone()[
+                "id"
+            ]
             # Mark artist as already checked (not due)
             conn.execute(
                 "UPDATE discovery_artists SET last_checked = datetime('now'), "
-                "hit_rate = 50.0, tracks_liked = 10, tracks_dismissed = 10"
+                "repost_keep_rate = 0.5, repost_rated_count = 20, "
+                "tracks_liked = 10, tracks_dismissed = 10"
             )
             # Seed 200 unseen backfill tracks
             for i in range(200):
@@ -838,7 +907,9 @@ class TestWaterfallIntegration:
                 )
             track_ids = {
                 row["soundcloud_id"]: row["id"]
-                for row in conn.execute("SELECT id, soundcloud_id FROM discovery_tracks").fetchall()
+                for row in conn.execute(
+                    "SELECT id, soundcloud_id FROM discovery_tracks"
+                ).fetchall()
             }
             for sc_id, dt_id in track_ids.items():
                 conn.execute(
@@ -851,15 +922,126 @@ class TestWaterfallIntegration:
 
         from web.backend.discovery_sync import run_discovery_sync
 
-        with patch(
-            "web.backend.discovery_sync.get_web_provider_state",
-            return_value=_auth_state(),
-        ), patch(
-            "web.backend.discovery_sync._fetch_all_reposts",
-            return_value=(_auth_state(), {}, []),
+        with (
+            patch(
+                "web.backend.discovery_sync.get_web_provider_state",
+                return_value=_auth_state(),
+            ),
+            patch(
+                "web.backend.discovery_sync._fetch_all_reposts",
+                return_value=(_auth_state(), {}, []),
+            ),
         ):
             result = run_discovery_sync(dry_run=True)
 
         assert result.tracks_added_to_playlist == 100, (
             f"Expected 100 tracks from backfill; got {result.tracks_added_to_playlist}"
+        )
+
+
+class TestUnfollowExclusions:
+    """Unfollowing an artist removes their tracks from the reposts playlist
+    and keeps their reposts out of future discovery syncs."""
+
+    def _seed_artist(self, conn, slug: str, is_following: int) -> int:
+        conn.execute(
+            "INSERT INTO discovery_artists "
+            "(soundcloud_user_id, slug, display_name, ranking, is_following, in_top_200) "
+            "VALUES (?, ?, ?, 50, ?, 1)",
+            (slug, slug, slug.title(), is_following),
+        )
+        return conn.execute(
+            "SELECT id FROM discovery_artists WHERE slug=?", (slug,)
+        ).fetchone()["id"]
+
+    def _seed_playlist_track(self, conn, playlist_id: int, sc_id: str) -> int:
+        conn.execute(
+            "INSERT INTO tracks (title, soundcloud_id) VALUES (?, ?)", (sc_id, sc_id)
+        )
+        track_id = conn.execute(
+            "SELECT id FROM tracks WHERE soundcloud_id=?", (sc_id,)
+        ).fetchone()["id"]
+        conn.execute(
+            "INSERT INTO playlist_tracks (playlist_id, track_id) VALUES (?, ?)",
+            (playlist_id, track_id),
+        )
+        return track_id
+
+    def _link_repost(self, conn, sc_id: str, artist_id: int) -> None:
+        conn.execute(
+            "INSERT OR IGNORE INTO discovery_tracks "
+            "(soundcloud_id, title, artist_name, duration_ms, status) "
+            "VALUES (?, ?, 'A', 200000, 'unseen')",
+            (sc_id, sc_id),
+        )
+        dt_id = conn.execute(
+            "SELECT id FROM discovery_tracks WHERE soundcloud_id=?", (sc_id,)
+        ).fetchone()["id"]
+        conn.execute(
+            "INSERT INTO discovery_track_reposters "
+            "(discovery_track_id, discovery_artist_id, reposted_at) "
+            "VALUES (?, ?, '2026-04-20 12:00:00')",
+            (dt_id, artist_id),
+        )
+
+    def test_removes_solo_reposts_keeps_shared_and_others(self, test_db) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.artists import (
+            remove_artist_tracks_from_reposts_playlist,
+        )
+
+        with get_db_connection() as conn:
+            conn.execute(
+                "INSERT INTO playlists (id, name, discovery_source) "
+                "VALUES (26, 'reposts', 'soundcloud_reposts')"
+            )
+            unfollowed = self._seed_artist(conn, "gone", is_following=0)
+            kept = self._seed_artist(conn, "kept", is_following=1)
+
+            # SOLO: only the unfollowed artist reposted → removed
+            self._seed_playlist_track(conn, 26, "SOLO")
+            self._link_repost(conn, "SOLO", unfollowed)
+            # SHARED: both reposted → stays (another followed artist wants it)
+            self._seed_playlist_track(conn, 26, "SHARED")
+            self._link_repost(conn, "SHARED", unfollowed)
+            self._link_repost(conn, "SHARED", kept)
+            # OTHER: unrelated followed artist's track → untouched
+            self._seed_playlist_track(conn, 26, "OTHER")
+            self._link_repost(conn, "OTHER", kept)
+            # UPLOAD: the unfollowed artist's own upload → removed
+            self._seed_playlist_track(conn, 26, "UPLOAD")
+            conn.execute(
+                "INSERT INTO sc_artist_uploads (discovery_artist_id, soundcloud_id) "
+                "VALUES (?, 'UPLOAD')",
+                (unfollowed,),
+            )
+            conn.commit()
+
+            deleted = remove_artist_tracks_from_reposts_playlist(conn, unfollowed)
+            conn.commit()
+
+            remaining = {
+                row["soundcloud_id"]
+                for row in conn.execute(
+                    "SELECT t.soundcloud_id FROM playlist_tracks pt "
+                    "JOIN tracks t ON t.id = pt.track_id WHERE pt.playlist_id = 26"
+                ).fetchall()
+            }
+        assert deleted == 2, f"expected SOLO + UPLOAD removed; deleted={deleted}"
+        assert remaining == {"SHARED", "OTHER"}, f"got {remaining}"
+
+    def test_backfill_skips_unfollowed_reposter(self, test_db) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.discovery import get_unplaced_short_tracks
+
+        with get_db_connection() as conn:
+            unfollowed = self._seed_artist(conn, "gone", is_following=0)
+            followed = self._seed_artist(conn, "here", is_following=1)
+            self._link_repost(conn, "DEAD", unfollowed)  # only unfollowed → excluded
+            self._link_repost(conn, "ALIVE", followed)
+            conn.commit()
+
+        sc_ids = {r["id"] for r in get_unplaced_short_tracks(limit=10)}
+        assert sc_ids == {"ALIVE"}, (
+            f"unfollowed artist's repost must not backfill; got {sc_ids}"
         )

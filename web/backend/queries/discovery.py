@@ -39,6 +39,7 @@ def _validate_status(status: str) -> None:
             f"valid values are {DISCOVERY_STATUSES}"
         )
 
+
 _TIER_PRIORITY: dict[str, int] = {"S": 1, "A": 2, "B": 3, "C": 4, "D": 5}
 
 
@@ -100,7 +101,18 @@ def seed_artists_from_csv(csv_path: str) -> int:
             not_quite = 0
         tracks_dismissed = not_interested + not_quite
         in_top_200 = 1 if row.get("in_top_200", "").strip() == "True" else 0
-        records.append((slug, tier, hit_rate, rank, tracks_seen, tracks_liked, tracks_dismissed, in_top_200))
+        records.append(
+            (
+                slug,
+                tier,
+                hit_rate,
+                rank,
+                tracks_seen,
+                tracks_liked,
+                tracks_dismissed,
+                in_top_200,
+            )
+        )
 
     inserted = 0
     with get_db_connection() as conn:
@@ -115,7 +127,9 @@ def seed_artists_from_csv(csv_path: str) -> int:
         conn.commit()
         inserted = conn.total_changes
 
-    logger.info(f"seed_artists_from_csv: inserted {inserted} of {len(records)} artists from {csv_path}")
+    logger.info(
+        f"seed_artists_from_csv: inserted {inserted} of {len(records)} artists from {csv_path}"
+    )
     return inserted
 
 
@@ -138,34 +152,47 @@ def update_artist_sc_id(slug: str, sc_user_id: str, display_name: str) -> None:
         conn.commit()
 
 
-def get_ranked_artists(include_not_due: bool = False) -> list[dict[str, Any]]:
-    """Get resolved top-200 artists ordered by ranking.
+def get_ranked_artists(
+    include_not_due: bool = False, max_rank: int | None = 200
+) -> list[dict[str, Any]]:
+    """Get resolved, still-followed current top-200 artists by live ranking.
+
+    ``in_top_200`` is retained only as seed provenance. Selection always uses
+    the editable current ranking so rank changes take effect immediately.
 
     Args:
         include_not_due: If True, include artists not yet due for a check.
+        max_rank: Current-rank cutoff. ``None`` is reserved for a gated model
+            rollout that intentionally considers every followed artist.
     """
     with get_db_connection() as conn:
+        rank_clause = "" if max_rank is None else "AND ranking <= ?"
+        params: tuple[int, ...] = () if max_rank is None else (max_rank,)
         if include_not_due:
             cursor = conn.execute(
-                """
+                f"""
                 SELECT * FROM discovery_artists
                 WHERE soundcloud_user_id IS NOT NULL
-                  AND in_top_200 = 1
+                  {rank_clause}
+                  AND is_following = 1
                 ORDER BY ranking
-                """
+                """,
+                params,
             )
         else:
             cursor = conn.execute(
-                """
+                f"""
                 SELECT * FROM discovery_artists
                 WHERE soundcloud_user_id IS NOT NULL
-                  AND in_top_200 = 1
+                  {rank_clause}
+                  AND is_following = 1
                   AND (
                     last_checked IS NULL
                     OR datetime(last_checked, '+' || check_interval_days || ' days') <= datetime('now')
-                  )
+                )
                 ORDER BY ranking
-                """
+                """,
+                params,
             )
         return [dict(row) for row in cursor.fetchall()]
 
@@ -251,9 +278,7 @@ def insert_discovery_tracks(tracks: list[dict[str, Any]]) -> int:
         return conn.total_changes
 
 
-def insert_track_reposters(
-    links: list[tuple[int, int, Optional[str]]]
-) -> None:
+def insert_track_reposters(links: list[tuple[int, int, Optional[str]]]) -> None:
     """Batch insert track-reposter relationships, tagged with seen_at=now.
 
     INSERT OR IGNORE preserves first-observation seen_at for existing rows.
@@ -351,12 +376,14 @@ def get_unplaced_short_tracks(
     exclude_sc_ids: set[str] | None = None,
     owned_sc_ids: set[str] | None = None,
     limit: int = 20000,
+    max_rank: int | None = 200,
 ) -> list[dict[str, Any]]:
     """Get older discovery tracks that never made it to a playlist.
 
     Returns dicts shaped like SC API tracks so they work with
-    _select_tracks_waterfall: {id, artist_id, artist_hit_rate, created_at, duration}.
-    Ordered by hit_rate DESC, reposted_at DESC, NULLs last.
+    _select_tracks_waterfall: {id, artist_id, artist_repost_keep_rate,
+    created_at, duration}. Ordered by role-specific Bayesian keep rate then
+    repost time, with NULL timestamps last.
 
     Args:
         exclude_sc_ids: SC IDs already selected this run (avoid dupes).
@@ -373,7 +400,8 @@ def get_unplaced_short_tracks(
             SELECT dt.soundcloud_id, dt.duration_ms, dt.first_seen, dt.released_at,
                    dt.title, dt.artist_name,
                    best.discovery_artist_id, best.reposted_at,
-                   da_best.hit_rate AS artist_hit_rate
+                   da_best.repost_keep_rate AS artist_repost_keep_rate,
+                   da_best.repost_rated_count AS artist_repost_rated_count
             FROM discovery_tracks dt
             JOIN (
                 SELECT dtr.discovery_track_id,
@@ -381,20 +409,22 @@ def get_unplaced_short_tracks(
                        dtr.reposted_at,
                        ROW_NUMBER() OVER (
                            PARTITION BY dtr.discovery_track_id
-                           ORDER BY da.ranking ASC
+                           ORDER BY da.ranking IS NULL, da.ranking ASC
                        ) AS rn
                 FROM discovery_track_reposters dtr
                 JOIN discovery_artists da
                   ON da.id = dtr.discovery_artist_id
-                 AND da.in_top_200 = 1
+                 AND (? IS NULL OR da.ranking <= ?)
+                 AND da.is_following = 1
             ) best ON best.discovery_track_id = dt.id AND best.rn = 1
             JOIN discovery_artists da_best ON da_best.id = best.discovery_artist_id
             WHERE dt.status = 'unseen'
               AND dt.duration_ms <= 600000
-            ORDER BY da_best.hit_rate DESC, best.reposted_at IS NULL, best.reposted_at DESC
+            ORDER BY da_best.repost_keep_rate DESC,
+                     best.reposted_at IS NULL, best.reposted_at DESC
             LIMIT ?
             """,
-            (limit,),
+            (max_rank, max_rank, limit),
         ).fetchall()
 
     results: list[dict[str, Any]] = []
@@ -404,17 +434,20 @@ def get_unplaced_short_tracks(
             continue
         if sc_id in owned_sc_ids:
             continue
-        results.append({
-            "id": sc_id,
-            "artist_id": row["discovery_artist_id"],
-            "artist_hit_rate": row["artist_hit_rate"] or 0.0,
-            "reposted_at": row["reposted_at"],
-            "released_at": row["released_at"],
-            "created_at": row["first_seen"] or "1970/01/01 00:00:00 +0000",
-            "duration": row["duration_ms"],
-            "title": row["title"] or "",
-            "user": {"username": row["artist_name"] or "Unknown"},
-        })
+        results.append(
+            {
+                "id": sc_id,
+                "artist_id": row["discovery_artist_id"],
+                "artist_repost_keep_rate": row["artist_repost_keep_rate"] or 0.22,
+                "artist_repost_rated_count": row["artist_repost_rated_count"] or 0.0,
+                "reposted_at": row["reposted_at"],
+                "released_at": row["released_at"],
+                "created_at": row["first_seen"] or "1970/01/01 00:00:00 +0000",
+                "duration": row["duration_ms"],
+                "title": row["title"] or "",
+                "user": {"username": row["artist_name"] or "Unknown"},
+            }
+        )
     return results
 
 
@@ -539,7 +572,9 @@ def recalculate_artist_stats(artist_id: int | None = None) -> None:
                 row["tracks_seen"],
                 row["tracks_liked"],
                 row["tracks_dismissed"],
-                row["tracks_liked"] / max(1, row["tracks_liked"] + row["tracks_dismissed"]) * 100,
+                row["tracks_liked"]
+                / max(1, row["tracks_liked"] + row["tracks_dismissed"])
+                * 100,
                 row["id"],
             )
             for row in stats
@@ -558,12 +593,12 @@ def recalculate_artist_stats(artist_id: int | None = None) -> None:
 
 
 def compute_slot_caps(artists: list[dict[str, Any]]) -> dict[int, int]:
-    """Compute round-robin slot caps based on hit rate.
+    """Compute round-robin slot caps from reposter-only recommendation quality.
 
     Pure function (no DB access).
 
-    "Rated" means tracks the user actually heard and judged (liked + dismissed).
-    Tracks that were fetched but never shown don't count.
+    ``repost_rated_count`` is the fractional track-level attribution count.
+    Tracks that were fetched but never judged do not count.
 
     Brackets:
     - No rated tracks (liked + dismissed == 0): 3 slots (benefit of doubt)
@@ -573,17 +608,20 @@ def compute_slot_caps(artists: list[dict[str, Any]]) -> dict[int, int]:
     - hit_rate < 5%: 1 slot
 
     Args:
-        artists: list of artist dicts with 'id', 'hit_rate', 'tracks_liked',
-                 'tracks_dismissed' keys
+        artists: list of artist dicts with ``id``, ``repost_keep_rate`` and
+                 ``repost_rated_count`` keys
 
     Returns:
         dict mapping artist_id -> max_slots
     """
+
     def _slots(artist: dict[str, Any]) -> int:
-        rated = (artist.get("tracks_liked") or 0) + (artist.get("tracks_dismissed") or 0)
+        rated = artist.get("repost_rated_count") or 0
         if rated == 0:
             return 3
-        rate = artist.get("hit_rate", 0.0) or 0.0
+        rate = artist.get("repost_keep_rate", 0.22) or 0.0
+        if rate <= 1:
+            rate *= 100
         if rate > 40:
             return 8
         if rate > 20:

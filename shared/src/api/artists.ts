@@ -26,6 +26,10 @@ export interface ArtistStats {
   in_top_200: boolean;
   hit_rate: number | null;
   tracks_seen: number;
+  upload_keep_rate: number;
+  upload_rated_count: number;
+  repost_keep_rate: number;
+  repost_rated_count: number;
   library_track_count: number;
   repost_in_library_count: number;
   sc_liked_count: number;
