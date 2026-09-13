@@ -180,6 +180,13 @@ export function usePlayer() {
   // track change so every playthrough gets one re-resolve before skipping.
   const retriedTrackIdRef = useRef<number | null>(null);
 
+  // Audio ownership: this device must be the active playback target AND this
+  // tab must hold the cross-tab audio-leader lock (lib/audioLeader.ts). Tabs
+  // sharing the device-id without the lock are remote controls — binding
+  // audio in them plays everything twice and their ended/error handlers
+  // double-fire /next against the leader's playback.
+  const isAudioOwner = store.isThisDeviceActive && store.isAudioLeader;
+
   // Initialize device on mount
   useEffect(() => {
     store.registerDevice();
@@ -208,9 +215,10 @@ export function usePlayer() {
     if (audioB) audioB.muted = store.isMuted;
   }, [audioA, audioB, store.isMuted]);
 
-  // Device transfer: when local device becomes inactive, pause and clear both elements
+  // Device transfer / not the leader tab: when this tab must not own audio,
+  // pause and clear both elements
   useEffect(() => {
-    if (store.isThisDeviceActive) return;
+    if (isAudioOwner) return;
     if (audioA) {
       audioA.pause();
       clearTrackSource(audioA);
@@ -224,7 +232,7 @@ export function usePlayer() {
       delete audioB.dataset.srcBoundAt;
     }
     lastLoadedTrackIdRef.current = null;
-  }, [audioA, audioB, store.isThisDeviceActive]);
+  }, [audioA, audioB, isAudioOwner]);
 
   // Track-change handler: silence old active, swap or load-on-swap to new track.
   // CRITICAL: activeKeyRef.current is read inside the effect; activeKey is NOT in deps.
@@ -232,7 +240,7 @@ export function usePlayer() {
   // which would re-evaluate the precondition against a half-loaded element and
   // trigger swap-back loops.
   useEffect(() => {
-    if (!store.isThisDeviceActive) return;
+    if (!isAudioOwner) return;
     if (!store.currentTrack) return;
     if (!audioA || !audioB) return;
 
@@ -306,13 +314,13 @@ export function usePlayer() {
     setActiveKey,
     store.currentTrack,
     store.isPlaying,
-    store.isThisDeviceActive,
+    isAudioOwner,
     handlePlayError,
   ]);
 
   // Sync audio position on explicit seek operations
   useEffect(() => {
-    if (!activeAudio || !store.isThisDeviceActive || !store.currentTrack) return;
+    if (!activeAudio || !isAudioOwner || !store.currentTrack) return;
     if (store.lastSeekAt === 0) return;
 
     const expectedPosition = getCurrentPosition(store) / 1000;
@@ -322,12 +330,12 @@ export function usePlayer() {
       activeAudio.currentTime = expectedPosition;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeAudio, store.lastSeekAt, store.isThisDeviceActive, store.currentTrack]);
+  }, [activeAudio, store.lastSeekAt, isAudioOwner, store.currentTrack]);
 
   // Preload next track on the inactive element. Debounced 500ms to avoid
   // thrashing the backend SoundCloud resolver on rapid skips.
   useEffect(() => {
-    if (!store.isThisDeviceActive) return;
+    if (!isAudioOwner) return;
     if (!store.currentTrack) return;
     if (store.currentContext?.type === 'comparison') return;
     if (!audioA || !audioB) return;
@@ -361,12 +369,12 @@ export function usePlayer() {
     store.queue,
     store.queueIndex,
     store.currentContext?.type,
-    store.isThisDeviceActive,
+    isAudioOwner,
   ]);
 
   // Scrobble tracking: fire onTrackPlayed at 50% or 30s (once per playthrough)
   useEffect(() => {
-    if (!store.isPlaying || !store.isThisDeviceActive || !store.currentTrack) return;
+    if (!store.isPlaying || !isAudioOwner || !store.currentTrack) return;
     if (store.scrobbledThisPlaythrough) return;
 
     const duration = (store.currentTrack.duration ?? 0) * 1000;
@@ -382,7 +390,7 @@ export function usePlayer() {
     const timeout = setTimeout(checkScrobble, threshold - store.positionMs);
     return () => clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store.currentTrack?.id, store.isPlaying, store.scrobbledThisPlaythrough]);
+  }, [store.currentTrack?.id, store.isPlaying, store.scrobbledThisPlaythrough, isAudioOwner]);
 
   // Error handler on active element with circuit breaker.
   // 3 errors within 10s trips the breaker and stops auto-skip cascade.
@@ -465,9 +473,13 @@ export function usePlayer() {
     };
 
     const onError = (): void => {
+      const s = usePlayerStore.getState();
+      // Non-owner tabs keep their elements unbound; a stray error here must
+      // never retry/skip against the leader tab's playback.
+      if (!s.isThisDeviceActive || !s.isAudioLeader) return;
       // Capture the errored track id NOW — a server prune may advance
       // currentTrack while the probe is in flight.
-      const trackId = usePlayerStore.getState().currentTrack?.id;
+      const trackId = s.currentTrack?.id;
       // Reauth probe FIRST (~3s timeout): the media element hides HTTP
       // status, and a revoked SoundCloud session 503s every SC stream.
       // Reauth is persistent — it never counts toward the error window and
@@ -513,7 +525,7 @@ export function usePlayer() {
 
     const onEnded = (): void => {
       const s = usePlayerStore.getState();
-      if (!s.isThisDeviceActive) return;
+      if (!s.isThisDeviceActive || !s.isAudioLeader) return;
       if (s.currentContext?.type === 'comparison') return;
       // A local advance is already awaiting its reconcile broadcast —
       // suppress duplicate advance triggers until server truth arrives.
