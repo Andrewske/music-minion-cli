@@ -258,3 +258,13 @@ sqlite3 db.db "EXPLAIN QUERY PLAN SELECT ... FROM tracks t JOIN ratings r ON t.i
 
 **Lesson:** When merging duplicate records, preserve the one with more foreign key relationships. Check all tables with CASCADE deletes before deciding which record to delete.
 
+
+## Decision timestamps must be recorded at decision time (2026-09-13)
+
+**Problem:** Tickets #60/#61 needed chronological, leakage-safe keep/nope data, but `discovery_tracks.status` carries no `decided_at`. `playlist_tracks.added_at` and `bucket_tracks.created_at` looked usable and were not: both cluster on bulk-sync timestamps, not user decisions.
+
+**Workaround:** `web/backend/keep_decisions.py` stamps a track decided in playlist batch k with the start of the sync run that created batch k+1 (`discovery_sync_log`). Ordering is exact across sync cycles, unknown within one, so splits and history rates treat each cycle as one group.
+
+**Lesson:** Any user judgment that will ever feed a model or a rate needs its own timestamped row when it happens. Derived status columns lose the order, and reconstructing it later costs far more than one `decided_at` column.
+
+**Related:** artist role stats give each decided track weight 1 (uploader full, reposters share 1/n). The old `hit_rate` replayed every track once per reposter (8238 credits for 884 decisions) and pulled every reposter toward the population rate.
