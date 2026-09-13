@@ -6,7 +6,7 @@ import sqlite3
 
 import pytest
 
-from music_minion.core.database import migrate_database
+from music_minion.core.database import _migrate_v62_decision_ledger, migrate_database
 from web.backend.artist_quality import (
     aggregate_artist_role_stats,
     bayesian_keep_rate,
@@ -42,6 +42,7 @@ CREATE TABLE discovery_tracks (
     genre TEXT,
     released_at TEXT,
     first_seen TEXT,
+    created_at TEXT,
     playlist_batch INTEGER,
     uploader_soundcloud_id TEXT,
     status TEXT DEFAULT 'unseen'
@@ -109,6 +110,7 @@ def conn() -> sqlite3.Connection:
     connection = sqlite3.connect(":memory:")
     connection.row_factory = sqlite3.Row
     connection.executescript(SCHEMA_SQL)
+    _migrate_v62_decision_ledger(connection)  # real ledger table, index and view
     yield connection
     connection.close()
 
@@ -191,6 +193,8 @@ def _seed(conn: sqlite3.Connection) -> None:
         "INSERT INTO discovery_track_reposters (discovery_track_id, discovery_artist_id) VALUES (?, ?)",
         [(10, 2), (10, 3), (11, 2), (12, 2), (13, 3)],
     )
+    # Legacy labels become ledger rows exactly as the v62 backfill does.
+    _migrate_v62_decision_ledger(conn)
 
 
 def test_recalculate_persists_rates_with_counts_and_keeps_rank_and_tier(conn) -> None:
@@ -214,7 +218,7 @@ def test_recalculate_persists_rates_with_counts_and_keeps_rank_and_tier(conn) ->
     ]
 
 
-def test_v62_migration_adds_role_columns_idempotently() -> None:
+def test_v63_migration_adds_role_columns_idempotently() -> None:
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     conn.executescript(
@@ -222,20 +226,25 @@ def test_v62_migration_adds_role_columns_idempotently() -> None:
         CREATE TABLE discovery_artists (
             id INTEGER PRIMARY KEY, ranking INTEGER, is_following INTEGER
         );
-        CREATE TABLE discovery_tracks (id INTEGER PRIMARY KEY, soundcloud_id TEXT);
+        CREATE TABLE discovery_tracks (
+            id INTEGER PRIMARY KEY, soundcloud_id TEXT,
+            status TEXT DEFAULT 'unseen', first_seen TEXT, created_at TEXT
+        );
         CREATE TABLE discovery_track_reposters (
             discovery_track_id INTEGER, discovery_artist_id INTEGER,
             reposted_at TEXT, seen_at TEXT
         );
         CREATE TABLE sc_artist_uploads (
             id INTEGER PRIMARY KEY, discovery_artist_id INTEGER,
-            soundcloud_id TEXT, uploaded_at TEXT
+            soundcloud_id TEXT, uploaded_at TEXT, status TEXT DEFAULT 'visible',
+            rated_at TEXT, first_seen TEXT,
+            sc_like_done INTEGER DEFAULT 0, sc_playlist_done INTEGER DEFAULT 0
         );
         CREATE TABLE sc_feed_sync_state (id INTEGER PRIMARY KEY);
         """
     )
     migrate_database(conn, 60)
-    migrate_database(conn, 61)
+    migrate_database(conn, 62)
     columns = {
         row["name"] for row in conn.execute("PRAGMA table_info(discovery_artists)")
     }

@@ -268,3 +268,11 @@ sqlite3 db.db "EXPLAIN QUERY PLAN SELECT ... FROM tracks t JOIN ratings r ON t.i
 **Lesson:** Any user judgment that will ever feed a model or a rate needs its own timestamped row when it happens. Derived status columns lose the order, and reconstructing it later costs far more than one `decided_at` column.
 
 **Related:** artist role stats give each decided track weight 1 (uploader full, reposters share 1/n). The old `hit_rate` replayed every track once per reposter (8238 credits for 884 decisions) and pulled every reposter toward the population rate.
+
+## Migrated ledger timestamps are ingestion times, not decision times (2026-09-13)
+
+**Problem:** The v62 `sc_track_decisions` backfill stamps `decided_at` with the best legacy value it has: `COALESCE(rated_at, first_seen)` for upload-feed rows and `COALESCE(first_seen, created_at)` for repost-builder rows. On the real DB all 883 builder rows carry `first_seen`, which precedes the sync run that surfaced the track. Trusting it would order decisions before their own playlist placement and leak later reposts into training.
+
+**Fix:** `keep_decisions.py` trusts `decided_at` only for live surfaces (no `_migration` suffix) and for upload-migration rows backed by a real `rated_at`. Everything else falls through to the batch/sync-log proxy. Rerunning the evaluation on the ledger moved Brier by 0.001 and log loss by 0.004; NO-SHIP stands.
+
+**Lesson:** When a migration synthesises a timestamp, record which rows are synthetic (here: the `surface` value) so downstream readers can tell real instants from placeholders.
