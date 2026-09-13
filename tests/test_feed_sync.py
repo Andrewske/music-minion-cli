@@ -28,6 +28,79 @@ def _auth_state() -> ProviderState:
     )
 
 
+class TestFeedMetadataMigration:
+    def test_v61_preserves_legacy_raw_time_and_adds_feed_indexes(self) -> None:
+        from music_minion.core.database import migrate_database
+
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.executescript(
+            """
+            CREATE TABLE discovery_artists (
+                id INTEGER PRIMARY KEY,
+                is_following INTEGER,
+                ranking INTEGER
+            );
+            CREATE TABLE discovery_tracks (
+                id INTEGER PRIMARY KEY,
+                soundcloud_id TEXT UNIQUE
+            );
+            CREATE TABLE discovery_track_reposters (
+                discovery_track_id INTEGER,
+                discovery_artist_id INTEGER,
+                reposted_at TEXT,
+                seen_at TEXT,
+                PRIMARY KEY(discovery_track_id, discovery_artist_id)
+            );
+            CREATE TABLE sc_artist_uploads (
+                id INTEGER PRIMARY KEY,
+                discovery_artist_id INTEGER,
+                soundcloud_id TEXT UNIQUE,
+                uploaded_at TEXT
+            );
+            CREATE TABLE sc_feed_sync_state (id INTEGER PRIMARY KEY);
+            INSERT INTO discovery_track_reposters
+                (discovery_track_id, discovery_artist_id, reposted_at, seen_at)
+            VALUES (1, 2, '2020/01/01 00:00:00 +0000', CURRENT_TIMESTAMP);
+            INSERT INTO sc_feed_sync_state (id) VALUES (1);
+            """
+        )
+
+        migrate_database(conn, 60)
+
+        migrated = conn.execute("SELECT * FROM discovery_track_reposters").fetchone()
+        assert migrated["event_type"] == "repost"
+        assert migrated["raw_reposted_at"] == "2020/01/01 00:00:00 +0000"
+        assert migrated["reposted_at"] is None
+        assert migrated["repost_time_precision"] == "approximate"
+
+        indexes = {
+            row["name"]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'index'"
+            )
+        }
+        assert {
+            "idx_discovery_tracks_feed_time",
+            "idx_dtr_repost_feed",
+            "idx_dtr_actor_repost_feed",
+            "idx_sc_uploads_actor_feed",
+        } <= indexes
+
+        query_plan = " ".join(
+            row["detail"]
+            for row in conn.execute(
+                """EXPLAIN QUERY PLAN
+                SELECT discovery_track_id
+                FROM discovery_track_reposters
+                ORDER BY reposted_at DESC
+                LIMIT 100"""
+            )
+        )
+        assert "idx_dtr_repost_feed" in query_plan
+        conn.close()
+
+
 def _mock_response(status: int, payload: object) -> MagicMock:
     r = MagicMock()
     r.status_code = status
@@ -115,7 +188,9 @@ MINIMAL_SCHEMA_SQL = [
         avatar_url TEXT,
         follower_count INTEGER,
         last_checked TIMESTAMP,
-        check_interval_days INTEGER DEFAULT 1
+        check_interval_days INTEGER DEFAULT 1,
+        uploads_last_checked TIMESTAMP,
+        upload_check_interval_hours INTEGER DEFAULT 24
     )""",
     """CREATE TABLE discovery_tracks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -124,7 +199,14 @@ MINIMAL_SCHEMA_SQL = [
         title TEXT,
         artist_name TEXT,
         duration_ms INTEGER,
+        uploader_soundcloud_id TEXT,
+        genre TEXT,
+        artwork_url TEXT,
+        permalink_url TEXT,
+        access TEXT,
+        uploaded_at TEXT,
         released_at TEXT,
+        metadata_updated_at TEXT,
         first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         status TEXT DEFAULT 'unseen',
         playlist_batch INTEGER
@@ -134,6 +216,9 @@ MINIMAL_SCHEMA_SQL = [
         discovery_artist_id INTEGER NOT NULL,
         reposted_at TIMESTAMP,
         seen_at TIMESTAMP,
+        event_type TEXT DEFAULT 'repost',
+        raw_reposted_at TEXT,
+        repost_time_precision TEXT DEFAULT 'approximate',
         PRIMARY KEY (discovery_track_id, discovery_artist_id)
     )""",
     """CREATE TABLE tracks (
@@ -211,7 +296,20 @@ MINIMAL_SCHEMA_SQL = [
         local_track_id INTEGER,
         title TEXT,
         status TEXT DEFAULT 'visible',
-        uploaded_at TIMESTAMP
+        uploaded_at TIMESTAMP,
+        access TEXT,
+        event_type TEXT DEFAULT 'upload',
+        uploader_soundcloud_id TEXT,
+        genre TEXT,
+        released_at TIMESTAMP,
+        metadata_updated_at TIMESTAMP
+    )""",
+    """CREATE TABLE sc_feed_sync_state (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        metadata_backfill_cursor INTEGER DEFAULT 0,
+        metadata_backfill_status TEXT,
+        metadata_backfill_last_error TEXT,
+        metadata_backfill_completed_at TIMESTAMP
     )""",
 ]
 
@@ -228,6 +326,7 @@ def test_db(tmp_path, monkeypatch):
     conn.row_factory = sqlite3.Row
     for stmt in MINIMAL_SCHEMA_SQL:
         conn.execute(stmt)
+    conn.execute("INSERT INTO sc_feed_sync_state (id) VALUES (1)")
     conn.commit()
     conn.close()
     yield db_path
@@ -323,6 +422,64 @@ class TestSyncFollowingsReposts:
                 "SELECT COUNT(*) FROM discovery_track_reposters"
             ).fetchone()[0]
         assert count == 1
+
+    def test_preserves_rich_track_metadata_and_upserts_changes(self, test_db) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.discovery_sync import sync_followings_reposts
+
+        with get_db_connection() as conn:
+            conn.execute(
+                """INSERT INTO discovery_artists
+                (soundcloud_user_id, slug, display_name, ranking, is_following)
+                VALUES ('222', 'reposter', 'Reposter', 1, 1)"""
+            )
+            conn.commit()
+
+        initial = [
+            {
+                "id": 2001,
+                "title": "Original",
+                "permalink": "original",
+                "permalink_url": "https://soundcloud.com/u/original",
+                "artwork_url": "https://img/original-large.jpg",
+                "genre": "House",
+                "access": "playable",
+                "duration": 100,
+                "created_at": "2026/04/15 00:00:00 +0000",
+                "release_date": "2026-04-16",
+                "user": {"id": 444, "username": "Uploader"},
+            }
+        ]
+        with patch(
+            "web.backend.discovery_sync.get_user_reposts",
+            return_value=(_auth_state(), initial, None),
+        ):
+            sync_followings_reposts(_auth_state())
+
+        with get_db_connection() as conn:
+            conn.execute("UPDATE discovery_artists SET last_checked = NULL")
+            conn.commit()
+
+        changed = [{**initial[0], "title": "Remastered", "genre": "Techno"}]
+        with patch(
+            "web.backend.discovery_sync.get_user_reposts",
+            return_value=(_auth_state(), changed, None),
+        ):
+            sync_followings_reposts(_auth_state())
+
+        with get_db_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM discovery_tracks WHERE soundcloud_id = '2001'"
+            ).fetchone()
+        assert row is not None
+        assert row["title"] == "Remastered"
+        assert row["uploader_soundcloud_id"] == "444"
+        assert row["genre"] == "Techno"
+        assert row["artwork_url"] == "https://img/original-t500x500.jpg"
+        assert row["permalink_url"].endswith("/original")
+        assert row["access"] == "playable"
+        assert row["uploaded_at"] == "2026/04/15 00:00:00 +0000"
+        assert row["released_at"] == "2026-04-16"
 
 
 class TestBackfillNullReposted:
@@ -624,10 +781,9 @@ def _seed_run_discovery_sync_minimum(
 
 
 class TestReposterWriteTimestamp:
-    """Regression: run_discovery_sync writes the SC repost timestamp,
-    not None, when storing reposter rows."""
+    """A track upload timestamp must never be mislabeled as a repost time."""
 
-    def test_reposted_at_populated_after_sync(self, test_db) -> None:
+    def test_track_created_at_is_only_upload_time(self, test_db) -> None:
         from music_minion.core.database import get_db_connection
 
         with get_db_connection() as conn:
@@ -658,12 +814,160 @@ class TestReposterWriteTimestamp:
 
         with get_db_connection() as conn:
             row = conn.execute(
-                "SELECT reposted_at FROM discovery_track_reposters"
+                """SELECT dtr.reposted_at, dtr.repost_time_precision,
+                          dt.uploaded_at
+                FROM discovery_track_reposters dtr
+                JOIN discovery_tracks dt ON dt.id = dtr.discovery_track_id"""
             ).fetchone()
         assert row is not None, "reposter row not written"
-        assert row["reposted_at"] == "2026/04/25 12:00:00 +0000", (
-            f"expected SC created_at as reposted_at; got {row['reposted_at']!r}"
-        )
+        assert row["reposted_at"] is None
+        assert row["repost_time_precision"] == "approximate"
+        assert row["uploaded_at"] == "2026/04/25 12:00:00 +0000"
+
+    def test_feed_enrichment_updates_only_the_exact_reposter(self, test_db) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.discovery_sync import enrich_repost_timestamps
+
+        with get_db_connection() as conn:
+            conn.execute(
+                """INSERT INTO discovery_tracks
+                (soundcloud_id, title) VALUES ('8001', 'Track')"""
+            )
+            track_id = conn.execute("SELECT id FROM discovery_tracks").fetchone()["id"]
+            for user_id, slug in (("111", "one"), ("222", "two")):
+                conn.execute(
+                    """INSERT INTO discovery_artists
+                    (soundcloud_user_id, slug, display_name, ranking)
+                    VALUES (?, ?, ?, 1)""",
+                    (user_id, slug, slug.title()),
+                )
+                artist_id = conn.execute(
+                    "SELECT id FROM discovery_artists WHERE slug = ?", (slug,)
+                ).fetchone()["id"]
+                conn.execute(
+                    """INSERT INTO discovery_track_reposters
+                    (discovery_track_id, discovery_artist_id, seen_at)
+                    VALUES (?, ?, CURRENT_TIMESTAMP)""",
+                    (track_id, artist_id),
+                )
+            conn.commit()
+
+        response = MagicMock()
+        response.status_code = 200
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "collection": [
+                {
+                    "type": "track:repost",
+                    "created_at": "2026/04/25 13:14:15 +0000",
+                    "user": {"id": 111, "permalink": "one"},
+                    "origin": {"id": 8001},
+                }
+            ],
+            "next_href": None,
+        }
+        with (
+            patch(
+                "web.backend.discovery_sync._ensure_valid_token",
+                return_value=(_auth_state(), {"access_token": "token"}),
+            ),
+            patch("web.backend.discovery_sync.requests.get", return_value=response),
+        ):
+            assert enrich_repost_timestamps(_auth_state(), max_pages=1) == 1
+
+        with get_db_connection() as conn:
+            rows = conn.execute(
+                """SELECT da.soundcloud_user_id, dtr.reposted_at,
+                          dtr.raw_reposted_at, dtr.repost_time_precision
+                FROM discovery_track_reposters dtr
+                JOIN discovery_artists da ON da.id = dtr.discovery_artist_id
+                ORDER BY da.soundcloud_user_id"""
+            ).fetchall()
+        assert rows[0]["repost_time_precision"] == "exact"
+        assert rows[0]["reposted_at"] == "2026/04/25 13:14:15 +0000"
+        assert rows[0]["raw_reposted_at"] == "2026/04/25 13:14:15 +0000"
+        assert rows[1]["repost_time_precision"] == "approximate"
+        assert rows[1]["reposted_at"] is None
+
+
+class TestDiscoveryMetadataBackfill:
+    def test_resumes_after_the_last_committed_batch(self, test_db) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.discovery_sync import run_discovery_metadata_backfill
+
+        with get_db_connection() as conn:
+            for sc_id in ("1", "2", "3"):
+                conn.execute(
+                    "INSERT INTO discovery_tracks (soundcloud_id, title) VALUES (?, '')",
+                    (sc_id,),
+                )
+            conn.commit()
+
+        def metadata(sc_id: str) -> dict:
+            return {
+                "id": int(sc_id),
+                "title": f"Track {sc_id}",
+                "genre": "Garage",
+                "access": "playable",
+                "permalink_url": f"https://soundcloud.com/u/{sc_id}",
+                "artwork_url": "https://img/x-large.jpg",
+                "created_at": "2026/09/01 00:00:00 +0000",
+                "user": {"id": 900, "username": "Uploader"},
+            }
+
+        first_calls: list[list[str]] = []
+
+        def first_fetch(state, ids):
+            first_calls.append(ids)
+            return state, [metadata(sc_id) for sc_id in ids], None
+
+        with patch(
+            "web.backend.discovery_sync.get_tracks_by_ids",
+            side_effect=first_fetch,
+        ):
+            updated, errors = run_discovery_metadata_backfill(
+                _auth_state(), batch_size=2, max_batches=1
+            )
+        assert updated == 2
+        assert errors == []
+        assert first_calls == [["1", "2"]]
+
+        second_calls: list[list[str]] = []
+
+        def second_fetch(state, ids):
+            second_calls.append(ids)
+            return state, [metadata(sc_id) for sc_id in ids], None
+
+        with patch(
+            "web.backend.discovery_sync.get_tracks_by_ids",
+            side_effect=second_fetch,
+        ):
+            updated, errors = run_discovery_metadata_backfill(
+                _auth_state(), batch_size=2
+            )
+        assert updated == 1
+        assert errors == []
+        assert second_calls == [["3"]]
+
+        with get_db_connection() as conn:
+            tracks = conn.execute(
+                """SELECT title, uploader_soundcloud_id, genre, artwork_url,
+                          permalink_url, access, uploaded_at
+                FROM discovery_tracks ORDER BY id"""
+            ).fetchall()
+            state = conn.execute(
+                "SELECT * FROM sc_feed_sync_state WHERE id = 1"
+            ).fetchone()
+        assert [row["title"] for row in tracks] == [
+            "Track 1",
+            "Track 2",
+            "Track 3",
+        ]
+        assert tracks[0]["uploader_soundcloud_id"] == "900"
+        assert tracks[0]["artwork_url"] == "https://img/x-t500x500.jpg"
+        assert state["metadata_backfill_cursor"] == 3
+        assert state["metadata_backfill_status"] == "completed"
+        assert state["metadata_backfill_completed_at"] is not None
 
 
 class TestFreshPathExcludesOwned:

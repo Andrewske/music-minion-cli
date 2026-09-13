@@ -1,7 +1,7 @@
 """Discovery query functions for SoundCloud reposts sync feature."""
 
 import csv
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -223,6 +223,27 @@ def get_followed_artists_due_for_check() -> list[dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
 
 
+def get_followed_artists_due_for_upload_check() -> list[dict[str, Any]]:
+    """Get followed artists due under the independent upload cadence."""
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT * FROM discovery_artists
+            WHERE is_following = 1
+              AND soundcloud_user_id IS NOT NULL
+              AND (
+                uploads_last_checked IS NULL
+                OR datetime(
+                    uploads_last_checked,
+                    '+' || COALESCE(upload_check_interval_hours, 24) || ' hours'
+                ) <= datetime('now')
+              )
+            ORDER BY ranking IS NULL, ranking
+            """
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
 def get_seen_track_ids() -> set[str]:
     """SC IDs to exclude from fresh fetches: classified or already placed.
 
@@ -245,10 +266,11 @@ def get_seen_track_ids() -> set[str]:
 
 
 def insert_discovery_tracks(tracks: list[dict[str, Any]]) -> int:
-    """Batch insert new discovery tracks. Returns count inserted.
+    """Batch upsert discovery tracks and return the number newly inserted.
 
-    Each track dict should have: soundcloud_id, slug, title, artist_name, duration_ms
-    Uses INSERT OR IGNORE (soundcloud_id is UNIQUE).
+    Empty or absent metadata never erases a value learned from a richer API
+    response. Every current SoundCloud sighting can therefore repair legacy
+    discovery rows as well as insert new ones.
     """
     if not tracks:
         return 0
@@ -260,45 +282,146 @@ def insert_discovery_tracks(tracks: list[dict[str, Any]]) -> int:
             t.get("title", ""),
             t.get("artist_name", ""),
             t.get("duration_ms", 0),
+            t.get("uploader_soundcloud_id"),
+            t.get("genre"),
+            t.get("artwork_url"),
+            t.get("permalink_url"),
+            t.get("access"),
+            t.get("uploaded_at"),
             t.get("released_at"),
+            t.get("metadata_updated_at") or datetime.now(timezone.utc).isoformat(),
         )
         for t in tracks
     ]
 
     with get_db_connection() as conn:
+        existing: set[str] = set()
+        sc_ids = list({record[0] for record in records})
+        for i in range(0, len(sc_ids), _SQLITE_BATCH_SIZE):
+            batch = sc_ids[i : i + _SQLITE_BATCH_SIZE]
+            placeholders = ",".join("?" * len(batch))
+            rows = conn.execute(
+                f"SELECT soundcloud_id FROM discovery_tracks "
+                f"WHERE soundcloud_id IN ({placeholders})",
+                batch,
+            ).fetchall()
+            existing.update(row["soundcloud_id"] for row in rows)
+
         conn.executemany(
             """
-            INSERT OR IGNORE INTO discovery_tracks
-                (soundcloud_id, slug, title, artist_name, duration_ms, released_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO discovery_tracks
+                (soundcloud_id, slug, title, artist_name, duration_ms,
+                 uploader_soundcloud_id, genre, artwork_url, permalink_url,
+                 access, uploaded_at, released_at, metadata_updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(soundcloud_id) DO UPDATE SET
+                slug = COALESCE(NULLIF(excluded.slug, ''), discovery_tracks.slug),
+                title = COALESCE(NULLIF(excluded.title, ''), discovery_tracks.title),
+                artist_name = COALESCE(
+                    NULLIF(excluded.artist_name, ''), discovery_tracks.artist_name
+                ),
+                duration_ms = CASE
+                    WHEN excluded.duration_ms > 0 THEN excluded.duration_ms
+                    ELSE discovery_tracks.duration_ms
+                END,
+                uploader_soundcloud_id = COALESCE(
+                    excluded.uploader_soundcloud_id,
+                    discovery_tracks.uploader_soundcloud_id
+                ),
+                genre = COALESCE(NULLIF(excluded.genre, ''), discovery_tracks.genre),
+                artwork_url = COALESCE(
+                    excluded.artwork_url, discovery_tracks.artwork_url
+                ),
+                permalink_url = COALESCE(
+                    excluded.permalink_url, discovery_tracks.permalink_url
+                ),
+                access = COALESCE(excluded.access, discovery_tracks.access),
+                uploaded_at = COALESCE(
+                    excluded.uploaded_at, discovery_tracks.uploaded_at
+                ),
+                released_at = COALESCE(
+                    excluded.released_at, discovery_tracks.released_at
+                ),
+                metadata_updated_at = excluded.metadata_updated_at
             """,
             records,
         )
         conn.commit()
-        return conn.total_changes
+        return len(set(sc_ids) - existing)
 
 
-def insert_track_reposters(links: list[tuple[int, int, Optional[str]]]) -> None:
-    """Batch insert track-reposter relationships, tagged with seen_at=now.
+def insert_track_reposters(
+    links: list[
+        tuple[int, int, Optional[str]]
+        | tuple[int, int, Optional[str], Optional[str], str]
+    ],
+) -> int:
+    """Batch upsert repost events, tagged with seen_at=now.
 
-    INSERT OR IGNORE preserves first-observation seen_at for existing rows.
+    The three-item legacy form treats a non-NULL timestamp as exact. New
+    ingestion should pass (track_id, actor_id, reposted_at, raw_reposted_at,
+    precision), leaving reposted_at NULL when the repost endpoint only exposes
+    the track's upload time.
 
-    Args:
-        links: list of (discovery_track_id, discovery_artist_id, reposted_at_iso_or_None)
+    Returns the number of newly observed actor/track relationships.
     """
     if not links:
-        return
+        return 0
+
+    records: list[tuple[int, int, Optional[str], Optional[str], str]] = []
+    for link in links:
+        if len(link) == 3:
+            track_id, artist_id, reposted_at = link
+            precision = "exact" if reposted_at else "approximate"
+            records.append((track_id, artist_id, reposted_at, reposted_at, precision))
+            continue
+        track_id, artist_id, reposted_at, raw_reposted_at, precision = link
+        if precision not in ("exact", "approximate"):
+            raise ValueError(f"Invalid repost timestamp precision: {precision!r}")
+        records.append((track_id, artist_id, reposted_at, raw_reposted_at, precision))
 
     with get_db_connection() as conn:
+        unique_pairs = {(record[0], record[1]) for record in records}
+        existing_pairs: set[tuple[int, int]] = set()
+        track_ids = list({pair[0] for pair in unique_pairs})
+        for i in range(0, len(track_ids), _SQLITE_BATCH_SIZE):
+            batch = track_ids[i : i + _SQLITE_BATCH_SIZE]
+            placeholders = ",".join("?" * len(batch))
+            rows = conn.execute(
+                f"""SELECT discovery_track_id, discovery_artist_id
+                FROM discovery_track_reposters
+                WHERE discovery_track_id IN ({placeholders})""",
+                batch,
+            ).fetchall()
+            existing_pairs.update(
+                (row["discovery_track_id"], row["discovery_artist_id"]) for row in rows
+            )
         conn.executemany(
             """
-            INSERT OR IGNORE INTO discovery_track_reposters
-                (discovery_track_id, discovery_artist_id, reposted_at, seen_at)
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            INSERT INTO discovery_track_reposters
+                (discovery_track_id, discovery_artist_id, reposted_at, seen_at,
+                 event_type, raw_reposted_at, repost_time_precision)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP, 'repost', ?, ?)
+            ON CONFLICT(discovery_track_id, discovery_artist_id) DO UPDATE SET
+                reposted_at = CASE
+                    WHEN excluded.repost_time_precision = 'exact'
+                    THEN excluded.reposted_at
+                    ELSE discovery_track_reposters.reposted_at
+                END,
+                raw_reposted_at = COALESCE(
+                    excluded.raw_reposted_at,
+                    discovery_track_reposters.raw_reposted_at
+                ),
+                repost_time_precision = CASE
+                    WHEN excluded.repost_time_precision = 'exact' THEN 'exact'
+                    ELSE discovery_track_reposters.repost_time_precision
+                END,
+                event_type = 'repost'
             """,
-            links,
+            records,
         )
         conn.commit()
+    return len(unique_pairs - existing_pairs)
 
 
 def get_discovery_track_ids_by_sc_ids(sc_ids: list[str]) -> dict[str, int]:
@@ -397,7 +520,8 @@ def get_unplaced_short_tracks(
     with get_db_connection() as conn:
         rows = conn.execute(
             """
-            SELECT dt.soundcloud_id, dt.duration_ms, dt.first_seen, dt.released_at,
+            SELECT dt.soundcloud_id, dt.duration_ms, dt.first_seen,
+                   dt.uploaded_at, dt.released_at,
                    dt.title, dt.artist_name,
                    best.discovery_artist_id, best.reposted_at,
                    da_best.repost_keep_rate AS artist_repost_keep_rate,
@@ -441,6 +565,7 @@ def get_unplaced_short_tracks(
                 "artist_repost_keep_rate": row["artist_repost_keep_rate"] or 0.22,
                 "artist_repost_rated_count": row["artist_repost_rated_count"] or 0.0,
                 "reposted_at": row["reposted_at"],
+                "uploaded_at": row["uploaded_at"],
                 "released_at": row["released_at"],
                 "created_at": row["first_seen"] or "1970/01/01 00:00:00 +0000",
                 "duration": row["duration_ms"],
@@ -527,6 +652,20 @@ def update_artist_last_checked(artist_id: int, new_repost_count: int) -> None:
             WHERE id = ?
             """,
             (new_repost_count, artist_id),
+        )
+        conn.commit()
+
+
+def update_artist_uploads_last_checked(artist_id: int) -> None:
+    """Advance only the upload checkpoint for one successfully fetched artist."""
+    with get_db_connection() as conn:
+        conn.execute(
+            """
+            UPDATE discovery_artists
+            SET uploads_last_checked = datetime('now')
+            WHERE id = ?
+            """,
+            (artist_id,),
         )
         conn.commit()
 

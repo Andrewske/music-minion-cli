@@ -16,7 +16,11 @@ import time
 
 from web.backend.queries import discovery as discovery_queries
 from web.backend.soundcloud_auth import get_web_provider_state
-from web.backend.discovery_sync import enrich_repost_timestamps, run_discovery_sync
+from web.backend.discovery_sync import (
+    enrich_repost_timestamps,
+    run_discovery_metadata_backfill,
+    run_discovery_sync,
+)
 from music_minion.domain.library.providers.soundcloud.api import (
     like_track as sc_like_track,
     resolve_user_by_slug,
@@ -144,7 +148,9 @@ def _run_sync_background(job_id: str, dry_run: bool) -> None:
         _broadcast_sync_progress(message, current, total)
 
     try:
-        result = run_discovery_sync(dry_run=dry_run, progress_callback=progress_callback)
+        result = run_discovery_sync(
+            dry_run=dry_run, progress_callback=progress_callback
+        )
         with _sync_lock:
             _sync_jobs[job_id]["status"] = "completed"
             _sync_jobs[job_id]["result"] = {
@@ -187,9 +193,7 @@ async def seed_artists(
 
 
 @router.get("/artists")
-async def list_artists(
-    limit: int = 50, offset: int = 0
-) -> dict[str, Any]:
+async def list_artists(limit: int = 50, offset: int = 0) -> dict[str, Any]:
     """List discovery artists with stats."""
     try:
         all_artists = discovery_queries.get_ranked_artists(include_not_due=True)
@@ -222,7 +226,9 @@ async def last_sync() -> Optional[dict[str, Any]]:
 
 
 @router.post("/sync", response_model=SyncJobResponse)
-async def trigger_sync(body: SyncRequest, background_tasks: BackgroundTasks) -> SyncJobResponse:
+async def trigger_sync(
+    body: SyncRequest, background_tasks: BackgroundTasks
+) -> SyncJobResponse:
     """Trigger a discovery sync in the background."""
     with _sync_lock:
         for job in _sync_jobs.values():
@@ -393,7 +399,9 @@ def _enrich_timestamps_background(job_id: str, max_pages: int) -> None:
                     _sync_jobs[job_id]["progress_message"] = msg
                     _sync_jobs[job_id]["progress_current"] = current
 
-        updated = enrich_repost_timestamps(state, max_pages=max_pages, progress_callback=progress_cb)
+        updated = enrich_repost_timestamps(
+            state, max_pages=max_pages, progress_callback=progress_cb
+        )
 
         with _sync_lock:
             _sync_jobs[job_id]["status"] = "completed"
@@ -405,6 +413,54 @@ def _enrich_timestamps_background(job_id: str, max_pages: int) -> None:
         with _sync_lock:
             _sync_jobs[job_id]["status"] = "failed"
             _sync_jobs[job_id]["error"] = str(e)
+
+
+@router.post("/backfill-metadata")
+async def backfill_metadata_endpoint(
+    background_tasks: BackgroundTasks, restart: bool = False
+) -> dict[str, str]:
+    """Start or resume metadata enrichment for legacy discovery tracks."""
+    job_id = str(uuid.uuid4())[:8]
+    with _sync_lock:
+        _sync_jobs[job_id] = {
+            "status": "running",
+            "progress_message": "Starting metadata backfill...",
+            "progress_current": 0,
+            "progress_total": 0,
+            "result": None,
+            "error": None,
+        }
+    background_tasks.add_task(_backfill_metadata_background, job_id, restart)
+    return {"job_id": job_id, "status": "started"}
+
+
+def _backfill_metadata_background(job_id: str, restart: bool) -> None:
+    try:
+        state = get_web_provider_state()
+        if state is None:
+            raise RuntimeError("SoundCloud not authenticated")
+
+        def progress_cb(msg: str, current: int, total: int) -> None:
+            with _sync_lock:
+                if job_id in _sync_jobs:
+                    _sync_jobs[job_id]["progress_message"] = msg
+                    _sync_jobs[job_id]["progress_current"] = current
+                    _sync_jobs[job_id]["progress_total"] = total
+
+        updated, errors = run_discovery_metadata_backfill(
+            state,
+            restart=restart,
+            progress_callback=progress_cb,
+        )
+        with _sync_lock:
+            _sync_jobs[job_id]["status"] = "completed" if not errors else "failed"
+            _sync_jobs[job_id]["result"] = {"tracks_updated": updated}
+            _sync_jobs[job_id]["error"] = "; ".join(errors) or None
+    except Exception as exc:
+        logger.exception("Discovery metadata backfill failed")
+        with _sync_lock:
+            _sync_jobs[job_id]["status"] = "failed"
+            _sync_jobs[job_id]["error"] = str(exc)
 
 
 @router.post("/update-stats")

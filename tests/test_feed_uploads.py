@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from music_minion.domain.library.provider import ProviderConfig, ProviderState
 from music_minion.domain.library.providers.soundcloud.api import (
     MAX_UPLOAD_PAGES,
+    get_tracks_by_ids,
     get_user_tracks,
 )
 
@@ -20,8 +21,11 @@ def _auth_state() -> ProviderState:
     return ProviderState(
         config=ProviderConfig(name="soundcloud"),
         authenticated=True,
-        cache={"client_id": "test", "client_secret": "test",
-               "token_data": {"access_token": "tok", "expires_at": 9999999999}},
+        cache={
+            "client_id": "test",
+            "client_secret": "test",
+            "token_data": {"access_token": "tok", "expires_at": 9999999999},
+        },
     )
 
 
@@ -57,12 +61,22 @@ MINIMAL_SCHEMA_SQL = [
         avatar_url TEXT,
         follower_count INTEGER,
         last_checked TIMESTAMP,
-        check_interval_days INTEGER DEFAULT 1
+        check_interval_days INTEGER DEFAULT 1,
+        uploads_last_checked TIMESTAMP,
+        upload_check_interval_hours INTEGER DEFAULT 24
     )""",
     """CREATE TABLE discovery_tracks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         soundcloud_id TEXT UNIQUE,
         title TEXT,
+        uploader_soundcloud_id TEXT,
+        genre TEXT,
+        artwork_url TEXT,
+        permalink_url TEXT,
+        access TEXT,
+        uploaded_at TIMESTAMP,
+        released_at TIMESTAMP,
+        metadata_updated_at TIMESTAMP,
         status TEXT DEFAULT 'unseen'
     )""",
     """CREATE TABLE discovery_track_reposters (
@@ -70,6 +84,9 @@ MINIMAL_SCHEMA_SQL = [
         discovery_artist_id INTEGER NOT NULL,
         reposted_at TIMESTAMP,
         seen_at TIMESTAMP,
+        event_type TEXT DEFAULT 'repost',
+        raw_reposted_at TEXT,
+        repost_time_precision TEXT DEFAULT 'approximate',
         PRIMARY KEY (discovery_track_id, discovery_artist_id)
     )""",
     """CREATE TABLE tracks (
@@ -81,6 +98,9 @@ MINIMAL_SCHEMA_SQL = [
         duration REAL,
         local_path TEXT,
         artwork_url TEXT,
+        source_url TEXT,
+        genre TEXT,
+        updated_at TIMESTAMP,
         source TEXT
     )""",
     """CREATE TABLE sc_artist_uploads (
@@ -99,21 +119,12 @@ MINIMAL_SCHEMA_SQL = [
         sc_like_done BOOLEAN DEFAULT 0,
         sc_playlist_done BOOLEAN DEFAULT 0,
         first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        access TEXT
-    )""",
-    """CREATE TABLE ratings (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        track_id INTEGER NOT NULL,
-        rating_type TEXT NOT NULL,
-        source TEXT,
-        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )""",
-    """CREATE TABLE playlist_tracks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        playlist_id INTEGER NOT NULL,
-        track_id INTEGER NOT NULL,
-        position INTEGER,
-        UNIQUE(playlist_id, track_id)
+        access TEXT,
+        event_type TEXT DEFAULT 'upload',
+        uploader_soundcloud_id TEXT,
+        genre TEXT,
+        released_at TIMESTAMP,
+        metadata_updated_at TIMESTAMP
     )""",
     """CREATE TABLE sc_monthly_playlists (
         name TEXT PRIMARY KEY,
@@ -131,12 +142,30 @@ MINIMAL_SCHEMA_SQL = [
         uploads_last_run_at TIMESTAMP,
         uploads_last_status TEXT,
         uploads_last_error TEXT,
-        uploads_added_last_run INTEGER DEFAULT 0
+        uploads_added_last_run INTEGER DEFAULT 0,
+        metadata_backfill_cursor INTEGER DEFAULT 0,
+        metadata_backfill_status TEXT,
+        metadata_backfill_last_error TEXT,
+        metadata_backfill_completed_at TIMESTAMP
     )""",
     """CREATE TABLE playlists (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT,
         soundcloud_playlist_id TEXT
+    )""",
+    """CREATE TABLE ratings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        track_id INTEGER NOT NULL,
+        rating_type TEXT NOT NULL,
+        source TEXT,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""",
+    """CREATE TABLE playlist_tracks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        playlist_id INTEGER NOT NULL,
+        track_id INTEGER NOT NULL,
+        position INTEGER,
+        UNIQUE(playlist_id, track_id)
     )""",
 ]
 
@@ -144,9 +173,7 @@ MINIMAL_SCHEMA_SQL = [
 @pytest.fixture
 def test_db(tmp_path, monkeypatch):
     db_path = tmp_path / "test.db"
-    monkeypatch.setattr(
-        "music_minion.core.database.get_database_path", lambda: db_path
-    )
+    monkeypatch.setattr("music_minion.core.database.get_database_path", lambda: db_path)
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     for stmt in MINIMAL_SCHEMA_SQL:
@@ -191,10 +218,13 @@ class TestGetUserTracks:
 
         def fake_request(state, method, url, **kw):
             calls["n"] += 1
-            return state, _mock_response(200, {
-                "collection": [{"id": calls["n"] * 100 + j} for j in range(200)],
-                "next_href": "https://api.soundcloud.com/next",
-            })
+            return state, _mock_response(
+                200,
+                {
+                    "collection": [{"id": calls["n"] * 100 + j} for j in range(200)],
+                    "next_href": "https://api.soundcloud.com/next",
+                },
+            )
 
         with patch(
             "music_minion.domain.library.providers.soundcloud.api._request_with_backoff",
@@ -219,6 +249,18 @@ class TestGetUserTracks:
         assert err is None
         assert len(tracks) == 1
 
+    def test_bulk_metadata_fetch_uses_ids_filter(self) -> None:
+        response = _mock_response(200, [{"id": 1}, {"id": 2}])
+        with patch(
+            "music_minion.domain.library.providers.soundcloud.api._request_with_backoff",
+            return_value=(_auth_state(), response),
+        ) as request:
+            _state, tracks, error = get_tracks_by_ids(_auth_state(), ["1", "2"])
+
+        assert error is None
+        assert [track["id"] for track in tracks] == [1, 2]
+        assert request.call_args.kwargs["params"]["ids"] == "1,2"
+
 
 # ---------------------------------------------------------------------------
 # Uploads sync
@@ -238,9 +280,18 @@ class TestSyncFollowingsUploads:
             conn.commit()
 
         fake = [
-            {"id": 9001, "title": "New Song", "permalink_url": "https://sc/x",
-             "artwork_url": "https://img/x-large.jpg", "duration": 180000,
-             "user": {"username": "Artist A"}, "created_at": _recent(3)},
+            {
+                "id": 9001,
+                "title": "New Song",
+                "permalink_url": "https://sc/x",
+                "artwork_url": "https://img/x-large.jpg",
+                "duration": 180000,
+                "genre": "House",
+                "access": "playable",
+                "release_date": "2026-09-01",
+                "user": {"id": 111, "username": "Artist A"},
+                "created_at": _recent(3),
+            },
         ]
         with patch(
             "web.backend.feed_uploads_sync.get_user_tracks",
@@ -259,6 +310,66 @@ class TestSyncFollowingsUploads:
         assert track["source"] == "soundcloud"
         assert track["artwork_url"] == "https://img/x-t500x500.jpg"
         assert "T" in upload["uploaded_at"]  # ISO normalized
+        assert upload["event_type"] == "upload"
+        assert upload["uploader_soundcloud_id"] == "111"
+        assert upload["genre"] == "House"
+        assert upload["access"] == "playable"
+        assert upload["released_at"] == "2026-09-01"
+        with get_db_connection() as conn:
+            artist = conn.execute(
+                "SELECT uploads_last_checked, last_checked FROM discovery_artists"
+            ).fetchone()
+        assert artist["uploads_last_checked"] is not None
+        assert artist["last_checked"] is None
+
+    def test_known_upload_metadata_is_upserted(self, test_db) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.feed_uploads_sync import sync_followings_uploads
+
+        with get_db_connection() as conn:
+            aid = _insert_artist(conn)
+            _insert_upload(
+                conn,
+                aid,
+                "9001",
+                "2026-07-01T00:00:00+00:00",
+                title="Old title",
+            )
+            conn.commit()
+
+        current = [
+            {
+                "id": 9001,
+                "title": "Current title",
+                "permalink_url": "https://soundcloud.com/artist/current",
+                "artwork_url": "https://img/current-large.jpg",
+                "genre": "Techno",
+                "access": "preview",
+                "duration": 181000,
+                "created_at": _recent(2),
+                "release_date": "2026-09-05",
+                "user": {"id": 111, "username": "Artist A"},
+            }
+        ]
+        with patch(
+            "web.backend.feed_uploads_sync.get_user_tracks",
+            return_value=(_auth_state(), current, None),
+        ):
+            added, errors = sync_followings_uploads(
+                _auth_state(), [self._artist_dict(aid)]
+            )
+
+        assert added == 0
+        assert errors == []
+        with get_db_connection() as conn:
+            upload = conn.execute(
+                "SELECT * FROM sc_artist_uploads WHERE soundcloud_id = '9001'"
+            ).fetchone()
+        assert upload["title"] == "Current title"
+        assert upload["genre"] == "Techno"
+        assert upload["access"] == "preview"
+        assert upload["permalink_url"].endswith("/current")
+        assert upload["artwork_url"] == "https://img/current-t500x500.jpg"
 
     def test_skips_known_and_old_uploads(self, test_db) -> None:
         from music_minion.core.database import get_db_connection
@@ -270,12 +381,24 @@ class TestSyncFollowingsUploads:
             conn.commit()
 
         fake = [
-            {"id": 9001, "title": "Known", "user": {"username": "A"},
-             "created_at": _recent(3)},
-            {"id": 9002, "title": "Pre-cutoff", "user": {"username": "A"},
-             "created_at": "2025/12/15 00:00:00 +0000"},  # before UPLOAD_CUTOFF
-            {"id": 9003, "title": "Fresh", "user": {"username": "A"},
-             "created_at": _recent(1)},
+            {
+                "id": 9001,
+                "title": "Known",
+                "user": {"username": "A"},
+                "created_at": _recent(3),
+            },
+            {
+                "id": 9002,
+                "title": "Pre-cutoff",
+                "user": {"username": "A"},
+                "created_at": "2025/12/15 00:00:00 +0000",
+            },  # before UPLOAD_CUTOFF
+            {
+                "id": 9003,
+                "title": "Fresh",
+                "user": {"username": "A"},
+                "created_at": _recent(1),
+            },
         ]
         with patch(
             "web.backend.feed_uploads_sync.get_user_tracks",
@@ -285,8 +408,10 @@ class TestSyncFollowingsUploads:
 
         assert added == 1
         with get_db_connection() as conn:
-            ids = {r["soundcloud_id"] for r in
-                   conn.execute("SELECT soundcloud_id FROM sc_artist_uploads")}
+            ids = {
+                r["soundcloud_id"]
+                for r in conn.execute("SELECT soundcloud_id FROM sc_artist_uploads")
+            }
         assert ids == {"9001", "9003"}
 
     def test_backfill_sweeps_all_followed_artists(self, test_db) -> None:
@@ -297,27 +422,44 @@ class TestSyncFollowingsUploads:
         with get_db_connection() as conn:
             a1 = _insert_artist(conn, "one", name="One")
             a2 = _insert_artist(conn, "two", name="Two")
-            conn.execute(
-                "UPDATE discovery_artists SET last_checked = datetime('now')"
-            )
+            conn.execute("UPDATE discovery_artists SET last_checked = datetime('now')")
             conn.commit()
 
         calls: list[int] = []
 
         def fake_get(state, user_id, limit=200, max_pages=2):
             calls.append(max_pages)
-            return state, [{"id": 5000 + len(calls), "title": "T",
-                            "user": {"username": "A"}, "created_at": _recent(2)}], None
+            return (
+                state,
+                [
+                    {
+                        "id": 5000 + len(calls),
+                        "title": "T",
+                        "user": {"username": "A"},
+                        "created_at": _recent(2),
+                    }
+                ],
+                None,
+            )
 
-        with patch("web.backend.feed_uploads_sync.get_user_tracks", side_effect=fake_get):
+        with patch(
+            "web.backend.feed_uploads_sync.get_user_tracks", side_effect=fake_get
+        ):
             added, errors = run_uploads_backfill(_auth_state())
 
         assert added == 2
         assert errors == []
-        assert calls == [1, 1]  # both artists swept despite fresh last_checked; 1 page each
+        assert calls == [
+            1,
+            1,
+        ]  # both artists swept despite fresh last_checked; 1 page each
         with get_db_connection() as conn:
-            artists = {r["discovery_artist_id"] for r in
-                       conn.execute("SELECT discovery_artist_id FROM sc_artist_uploads")}
+            artists = {
+                r["discovery_artist_id"]
+                for r in conn.execute(
+                    "SELECT discovery_artist_id FROM sc_artist_uploads"
+                )
+            }
         assert artists == {a1, a2}
 
     def test_never_touches_last_checked(self, test_db) -> None:
@@ -328,8 +470,14 @@ class TestSyncFollowingsUploads:
             aid = _insert_artist(conn)
             conn.commit()
 
-        fake = [{"id": 9001, "title": "X", "user": {"username": "A"},
-                 "created_at": _recent(2)}]
+        fake = [
+            {
+                "id": 9001,
+                "title": "X",
+                "user": {"username": "A"},
+                "created_at": _recent(2),
+            }
+        ]
         with patch(
             "web.backend.feed_uploads_sync.get_user_tracks",
             return_value=(_auth_state(), fake, None),
@@ -341,6 +489,27 @@ class TestSyncFollowingsUploads:
                 "SELECT last_checked FROM discovery_artists WHERE id = ?", (aid,)
             ).fetchone()
         assert row["last_checked"] is None
+
+    def test_upload_due_check_is_independent_from_repost_cadence(self, test_db) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.discovery import (
+            get_followed_artists_due_for_upload_check,
+        )
+
+        with get_db_connection() as conn:
+            aid = _insert_artist(conn)
+            conn.execute(
+                """UPDATE discovery_artists
+                SET last_checked = datetime('now'),
+                    check_interval_days = 30,
+                    uploads_last_checked = datetime('now', '-25 hours')
+                WHERE id = ?""",
+                (aid,),
+            )
+            conn.commit()
+
+        due = get_followed_artists_due_for_upload_check()
+        assert [artist["id"] for artist in due] == [aid]
 
     def test_writes_sync_state(self, test_db) -> None:
         from music_minion.core.database import get_db_connection
@@ -514,17 +683,24 @@ class TestRateUpload:
         from music_minion.core.database import get_db_connection
 
         aid, uid = self._seed()
-        with patch(
-            "web.backend.routers.feed.get_web_provider_state",
-            return_value=_auth_state(),
-        ), patch("web.backend.feed_rating.like_track",
-                 return_value=(_auth_state(), True, None)) as mock_like, patch(
-            "web.backend.feed_rating.get_or_create_monthly_sc_playlist",
-            return_value=(_auth_state(), "PL1", None),
-        ), patch(
-            "web.backend.feed_rating.add_track_to_playlist",
-            return_value=(_auth_state(), True, None),
-        ) as mock_add:
+        with (
+            patch(
+                "web.backend.routers.feed.get_web_provider_state",
+                return_value=_auth_state(),
+            ),
+            patch(
+                "web.backend.feed_rating.like_track",
+                return_value=(_auth_state(), True, None),
+            ) as mock_like,
+            patch(
+                "web.backend.feed_rating.get_or_create_monthly_sc_playlist",
+                return_value=(_auth_state(), "PL1", None),
+            ),
+            patch(
+                "web.backend.feed_rating.add_track_to_playlist",
+                return_value=(_auth_state(), True, None),
+            ) as mock_add,
+        ):
             resp = client.post(f"/api/feed/{uid}/rate", json={"value": 1})
 
         assert resp.status_code == 200
@@ -547,13 +723,19 @@ class TestRateUpload:
         from web.backend.queries.feed import get_unsynced_liked_uploads
 
         _, uid = self._seed()
-        with patch(
-            "web.backend.routers.feed.get_web_provider_state",
-            return_value=_auth_state(),
-        ), patch("web.backend.feed_rating.like_track",
-                 return_value=(_auth_state(), False, "Rate limited")), patch(
-            "web.backend.feed_rating.get_or_create_monthly_sc_playlist",
-            return_value=(_auth_state(), None, "Rate limited"),
+        with (
+            patch(
+                "web.backend.routers.feed.get_web_provider_state",
+                return_value=_auth_state(),
+            ),
+            patch(
+                "web.backend.feed_rating.like_track",
+                return_value=(_auth_state(), False, "Rate limited"),
+            ),
+            patch(
+                "web.backend.feed_rating.get_or_create_monthly_sc_playlist",
+                return_value=(_auth_state(), None, "Rate limited"),
+            ),
         ):
             resp = client.post(f"/api/feed/{uid}/rate", json={"value": 1})
 
@@ -575,8 +757,13 @@ class TestMonthlyPlaylist:
     def test_name_format(self) -> None:
         from web.backend.feed_rating import monthly_playlist_name
 
-        assert monthly_playlist_name(datetime(2026, 7, 15, tzinfo=timezone.utc)) == "Jul 26"
-        assert monthly_playlist_name(datetime(2027, 1, 2, tzinfo=timezone.utc)) == "Jan 27"
+        assert (
+            monthly_playlist_name(datetime(2026, 7, 15, tzinfo=timezone.utc))
+            == "Jul 26"
+        )
+        assert (
+            monthly_playlist_name(datetime(2027, 1, 2, tzinfo=timezone.utc)) == "Jan 27"
+        )
 
     def test_ladder_cache_then_local_then_scan_then_create(self, test_db) -> None:
         from music_minion.core.database import get_db_connection
@@ -588,11 +775,16 @@ class TestMonthlyPlaylist:
         name = monthly_playlist_name()
 
         # (4) nothing anywhere -> create
-        with patch("web.backend.feed_rating.get_playlists",
-                   return_value=(_auth_state(), [])), patch(
-            "web.backend.feed_rating.create_playlist",
-            return_value=(_auth_state(), "NEW1", None),
-        ) as mock_create:
+        with (
+            patch(
+                "web.backend.feed_rating.get_playlists",
+                return_value=(_auth_state(), []),
+            ),
+            patch(
+                "web.backend.feed_rating.create_playlist",
+                return_value=(_auth_state(), "NEW1", None),
+            ) as mock_create,
+        ):
             _, pid, err = get_or_create_monthly_sc_playlist(_auth_state())
         assert pid == "NEW1" and err is None
         mock_create.assert_called_once()
@@ -641,13 +833,19 @@ class TestRetrySweep:
             )
             conn.commit()
 
-        with patch("web.backend.feed_rating.like_track",
-                   return_value=(_auth_state(), True, None)), patch(
-            "web.backend.feed_rating.get_or_create_monthly_sc_playlist",
-            return_value=(_auth_state(), "PL1", None),
-        ), patch(
-            "web.backend.feed_rating.add_track_to_playlist",
-            return_value=(_auth_state(), True, None),
+        with (
+            patch(
+                "web.backend.feed_rating.like_track",
+                return_value=(_auth_state(), True, None),
+            ),
+            patch(
+                "web.backend.feed_rating.get_or_create_monthly_sc_playlist",
+                return_value=(_auth_state(), "PL1", None),
+            ),
+            patch(
+                "web.backend.feed_rating.add_track_to_playlist",
+                return_value=(_auth_state(), True, None),
+            ),
         ):
             processed = sync_pending_feed_likes(_auth_state())
 

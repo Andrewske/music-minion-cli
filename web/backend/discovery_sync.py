@@ -16,10 +16,16 @@ import requests
 from music_minion.domain.library.providers.soundcloud.api import (
     _ensure_valid_token,
     add_track_to_playlist,
+    get_tracks_by_ids,
     get_user_reposts,
     reorder_playlist,
 )
 from web.backend.queries import discovery as discovery_queries
+from web.backend.soundcloud_metadata import (
+    parse_soundcloud_datetime,
+    raw_repost_timestamp,
+    track_metadata,
+)
 from web.backend.soundcloud_auth import get_web_provider_state
 
 
@@ -171,17 +177,7 @@ def sync_followings_reposts(
         )
         return 0, errors
 
-    discovery_records = [
-        {
-            "soundcloud_id": str(t["id"]),
-            "slug": t.get("permalink", ""),
-            "title": t.get("title", ""),
-            "artist_name": t.get("user", {}).get("username", "Unknown"),
-            "duration_ms": t.get("duration", 0) or 0,
-            "released_at": t.get("created_at"),
-        }
-        for t in all_fetched
-    ]
+    discovery_records = [track_metadata(t) for t in all_fetched]
     discovery_queries.insert_discovery_tracks(discovery_records)
 
     sc_ids_fetched = [str(t["id"]) for t in all_fetched]
@@ -189,7 +185,7 @@ def sync_followings_reposts(
         sc_ids_fetched
     )
 
-    reposter_links: list[tuple[int, int, Optional[str]]] = []
+    reposter_links: list[tuple[int, int, Optional[str], Optional[str], str]] = []
     for track in all_fetched:
         sc_id = str(track["id"])
         discovery_track_id = sc_id_to_discovery_id.get(sc_id)
@@ -198,16 +194,24 @@ def sync_followings_reposts(
         artist_id = track.get("artist_id")
         if artist_id is None:
             continue
-        reposted_at = track.get("created_at")
-        reposter_links.append((discovery_track_id, artist_id, reposted_at))
+        reposted_at = raw_repost_timestamp(track)
+        reposter_links.append(
+            (
+                discovery_track_id,
+                artist_id,
+                reposted_at,
+                reposted_at,
+                "exact" if reposted_at else "approximate",
+            )
+        )
 
-    discovery_queries.insert_track_reposters(reposter_links)
+    events_added = discovery_queries.insert_track_reposters(reposter_links)
 
     logger.info(
         f"sync_followings_reposts: checked {len(artists)} artists, "
         f"{len(all_fetched)} reposts fetched, {len(reposter_links)} attributed"
     )
-    return len(reposter_links), errors
+    return events_added, errors
 
 
 def _fetch_all_reposts(
@@ -292,26 +296,14 @@ def _parse_sc_datetime(value: Any) -> Optional[datetime]:
     Returns None if the value is empty or unparseable. SQLite cannot parse the
     slash format, so recency ordering must happen here in Python.
     """
-    if not value or not isinstance(value, str):
-        return None
-    for fmt in ("%Y/%m/%d %H:%M:%S %z", "%Y-%m-%d %H:%M:%S"):
-        try:
-            dt = datetime.strptime(value, fmt)
-            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
-        except ValueError:
-            continue
-    try:
-        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
-    except ValueError:
-        return None
+    return parse_soundcloud_datetime(value)
 
 
 def _track_recency(track: dict[str, Any]) -> datetime:
     """Recency signal for selection: track release date (UI-visible age) first,
     then repost date, then ingest time. Falls back to epoch when undatable so
     such tracks sort last."""
-    for key in ("released_at", "reposted_at", "created_at"):
+    for key in ("released_at", "uploaded_at", "reposted_at", "created_at"):
         dt = _parse_sc_datetime(track.get(key))
         if dt:
             return dt
@@ -623,17 +615,7 @@ def run_discovery_sync(
     artists_checked = len(artist_tracks)
 
     # Step 7: Store new tracks in discovery_tracks
-    discovery_records = [
-        {
-            "soundcloud_id": str(t["id"]),
-            "slug": t.get("permalink", ""),
-            "title": t.get("title", ""),
-            "artist_name": t.get("user", {}).get("username", "Unknown"),
-            "duration_ms": t.get("duration", 0) or 0,
-            "released_at": t.get("created_at"),
-        }
-        for t in all_fetched
-    ]
+    discovery_records = [track_metadata(t) for t in all_fetched]
     tracks_new = discovery_queries.insert_discovery_tracks(discovery_records)
 
     # Store track-reposter relationships
@@ -643,7 +625,7 @@ def run_discovery_sync(
             sc_ids_fetched
         )
 
-        reposter_links: list[tuple[int, int, Optional[str]]] = []
+        reposter_links: list[tuple[int, int, Optional[str], Optional[str], str]] = []
         for track in all_fetched:
             sc_id = str(track["id"])
             discovery_track_id = sc_id_to_discovery_id.get(sc_id)
@@ -652,8 +634,15 @@ def run_discovery_sync(
             artist_id = track.get("artist_id")
             if artist_id is None:
                 continue
+            reposted_at = raw_repost_timestamp(track)
             reposter_links.append(
-                (discovery_track_id, artist_id, track.get("created_at"))
+                (
+                    discovery_track_id,
+                    artist_id,
+                    reposted_at,
+                    reposted_at,
+                    "exact" if reposted_at else "approximate",
+                )
             )
 
         discovery_queries.insert_track_reposters(reposter_links)
@@ -804,8 +793,8 @@ def enrich_repost_timestamps(
 ) -> int:
     """Fetch /me/feed and backfill reposted_at timestamps in discovery_track_reposters.
 
-    Cross-references feed items (type=track:repost) against existing discovery tracks
-    by SC track ID + reposter slug. Only updates rows where reposted_at is NULL.
+    Cross-references feed items against existing discovery events by SoundCloud
+    track ID plus reposter ID/slug. Only exact actor matches are upgraded.
 
     Args:
         state: Authenticated SC provider state
@@ -820,15 +809,20 @@ def enrich_repost_timestamps(
         logger.warning("Cannot enrich timestamps: token refresh failed")
         return 0
 
-    # Load SC IDs that have NULL reposted_at (candidates for enrichment)
+    # Load approximate actor/track events. Exact feed events must be matched to
+    # their specific reposter; updating every actor for a matching track would
+    # invent timestamps for unrelated reposts.
     with get_db_connection() as conn:
         candidates = conn.execute(
-            """SELECT DISTINCT dt.soundcloud_id
+            """SELECT dtr.discovery_track_id, dtr.discovery_artist_id,
+                      dt.soundcloud_id, da.soundcloud_user_id, da.slug
             FROM discovery_track_reposters dtr
             JOIN discovery_tracks dt ON dt.id = dtr.discovery_track_id
-            WHERE dtr.reposted_at IS NULL"""
+            JOIN discovery_artists da ON da.id = dtr.discovery_artist_id
+            WHERE dtr.repost_time_precision != 'exact'
+               OR dtr.reposted_at IS NULL"""
         ).fetchall()
-    needs_timestamp: set[str] = {r["soundcloud_id"] for r in candidates}
+    needs_timestamp: set[str] = {row["soundcloud_id"] for row in candidates}
 
     if not needs_timestamp:
         logger.info("All repost timestamps already populated")
@@ -839,12 +833,28 @@ def enrich_repost_timestamps(
         f"scanning up to {max_pages} feed pages"
     )
 
-    # Paginate through feed, collecting the earliest repost date per track.
-    # The feed is reverse-chronological, so the same track may appear multiple
-    # times (once per follower who reposted it). We keep the earliest timestamp.
+    by_user_id = {
+        (row["soundcloud_id"], str(row["soundcloud_user_id"])): (
+            row["discovery_track_id"],
+            row["discovery_artist_id"],
+        )
+        for row in candidates
+        if row["soundcloud_user_id"] is not None
+    }
+    by_slug = {
+        (row["soundcloud_id"], str(row["slug"]).casefold()): (
+            row["discovery_track_id"],
+            row["discovery_artist_id"],
+        )
+        for row in candidates
+        if row["slug"]
+    }
+
+    # Paginate through feed, collecting the earliest event for each exact
+    # actor/track pair (duplicate delivery can occur across page boundaries).
     url: Optional[str] = f"{API_BASE_URL}/me/feed"
     params: dict[str, Any] = {"limit": 200, "linked_partitioning": "true"}
-    earliest_by_sc_id: dict[str, str] = {}  # sc_id -> earliest reposted_at
+    exact_events: dict[tuple[int, int], str] = {}
     pages_fetched = 0
 
     while url and pages_fetched < max_pages:
@@ -866,13 +876,13 @@ def enrich_repost_timestamps(
 
         if progress_callback:
             progress_callback(
-                f"Scanning feed page {pages_fetched} ({len(earliest_by_sc_id)} tracks found)",
+                f"Scanning feed page {pages_fetched} ({len(exact_events)} events found)",
                 pages_fetched,
                 max_pages,
             )
 
         for item in collection:
-            if item.get("type") != "track:repost":
+            if item.get("type") not in ("track:repost", "track-repost"):
                 continue
 
             origin = item.get("origin", {})
@@ -885,11 +895,24 @@ def enrich_repost_timestamps(
             if sc_id not in needs_timestamp:
                 continue
 
-            # Feed is newest-first, so later pages have older (earlier) dates.
-            # Always keep the oldest timestamp we find for each track.
-            existing = earliest_by_sc_id.get(sc_id)
-            if existing is None or reposted_at < existing:
-                earliest_by_sc_id[sc_id] = reposted_at
+            actor = item.get("user") or item.get("reposter") or {}
+            actor_id = actor.get("id")
+            actor_slug = actor.get("permalink") or actor.get("username")
+            pair = None
+            if actor_id is not None:
+                pair = by_user_id.get((sc_id, str(actor_id)))
+            if pair is None and actor_slug:
+                pair = by_slug.get((sc_id, str(actor_slug).casefold()))
+            if pair is None:
+                continue
+
+            existing = exact_events.get(pair)
+            old_dt = _parse_sc_datetime(existing)
+            new_dt = _parse_sc_datetime(reposted_at)
+            if existing is None or (
+                new_dt is not None and (old_dt is None or new_dt < old_dt)
+            ):
+                exact_events[pair] = reposted_at
 
         # Next page
         url = data.get("next_href")
@@ -899,17 +922,20 @@ def enrich_repost_timestamps(
         if not collection:
             break
 
-    # Batch update reposted_at for all reposter entries of matched tracks
-    updates = list(earliest_by_sc_id.items())
+    updates = [
+        (timestamp, timestamp, track_id, artist_id)
+        for (track_id, artist_id), timestamp in exact_events.items()
+    ]
     if updates:
         with get_db_connection() as conn:
             conn.executemany(
                 """UPDATE discovery_track_reposters
-                SET reposted_at = ?
-                WHERE discovery_track_id = (
-                    SELECT id FROM discovery_tracks WHERE soundcloud_id = ?
-                ) AND reposted_at IS NULL""",
-                [(ts, sc_id) for sc_id, ts in updates],
+                SET reposted_at = ?,
+                    raw_reposted_at = ?,
+                    repost_time_precision = 'exact'
+                WHERE discovery_track_id = ?
+                  AND discovery_artist_id = ?""",
+                updates,
             )
             conn.commit()
 
@@ -918,3 +944,95 @@ def enrich_repost_timestamps(
         f"({pages_fetched} feed pages scanned)"
     )
     return len(updates)
+
+
+def _write_metadata_backfill_state(
+    status: str,
+    cursor: int,
+    error: Optional[str] = None,
+    completed: bool = False,
+) -> None:
+    with get_db_connection() as conn:
+        conn.execute(
+            """UPDATE sc_feed_sync_state
+            SET metadata_backfill_status = ?,
+                metadata_backfill_cursor = ?,
+                metadata_backfill_last_error = ?,
+                metadata_backfill_completed_at = CASE
+                    WHEN ? THEN CURRENT_TIMESTAMP
+                    WHEN ? = 'running' THEN NULL
+                    ELSE metadata_backfill_completed_at
+                END
+            WHERE id = 1""",
+            (status, cursor, error, int(completed), status),
+        )
+        conn.commit()
+
+
+def run_discovery_metadata_backfill(
+    state: Any,
+    batch_size: int = 50,
+    max_batches: Optional[int] = None,
+    restart: bool = False,
+    progress_callback: Optional[Callable[[str, int, int], None]] = None,
+) -> tuple[int, list[str]]:
+    """Enrich legacy discovery metadata in resumable SoundCloud API batches.
+
+    The cursor advances only after a complete API batch is upserted. A killed
+    process or a rate limit therefore resumes from the last committed batch
+    instead of restarting the corpus.
+    """
+    if batch_size < 1 or batch_size > 200:
+        raise ValueError("batch_size must be between 1 and 200")
+    if max_batches is not None and max_batches < 1:
+        raise ValueError("max_batches must be positive")
+
+    with get_db_connection() as conn:
+        state_row = conn.execute(
+            """SELECT metadata_backfill_cursor, metadata_backfill_status
+            FROM sc_feed_sync_state WHERE id = 1"""
+        ).fetchone()
+    cursor = 0 if restart or state_row is None else (state_row[0] or 0)
+    if state_row is not None and state_row[1] == "completed" and not restart:
+        return 0, []
+
+    _write_metadata_backfill_state("running", cursor)
+    enriched = 0
+    batches = 0
+
+    while max_batches is None or batches < max_batches:
+        with get_db_connection() as conn:
+            rows = conn.execute(
+                """SELECT id, soundcloud_id
+                FROM discovery_tracks
+                WHERE id > ? AND metadata_updated_at IS NULL
+                ORDER BY id
+                LIMIT ?""",
+                (cursor, batch_size),
+            ).fetchall()
+
+        if not rows:
+            _write_metadata_backfill_state("completed", cursor, completed=True)
+            return enriched, []
+
+        ids = [row["soundcloud_id"] for row in rows]
+        state, tracks, api_error = get_tracks_by_ids(state, ids)
+        if api_error:
+            _write_metadata_backfill_state("error", cursor, api_error)
+            return enriched, [api_error]
+
+        discovery_queries.insert_discovery_tracks(
+            [track_metadata(track) for track in tracks if track.get("id") is not None]
+        )
+        cursor = rows[-1]["id"]
+        _write_metadata_backfill_state("running", cursor)
+        enriched += len(tracks)
+        batches += 1
+        if progress_callback:
+            progress_callback(
+                f"Metadata: {enriched} tracks enriched",
+                enriched,
+                enriched + batch_size,
+            )
+
+    return enriched, []
