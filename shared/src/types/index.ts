@@ -156,6 +156,11 @@ export interface PlaylistTrackEntry {
   reposters?: TrackReposter[];
   /** False when the upstream source is dead (tracks.unavailable_at set). */
   available?: boolean;
+  artwork_url?: string;
+  /** SoundCloud permalink, or a /api/tracks/{id}/soundcloud redirect when not yet resolved; null for local-only tracks. */
+  soundcloud_url?: string;
+  /** True when discovery_tracks.status = 'liked' (kept on SoundCloud). */
+  sc_liked?: boolean;
 }
 
 export interface PlaylistTracksResponse {
