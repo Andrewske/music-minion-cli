@@ -3,6 +3,7 @@
  */
 import { createPlayerStore, getCurrentPosition, createWebStorageAdapter } from '@music-minion/shared';
 import type { PlayContext, PlayerStore } from '@music-minion/shared';
+import { startAudioLeaderElection } from '../lib/audioLeader';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
@@ -45,6 +46,10 @@ export const usePlayerStore = createPlayerStore({
   getDeviceName,
   generateDeviceId,
 });
+
+// Tabs share the device-id above, so the backend sees them as one device —
+// elect exactly one tab to own the audio elements (see lib/audioLeader.ts).
+startAudioLeaderElection((isLeader) => usePlayerStore.setState({ isAudioLeader: isLeader }));
 
 export { getCurrentPosition };
 export type { PlayContext, PlayerStore };

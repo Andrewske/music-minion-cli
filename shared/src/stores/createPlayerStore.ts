@@ -10,7 +10,6 @@ export interface Device {
   id: string;
   name: string;
   connected_at: string;
-  isActive: boolean;
 }
 
 export interface PlayContext {
@@ -83,6 +82,15 @@ export interface PlayerState {
   scrobbledThisPlaythrough: boolean;
   thisDeviceId: string;
   thisDeviceName: string;
+  /**
+   * Cross-tab audio ownership within one device. Browser tabs share a
+   * persisted device-id (one "device" to the backend), but each tab owns its
+   * own audio elements — only the leader tab may drive them, otherwise every
+   * tab plays at once and their ended/error handlers fight (double /next,
+   * phantom pauses). Single-instance platforms (mobile) stay `true`; the web
+   * app overrides via Web Locks election at store init (lib/audioLeader.ts).
+   */
+  isAudioLeader: boolean;
   activeDeviceId: string | null;
   availableDevices: Device[];
   isThisDeviceActive: boolean;
@@ -216,6 +224,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
     scrobbledThisPlaythrough: false,
     thisDeviceId: generateDeviceIdFn(),
     thisDeviceName: getDeviceNameFn(),
+    isAudioLeader: true,
     activeDeviceId: null,
     availableDevices: [],
     isThisDeviceActive: false,
@@ -711,9 +720,13 @@ export const createPlayerStore = (deps: PlatformDeps) => {
     },
 
     syncDevices: (devices: Device[]) => {
+      // isThisDeviceActive derives from activeDeviceId (same as syncState) —
+      // the backend's device payloads carry NO isActive field, so reading one
+      // here made every devices:updated broadcast (any tab/device connecting
+      // or dropping) flip this device to "inactive" and kill local audio.
       set({
         availableDevices: devices,
-        isThisDeviceActive: devices.find((d) => d.id === get().thisDeviceId)?.isActive ?? false,
+        isThisDeviceActive: get().activeDeviceId === get().thisDeviceId,
       });
     },
 

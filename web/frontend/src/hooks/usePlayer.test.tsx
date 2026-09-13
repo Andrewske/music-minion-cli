@@ -33,6 +33,7 @@ beforeEach(() => {
     queueIndex: 0,
     isPlaying: false,
     isThisDeviceActive: true,
+    isAudioLeader: true,
     volume: 1.0,
     isMuted: false,
     currentContext: null,
