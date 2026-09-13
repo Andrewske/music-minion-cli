@@ -4,7 +4,7 @@ import * as artistsApi from '../api/artists';
 import type {
   ArtistStats, ArtistDetail, ArtistLibraryTrack, ArtistConnection, ParetoResult, FeedSyncState,
   GetArtistsOptions, CreateMatchOverrideBody, MatchOverride,
-  UnfollowResult, FollowingsSyncResult,
+  UnfollowResult, FollowingsSyncResult, UpdateArtistBody, UpdateArtistResult,
 } from '../api/artists';
 
 // ---------------------------------------------------------------------------
@@ -89,15 +89,22 @@ export function useUnfollowArtist(): UseMutationResult<UnfollowResult, Error, nu
       for (const [key] of previousLists) {
         queryClient.setQueryData<ArtistStats[]>(key as Parameters<typeof queryClient.setQueryData>[0], (old) => {
           if (!old) return old;
-          return old.map((artist) => {
-            if (artist.id !== id) return artist;
-            return {
+          // Mirror the backend visibility rule: unfollowed artists vanish
+          // unless songs of theirs remain in likes, loves, or playlists.
+          return old.flatMap((artist) => {
+            if (artist.id !== id) return [artist];
+            const keptVisible =
+              artist.sc_liked_count > 0 ||
+              artist.playlist_track_count > 0 ||
+              artist.last_loved_at != null;
+            if (!keptVisible) return [];
+            return [{
               ...artist,
               is_following: false,
               feed_noise_7d: 0,
               feed_noise_30d: 0,
               last_activity_at: null,
-            };
+            }];
           });
         });
       }
@@ -114,6 +121,30 @@ export function useUnfollowArtist(): UseMutationResult<UnfollowResult, Error, nu
       void queryClient.invalidateQueries({ queryKey: ['artists', 'list'] });
       void queryClient.invalidateQueries({ queryKey: ['artists', 'detail', id] });
       void queryClient.invalidateQueries({ queryKey: ['artists', 'pareto'] });
+      // Unfollow removes the artist's uploads from the feed and their tracks
+      // from the reposts playlist — refresh both surfaces.
+      void queryClient.invalidateQueries({ queryKey: ['feed'] });
+      void queryClient.invalidateQueries({ queryKey: ['playlists'] });
+      void queryClient.invalidateQueries({ queryKey: ['playlist-tracks'] });
+      void queryClient.invalidateQueries({ queryKey: ['playlist-stats'] });
+    },
+  });
+}
+
+interface UpdateArtistVars {
+  id: number;
+  body: UpdateArtistBody;
+}
+
+export function useUpdateArtist(): UseMutationResult<UpdateArtistResult, Error, UpdateArtistVars, unknown> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, body }: UpdateArtistVars) => artistsApi.updateArtist(id, body),
+    onSuccess: (_data, { id }) => {
+      // Tier changes renumber every artist's ranking — refresh all lists.
+      void queryClient.invalidateQueries({ queryKey: ['artists', 'list'] });
+      void queryClient.invalidateQueries({ queryKey: ['artists', 'detail', id] });
     },
   });
 }

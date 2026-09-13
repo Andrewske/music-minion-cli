@@ -12,14 +12,11 @@ import { ArtistFiltersBar } from '../components/artists/ArtistFiltersBar';
 import { ChipVisibilityMenu } from '../components/artists/ChipVisibilityMenu';
 import { SyncStatusHeader } from '../components/artists/SyncStatusHeader';
 import { Button } from '../components/ui/button';
-import { useVisibleChips } from '../stores/artistViewStore';
+import { useArtistViewStore, useVisibleChips } from '../stores/artistViewStore';
 
 export const Route = createFileRoute('/artists')({
   component: ArtistsPage,
 });
-
-type ArtistSource = 'all' | 'soundcloud' | 'local' | 'following';
-type ArtistSort = 'name' | 'rank' | 'library' | 'reposts' | 'hit_rate' | 'noise' | 'last_loved';
 
 const DISPLAY_CAP = 500;
 
@@ -80,9 +77,9 @@ function EmptyState(): ReactElement {
 // ---------------------------------------------------------------------------
 
 function ArtistsPage(): ReactElement {
-  const [search, setSearch] = useState('');
-  const [source, setSource] = useState<ArtistSource>('all');
-  const [sort, setSort] = useState<ArtistSort>('name');
+  // Filters/sort live in the artist view store so they survive navigating
+  // to an artist page and back.
+  const { search, setSearch, source, setSource, sort, setSort } = useArtistViewStore();
   const [paretoIds, setParetoIds] = useState<Set<number> | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [confirmArtist, setConfirmArtist] = useState<ArtistStats | null>(null);

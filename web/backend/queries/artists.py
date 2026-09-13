@@ -76,7 +76,7 @@ playlist_counts AS (
   GROUP BY amr.discovery_artist_id
 )
 SELECT da.id, da.soundcloud_user_id, da.slug, da.display_name, da.avatar_url,
-       da.follower_count, da.is_following, da.ranking, da.in_top_200,
+       da.follower_count, da.is_following, da.ranking, da.tier, da.in_top_200,
        da.hit_rate, da.tracks_seen,
        COALESCE(lc.library_count, 0) AS library_track_count,
        COALESCE(rc.repost_count, 0) AS repost_in_library_count,
@@ -103,7 +103,7 @@ UNION ALL
 
 -- Local-only artists (tracks with artist_normalized that never resolves to a discovery_artists row)
 SELECT NULL AS id, NULL, NULL, t.artist AS display_name, NULL,
-       NULL, 0, NULL, 0, NULL, 0,
+       NULL, 0, NULL, NULL, 0, NULL, 0,
        COUNT(DISTINCT t.id) AS library_track_count,
        0, 0, 0, NULL,
        NULL, NULL, NULL, NULL,
@@ -140,11 +140,19 @@ _SORT_CLAUSES: dict[str, str] = {
 
 # Source filter WHERE clauses (applied as outer wrapping query)
 _SOURCE_FILTERS: dict[str, str] = {
-    "soundcloud": "WHERE id IS NOT NULL",
-    "local": "WHERE id IS NULL",
-    "following": "WHERE is_following = 1",
+    "soundcloud": "id IS NOT NULL",
+    "local": "id IS NULL",
+    "following": "is_following = 1",
     "all": "",
 }
+
+# Unfollowed discovery artists stay hidden unless the user kept some of their
+# songs: liked (SC like), loved, or placed in any playlist. Local-only rows
+# (id IS NULL) are never affected.
+_VISIBILITY_FILTER = (
+    "(id IS NULL OR is_following = 1 OR sc_liked_count > 0 "
+    "OR playlist_track_count > 0 OR last_loved_at IS NOT NULL)"
+)
 
 
 def _derive_activity_state(last_activity_at: str | None) -> str:
@@ -194,6 +202,8 @@ def _coerce_row(row: dict[str, Any]) -> dict[str, Any]:
         "follower_count": row["follower_count"],
         "is_following": bool(row["is_following"]),
         "ranking": row["ranking"],
+        # Legacy seeding left '' in tier for untiered artists — normalize to None
+        "tier": row["tier"] or None,
         "in_top_200": bool(row["in_top_200"]),
         "hit_rate": row["hit_rate"],
         "tracks_seen": row["tracks_seen"],
@@ -230,15 +240,16 @@ def get_artist_stats(
     source_filter = _SOURCE_FILTERS.get(source, "")
     order_clause = _SORT_CLAUSES.get(sort, _SORT_CLAUSES["name"])
 
+    conditions = [_VISIBILITY_FILTER]
     if source_filter:
-        # Wrap CTE in a subquery so we can filter on the aliased columns
-        sql = (
-            f"SELECT * FROM ({ARTISTS_STATS_SQL.strip()}) sub\n"
-            f"{source_filter}\n"
-            f"{order_clause}"
-        )
-    else:
-        sql = f"{ARTISTS_STATS_SQL.strip()}\n{order_clause}"
+        conditions.append(source_filter)
+
+    # Wrap CTE in a subquery so we can filter on the aliased columns
+    sql = (
+        f"SELECT * FROM ({ARTISTS_STATS_SQL.strip()}) sub\n"
+        f"WHERE {' AND '.join(conditions)}\n"
+        f"{order_clause}"
+    )
 
     rows = conn.execute(sql).fetchall()
     return [_coerce_row(dict(r)) for r in rows]
@@ -412,6 +423,119 @@ def get_local_artist_library_tracks(
     ).fetchall()
 
     return [_coerce_library_track_row(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Tier / ranking management
+# ---------------------------------------------------------------------------
+
+ARTIST_TIERS: tuple[str, ...] = ("S", "A", "B", "C", "D")
+_TIER_ORDER: dict[str, int] = {t: i for i, t in enumerate(ARTIST_TIERS)}
+
+_RANKING_STATS_SQL = """
+SELECT da.id, da.tier, da.ranking,
+       COALESCE(sl.liked, 0) AS liked_count,
+       COALESCE(lc.cnt, 0) AS library_count,
+       COALESCE(da.follower_count, 0) AS follower_count,
+       LOWER(COALESCE(da.display_name, da.slug, '')) AS name
+FROM discovery_artists da
+LEFT JOIN (
+  SELECT amr.discovery_artist_id, COUNT(DISTINCT t.id) AS liked
+  FROM artist_match_resolved amr
+  INNER JOIN tracks t ON t.artist_normalized = amr.local_name
+  INNER JOIN ratings r ON r.track_id = t.id
+    AND r.rating_type = 'like' AND r.source = 'soundcloud'
+  GROUP BY amr.discovery_artist_id
+) sl ON sl.discovery_artist_id = da.id
+LEFT JOIN (
+  SELECT amr.discovery_artist_id, COUNT(DISTINCT t.id) AS cnt
+  FROM artist_match_resolved amr
+  INNER JOIN tracks t ON t.artist_normalized = amr.local_name
+  GROUP BY amr.discovery_artist_id
+) lc ON lc.discovery_artist_id = da.id
+"""
+
+
+def _tier_sort_key(row: dict[str, Any]) -> tuple[int, int, int, int, str]:
+    return (
+        _TIER_ORDER[row["tier"]],
+        -row["liked_count"],
+        -row["library_count"],
+        -row["follower_count"],
+        row["name"],
+    )
+
+
+def _untiered_sort_key(row: dict[str, Any]) -> tuple[bool, int, str]:
+    return (row["ranking"] is None, row["ranking"] or 0, row["name"])
+
+
+def recompute_tier_rankings(conn: sqlite3.Connection) -> int:
+    """Renumber all artist rankings from tiers + engagement stats.
+
+    Tiered artists come first, ordered by tier (S best), then SC-liked
+    count, library count, follower count, name. Untiered artists follow,
+    keeping their existing relative ranking order. Returns rows changed.
+    """
+    rows = [dict(r) for r in conn.execute(_RANKING_STATS_SQL).fetchall()]
+    tiered = sorted((r for r in rows if r["tier"] in _TIER_ORDER), key=_tier_sort_key)
+    untiered = sorted(
+        (r for r in rows if r["tier"] not in _TIER_ORDER), key=_untiered_sort_key
+    )
+    updates = [
+        (rank, row["id"])
+        for rank, row in enumerate([*tiered, *untiered], start=1)
+        if row["ranking"] != rank
+    ]
+    conn.executemany("UPDATE discovery_artists SET ranking = ? WHERE id = ?", updates)
+    return len(updates)
+
+
+def set_artist_tier(
+    conn: sqlite3.Connection, discovery_artist_id: int, tier: str | None
+) -> bool:
+    """Set (or clear) an artist's tier, then recompute all rankings.
+
+    Returns False if the artist does not exist.
+    """
+    cursor = conn.execute(
+        "UPDATE discovery_artists SET tier = ? WHERE id = ?",
+        (tier, discovery_artist_id),
+    )
+    if cursor.rowcount == 0:
+        return False
+    changed = recompute_tier_rankings(conn)
+    logger.info(
+        f"set_artist_tier: artist={discovery_artist_id} tier={tier} "
+        f"({changed} rankings renumbered)"
+    )
+    return True
+
+
+def set_artist_ranking(
+    conn: sqlite3.Connection, discovery_artist_id: int, ranking: int
+) -> bool:
+    """Manually place an artist at a ranking position (insert semantics).
+
+    Artists at or below the target position shift down by one; no
+    renumbering pass, so gaps elsewhere are preserved. Returns False if
+    the artist does not exist.
+    """
+    exists = conn.execute(
+        "SELECT 1 FROM discovery_artists WHERE id = ?", (discovery_artist_id,)
+    ).fetchone()
+    if exists is None:
+        return False
+    conn.execute(
+        "UPDATE discovery_artists SET ranking = ranking + 1 "
+        "WHERE ranking >= ? AND id != ?",
+        (ranking, discovery_artist_id),
+    )
+    conn.execute(
+        "UPDATE discovery_artists SET ranking = ? WHERE id = ?",
+        (ranking, discovery_artist_id),
+    )
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -658,6 +782,66 @@ def mark_artist_unfollowed(
         (discovery_artist_id,),
     )
     return 0
+
+
+def remove_artist_tracks_from_reposts_playlist(
+    conn: sqlite3.Connection,
+    discovery_artist_id: int,
+) -> int:
+    """Remove an unfollowed artist's tracks from the local reposts playlist.
+
+    Targets tracks the artist reposted or uploaded, but keeps any track that
+    another currently-followed artist also reposted. Local DB only — the SC
+    mirror playlist is a full rebuild on every discovery sync, so it catches
+    up on the next run. Returns number of playlist rows deleted.
+    """
+    playlist_row = conn.execute(
+        "SELECT id FROM playlists WHERE discovery_source = 'soundcloud_reposts'"
+    ).fetchone()
+    if playlist_row is None:
+        return 0
+
+    cursor = conn.execute(
+        """
+        DELETE FROM playlist_tracks
+        WHERE playlist_id = :pid
+          AND track_id IN (
+            SELECT t.id
+            FROM tracks t
+            WHERE t.soundcloud_id IN (
+                SELECT dt.soundcloud_id
+                FROM discovery_track_reposters dtr
+                JOIN discovery_tracks dt ON dt.id = dtr.discovery_track_id
+                WHERE dtr.discovery_artist_id = :aid
+                UNION
+                SELECT u.soundcloud_id
+                FROM sc_artist_uploads u
+                WHERE u.discovery_artist_id = :aid
+            )
+            AND NOT EXISTS (
+                SELECT 1
+                FROM discovery_tracks dt2
+                JOIN discovery_track_reposters dtr2 ON dtr2.discovery_track_id = dt2.id
+                JOIN discovery_artists da2 ON da2.id = dtr2.discovery_artist_id
+                WHERE dt2.soundcloud_id = t.soundcloud_id
+                  AND da2.id != :aid
+                  AND da2.is_following = 1
+            )
+          )
+        """,
+        {"pid": playlist_row["id"], "aid": discovery_artist_id},
+    )
+    deleted = cursor.rowcount
+    if deleted:
+        conn.execute(
+            "UPDATE playlists SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (playlist_row["id"],),
+        )
+        logger.info(
+            f"Unfollow artist {discovery_artist_id}: removed {deleted} tracks "
+            f"from reposts playlist {playlist_row['id']}"
+        )
+    return deleted
 
 
 def upsert_match_override(

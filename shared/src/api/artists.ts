@@ -11,6 +11,8 @@ export interface FirstLovedTrack {
   loved_at: string;
 }
 
+export type ArtistTier = 'S' | 'A' | 'B' | 'C' | 'D';
+
 export interface ArtistStats {
   id: number | null;
   soundcloud_user_id: string | null;
@@ -20,6 +22,7 @@ export interface ArtistStats {
   follower_count: number | null;
   is_following: boolean;
   ranking: number | null;
+  tier: ArtistTier | null;
   in_top_200: boolean;
   hit_rate: number | null;
   tracks_seen: number;
@@ -131,6 +134,7 @@ export interface UnfollowResult {
   unfollowed: boolean;
   sc_called: boolean;
   feed_events_deleted: number;
+  reposts_removed: number;
 }
 
 export interface FollowingsSyncResult {
@@ -148,6 +152,17 @@ export interface CreateMatchOverrideBody {
   discovery_artist_id: number;
   local_artist_name: string;
   action: 'merge' | 'split';
+}
+
+export interface UpdateArtistBody {
+  ranking?: number;
+  tier?: ArtistTier | null;
+}
+
+export interface UpdateArtistResult {
+  id: number;
+  ranking: number;
+  tier: ArtistTier | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -208,6 +223,16 @@ export async function getArtistConnections(id: number): Promise<ArtistConnection
   const response = await fetch(`${artistsBase()}/${id}/connections`);
   if (!response.ok) await parseErrorResponse(response, 'Failed to fetch artist connections');
   return response.json() as Promise<ArtistConnection[]>;
+}
+
+export async function updateArtist(id: number, body: UpdateArtistBody): Promise<UpdateArtistResult> {
+  const response = await fetch(`${artistsBase()}/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) await parseErrorResponse(response, 'Failed to update artist');
+  return response.json() as Promise<UpdateArtistResult>;
 }
 
 export async function unfollowArtist(id: number): Promise<UnfollowResult> {

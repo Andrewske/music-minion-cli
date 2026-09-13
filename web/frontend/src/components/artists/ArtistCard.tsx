@@ -15,6 +15,7 @@ import type { ArtistStats } from '../../api/artists';
 import { Button } from '../ui/button';
 import { ArtistStatChip } from './ArtistStatChip';
 import type { ChipKey } from './ArtistStatChip';
+import { RankTierMenu } from './RankTierMenu';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -161,11 +162,7 @@ export function ArtistCard({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {artist.ranking !== null && (
-            <span className="font-sf-mono text-xs text-white/50">
-              #{artist.ranking}
-            </span>
-          )}
+          <RankTierMenu artist={artist} />
           {artist.in_top_200 && (
             <span className="font-sf-mono text-xs px-1.5 py-0.5 bg-obsidian-accent/10 text-obsidian-accent border border-obsidian-accent/30">
               Top200
