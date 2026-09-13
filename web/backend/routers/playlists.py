@@ -34,7 +34,8 @@ def _set_cached_tracks(cache_key: tuple, result: Tuple[List[dict], int]) -> None
     if len(_playlist_tracks_cache) > 100:
         current_time = time()
         expired_keys = [
-            k for k, (t, _) in _playlist_tracks_cache.items()
+            k
+            for k, (t, _) in _playlist_tracks_cache.items()
             if current_time - t >= _CACHE_TTL_SECONDS
         ]
         for k in expired_keys:
@@ -171,8 +172,7 @@ def get_playlist_tracks_with_ratings(
         # Extract total from first row (window function), or 0 if no rows
         total = rows[0]["total_count"] if rows else 0
         tracks = [
-            {k: v for k, v in dict(row).items() if k != "total_count"}
-            for row in rows
+            {k: v for k, v in dict(row).items() if k != "total_count"} for row in rows
         ]
         # SQLite returns boolean exprs as 0/1 — coerce to real bools for the API
         for track in tracks:
@@ -223,11 +223,13 @@ def get_playlist_tracks_with_ratings(
                         continue
                     if tid not in reposters_map:
                         reposters_map[tid] = []
-                    reposters_map[tid].append({
-                        "slug": row["slug"],
-                        "name": row["display_name"] or row["slug"],
-                        "avatar_url": row["avatar_url"],
-                    })
+                    reposters_map[tid].append(
+                        {
+                            "slug": row["slug"],
+                            "name": row["display_name"] or row["slug"],
+                            "avatar_url": row["avatar_url"],
+                        }
+                    )
 
                 for track in tracks:
                     track["reposters"] = reposters_map.get(track["id"], [])
@@ -268,7 +270,9 @@ async def get_playlists(library: Optional[str] = None):
 async def create_playlist(request: CreatePlaylistRequest):
     """Create a new manual playlist."""
     try:
-        from music_minion.domain.playlists.crud import create_playlist as create_playlist_fn
+        from music_minion.domain.playlists.crud import (
+            create_playlist as create_playlist_fn,
+        )
         from music_minion.core.database import get_db_connection
 
         # Share one connection across the insert and the read-back to avoid
@@ -282,11 +286,13 @@ async def create_playlist(request: CreatePlaylistRequest):
             )
             cursor = conn.execute(
                 "SELECT id, name, type, description, track_count, library FROM playlists WHERE id = ?",
-                (playlist_id,)
+                (playlist_id,),
             )
             row = cursor.fetchone()
             if not row:
-                raise HTTPException(status_code=500, detail="Created playlist but failed to fetch")
+                raise HTTPException(
+                    status_code=500, detail="Created playlist but failed to fetch"
+                )
             playlist = dict(row)
 
         return playlist
@@ -294,14 +300,19 @@ async def create_playlist(request: CreatePlaylistRequest):
         # Handle duplicate name error
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create playlist: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create playlist: {str(e)}"
+        )
 
 
 @router.get("/playlists/{playlist_id}/stats", response_model=PlaylistStatsResponse)
 async def get_playlist_stats(playlist_id: int):
     """Get statistics for a specific playlist."""
     try:
-        from music_minion.domain.playlists.analytics import get_playlist_analytics, get_comparison_pace
+        from music_minion.domain.playlists.analytics import (
+            get_playlist_analytics,
+            get_comparison_pace,
+        )
         from music_minion.domain.rating.database import get_playlist_comparison_progress
 
         analytics = get_playlist_analytics(playlist_id)
@@ -344,7 +355,7 @@ async def get_playlist_tracks(
     limit: int = 100,
     offset: int = 0,
     sort_field: str = "artist",
-    sort_direction: str = "asc"
+    sort_direction: str = "asc",
 ):
     """Get tracks in a playlist with pagination, ratings, wins, and losses.
 
@@ -370,7 +381,7 @@ async def get_playlist_tracks(
             sort_field=sort_field,
             sort_direction=sort_direction,
             limit=limit,
-            offset=offset
+            offset=offset,
         )
 
         # Return paginated track data with metadata
@@ -419,9 +430,7 @@ async def get_smart_filters(playlist_id: int):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to get filters: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to get filters: {str(e)}")
 
 
 @router.put("/playlists/{playlist_id}/filters", response_model=SmartFiltersResponse)
@@ -430,7 +439,10 @@ async def update_smart_filters(playlist_id: int, filters: List[Filter]):
     try:
         from music_minion.core.database import get_db_connection
         from music_minion.domain.playlists import get_playlist_by_id
-        from music_minion.domain.playlists.filters import validate_filter, get_playlist_filters
+        from music_minion.domain.playlists.filters import (
+            validate_filter,
+            get_playlist_filters,
+        )
 
         # 1. Verify playlist exists and is type='smart'
         playlist = get_playlist_by_id(playlist_id)
@@ -440,7 +452,7 @@ async def update_smart_filters(playlist_id: int, filters: List[Filter]):
         if playlist["type"] != "smart":
             raise HTTPException(
                 status_code=400,
-                detail="Cannot add filters to manual playlist. Only smart playlists support filters."
+                detail="Cannot add filters to manual playlist. Only smart playlists support filters.",
             )
 
         # 2. Validate ALL filters first (fail fast before any DB writes)
@@ -453,7 +465,7 @@ async def update_smart_filters(playlist_id: int, filters: List[Filter]):
             if f.conjunction not in ("AND", "OR"):
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Conjunction must be 'AND' or 'OR', got: {f.conjunction}"
+                    detail=f"Conjunction must be 'AND' or 'OR', got: {f.conjunction}",
                 )
 
         # 3. Atomic replace: DELETE + INSERT in single transaction
@@ -461,8 +473,7 @@ async def update_smart_filters(playlist_id: int, filters: List[Filter]):
             try:
                 # Delete all existing filters
                 conn.execute(
-                    "DELETE FROM playlist_filters WHERE playlist_id = ?",
-                    (playlist_id,)
+                    "DELETE FROM playlist_filters WHERE playlist_id = ?", (playlist_id,)
                 )
 
                 # Insert new filters via executemany
@@ -476,7 +487,7 @@ async def update_smart_filters(playlist_id: int, filters: List[Filter]):
                         INSERT INTO playlist_filters (playlist_id, field, operator, value, conjunction)
                         VALUES (?, ?, ?, ?, ?)
                         """,
-                        filter_data
+                        filter_data,
                     )
 
                 conn.commit()
@@ -484,7 +495,7 @@ async def update_smart_filters(playlist_id: int, filters: List[Filter]):
                 conn.rollback()
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Failed to update filters (rolled back): {str(e)}"
+                    detail=f"Failed to update filters (rolled back): {str(e)}",
                 )
 
         # 4. Return updated filters
@@ -541,7 +552,9 @@ async def unpin_playlist_endpoint(playlist_id: int):
 
 
 @router.patch("/playlists/{playlist_id}/pin")
-async def reorder_pinned_playlist_endpoint(playlist_id: int, request: ReorderPinRequest):
+async def reorder_pinned_playlist_endpoint(
+    playlist_id: int, request: ReorderPinRequest
+):
     """Reorder a pinned playlist to a new position."""
     from music_minion.domain.playlists import crud
 
@@ -576,17 +589,13 @@ async def skip_track_endpoint(playlist_id: int, track_id: int):
 
     if playlist["type"] != "smart":
         raise HTTPException(
-            status_code=400,
-            detail="Can only skip tracks from smart playlists"
+            status_code=400, detail="Can only skip tracks from smart playlists"
         )
 
     # Skip the track
     result = builder.skip_track(playlist_id, track_id)
     if not result.get("success"):
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to skip track {track_id}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to skip track {track_id}")
 
     return {"skipped": True, "track_id": track_id}
 
@@ -604,8 +613,7 @@ async def unskip_track_endpoint(playlist_id: int, track_id: int):
 
     if playlist["type"] != "smart":
         raise HTTPException(
-            status_code=400,
-            detail="Can only unskip tracks from smart playlists"
+            status_code=400, detail="Can only unskip tracks from smart playlists"
         )
 
     # Unskip the track
@@ -614,8 +622,7 @@ async def unskip_track_endpoint(playlist_id: int, track_id: int):
         return {"unskipped": True, "track_id": track_id}
     except Exception as e:
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to unskip track {track_id}: {str(e)}"
+            status_code=500, detail=f"Failed to unskip track {track_id}: {str(e)}"
         )
 
 
@@ -632,8 +639,7 @@ async def get_skipped_tracks_endpoint(playlist_id: int):
 
     if playlist["type"] != "smart":
         raise HTTPException(
-            status_code=400,
-            detail="Can only get skipped tracks from smart playlists"
+            status_code=400, detail="Can only get skipped tracks from smart playlists"
         )
 
     # Get skipped tracks
@@ -642,8 +648,7 @@ async def get_skipped_tracks_endpoint(playlist_id: int):
         return {"tracks": skipped_tracks}
     except Exception as e:
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to get skipped tracks: {str(e)}"
+            status_code=500, detail=f"Failed to get skipped tracks: {str(e)}"
         )
 
 
@@ -689,7 +694,7 @@ async def sync_playlist_to_soundcloud(playlist_id: int):
         if not soundcloud_playlist_id:
             raise HTTPException(
                 status_code=400,
-                detail="Playlist is not linked to a SoundCloud playlist"
+                detail="Playlist is not linked to a SoundCloud playlist",
             )
 
         # 2. Get tracks in order with their soundcloud_id
@@ -707,15 +712,12 @@ async def sync_playlist_to_soundcloud(playlist_id: int):
 
     # 3. Filter to tracks that have soundcloud_id
     sc_track_ids = [
-        track["soundcloud_id"]
-        for track in tracks
-        if track["soundcloud_id"] is not None
+        track["soundcloud_id"] for track in tracks if track["soundcloud_id"] is not None
     ]
 
     if not sc_track_ids:
         raise HTTPException(
-            status_code=400,
-            detail="No tracks in playlist have SoundCloud IDs"
+            status_code=400, detail="No tracks in playlist have SoundCloud IDs"
         )
 
     # 4. Get SoundCloud provider state
@@ -729,7 +731,9 @@ async def sync_playlist_to_soundcloud(playlist_id: int):
         f"with {len(sc_track_ids)} tracks"
     )
 
-    new_state, success, error = reorder_playlist(state, soundcloud_playlist_id, sc_track_ids)
+    new_state, success, error = reorder_playlist(
+        state, soundcloud_playlist_id, sc_track_ids
+    )
 
     if not new_state.authenticated:
         raise HTTPException(status_code=401, detail="SoundCloud authentication expired")
@@ -737,8 +741,7 @@ async def sync_playlist_to_soundcloud(playlist_id: int):
     if not success:
         logger.error(f"Failed to sync playlist to SoundCloud: {error}")
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to sync to SoundCloud: {error}"
+            status_code=500, detail=f"Failed to sync to SoundCloud: {error}"
         )
 
     logger.info(f"Successfully synced playlist {playlist_id} to SoundCloud")
