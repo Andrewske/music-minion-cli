@@ -59,6 +59,8 @@ def get_feed_page(
     immune to new rows being inserted by the sync mid-scroll. Excludes
     hidden/dismissed unless show_hidden. in_library requires an actually
     saved local file (local_path NOT NULL), not just a streaming import row.
+    Only currently-followed artists appear: unfollowing removes an artist's
+    uploads from the feed instantly (rows are kept, so re-following restores).
     """
     with get_db_connection() as conn:
         rows = conn.execute(
@@ -87,7 +89,8 @@ def get_feed_page(
                    ) AS in_playlists
             FROM sc_artist_uploads u
             JOIN discovery_artists da ON da.id = u.discovery_artist_id
-            WHERE (? = 1 OR u.status IN ('visible', 'liked'))
+            WHERE da.is_following = 1
+              AND (? = 1 OR u.status IN ('visible', 'liked'))
               -- Go+ preview snips (30s) and geo-blocked tracks are unplayable
               AND (u.access IS NULL OR u.access = 'playable')
               AND (
