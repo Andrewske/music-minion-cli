@@ -18,6 +18,7 @@ import type { FeedArtist } from '../../api/feed';
 import type { ArtistStats } from '../../api/artists';
 import { useArtist, useUnfollowArtist } from '../../hooks/useArtists';
 import { ArtistStatChip } from '../artists/ArtistStatChip';
+import { formatKeepRates, keepRateAccent } from '../artists/keep-rates';
 import { ConfirmUnfollowDialog } from '../artists/ConfirmUnfollowDialog';
 
 function formatFollowers(n: number): string {
@@ -170,10 +171,10 @@ export function ArtistHoverCard({ artist, children }: ArtistHoverCardProps): Rea
                   <div className="flex flex-wrap gap-3">
                     <ArtistStatChip
                       icon={Target}
-                      label="hit"
-                      value={stats.hit_rate !== null ? `${Math.round(stats.hit_rate * 100)}%` : '—'}
-                      tooltip="proportion of feed tracks loved"
-                      accent={stats.hit_rate !== null && stats.hit_rate >= 0.15}
+                      label="keep"
+                      value={formatKeepRates(stats)}
+                      tooltip="Bayesian-smoothed uploader / reposter keep rates (rated samples)"
+                      accent={keepRateAccent(stats)}
                     />
                     {stats.avg_elo !== null && (
                       <ArtistStatChip

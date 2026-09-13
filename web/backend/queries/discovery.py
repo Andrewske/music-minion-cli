@@ -8,9 +8,18 @@ from typing import Any, Optional
 from loguru import logger
 
 from music_minion.core.database import get_db_connection
+from web.backend.artist_quality import (
+    DEFAULT_PRIOR,
+    rate_or_prior,
+    recalculate_artist_role_stats,
+)
 
 # SQLite has a limit of 999 variables per query; use batches of 900 to be safe
 _SQLITE_BATCH_SIZE = 900
+
+# Discovery selection uses the live, editable ranking. The static ``in_top_200``
+# seed flag is provenance only and must not gate selection or filtering.
+DISCOVERY_MAX_RANK = 200
 
 # Canonical set of valid discovery_tracks.status values. This is the single
 # source of truth — every writer must validate against it, and the fresh
@@ -153,17 +162,16 @@ def update_artist_sc_id(slug: str, sc_user_id: str, display_name: str) -> None:
 
 
 def get_ranked_artists(
-    include_not_due: bool = False, max_rank: int | None = 200
+    include_not_due: bool = False, max_rank: int | None = DISCOVERY_MAX_RANK
 ) -> list[dict[str, Any]]:
-    """Get resolved, still-followed current top-200 artists by live ranking.
+    """Get resolved, still-followed artists within the live ranking cutoff.
 
     ``in_top_200`` is retained only as seed provenance. Selection always uses
     the editable current ranking so rank changes take effect immediately.
 
     Args:
         include_not_due: If True, include artists not yet due for a check.
-        max_rank: Current-rank cutoff. ``None`` is reserved for a gated model
-            rollout that intentionally considers every followed artist.
+        max_rank: Current-rank cutoff; ``None`` means every followed artist.
     """
     with get_db_connection() as conn:
         rank_clause = "" if max_rank is None else "AND ranking <= ?"
@@ -499,7 +507,7 @@ def get_unplaced_short_tracks(
     exclude_sc_ids: set[str] | None = None,
     owned_sc_ids: set[str] | None = None,
     limit: int = 20000,
-    max_rank: int | None = 200,
+    max_rank: int | None = DISCOVERY_MAX_RANK,
 ) -> list[dict[str, Any]]:
     """Get older discovery tracks that never made it to a playlist.
 
@@ -544,11 +552,11 @@ def get_unplaced_short_tracks(
             JOIN discovery_artists da_best ON da_best.id = best.discovery_artist_id
             WHERE dt.status = 'unseen'
               AND dt.duration_ms <= 600000
-            ORDER BY da_best.repost_keep_rate DESC,
+            ORDER BY COALESCE(da_best.repost_keep_rate, ?) DESC,
                      best.reposted_at IS NULL, best.reposted_at DESC
             LIMIT ?
             """,
-            (max_rank, max_rank, limit),
+            (max_rank, max_rank, DEFAULT_PRIOR, limit),
         ).fetchall()
 
     results: list[dict[str, Any]] = []
@@ -562,7 +570,9 @@ def get_unplaced_short_tracks(
             {
                 "id": sc_id,
                 "artist_id": row["discovery_artist_id"],
-                "artist_repost_keep_rate": row["artist_repost_keep_rate"] or 0.22,
+                "artist_repost_keep_rate": rate_or_prior(
+                    row["artist_repost_keep_rate"]
+                ),
                 "artist_repost_rated_count": row["artist_repost_rated_count"] or 0.0,
                 "reposted_at": row["reposted_at"],
                 "uploaded_at": row["uploaded_at"],
@@ -671,15 +681,16 @@ def update_artist_uploads_last_checked(artist_id: int) -> None:
 
 
 def recalculate_artist_stats(artist_id: int | None = None) -> None:
-    """Recalculate hit_rate, tracks_seen, tracks_liked, tracks_dismissed.
+    """Recalculate legacy display counters and the role-specific keep rates.
 
-    Aggregates two sources per artist:
-    - reposts: discovery_track_reposters -> discovery_tracks status
-    - uploads: sc_artist_uploads status (feed -1/+1 ratings)
-    'hidden' uploads count toward tracks_seen only (no penalty, no credit).
-    hit_rate = liked / max(1, liked + dismissed) * 100
+    Legacy columns (tracks_seen, tracks_liked, tracks_dismissed, hit_rate)
+    give every actor full credit for every track and are kept for the UI
+    only. Selection reads ``upload_keep_rate`` / ``repost_keep_rate`` instead,
+    which :func:`recalculate_artist_role_stats` refreshes for all artists.
 
-    Pass artist_id for a targeted single-artist recalc (feed rate endpoint).
+    Pass artist_id for a targeted single-artist recalc of the legacy counters
+    (feed rate endpoint); role stats are always refreshed globally because a
+    track decision changes the fractional credit of every reposter on it.
     """
     with get_db_connection() as conn:
         cursor = conn.execute(
@@ -727,6 +738,7 @@ def recalculate_artist_stats(artist_id: int | None = None) -> None:
             """,
             records,
         )
+        recalculate_artist_role_stats(conn)
         conn.commit()
     logger.info(f"recalculate_artist_stats: updated {len(records)} artists")
 
@@ -739,12 +751,12 @@ def compute_slot_caps(artists: list[dict[str, Any]]) -> dict[int, int]:
     ``repost_rated_count`` is the fractional track-level attribution count.
     Tracks that were fetched but never judged do not count.
 
-    Brackets:
-    - No rated tracks (liked + dismissed == 0): 3 slots (benefit of doubt)
-    - hit_rate > 40%: 8 slots
-    - hit_rate 20-40%: 4 slots
-    - hit_rate 5-20%: 2 slots
-    - hit_rate < 5%: 1 slot
+    Brackets (Bayesian-smoothed repost keep rate):
+    - No rated repost credit: 3 slots (benefit of doubt)
+    - rate > 40%: 8 slots
+    - rate 20-40%: 4 slots
+    - rate 5-20%: 2 slots
+    - rate < 5%: 1 slot
 
     Args:
         artists: list of artist dicts with ``id``, ``repost_keep_rate`` and
@@ -758,9 +770,7 @@ def compute_slot_caps(artists: list[dict[str, Any]]) -> dict[int, int]:
         rated = artist.get("repost_rated_count") or 0
         if rated == 0:
             return 3
-        rate = artist.get("repost_keep_rate", 0.22) or 0.0
-        if rate <= 1:
-            rate *= 100
+        rate = rate_or_prior(artist.get("repost_keep_rate")) * 100
         if rate > 40:
             return 8
         if rate > 20:

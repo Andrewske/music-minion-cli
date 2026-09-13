@@ -4,6 +4,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { X, Music, RefreshCw, Target, Radio, Star, Users } from 'lucide-react';
 import { useArtist, useMatchOverride, useDeleteMatchOverride } from '../../hooks/useArtists';
 import { ArtistStatChip } from './ArtistStatChip';
+import { formatKeepRates, keepRateAccent } from './keep-rates';
 import { Button } from '../ui/button';
 import type { MatchOverride, ArtistStats } from '../../api/artists';
 
@@ -197,7 +198,7 @@ function DialogBody({ artistId, onUnfollowRequest }: DialogBodyProps): ReactElem
 
   const { artist, recent_feed_events, top_library_tracks, match_overrides } = data;
 
-  const hitRateValue = `up ${Math.round(artist.upload_keep_rate * 100)}% (${Math.round(artist.upload_rated_count)}) · re ${Math.round(artist.repost_keep_rate * 100)}% (${artist.repost_rated_count.toFixed(1)})`;
+  const hitRateValue = formatKeepRates(artist);
 
   const feedNoiseValue =
     artist.feed_noise_7d === 0 && artist.last_activity_at === null
@@ -261,7 +262,7 @@ function DialogBody({ artistId, onUnfollowRequest }: DialogBodyProps): ReactElem
           label="hit"
           value={hitRateValue}
           tooltip="proportion of feed tracks loved"
-          accent={artist.repost_keep_rate >= 0.22}
+          accent={keepRateAccent(artist)}
         />
         <ArtistStatChip
           icon={Radio}

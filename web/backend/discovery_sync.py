@@ -20,6 +20,7 @@ from music_minion.domain.library.providers.soundcloud.api import (
     get_user_reposts,
     reorder_playlist,
 )
+from web.backend.artist_quality import rate_or_prior as _rate_or_prior
 from web.backend.queries import discovery as discovery_queries
 from web.backend.soundcloud_metadata import (
     parse_soundcloud_datetime,
@@ -333,7 +334,7 @@ def _select_tracks_waterfall(
         age_weeks = max(0, (now - dt).days) // 7
         return (
             -age_weeks,  # 0 = most recent 7 days, sorts first under reverse=True
-            track.get("artist_repost_keep_rate", 0.22) or 0.0,
+            _rate_or_prior(track.get("artist_repost_keep_rate")),
             dt.timestamp(),
         )
 
@@ -577,10 +578,7 @@ def run_discovery_sync(
     # Step 4: Load ranked artists + compute slot caps
     # artists_to_fetch: only due for API check (cadence-gated)
     # all_artists: everyone in top-200 (for slot cap computation)
-    from web.backend.preference_scoring import builder_all_followed_enabled
-
-    with get_db_connection() as conn:
-        max_rank = None if builder_all_followed_enabled(conn) else 200
+    max_rank = discovery_queries.DISCOVERY_MAX_RANK
     artists_to_fetch = discovery_queries.get_ranked_artists(max_rank=max_rank)
     all_artists = discovery_queries.get_ranked_artists(
         include_not_due=True, max_rank=max_rank
@@ -590,7 +588,7 @@ def run_discovery_sync(
 
     slot_caps = discovery_queries.compute_slot_caps(all_artists)
     artist_repost_keep_rates: dict[int, float] = {
-        a["id"]: a.get("repost_keep_rate", 0.22) or 0.22 for a in all_artists
+        a["id"]: _rate_or_prior(a.get("repost_keep_rate")) for a in all_artists
     }
 
     # Step 5: Load seen track IDs
@@ -677,7 +675,9 @@ def run_discovery_sync(
     for track in combined_pool:
         aid = track.get("artist_id")
         if aid is not None and "artist_repost_keep_rate" not in track:
-            track["artist_repost_keep_rate"] = artist_repost_keep_rates.get(aid, 0.22)
+            track["artist_repost_keep_rate"] = artist_repost_keep_rates.get(
+                aid, _rate_or_prior(None)
+            )
 
     selected_short = _select_tracks_waterfall(combined_pool, slot_caps, target_count)
     backfilled = sum(1 for t in selected_short if str(t["id"]) not in fresh_sc_ids)
