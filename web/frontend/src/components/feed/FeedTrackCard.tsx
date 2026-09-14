@@ -10,6 +10,7 @@ import {
   isFeedSyncPending,
 } from '../../api/feed';
 import type { FeedArtist, FeedDecision, FeedItem } from '../../api/feed';
+import { SoundCloudIcon } from '../icons/SoundCloudIcon';
 import { ArtistHoverCard } from './ArtistHoverCard';
 import { FeedWaveform } from './FeedWaveform';
 
@@ -67,6 +68,22 @@ function Attribution({ item }: { item: FeedItem }): JSX.Element {
         </span>
       )}
     </div>
+  );
+}
+
+function SoundCloudLink({ item }: { item: FeedItem }): JSX.Element | null {
+  if (!item.permalink_url) return null;
+  return (
+    <a
+      href={item.permalink_url}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`Open ${item.title ?? 'track'} on SoundCloud`}
+      title="Open on SoundCloud"
+      className="flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded p-2 text-white/45 transition-colors hover:bg-white/10 hover:text-[#ff5500] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-obsidian-accent"
+    >
+      <SoundCloudIcon className="h-4 w-4" />
+    </a>
   );
 }
 
@@ -184,6 +201,7 @@ export function FeedTrackCard({
       </div>
 
       <SoundCloudSyncState item={item} />
+      <SoundCloudLink item={item} />
       <span className="hidden shrink-0 font-sf-mono text-xs text-white/40 sm:block">{formatDuration(item.duration_ms)}</span>
 
       <div className="flex shrink-0 items-center gap-0.5" aria-label="Feed decisions">

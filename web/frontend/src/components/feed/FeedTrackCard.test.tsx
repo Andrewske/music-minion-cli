@@ -101,4 +101,24 @@ describe('FeedTrackCard', () => {
     expect(screen.getByRole('status')).toHaveTextContent('SoundCloud sync failed');
     expect(screen.getByRole('button', { name: /Keep/ })).toHaveAttribute('aria-pressed', 'true');
   });
+
+  it('links to the SoundCloud track page in a new tab when a permalink exists', () => {
+    render(
+      <FeedTrackCard
+        item={makeItem({ permalink_url: 'https://soundcloud.com/original/signal-path' })}
+        isPlaying={false}
+        onPlay={vi.fn()}
+        onDecide={vi.fn()}
+      />
+    );
+    const link = screen.getByRole('link', { name: 'Open Signal Path on SoundCloud' });
+    expect(link).toHaveAttribute('href', 'https://soundcloud.com/original/signal-path');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
+  it('omits the SoundCloud link when no permalink is known', () => {
+    render(<FeedTrackCard item={makeItem()} isPlaying={false} onPlay={vi.fn()} onDecide={vi.fn()} />);
+    expect(screen.queryByRole('link', { name: /on SoundCloud/ })).not.toBeInTheDocument();
+  });
 });
