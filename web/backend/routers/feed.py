@@ -40,24 +40,36 @@ def _resolve_decision(body: RateRequest) -> str:
     raise HTTPException(status_code=422, detail="decision or value is required")
 
 
-def _encode_cursor(item: dict[str, Any]) -> str:
-    payload = json.dumps(
-        [item["event_at"], item["soundcloud_id"]], separators=(",", ":")
-    ).encode()
+def _encode_cursor(item: dict[str, Any], sort: str) -> str:
+    if sort == "score":
+        # Unscored tracks share the sentinel used for SQL ordering (-1.0).
+        score = item["keep_probability"] if item["keep_probability"] is not None else -1.0
+        values: list[Any] = ["score", score, item["soundcloud_id"]]
+    else:
+        values = [item["event_at"], item["soundcloud_id"]]
+    payload = json.dumps(values, separators=(",", ":")).encode()
     return base64.urlsafe_b64encode(payload).decode().rstrip("=")
 
 
-def _decode_cursor(cursor: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+def _decode_cursor(
+    cursor: Optional[str], sort: str
+) -> tuple[Optional[str], Optional[str], Optional[float]]:
+    """Returns (event_at, soundcloud_id, score); rejects cross-sort cursors."""
     if not cursor:
-        return None, None
+        return None, None, None
     try:
         padding = "=" * (-len(cursor) % 4)
-        event_at, soundcloud_id = json.loads(
-            base64.urlsafe_b64decode(cursor + padding).decode()
-        )
+        values = json.loads(base64.urlsafe_b64decode(cursor + padding).decode())
+        if len(values) == 3 and values[0] == "score":
+            if sort != "score" or not isinstance(values[2], str):
+                raise ValueError("cursor does not match the requested sort")
+            return None, values[2], float(values[1])
+        event_at, soundcloud_id = values
+        if sort != "event_at":
+            raise ValueError("cursor does not match the requested sort")
         if not isinstance(event_at, str) or not isinstance(soundcloud_id, str):
             raise ValueError("cursor values must be strings")
-        return event_at, soundcloud_id
+        return event_at, soundcloud_id, None
     except (
         ValueError,
         TypeError,
@@ -77,8 +89,10 @@ def get_feed(
     in_library: bool = False,
     show_hidden: bool = False,
     top200: bool = False,
+    sort: Literal["event_at", "score"] = "event_at",
+    min_score: Optional[float] = Query(default=None, ge=0.0, le=1.0),
 ) -> dict[str, Any]:
-    cursor_event_at, cursor_soundcloud_id = _decode_cursor(cursor)
+    cursor_event_at, cursor_soundcloud_id, cursor_score = _decode_cursor(cursor, sort)
     items = feed_queries.get_feed_page(
         limit=limit,
         cursor_event_at=cursor_event_at,
@@ -88,8 +102,11 @@ def get_feed(
         in_library=in_library,
         show_hidden=show_hidden,
         top200=top200,
+        sort=sort,
+        min_score=min_score,
+        cursor_score=cursor_score,
     )
-    next_cursor = _encode_cursor(items[-1]) if len(items) == limit else None
+    next_cursor = _encode_cursor(items[-1], sort) if len(items) == limit else None
     return {"items": items, "next_cursor": next_cursor}
 
 

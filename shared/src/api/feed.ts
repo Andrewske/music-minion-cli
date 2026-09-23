@@ -4,6 +4,7 @@ export const FEED_PAGE_SIZE = 100;
 export const FEED_RANK_PRESETS = [25, 50, 75, 100, 200] as const;
 
 export type FeedSource = 'all' | 'releases' | 'reposts';
+export type FeedSort = 'event_at' | 'score';
 export type FeedRankPreset = (typeof FEED_RANK_PRESETS)[number];
 export type FeedRating = -1 | 0 | 1;
 export type FeedDecision = 'keep' | 'nope' | 'hide';
@@ -79,6 +80,9 @@ export interface GetFeedParams {
   maxRank?: FeedRankPreset;
   inLibrary?: boolean;
   showHidden?: boolean;
+  sort?: FeedSort;
+  /** Hide tracks whose predicted keep probability is below this (0-1). */
+  minScore?: number;
 }
 
 export interface RateFeedItemOptions {
@@ -215,6 +219,8 @@ export async function getFeed(params: GetFeedParams = {}): Promise<FeedPage> {
   if (params.maxRank) queryParams.set('max_rank', String(params.maxRank));
   if (params.inLibrary) queryParams.set('in_library', 'true');
   if (params.showHidden) queryParams.set('show_hidden', 'true');
+  if (params.sort && params.sort !== 'event_at') queryParams.set('sort', params.sort);
+  if (params.minScore !== undefined) queryParams.set('min_score', String(params.minScore));
 
   const page = await getDefaultApiClient().request<FeedPage>(`/feed?${queryParams.toString()}`);
   return { ...page, items: page.items.map(normalizeFeedItem) };

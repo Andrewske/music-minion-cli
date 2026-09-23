@@ -220,6 +220,9 @@ def test_db(tmp_path, monkeypatch):
     conn.row_factory = sqlite3.Row
     for stmt in MINIMAL_SCHEMA_SQL:
         conn.execute(stmt)
+    from music_minion.core.database import _migrate_v64_track_predictions
+
+    _migrate_v64_track_predictions(conn)
     conn.execute("INSERT INTO sc_feed_sync_state (id) VALUES (1)")
     conn.commit()
     conn.close()

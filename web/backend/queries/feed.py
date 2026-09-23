@@ -10,9 +10,14 @@ from music_minion.core.database import get_db_connection
 
 Decision = Literal["keep", "nope", "hide"]
 FeedSource = Literal["all", "releases", "reposts"]
+FeedSort = Literal["event_at", "score"]
 
 DECISIONS: tuple[str, ...] = ("keep", "nope", "hide")
 FEED_SOURCES: tuple[str, ...] = ("all", "releases", "reposts")
+FEED_SORTS: tuple[str, ...] = ("event_at", "score")
+
+# Tracks without a prediction sort below every scored track.
+_SORT_SCORE_SQL = "COALESCE(p.probability, -1.0)"
 
 
 def _utc_iso(column: str) -> str:
@@ -37,6 +42,11 @@ def _validate_source(source: str) -> None:
         raise ValueError(
             f"Invalid feed source {source!r}; valid values are {FEED_SOURCES}"
         )
+
+
+def _validate_sort(sort: str) -> None:
+    if sort not in FEED_SORTS:
+        raise ValueError(f"Invalid feed sort {sort!r}; valid values are {FEED_SORTS}")
 
 
 def _decision_to_legacy_status(decision: str) -> str:
@@ -98,9 +108,8 @@ def _row_to_feed_item(row: Any) -> dict[str, Any]:
         "reposter_count": row["reposter_count"] or 0,
         "reposters": [],
         "action_state": {"like": None, "monthly_playlist": None, "error": None},
-        # Stable extension points for the production scorer (#62).
-        "keep_probability": None,
-        "prediction_model_version": None,
+        "keep_probability": row["pred_probability"],
+        "prediction_model_version": row["pred_model_id"],
         "prediction_explanation": None,
     }
 
@@ -173,6 +182,22 @@ def _attach_action_states(conn: Any, items: list[dict[str, Any]]) -> None:
         item["action_state"] = states[item["soundcloud_id"]]
 
 
+def _sort_clauses(sort: str) -> tuple[str, str]:
+    """Keyset cursor predicate and ORDER BY for the chosen sort."""
+    if sort == "score":
+        cursor_sql = f"""(:cursor_score IS NULL
+                   OR {_SORT_SCORE_SQL} < :cursor_score
+                   OR ({_SORT_SCORE_SQL} = :cursor_score
+                       AND c.soundcloud_id < :cursor_soundcloud_id))"""
+        order_sql = f"{_SORT_SCORE_SQL} DESC, c.soundcloud_id DESC"
+    else:
+        cursor_sql = """(:cursor_event_at IS NULL OR c.event_at < :cursor_event_at
+                   OR (c.event_at = :cursor_event_at
+                       AND c.soundcloud_id < :cursor_soundcloud_id))"""
+        order_sql = "c.event_at DESC, c.soundcloud_id DESC"
+    return cursor_sql, order_sql
+
+
 def get_feed_page(
     limit: int = 30,
     cursor_event_at: Optional[str] = None,
@@ -182,19 +207,25 @@ def get_feed_page(
     in_library: bool = False,
     show_hidden: bool = False,
     top200: bool = False,
+    sort: FeedSort = "event_at",
+    min_score: Optional[float] = None,
+    cursor_score: Optional[float] = None,
 ) -> list[dict[str, Any]]:
     """Fetch one deduplicated page; filters are applied before keyset paging.
 
-    Cursor is the (event_at, soundcloud_id) of the previous page's last item.
-    Rows inserted by a sync mid-scroll land above the cursor, so later pages
-    never shift. `top200` is shorthand for max_rank=200.
+    Cursor is the (event_at, soundcloud_id) of the previous page's last item
+    (or (score, soundcloud_id) when sorting by keep probability; unscored
+    tracks sort last). Rows inserted by a sync mid-scroll land above the
+    cursor, so later pages never shift. `top200` is shorthand for max_rank=200.
     """
     _validate_source(source)
+    _validate_sort(sort)
     limit = max(1, min(limit, 100))
     if top200 and max_rank is None:
         max_rank = 200
     if max_rank is not None and max_rank < 1:
         raise ValueError("max_rank must be at least 1")
+    cursor_sql, order_sql = _sort_clauses(sort)
 
     params = {
         "max_rank": max_rank,
@@ -202,6 +233,8 @@ def get_feed_page(
         "include_reposts": int(source in ("all", "reposts")),
         "cursor_event_at": cursor_event_at,
         "cursor_soundcloud_id": cursor_soundcloud_id or "",
+        "cursor_score": cursor_score,
+        "min_score": min_score,
         "show_hidden": int(show_hidden),
         "in_library": int(in_library),
         "limit": limit,
@@ -292,8 +325,21 @@ def get_feed_page(
                 FROM eligible_ids ids
                 LEFT JOIN release_events r ON r.soundcloud_id = ids.soundcloud_id
                 LEFT JOIN repost_events rp ON rp.soundcloud_id = ids.soundcloud_id
+            ),
+            latest_pred AS (
+                SELECT soundcloud_id, probability, confidence, model_id
+                FROM (
+                    SELECT sp.*, ROW_NUMBER() OVER (
+                        PARTITION BY soundcloud_id
+                        ORDER BY created_at DESC, id DESC
+                    ) AS rn
+                    FROM sc_track_predictions sp
+                ) WHERE rn = 1
             )
             SELECT c.*, d.decision AS current_decision, d.decided_at,
+                   p.probability AS pred_probability,
+                   p.confidence AS pred_confidence,
+                   p.model_id AS pred_model_id,
                    EXISTS(
                        SELECT 1 FROM tracks t
                        WHERE t.artist_normalized = LOWER(TRIM(COALESCE(c.uploader_display_name, '')))
@@ -311,16 +357,16 @@ def get_feed_page(
             FROM combined c
             LEFT JOIN sc_track_decisions d
               ON d.soundcloud_id = c.soundcloud_id AND d.is_current = 1
+            LEFT JOIN latest_pred p ON p.soundcloud_id = c.soundcloud_id
             WHERE (:show_hidden = 1 OR d.decision IS NULL OR d.decision = 'keep')
               AND (:in_library = 0 OR EXISTS(
                     SELECT 1 FROM tracks t
                     WHERE t.artist_normalized = LOWER(TRIM(COALESCE(c.uploader_display_name, '')))
                       AND t.local_path IS NOT NULL
               ))
-              AND (:cursor_event_at IS NULL OR c.event_at < :cursor_event_at
-                   OR (c.event_at = :cursor_event_at
-                       AND c.soundcloud_id < :cursor_soundcloud_id))
-            ORDER BY c.event_at DESC, c.soundcloud_id DESC LIMIT :limit
+              AND (:min_score IS NULL OR p.probability >= :min_score)
+              AND {cursor_sql}
+            ORDER BY {order_sql} LIMIT :limit
             """,
             params,
         ).fetchall()
@@ -421,6 +467,20 @@ def get_decision_history(soundcloud_id: str) -> list[dict[str, Any]]:
     return result
 
 
+def _latest_prediction_snapshot(
+    conn: Any, soundcloud_id: str
+) -> tuple[Optional[str], Optional[str]]:
+    """(model_id, state_sent JSON) of the newest prediction shown for a track."""
+    row = conn.execute(
+        """SELECT model_id, state_sent FROM sc_track_predictions
+        WHERE soundcloud_id = ? ORDER BY created_at DESC, id DESC LIMIT 1""",
+        (soundcloud_id,),
+    ).fetchone()
+    if row is None:
+        return None, None
+    return row["model_id"], row["state_sent"]
+
+
 def record_decision(
     soundcloud_id: str,
     decision: Decision,
@@ -445,6 +505,12 @@ def record_decision(
         ).fetchone()
         if not exists:
             return None
+        # The ledger stores what the model saw at decision time: when the
+        # caller didn't pass a snapshot, adopt the latest shown prediction.
+        if model_version is None and snapshot_json is None:
+            model_version, snapshot_json = _latest_prediction_snapshot(
+                conn, soundcloud_id
+            )
         conn.execute("BEGIN IMMEDIATE")
         conn.execute(
             "UPDATE sc_track_decisions SET is_current = 0 WHERE soundcloud_id = ? AND is_current = 1",
@@ -482,7 +548,7 @@ def record_decision(
             "SELECT * FROM sc_track_decisions WHERE id = ?", (cursor.lastrowid,)
         ).fetchone()
     result = dict(row)
-    if snapshot_json is not None:
+    if feature_snapshot is not None:
         result["feature_snapshot"] = feature_snapshot
     return result
 

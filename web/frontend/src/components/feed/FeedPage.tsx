@@ -26,8 +26,10 @@ import type {
   FeedItem,
   FeedPage as FeedPageData,
   FeedRankPreset,
+  FeedSort,
   FeedSource,
 } from '../../api/feed';
+import { MIN_SCORE_PRESETS } from '../../routes/feed';
 import { syncFeed } from '../../api/artists';
 import { useFeedSyncStatus } from '../../hooks/useArtists';
 import { usePlayerStore } from '../../stores/playerStore';
@@ -63,6 +65,8 @@ export function FeedPage(): JSX.Element {
     maxRank,
     inLibrary = false,
     showHidden = false,
+    sort = 'event_at',
+    minScore,
   } = routeApi.useSearch();
   const navigate = useNavigate({ from: '/feed' });
   const queryClient = useQueryClient();
@@ -70,7 +74,7 @@ export function FeedPage(): JSX.Element {
   const currentTrackId = usePlayerStore((state) => state.currentTrack?.id ?? null);
   const parentRef = useRef<HTMLDivElement>(null);
 
-  const feedQueryKey = ['feed', { source, maxRank, inLibrary, showHidden }] as const;
+  const feedQueryKey = ['feed', { source, maxRank, inLibrary, showHidden, sort, minScore }] as const;
   const feedQuery = useInfiniteQuery({
     queryKey: feedQueryKey,
     queryFn: ({ pageParam }) =>
@@ -81,6 +85,8 @@ export function FeedPage(): JSX.Element {
         maxRank,
         inLibrary,
         showHidden,
+        sort,
+        minScore,
       }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
@@ -104,7 +110,7 @@ export function FeedPage(): JSX.Element {
 
   useEffect(() => {
     parentRef.current?.scrollTo({ top: 0 });
-  }, [source, maxRank, inLibrary, showHidden]);
+  }, [source, maxRank, inLibrary, showHidden, sort, minScore]);
 
   useEffect(() => {
     const last = virtualItems[virtualItems.length - 1];
@@ -244,19 +250,17 @@ export function FeedPage(): JSX.Element {
     [items, play, queryClient]
   );
 
-  const updateSearch = (patch: {
+  type FeedSearchPatch = {
     source?: FeedSource;
     maxRank?: FeedRankPreset;
     inLibrary?: boolean;
     showHidden?: boolean;
-  }): void => {
+    sort?: FeedSort;
+    minScore?: number;
+  };
+  const updateSearch = (patch: FeedSearchPatch): void => {
     void navigate({
-      search: (previous: {
-        source?: FeedSource;
-        maxRank?: FeedRankPreset;
-        inLibrary?: boolean;
-        showHidden?: boolean;
-      }) => ({ ...previous, ...patch }),
+      search: (previous: FeedSearchPatch) => ({ ...previous, ...patch }),
       replace: true,
     });
   };
@@ -302,6 +306,44 @@ export function FeedPage(): JSX.Element {
           >
             <option value="">All</option>
             {FEED_RANK_PRESETS.map((rank) => <option key={rank} value={rank}>Top {rank}</option>)}
+          </select>
+        </label>
+
+        <fieldset role="radiogroup" className="flex items-center rounded-full border border-obsidian-border p-0.5" aria-label="Feed sort">
+          <legend className="sr-only">Feed sort</legend>
+          {([
+            ['event_at', 'Newest'],
+            ['score', 'Score'],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={sort === value}
+              onClick={() => updateSearch({ sort: value === 'event_at' ? undefined : value })}
+              className={`rounded-full px-3 py-1 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent ${
+                sort === value ? 'bg-obsidian-accent/20 text-obsidian-accent' : 'text-white/60 hover:text-white'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </fieldset>
+
+        <label className="flex items-center gap-2 text-xs text-white/60">
+          Min score
+          <select
+            aria-label="Minimum keep probability"
+            value={minScore ?? ''}
+            onChange={(event) =>
+              updateSearch({ minScore: event.target.value ? Number(event.target.value) : undefined })
+            }
+            className="rounded border border-obsidian-border bg-obsidian-surface px-2 py-1.5 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent"
+          >
+            <option value="">Off</option>
+            {MIN_SCORE_PRESETS.map((score) => (
+              <option key={score} value={score}>{Math.round(score * 100)}%+</option>
+            ))}
           </select>
         </label>
 
