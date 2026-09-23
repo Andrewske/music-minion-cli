@@ -237,6 +237,10 @@ def score_new_tracks(limit: int = 200, sleep_s: float = 0.1) -> int:
                 state,
             )
             scored += 1
+            # Periodic commits keep a crashed batch's work and let the feed
+            # show scores while a long backfill is still running.
+            if scored % 25 == 0:
+                conn.commit()
             time.sleep(sleep_s)
         conn.commit()
     if scored or failed:
