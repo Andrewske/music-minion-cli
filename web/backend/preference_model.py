@@ -637,8 +637,14 @@ def evaluate_model(
     examples: Sequence[TrainingExample],
     version: str,
     bootstrap_iterations: int = 1_000,
+    extra_systems: dict[str, list[float]] | None = None,
 ) -> tuple[ModelArtifact, dict[str, Any]]:
-    """Chronological, leakage-safe offline evaluation against the baselines."""
+    """Chronological, leakage-safe offline evaluation against the baselines.
+
+    ``extra_systems`` maps a system name to precomputed probabilities over
+    ``split.test`` (same order), e.g. cached Jev predictions; they join the
+    comparison tables but never the ship gate.
+    """
     split = chronological_split(examples)
     genres = select_common_genres(split.train)
     c, grid = select_regularization(split.train, split.validation, genres)
@@ -657,6 +663,13 @@ def evaluate_model(
         "legacy_builder": legacy_builder_probabilities(split.test),
         "combined_heuristic": combined_heuristic_probabilities(split.test),
     }
+    for name, predictions in (extra_systems or {}).items():
+        if len(predictions) != len(split.test):
+            raise ValueError(
+                f"extra system {name!r} has {len(predictions)} predictions "
+                f"for {len(split.test)} test examples"
+            )
+        systems[name] = predictions
     comparisons = {
         name: _system_report(labels, predictions, bootstrap_iterations)
         for name, predictions in systems.items()

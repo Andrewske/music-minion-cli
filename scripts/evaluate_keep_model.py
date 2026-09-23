@@ -28,8 +28,11 @@ from music_minion.core.database import get_database_path  # noqa: E402
 from web.backend.keep_decisions import timeline_track_decisions  # noqa: E402
 from web.backend.keep_model_dataset import training_examples  # noqa: E402
 from web.backend.keep_model_report import render_evaluation_markdown  # noqa: E402
+from web.backend.jev_scorer import load_taste_profile  # noqa: E402
 from web.backend.preference_model import (  # noqa: E402
+    TrainingExample,
     artifact_to_json,
+    chronological_split,
     evaluate_model,
 )
 
@@ -68,7 +71,39 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--artifact", type=Path)
     parser.add_argument("--version", default="offline-keep-v2")
     parser.add_argument("--bootstrap-iterations", type=int, default=1_000)
+    parser.add_argument(
+        "--jev-cache",
+        type=Path,
+        default=Path("data/jev_eval_cache.json"),
+        help="Prediction cache from build_jev_eval_cache.py; merged as the "
+        "'jev' system when it covers the whole test split",
+    )
     return parser.parse_args()
+
+
+def _jev_system(
+    cache_path: Path, examples: list[TrainingExample]
+) -> dict[str, list[float]]:
+    """{'jev': test-split probabilities} when the cache fully covers it."""
+    profile = load_taste_profile()
+    if profile is None or not cache_path.exists():
+        return {}
+    _, profile_version = profile
+    cache = json.loads(cache_path.read_text())
+    test = chronological_split(examples).test
+    probabilities: list[float] = []
+    for example in test:
+        entry = cache.get(
+            f"{example.soundcloud_id}|{example.decided_at}|{profile_version}"
+        )
+        if entry is None:
+            logger.warning(
+                f"jev cache misses {example.soundcloud_id} for profile "
+                f"{profile_version}; skipping the jev comparison"
+            )
+            return {}
+        probabilities.append(float(entry["probability"]))
+    return {"jev": probabilities}
 
 
 def _open_readonly(path: Path) -> sqlite3.Connection:
@@ -90,7 +125,10 @@ def main() -> int:
         logger.error(f"need at least 50 decided tracks, found {len(examples)}")
         return 2
     artifact, report = evaluate_model(
-        examples, args.version, bootstrap_iterations=args.bootstrap_iterations
+        examples,
+        args.version,
+        bootstrap_iterations=args.bootstrap_iterations,
+        extra_systems=_jev_system(args.jev_cache, examples),
     )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(render_evaluation_markdown(report, LIMITATIONS, args.db.name))

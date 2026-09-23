@@ -45,6 +45,23 @@ function ArtistName({ artist }: { artist: FeedArtist }): JSX.Element {
   );
 }
 
+function KeepScoreBadge({ item }: { item: FeedItem }): JSX.Element | null {
+  if (item.keep_probability === null) return null;
+  const percent = Math.round(item.keep_probability * 100);
+  const tone =
+    percent >= 70 ? 'bg-emerald-400/10 text-emerald-300'
+    : percent >= 40 ? 'bg-white/5 text-white/60'
+    : 'bg-white/5 text-white/35';
+  return (
+    <span
+      title={`Predicted keep probability${item.prediction_model_version ? ` (${item.prediction_model_version})` : ''}`}
+      className={`shrink-0 rounded px-1.5 py-0.5 font-sf-mono text-[10px] ${tone}`}
+    >
+      {percent}%
+    </span>
+  );
+}
+
 function Attribution({ item }: { item: FeedItem }): JSX.Element {
   const uploader = getFeedItemUploader(item);
   const firstReposter = item.reposters[0];
@@ -67,6 +84,7 @@ function Attribution({ item }: { item: FeedItem }): JSX.Element {
           #{bestRank}
         </span>
       )}
+      <KeepScoreBadge item={item} />
     </div>
   );
 }

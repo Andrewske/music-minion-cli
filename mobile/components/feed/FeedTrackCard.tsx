@@ -125,6 +125,14 @@ export function FeedTrackCard({ item, isPlaying, isUpdating = false, onPlay, onD
             <View className="mt-0.5 flex-row items-center gap-2">
               <Text className="text-xs text-text-secondary">{formatRelativeDate(getFeedEventAt(item))} · {formatDuration(item.duration_ms)}</Text>
               {bestRank !== null && <Text className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-text-secondary">#{bestRank}</Text>}
+              {item.keep_probability !== null && (
+                <Text
+                  className={`rounded px-1.5 py-0.5 text-xs ${item.keep_probability >= 0.7 ? 'bg-emerald-900/60 text-emerald-300' : 'bg-neutral-800 text-text-secondary'}`}
+                  testID={`feed-score-${item.soundcloud_id}`}
+                >
+                  {Math.round(item.keep_probability * 100)}%
+                </Text>
+              )}
             </View>
           </View>
         </Pressable>

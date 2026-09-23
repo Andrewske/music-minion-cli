@@ -143,6 +143,15 @@ def _fetch_feed_locked() -> dict[str, Any]:
         _set_sync_error(str(exc))
         raise
 
+    # Score newly ingested tracks with Jev before the feed shows them; a
+    # scoring outage must never block the sync or the action drain.
+    try:
+        from web.backend.jev_scorer import score_new_tracks
+
+        score_new_tracks()
+    except Exception:
+        logger.exception("feed_sync_error during jev scoring (continuing)")
+
     # Wake the single SC mutation writer. Jobs are durable and remain queued
     # across provider outages and process restarts.
     enqueue_feed_action_drain()

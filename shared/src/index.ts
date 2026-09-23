@@ -80,7 +80,7 @@ export {
   startFeedBackfill,
 } from './api/feed';
 export type {
-  FeedSource, FeedRankPreset, FeedRating, FeedDecision, FeedItemStatus,
+  FeedSource, FeedSort, FeedRankPreset, FeedRating, FeedDecision, FeedItemStatus,
   FeedActionStatus, FeedArtist, FeedActionState, FeedItem, FeedPage,
   GetFeedParams, RateFeedItemOptions, RateFeedItemResponse,
   MaterializeFeedItemResponse,

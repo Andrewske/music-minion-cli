@@ -78,6 +78,16 @@ describe('feed API', () => {
     );
   });
 
+  it('serializes score sort and minimum keep probability', async () => {
+    await getFeed({ sort: 'score', minScore: 0.7 });
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/feed?limit=100&sort=score&min_score=0.7');
+  });
+
+  it('omits the default event_at sort from the query string', async () => {
+    await getFeed({ sort: 'event_at' });
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/feed?limit=100');
+  });
+
   it('normalizes release-only items during a rolling deployment', () => {
     const legacy = {
       id: 8,

@@ -8,7 +8,7 @@ export {
   startFeedBackfill,
 } from '@music-minion/shared';
 export type {
-  FeedSource, FeedRankPreset, FeedRating, FeedDecision, FeedItemStatus,
+  FeedSource, FeedSort, FeedRankPreset, FeedRating, FeedDecision, FeedItemStatus,
   FeedActionStatus, FeedArtist, FeedActionState, FeedItem, FeedPage,
   GetFeedParams, RateFeedItemOptions, RateFeedItemResponse,
   MaterializeFeedItemResponse,

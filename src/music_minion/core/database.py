@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 63  # role-specific artist keep rates on top of the SC ledger
+SCHEMA_VERSION = 64  # append-only Jev keep-probability predictions
 
 
 # Initial top 50 curated emojis for music reactions
@@ -271,6 +271,31 @@ def _migrate_v62_decision_ledger(conn) -> None:
                model_version, feature_snapshot
         FROM sc_track_decisions
         WHERE is_current = 1 AND decision IN ('keep', 'nope')
+    """)
+
+
+def _migrate_v64_track_predictions(conn) -> None:
+    """Append-only model keep-probability predictions per SoundCloud track.
+
+    Every scoring run inserts a new row (never updates), so the exact state
+    each prediction saw is preserved; "latest" is the newest created_at per
+    (soundcloud_id, model) pair.
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS sc_track_predictions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            soundcloud_id TEXT NOT NULL,
+            model_id TEXT NOT NULL,
+            taste_profile_version TEXT NOT NULL,
+            probability REAL NOT NULL,
+            confidence REAL,
+            state_sent TEXT NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_predictions_track_time
+        ON sc_track_predictions(soundcloud_id, created_at DESC)
     """)
 
 
@@ -3139,6 +3164,12 @@ def migrate_database(conn, current_version: int) -> None:
 
         conn.commit()
         logger.info("  ✓ Migration to v63 complete: role-specific artist keep rates")
+
+    if current_version < 64:
+        logger.info("Running migration to v64: track keep-probability predictions...")
+        _migrate_v64_track_predictions(conn)
+        conn.commit()
+        logger.info("  ✓ Migration to v64 complete: sc_track_predictions ledger")
 
 
 def init_database() -> None:

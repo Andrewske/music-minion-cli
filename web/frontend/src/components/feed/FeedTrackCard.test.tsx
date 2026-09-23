@@ -121,4 +121,22 @@ describe('FeedTrackCard', () => {
     render(<FeedTrackCard item={makeItem()} isPlaying={false} onPlay={vi.fn()} onDecide={vi.fn()} />);
     expect(screen.queryByRole('link', { name: /on SoundCloud/ })).not.toBeInTheDocument();
   });
+
+  it('shows the predicted keep probability as a percentage badge', () => {
+    render(
+      <FeedTrackCard
+        item={makeItem({ keep_probability: 0.73, prediction_model_version: 'typesafe/jev-latest' })}
+        isPlaying={false}
+        onPlay={vi.fn()}
+        onDecide={vi.fn()}
+      />
+    );
+    const badge = screen.getByText('73%');
+    expect(badge).toHaveAttribute('title', 'Predicted keep probability (typesafe/jev-latest)');
+  });
+
+  it('renders no score badge when the track is unscored', () => {
+    render(<FeedTrackCard item={makeItem()} isPlaying={false} onPlay={vi.fn()} onDecide={vi.fn()} />);
+    expect(screen.queryByText(/%$/)).not.toBeInTheDocument();
+  });
 });
