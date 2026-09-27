@@ -102,6 +102,8 @@ CREATE TABLE sc_feed_action_jobs (
 def db_path(tmp_path, monkeypatch):
     path = tmp_path / "test.db"
     monkeypatch.setattr("music_minion.core.database.get_database_path", lambda: path)
+    # Fixtures use fixed historical dates; the feed window would hide them.
+    monkeypatch.setattr("web.backend.queries.feed.FEED_WINDOW_DAYS", None)
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.executescript(MINIMAL_SCHEMA_SQL)
