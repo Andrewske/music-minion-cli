@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 64  # append-only Jev keep-probability predictions
+SCHEMA_VERSION = 65  # index discovery_artists.soundcloud_user_id for the feed
 
 
 # Initial top 50 curated emojis for music reactions
@@ -3170,6 +3170,20 @@ def migrate_database(conn, current_version: int) -> None:
         _migrate_v64_track_predictions(conn)
         conn.commit()
         logger.info("  ✓ Migration to v64 complete: sc_track_predictions ledger")
+
+    if current_version < 65:
+        # The feed joins reposted tracks to their uploader by SC user id; with
+        # no index each repost row scanned every artist (~6s per feed page).
+        columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(discovery_artists)")
+        }
+        if "soundcloud_user_id" in columns:
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_discovery_artists_sc_user
+                ON discovery_artists(soundcloud_user_id)
+            """)
+        conn.commit()
+        logger.info("  ✓ Migration to v65 complete: uploader lookup index")
 
 
 def init_database() -> None:

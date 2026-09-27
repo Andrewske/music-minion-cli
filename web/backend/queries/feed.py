@@ -1,7 +1,7 @@
 """Canonical queries for the deduplicated SoundCloud releases/reposts feed."""
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal, Optional
 
 from loguru import logger
@@ -18,6 +18,22 @@ FEED_SORTS: tuple[str, ...] = ("event_at", "score")
 
 # Tracks without a prediction sort below every scored track.
 _SORT_SCORE_SQL = "COALESCE(p.probability, -1.0)"
+
+# Only recent activity is ranked. The April 2026 import alone holds ~226k
+# stale repost links; ranking all of them cost ~5s per page on the pi.
+# None disables the window (tests use fixed historical dates).
+FEED_WINDOW_DAYS: Optional[int] = 90
+
+_LATEST_PRED_CTE = """latest_pred AS (
+            SELECT soundcloud_id, probability, confidence, model_id
+            FROM (
+                SELECT sp.*, ROW_NUMBER() OVER (
+                    PARTITION BY soundcloud_id
+                    ORDER BY created_at DESC, id DESC
+                ) AS rn
+                FROM sc_track_predictions sp
+            ) WHERE rn = 1
+        )"""
 
 
 def _utc_iso(column: str) -> str:
@@ -129,7 +145,7 @@ def _attach_reposters(
                    AS reposted_at,
                dtr.repost_time_precision
         FROM discovery_tracks dt
-        JOIN discovery_track_reposters dtr ON dtr.discovery_track_id = dt.id
+        CROSS JOIN discovery_track_reposters dtr ON dtr.discovery_track_id = dt.id
         JOIN discovery_artists da ON da.id = dtr.discovery_artist_id
         WHERE dt.soundcloud_id IN ({placeholders})
           AND da.is_following = 1
@@ -238,10 +254,124 @@ def get_feed_page(
         "show_hidden": int(show_hidden),
         "in_library": int(in_library),
         "limit": limit,
+        **_window_params(),
     }
     with get_db_connection() as conn:
-        rows = conn.execute(
-            f"""
+        page_ids = [
+            row["soundcloud_id"]
+            for row in conn.execute(_page_keys_sql(cursor_sql, order_sql), params)
+        ]
+        items = _hydrate_feed_items(conn, page_ids, params)
+        _attach_reposters(conn, items, max_rank)
+        _attach_action_states(conn, items)
+    return items
+
+
+def _window_params() -> dict[str, Optional[str]]:
+    """Cutoffs in each column's stored format, so the seen_at index applies."""
+    if FEED_WINDOW_DAYS is None:
+        return {"since_seen": None, "since_event": None}
+    cutoff = datetime.now(timezone.utc) - timedelta(days=FEED_WINDOW_DAYS)
+    return {
+        "since_seen": cutoff.strftime("%Y-%m-%d %H:%M:%S"),
+        "since_event": cutoff.strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+
+
+def _window_sql() -> dict[str, str]:
+    """Window predicates, emitted only when on: `:x IS NULL OR` defeats indexes."""
+    if FEED_WINDOW_DAYS is None:
+        return {"release_window": "", "repost_window": "", "repost_in_window": "1"}
+    return {
+        "release_window": f"AND {_utc_iso('u.uploaded_at')} >= :since_event",
+        "repost_window": "AND dtr.seen_at >= :since_seen",
+        "repost_in_window": "dtr.seen_at >= :since_seen",
+    }
+
+
+def _page_keys_sql(cursor_sql: str, order_sql: str) -> str:
+    """Filter, sort and page on narrow keys only.
+
+    Sorting full rows cost ~4s on the pi; sorting ids + sort keys is cheap,
+    and only the page's ids get hydrated. Event times must match
+    _hydrate_feed_items exactly, since the cursor comes from hydrated rows.
+    """
+    window = _window_sql()
+    return f"""
+        WITH release_keys AS (
+            SELECT u.soundcloud_id, {_utc_iso("u.uploaded_at")} AS event_at,
+                   da.display_name AS uploader_display_name
+            FROM discovery_artists da
+            JOIN sc_artist_uploads u ON u.discovery_artist_id = da.id
+            WHERE :include_releases = 1 AND da.is_following = 1
+              AND (:max_rank IS NULL OR da.ranking <= :max_rank)
+              AND (u.access IS NULL OR u.access = 'playable')
+              {window["release_window"]}
+        ),
+        repost_keys AS (
+            SELECT dt.soundcloud_id,
+                   MAX(COALESCE({_utc_iso("dtr.reposted_at")},
+                                {_utc_iso("dtr.seen_at")},
+                                {_utc_iso("dt.first_seen")})) AS event_at,
+                   COALESCE(uda.display_name, dt.artist_name) AS uploader_display_name
+            FROM discovery_artists da
+            JOIN discovery_track_reposters dtr ON dtr.discovery_artist_id = da.id
+            JOIN discovery_tracks dt ON dt.id = dtr.discovery_track_id
+            LEFT JOIN discovery_artists uda
+              ON uda.soundcloud_user_id = dt.uploader_soundcloud_id
+            WHERE :include_reposts = 1 AND da.is_following = 1
+              AND (:max_rank IS NULL OR da.ranking <= :max_rank)
+              AND (dt.access IS NULL OR dt.access = 'playable')
+              {window["repost_window"]}
+            GROUP BY dt.id
+        ),
+        keys AS (
+            SELECT ids.soundcloud_id,
+                   CASE
+                       WHEN r.event_at IS NULL THEN rp.event_at
+                       WHEN rp.event_at IS NULL THEN r.event_at
+                       WHEN r.event_at >= rp.event_at THEN r.event_at
+                       ELSE rp.event_at
+                   END AS event_at,
+                   COALESCE(r.uploader_display_name, rp.uploader_display_name)
+                       AS uploader_display_name
+            FROM (SELECT soundcloud_id FROM release_keys
+                  UNION SELECT soundcloud_id FROM repost_keys) ids
+            LEFT JOIN release_keys r ON r.soundcloud_id = ids.soundcloud_id
+            LEFT JOIN repost_keys rp ON rp.soundcloud_id = ids.soundcloud_id
+        ),
+        {_LATEST_PRED_CTE}
+        SELECT c.soundcloud_id
+        FROM keys c
+        LEFT JOIN sc_track_decisions d
+          ON d.soundcloud_id = c.soundcloud_id AND d.is_current = 1
+        LEFT JOIN latest_pred p ON p.soundcloud_id = c.soundcloud_id
+        WHERE (:show_hidden = 1 OR d.decision IS NULL OR d.decision = 'keep')
+          AND (:in_library = 0 OR EXISTS(
+                SELECT 1 FROM tracks t
+                WHERE t.artist_normalized = LOWER(TRIM(COALESCE(c.uploader_display_name, '')))
+                  AND t.local_path IS NOT NULL
+          ))
+          AND (:min_score IS NULL OR p.probability >= :min_score)
+          AND {cursor_sql}
+        ORDER BY {order_sql} LIMIT :limit
+    """
+
+
+def _hydrate_feed_items(
+    conn: Any, page_ids: list[str], params: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Full feed rows for one page of ids, returned in page order.
+
+    Reposter counts cover every followed reposter (matching the attached
+    reposter list), but event_at only considers in-window reposts so it
+    equals the key query's sort value.
+    """
+    if not page_ids:
+        return []
+    window = _window_sql()
+    rows = conn.execute(
+        f"""
             WITH release_events AS (
                 SELECT u.soundcloud_id, u.local_track_id, u.title,
                        u.artwork_url, u.permalink_url, u.duration_ms, u.genre,
@@ -260,14 +390,17 @@ def get_feed_page(
                 WHERE :include_releases = 1 AND da.is_following = 1
                   AND (:max_rank IS NULL OR da.ranking <= :max_rank)
                   AND (u.access IS NULL OR u.access = 'playable')
+                  AND u.soundcloud_id IN (SELECT value FROM json_each(:ids))
+                  {window["release_window"]}
             ),
             repost_events AS (
                 SELECT dt.soundcloud_id, dt.local_track_id, dt.title,
                        dt.artwork_url, dt.permalink_url, dt.duration_ms, dt.genre,
                        dt.access, dt.uploaded_at, dt.released_at,
-                       MAX(COALESCE({_utc_iso("dtr.reposted_at")},
+                       MAX(CASE WHEN {window["repost_in_window"]} THEN
+                           COALESCE({_utc_iso("dtr.reposted_at")},
                                     {_utc_iso("dtr.seen_at")},
-                                    {_utc_iso("dt.first_seen")})) AS event_at,
+                                    {_utc_iso("dt.first_seen")}) END) AS event_at,
                        uda.id AS uploader_artist_id,
                        dt.uploader_soundcloud_id,
                        COALESCE(uda.display_name, dt.artist_name) AS uploader_display_name,
@@ -276,8 +409,11 @@ def get_feed_page(
                        uda.ranking AS uploader_ranking,
                        MIN(da.ranking) AS best_reposter_rank,
                        COUNT(DISTINCT da.id) AS reposter_count
+                -- CROSS JOIN pins the order: start from the page's tracks, not
+                -- every followed artist's reposts (~300k rows).
                 FROM discovery_tracks dt
-                JOIN discovery_track_reposters dtr ON dtr.discovery_track_id = dt.id
+                CROSS JOIN discovery_track_reposters dtr
+                  ON dtr.discovery_track_id = dt.id
                 JOIN discovery_artists da
                   ON da.id = dtr.discovery_artist_id AND da.is_following = 1
                 LEFT JOIN discovery_artists uda
@@ -285,6 +421,7 @@ def get_feed_page(
                 WHERE :include_reposts = 1
                   AND (:max_rank IS NULL OR da.ranking <= :max_rank)
                   AND (dt.access IS NULL OR dt.access = 'playable')
+                  AND dt.soundcloud_id IN (SELECT value FROM json_each(:ids))
                 GROUP BY dt.id
             ),
             eligible_ids AS (
@@ -326,16 +463,7 @@ def get_feed_page(
                 LEFT JOIN release_events r ON r.soundcloud_id = ids.soundcloud_id
                 LEFT JOIN repost_events rp ON rp.soundcloud_id = ids.soundcloud_id
             ),
-            latest_pred AS (
-                SELECT soundcloud_id, probability, confidence, model_id
-                FROM (
-                    SELECT sp.*, ROW_NUMBER() OVER (
-                        PARTITION BY soundcloud_id
-                        ORDER BY created_at DESC, id DESC
-                    ) AS rn
-                    FROM sc_track_predictions sp
-                ) WHERE rn = 1
-            )
+            {_LATEST_PRED_CTE}
             SELECT c.*, d.decision AS current_decision, d.decided_at,
                    p.probability AS pred_probability,
                    p.confidence AS pred_confidence,
@@ -358,22 +486,11 @@ def get_feed_page(
             LEFT JOIN sc_track_decisions d
               ON d.soundcloud_id = c.soundcloud_id AND d.is_current = 1
             LEFT JOIN latest_pred p ON p.soundcloud_id = c.soundcloud_id
-            WHERE (:show_hidden = 1 OR d.decision IS NULL OR d.decision = 'keep')
-              AND (:in_library = 0 OR EXISTS(
-                    SELECT 1 FROM tracks t
-                    WHERE t.artist_normalized = LOWER(TRIM(COALESCE(c.uploader_display_name, '')))
-                      AND t.local_path IS NOT NULL
-              ))
-              AND (:min_score IS NULL OR p.probability >= :min_score)
-              AND {cursor_sql}
-            ORDER BY {order_sql} LIMIT :limit
-            """,
-            params,
-        ).fetchall()
-        items = [_row_to_feed_item(row) for row in rows]
-        _attach_reposters(conn, items, max_rank)
-        _attach_action_states(conn, items)
-    return items
+        """,
+        {**params, "ids": json.dumps(page_ids)},
+    ).fetchall()
+    by_id = {row["soundcloud_id"]: _row_to_feed_item(row) for row in rows}
+    return [by_id[sc_id] for sc_id in page_ids if sc_id in by_id]
 
 
 def get_feed_track(soundcloud_id: str) -> Optional[dict[str, Any]]:

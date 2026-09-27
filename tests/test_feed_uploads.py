@@ -216,6 +216,8 @@ MINIMAL_SCHEMA_SQL = [
 def test_db(tmp_path, monkeypatch):
     db_path = tmp_path / "test.db"
     monkeypatch.setattr("music_minion.core.database.get_database_path", lambda: db_path)
+    # Fixtures use fixed historical dates; TestFeedWindow re-enables it.
+    monkeypatch.setattr("web.backend.queries.feed.FEED_WINDOW_DAYS", None)
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     for stmt in MINIMAL_SCHEMA_SQL:
@@ -1155,6 +1157,71 @@ def _fetch_all_pages(client, limit: int, **params) -> list[dict]:
         if cursor is None:
             return items
     raise AssertionError("pagination never terminated")
+
+
+def _days_ago(days: int, iso: bool = False) -> str:
+    moment = datetime.now(timezone.utc) - timedelta(days=days)
+    return moment.strftime("%Y-%m-%dT%H:%M:%S+00:00" if iso else "%Y-%m-%d %H:%M:%S")
+
+
+class TestFeedWindow:
+    @pytest.fixture(autouse=True)
+    def _window_on(self, test_db, monkeypatch) -> None:
+        # Depends on test_db so it runs after that fixture disables the window.
+        monkeypatch.setattr("web.backend.queries.feed.FEED_WINDOW_DAYS", 90)
+
+    def test_activity_older_than_window_is_excluded(self, test_db) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.feed import get_feed_page
+
+        with get_db_connection() as conn:
+            uploader = _insert_artist(conn, "up", name="Up")
+            reposter = _insert_artist(conn, "re", name="Re")
+            _insert_upload(conn, uploader, "new-up", _days_ago(5, iso=True))
+            _insert_upload(conn, uploader, "old-up", _days_ago(200, iso=True))
+            _insert_repost_track(conn, reposter, "new-rp", None, _days_ago(3))
+            _insert_repost_track(conn, reposter, "old-rp", None, _days_ago(200))
+            conn.commit()
+
+        ids = [i["soundcloud_id"] for i in get_feed_page(limit=10)]
+        assert ids == ["new-rp", "new-up"]
+
+    def test_counts_every_reposter_but_sorts_by_in_window_activity(
+        self, test_db
+    ) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.feed import get_feed_page
+
+        with get_db_connection() as conn:
+            old = _insert_artist(conn, "old", name="Old")
+            recent = _insert_artist(conn, "recent", name="Recent")
+            row = _insert_repost_track(conn, old, "track", None, _days_ago(200))
+            conn.execute(
+                """INSERT INTO discovery_track_reposters
+                (discovery_track_id, discovery_artist_id, seen_at) VALUES (?, ?, ?)""",
+                (row, recent, _days_ago(2)),
+            )
+            conn.commit()
+
+        [item] = get_feed_page(limit=10)
+        assert item["reposter_count"] == 2
+        assert len(item["reposters"]) == 2
+        assert item["event_at"].startswith(_days_ago(2)[:10])
+
+    def test_cursor_round_trip_inside_window(self, client) -> None:
+        from music_minion.core.database import get_db_connection
+
+        with get_db_connection() as conn:
+            uploader = _insert_artist(conn, "up", name="Up")
+            reposter = _insert_artist(conn, "re", name="Re")
+            for day in range(1, 6):
+                _insert_upload(conn, uploader, f"u{day}", _days_ago(day, iso=True))
+                _insert_repost_track(conn, reposter, f"r{day}", None, _days_ago(day))
+            _insert_repost_track(conn, reposter, "stale", None, _days_ago(365))
+            conn.commit()
+
+        ids = [i["soundcloud_id"] for i in _fetch_all_pages(client, limit=3)]
+        assert len(ids) == 10 and len(set(ids)) == 10 and "stale" not in ids
 
 
 class TestUnifiedFeedApi:
