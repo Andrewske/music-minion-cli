@@ -6,7 +6,7 @@ import json
 import threading
 from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from loguru import logger
 from pydantic import BaseModel
 
@@ -145,8 +145,24 @@ def _resolve_compat_identifier(identifier: str) -> str:
     return identifier
 
 
+def _refresh_contributor_stats(soundcloud_id: str) -> None:
+    """Refresh stats for every artist a decision trains (uploader + reposters).
+
+    Runs after the response: it costs ~2s on the pi and nothing in the
+    response depends on it.
+    """
+    try:
+        artist_ids = feed_queries.get_contributing_artist_ids(soundcloud_id)
+        if artist_ids:
+            discovery_queries.recalculate_artist_stats(artist_ids)
+    except Exception:
+        logger.exception(f"Artist stats refresh failed after rating {soundcloud_id}")
+
+
 @router.post("/{soundcloud_id}/rate")
-def rate_track(soundcloud_id: str, body: RateRequest) -> dict[str, Any]:
+def rate_track(
+    soundcloud_id: str, body: RateRequest, background_tasks: BackgroundTasks
+) -> dict[str, Any]:
     soundcloud_id = _resolve_compat_identifier(soundcloud_id)
     decision = _resolve_decision(body)
     updated = feed_queries.record_decision(
@@ -169,10 +185,8 @@ def rate_track(soundcloud_id: str, body: RateRequest) -> dict[str, Any]:
     else:
         feed_queries.cancel_pending_actions(soundcloud_id)
 
-    # A re-rating can remove as well as add a training label, so refresh every
-    # artist who contributed this track (uploader + reposters).
-    for artist_id in feed_queries.get_contributing_artist_ids(soundcloud_id):
-        discovery_queries.recalculate_artist_stats(artist_id)
+    # A re-rating can remove as well as add a training label.
+    background_tasks.add_task(_refresh_contributor_stats, soundcloud_id)
     return {
         "soundcloud_id": soundcloud_id,
         "current_decision": decision,
