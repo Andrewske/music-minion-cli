@@ -121,6 +121,10 @@ export const getFeedItemDecision = (item: FeedItem): FeedDecision | null => {
   return null;
 };
 
+/** Red heart: kept in the feed, or already in SoundCloud likes / a playlist. */
+export const isFeedItemHearted = (item: FeedItem): boolean =>
+  getFeedItemDecision(item) === 'keep' || !!item.in_likes || !!item.in_playlists;
+
 export const getFeedItemUploader = (item: FeedItem): FeedArtist | null =>
   item.uploader ?? item.artist ?? null;
 
@@ -210,6 +214,21 @@ export const hasPendingFeedSync = (
   pages: ReadonlyArray<{ items: FeedItem[] }> | undefined
 ): boolean =>
   pages?.some((page) => page.items.some((item) => isFeedSyncPending(item.action_state))) ?? false;
+
+/** Shared by the feed decision mutation and the poll guard below. */
+export const FEED_DECISION_MUTATION_KEY = ['feed-decision'] as const;
+const FEED_SYNC_POLL_MS = 5_000;
+
+/**
+ * Poll while a keep's SoundCloud sync is in flight, but never mid-decision: a
+ * poll that reads before the decision commits lands after onSuccess and
+ * reverts the heart. Callers must invalidate the feed when decisions settle.
+ */
+export const getFeedRefetchInterval = (
+  pages: ReadonlyArray<{ items: FeedItem[] }> | undefined,
+  decisionsInFlight: number
+): number | false =>
+  decisionsInFlight === 0 && hasPendingFeedSync(pages) ? FEED_SYNC_POLL_MS : false;
 
 export async function getFeed(params: GetFeedParams = {}): Promise<FeedPage> {
   const queryParams = new URLSearchParams();

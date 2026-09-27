@@ -6,6 +6,7 @@ import {
   getFeedItemBestRank,
   getFeedItemDecision,
   getFeedItemUploader,
+  isFeedItemHearted,
   isFeedSyncFailed,
   isFeedSyncPending,
 } from '../../api/feed';
@@ -171,6 +172,7 @@ export function FeedTrackCard({
 }: FeedTrackCardProps): JSX.Element {
   const [artworkFailed, setArtworkFailed] = useState(false);
   const decision = getFeedItemDecision(item);
+  const hearted = isFeedItemHearted(item);
   const hidden = decision === 'hide' || decision === 'nope';
   const playable = item.access !== 'blocked';
   const eventAt = getFeedEventAt(item);
@@ -229,8 +231,8 @@ export function FeedTrackCard({
         <ActionButton label="Hide without affecting recommendations" title="Hide" active={decision === 'hide'} disabled={isUpdating} onClick={() => onDecide(item, 'hide')}>
           <EyeOff className="h-4 w-4" />
         </ActionButton>
-        <ActionButton label="Keep; like on SoundCloud and add to monthly playlist" title="Heart" active={decision === 'keep'} disabled={isUpdating || decision === 'keep'} onClick={() => onDecide(item, 'keep')}>
-          <Heart className={`h-4 w-4 ${decision === 'keep' ? 'fill-current' : ''}`} />
+        <ActionButton label="Keep; like on SoundCloud and add to monthly playlist" title="Heart" active={hearted} disabled={isUpdating || decision === 'keep'} onClick={() => onDecide(item, 'keep')}>
+          <Heart className={`h-4 w-4 ${hearted ? 'fill-current' : ''}`} />
         </ActionButton>
       </div>
     </article>

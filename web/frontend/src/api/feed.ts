@@ -4,6 +4,7 @@ export {
   getFeedItemDecision, getFeedItemUploader, getFeedEventAt,
   getFeedItemBestRank, normalizeFeedItem, applyFeedDecision, mergeFeedDecisionResponse,
   isFeedSyncPending, isFeedSyncFailed, hasPendingFeedSync,
+  isFeedItemHearted, FEED_DECISION_MUTATION_KEY, getFeedRefetchInterval,
   getFeed, rateFeedItem, materializeFeedItem,
   startFeedBackfill,
 } from '@music-minion/shared';

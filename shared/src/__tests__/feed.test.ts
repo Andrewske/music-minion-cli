@@ -6,7 +6,9 @@ import {
   feedRatingToDecision,
   getFeed,
   getFeedItemBestRank,
+  getFeedRefetchInterval,
   hasPendingFeedSync,
+  isFeedItemHearted,
   isFeedSyncFailed,
   isFeedSyncPending,
   materializeFeedItem,
@@ -176,6 +178,21 @@ describe('feed decisions', () => {
     expect(hasPendingFeedSync([{ items: [settled] }, { items: [running] }])).toBe(true);
     expect(hasPendingFeedSync([{ items: [settled] }])).toBe(false);
     expect(hasPendingFeedSync(undefined)).toBe(false);
+  });
+
+  it('hearts kept tracks and tracks already in SoundCloud likes or playlists', () => {
+    expect(isFeedItemHearted(item())).toBe(false);
+    expect(isFeedItemHearted(item({ current_decision: 'keep' }))).toBe(true);
+    expect(isFeedItemHearted(item({ in_likes: true }))).toBe(true);
+    expect(isFeedItemHearted(item({ in_playlists: true }))).toBe(true);
+    expect(isFeedItemHearted(item({ current_decision: 'nope' }))).toBe(false);
+  });
+
+  it('polls pending sync only when no decision is in flight', () => {
+    const running = item({ action_state: { like: 'pending', monthly_playlist: 'pending', error: null } });
+    expect(getFeedRefetchInterval([{ items: [running] }], 0)).toBe(5_000);
+    expect(getFeedRefetchInterval([{ items: [running] }], 1)).toBe(false);
+    expect(getFeedRefetchInterval([{ items: [item()] }], 0)).toBe(false);
   });
 
   it('uses the best qualifying uploader or reposter rank', () => {
