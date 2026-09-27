@@ -102,6 +102,17 @@ describe('FeedTrackCard', () => {
     expect(screen.getByRole('button', { name: /Keep/ })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it('fills the heart for tracks already in SoundCloud likes or a playlist', () => {
+    const { rerender } = render(
+      <FeedTrackCard item={makeItem({ in_likes: true })} isPlaying={false} onPlay={vi.fn()} onDecide={vi.fn()} />
+    );
+    expect(screen.getByRole('button', { name: /Keep/ })).toHaveAttribute('aria-pressed', 'true');
+    rerender(
+      <FeedTrackCard item={makeItem({ in_playlists: true })} isPlaying={false} onPlay={vi.fn()} onDecide={vi.fn()} />
+    );
+    expect(screen.getByRole('button', { name: /Keep/ })).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('links to the SoundCloud track page in a new tab when a permalink exists', () => {
     render(
       <FeedTrackCard

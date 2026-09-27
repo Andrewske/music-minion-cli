@@ -5,6 +5,7 @@ import {
   getFeedItemBestRank,
   getFeedItemDecision,
   getFeedItemUploader,
+  isFeedItemHearted,
   isFeedSyncFailed,
   isFeedSyncPending,
 } from '@music-minion/shared';
@@ -93,6 +94,7 @@ function DecisionButton({ label, glyph, active, disabled, onPress, testID }: {
 
 export function FeedTrackCard({ item, isPlaying, isUpdating = false, onPlay, onDecide }: FeedTrackCardProps) {
   const decision = getFeedItemDecision(item);
+  const hearted = isFeedItemHearted(item);
   const uploader = getFeedItemUploader(item);
   const firstReposter = item.reposters[0];
   const otherReposters = Math.max(0, item.reposter_count - (firstReposter ? 1 : 0));
@@ -153,7 +155,7 @@ export function FeedTrackCard({ item, isPlaying, isUpdating = false, onPlay, onD
         <View className="flex-row items-center" accessibilityLabel="Feed decisions">
           <DecisionButton label="Nope; hide and count against this recommendation" glyph="👎" active={decision === 'nope'} disabled={isUpdating} onPress={() => onDecide(item, 'nope')} testID={`feed-nope-${item.soundcloud_id}`} />
           <DecisionButton label="Hide without affecting recommendations" glyph="◌" active={decision === 'hide'} disabled={isUpdating} onPress={() => onDecide(item, 'hide')} testID={`feed-hide-${item.soundcloud_id}`} />
-          <DecisionButton label="Keep; like on SoundCloud and add to monthly playlist" glyph={decision === 'keep' ? '♥' : '♡'} active={decision === 'keep'} disabled={isUpdating || decision === 'keep'} onPress={() => onDecide(item, 'keep')} testID={`feed-keep-${item.soundcloud_id}`} />
+          <DecisionButton label="Keep; like on SoundCloud and add to monthly playlist" glyph={hearted ? '♥' : '♡'} active={hearted} disabled={isUpdating || decision === 'keep'} onPress={() => onDecide(item, 'keep')} testID={`feed-keep-${item.soundcloud_id}`} />
         </View>
       </View>
     </View>

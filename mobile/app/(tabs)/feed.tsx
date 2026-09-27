@@ -17,10 +17,11 @@ import {
 } from '@tanstack/react-query';
 import Toast from 'react-native-toast-message';
 import {
+  FEED_DECISION_MUTATION_KEY,
   FEED_PAGE_SIZE,
   FEED_RANK_PRESETS,
   getFeed,
-  hasPendingFeedSync,
+  getFeedRefetchInterval,
   isFeedSyncFailed,
   materializeFeedItem,
   mergeFeedDecisionResponse,
@@ -105,9 +106,10 @@ export default function FeedScreen() {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     refetchInterval: (query) =>
-      hasPendingFeedSync((query.state.data as InfiniteData<FeedPage> | undefined)?.pages)
-        ? 5_000
-        : false,
+      getFeedRefetchInterval(
+        (query.state.data as InfiniteData<FeedPage> | undefined)?.pages,
+        queryClient.isMutating({ mutationKey: FEED_DECISION_MUTATION_KEY })
+      ),
   });
   const items = useMemo(
     () => feedQuery.data?.pages.flatMap((page) => page.items) ?? [],
@@ -115,6 +117,7 @@ export default function FeedScreen() {
   );
 
   const decisionMutation = useMutation({
+    mutationKey: FEED_DECISION_MUTATION_KEY,
     mutationFn: ({ item, decision }: { item: FeedItem; decision: FeedDecision }) =>
       rateFeedItem(item.soundcloud_id, decision, {
         surface: 'mobile',
@@ -162,6 +165,12 @@ export default function FeedScreen() {
         Toast.show({ type: 'error', text1: 'Kept locally', text2: 'SoundCloud sync needs attention.' });
       } else if (decision === 'keep') {
         Toast.show({ type: 'success', text1: 'Kept', text2: 'SoundCloud sync queued.' });
+      }
+    },
+    onSettled: () => {
+      // Replaces any poll that read before the decision committed.
+      if (queryClient.isMutating({ mutationKey: FEED_DECISION_MUTATION_KEY }) === 1) {
+        void queryClient.invalidateQueries({ queryKey: feedQueryKey });
       }
     },
   });
