@@ -1,6 +1,8 @@
 """Discovery query functions for SoundCloud reposts sync feature."""
 
 import csv
+import json
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -696,7 +698,7 @@ def update_artist_uploads_last_checked(artist_id: int) -> None:
         conn.commit()
 
 
-def recalculate_artist_stats(artist_id: int | None = None) -> None:
+def recalculate_artist_stats(artist_ids: Sequence[int] | None = None) -> None:
     """Recalculate legacy display counters and the role-specific keep rates.
 
     Legacy columns (tracks_seen, tracks_liked, tracks_dismissed, hit_rate)
@@ -709,20 +711,25 @@ def recalculate_artist_stats(artist_id: int | None = None) -> None:
     Selection reads ``upload_keep_rate`` / ``repost_keep_rate`` instead,
     which :func:`recalculate_artist_role_stats` refreshes for all artists.
 
-    Pass artist_id for a targeted single-artist recalc of the legacy counters
-    (feed rate endpoint); role stats are always refreshed globally because a
-    track decision changes the fractional credit of every reposter on it.
+    Pass artist_ids for a targeted recalc of the legacy counters (feed rate
+    endpoint); the filter sits inside the CTE so only those artists'
+    contributions are scanned. Role stats are always refreshed globally
+    because a track decision changes the fractional credit of every reposter.
     """
+    ids_json = None if artist_ids is None else json.dumps(list(artist_ids))
     with get_db_connection() as conn:
         rows = conn.execute(
             """
-            WITH contributions AS (
+            WITH targets AS (SELECT value AS id FROM json_each(:ids)),
+            contributions AS (
                 SELECT dtr.discovery_artist_id AS artist_id, dt.soundcloud_id
                 FROM discovery_track_reposters dtr
                 JOIN discovery_tracks dt ON dt.id = dtr.discovery_track_id
+                WHERE :ids IS NULL OR dtr.discovery_artist_id IN (SELECT id FROM targets)
                 UNION
                 SELECT u.discovery_artist_id, u.soundcloud_id
                 FROM sc_artist_uploads u
+                WHERE :ids IS NULL OR u.discovery_artist_id IN (SELECT id FROM targets)
             ), labeled AS (
                 SELECT c.artist_id, c.soundcloud_id, d.decision
                 FROM contributions c
@@ -738,10 +745,10 @@ def recalculate_artist_stats(artist_id: int | None = None) -> None:
                     AS tracks_dismissed
             FROM discovery_artists da
             LEFT JOIN labeled l ON l.artist_id = da.id
-            WHERE (? IS NULL OR da.id = ?)
+            WHERE :ids IS NULL OR da.id IN (SELECT id FROM targets)
             GROUP BY da.id
             """,
-            (artist_id, artist_id),
+            {"ids": ids_json},
         ).fetchall()
 
         records = [

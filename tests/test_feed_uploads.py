@@ -1457,6 +1457,29 @@ class TestTrainingDedup:
         # The uploader both released and reposted it: still one contribution.
         assert [tuple(r) for r in stats] == [("r1", 1, 1), ("r2", 1, 1), ("up", 1, 1)]
 
+    def test_targeted_recalc_updates_only_listed_artists(self, test_db) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.discovery import recalculate_artist_stats
+        from web.backend.queries.feed import record_decision
+
+        with get_db_connection() as conn:
+            uploader = _insert_artist(conn, "up", name="Up")
+            r1 = _insert_artist(conn, "r1", name="R1")
+            r2 = _insert_artist(conn, "r2", name="R2")
+            _insert_upload(conn, uploader, "same", "2026-07-01T00:00:00+00:00")
+            row = _insert_repost_track(conn, r1, "same", "2026/07/02 00:00:00 +0000")
+            _link_reposter(conn, row, r2, "2026/07/03 00:00:00 +0000")
+            conn.commit()
+
+        record_decision("same", "keep", "web_feed")
+        recalculate_artist_stats([uploader, r1])
+
+        with get_db_connection() as conn:
+            stats = conn.execute(
+                "SELECT slug, tracks_seen, tracks_liked FROM discovery_artists ORDER BY slug"
+            ).fetchall()
+        assert [tuple(r) for r in stats] == [("r1", 1, 1), ("r2", 0, 0), ("up", 1, 1)]
+
 
 class TestActionBackoff:
     def test_backoff_is_bounded_and_terminal_after_max_attempts(self, test_db) -> None:
