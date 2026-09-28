@@ -1429,10 +1429,11 @@ class TestHeartBySoundcloudId:
 
     def test_materialize_endpoint_is_idempotent(self, client) -> None:
         self._seed_repost()
-        first = client.post("/api/feed/555/materialize").json()["local_track_id"]
-        second = client.post("/api/feed/555/materialize").json()["local_track_id"]
+        body = {"soundcloud_ids": ["555", "nope", "555"]}
+        first = client.post("/api/feed/materialize", json=body).json()["items"]
+        second = client.post("/api/feed/materialize", json=body).json()["items"]
         assert first == second
-        assert client.post("/api/feed/nope/materialize").status_code == 404
+        assert [item["soundcloud_id"] for item in first] == ["555"]
 
     def test_reconcile_endpoint_resets_errored_jobs(self, client) -> None:
         from music_minion.core.database import get_db_connection

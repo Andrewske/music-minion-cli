@@ -23,7 +23,9 @@ import {
   getFeed,
   getFeedRefetchInterval,
   isFeedSyncFailed,
-  materializeFeedItem,
+  prepareFeedQueue,
+  applyMaterializedIds,
+  type PreparedFeedQueue,
   mergeFeedDecisionResponse,
   rateFeedItem,
 } from '@music-minion/shared';
@@ -177,40 +179,32 @@ export default function FeedScreen() {
 
   const handlePlay = useCallback(
     async (item: FeedItem): Promise<void> => {
-      let localTrackId = item.local_track_id;
-      if (localTrackId === null) {
-        try {
-          const materialized = await materializeFeedItem(item.soundcloud_id);
-          localTrackId = materialized.local_track_id;
-          queryClient.setQueriesData<InfiniteData<FeedPage>>(
-            { queryKey: ['feed'] },
-            (old) => old && ({
-              ...old,
-              pages: old.pages.map((page) => ({
-                ...page,
-                items: page.items.map((candidate) =>
-                  candidate.soundcloud_id === item.soundcloud_id
-                    ? { ...candidate, local_track_id: materialized.local_track_id }
-                    : candidate
-                ),
-              })),
-            })
-          );
-        } catch {
-          Toast.show({ type: 'error', text1: 'Could not prepare track for playback' });
-          return;
-        }
+      let queue: PreparedFeedQueue;
+      try {
+        queue = await prepareFeedQueue(items, item);
+      } catch {
+        Toast.show({ type: 'error', text1: 'Could not prepare track for playback' });
+        return;
       }
-      const index = items.findIndex((candidate) => candidate.soundcloud_id === item.soundcloud_id);
-      const trackIds = items
-        .slice(Math.max(0, index))
-        .map((candidate) =>
-          candidate.soundcloud_id === item.soundcloud_id
-            ? localTrackId
-            : candidate.local_track_id
-        )
-        .filter((id): id is number => id !== null);
-      await play(toTrack(item, localTrackId), { type: 'feed', track_ids: trackIds, shuffle: false });
+      const localTrackId = item.local_track_id ?? queue.materialized[item.soundcloud_id];
+      if (localTrackId === undefined) {
+        Toast.show({ type: 'error', text1: 'Could not prepare track for playback' });
+        return;
+      }
+      if (Object.keys(queue.materialized).length > 0) {
+        queryClient.setQueriesData<InfiniteData<FeedPage>>(
+          { queryKey: ['feed'] },
+          (old) => old && ({
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              items: page.items.map((candidate) => applyMaterializedIds(candidate, queue.materialized)),
+            })),
+          })
+        );
+      }
+      // No shuffle override: the player bar's shuffle toggle decides.
+      await play(toTrack(item, localTrackId), { type: 'feed', track_ids: queue.trackIds });
     },
     [items, play, queryClient]
   );

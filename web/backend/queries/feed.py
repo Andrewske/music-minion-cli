@@ -557,6 +557,19 @@ def materialize_feed_track(soundcloud_id: str) -> Optional[int]:
     return int(track_id)
 
 
+def materialize_feed_tracks(soundcloud_ids: list[str]) -> dict[str, int]:
+    """Materialize several feed items; returns soundcloud_id -> local track id.
+
+    Ids with no feed metadata are skipped.
+    """
+    materialized = {}
+    for soundcloud_id in dict.fromkeys(soundcloud_ids):
+        local_track_id = materialize_feed_track(soundcloud_id)
+        if local_track_id is not None:
+            materialized[soundcloud_id] = local_track_id
+    return materialized
+
+
 def get_current_decision(soundcloud_id: str) -> Optional[dict[str, Any]]:
     with get_db_connection() as conn:
         row = conn.execute(

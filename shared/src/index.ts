@@ -77,14 +77,15 @@ export {
   getFeedItemBestRank, normalizeFeedItem, applyFeedDecision, mergeFeedDecisionResponse,
   isFeedSyncPending, isFeedSyncFailed, hasPendingFeedSync,
   isFeedItemHearted, FEED_DECISION_MUTATION_KEY, getFeedRefetchInterval,
-  getFeed, rateFeedItem, materializeFeedItem,
+  getFeed, rateFeedItem, materializeFeedItems, prepareFeedQueue, applyMaterializedIds,
+  FEED_QUEUE_LIMIT,
   startFeedBackfill,
 } from './api/feed';
 export type {
   FeedSource, FeedSort, FeedRankPreset, FeedRating, FeedDecision, FeedItemStatus,
   FeedActionStatus, FeedArtist, FeedActionState, FeedItem, FeedPage,
   GetFeedParams, RateFeedItemOptions, RateFeedItemResponse,
-  MaterializeFeedItemResponse,
+  MaterializeFeedItemResponse, PreparedFeedQueue,
 } from './api/feed';
 
 // Playback error policy (shared window/breaker/retry decision logic)

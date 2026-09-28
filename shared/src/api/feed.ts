@@ -264,13 +264,58 @@ export async function rateFeedItem(
   );
 }
 
-export async function materializeFeedItem(
-  soundcloudId: string
-): Promise<MaterializeFeedItemResponse> {
-  return getDefaultApiClient().post<MaterializeFeedItemResponse>(
-    `/feed/${encodeURIComponent(soundcloudId)}/materialize`
-  );
+/** Feed items queued from one play click; matches the backend queue window. */
+export const FEED_QUEUE_LIMIT = 100;
+
+export interface PreparedFeedQueue {
+  /** Local track ids in feed order, starting with the clicked item. */
+  trackIds: number[];
+  /** Newly created local ids, keyed by SoundCloud id, for patching cached pages. */
+  materialized: Record<string, number>;
 }
+
+export async function materializeFeedItems(
+  soundcloudIds: string[]
+): Promise<MaterializeFeedItemResponse[]> {
+  if (soundcloudIds.length === 0) return [];
+  const response = await getDefaultApiClient().post<{ items: MaterializeFeedItemResponse[] }>(
+    '/feed/materialize',
+    { soundcloud_ids: soundcloudIds }
+  );
+  return response.items;
+}
+
+/**
+ * Build a play queue from the clicked item onward, in feed order. Items that
+ * are not in the library yet get materialized first; otherwise the queue would
+ * skip them and playback would hop around the feed.
+ */
+export async function prepareFeedQueue(
+  items: FeedItem[],
+  clicked: FeedItem
+): Promise<PreparedFeedQueue> {
+  const index = items.findIndex((item) => item.soundcloud_id === clicked.soundcloud_id);
+  const upcoming = index === -1 ? [clicked] : items.slice(index, index + FEED_QUEUE_LIMIT);
+  const missing = upcoming
+    .filter((item) => item.local_track_id === null)
+    .map((item) => item.soundcloud_id);
+  const created = await materializeFeedItems(missing);
+  const materialized = Object.fromEntries(
+    created.map((entry) => [entry.soundcloud_id, entry.local_track_id])
+  );
+  const trackIds = upcoming
+    .map((item) => item.local_track_id ?? materialized[item.soundcloud_id] ?? null)
+    .filter((id): id is number => id !== null);
+  return { trackIds, materialized };
+}
+
+export const applyMaterializedIds = (
+  item: FeedItem,
+  materialized: Record<string, number>
+): FeedItem =>
+  item.soundcloud_id in materialized
+    ? { ...item, local_track_id: materialized[item.soundcloud_id] }
+    : item;
 
 /** One-time backfill retained for installations that have not completed it. */
 export async function startFeedBackfill(): Promise<{ started: boolean }> {
