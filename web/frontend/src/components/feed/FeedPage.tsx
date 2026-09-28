@@ -190,12 +190,11 @@ export function FeedPage(): JSX.Element {
 
   const syncMutation = useMutation({
     mutationFn: syncFeed,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['feed'] });
-      void queryClient.invalidateQueries({ queryKey: ['artists', 'feed-sync-status'] });
-      toast.success('Feed synced');
+    onSuccess: (state) => {
+      queryClient.setQueryData(['artists', 'feed-sync-status'], state);
+      toast.success('Feed sync started, new tracks appear when it finishes');
     },
-    onError: () => toast.error('Feed sync failed — check SoundCloud auth or try later'),
+    onError: () => toast.error('Feed sync failed to start, it may already be running'),
   });
   const backfillMutation = useMutation({
     mutationFn: startFeedBackfill,
@@ -204,6 +203,7 @@ export function FeedPage(): JSX.Element {
   });
 
   const { data: syncStatus } = useFeedSyncStatus();
+  const feedSyncRunning = syncMutation.isPending || syncStatus?.last_run_status === 'running';
   const backfillRunning =
     backfillMutation.isPending || syncStatus?.uploads_last_status === 'running';
   const previousUploadStatus = useRef<string | null>(null);
@@ -365,8 +365,8 @@ export function FeedPage(): JSX.Element {
 
         <div className="ml-auto flex items-center gap-1 text-xs text-white/40">
           <span>Synced {formatLastSync(syncStatus?.uploads_last_run_at ?? syncStatus?.last_run_at)}</span>
-          <button type="button" onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending} aria-label="Sync feed now" className="rounded p-2 text-white/60 hover:bg-white/5 hover:text-white disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent">
-            <RefreshCw className={`h-4 w-4 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
+          <button type="button" onClick={() => syncMutation.mutate()} disabled={feedSyncRunning} aria-label="Sync feed now" className="rounded p-2 text-white/60 hover:bg-white/5 hover:text-white disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent">
+            <RefreshCw className={`h-4 w-4 ${feedSyncRunning ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </header>

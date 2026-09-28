@@ -106,13 +106,7 @@ def _fetch_feed_locked() -> dict[str, Any]:
     Returns summary dict: {events_added, duration_ms, total_events}.
     """
     start_ms = time.monotonic()
-
-    with get_db_connection() as conn:
-        conn.execute(
-            "UPDATE sc_feed_sync_state SET last_run_status = 'running' WHERE id = 1"
-        )
-        conn.commit()
-
+    _mark_running()
     logger.info("feed_sync_started (uploads + reposts)")
 
     provider_state = get_web_provider_state()
@@ -282,29 +276,47 @@ def start_feed_worker() -> None:
     logger.info("feed_sync worker started")
 
 
+def _mark_running() -> None:
+    with get_db_connection() as conn:
+        conn.execute(
+            "UPDATE sc_feed_sync_state SET last_run_status = 'running' WHERE id = 1"
+        )
+        conn.commit()
+
+
+def _run_manual_sync_thread() -> None:
+    """Run a feed sync the caller already holds _feed_lock for, then release it.
+
+    Failures land in sc_feed_sync_state via _set_sync_error; the UI polls it.
+    """
+    threading.current_thread().silent_logging = True  # type: ignore[attr-defined]
+    try:
+        _fetch_feed_locked()
+    except Exception:
+        logger.exception("feed_sync: manual sync failed")
+    finally:
+        _feed_lock.release()
+
+
 def run_manual_sync() -> dict[str, Any]:
-    """Trigger an immediate feed sync. Called from POST /api/soundcloud/feed-sync."""
+    """Start a feed sync in the background. Called from POST /api/soundcloud/feed-sync.
+
+    A full sync walks every followed artist and takes most of an hour, so it
+    must never run on the request path. Returns the status row (now 'running').
+    """
     if not _feed_lock.acquire(blocking=False):
         raise HTTPException(
             status_code=429, detail="sync in progress, try again shortly"
         )
     try:
-        return _fetch_feed_locked()
-    except HTTPException:
-        raise
-    except Exception as exc:
-        status_code = getattr(getattr(exc, "response", None), "status_code", None)
-        if status_code == 429:
-            raise HTTPException(
-                status_code=503, detail="SC rate-limited, retry in 5 minutes"
-            )
-        if status_code is not None and status_code >= 500:
-            raise HTTPException(
-                status_code=503, detail="SC upstream error, retry later"
-            )
-        raise HTTPException(status_code=503, detail=f"Feed sync failed: {exc}") from exc
-    finally:
+        _mark_running()
+        threading.Thread(
+            target=_run_manual_sync_thread, daemon=True, name="sc_feed_manual_sync"
+        ).start()
+    except Exception:
         _feed_lock.release()
+        raise
+    return get_sync_status()
 
 
 def get_sync_status() -> dict[str, Any]:

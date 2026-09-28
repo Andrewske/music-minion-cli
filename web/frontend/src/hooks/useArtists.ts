@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import type { UseQueryResult, UseMutationResult } from '@tanstack/react-query';
 import * as artistsApi from '../api/artists';
@@ -55,11 +56,26 @@ export function usePareto(): UseQueryResult<ParetoResult> {
 }
 
 export function useFeedSyncStatus(): UseQueryResult<FeedSyncState> {
-  return useQuery({
+  const queryClient = useQueryClient();
+  const result = useQuery({
     queryKey: ['artists', 'feed-sync-status'],
     queryFn: () => artistsApi.getFeedSyncStatus(),
-    refetchInterval: 30_000,
+    // Syncs run in the background for up to an hour; poll faster while one runs.
+    refetchInterval: (query) => (query.state.data?.last_run_status === 'running' ? 5_000 : 30_000),
   });
+
+  const status = result.data?.last_run_status ?? null;
+  const previousStatus = useRef<string | null>(null);
+  useEffect(() => {
+    if (previousStatus.current === 'running' && status !== 'running') {
+      void queryClient.invalidateQueries({ queryKey: ['feed'] });
+      void queryClient.invalidateQueries({ queryKey: ['artists', 'list'] });
+      void queryClient.invalidateQueries({ queryKey: ['artists', 'pareto'] });
+    }
+    previousStatus.current = status;
+  }, [status, queryClient]);
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,10 +170,9 @@ export function useFeedSync(): UseMutationResult<FeedSyncState, Error, void, unk
 
   return useMutation({
     mutationFn: () => artistsApi.syncFeed(),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['artists', 'list'] });
-      void queryClient.invalidateQueries({ queryKey: ['artists', 'feed-sync-status'] });
-      void queryClient.invalidateQueries({ queryKey: ['artists', 'pareto'] });
+    // The sync runs in the background; useFeedSyncStatus refreshes data when it ends.
+    onSuccess: (state) => {
+      queryClient.setQueryData(['artists', 'feed-sync-status'], state);
     },
   });
 }
