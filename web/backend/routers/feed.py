@@ -197,15 +197,23 @@ def rate_track(
     }
 
 
-@router.post("/{soundcloud_id}/materialize")
-def materialize_track(soundcloud_id: str) -> dict[str, Any]:
-    soundcloud_id = _resolve_compat_identifier(soundcloud_id)
-    local_track_id = feed_queries.materialize_feed_track(soundcloud_id)
-    if local_track_id is None:
-        raise HTTPException(
-            status_code=404, detail=f"SoundCloud track {soundcloud_id} not found"
-        )
-    return {"soundcloud_id": soundcloud_id, "local_track_id": local_track_id}
+class MaterializeRequest(BaseModel):
+    soundcloud_ids: list[str]
+
+
+@router.post("/materialize")
+def materialize_tracks(body: MaterializeRequest) -> dict[str, Any]:
+    """Create library rows for feed items so a play queue can keep feed order.
+
+    Unknown ids are left out of the response rather than failing the batch.
+    """
+    materialized = feed_queries.materialize_feed_tracks(body.soundcloud_ids)
+    return {
+        "items": [
+            {"soundcloud_id": soundcloud_id, "local_track_id": local_track_id}
+            for soundcloud_id, local_track_id in materialized.items()
+        ]
+    }
 
 
 @router.get("/{soundcloud_id}/decisions")

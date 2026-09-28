@@ -5,12 +5,12 @@ export {
   getFeedItemBestRank, normalizeFeedItem, applyFeedDecision, mergeFeedDecisionResponse,
   isFeedSyncPending, isFeedSyncFailed, hasPendingFeedSync,
   isFeedItemHearted, FEED_DECISION_MUTATION_KEY, getFeedRefetchInterval,
-  getFeed, rateFeedItem, materializeFeedItem,
+  getFeed, rateFeedItem, prepareFeedQueue, applyMaterializedIds,
   startFeedBackfill,
 } from '@music-minion/shared';
 export type {
   FeedSource, FeedSort, FeedRankPreset, FeedRating, FeedDecision, FeedItemStatus,
   FeedActionStatus, FeedArtist, FeedActionState, FeedItem, FeedPage,
   GetFeedParams, RateFeedItemOptions, RateFeedItemResponse,
-  MaterializeFeedItemResponse,
+  MaterializeFeedItemResponse, PreparedFeedQueue,
 } from '@music-minion/shared';

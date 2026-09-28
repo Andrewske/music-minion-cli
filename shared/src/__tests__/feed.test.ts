@@ -11,7 +11,7 @@ import {
   isFeedItemHearted,
   isFeedSyncFailed,
   isFeedSyncPending,
-  materializeFeedItem,
+  prepareFeedQueue,
   mergeFeedDecisionResponse,
   normalizeFeedItem,
   rateFeedItem,
@@ -133,13 +133,33 @@ describe('feed API', () => {
     expect(feedRatingToDecision(0)).toBe('hide');
   });
 
-  it('materializes streaming-only reposts by SoundCloud id', async () => {
-    fetchMock.mockResolvedValue({ ok: true, json: () => Promise.resolve({ local_track_id: 9 }) });
-    await materializeFeedItem('456');
+  it('queues from the clicked item in feed order, materializing missing tracks', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ items: [{ soundcloud_id: 'b', local_track_id: 20 }] }),
+    });
+    const items = [
+      item({ soundcloud_id: 'a', local_track_id: 1 }),
+      item({ soundcloud_id: 'b' }),
+      item({ soundcloud_id: 'c', local_track_id: 3 }),
+      item({ soundcloud_id: 'd' }),
+    ];
+    const queue = await prepareFeedQueue(items, items[1]);
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/feed/456/materialize',
-      expect.objectContaining({ method: 'POST' })
+      '/api/feed/materialize',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ soundcloud_ids: ['b', 'd'] }),
+      })
     );
+    expect(queue).toEqual({ trackIds: [20, 3], materialized: { b: 20 } });
+  });
+
+  it('skips the materialize request when every queued item is local', async () => {
+    const items = [item({ soundcloud_id: 'a', local_track_id: 1 })];
+    const queue = await prepareFeedQueue(items, items[0]);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(queue.trackIds).toEqual([1]);
   });
 });
 
