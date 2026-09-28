@@ -684,16 +684,23 @@ def update_artist_last_checked(artist_id: int, new_repost_count: int) -> None:
         conn.commit()
 
 
-def update_artist_uploads_last_checked(artist_id: int) -> None:
-    """Advance only the upload checkpoint for one successfully fetched artist."""
+def update_artist_uploads_last_checked(artist_id: int, new_upload_count: int) -> None:
+    """Advance the upload checkpoint and adapt the interval, like reposts do.
+
+    New uploads reset the interval to 24h; an empty check doubles it (cap 30 days).
+    """
     with get_db_connection() as conn:
         conn.execute(
             """
             UPDATE discovery_artists
-            SET uploads_last_checked = datetime('now')
+            SET uploads_last_checked = datetime('now'),
+                upload_check_interval_hours = CASE
+                    WHEN ? > 0 THEN 24
+                    ELSE MIN(upload_check_interval_hours * 2, 720)
+                END
             WHERE id = ?
             """,
-            (artist_id,),
+            (new_upload_count, artist_id),
         )
         conn.commit()
 

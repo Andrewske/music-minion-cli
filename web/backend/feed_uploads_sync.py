@@ -3,7 +3,8 @@
 Fetches followed artists' own track uploads (not reposts) into
 sc_artist_uploads, importing each as a streaming-only local track so the
 feed is instantly playable. Runs inside the feed worker BEFORE the reposts
-sync, with its own uploads_last_checked checkpoint and hourly cadence.
+sweep, with its own uploads_last_checked checkpoint and adaptive cadence
+(24h after a new upload, doubling to 30 days while an artist stays quiet).
 """
 
 import time
@@ -30,7 +31,7 @@ def _upload_cutoff() -> datetime:
     return UPLOAD_CUTOFF
 
 
-def _get_known_upload_ids() -> set[str]:
+def get_known_upload_ids() -> set[str]:
     with get_db_connection() as conn:
         rows = conn.execute("SELECT soundcloud_id FROM sc_artist_uploads").fetchall()
     return {row["soundcloud_id"] for row in rows}
@@ -113,7 +114,7 @@ def _import_upload_to_library(conn: Any, track: dict[str, Any]) -> Optional[int]
     return row["id"]
 
 
-def _insert_uploads(records: list[dict[str, Any]]) -> int:
+def insert_uploads(records: list[dict[str, Any]]) -> int:
     """Import to library + upsert sc_artist_uploads rows in one transaction."""
     if not records:
         return 0
@@ -194,7 +195,7 @@ def _insert_uploads(records: list[dict[str, Any]]) -> int:
     return inserted
 
 
-def _collect_uploads(
+def collect_uploads(
     tracks: list[dict[str, Any]], artist_id: int, known_ids: set[str]
 ) -> list[dict[str, Any]]:
     """Keep known rows for metadata updates and bound only brand-new uploads."""
@@ -250,7 +251,7 @@ def sync_followings_uploads(
         _write_uploads_sync_state("ok", 0, None)
         return 0, []
 
-    known_ids = _get_known_upload_ids()
+    known_ids = get_known_upload_ids()
     errors: list[str] = []
     added = 0
     total = len(artists)
@@ -267,9 +268,14 @@ def sync_followings_uploads(
             state, tracks, api_error = _fetch_artist_uploads(state, artist, max_pages)
             if api_error:
                 errors.append(f"{artist['slug']}: {api_error}")
-            added += _insert_uploads(_collect_uploads(tracks, artist["id"], known_ids))
+            new_uploads = insert_uploads(
+                collect_uploads(tracks, artist["id"], known_ids)
+            )
+            added += new_uploads
             if api_error is None:
-                discovery_queries.update_artist_uploads_last_checked(artist["id"])
+                discovery_queries.update_artist_uploads_last_checked(
+                    artist["id"], new_uploads
+                )
         except Exception as exc:
             logger.exception(f"feed_uploads: failed for {artist['slug']}")
             errors.append(f"{artist['slug']}: {exc}")

@@ -1,8 +1,8 @@
 """Background SoundCloud feed-sync worker.
 
-Daemon thread that periodically runs sync_followings_reposts (lightweight
-variant of discovery sync covering all followed artists, not just top-200)
-and writes reposter rows into discovery_track_reposters with seen_at=now.
+Daemon thread that reads SoundCloud's stream (/me/feed/tracks) every hour,
+and once a day also sweeps followed artists one by one (adaptive cadence) to
+backfill the activity SC throttles out of the stream.
 
 A threading lock coordinates daemon runs with the manual
 POST /api/soundcloud/feed-sync trigger.
@@ -10,7 +10,7 @@ POST /api/soundcloud/feed-sync trigger.
 
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import HTTPException
@@ -18,6 +18,7 @@ from loguru import logger
 
 from music_minion.core.database import get_db_connection
 from web.backend.discovery_sync import sync_followings_reposts
+from web.backend.feed_stream_sync import sync_from_stream
 from web.backend.feed_uploads_sync import sync_followings_uploads
 from web.backend.queries import discovery as discovery_queries
 from web.backend.queries import feed as feed_queries
@@ -25,6 +26,9 @@ from web.backend.sc_push_worker import enqueue_feed_action_drain, recover_feed_a
 from web.backend.soundcloud_auth import get_web_provider_state
 
 _feed_lock = threading.Lock()
+
+TICK_SECONDS = 3600  # stream read every hour
+SWEEP_INTERVAL = timedelta(hours=24)  # per-artist backfill sweep
 
 
 def _now_utc() -> datetime:
@@ -100,22 +104,52 @@ def _reset_stale_running_status() -> None:
         logger.exception("feed_sync: failed to reset stale running status")
 
 
-def _fetch_feed_locked() -> dict[str, Any]:
+def _fetch_feed_locked(sweep: bool) -> dict[str, Any]:
     """Core feed sync. Caller must hold _feed_lock.
 
-    Returns summary dict: {events_added, duration_ms, total_events}.
+    Always reads SC's stream (seconds). With sweep=True it also runs the
+    per-artist uploads + reposts sweep that backfills what the stream
+    throttles (minutes to an hour; the daemon runs it daily).
+
+    Returns summary dict: {events_added, uploads_added, duration_ms, total_events}.
     """
     start_ms = time.monotonic()
     _mark_running()
-    logger.info("feed_sync_started (uploads + reposts)")
+    logger.info(f"feed_sync_started (stream{' + sweep' if sweep else ''})")
 
     provider_state = get_web_provider_state()
     if provider_state is None:
         _set_sync_error("SC provider state unavailable (not authenticated)")
         raise RuntimeError("SC provider state unavailable")
 
-    # Uploads have a dedicated per-artist checkpoint. They must not inherit the
-    # adaptive repost cadence, which can stretch to 30 days for quiet artists.
+    try:
+        events_added, uploads_added = sync_from_stream(provider_state)
+        if sweep:
+            swept_events, swept_uploads = _run_sweep(provider_state)
+            events_added += swept_events
+            uploads_added += swept_uploads
+    except Exception as exc:
+        logger.exception("feed_sync_error during stream/sweep")
+        _set_sync_error(str(exc))
+        raise
+
+    _after_ingest(provider_state)
+    duration_ms = int((time.monotonic() - start_ms) * 1000)
+    total_events = _write_success(events_added, duration_ms, sweep)
+    logger.info(
+        f"feed_sync_completed events_added={events_added} "
+        f"uploads_added={uploads_added} sweep={sweep} duration_ms={duration_ms}"
+    )
+    return {
+        "events_added": events_added,
+        "uploads_added": uploads_added,
+        "duration_ms": duration_ms,
+        "total_events": total_events,
+    }
+
+
+def _run_sweep(provider_state: Any) -> tuple[int, int]:
+    """Per-artist sweep of due artists; returns (repost_events, uploads) added."""
     uploads_added = 0
     try:
         due_artists = discovery_queries.get_followed_artists_due_for_upload_check()
@@ -127,18 +161,18 @@ def _fetch_feed_locked() -> dict[str, Any]:
                 f"feed_sync: {len(upload_errors)} artist-level upload errors (continuing)"
             )
     except Exception:
-        # Uploads failure must not block the reposts sync.
+        # Uploads failure must not block the reposts sweep.
         logger.exception("feed_sync_error during sync_followings_uploads (continuing)")
 
-    try:
-        events_added, errors = sync_followings_reposts(provider_state)
-    except Exception as exc:
-        logger.exception("feed_sync_error during sync_followings_reposts")
-        _set_sync_error(str(exc))
-        raise
+    events_added, errors = sync_followings_reposts(provider_state)
+    if errors:
+        logger.warning(f"feed_sync: {len(errors)} artist-level errors (continuing)")
+    return events_added, uploads_added
 
-    # Score newly ingested tracks with Jev before the feed shows them; a
-    # scoring outage must never block the sync or the action drain.
+
+def _after_ingest(provider_state: Any) -> None:
+    """Scoring, SC action drain, likes pull; none may fail the sync."""
+    # Score newly ingested tracks with Jev before the feed shows them.
     try:
         from web.backend.jev_scorer import score_new_tracks
 
@@ -157,17 +191,15 @@ def _fetch_feed_locked() -> dict[str, Any]:
     except Exception:
         logger.exception("feed_sync_error during _sync_sc_likes (continuing)")
 
-    if errors:
-        logger.warning(f"feed_sync: {len(errors)} artist-level errors (continuing)")
 
+def _write_success(events_added: int, duration_ms: int, sweep: bool) -> int:
+    """Record a successful run; returns total repost events."""
+    now_iso = _now_utc().isoformat()
     try:
         with get_db_connection() as conn:
-            total_row = conn.execute(
+            total_events: int = conn.execute(
                 "SELECT COUNT(*) FROM discovery_track_reposters"
-            ).fetchone()
-            total_events: int = total_row[0]
-            duration_ms = int((time.monotonic() - start_ms) * 1000)
-            now_iso = _now_utc().isoformat()
+            ).fetchone()[0]
             conn.execute(
                 """
                 UPDATE sc_feed_sync_state
@@ -176,27 +208,32 @@ def _fetch_feed_locked() -> dict[str, Any]:
                     events_added_last_run = ?,
                     total_events = ?,
                     last_run_duration_ms = ?,
-                    last_error = NULL
+                    last_error = NULL,
+                    sweep_last_run_at = CASE WHEN ? THEN ? ELSE sweep_last_run_at END
                 WHERE id = 1
                 """,
-                (now_iso, events_added, total_events, duration_ms),
+                (now_iso, events_added, total_events, duration_ms, sweep, now_iso),
             )
             conn.commit()
     except Exception as exc:
         logger.exception("feed_sync_error during final state write")
         _set_sync_error(str(exc))
         raise
+    return total_events
 
-    logger.info(
-        f"feed_sync_completed events_added={events_added} "
-        f"uploads_added={uploads_added} duration_ms={duration_ms}"
-    )
-    return {
-        "events_added": events_added,
-        "uploads_added": uploads_added,
-        "duration_ms": duration_ms,
-        "total_events": total_events,
-    }
+
+def _sweep_due() -> bool:
+    with get_db_connection() as conn:
+        row = conn.execute(
+            "SELECT sweep_last_run_at FROM sc_feed_sync_state WHERE id = 1"
+        ).fetchone()
+    raw = row["sweep_last_run_at"] if row else None
+    if not raw:
+        return True
+    try:
+        return _now_utc() - datetime.fromisoformat(raw) >= SWEEP_INTERVAL
+    except ValueError:
+        return True
 
 
 def _set_sync_error(error: str) -> None:
@@ -228,49 +265,11 @@ def start_feed_worker() -> None:
         threading.current_thread().silent_logging = True  # type: ignore[attr-defined]
         while True:
             try:
-                with get_db_connection() as conn:
-                    row = conn.execute(
-                        "SELECT last_run_at, last_run_status FROM sc_feed_sync_state WHERE id = 1"
-                    ).fetchone()
-
-                last_run_at_raw: str | None = row["last_run_at"] if row else None
-                last_status: str | None = row["last_run_status"] if row else None
-
-                should_run = False
-                if last_run_at_raw is None:
-                    should_run = True
-                else:
-                    try:
-                        last_run = datetime.fromisoformat(
-                            last_run_at_raw.replace(" ", "T")
-                        )
-                        if last_run.tzinfo is None:
-                            last_run = last_run.replace(tzinfo=timezone.utc)
-                        age = (_now_utc() - last_run).total_seconds()
-                        should_run = age > 86400  # 24h
-                    except (ValueError, TypeError):
-                        should_run = True
-
-                if should_run:
-                    _feed_lock.acquire(blocking=True)
-                    try:
-                        _fetch_feed_locked()
-                        sleep_secs = 86400
-                    except Exception:
-                        sleep_secs = 3600
-                    finally:
-                        _feed_lock.release()
-                else:
-                    sleep_secs = 3600
-
-                if last_status == "error":
-                    sleep_secs = min(sleep_secs, 3600)
-
-                time.sleep(sleep_secs)
-
+                with _feed_lock:
+                    _fetch_feed_locked(sweep=_sweep_due())
             except Exception:
                 logger.exception("feed worker tick failed")
-                time.sleep(3600)
+            time.sleep(TICK_SECONDS)
 
     threading.Thread(target=_loop, daemon=True, name="sc_feed_worker").start()
     logger.info("feed_sync worker started")
@@ -291,7 +290,7 @@ def _run_manual_sync_thread() -> None:
     """
     threading.current_thread().silent_logging = True  # type: ignore[attr-defined]
     try:
-        _fetch_feed_locked()
+        _fetch_feed_locked(sweep=False)
     except Exception:
         logger.exception("feed_sync: manual sync failed")
     finally:
@@ -299,10 +298,11 @@ def _run_manual_sync_thread() -> None:
 
 
 def run_manual_sync() -> dict[str, Any]:
-    """Start a feed sync in the background. Called from POST /api/soundcloud/feed-sync.
+    """Start a stream-only feed sync in the background.
 
-    A full sync walks every followed artist and takes most of an hour, so it
-    must never run on the request path. Returns the status row (now 'running').
+    Called from POST /api/soundcloud/feed-sync. The stream read takes seconds,
+    but Jev scoring and the likes pull can take minutes, so it still stays
+    off the request path. Returns the status row (now 'running').
     """
     if not _feed_lock.acquire(blocking=False):
         raise HTTPException(
@@ -333,7 +333,8 @@ def _sync_state_row() -> dict[str, Any]:
                    uploads_last_run_at, uploads_last_status, uploads_last_error,
                    uploads_added_last_run, metadata_backfill_cursor,
                    metadata_backfill_status, metadata_backfill_last_error,
-                   metadata_backfill_completed_at
+                   metadata_backfill_completed_at, stream_checkpoint_at,
+                   sweep_last_run_at
             FROM sc_feed_sync_state
             WHERE id = 1
             """
@@ -355,6 +356,8 @@ def _sync_state_row() -> dict[str, Any]:
             "metadata_backfill_status": None,
             "metadata_backfill_last_error": None,
             "metadata_backfill_completed_at": None,
+            "stream_checkpoint_at": None,
+            "sweep_last_run_at": None,
         }
 
     return {
@@ -372,4 +375,6 @@ def _sync_state_row() -> dict[str, Any]:
         "metadata_backfill_status": row["metadata_backfill_status"],
         "metadata_backfill_last_error": row["metadata_backfill_last_error"],
         "metadata_backfill_completed_at": row["metadata_backfill_completed_at"],
+        "stream_checkpoint_at": row["stream_checkpoint_at"],
+        "sweep_last_run_at": row["sweep_last_run_at"],
     }

@@ -22,7 +22,7 @@ def test_manual_sync_returns_before_sync_finishes(
     release = threading.Event()
     finished = threading.Event()
 
-    def slow_sync() -> dict:
+    def slow_sync(sweep: bool) -> dict:
         release.wait(timeout=5)
         finished.set()
         return {}
@@ -53,7 +53,7 @@ def test_manual_sync_releases_lock_after_failure(
 ) -> None:
     done = threading.Event()
 
-    def failing_sync() -> dict:
+    def failing_sync(sweep: bool) -> dict:
         done.set()
         raise RuntimeError("SC down")
 

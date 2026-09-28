@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 65  # index discovery_artists.soundcloud_user_id for the feed
+SCHEMA_VERSION = 66  # SC stream checkpoint + daily sweep timestamp
 
 
 # Initial top 50 curated emojis for music reactions
@@ -3184,6 +3184,14 @@ def migrate_database(conn, current_version: int) -> None:
             """)
         conn.commit()
         logger.info("  ✓ Migration to v65 complete: uploader lookup index")
+
+    if current_version < 66:
+        # Feed sync reads SC's own stream hourly from a checkpoint; the
+        # per-artist sweep that backfills throttled activity runs daily.
+        for column_ddl in ("stream_checkpoint_at TEXT", "sweep_last_run_at TEXT"):
+            _add_column_if_missing(conn, "sc_feed_sync_state", column_ddl)
+        conn.commit()
+        logger.info("  ✓ Migration to v66 complete: SC stream checkpoint")
 
 
 def init_database() -> None:
