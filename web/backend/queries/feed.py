@@ -36,7 +36,7 @@ _LATEST_PRED_CTE = """latest_pred AS (
         )"""
 
 
-def _utc_iso(column: str) -> str:
+def utc_iso(column: str) -> str:
     """SQL that renders any stored timestamp as 'YYYY-MM-DDTHH:MM:SSZ'.
 
     Sources disagree on format: uploads store ISO ('2026-07-01T00:00:00+00:00'),
@@ -141,7 +141,7 @@ def _attach_reposters(
         f"""
         SELECT dt.soundcloud_id, da.id, da.soundcloud_user_id, da.display_name,
                da.slug, da.avatar_url, da.ranking,
-               COALESCE({_utc_iso("dtr.reposted_at")}, {_utc_iso("dtr.seen_at")})
+               COALESCE({utc_iso("dtr.reposted_at")}, {utc_iso("dtr.seen_at")})
                    AS reposted_at,
                dtr.repost_time_precision
         FROM discovery_tracks dt
@@ -254,7 +254,7 @@ def get_feed_page(
         "show_hidden": int(show_hidden),
         "in_library": int(in_library),
         "limit": limit,
-        **_window_params(),
+        **window_params(),
     }
     with get_db_connection() as conn:
         page_ids = [
@@ -267,7 +267,7 @@ def get_feed_page(
     return items
 
 
-def _window_params() -> dict[str, Optional[str]]:
+def window_params() -> dict[str, Optional[str]]:
     """Cutoffs in each column's stored format, so the seen_at index applies."""
     if FEED_WINDOW_DAYS is None:
         return {"since_seen": None, "since_event": None}
@@ -278,12 +278,12 @@ def _window_params() -> dict[str, Optional[str]]:
     }
 
 
-def _window_sql() -> dict[str, str]:
+def window_sql() -> dict[str, str]:
     """Window predicates, emitted only when on: `:x IS NULL OR` defeats indexes."""
     if FEED_WINDOW_DAYS is None:
         return {"release_window": "", "repost_window": "", "repost_in_window": "1"}
     return {
-        "release_window": f"AND {_utc_iso('u.uploaded_at')} >= :since_event",
+        "release_window": f"AND {utc_iso('u.uploaded_at')} >= :since_event",
         "repost_window": "AND dtr.seen_at >= :since_seen",
         "repost_in_window": "dtr.seen_at >= :since_seen",
     }
@@ -296,10 +296,10 @@ def _page_keys_sql(cursor_sql: str, order_sql: str) -> str:
     and only the page's ids get hydrated. Event times must match
     _hydrate_feed_items exactly, since the cursor comes from hydrated rows.
     """
-    window = _window_sql()
+    window = window_sql()
     return f"""
         WITH release_keys AS (
-            SELECT u.soundcloud_id, {_utc_iso("u.uploaded_at")} AS event_at,
+            SELECT u.soundcloud_id, {utc_iso("u.uploaded_at")} AS event_at,
                    da.display_name AS uploader_display_name
             FROM discovery_artists da
             JOIN sc_artist_uploads u ON u.discovery_artist_id = da.id
@@ -310,9 +310,9 @@ def _page_keys_sql(cursor_sql: str, order_sql: str) -> str:
         ),
         repost_keys AS (
             SELECT dt.soundcloud_id,
-                   MAX(COALESCE({_utc_iso("dtr.reposted_at")},
-                                {_utc_iso("dtr.seen_at")},
-                                {_utc_iso("dt.first_seen")})) AS event_at,
+                   MAX(COALESCE({utc_iso("dtr.reposted_at")},
+                                {utc_iso("dtr.seen_at")},
+                                {utc_iso("dt.first_seen")})) AS event_at,
                    COALESCE(uda.display_name, dt.artist_name) AS uploader_display_name
             FROM discovery_artists da
             JOIN discovery_track_reposters dtr ON dtr.discovery_artist_id = da.id
@@ -369,7 +369,7 @@ def _hydrate_feed_items(
     """
     if not page_ids:
         return []
-    window = _window_sql()
+    window = window_sql()
     rows = conn.execute(
         f"""
             WITH release_events AS (
@@ -377,7 +377,7 @@ def _hydrate_feed_items(
                        u.artwork_url, u.permalink_url, u.duration_ms, u.genre,
                        u.access, u.uploaded_at,
                        COALESCE(u.released_at, u.uploaded_at) AS released_at,
-                       {_utc_iso("u.uploaded_at")} AS event_at,
+                       {utc_iso("u.uploaded_at")} AS event_at,
                        da.id AS uploader_artist_id,
                        COALESCE(u.uploader_soundcloud_id, da.soundcloud_user_id)
                            AS uploader_soundcloud_id,
@@ -398,9 +398,9 @@ def _hydrate_feed_items(
                        dt.artwork_url, dt.permalink_url, dt.duration_ms, dt.genre,
                        dt.access, dt.uploaded_at, dt.released_at,
                        MAX(CASE WHEN {window["repost_in_window"]} THEN
-                           COALESCE({_utc_iso("dtr.reposted_at")},
-                                    {_utc_iso("dtr.seen_at")},
-                                    {_utc_iso("dt.first_seen")}) END) AS event_at,
+                           COALESCE({utc_iso("dtr.reposted_at")},
+                                    {utc_iso("dtr.seen_at")},
+                                    {utc_iso("dt.first_seen")}) END) AS event_at,
                        uda.id AS uploader_artist_id,
                        dt.uploader_soundcloud_id,
                        COALESCE(uda.display_name, dt.artist_name) AS uploader_display_name,

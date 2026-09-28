@@ -19,6 +19,7 @@ from loguru import logger
 from music_minion.core.database import get_db_connection
 
 from web.backend import jev_client
+from web.backend.queries import feed as feed_queries
 
 TASTE_PROFILE_PATH = Path(__file__).parent / "data" / "taste-profile.md"
 MAX_REPOSTERS_IN_STATE = 5
@@ -125,17 +126,25 @@ def _track_state_dict(conn: Any, row: Any, now: datetime) -> dict[str, Any]:
     }
 
 
-_CANDIDATES_SQL = """
+def _candidates_sql() -> str:
+    """Undecided, unscored tracks inside the feed's window, newest first.
+
+    Uses the feed's own window predicates so we never pay to score tracks
+    the feed can't show (the April 2026 import holds ~226k stale reposts).
+    """
+    window = feed_queries.window_sql()
+    return f"""
 WITH feed_tracks AS (
     SELECT u.soundcloud_id, u.title, u.genre, u.duration_ms,
            COALESCE(u.released_at, u.uploaded_at) AS released_at,
            1 AS is_release,
            da.display_name AS uploader_name, da.is_following AS uploader_followed,
            da.ranking AS uploader_rank, da.upload_keep_rate, da.upload_rated_count,
-           u.uploaded_at AS seen_order
-    FROM sc_artist_uploads u
-    JOIN discovery_artists da ON da.id = u.discovery_artist_id
+           {feed_queries.utc_iso("u.uploaded_at")} AS seen_order
+    FROM discovery_artists da
+    JOIN sc_artist_uploads u ON u.discovery_artist_id = da.id
     WHERE da.is_following = 1 AND (u.access IS NULL OR u.access = 'playable')
+      {window["release_window"]}
     UNION ALL
     SELECT dt.soundcloud_id, dt.title, dt.genre, dt.duration_ms,
            COALESCE(dt.released_at, dt.uploaded_at) AS released_at,
@@ -143,19 +152,19 @@ WITH feed_tracks AS (
            COALESCE(uda.display_name, dt.artist_name),
            COALESCE(uda.is_following, 0),
            uda.ranking, uda.upload_keep_rate, uda.upload_rated_count,
-           dt.first_seen
-    FROM discovery_tracks dt
+           MAX(COALESCE({feed_queries.utc_iso("dtr.reposted_at")},
+                        {feed_queries.utc_iso("dtr.seen_at")},
+                        {feed_queries.utc_iso("dt.first_seen")}))
+    FROM discovery_artists da
+    JOIN discovery_track_reposters dtr ON dtr.discovery_artist_id = da.id
+    JOIN discovery_tracks dt ON dt.id = dtr.discovery_track_id
     LEFT JOIN discovery_artists uda
       ON uda.soundcloud_user_id = dt.uploader_soundcloud_id
-    WHERE (dt.access IS NULL OR dt.access = 'playable')
-      AND EXISTS (
-          SELECT 1 FROM discovery_track_reposters dtr
-          JOIN discovery_artists da
-            ON da.id = dtr.discovery_artist_id AND da.is_following = 1
-          WHERE dtr.discovery_track_id = dt.id
-      )
+    WHERE da.is_following = 1 AND (dt.access IS NULL OR dt.access = 'playable')
+      {window["repost_window"]}
+    GROUP BY dt.id
 )
-SELECT * FROM feed_tracks f
+SELECT f.*, MAX(f.seen_order) AS latest_seen FROM feed_tracks f
 WHERE NOT EXISTS (
       SELECT 1 FROM sc_track_decisions d
       WHERE d.soundcloud_id = f.soundcloud_id AND d.is_current = 1
@@ -167,8 +176,7 @@ WHERE NOT EXISTS (
         AND sp.taste_profile_version = :profile_version
   )
 GROUP BY f.soundcloud_id
-ORDER BY f.seen_order DESC
-LIMIT :limit
+ORDER BY latest_seen DESC
 """
 
 
@@ -196,11 +204,18 @@ def _insert_prediction(
     )
 
 
-def score_new_tracks(limit: int = 200, sleep_s: float = 0.1) -> int:
-    """Score undecided, not-yet-scored feed tracks; returns tracks scored."""
+def score_new_tracks(sleep_s: float = 0.1) -> int:
+    """Score every undecided, not-yet-scored track in the feed window.
+
+    Uncapped: ~250 tracks arrive per day, and the window bounds the worst
+    case (a taste-profile edit rescoring ~7k tracks) to roughly 35 minutes.
+    Returns tracks scored.
+    """
     config = jev_client.get_jev_config()
     if config is None:
-        logger.info("jev: no JEV_API_KEY configured, skipping feed scoring")
+        logger.warning(
+            "jev: no JEV_API_KEY or OPENROUTER_API_KEY, skipping feed scoring"
+        )
         return 0
     profile = load_taste_profile()
     if profile is None:
@@ -211,11 +226,11 @@ def score_new_tracks(limit: int = 200, sleep_s: float = 0.1) -> int:
     scored = failed = 0
     with get_db_connection() as conn:
         rows = conn.execute(
-            _CANDIDATES_SQL,
+            _candidates_sql(),
             {
                 "model_id": config.model_id,
                 "profile_version": profile_version,
-                "limit": limit,
+                **feed_queries.window_params(),
             },
         ).fetchall()
         for row in rows:

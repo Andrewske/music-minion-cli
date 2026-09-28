@@ -31,7 +31,7 @@ rsync -avz --delete \
   ./ piserver:~/music-minion/
 
 echo "Rebuilding containers on Pi..."
-ssh piserver "cd ~/music-minion/docker/pi-deployment && docker compose up -d --build"
+ssh piserver "cd ~/music-minion/docker/pi-deployment && docker compose --env-file ../../.env up -d --build"
 
 echo ""
 echo "Done! Access at: https://music.piserver:8443"

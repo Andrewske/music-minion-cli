@@ -204,8 +204,12 @@ def test_build_state_includes_profile_and_semantics(db_path) -> None:
     conn = _conn(db_path)
     _seed_repost_track(conn)
     row = conn.execute(
-        jev_scorer._CANDIDATES_SQL,
-        {"model_id": "m", "profile_version": "v", "limit": 10},
+        jev_scorer._candidates_sql(),
+        {
+            "model_id": "m",
+            "profile_version": "v",
+            **feed_queries.window_params(),
+        },
     ).fetchone()
     from datetime import datetime, timezone
 
@@ -289,6 +293,40 @@ def test_score_new_tracks_survives_one_failure(
 
     monkeypatch.setattr(jev_client, "ask_noul", flaky)
     assert jev_scorer.score_new_tracks(sleep_s=0) == 1
+
+
+def test_score_new_tracks_skips_tracks_outside_feed_window(
+    db_path, configured, monkeypatch
+) -> None:
+    monkeypatch.setattr("web.backend.queries.feed.FEED_WINDOW_DAYS", 90)
+    conn = _conn(db_path)
+    _seed_repost_track(conn, sc_id="stale")  # seen_at NULL: never in window
+    conn.execute(
+        """INSERT INTO discovery_tracks
+        (id, soundcloud_id, title, access, first_seen)
+        VALUES (2, 'fresh', 'Fresh', 'playable', datetime('now'))"""
+    )
+    conn.execute(
+        """INSERT INTO discovery_track_reposters
+        (discovery_track_id, discovery_artist_id, seen_at)
+        VALUES (2, 1, datetime('now'))"""
+    )
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(
+        jev_client,
+        "ask_noul",
+        lambda config, state, question, timeout_s=10.0: JevPrediction(
+            0.5, None, config.model_id, {}
+        ),
+    )
+    assert jev_scorer.score_new_tracks(sleep_s=0) == 1
+    conn = _conn(db_path)
+    scored = [
+        r[0] for r in conn.execute("SELECT soundcloud_id FROM sc_track_predictions")
+    ]
+    conn.close()
+    assert scored == ["fresh"]
 
 
 def test_score_new_tracks_without_config_is_noop(db_path, monkeypatch) -> None:
