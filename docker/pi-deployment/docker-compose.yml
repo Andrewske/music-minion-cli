@@ -12,6 +12,10 @@ services:
       - /home/kevin/.local/share/music-minion:/root/.local/share/music-minion  # DB (Syncthing)
     environment:
       - ALLOWED_ORIGINS=https://music.piserver:8443
+      # Jev feed scoring. Interpolated from ../../.env via `--env-file` (see
+      # scripts/deploy-to-pi.sh); don't env_file that whole .env in, its
+      # DATABASE_URL would switch the app off SQLite.
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8642/health"]
       interval: 30s
