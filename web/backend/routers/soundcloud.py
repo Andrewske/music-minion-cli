@@ -1319,20 +1319,15 @@ async def get_match_candidate_stats(db=Depends(get_db)) -> MatchCandidateStatsRe
 # ============================================================================
 
 
-@router.post("/feed-sync")
-async def trigger_feed_sync() -> dict:
-    """Manually trigger a SoundCloud feed-noise sync.
+@router.post("/feed-sync", status_code=202)
+def trigger_feed_sync() -> dict:
+    """Start a SoundCloud feed sync in the background.
 
-    Iterates followed artists due for a check, fetches their recent reposts
-    via /users/{id}/reposts/tracks, and writes reposter rows into
-    discovery_track_reposters with seen_at=now.
-
-    Returns:
-        {events_added, duration_ms, total_events}
+    Returns immediately with the sc_feed_sync_state row (last_run_status
+    'running'); poll GET /feed-sync/status for completion.
 
     Raises:
-        HTTPException 429: Sync already in progress (daemon holds lock)
-        HTTPException 503: SC rate-limited or upstream error
+        HTTPException 429: Sync already in progress (daemon or manual run)
     """
     from web.backend.sc_feed_worker import run_manual_sync
 

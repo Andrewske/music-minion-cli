@@ -69,7 +69,7 @@ export function SyncStatusHeader(): ReactElement {
           disabled={isRunning}
           className="gap-1.5 font-sf-mono text-xs shrink-0"
         >
-          <RefreshCw className={`w-3 h-3 ${syncMut.isPending ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-3 h-3 ${isRunning ? 'animate-spin' : ''}`} />
           Sync now
         </Button>
       </div>
