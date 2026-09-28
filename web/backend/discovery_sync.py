@@ -14,6 +14,7 @@ from music_minion.core.database import get_db_connection
 import requests
 
 from music_minion.domain.library.providers.soundcloud.api import (
+    MAX_REPOSTS_PAGES,
     _ensure_valid_token,
     add_track_to_playlist,
     get_tracks_by_ids,
@@ -144,13 +145,12 @@ def sync_followings_reposts(
     state: Any,
     progress_callback: Optional[Callable[[str, int, int], None]] = None,
 ) -> tuple[int, list[str]]:
-    """Lightweight sync: fetch reposts from all followed artists due for a check,
+    """Sweep followed artists due for a repost check (newest page each) and
     write rows to discovery_track_reposters with seen_at=now.
 
-    Used for feed-noise metric tracking on the Artists page. Does NOT trigger
-    playlist reorder, slot-cap selection, or push to SC. Inherits the adaptive
-    check_interval_days cadence from the existing discovery pipeline, so quiet
-    artists get checked less often.
+    Backfills what SoundCloud's stream (feed_stream_sync) throttles away.
+    Cadence adapts per artist: a check that finds no new actor/track pair
+    doubles check_interval_days (cap 30); any new pair resets it to 1.
 
     Returns (events_added, errors).
     """
@@ -164,55 +164,46 @@ def sync_followings_reposts(
     # playlist-building path, but that filter drops attribution for tracks
     # reposted by multiple followed artists.
     state, artist_tracks, errors = _fetch_all_reposts(
-        state, artists, set(), progress_callback
+        state, artists, set(), progress_callback, max_pages=1, update_cadence=False
     )
 
-    all_fetched: list[dict[str, Any]] = []
-    for artist_id, tracks in artist_tracks.items():
-        for track in tracks:
-            all_fetched.append({**track, "artist_id": artist_id})
-
-    if not all_fetched:
-        logger.info(
-            f"sync_followings_reposts: checked {len(artists)} artists, 0 new reposts"
-        )
-        return 0, errors
-
-    discovery_records = [track_metadata(t) for t in all_fetched]
-    discovery_queries.insert_discovery_tracks(discovery_records)
-
-    sc_ids_fetched = [str(t["id"]) for t in all_fetched]
+    all_fetched = [t for tracks in artist_tracks.values() for t in tracks]
+    discovery_queries.insert_discovery_tracks([track_metadata(t) for t in all_fetched])
     sc_id_to_discovery_id = discovery_queries.get_discovery_track_ids_by_sc_ids(
-        sc_ids_fetched
+        [str(t["id"]) for t in all_fetched]
     )
 
-    reposter_links: list[tuple[int, int, Optional[str], Optional[str], str]] = []
-    for track in all_fetched:
-        sc_id = str(track["id"])
-        discovery_track_id = sc_id_to_discovery_id.get(sc_id)
-        if discovery_track_id is None:
-            continue
-        artist_id = track.get("artist_id")
-        if artist_id is None:
-            continue
-        reposted_at = raw_repost_timestamp(track)
-        reposter_links.append(
-            (
-                discovery_track_id,
-                artist_id,
-                reposted_at,
-                reposted_at,
-                "exact" if reposted_at else "approximate",
-            )
+    events_added = 0
+    for artist_id, tracks in artist_tracks.items():
+        added = discovery_queries.insert_track_reposters(
+            _reposter_links(artist_id, tracks, sc_id_to_discovery_id)
         )
-
-    events_added = discovery_queries.insert_track_reposters(reposter_links)
+        discovery_queries.update_artist_last_checked(artist_id, added)
+        events_added += added
 
     logger.info(
         f"sync_followings_reposts: checked {len(artists)} artists, "
-        f"{len(all_fetched)} reposts fetched, {len(reposter_links)} attributed"
+        f"{len(all_fetched)} reposts fetched, {events_added} new"
     )
     return events_added, errors
+
+
+def _reposter_links(
+    artist_id: int,
+    tracks: list[dict[str, Any]],
+    sc_id_to_discovery_id: dict[str, int],
+) -> list[tuple[int, int, Optional[str], Optional[str], str]]:
+    links = []
+    for track in tracks:
+        discovery_track_id = sc_id_to_discovery_id.get(str(track["id"]))
+        if discovery_track_id is None:
+            continue
+        reposted_at = raw_repost_timestamp(track)
+        precision = "exact" if reposted_at else "approximate"
+        links.append(
+            (discovery_track_id, artist_id, reposted_at, reposted_at, precision)
+        )
+    return links
 
 
 def _fetch_all_reposts(
@@ -220,6 +211,8 @@ def _fetch_all_reposts(
     artists: list[dict[str, Any]],
     seen_ids: set[str],
     progress_callback: Optional[Callable[[str, int, int], None]] = None,
+    max_pages: int = MAX_REPOSTS_PAGES,
+    update_cadence: bool = True,
 ) -> tuple[Any, dict[int, list[dict[str, Any]]], list[str]]:
     """Fetch reposts from all ranked artists.
 
@@ -228,6 +221,9 @@ def _fetch_all_reposts(
         artists: ranked artist dicts with 'id', 'soundcloud_user_id', 'slug', etc.
         seen_ids: set of SC track IDs already seen (for dedup)
         progress_callback: optional fn(message, current, total) for progress updates
+        max_pages: repost pages per artist
+        update_cadence: advance last_checked here from the unseen count; callers
+            that can count genuinely new events do it themselves instead
 
     Returns:
         (updated_state, {artist_id: [track_dicts]}, errors_list)
@@ -251,7 +247,9 @@ def _fetch_all_reposts(
 
         while retries <= 3:
             try:
-                state, reposts, api_error = get_user_reposts(state, sc_user_id)
+                state, reposts, api_error = get_user_reposts(
+                    state, sc_user_id, max_pages=max_pages
+                )
                 if api_error:
                     if "Rate limited" in api_error:
                         raise Exception(api_error)  # Trigger retry logic
@@ -260,7 +258,8 @@ def _fetch_all_reposts(
                     break
                 unseen = [t for t in reposts if str(t.get("id", "")) not in seen_ids]
                 artist_tracks[artist_id] = unseen
-                discovery_queries.update_artist_last_checked(artist_id, len(unseen))
+                if update_cadence:
+                    discovery_queries.update_artist_last_checked(artist_id, len(unseen))
                 break
             except Exception as exc:
                 err_str = str(exc)

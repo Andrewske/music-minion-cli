@@ -1215,7 +1215,10 @@ MAX_REPOSTS_PAGES = 3  # Cap pagination per artist (600 reposts max)
 
 
 def get_user_reposts(
-    state: ProviderState, user_id: str, limit: int = 200
+    state: ProviderState,
+    user_id: str,
+    limit: int = 200,
+    max_pages: int = MAX_REPOSTS_PAGES,
 ) -> tuple[ProviderState, list[dict[str, Any]], Optional[str]]:
     """Fetch a user's track reposts from SoundCloud, paginated up to MAX_REPOSTS_PAGES.
 
@@ -1227,6 +1230,7 @@ def get_user_reposts(
         state: Current provider state
         user_id: SoundCloud user ID (numeric string)
         limit: Page size (1-200, default 200)
+        max_pages: Page cap (the incremental sweep only needs the newest page)
 
     Returns:
         (updated_state, tracks_list, error_message_or_None)
@@ -1238,7 +1242,7 @@ def get_user_reposts(
     results: list[dict[str, Any]] = []
     pages = 0
 
-    while url and pages < MAX_REPOSTS_PAGES:
+    while url and pages < max_pages:
         pages += 1
         try:
             state, response = _request_with_backoff(state, "GET", url, params=params)
@@ -1274,6 +1278,55 @@ def get_user_reposts(
         f"Fetched {len(results)} reposts for user {user_id} across {pages} page(s)"
     )
     return state, results, None
+
+
+def get_feed_tracks(
+    state: ProviderState, since: datetime, max_pages: int = 50
+) -> tuple[ProviderState, list[dict[str, Any]], Optional[str]]:
+    """Fetch the authenticated user's stream (GET /me/feed/tracks) back to `since`.
+
+    Items are newest-first activities: {type: 'track' | 'track:repost',
+    created_at, origin: <track>, reposter?: 'soundcloud:users:<id>'}. For
+    reposts created_at is the exact repost time. Stops at the first page that
+    reaches `since`; callers filter the older items on that page.
+
+    Returns:
+        (updated_state, items, error_message_or_None). On error, items holds
+        what was fetched so far and must not advance any checkpoint.
+    """
+    url: Optional[str] = f"{API_BASE_URL}/me/feed/tracks"
+    params: dict[str, Any] = {"limit": 200, "linked_partitioning": "true"}
+    items: list[dict[str, Any]] = []
+    for _page in range(max_pages):
+        try:
+            state, response = _request_with_backoff(state, "GET", url, params=params)
+            data = response.json()
+        except HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else 0
+            return state, items, f"HTTP {status}"
+        except requests.exceptions.RequestException as exc:
+            return state, items, f"Network error: {exc}"
+        except (json.JSONDecodeError, ValueError):
+            return state, items, "Invalid JSON response"
+
+        page = data.get("collection", []) or []
+        items.extend(page)
+        url = data.get("next_href")
+        params = {}  # next_href already contains pagination params
+        if not page or not url or _feed_item_before(page[-1], since):
+            return state, items, None
+    logger.warning(f"get_feed_tracks: hit {max_pages}-page cap before {since}")
+    return state, items, None
+
+
+def _feed_item_before(item: dict[str, Any], since: datetime) -> bool:
+    raw = item.get("created_at")
+    if not isinstance(raw, str):
+        return False
+    try:
+        return datetime.strptime(raw, "%Y/%m/%d %H:%M:%S %z") < since
+    except ValueError:
+        return False
 
 
 MAX_UPLOAD_PAGES = 2  # Cap pagination per artist (400 uploads max on backfill)

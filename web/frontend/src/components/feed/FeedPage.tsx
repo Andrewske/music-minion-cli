@@ -364,7 +364,7 @@ export function FeedPage(): JSX.Element {
         </button>
 
         <div className="ml-auto flex items-center gap-1 text-xs text-white/40">
-          <span>Synced {formatLastSync(syncStatus?.uploads_last_run_at ?? syncStatus?.last_run_at)}</span>
+          <span>Synced {formatLastSync(syncStatus?.last_run_at)}</span>
           <button type="button" onClick={() => syncMutation.mutate()} disabled={feedSyncRunning} aria-label="Sync feed now" className="rounded p-2 text-white/60 hover:bg-white/5 hover:text-white disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent">
             <RefreshCw className={`h-4 w-4 ${feedSyncRunning ? 'animate-spin' : ''}`} />
           </button>
