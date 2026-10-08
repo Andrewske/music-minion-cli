@@ -102,9 +102,9 @@ def extract_track_metadata(local_path: str) -> Track:
         # ID3 (MP3), MP4, and Vorbis/Opus tags (lowercase)
         title = get_tag_value(audio_file, ["TIT2", "\xa9nam", "TITLE", "title"])
         artist = get_tag_value(audio_file, ["TPE1", "\xa9ART", "ARTIST", "artist"])
-        remix_artist = get_tag_value(
-            audio_file, ["TPE4", "TPE2", "albumartist"]
-        )  # Remix artist (TPE4) or Album artist (TPE2/albumartist)
+        # Remixer only. Album artist (TPE2) is NOT a remixer: the library sets
+        # TPE2="Kevin" on downloads, which polluted remix_artist.
+        remix_artist = get_tag_value(audio_file, ["TPE4", "REMIXER", "remixer"])
         album = get_tag_value(audio_file, ["TALB", "\xa9alb", "ALBUM", "album"])
         genre = get_tag_value(audio_file, ["TCON", "\xa9gen", "GENRE", "genre"])
 

@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tracks"],
+  "properties": {
+    "tracks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "base_title", "artists", "featured", "remixers", "version", "confidence", "notes"],
+        "properties": {
+          "id": {"type": "string"},
+          "base_title": {"type": "string"},
+          "artists": {"type": "array", "items": {"type": "string"}},
+          "featured": {"type": "array", "items": {"type": "string"}},
+          "remixers": {"type": "array", "items": {"type": "string"}},
+          "version": {"type": ["string", "null"]},
+          "confidence": {"type": "number"},
+          "notes": {"type": "string"}
+        }
+      }
+    }
+  }
+}
