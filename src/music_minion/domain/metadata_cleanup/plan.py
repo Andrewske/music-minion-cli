@@ -85,3 +85,30 @@ def tag_changes(
         for key, value in new.items()
         if current.get(key, "").strip() != value
     }
+
+
+def build_change(
+    track_id: str, current: dict[str, str], final: Row, sep: Separators
+) -> Row | None:
+    """A write instruction for apply.apply_changes, or None if tags already match."""
+    diff = tag_changes(current, to_tags(final, sep))
+    if not diff:
+        return None
+    new = {**current, **{key: value for key, (_, value) in diff.items()}}
+    return {"id": track_id, "diff": diff, "new": new}
+
+
+_HEDGE_RE = re.compile(
+    r"\b(assum|infer|guess|unclear|unsure|uncertain|not (identified|confirmed))",
+    re.IGNORECASE,
+)
+
+
+def is_hedged(notes: str) -> bool:
+    """Model notes that admit a guess ("Assuming X is the artist") need a human."""
+    return bool(_HEDGE_RE.search(notes or ""))
+
+
+def gate(row: Row) -> Row:
+    """Auto-apply only when both runs agree AND neither run hedged."""
+    return {**row, "auto": row["auto"] and not is_hedged(row["notes"])}

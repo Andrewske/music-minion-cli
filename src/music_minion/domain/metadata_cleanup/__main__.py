@@ -1,4 +1,4 @@
-"""CLI: extract | gold | clean | eval | review | apply | restore.
+"""CLI: extract | gold | clean | eval | review | apply | restore | ingest.
 
 uv run python -m music_minion.domain.metadata_cleanup extract --year 2026
 uv run python -m music_minion.domain.metadata_cleanup gold
@@ -7,6 +7,9 @@ uv run python -m music_minion.domain.metadata_cleanup eval <run_dir>
 uv run python -m music_minion.domain.metadata_cleanup review [--mode apply]
 uv run python -m music_minion.domain.metadata_cleanup apply [--write]
 uv run python -m music_minion.domain.metadata_cleanup restore <backup_dir>
+uv run python -m music_minion.domain.metadata_cleanup ingest   # nightly, new files only
+uv run python -m music_minion.domain.metadata_cleanup review --mode pending
+uv run python -m music_minion.domain.metadata_cleanup apply --pending --write
 """
 
 import argparse
@@ -18,40 +21,27 @@ from loguru import logger
 
 from music_minion.domain.metadata_cleanup import apply as apply_mod
 from music_minion.domain.metadata_cleanup import (
-    batching,
     evaluate,
     gold,
+    ingest,
     plan,
     records,
     review,
 )
+from music_minion.domain.metadata_cleanup.codex_runner import CodexSettings
+from music_minion.domain.metadata_cleanup.pipeline import (
+    RECORDS_DIR,
+    RUNS_DIR,
+    clean_rows,
+    raw_records,
+    resolve,
+    scan,
+)
 from music_minion.domain.metadata_cleanup.render import DEFAULT_SEPARATORS
-from music_minion.domain.metadata_cleanup.normalize import normalize_proposal
-from music_minion.domain.metadata_cleanup.codex_runner import CodexSettings, run_batches
-from music_minion.domain.metadata_cleanup.soundcloud_fetch import fetch_all
-
-RECORDS_DIR = records.WORK_DIR / "records"
-RUNS_DIR = records.WORK_DIR / "runs"
-SC_CACHE = records.WORK_DIR / "soundcloud-cache.json"
-
-
-def _scan(folder: Path) -> list[tuple[Path, dict[str, str]]]:
-    return [(path, records.read_tags(path)) for path in records.list_mp3s(folder)]
-
-
-def _resolve(scanned: list[tuple[Path, dict[str, str]]]) -> dict[str, dict | None]:
-    urls = sorted({tags["source_url"] for _, tags in scanned if "source_url" in tags})
-    logger.info(f"Resolving {len(urls)} SoundCloud permalinks (cached where possible)")
-    return fetch_all(urls, SC_CACHE)
 
 
 def cmd_extract(args: argparse.Namespace) -> None:
-    scanned = _scan(records.MUSIC_ROOT / args.year)
-    sc = _resolve(scanned)
-    rows = [
-        records.build_record(path, tags, sc.get(tags.get("source_url", "")), raw=True)
-        for path, tags in scanned
-    ]
+    rows = raw_records(scan(records.MUSIC_ROOT / args.year))
     count = records.write_jsonl(RECORDS_DIR / f"{args.year}.jsonl", rows)
     with_sc = sum(1 for row in rows if row["soundcloud"])
     logger.info(f"Wrote {count} records ({with_sc} with SoundCloud data)")
@@ -69,10 +59,10 @@ def cmd_gold(args: argparse.Namespace) -> None:
     scanned = [
         item
         for year in gold.FIXED_MONTHS
-        for item in _scan(records.MUSIC_ROOT / year)
+        for item in scan(records.MUSIC_ROOT / year)
         if gold.is_fixed_month(records.track_id(item[0])) and "source_url" in item[1]
     ]
-    sc = _resolve(scanned)
+    sc = resolve(scanned)
     rows = [_gold_row(path, tags, sc.get(tags["source_url"])) for path, tags in scanned]
     kept = [row for row in rows if row]
     records.write_jsonl(RECORDS_DIR / "gold.jsonl", kept)
@@ -81,16 +71,11 @@ def cmd_gold(args: argparse.Namespace) -> None:
     )
 
 
-def _sort_key(record: dict) -> str:
-    sc = record.get("soundcloud") or {}
-    return (sc.get("uploader") or record["filename"]).casefold()
-
-
-def _new_run_dir(args: argparse.Namespace, batch_count: int) -> Path:
+def _new_run_dir(args: argparse.Namespace) -> Path:
     run_dir = RUNS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}-{args.input}-{args.label}"
     run_dir.mkdir(parents=True)
     settings = CodexSettings(args.model, args.reasoning, not args.no_web_search)
-    config = {**vars(args), "settings": settings.__dict__, "batches": batch_count}
+    config = {**vars(args), "settings": settings.__dict__}
     (run_dir / "config.json").write_text(json.dumps(config, indent=1, default=str))
     return run_dir
 
@@ -106,29 +91,16 @@ def cmd_clean(args: argparse.Namespace) -> None:
     resume = Path(args.resume) if args.resume else None
     existing = _existing_proposals(resume)
     done = {proposal["id"] for proposal in existing}
-    rows = sorted(
-        records.read_jsonl(RECORDS_DIR / f"{args.input}.jsonl"), key=_sort_key
-    )
+    rows = records.read_jsonl(RECORDS_DIR / f"{args.input}.jsonl")
     rows = [row for row in rows if row["id"] not in done]
     rows = rows[: args.limit] if args.limit else rows
-    batches = batching.make_batches(rows, args.batch_size)
-    run_dir = resume or _new_run_dir(args, len(batches))
-    logger.info(f"{len(rows)} tracks in {len(batches)} batches -> {run_dir}")
+    run_dir = resume or _new_run_dir(args)
     settings = CodexSettings(args.model, args.reasoning, not args.no_web_search)
-    results = run_batches(batches, settings, args.workers)
+    new, results = clean_rows(rows, settings, args.batch_size, args.workers)
     batch_log = "batches-resume.jsonl" if resume else "batches.jsonl"
     records.write_jsonl(run_dir / batch_log, results)
-    uploaders = {r["id"]: (r.get("soundcloud") or {}).get("uploader") for r in rows}
-    proposals = existing + [
-        normalize_proposal(track, uploaders.get(track["id"]))
-        for result in results
-        for track in result["tracks"]
-        if track["id"] in uploaders  # drop ids the model mangled
-    ]
-    records.write_jsonl(run_dir / "proposals.jsonl", proposals)
-    logger.info(
-        f"{len(proposals)} proposals in run ({len(proposals) - len(existing)} new)"
-    )
+    records.write_jsonl(run_dir / "proposals.jsonl", existing + new)
+    logger.info(f"{len(existing) + len(new)} proposals in {run_dir} ({len(new)} new)")
 
 
 def _load_gold() -> list[dict]:
@@ -187,7 +159,15 @@ def _apply_rows(year: str, run_a: Path, run_b: Path) -> list[dict]:
 
 def cmd_review(args: argparse.Namespace) -> None:
     """Gold mode shows raw gold (not corrected) so every original mismatch shows."""
-    if args.mode == "apply":
+    if args.mode == "pending":
+        session = review.ReviewSession(
+            mode="apply",
+            title="pending from nightly ingest",
+            rows=ingest.pending_rows(ingest.load_ledger()),
+            decisions_path=ingest.PENDING_DECISIONS_PATH,
+            labels={"left": "Current tags", "a": "Run A", "b": "Run B"},
+        )
+    elif args.mode == "apply":
         run_a, run_b = _apply_runs(args)
         rows = [
             {**row, "left": row["current"]}
@@ -227,13 +207,12 @@ def _planned_changes(args: argparse.Namespace) -> tuple[list[dict], dict[str, in
             counts["kept" if decision else "undecided"] += 1
             continue
         current = apply_mod.read_current(records.MUSIC_ROOT / row["id"])
-        diff = plan.tag_changes(current, plan.to_tags(final, DEFAULT_SEPARATORS))
-        if not diff:
+        change = plan.build_change(row["id"], current, final, DEFAULT_SEPARATORS)
+        if change is None:
             counts["unchanged"] += 1
             continue
         counts["reviewed" if decision else "auto"] += 1
-        new = {**current, **{key: new for key, (_, new) in diff.items()}}
-        changes.append({"id": row["id"], "diff": diff, "new": new})
+        changes.append(change)
     return changes, counts
 
 
@@ -248,6 +227,10 @@ def _render_diff(changes: list[dict]) -> str:
 
 def cmd_apply(args: argparse.Namespace) -> None:
     """Dry run by default: writes the diff to a file. --write changes the MP3s."""
+    if args.pending:
+        sync_url = None if args.no_sync else ingest.DEFAULT_SYNC_URL
+        logger.info(f"Pending: {ingest.resolve_pending(args.write, sync_url)}")
+        return
     changes, counts = _planned_changes(args)
     diff_path = records.WORK_DIR / f"apply-{args.year}-diff.txt"
     diff_path.write_text(_render_diff(changes))
@@ -263,6 +246,15 @@ def cmd_apply(args: argparse.Namespace) -> None:
         "Syncthing will carry the files to the pi; then refresh its DB with "
         "`curl -k -X POST https://music.piserver:8443/api/sync`"
     )
+
+
+def cmd_ingest(args: argparse.Namespace) -> None:
+    """Nightly hook: clean tracks downloaded since the last run."""
+    if args.bootstrap:
+        logger.info(f"Ledger now holds {ingest.bootstrap(args.year)} tracks")
+        return
+    settings = CodexSettings(args.model, args.reasoning, True)
+    ingest.run_ingest(args.year, settings, None if args.no_sync else args.sync_url)
 
 
 def cmd_restore(args: argparse.Namespace) -> None:
@@ -287,7 +279,9 @@ def build_parser() -> argparse.ArgumentParser:
     clean.add_argument("--resume", help="existing run dir; only run its missing tracks")
     sub.add_parser("eval").add_argument("run_dir")
     review_cmd = sub.add_parser("review")
-    review_cmd.add_argument("--mode", choices=("gold", "apply"), default="gold")
+    review_cmd.add_argument(
+        "--mode", choices=("gold", "apply", "pending"), default="gold"
+    )
     review_cmd.add_argument("--year", default="2026")
     review_cmd.add_argument("--runs", nargs="+", help="gold: 1 run dir; apply: 2")
     review_cmd.add_argument("--port", type=int, default=8765)
@@ -295,6 +289,15 @@ def build_parser() -> argparse.ArgumentParser:
     apply_cmd.add_argument("--year", default="2026")
     apply_cmd.add_argument("--runs", nargs=2, help="run A and run B dirs")
     apply_cmd.add_argument("--write", action="store_true")
+    apply_cmd.add_argument("--pending", action="store_true", help="nightly queue")
+    apply_cmd.add_argument("--no-sync", action="store_true")
+    ingest_cmd = sub.add_parser("ingest")
+    ingest_cmd.add_argument("--year", default=str(datetime.now().year))
+    ingest_cmd.add_argument("--bootstrap", action="store_true")
+    ingest_cmd.add_argument("--model", default="gpt-6-luna")
+    ingest_cmd.add_argument("--reasoning", default="medium")
+    ingest_cmd.add_argument("--sync-url", default=ingest.DEFAULT_SYNC_URL)
+    ingest_cmd.add_argument("--no-sync", action="store_true")
     sub.add_parser("restore").add_argument("backup_dir")
     return parser
 
@@ -307,6 +310,7 @@ COMMANDS = {
     "review": cmd_review,
     "apply": cmd_apply,
     "restore": cmd_restore,
+    "ingest": cmd_ingest,
 }
 
 if __name__ == "__main__":
