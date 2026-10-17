@@ -10,14 +10,11 @@ from typing import Any, Callable, NamedTuple
 
 from loguru import logger
 
-from ...core import database
 from ...core.output import log
 from ...domain.library import providers
 from ...domain.library.provider import ProviderConfig
 from . import crud
 from .matching import (
-    MIN_CONFIDENCE_THRESHOLD,
-    MatchCandidate,
     batch_score_candidates,
     generate_search_queries,
 )
@@ -171,45 +168,6 @@ def match_spotify_tracks_to_soundcloud(
     return soundcloud_provider_state, matches
 
 
-def import_soundcloud_tracks_to_db(matches: list[TrackMatch]) -> int:
-    """Import matched SoundCloud tracks to database.
-
-    Args:
-        matches: List of TrackMatch objects with matched=True
-
-    Returns:
-        Number of tracks successfully imported
-    """
-    matched_tracks = [m for m in matches if m.matched and m.soundcloud_id]
-
-    if not matched_tracks:
-        return 0
-
-    # Build track data for batch insert
-    track_data = []
-    for match in matched_tracks:
-        track_data.append(
-            (
-                match.soundcloud_id,
-                {
-                    "title": match.soundcloud_title,
-                    "artist": match.soundcloud_artist,
-                    # Duration and other metadata would come from original search results
-                    # For now, we'll let the database handle missing fields
-                },
-            )
-        )
-
-    try:
-        with database.get_db_connection() as conn:
-            database.batch_insert_provider_tracks(conn, "soundcloud", track_data)
-        logger.info(f"Imported {len(track_data)} SoundCloud tracks to database")
-        return len(track_data)
-    except Exception as e:
-        logger.exception(f"Failed to import SoundCloud tracks to database: {e}")
-        return 0
-
-
 def create_soundcloud_playlist(
     soundcloud_provider_state: Any,
     playlist_name: str,
@@ -359,10 +317,6 @@ def convert_spotify_to_soundcloud(
                 ],
                 error_message="No tracks matched",
             )
-
-        # Import matched tracks to database
-        # Note: This step may be skipped if tracks are already in DB
-        # import_soundcloud_tracks_to_db(matches)
 
         # Create SoundCloud playlist and add tracks
         log("📝 Creating SoundCloud playlist...", level="info")

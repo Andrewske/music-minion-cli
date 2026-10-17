@@ -73,7 +73,6 @@ def _handle_web_winner_command(ctx: AppContext) -> tuple[AppContext, bool]:
     Returns:
         (updated_context, should_continue)
     """
-    from datetime import datetime
 
     if ctx.active_web_mode == "builder":
         # Builder mode: Broadcast message to web clients
@@ -101,8 +100,8 @@ def _handle_web_archive_command(ctx: AppContext) -> tuple[AppContext, bool]:
     Handle web-archive command with context-aware routing.
 
     Routes based on active_web_mode:
-    - builder: Broadcast builder:skip message to web clients
-    - comparison: Execute existing comparison archive logic
+    - builder: builder:skip is broadcast to web clients (by ipc/server.py)
+    - comparison: comparison:loser is broadcast; frontend archives the loser
     - None: Log warning
 
     Args:
@@ -111,17 +110,17 @@ def _handle_web_archive_command(ctx: AppContext) -> tuple[AppContext, bool]:
     Returns:
         (updated_context, should_continue)
     """
-    from datetime import datetime
 
     if ctx.active_web_mode == "builder":
-        # Builder mode: Broadcast message to web clients
+        # Builder mode: ipc/server.py broadcasts builder:skip after this returns;
+        # the frontend performs the skip via the builder API
         log("⏭  Track skipped", level="info")
         logger.info(f"web-archive: builder mode, playlist_id={ctx.active_builder_playlist_id}")
         return ctx, True
 
     elif ctx.active_web_mode == "comparison":
-        # Comparison mode: Execute existing comparison logic
-        # TODO: Implement comparison archive logic
+        # Comparison mode: ipc/server.py broadcasts comparison:loser after this
+        # returns; the frontend archives the non-playing track via the API
         log("⏭  Track archived", level="info")
         logger.info("web-archive: comparison mode")
         return ctx, True

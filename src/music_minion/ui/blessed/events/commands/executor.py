@@ -1024,7 +1024,6 @@ def _process_ui_action(
 
         if comparison:
             # Update UI state with comparison data
-            # The validation in update_ui_state_safe prevents background thread from overwriting this
             comparison_with_data = replace(
                 comparison, filtered_tracks=filtered_tracks, ratings_cache=ratings_cache
             )

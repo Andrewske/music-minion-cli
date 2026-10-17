@@ -22,6 +22,6 @@ __all__ = [
     "handle_metadata_editor_key",
     "handle_comparison_key",
     "handle_playlist_builder_key",
-    "handle_export_options_key",
+    "handle_export_selector_key",
     "handle_normal_mode_key",
 ]

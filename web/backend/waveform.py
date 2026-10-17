@@ -43,6 +43,13 @@ def generate_waveform(audio_path: str, track_id: int) -> dict:
     """Generate waveform data using pydub and cache it."""
     cache_path = get_waveform_path(track_id)
 
+    # Check file size BEFORE decoding (pydub loads the whole file into memory)
+    file_size_mb = Path(audio_path).stat().st_size / (1024 * 1024)
+    if file_size_mb > MAX_AUDIO_SIZE_MB:
+        raise AudioTooLargeError(
+            f"File too large: {file_size_mb:.1f}MB > {MAX_AUDIO_SIZE_MB}MB"
+        )
+
     try:
         # Load audio file with pydub
         audio = AudioSegment.from_file(audio_path)
@@ -60,13 +67,6 @@ def generate_waveform(audio_path: str, track_id: int) -> dict:
         raise RuntimeError(f"Failed to decode audio: {type(e).__name__}") from e
 
     try:
-        # Check file size before processing
-        file_size_mb = Path(audio_path).stat().st_size / (1024 * 1024)
-        if file_size_mb > MAX_AUDIO_SIZE_MB:
-            raise AudioTooLargeError(
-                f"File too large: {file_size_mb:.1f}MB > {MAX_AUDIO_SIZE_MB}MB"
-            )
-
         # Get raw audio data as numpy array
         samples = np.array(audio.get_array_of_samples())
 

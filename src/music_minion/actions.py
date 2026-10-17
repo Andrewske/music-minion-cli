@@ -138,9 +138,10 @@ def execute_like_and_add_dated(ctx: AppContext) -> Tuple[AppContext, bool, str]:
         logger.exception(f"Failed to remove track {track_id} from reposts playlist")
         log(f"   ⚠ Warning: Failed to remove from reposts: {str(e)}", level="warning")
 
-    # Execute like command
+    # Execute like command. Its bool is the command-handler "should_continue"
+    # flag (always True), not a success signal; its failure modes (no track /
+    # track not in DB) are already ruled out by get_current_track_info above.
     ctx, _ = rating.handle_like_command(ctx)
-    like_success = True  # Assume success unless error
 
     # Ensure dated playlist exists
     playlist = ensure_playlist_exists(playlist_name)
