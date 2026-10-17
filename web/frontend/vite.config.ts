@@ -15,6 +15,11 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      // Page-agent chat lives on the dashboard; must precede the generic /api entry
+      '/api/page-chat': {
+        target: 'http://piserver:3000',
+        changeOrigin: true
+      },
       '/api': {
         target: 'http://localhost:8642',
         changeOrigin: true
