@@ -2,18 +2,12 @@
 Cross-cutting utilities for Music Minion.
 
 Contains:
-- autocomplete: CLI autocomplete functionality
 - parsers: Argument and command parsing
 """
 
-from .autocomplete import *
-from .parsers import *
+from .parsers import parse_command, parse_quoted_args
 
 __all__ = [
-    # From autocomplete
-    "MusicMinionCompleter",
-    "PlaylistCompleter",
-    # From parsers
     "parse_quoted_args",
     "parse_command",
 ]
