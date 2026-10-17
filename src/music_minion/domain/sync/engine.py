@@ -93,11 +93,11 @@ def write_tags_to_file(local_path: str, tags: list[str], config: Config) -> bool
         # Validate file format first (only MP3 and M4A supported)
         audio = MutagenFile(local_path, easy=False)
         if audio is None:
-            print(f"Error: Could not open file {local_path}")
+            logger.error(f"Could not open file {local_path}")
             return False
 
         if not isinstance(audio, (MP4, ID3)) and not hasattr(audio, "tags"):
-            print(f"Unsupported format for {local_path} (only MP3/M4A supported)")
+            logger.warning(f"Unsupported format for {local_path} (only MP3/M4A supported)")
             return False
 
         # Atomic write: copy to temp, modify temp, then replace original
@@ -149,15 +149,15 @@ def write_tags_to_file(local_path: str, tags: list[str], config: Config) -> bool
             if os.path.exists(temp_path):
                 try:
                     os.remove(temp_path)
-                except:
-                    pass
+                except OSError:
+                    logger.warning(f"Failed to remove temp file {temp_path}")
             raise e
 
     except PermissionError as e:
-        print(f"Permission denied writing to {local_path}: {e}")
+        logger.error(f"Permission denied writing to {local_path}: {e}")
         return False
     except Exception as e:
-        print(f"Error writing tags to {local_path}: {e}")
+        logger.exception(f"Error writing tags to {local_path}: {e}")
         return False
 
 
@@ -214,7 +214,7 @@ def read_tags_from_file(local_path: str, config: Config) -> list[str]:
         return list(tags_set)
 
     except Exception as e:
-        print(f"Error reading tags from {local_path}: {e}")
+        logger.exception(f"Error reading tags from {local_path}: {e}")
         return []
 
 
@@ -243,6 +243,26 @@ def compute_metadata_hash(metadata: dict) -> str:
     return hashlib.sha256('|'.join(values).encode()).hexdigest()[:16]
 
 
+def _read_comment(audio: Any) -> Optional[str]:
+    """Read the COMMENT field from a mutagen file object (MP4, ID3, or Vorbis)."""
+    if not audio:
+        return None
+    if isinstance(audio, MP4):
+        return audio.get("\xa9cmt", [""])[0]
+    tags = getattr(audio, "tags", None)
+    if not tags:
+        return None
+    # ID3 must be checked before Vorbis: ID3 is dict-like and also has .get
+    if isinstance(tags, ID3):
+        comm_frames = tags.getall("COMM")
+        if comm_frames and comm_frames[0].text:
+            return comm_frames[0].text[0]
+        return None
+    if "COMMENT" in tags:
+        return tags.get("COMMENT", [""])[0]
+    return None
+
+
 def extract_file_structured_metadata(local_path: str) -> dict:
     """Extract structured metadata fields from audio file.
 
@@ -257,23 +277,9 @@ def extract_file_structured_metadata(local_path: str) -> dict:
     # Extract comment field separately since it's not in Track model
     comment = None
     try:
-        audio = MutagenFile(local_path, easy=False)
-        if audio:
-            if isinstance(audio, MP4):
-                # M4A file
-                comment = audio.get("\xa9cmt", [""])[0]
-            elif hasattr(audio, "tags") and audio.tags:
-                # Check for VorbisComment (Opus, Ogg Vorbis, FLAC)
-                if hasattr(audio.tags, "get"):
-                    # VorbisComment uses dictionary-like access
-                    comment = audio.tags.get("COMMENT", [""])[0] if "COMMENT" in audio.tags else None
-                elif hasattr(audio.tags, "getall"):
-                    # ID3 tags (MP3) - read COMM frame
-                    comm_frames = audio.tags.getall("COMM")
-                    if comm_frames:
-                        comment = comm_frames[0].text[0] if comm_frames[0].text else None
+        comment = _read_comment(MutagenFile(local_path, easy=False))
     except Exception:
-        pass
+        logger.exception(f"Failed to read comment from {local_path}")
 
     return {
         'title': track.title,

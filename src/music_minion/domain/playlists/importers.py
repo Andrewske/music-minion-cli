@@ -161,7 +161,7 @@ def _add_tracks_from_paths(
             if row:
                 track_id = row["id"]
                 # Add track to playlist
-                if add_track_to_playlist(playlist_id, track_id):
+                if add_track_to_playlist(playlist_id, track_id, conn=conn):
                     tracks_added += 1
                 else:
                     # Track already in playlist or other failure
@@ -491,11 +491,14 @@ def _upsert_tracks_to_playlist(
                     # This would be an error case, but we'll skip for now
                     continue
 
-            # Add track to playlist
-            if add_track_to_playlist(playlist_id, cast(int, track_id)):
+            # Add track to playlist on the same connection (avoids a second
+            # connection blocking on this one's uncommitted writes)
+            if add_track_to_playlist(playlist_id, cast(int, track_id), conn=conn):
                 tracks_added += 1
             else:
                 duplicates_skipped += 1
+
+        conn.commit()
 
     return tracks_added, duplicates_skipped
 

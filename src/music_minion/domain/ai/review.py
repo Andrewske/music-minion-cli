@@ -6,12 +6,13 @@ allowing users to provide feedback and improve the tagging system over time.
 """
 
 import json
-from typing import Optional, Any
+from typing import Optional
 
 from music_minion.domain.library import Track, get_track_id_from_track
-from music_minion.core.database import get_track_tags
+from music_minion.core.database import get_track_by_path, get_track_tags
+from music_minion.core.output import log
 from .client import analyze_track_with_ai, AIError, get_api_key
-from .prompt_manager import get_learnings, append_to_learnings_section
+from .prompt_manager import get_learnings
 
 
 def get_or_generate_tags_with_reasoning(track: Track) -> tuple[dict[str, str], bool]:
@@ -50,119 +51,6 @@ def get_or_generate_tags_with_reasoning(track: Track) -> tuple[dict[str, str], b
         reasoning = {tag: "Generated tag" for tag in tags_list}
 
     return reasoning, True
-
-
-def have_tag_conversation(track: Track, initial_tags: dict[str, str]) -> Optional[str]:
-    """Conduct a conversation about tags with the user.
-
-    Args:
-        track: Track being reviewed
-        initial_tags: Initial tags with reasoning
-
-    Returns:
-        Full conversation text or None if cancelled
-    """
-    from music_minion.core.database import get_track_notes
-
-    print("\n" + "=" * 60)
-    print("🎵 AI Tag Review - Conversation Mode")
-    print("=" * 60)
-    print("\nCurrent tags with AI reasoning:")
-    print()
-
-    for tag, reasoning in initial_tags.items():
-        print(f'  • {tag}: "{reasoning}"')
-
-    print("\n" + "-" * 60)
-    print("Discuss these tags with AI. Type your feedback, or 'done' to finish.")
-    print(
-        "Example: \"This track is half-time, not energetic. Don't tag key, it's in metadata.\""
-    )
-    print("-" * 60)
-
-    conversation_lines = []
-    conversation_lines.append(f"Track: {track.artist} - {track.title}")
-    conversation_lines.append(f"\nInitial tags:")
-    for tag, reasoning in initial_tags.items():
-        conversation_lines.append(f"  {tag}: {reasoning}")
-
-    # Build context for AI
-    db_track = get_track_by_path(track.local_path)
-    track_notes = get_track_notes(db_track["id"]) if db_track else []
-    notes_text = (
-        "\n".join([note["note_text"] for note in track_notes])
-        if track_notes
-        else "None"
-    )
-
-    track_context = f"""Track Metadata:
-- Artist: {track.artist}
-- Title: {track.title}
-- Album: {track.album or "Unknown"}
-- Genre: {track.genre or "Unknown"}
-- BPM: {track.bpm or "Unknown"}
-- Key: {track.key or "Unknown"}
-- User Notes: {notes_text}
-
-Current Tags:
-{json.dumps(initial_tags, indent=2)}
-"""
-
-    # Get learnings context
-    learnings = get_learnings()
-
-    while True:
-        user_input = input("\n> ").strip()
-
-        if not user_input:
-            continue
-
-        if user_input.lower() == "done":
-            break
-
-        # Add to conversation
-        conversation_lines.append(f"\nUser: {user_input}")
-
-        # Get AI response
-        try:
-            api_key = get_api_key()
-            if not api_key:
-                print("❌ No API key configured. Use 'ai setup <key>' first.")
-                return None
-
-            import openai
-
-            client = openai.OpenAI(api_key=api_key)
-
-            # Build conversation prompt
-            conversation_prompt = f"""{track_context}
-
-Previous Learnings:
-{learnings}
-
-Conversation so far:
-{chr(10).join(conversation_lines)}
-
-User feedback: {user_input}
-
-Please respond naturally to the user's feedback about the tags. If they suggest changes, acknowledge them and explain what you'll update. Be concise and helpful."""
-
-            response = client.responses.create(
-                model="gpt-4o-mini",
-                instructions="You are helping a user review and improve AI-generated music tags. Have a natural conversation about tag quality, understand their feedback, and suggest improvements based on their guidance and any learnings.",
-                input=conversation_prompt,
-            )
-
-            ai_response = response.output_text.strip()
-            conversation_lines.append(f"AI: {ai_response}")
-
-            print(f"\n🤖 {ai_response}")
-
-        except Exception as e:
-            print(f"❌ Error getting AI response: {e}")
-            return None
-
-    return "\n".join(conversation_lines)
 
 
 def extract_learnings_from_conversation(
@@ -238,7 +126,7 @@ Example:
         return summary
 
     except Exception as e:
-        print(f"⚠️  Warning: Could not extract learnings: {e}")
+        log(f"⚠️  Warning: Could not extract learnings: {e}", level="warning")
         return None
 
 
@@ -329,5 +217,5 @@ Example format:
         return new_tags
 
     except Exception as e:
-        print(f"❌ Error regenerating tags: {e}")
+        log(f"❌ Error regenerating tags: {e}", level="error")
         return None
