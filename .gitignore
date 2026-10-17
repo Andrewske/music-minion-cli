@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 .coverage
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
 
 # Distribution
 build/
@@ -40,9 +43,7 @@ config.toml
 !.env.example
 !CLAUDE.md
 
-*.log
 *.backup
-*.backup.last_sync
 
 # Node.js (monorepo)
 node_modules/
@@ -68,3 +69,9 @@ mobile/ios/
 /.claude/scheduled_tasks.lock
 /.claude/worktrees/
 .gstack/
+
+# Tool caches and runtime artifacts
+.firecrawl/
+*.timestamp-*.mjs
+/.last_sync
+/low_confidence_keys.txt
