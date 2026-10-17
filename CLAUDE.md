@@ -106,7 +106,7 @@ except Exception:
 - Primary: `music-minion`
 - Dev mode: `music-minion --dev` (hot-reload)
 - Web mode: `music-minion --web` (blessed UI + web backend + frontend)
-- IPC: `music-minion-cli play|skip|love|...`
+- IPC: `music-minion skip|love|like|la|nq|ni|add <playlist>|web-*`
 - Opus migration: `music-minion locate-opus /path [--apply]`
 - Tests: `uv run pytest` or `uv run pytest path/to/test.py::test_case`
 - Lint: `uv run ruff check src` / `uv run ruff format src`
@@ -211,7 +211,7 @@ Bucket interface includes:
 
 - Database: SQLite at `~/.local/share/music-minion/music_minion.db` (schema in `core/database.py`)
 - Learnings: `ai-learnings.md`
-- Future roadmap: `docs/incomplete-items.md`
+- Open work: `TODOS.md`
 
 ## Recent Updates (2026-03-11)
 

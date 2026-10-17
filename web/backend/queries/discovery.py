@@ -261,7 +261,7 @@ def get_seen_track_ids() -> set[str]:
     promote them to a playlist.
 
     Status coupling: if a new value is added to DISCOVERY_STATUSES,
-    decide whether it belongs in this exclusion set too. See TODOS.md.
+    decide whether it belongs in this exclusion set too.
     """
     with get_db_connection() as conn:
         cursor = conn.execute("""

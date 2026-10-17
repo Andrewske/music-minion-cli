@@ -1,11 +1,5 @@
 # TODOS
 
-## SC Push Worker: Bounded retry for transient failures
-**Priority:** Low
-**Context:** The background SC push worker (Task 01 of concurrent-squishing-salamander) is fire-and-forget — if the SC API is temporarily down, pushes are silently lost. A bounded retry (e.g., retry once after 30s, then drop) would catch transient failures without adding unbounded complexity. The manual sync button (Task 04/05) serves as the user-facing escape hatch for reconciliation.
-**Depends on:** SC push worker (web/backend/sc_push_worker.py) must exist first.
-**Added:** 2026-03-17 via /plan-eng-review
-
 ## Android App: Waveform visualization for mobile player
 **Priority:** P2/High
 **Context:** Kevin rates this as high priority. wavesurfer.js (used in web) is web-only and has no direct React Native equivalent. Current plan ships a plain seek slider in v1. Options for a future implementation: (1) react-native-audio-waveform (limited, peaks-only), (2) custom react-native-skia canvas drawing waveform peaks from the existing `/tracks/{id}/waveform` backend endpoint, (3) expo-av waveform metering (live only, not static). The backend already returns waveform peak data — the hard part is the rendering, not the data.
@@ -40,20 +34,6 @@
 **Effort:** S (human) → S (CC)
 **Depends on:** Discovery sync feature must be complete and stable first.
 **Added:** 2026-03-29 via /plan-ceo-review + /plan-eng-review
-
-## Clean up `affects_global` column in playlist_comparison_history
-**Priority:** P3/Low
-**Context:** After the global comparison graph migration (graceful-snacking-seahorse), `affects_global` is always `False` for new rows. The column is dead weight — ~2KB for 1,956 booleans. Not causing harm, but misleading for anyone reading the schema. Fix requires SQLite table rebuild (CREATE new table, INSERT ... SELECT, DROP old, ALTER TABLE RENAME) + updating all INSERT statements that reference the column.
-**Depends on:** graceful-snacking-seahorse must ship first.
-**Effort:** M (human) → S (CC)
-**Added:** 2026-03-18 via /plan-ceo-review
-
-## Discovery: Audit `discovery_tracks.status` enum drift
-**Priority:** P3/Low
-**Context:** `get_seen_track_ids` (`web/backend/queries/discovery.py:172`) hardcodes 4 status values: `'liked'`, `'dismissed'`, `'in_playlist'`, `'unseen'`. If a 5th status is ever added (e.g., `'snoozed'`, `'maybe'`) and the function isn't updated, those tracks will silently be misclassified — likely treated as eligible for fresh fetch when they shouldn't be, or vice versa. Fix options: (1) add a SQLite CHECK constraint pinning allowed values (requires table rebuild via INSERT/DROP/RENAME hack), (2) extract the set of "classified" statuses to a single module-level constant + add a comment in the status column docstring pointing to it.
-**Effort:** S (human) → XS (CC)
-**Depends on:** nothing
-**Added:** 2026-04-26 via /plan-eng-review
 
 ## Discovery: Investigate stuck `active` `bucket_sessions`
 **Priority:** P2/Medium

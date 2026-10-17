@@ -46,7 +46,7 @@ Music Minion CLI is a smart music player that goes beyond simple ratings. Instea
 
 ### 🎮 **External Control**
 - **IPC System**: Background control via Unix socket
-- **CLI Commands**: `music-minion-cli play|skip|love|like|unlike`
+- **CLI Commands**: `music-minion skip|love|like|la|nq|ni|add <playlist>`
 - **Desktop Notifications**: Track changes and playback events
 - **Control Anywhere**: From any terminal, script, or automation
 
@@ -123,8 +123,8 @@ music-minion> love
 music-minion> note "Perfect morning energy track"
 
 # Control from external terminal (IPC)
-music-minion-cli skip
-music-minion-cli love
+music-minion skip
+music-minion love
 ```
 
 ## 📖 Usage Guide
@@ -172,14 +172,20 @@ Control Music Minion from any terminal or script:
 
 ```bash
 # Playback control
-music-minion-cli play                 # Play current/next track
-music-minion-cli skip                 # Skip to next track
+music-minion skip                     # Skip to next track
 
 # Rating commands
-music-minion-cli love                 # Love current track
-music-minion-cli like                 # Like current track
-music-minion-cli unlike               # Unlike current track
+music-minion love                     # Love current track
+music-minion like                     # Like current track
+
+# Playlist shortcuts
+music-minion add <playlist>           # Add current track to a playlist
+music-minion la                       # Like + add to this month's playlist
+music-minion nq                       # Add to "Not Quite"
+music-minion ni                       # Add to "Not Interested" and skip
 ```
+
+Run `music-minion --help` for the full list (web-* controls, locate-opus, sync-radio).
 
 ### Temporal Context Capture
 
@@ -198,7 +204,7 @@ Example output:
 
 ### Music Library Setup
 
-Configure library paths in `~/.config/music-minion/config.toml`:
+Configure library paths in `config.toml` (see Configuration Files below for lookup order):
 
 ```toml
 [music]
@@ -212,7 +218,7 @@ scan_recursive = true
 ### Configuration Files
 
 Music Minion stores configuration in:
-- **Config**: `~/.config/music-minion/config.toml`
+- **Config**: `config.toml` in the project root (dev), else the current directory, else `~/.config/music-minion/config.toml`
 - **Database**: `~/.local/share/music-minion/music_minion.db`
 - **Logs**: `~/.local/share/music-minion/logs/`
 
@@ -266,12 +272,11 @@ music-minion-cli/
 │   ├── domain/          # Business logic (ai, library, playback, playlists, sync)
 │   ├── commands/        # Command handlers (functional)
 │   ├── ui/              # User interface (blessed-based)
-│   └── utils/           # Utilities (parsers, autocomplete)
-├── docs/                # Documentation
-│   ├── ai-tag-review-system.md
-│   ├── hot-reload-usage.md
-│   ├── playlist-system-plan.md
-│   └── incomplete-items.md
+│   └── utils/           # Utilities (parsers)
+├── web/                 # FastAPI backend + Vite/React frontend
+├── mobile/              # Expo app
+├── shared/              # Shared TS code (web + mobile)
+├── docs/                # Documentation (reference/, plans, reports)
 ├── pyproject.toml       # Project configuration
 ├── CLAUDE.md           # Development guide
 ├── ai-learnings.md     # Patterns and best practices
@@ -341,9 +346,7 @@ ruff format src/
 
 - **[CLAUDE.md](CLAUDE.md)** - Comprehensive development guide
 - **[ai-learnings.md](ai-learnings.md)** - Patterns and best practices
-- **[docs/hot-reload-usage.md](docs/hot-reload-usage.md)** - Hot-reload development mode
-- **[docs/ai-tag-review-system.md](docs/ai-tag-review-system.md)** - AI review system
-- **[docs/playlist-system-plan.md](docs/playlist-system-plan.md)** - Implementation history
+- **[docs/reference/](docs/reference/)** - Reference docs (Syncthing setup, etc.)
 
 ### Code Style Guidelines
 
@@ -377,7 +380,7 @@ mpv --version
 ```bash
 # Check your library paths
 music-minion> init
-# Edit ~/.config/music-minion/config.toml
+# Edit config.toml (project root or ~/.config/music-minion/)
 # Add your music directories to library_paths
 ```
 
@@ -424,7 +427,7 @@ Logs are written to `~/.local/share/music-minion/logs/`
 - ✅ **OAuth 2.0 + PKCE authentication**
 - ✅ **Background library/playlist syncing**
 - ✅ **Playback history tracking**
-- ✅ **IPC control system** (music-minion-cli)
+- ✅ **IPC control system** (`music-minion <command>`)
 - ✅ **Track deduplication** (TF-IDF matching)
 - ✅ **Spotify Web Playback SDK** integration
 - ✅ **blessed UI migration** (functional rendering)
@@ -445,7 +448,7 @@ Logs are written to `~/.local/share/music-minion/logs/`
 - [ ] Advanced temporal analytics and visualizations
 - [ ] Social sharing of musical discoveries
 
-See [docs/incomplete-items.md](docs/incomplete-items.md) for detailed roadmap.
+See [TODOS.md](TODOS.md) for open work.
 
 ## 📄 License
 
