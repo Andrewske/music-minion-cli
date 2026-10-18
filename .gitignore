@@ -68,6 +68,7 @@ mobile/ios/
 # Machine-local Claude state
 /.claude/scheduled_tasks.lock
 /.claude/worktrees/
+/.claude/settings.local.json
 .gstack/
 
 # Tool caches and runtime artifacts
