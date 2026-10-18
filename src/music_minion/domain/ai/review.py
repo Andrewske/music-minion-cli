@@ -8,10 +8,12 @@ allowing users to provide feedback and improve the tagging system over time.
 import json
 from typing import Optional
 
+from loguru import logger
+
 from music_minion.domain.library import Track, get_track_id_from_track
 from music_minion.core.database import get_track_by_path, get_track_tags
 from music_minion.core.output import log
-from .client import analyze_track_with_ai, AIError, get_api_key
+from .client import analyze_track_with_ai, get_openai_client
 from .prompt_manager import get_learnings
 
 
@@ -67,13 +69,7 @@ def extract_learnings_from_conversation(
         Extracted learnings summary or None if extraction failed
     """
     try:
-        api_key = get_api_key()
-        if not api_key:
-            return None
-
-        import openai
-
-        client = openai.OpenAI(api_key=api_key)
+        client = get_openai_client()
 
         extraction_prompt = f"""Based on this tag review conversation, extract key learnings for improving future tagging.
 
@@ -126,6 +122,7 @@ Example:
         return summary
 
     except Exception as e:
+        logger.exception("Learning extraction failed")
         log(f"⚠️  Warning: Could not extract learnings: {e}", level="warning")
         return None
 
@@ -144,14 +141,9 @@ def regenerate_tags_with_feedback(
         New tags with reasoning, or None if regeneration failed
     """
     try:
-        api_key = get_api_key()
-        if not api_key:
-            raise AIError("No API key configured")
-
-        import openai
         from music_minion.core.database import get_track_notes
 
-        client = openai.OpenAI(api_key=api_key)
+        client = get_openai_client()
 
         # Get track metadata
         db_track = get_track_by_path(track.local_path)
@@ -217,5 +209,6 @@ Example format:
         return new_tags
 
     except Exception as e:
+        logger.exception("Tag regeneration failed")
         log(f"❌ Error regenerating tags: {e}", level="error")
         return None

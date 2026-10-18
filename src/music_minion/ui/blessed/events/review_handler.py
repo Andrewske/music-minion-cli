@@ -1,6 +1,9 @@
 """Review mode handler for conversational AI tag review in blessed UI."""
 
+import json
 from dataclasses import replace
+
+from loguru import logger
 
 from music_minion.context import AppContext
 from music_minion.ui.blessed.state import (
@@ -110,28 +113,20 @@ def handle_review_input(
             ui_state = add_history_line(ui_state, f"❌ AI Error: {e}", "red")
             ui_state = exit_review_mode(ui_state)
         except Exception as e:
+            logger.exception("Review tag regeneration failed")
             ui_state = add_history_line(ui_state, f"❌ Unexpected error: {e}", "red")
-            import traceback
-
-            traceback.print_exc()
             ui_state = exit_review_mode(ui_state)
 
         return ctx, ui_state
 
+    try:
+        client = ai_module.get_openai_client()
+    except ai_module.AIError as e:
+        ui_state = add_history_line(ui_state, f"❌ {e}", "red")
+        return ctx, exit_review_mode(ui_state)
+
     # Get AI response
     try:
-        import json
-
-        import openai
-
-        api_key = ai_module.get_api_key()
-        if not api_key:
-            ui_state = add_history_line(ui_state, "❌ No API key configured", "red")
-            ui_state = exit_review_mode(ui_state)
-            return ctx, ui_state
-
-        client = openai.OpenAI(api_key=api_key)
-
         # Get learnings and track context
         learnings = ai_module.get_learnings()
         track_data = review_data["track"]
@@ -194,18 +189,11 @@ Please respond naturally to the user's feedback about the tags. If they suggest 
         ui_state = add_history_line(ui_state, f"🤖 {ai_response}", "green")
         ui_state = add_history_line(ui_state, "", "white")
 
-    except ImportError as e:
-        ui_state = add_history_line(ui_state, f"❌ Missing dependency: {e}", "red")
-        ui_state = add_history_line(
-            ui_state, "Install with: pip install openai", "yellow"
-        )
     except ai_module.AIError as e:
         ui_state = add_history_line(ui_state, f"❌ AI Error: {e}", "red")
     except Exception as e:
+        logger.exception("Review conversation request failed")
         ui_state = add_history_line(ui_state, f"❌ Unexpected error: {e}", "red")
-        import traceback
-
-        traceback.print_exc()
 
     return ctx, ui_state
 
