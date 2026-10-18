@@ -2,12 +2,14 @@
 AI integration for Music Minion CLI using OpenAI Responses API
 """
 
+import json
 import os
 import re
 import time
 from pathlib import Path
 from typing import Any, Optional
 
+import openai
 from loguru import logger
 
 from music_minion.core.config import get_config_dir
@@ -88,6 +90,18 @@ def get_api_key() -> Optional[str]:
         pass
 
     return None
+
+
+def get_openai_client() -> openai.OpenAI:
+    """Build a sync OpenAI client from the configured API key.
+
+    Raises:
+        AIError: If no API key is configured.
+    """
+    api_key = get_api_key()
+    if not api_key:
+        raise AIError("No OpenAI API key found. Use 'ai setup <key>' to configure.")
+    return openai.OpenAI(api_key=api_key)
 
 
 def store_api_key(api_key: str) -> None:
@@ -248,16 +262,7 @@ def analyze_track_with_ai(
         - request_metadata: API usage metadata
         - reasoning_dict: Dict mapping tag names to reasoning (None if return_reasoning=False)
     """
-    api_key = get_api_key()
-    if not api_key:
-        raise AIError("No OpenAI API key found. Use 'ai setup <key>' to configure.")
-
-    try:
-        import json
-
-        import openai
-    except ImportError:
-        raise AIError("OpenAI library not installed. Install with: pip install openai")
+    client = get_openai_client()
 
     # Get track from database to get ID (multi-source support)
     from music_minion.domain.library import get_track_id_from_track
@@ -272,9 +277,6 @@ def analyze_track_with_ai(
 
     # Build input for Responses API
     input_text = build_analysis_input(track, notes, existing_tags)
-
-    # Prepare OpenAI client
-    client = openai.OpenAI(api_key=api_key)
 
     start_time = time.time()
 
@@ -388,6 +390,7 @@ Use lowercase for tag names. Be specific and reference actual track data."""
         response_time_ms = int((end_time - start_time) * 1000)
 
         error_msg = f"OpenAI API error: {str(e)}"
+        logger.exception(f"AI analysis failed for track {track_id}: {error_msg}")
 
         # Log failed request
         log_ai_request(
@@ -408,6 +411,7 @@ Use lowercase for tag names. Be specific and reference actual track data."""
         response_time_ms = int((end_time - start_time) * 1000)
 
         error_msg = f"Unexpected error: {str(e)}"
+        logger.exception(f"AI analysis failed for track {track_id}: {error_msg}")
 
         log_ai_request(
             track_id=track_id,

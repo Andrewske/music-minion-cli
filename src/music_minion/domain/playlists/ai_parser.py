@@ -8,7 +8,10 @@ import json
 import time
 from typing import Any, TypedDict
 
-from music_minion.domain.ai import get_api_key, AIError
+import openai
+from loguru import logger
+
+from music_minion.domain.ai import AIError, get_openai_client
 from .filters import (
     VALID_FIELDS,
     TEXT_OPERATORS,
@@ -61,14 +64,7 @@ def parse_natural_language_to_filters(
     Raises:
         AIError: If API key not found, API error, or invalid response format
     """
-    api_key = get_api_key()
-    if not api_key:
-        raise AIError("No OpenAI API key found. Use 'ai setup <key>' to configure.")
-
-    try:
-        import openai
-    except ImportError:
-        raise AIError("OpenAI library not installed. Install with: pip install openai")
+    client = get_openai_client()
 
     # Build structured prompt with schema
     instruction = """Parse the user's playlist description into structured filter rules.
@@ -101,9 +97,6 @@ IMPORTANT:
     input_text = f"""Playlist description: "{description}"
 
 Parse this into filter rules following the schema provided in the instructions."""
-
-    # Prepare OpenAI client
-    client = openai.OpenAI(api_key=api_key)
 
     start_time = time.time()
 
@@ -152,11 +145,16 @@ Parse this into filter rules following the schema provided in the instructions."
 
         return filters, request_metadata
 
+    except AIError:
+        raise
+
     except openai.APIError as e:
-        raise AIError(f"OpenAI API error: {str(e)}")
+        logger.exception("AI playlist parse failed")
+        raise AIError(f"OpenAI API error: {str(e)}") from e
 
     except Exception as e:
-        raise AIError(f"Unexpected error: {str(e)}")
+        logger.exception("AI playlist parse failed")
+        raise AIError(f"Unexpected error: {str(e)}") from e
 
 
 def format_filters_for_preview(filters: list[FilterDict]) -> str:
