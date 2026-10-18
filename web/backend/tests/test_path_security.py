@@ -4,7 +4,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import Mock
 
-import pytest
 
 from music_minion.core.config import MusicConfig
 from music_minion.core.path_security import is_path_within_library, validate_track_path

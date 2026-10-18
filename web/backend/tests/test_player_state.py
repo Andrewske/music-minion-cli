@@ -3,7 +3,7 @@
 import asyncio
 import pytest
 from pydantic import ValidationError
-from backend.player_state import (
+from web.backend.player_state import (
     PlaybackState,
     get_state,
     get_state_dict,
@@ -62,7 +62,7 @@ class TestGetStateDict:
     async def test_track_started_at_converted_to_milliseconds(self, monkeypatch):
         import time
         monkeypatch.setattr(
-            "backend.sync_manager.sync_manager.broadcast",
+            "web.backend.sync_manager.sync_manager.broadcast",
             lambda *args: asyncio.sleep(0)
         )
         await update_state({"track_started_at": time.time()}, broadcast=False)
@@ -87,7 +87,7 @@ class TestUpdateState:
     async def test_update_with_dict(self, monkeypatch):
         # Mock broadcast to avoid import issues
         monkeypatch.setattr(
-            "backend.sync_manager.sync_manager.broadcast",
+            "web.backend.sync_manager.sync_manager.broadcast",
             lambda *args: asyncio.sleep(0)
         )
 
@@ -100,7 +100,7 @@ class TestUpdateState:
     @pytest.mark.asyncio
     async def test_update_with_callable(self, monkeypatch):
         monkeypatch.setattr(
-            "backend.sync_manager.sync_manager.broadcast",
+            "web.backend.sync_manager.sync_manager.broadcast",
             lambda *args: asyncio.sleep(0)
         )
 
@@ -114,7 +114,7 @@ class TestUpdateState:
     @pytest.mark.asyncio
     async def test_list_to_tuple_conversion(self, monkeypatch):
         monkeypatch.setattr(
-            "backend.sync_manager.sync_manager.broadcast",
+            "web.backend.sync_manager.sync_manager.broadcast",
             lambda *args: asyncio.sleep(0)
         )
 
@@ -127,7 +127,7 @@ class TestUpdateState:
     async def test_concurrent_updates_are_serialized(self, monkeypatch):
         """Multiple concurrent updates should not race."""
         monkeypatch.setattr(
-            "backend.sync_manager.sync_manager.broadcast",
+            "web.backend.sync_manager.sync_manager.broadcast",
             lambda *args: asyncio.sleep(0)
         )
 
@@ -158,7 +158,7 @@ class TestBroadcastConcurrency:
             await release.wait()
 
         monkeypatch.setattr(
-            "backend.sync_manager.sync_manager.broadcast", slow_broadcast
+            "web.backend.sync_manager.sync_manager.broadcast", slow_broadcast
         )
 
         t1 = asyncio.create_task(update_state({"queue_index": 1}))
@@ -181,7 +181,7 @@ class TestBroadcastConcurrency:
         async def capture(event_type, data):
             sent.append(data)
 
-        monkeypatch.setattr("backend.sync_manager.sync_manager.broadcast", capture)
+        monkeypatch.setattr("web.backend.sync_manager.sync_manager.broadcast", capture)
 
         await update_state(
             {"queue_index": 3}, broadcast_extra={"pruned_track_id": 99}
@@ -268,7 +268,7 @@ class TestSlimBroadcastPayload:
         async def capture(event_type, data):
             sent.append(data)
 
-        monkeypatch.setattr("backend.sync_manager.sync_manager.broadcast", capture)
+        monkeypatch.setattr("web.backend.sync_manager.sync_manager.broadcast", capture)
 
         track = {"id": 7, "title": "T", "artist": "A"}
         await update_state(
@@ -298,7 +298,7 @@ class TestSlimBroadcastPayload:
         async def capture(event_type, data):
             sent.append(data)
 
-        monkeypatch.setattr("backend.sync_manager.sync_manager.broadcast", capture)
+        monkeypatch.setattr("web.backend.sync_manager.sync_manager.broadcast", capture)
 
         await update_state({"is_playing": True})
         await update_state({"is_playing": False})

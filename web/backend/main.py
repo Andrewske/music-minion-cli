@@ -1,10 +1,12 @@
 import os
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse
 
 from music_minion.core.config import get_data_dir
 
@@ -13,14 +15,47 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
-app = FastAPI(title="Music Minion Web API", version="1.0.0")
 
-# Mount custom emojis static files
+async def _startup() -> None:
+    """Initialize database, restore player state, start background workers."""
+    from music_minion.core.db_adapter import is_postgres, init_postgres_schema
+    from .routers.player import restore_player_queue_state
+
+    if is_postgres():
+        logging.info("PostgreSQL detected, initializing schema...")
+        init_postgres_schema()
+    else:
+        # SQLite - use existing init
+        from music_minion.core.database import init_database
+
+        init_database()
+
+    custom_emojis_dir.mkdir(parents=True, exist_ok=True)
+
+    # Restore player queue state from database
+    await restore_player_queue_state()
+
+    # Start background SC feed-sync daemon
+    from web.backend.sc_feed_worker import start_feed_worker
+
+    start_feed_worker()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    await _startup()
+    yield
+
+
+app = FastAPI(title="Music Minion Web API", version="1.0.0", lifespan=lifespan)
+
+# Mount custom emojis static files. check_dir=False defers the directory
+# check to request time so importing this module never touches disk;
+# startup (and the emoji processor) create the directory.
 custom_emojis_dir = get_data_dir() / "custom_emojis"
-custom_emojis_dir.mkdir(exist_ok=True)
 app.mount(
     "/custom_emojis",
-    StaticFiles(directory=str(custom_emojis_dir)),
+    StaticFiles(directory=str(custom_emojis_dir), check_dir=False),
     name="custom_emojis",
 )
 
@@ -90,30 +125,6 @@ app.include_router(buckets.router, tags=["buckets"])
 app.include_router(genres.router)
 app.include_router(discovery.router)
 app.include_router(feed.router)
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database on startup."""
-    from music_minion.core.db_adapter import is_postgres, init_postgres_schema
-    from .routers.player import restore_player_queue_state
-
-    if is_postgres():
-        logging.info("PostgreSQL detected, initializing schema...")
-        init_postgres_schema()
-    else:
-        # SQLite - use existing init
-        from music_minion.core.database import init_database
-
-        init_database()
-
-    # Restore player queue state from database
-    await restore_player_queue_state()
-
-    # Start background SC feed-sync daemon
-    from web.backend.sc_feed_worker import start_feed_worker
-
-    start_feed_worker()
 
 
 @app.get("/health")

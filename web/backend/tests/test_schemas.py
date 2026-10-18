@@ -1,7 +1,9 @@
 """Tests for backend schemas."""
 
 import pytest
-from web.backend.schemas import TrackInfo, ComparisonPair, StartSessionRequest
+from pydantic import ValidationError
+
+from web.backend.schemas import BuilderStartSessionRequest, ComparisonPair, TrackInfo
 
 
 def test_track_info_schema():
@@ -80,18 +82,19 @@ def test_comparison_pair_schema():
         has_waveform=False,
     )
 
-    pair = ComparisonPair(
-        track_a=track_a, track_b=track_b, session_id="test-session-123"
-    )
+    pair = ComparisonPair(track_a=track_a, track_b=track_b)
 
     assert pair.track_a.title == "Track A"
     assert pair.track_b.title == "Track B"
-    assert pair.session_id == "test-session-123"
 
 
-def test_start_session_request_schema():
-    """Test StartSessionRequest Pydantic model."""
-    request = StartSessionRequest(genre_filter="Electronic", year_filter="2023")
+def test_builder_start_session_request_schema():
+    """BuilderStartSessionRequest carries only the target playlist id."""
+    request = BuilderStartSessionRequest(playlist_id=42)
 
-    assert request.genre_filter == "Electronic"
-    assert request.year_filter == "2023"
+    assert request.playlist_id == 42
+
+
+def test_builder_start_session_request_requires_playlist_id():
+    with pytest.raises(ValidationError):
+        BuilderStartSessionRequest()

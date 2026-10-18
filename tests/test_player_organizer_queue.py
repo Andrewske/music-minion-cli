@@ -1,20 +1,14 @@
 """Tests for organizer queue behavior in player router."""
 
-import sys
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-_REPO_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(_REPO_ROOT / "web"))   # supports `from backend.X import ...`
-sys.path.insert(0, str(_REPO_ROOT))           # supports `from web.backend.X import ...`
-
-from backend.player_state import PlaybackState
-import backend.queries.buckets  # noqa: F401  ensure submodule loaded for patch targets
-import backend.queries.tracks  # noqa: F401
-from backend.routers.player import advance_queue, update_organizer_queue
-from backend.schemas import PlayContext
+from web.backend.player_state import PlaybackState
+import web.backend.queries.buckets  # noqa: F401  ensure submodule loaded for patch targets
+import web.backend.queries.tracks  # noqa: F401
+from web.backend.routers.player import advance_queue, update_organizer_queue
+from web.backend.schemas import PlayContext
 
 
 def _track(track_id: int) -> dict:
@@ -51,9 +45,9 @@ async def test_assign_current_advances_to_next_forward() -> None:
     mock_db_conn.__enter__ = MagicMock(return_value=mock_db_conn)
     mock_db_conn.__exit__ = MagicMock(return_value=False)
 
-    with patch("backend.routers.player.get_state", return_value=initial_state), \
-         patch("backend.queries.buckets.get_session_with_data", return_value=session), \
-         patch("backend.routers.player.update_state", new_callable=AsyncMock) as mock_update, \
+    with patch("web.backend.routers.player.get_state", return_value=initial_state), \
+         patch("web.backend.queries.buckets.get_session_with_data", return_value=session), \
+         patch("web.backend.routers.player.update_state", new_callable=AsyncMock) as mock_update, \
          patch("music_minion.core.database.get_db_connection", return_value=mock_db_conn):
 
         await update_organizer_queue("test-session-123")
@@ -81,9 +75,9 @@ async def test_assign_with_no_forward_survivors_advances_to_end_of_queue() -> No
     mock_db_conn.__enter__ = MagicMock(return_value=mock_db_conn)
     mock_db_conn.__exit__ = MagicMock(return_value=False)
 
-    with patch("backend.routers.player.get_state", return_value=initial_state), \
-         patch("backend.queries.buckets.get_session_with_data", return_value=session), \
-         patch("backend.routers.player.update_state", new_callable=AsyncMock) as mock_update, \
+    with patch("web.backend.routers.player.get_state", return_value=initial_state), \
+         patch("web.backend.queries.buckets.get_session_with_data", return_value=session), \
+         patch("web.backend.routers.player.update_state", new_callable=AsyncMock) as mock_update, \
          patch("music_minion.core.database.get_db_connection", return_value=mock_db_conn):
 
         await update_organizer_queue("test-session-123")
@@ -149,17 +143,13 @@ def test_advance_queue_end_of_queue_stops_playback() -> None:
 # ---------- next_track: refill exclusion ----------
 
 
-def _capture_exclusion_test(context_type: str, expected_exclusion_size: int, queue_size: int = 51, qi: int = 2):
-    """Helper: drive /next refill path and capture exclusion_ids passed to get_next_track."""
+def _capture_refill_exclusion(queue_size: int, qi: int) -> list[int]:
+    """Drive the /next refill path for a playlist context; capture exclusion_ids."""
     from fastapi.testclient import TestClient
-    from backend.main import app
+    from web.backend.main import app
 
     queue = tuple(_track(i) for i in range(1, queue_size + 1))
-    if context_type == "organizer":
-        ctx = PlayContext(type="organizer", playlist_id=1, session_id="s1")
-    else:
-        ctx = PlayContext(type="playlist", playlist_id=1)
-
+    ctx = PlayContext(type="playlist", playlist_id=1)
     state_advanced = PlaybackState(
         queue=queue,
         current_track=_track(qi + 2),  # after advance_queue +1 from qi
@@ -174,49 +164,32 @@ def _capture_exclusion_test(context_type: str, expected_exclusion_size: int, que
         current_context=ctx,
         shuffle_enabled=True,
     )
+    captured: dict = {}
 
-    captured = {}
-
-    def fake_get_next_track(**kwargs):
+    def fake_get_next_tracks(**kwargs):
         captured["exclusion_ids"] = kwargs.get("exclusion_ids")
-        return None  # Trigger no-op refill path (no append)
+        return [], None  # nothing new: no append, no cursor move
 
     state_calls = [state_initial, state_advanced, state_advanced, state_advanced]
 
     def get_state_side_effect():
         return state_calls.pop(0) if state_calls else state_advanced
 
-    with patch("backend.routers.player.get_state", side_effect=get_state_side_effect), \
-         patch("backend.routers.player.update_state", new_callable=AsyncMock), \
-         patch("backend.routers.player.get_next_track", side_effect=fake_get_next_track), \
-         patch("backend.routers.player.rebuild_queue", return_value=[]), \
-         patch("backend.routers.player.save_queue_state"), \
-         patch("backend.routers.player._calculate_final_duration", return_value=0), \
+    with patch("web.backend.routers.player.get_state", side_effect=get_state_side_effect), \
+         patch("web.backend.routers.player.update_state", new_callable=AsyncMock), \
+         patch("web.backend.routers.player.get_next_tracks", side_effect=fake_get_next_tracks), \
+         patch("web.backend.routers.player.save_queue_state"), \
+         patch("web.backend.routers.player._calculate_final_duration", return_value=0), \
          patch("music_minion.domain.radio.history.end_play"), \
-         patch("music_minion.domain.radio.history.start_play", return_value=42), \
-         patch("backend.queries.tracks.batch_fetch_tracks_with_metadata", return_value=[]):
+         patch("music_minion.domain.radio.history.start_play", return_value=42):
+        TestClient(app).post("/api/player/next")
 
-        client = TestClient(app)
-        client.post("/api/player/next")
-
-    assert "exclusion_ids" in captured, "get_next_track was not called — refill path didn't fire"
-    assert len(captured["exclusion_ids"]) == expected_exclusion_size, (
-        f"expected exclusion_ids size {expected_exclusion_size}, got {len(captured['exclusion_ids'])}"
-    )
+    assert "exclusion_ids" in captured, "get_next_tracks was not called; refill path didn't fire"
     return captured["exclusion_ids"]
 
 
-def test_organizer_refill_excludes_entire_queue() -> None:
-    """T3: organizer refill excludes ALL queue entries, not just forward."""
-    # Queue size 51, qi advances to 3 → tracks_ahead = 48 < 50 triggers refill
-    exclusion = _capture_exclusion_test("organizer", expected_exclusion_size=51, queue_size=51, qi=2)
-    # All 51 track IDs should be excluded
-    assert set(exclusion) == set(range(1, 52))
-
-
-def test_non_organizer_refill_excludes_forward_only() -> None:
-    """T6 REGRESSION: non-organizer (playlist) refill keeps forward-only exclusion."""
-    # qi advances from 2 to 3, queue[3:] = 48 entries
-    exclusion = _capture_exclusion_test("playlist", expected_exclusion_size=48, queue_size=51, qi=2)
-    # Only tracks at index 3 onward (track IDs 4..51) should be in exclusion
-    assert set(exclusion) == set(range(4, 52))
+def test_playlist_refill_excludes_forward_only() -> None:
+    """Rolling-window refill excludes only the tracks still ahead of the cursor."""
+    # qi advances from 2 to 3 -> queue[3:] = 48 entries, below REFILL_THRESHOLD
+    exclusion = _capture_refill_exclusion(queue_size=51, qi=2)
+    assert exclusion == list(range(4, 52))

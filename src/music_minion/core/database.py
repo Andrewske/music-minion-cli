@@ -685,7 +685,14 @@ def migrate_database(conn, current_version: int) -> None:
             "CREATE INDEX IF NOT EXISTS idx_tracks_local_path ON tracks (local_path)"
         )
 
-        # 10. Create UNIQUE indexes on provider IDs for fast lookups and uniqueness
+        # 10. Create UNIQUE indexes on provider IDs for fast lookups and uniqueness.
+        # The indexes reference tracks.source (formally added in v12), so add it
+        # here first or fresh databases fail to migrate.
+        try:
+            conn.execute("ALTER TABLE tracks ADD COLUMN source TEXT DEFAULT 'local'")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_soundcloud_id ON tracks (source, soundcloud_id) WHERE soundcloud_id IS NOT NULL"
         )
@@ -942,13 +949,6 @@ def migrate_database(conn, current_version: int) -> None:
             UPDATE playlists
             SET library = 'spotify'
             WHERE spotify_playlist_id IS NOT NULL
-        """)
-
-        # YouTube playlists (if any exist in future)
-        conn.execute("""
-            UPDATE playlists
-            SET library = 'youtube'
-            WHERE youtube_playlist_id IS NOT NULL
         """)
 
         # Local playlists (no provider ID)
@@ -1881,9 +1881,14 @@ def migrate_database(conn, current_version: int) -> None:
 
     if current_version < 37:
         logger.info("Migrating to v37: add losses column to playlist_elo_ratings...")
-        conn.execute("""
-            ALTER TABLE playlist_elo_ratings ADD COLUMN losses INTEGER DEFAULT 0
-        """)
+        try:
+            conn.execute("""
+                ALTER TABLE playlist_elo_ratings ADD COLUMN losses INTEGER DEFAULT 0
+            """)
+        except sqlite3.OperationalError as e:
+            # v36 table rebuild already includes losses on fresh databases
+            if "duplicate column name" not in str(e).lower():
+                raise
         conn.commit()
         logger.info("  ✓ Migration to v37 complete: added losses column")
 

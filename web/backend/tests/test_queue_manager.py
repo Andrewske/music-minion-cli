@@ -8,9 +8,14 @@ import pytest
 import sqlite3
 from unittest import mock
 
-# Import queue_manager - conftest.py handles the circular import setup
-from backend import queue_manager
-from conftest import MockPlayContext
+from web.backend import queue_manager
+from web.backend.schemas import PlayContext
+
+
+def make_context(**overrides: object) -> PlayContext:
+    """Build a PlayContext with playlist defaults (playlist 1, shuffled)."""
+    fields: dict = {"type": "playlist", "playlist_id": 1, "shuffle": True}
+    return PlayContext(**{**fields, **overrides})
 
 
 @pytest.fixture
@@ -75,12 +80,8 @@ def test_db():
 
 @pytest.fixture
 def mock_context():
-    """Mock PlayContext for testing.
-
-    This matches the Pydantic model structure from routers.player but as a dataclass
-    to avoid circular import issues during testing.
-    """
-    return MockPlayContext()
+    """Default playlist PlayContext."""
+    return make_context()
 
 
 # Test: initialize_queue (shuffle mode)
@@ -183,7 +184,7 @@ def test_get_next_track_sorted_mode_sequential(test_db, mock_context):
     """Should get next track in sorted sequence."""
     sort_spec = {"field": "bpm", "direction": "asc"}
 
-    # Position at track 0, should get track at position 1
+    # position_in_sorted is the offset of the next row to read (no +1)
     track_id = queue_manager.get_next_track(
         mock_context,
         [],
@@ -193,17 +194,25 @@ def test_get_next_track_sorted_mode_sequential(test_db, mock_context):
         position_in_sorted=0,
     )
 
-    # Should get second track in sorted order
     assert track_id is not None
 
-    # At last position, should return None (no wrap-around)
-    track_id_end = queue_manager.get_next_track(
+    # Offset 199 is the last row; offset 200 is past the end (no wrap-around)
+    track_id_last = queue_manager.get_next_track(
         mock_context,
         [],
         test_db,
         shuffle=False,
         sort_spec=sort_spec,
         position_in_sorted=199,
+    )
+    assert track_id_last is not None
+    track_id_end = queue_manager.get_next_track(
+        mock_context,
+        [],
+        test_db,
+        shuffle=False,
+        sort_spec=sort_spec,
+        position_in_sorted=200,
     )
     assert track_id_end is None  # End of playlist
 
@@ -456,7 +465,7 @@ def test_initialize_queue_sorted_without_spec(test_db, mock_context):
 
 
 def test_get_next_track_sorted_at_position_zero(test_db, mock_context):
-    """Should get second track when position is 0 in sorted mode."""
+    """Position 0 in sorted mode reads the first track."""
     sort_spec = {"field": "track_number", "direction": "asc"}
 
     track_id = queue_manager.get_next_track(
@@ -468,9 +477,7 @@ def test_get_next_track_sorted_at_position_zero(test_db, mock_context):
         position_in_sorted=0,
     )
 
-    assert track_id is not None
-    # Should be track at position 1 (second track)
-    assert track_id == 2
+    assert track_id == 1
 
 
 def test_save_queue_state_updates_existing(test_db, mock_context):
@@ -517,7 +524,7 @@ def test_save_queue_state_updates_existing(test_db, mock_context):
 
 def test_initialize_queue_comparison_context(test_db):
     """Should handle comparison context with track_ids."""
-    context = MockPlayContext(type="comparison", track_ids=[1, 2, 3, 4, 5])
+    context = make_context(type="comparison", track_ids=[1, 2, 3, 4, 5])
 
     queue = queue_manager.initialize_queue(
         context, test_db, window_size=10, shuffle=True
@@ -536,7 +543,7 @@ def test_initialize_queue_builder_context(test_db):
         test_db.execute("INSERT INTO playlist_tracks VALUES (99, ?, ?)", (i, i))
     test_db.commit()
 
-    context = MockPlayContext(type="builder", playlist_id=None, builder_id=99)
+    context = make_context(type="builder", playlist_id=None, builder_id=99)
 
     queue = queue_manager.initialize_queue(
         context, test_db, window_size=10, shuffle=True
@@ -553,7 +560,7 @@ def test_get_next_track_builder_context(test_db):
         test_db.execute("INSERT INTO playlist_tracks VALUES (99, ?, ?)", (i, i))
     test_db.commit()
 
-    context = MockPlayContext(type="builder", playlist_id=None, builder_id=99)
+    context = make_context(type="builder", playlist_id=None, builder_id=99)
 
     track_id = queue_manager.get_next_track(context, [1, 2, 3], test_db, shuffle=True)
 
@@ -564,7 +571,7 @@ def test_get_next_track_builder_context(test_db):
 
 def test_get_next_track_comparison_context(test_db):
     """Should get next track from comparison context track_ids."""
-    context = MockPlayContext(type="comparison", track_ids=[10, 20, 30, 40, 50])
+    context = make_context(type="comparison", track_ids=[10, 20, 30, 40, 50])
 
     track_id = queue_manager.get_next_track(context, [10, 20], test_db, shuffle=True)
 
@@ -580,7 +587,7 @@ def test_get_next_track_sorted_builder(test_db):
         test_db.execute("INSERT INTO playlist_tracks VALUES (99, ?, ?)", (i, i))
     test_db.commit()
 
-    context = MockPlayContext(type="builder", playlist_id=None, builder_id=99)
+    context = make_context(type="builder", playlist_id=None, builder_id=99)
 
     sort_spec = {"field": "bpm", "direction": "asc"}
     track_id = queue_manager.get_next_track(
@@ -666,7 +673,7 @@ def test_load_queue_state_with_builder_context(test_db):
     test_db.execute("INSERT INTO playlists VALUES (99, 'Builder', 'manual')")
     test_db.commit()
 
-    context = MockPlayContext(type="builder", builder_id=99, playlist_id=None)
+    context = make_context(type="builder", builder_id=99, playlist_id=None)
     queue_manager.save_queue_state(context, [1, 2, 3], 0, True, None, test_db)
 
     state = queue_manager.load_queue_state(test_db)
@@ -697,7 +704,7 @@ def test_initialize_queue_when_window_larger_than_playlist_shuffle(
 
 def test_get_next_track_comparison_all_excluded(test_db):
     """Should return None when all comparison tracks are excluded."""
-    context = MockPlayContext(type="comparison", track_ids=[1, 2, 3])
+    context = make_context(type="comparison", track_ids=[1, 2, 3])
 
     track_id = queue_manager.get_next_track(context, [1, 2, 3], test_db, shuffle=True)
     assert track_id is None
@@ -725,7 +732,7 @@ def test_rebuild_queue_with_full_history(test_db, mock_context):
 
 def test_get_next_track_sorted_comparison_context(test_db):
     """Should handle sorted mode with comparison context."""
-    context = MockPlayContext(type="comparison", track_ids=[5, 15, 25, 35, 45])
+    context = make_context(type="comparison", track_ids=[5, 15, 25, 35, 45])
 
     sort_spec = {"field": "bpm", "direction": "asc"}
     track_id = queue_manager.get_next_track(
@@ -877,7 +884,7 @@ def test_initialize_queue_small_playlist_sorted_without_spec(test_db, mock_conte
 
 def test_get_next_track_nonexistent_playlist(test_db):
     """Should handle nonexistent playlist gracefully."""
-    context = MockPlayContext(playlist_id=999)  # Doesn't exist
+    context = make_context(playlist_id=999)  # Doesn't exist
 
     track_id = queue_manager.get_next_track(context, [], test_db, shuffle=True)
     # Should return None due to empty playlist
@@ -886,7 +893,7 @@ def test_get_next_track_nonexistent_playlist(test_db):
 
 def test_initialize_queue_nonexistent_playlist(test_db):
     """Should handle nonexistent playlist gracefully."""
-    context = MockPlayContext(playlist_id=999)  # Doesn't exist
+    context = make_context(playlist_id=999)  # Doesn't exist
 
     queue = queue_manager.initialize_queue(
         context, test_db, window_size=100, shuffle=True
@@ -897,7 +904,7 @@ def test_initialize_queue_nonexistent_playlist(test_db):
 
 def test_rebuild_queue_nonexistent_playlist(test_db):
     """Should handle errors gracefully and return preserved tracks."""
-    context = MockPlayContext(playlist_id=999)  # Doesn't exist
+    context = make_context(playlist_id=999)  # Doesn't exist
 
     original_queue = list(range(1, 51))
     queue_index = 25
@@ -912,7 +919,7 @@ def test_rebuild_queue_nonexistent_playlist(test_db):
 
 def test_initialize_queue_track_context(test_db):
     """Should handle single track context."""
-    context = MockPlayContext(type="track", track_ids=[42])
+    context = make_context(type="track", track_ids=[42])
 
     queue = queue_manager.initialize_queue(
         context, test_db, window_size=100, shuffle=True
@@ -967,7 +974,7 @@ def test_get_next_track_builder_sorted_by_title(test_db):
         test_db.execute("INSERT INTO playlist_tracks VALUES (99, ?, ?)", (i, i))
     test_db.commit()
 
-    context = MockPlayContext(type="builder", playlist_id=None, builder_id=99)
+    context = make_context(type="builder", playlist_id=None, builder_id=99)
 
     sort_spec = {"field": "title", "direction": "asc"}
     track_id = queue_manager.get_next_track(
@@ -1049,7 +1056,7 @@ def test_get_next_track_smart_playlist(mock_evaluate, test_db):
     # Mock evaluate_filters to return some tracks
     mock_evaluate.return_value = [{"id": 10}, {"id": 20}, {"id": 30}, {"id": 40}]
 
-    context = MockPlayContext(playlist_id=88)
+    context = make_context(playlist_id=88)
 
     track_id = queue_manager.get_next_track(context, [10], test_db, shuffle=True)
 
@@ -1068,7 +1075,7 @@ def test_initialize_queue_smart_playlist(mock_evaluate, test_db):
     # Mock evaluate_filters to return tracks
     mock_evaluate.return_value = [{"id": i} for i in range(1, 51)]
 
-    context = MockPlayContext(playlist_id=88)
+    context = make_context(playlist_id=88)
 
     queue = queue_manager.initialize_queue(
         context, test_db, window_size=20, shuffle=True
@@ -1088,7 +1095,7 @@ def test_get_sorted_tracks_smart_playlist(mock_evaluate, test_db):
     # Mock evaluate_filters
     mock_evaluate.return_value = [{"id": i} for i in range(1, 21)]
 
-    context = MockPlayContext(playlist_id=88)
+    context = make_context(playlist_id=88)
 
     sort_spec = {"field": "bpm", "direction": "asc"}
     queue = queue_manager.initialize_queue(
@@ -1114,7 +1121,7 @@ def test_get_next_track_smart_playlist_sorted(mock_evaluate, test_db):
     # Mock evaluate_filters
     mock_evaluate.return_value = [{"id": i} for i in range(1, 21)]
 
-    context = MockPlayContext(playlist_id=88)
+    context = make_context(playlist_id=88)
 
     sort_spec = {"field": "bpm", "direction": "asc"}
     track_id = queue_manager.get_next_track(
@@ -1134,7 +1141,7 @@ def test_rebuild_queue_smart_playlist(mock_evaluate, test_db):
     # Mock evaluate_filters
     mock_evaluate.return_value = [{"id": i} for i in range(1, 101)]
 
-    context = MockPlayContext(playlist_id=88)
+    context = make_context(playlist_id=88)
 
     original_queue = list(range(1, 51))
     queue_index = 25
@@ -1173,11 +1180,11 @@ def create_test_session(
     }
 
 
-@mock.patch("backend.queries.buckets.get_session_with_data")
+@mock.patch("web.backend.queries.buckets.get_session_with_data")
 def test_resolve_organizer_context_returns_only_unassigned(mock_get_session, test_db):
     """Queue should only contain unassigned tracks from bucket session."""
-    from backend.queue_manager import get_next_track
-    from backend.schemas import PlayContext
+    from web.backend.queue_manager import get_next_track
+    from web.backend.schemas import PlayContext
 
     # Mock session with tracks 1,2,3 unassigned, 4,5 assigned
     mock_session = create_test_session(
@@ -1205,13 +1212,13 @@ def test_resolve_organizer_context_returns_only_unassigned(mock_get_session, tes
         assert track_id in [1, 2, 3]
 
 
-@mock.patch("backend.queries.buckets.get_session_with_data")
+@mock.patch("web.backend.queries.buckets.get_session_with_data")
 def test_organizer_loop_sequential_returns_none_when_exhausted(
     mock_get_session, test_db
 ):
     """Sequential mode should return None when all tracks excluded (signals queue rebuild)."""
-    from backend.queue_manager import get_next_track
-    from backend.schemas import PlayContext
+    from web.backend.queue_manager import get_next_track
+    from web.backend.schemas import PlayContext
 
     mock_session = create_test_session(all_track_ids=[1, 2, 3])
     mock_get_session.return_value = mock_session
@@ -1229,11 +1236,11 @@ def test_organizer_loop_sequential_returns_none_when_exhausted(
     assert next_track is None
 
 
-@mock.patch("backend.queries.buckets.get_session_with_data")
+@mock.patch("web.backend.queries.buckets.get_session_with_data")
 def test_organizer_loop_shuffle_returns_none_when_exhausted(mock_get_session, test_db):
     """Shuffle mode should return None when all tracks excluded (signals queue rebuild)."""
-    from backend.queue_manager import get_next_track
-    from backend.schemas import PlayContext
+    from web.backend.queue_manager import get_next_track
+    from web.backend.schemas import PlayContext
 
     mock_session = create_test_session(all_track_ids=[1, 2, 3, 4, 5])
     mock_get_session.return_value = mock_session
@@ -1250,13 +1257,13 @@ def test_organizer_loop_shuffle_returns_none_when_exhausted(mock_get_session, te
     assert next_track is None
 
 
-@mock.patch("backend.queries.buckets.get_session_with_data")
+@mock.patch("web.backend.queries.buckets.get_session_with_data")
 def test_resolve_organizer_context_inactive_session_returns_empty(
     mock_get_session, test_db
 ):
     """Inactive sessions should return empty track list."""
-    from backend.queue_manager import _resolve_context_to_track_ids
-    from backend.schemas import PlayContext
+    from web.backend.queue_manager import _resolve_context_to_track_ids
+    from web.backend.schemas import PlayContext
 
     # Session is "applied" (inactive)
     mock_session = create_test_session(status="applied", all_track_ids=[1, 2, 3])

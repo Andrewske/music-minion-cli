@@ -4,10 +4,23 @@ import pytest
 from pathlib import Path
 from unittest.mock import Mock
 from fastapi.testclient import TestClient
+from music_minion.core.database import get_db_connection
 from web.backend.main import app
 from web.backend.routers.tracks import get_track_path, get_mime_type
 
 client = TestClient(app)
+
+
+@pytest.fixture
+def seeded_track_id() -> int:
+    """Insert one track into the isolated test DB and return its id."""
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            "INSERT INTO tracks (title, artist, local_path, source)"
+            " VALUES ('Test Song', 'Test Artist', '/music/test.mp3', 'local')"
+        )
+        conn.commit()
+        return cursor.lastrowid
 
 
 class TestGetTrackPath:
@@ -121,11 +134,11 @@ def test_waveform_track_with_null_path():
 class TestSearchTracks:
     """Test search_tracks endpoint."""
 
-    def test_search_tracks_returns_list(self):
-        """Test search endpoint returns a list."""
+    def test_search_tracks_returns_list(self, seeded_track_id: int):
+        """Test search endpoint finds a seeded track."""
         response = client.get("/api/tracks/search?q=test")
         assert response.status_code == 200
-        assert isinstance(response.json(), list)
+        assert [t["id"] for t in response.json()] == [seeded_track_id]
 
     def test_search_tracks_with_limit(self):
         """Test search endpoint respects limit parameter."""
@@ -150,13 +163,9 @@ class TestScrobbleTrack:
         response = client.post("/api/tracks/99999/scrobble", json={"played_ms": 30000})
         assert response.status_code == 404
 
-    def test_scrobble_valid_track_returns_200(self):
-        # First check if any track exists in test DB
-        search = client.get("/api/tracks/search?q=&limit=1")
-        if search.status_code == 200 and search.json():
-            track_id = search.json()[0]["id"]
-            response = client.post(f"/api/tracks/{track_id}/scrobble", json={"played_ms": 60000})
-            assert response.status_code == 200
-            assert response.json() == {"ok": True}
-        else:
-            pytest.skip("No tracks in test database")
+    def test_scrobble_valid_track_returns_200(self, seeded_track_id: int):
+        response = client.post(
+            f"/api/tracks/{seeded_track_id}/scrobble", json={"played_ms": 60000}
+        )
+        assert response.status_code == 200
+        assert response.json() == {"ok": True}

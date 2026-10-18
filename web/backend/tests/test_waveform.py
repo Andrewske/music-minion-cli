@@ -1,83 +1,77 @@
 """Tests for waveform generation utilities."""
 
-import tempfile
 import json
+from array import array
 from pathlib import Path
-from unittest.mock import patch, Mock
+from unittest.mock import Mock, patch
+
 import pytest
 
 from web.backend.waveform import (
+    MAX_AUDIO_SIZE_MB,
     AudioTooLargeError,
     FFmpegNotFoundError,
     generate_waveform,
-    has_cached_waveform,
     get_waveform_path,
 )
+
+FROM_FILE = "web.backend.waveform.AudioSegment.from_file"
+
+
+@pytest.fixture
+def small_audio(tmp_path: Path) -> Path:
+    """A tiny placeholder file; decoding is always mocked."""
+    path = tmp_path / "song.mp3"
+    path.write_bytes(b"\x00" * 1024)
+    return path
 
 
 class TestWaveformGeneration:
     """Test waveform generation with various conditions."""
 
-    def test_waveform_size_limit(self):
-        """Test that files >100MB raise AudioTooLargeError."""
-        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
-            # Create a large file (simulate >100MB)
-            f.write(b"x" * (101 * 1024 * 1024))  # 101MB
-            large_file = f.name
+    def test_waveform_size_limit(self, tmp_path: Path) -> None:
+        """Oversized files raise AudioTooLargeError without ever being decoded."""
+        large_file = tmp_path / "huge.mp3"
+        with open(large_file, "wb") as f:
+            # Sparse file: reports the size without writing 100MB to disk
+            f.truncate((MAX_AUDIO_SIZE_MB + 1) * 1024 * 1024)
 
-        try:
-            with patch("web.backend.waveform.Path") as mock_path:
-                mock_path.return_value.stat.return_value.st_size = 101 * 1024 * 1024
-                with pytest.raises(AudioTooLargeError, match="File too large"):
-                    generate_waveform(large_file, 1)
-        finally:
-            Path(large_file).unlink(missing_ok=True)
+        with patch(FROM_FILE) as mock_from_file:
+            with pytest.raises(AudioTooLargeError, match="File too large"):
+                generate_waveform(str(large_file), 1)
 
-    def test_ffmpeg_not_found_error(self):
-        """Test that missing ffmpeg raises FFmpegNotFoundError."""
-        with patch("web.backend.waveform.AudioSegment.from_file") as mock_from_file:
-            mock_from_file.side_effect = FileNotFoundError("ffmpeg not found")
+        mock_from_file.assert_not_called()
 
+    def test_ffmpeg_not_found_error(self, small_audio: Path) -> None:
+        """Missing ffmpeg raises FFmpegNotFoundError."""
+        with patch(FROM_FILE, side_effect=FileNotFoundError("ffmpeg not found")):
             with pytest.raises(FFmpegNotFoundError, match="ffmpeg not found"):
-                generate_waveform("/fake/path.mp3", 1)
+                generate_waveform(str(small_audio), 1)
 
-    def test_opus_codec_error(self):
-        """Test that Opus decode failure has helpful message."""
-        with patch("web.backend.waveform.AudioSegment.from_file") as mock_from_file:
-            mock_from_file.side_effect = Exception("opus codec not supported")
-
+    def test_opus_codec_error(self, small_audio: Path) -> None:
+        """Opus decode failure has a helpful message."""
+        with patch(FROM_FILE, side_effect=Exception("opus codec not supported")):
             with pytest.raises(RuntimeError, match="Opus codec not supported"):
-                generate_waveform("/fake/path.opus", 1)
+                generate_waveform(str(small_audio), 1)
 
-    @patch("web.backend.waveform.AudioSegment.from_file")
-    @patch("web.backend.waveform.np.array")
-    def test_vectorized_peaks_correctness(self, mock_np_array, mock_from_file):
-        """Test that vectorized peaks match original algorithm."""
-        # Mock audio segment
-        mock_audio = Mock()
-        mock_audio.channels = 2
-        mock_audio.frame_rate = 44100
-        mock_from_file.return_value = mock_audio
+    def test_vectorized_peaks_correctness(self, small_audio: Path) -> None:
+        """Vectorized peaks match a naive per-chunk min/max loop."""
+        samples = [((i * 37) % 201) - 100 for i in range(4000)]
+        mock_audio = Mock(channels=2, frame_rate=44100)
+        mock_audio.get_array_of_samples.return_value = array("h", samples)
 
-        # Mock samples array (simple test data)
-        samples = [1, -2, 3, -4, 5, -6, 7, -8]
-        mock_np_array.return_value = samples
+        with patch(FROM_FILE, return_value=mock_audio):
+            result = generate_waveform(str(small_audio), 7)
 
-        # Mock file size check
-        with patch("web.backend.waveform.Path") as mock_path:
-            mock_path.return_value.stat.return_value.st_size = 1024  # Small file
+        chunk = 4  # 4000 samples // 1000 target peaks
+        expected: list[int] = []
+        for start in range(0, len(samples), chunk):
+            block = samples[start : start + chunk]
+            expected += [min(block), max(block)]
 
-            result = generate_waveform("/fake/path.mp3", 1)
-
-            # Verify structure
-            assert "peaks" in result
-            assert "version" in result
-            assert "channels" in result
-            assert "sample_rate" in result
-            assert "samples_per_pixel" in result
-            assert "bits" in result
-            assert "length" in result
-
-            # Verify peaks is list of ints
-            assert isinstance(result["peaks"], list)
-            assert all(isinstance(p, int) for p in result["peaks"])
+        assert result["peaks"] == expected
+        assert result["samples_per_pixel"] == chunk
+        assert result["length"] == len(samples)
+        assert result["channels"] == 2
+        assert result["sample_rate"] == 44100
+        assert json.loads(get_waveform_path(7).read_text()) == result
