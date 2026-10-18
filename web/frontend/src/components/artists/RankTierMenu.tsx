@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import type { ArtistStats, ArtistTier } from '../../api/artists';
 import { useUpdateArtist } from '../../hooks/useArtists';
 
-export const TIER_COLORS: Record<ArtistTier, string> = {
+const TIER_COLORS: Record<ArtistTier, string> = {
   S: 'text-amber-300 border-amber-300/40 bg-amber-300/10',
   A: 'text-violet-300 border-violet-300/40 bg-violet-300/10',
   B: 'text-sky-300 border-sky-300/40 bg-sky-300/10',

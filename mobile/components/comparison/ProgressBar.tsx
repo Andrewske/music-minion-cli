@@ -13,11 +13,13 @@ interface ProgressBarProps {
 }
 
 export function ProgressBar({ progress }: ProgressBarProps) {
-  if (!progress) return null;
-
+  // Hooks must run before the early return (rules-of-hooks)
+  const percentage = progress?.percentage ?? 0;
   const widthStyle = useAnimatedStyle(() => ({
-    width: withTiming(`${Math.min(progress.percentage, 100)}%`, { duration: 300 }),
+    width: withTiming(`${Math.min(percentage, 100)}%`, { duration: 300 }),
   }));
+
+  if (!progress) return null;
 
   return (
     <View style={styles.container}>

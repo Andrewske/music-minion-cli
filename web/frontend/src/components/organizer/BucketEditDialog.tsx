@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
@@ -51,14 +51,16 @@ export function BucketEditDialog({
     (p) => p.id !== parentPlaylistId
   ) ?? [];
 
-  // Reset form when dialog opens
-  useEffect(() => {
+  // Reset form when dialog opens (adjusted during render, not in an effect)
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
     if (open) {
       setName(initialName);
       setEmojiId(initialEmojiId);
       setSelectedPlaylistId(linkedPlaylistId ? String(linkedPlaylistId) : 'unlink');
     }
-  }, [open, initialName, initialEmojiId, linkedPlaylistId]);
+  }
 
   const handleSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();

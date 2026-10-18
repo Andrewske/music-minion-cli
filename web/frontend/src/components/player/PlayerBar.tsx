@@ -103,7 +103,7 @@ export function PlayerBar(): JSX.Element {
   // serving the current track, falling back to store interpolation only for
   // genuinely remote playback.
   const audio = useActiveAudioElement();
-  const [progress, setProgress] = useState(0);
+  const [trackedProgress, setProgress] = useState(0);
 
   // The local audio element is the source of truth when it holds the current
   // track. We key on dataset.trackId (set in usePlayer) rather than the
@@ -114,11 +114,11 @@ export function PlayerBar(): JSX.Element {
   const audioServesCurrentTrack =
     !!audio && !!currentTrack && audio.dataset.trackId === String(currentTrack.id);
 
+  // No duration means nothing to track; render 0 without touching state
+  const progress = currentTrack?.duration ? trackedProgress : 0;
+
   useEffect(() => {
-    if (!currentTrack?.duration) {
-      setProgress(0);
-      return;
-    }
+    if (!currentTrack?.duration) return;
 
     // Keep showing last position when paused (don't reset to 0)
     if (!isPlaying) return;

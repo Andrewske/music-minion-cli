@@ -140,14 +140,14 @@ export const TrackQueueTable = ({
   });
 
   // Trigger load more when scrolling near bottom
+  const lastVirtualIndex = virtualizer.getVirtualItems().at(-1)?.index;
   useEffect(() => {
-    const lastItem = virtualizer.getVirtualItems().at(-1);
-    if (!lastItem) return;
+    if (lastVirtualIndex === undefined) return;
 
-    if (lastItem.index >= tracks.length - 5 && hasMore && !isLoadingMore) {
+    if (lastVirtualIndex >= tracks.length - 5 && hasMore && !isLoadingMore) {
       onLoadMore();
     }
-  }, [virtualizer.getVirtualItems(), hasMore, isLoadingMore, tracks.length, onLoadMore]);
+  }, [lastVirtualIndex, hasMore, isLoadingMore, tracks.length, onLoadMore]);
 
   // Helper to get row highlight classes
   const getRowClasses = (index: number, trackId: number): string => {

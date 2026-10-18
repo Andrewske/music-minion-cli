@@ -28,14 +28,12 @@ import {
   type PreparedFeedQueue,
   mergeFeedDecisionResponse,
   rateFeedItem,
-} from '@music-minion/shared';
-import type {
-  FeedDecision,
-  FeedItem,
-  FeedPage,
-  FeedRankPreset,
-  FeedSource,
-  Track,
+  type FeedDecision,
+  type FeedItem,
+  type FeedPage,
+  type FeedRankPreset,
+  type FeedSource,
+  type Track,
 } from '@music-minion/shared';
 import { usePlayerStore } from '../../stores/playerStore';
 import { FeedTrackCard } from '../../components/feed/FeedTrackCard';

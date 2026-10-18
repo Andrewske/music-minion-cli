@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import type { PlaylistTrackEntry } from '../types';
 import { EmojiTrackActions } from './EmojiTrackActions';
@@ -15,11 +15,13 @@ export function PlaylistTracksTable({ tracks }: PlaylistTracksTableProps): JSX.E
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   // Local state for tracks to allow emoji updates
   const [localTracks, setLocalTracks] = useState<PlaylistTrackEntry[]>(tracks);
+  const [prevTracks, setPrevTracks] = useState(tracks);
 
-  // Sync local state when tracks prop changes (e.g., on refetch)
-  useEffect(() => {
+  // Reset local state when tracks prop changes (e.g., on refetch), during render
+  if (tracks !== prevTracks) {
+    setPrevTracks(tracks);
     setLocalTracks(tracks);
-  }, [tracks]);
+  }
 
   const sortedTracks = useMemo(() => {
     return [...localTracks].sort((a, b) => {

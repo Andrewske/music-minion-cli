@@ -19,16 +19,22 @@ export function GenreSelectionModal({
   onSave,
 }: GenreSelectionModalProps): JSX.Element {
   const { genres, fetchGenres } = useGenreStore();
-  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [selectedIds, setSelectedIds] = useState<number[]>(
+    () => track.genres?.map((g) => g.id) ?? [],
+  );
   const [saving, setSaving] = useState(false);
 
+  // Re-initialize with current track genres (in order) when opened or when
+  // they change while open; adjusted during render rather than in an effect
+  const [syncedFor, setSyncedFor] = useState({ open, genres: track.genres });
+  if (syncedFor.open !== open || syncedFor.genres !== track.genres) {
+    setSyncedFor({ open, genres: track.genres });
+    if (open) setSelectedIds(track.genres?.map((g) => g.id) ?? []);
+  }
+
   useEffect(() => {
-    if (open) {
-      fetchGenres();
-      // Initialize with current track genres in order
-      setSelectedIds(track.genres?.map((g) => g.id) ?? []);
-    }
-  }, [open, track.genres, fetchGenres]);
+    if (open) fetchGenres();
+  }, [open, fetchGenres]);
 
   const handleToggle = (genreId: number): void => {
     setSelectedIds((prev) => {

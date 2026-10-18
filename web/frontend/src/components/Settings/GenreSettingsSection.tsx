@@ -42,7 +42,7 @@ export function GenreSettingsSection(): JSX.Element {
       } else {
         toast.success('Genre renamed');
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to rename genre');
     } finally {
       setEditingId(null);
@@ -60,7 +60,7 @@ export function GenreSettingsSection(): JSX.Element {
       await deleteGenre(genre.id);
       removeGenre(genre.id);
       toast.success('Genre deleted');
-    } catch (err) {
+    } catch {
       toast.error('Failed to delete genre');
     }
   };
@@ -70,7 +70,7 @@ export function GenreSettingsSection(): JSX.Element {
       const updated = await assignGenreEmoji(genreId, emojiId);
       updateGenre(updated);
       toast.success(emojiId ? 'Emoji assigned' : 'Emoji removed');
-    } catch (err) {
+    } catch {
       toast.error('Failed to update emoji');
     } finally {
       setEmojiPickerFor(null);

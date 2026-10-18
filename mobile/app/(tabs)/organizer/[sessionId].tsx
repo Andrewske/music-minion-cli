@@ -65,7 +65,7 @@ export default function SessionScreen() {
       await organizer.createBucket(name);
       setNewBucketName('');
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch (err) {
+    } catch {
       Toast.show({ type: 'error', text1: 'Failed to create bucket' });
     }
   }, [newBucketName, organizer]);
