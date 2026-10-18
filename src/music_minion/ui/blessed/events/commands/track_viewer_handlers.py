@@ -124,7 +124,7 @@ def handle_play_track_from_viewer(
     ui_state = add_history_line(
         ui_state, f"▶️  Now playing: {artist} - {title}", "white"
     )
-    ui_state = set_feedback(ui_state, f"✓ Playing from viewer", "✓")
+    ui_state = set_feedback(ui_state, "✓ Playing from viewer", "✓")
 
     # Keep viewer open
     return ctx, ui_state
@@ -171,7 +171,7 @@ def handle_remove_track_from_playlist(
     try:
         playlists.remove_track_from_playlist(pl["id"], track_id)
         ui_state = add_history_line(
-            ui_state, f"✅ Removed track from playlist", "green"
+            ui_state, "✅ Removed track from playlist", "green"
         )
         ui_state = set_feedback(ui_state, f"✓ Removed from {playlist_name}", "✓")
 
@@ -369,12 +369,12 @@ def handle_track_viewer_edit_filters(
     # Get playlist
     pl = playlists.get_playlist_by_id(playlist_id)
     if not pl:
-        ui_state = add_history_line(ui_state, f"❌ Playlist not found", "red")
+        ui_state = add_history_line(ui_state, "❌ Playlist not found", "red")
         return ctx, ui_state
 
     if pl["type"] != "smart":
         ui_state = add_history_line(
-            ui_state, f"❌ Cannot edit filters on manual playlist", "red"
+            ui_state, "❌ Cannot edit filters on manual playlist", "red"
         )
         return ctx, ui_state
 

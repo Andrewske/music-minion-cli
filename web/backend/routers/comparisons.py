@@ -1,6 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException
-from typing import Optional
-from pydantic import BaseModel
 from ..deps import get_db
 from music_minion.ipc import send_command
 from ..sync_manager import sync_manager

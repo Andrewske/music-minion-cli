@@ -1017,7 +1017,7 @@ def _process_ui_action(
         filtered_tracks = action.get("filtered_tracks", [])
         ratings_cache = action.get("ratings_cache", {})
 
-        log(f"🔍 DEBUG: Processing start_comparison action", level="info")
+        log("🔍 DEBUG: Processing start_comparison action", level="info")
         logger.info(
             f"Processing start_comparison action: comparison={comparison is not None}, filtered_tracks={len(filtered_tracks)}, active={comparison.active if comparison else 'N/A'}"
         )

@@ -27,8 +27,6 @@ from music_minion.core.database import get_db_connection, init_database
 from music_minion.domain.library.providers.soundcloud.api import (
     API_BASE_URL,
     _ensure_valid_token,
-    _format_track_urn,
-    _format_playlist_urn,
     reorder_playlist,
 )
 from web.backend.soundcloud_auth import get_web_provider_state
@@ -291,7 +289,7 @@ def main() -> None:
             assignments[target] = []
         assignments[target].append(sc_id)
 
-    print(f"\n── Orphan Assignment Plan ──")
+    print("\n── Orphan Assignment Plan ──")
     total_assigned = 0
     for name in sorted(assignments.keys()):
         count = len(assignments[name])

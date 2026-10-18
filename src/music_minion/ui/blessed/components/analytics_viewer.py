@@ -88,15 +88,15 @@ def format_analytics_lines(analytics: dict, term: Terminal) -> list[str]:
             avg_mins = avg_secs // 60
             avg_secs_rem = avg_secs % 60
 
-            lines.append(f"  Tracks: " + term.bold_white(str(basic["total_tracks"])))
+            lines.append("  Tracks: " + term.bold_white(str(basic["total_tracks"])))
             lines.append(
-                f"  Duration: "
+                "  Duration: "
                 + term.bold_white(f"{hours}h {minutes}m {seconds}s")
                 + f" (avg: {avg_mins}m {avg_secs_rem}s)"
             )
             if basic["year_min"] and basic["year_max"]:
                 lines.append(
-                    f"  Year Range: "
+                    "  Year Range: "
                     + term.bold_white(f"{basic['year_min']}-{basic['year_max']}")
                 )
             lines.append("")
@@ -188,7 +188,7 @@ def format_analytics_lines(analytics: dict, term: Terminal) -> list[str]:
         if bpm["min"] is not None:
             lines.append(term.bold_yellow("⚡ BPM ANALYSIS"))
             lines.append(
-                f"  Range: "
+                "  Range: "
                 + term.bold_white(f"{bpm['min']:.0f}-{bpm['max']:.0f} BPM")
                 + f" (avg: {bpm['avg']:.0f}, median: {bpm['median']:.0f})"
             )

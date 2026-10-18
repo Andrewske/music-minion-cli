@@ -62,18 +62,18 @@ def update_playlist_opus_to_mp3(playlist_name: str):
             else:
                 not_found += 1
                 print(f"✗ MP3 not found in database: {mp3_path}")
-                print(f"  Run 'sync' first to add the MP3 files to the database")
+                print("  Run 'sync' first to add the MP3 files to the database")
 
         conn.commit()
 
     print(f"\n{'='*60}")
-    print(f"Update complete:")
+    print("Update complete:")
     print(f"  Updated:   {updated}")
     print(f"  Not found: {not_found}")
     print(f"  Total:     {len(opus_tracks)}")
 
     if not_found > 0:
-        print(f"\nRun 'sync' to add the MP3 files to the database, then run this script again")
+        print("\nRun 'sync' to add the MP3 files to the database, then run this script again")
         return False
 
     return True
@@ -89,7 +89,7 @@ def main():
     if success:
         print(f"\nPlaylist updated! Now run: playlist export {playlist_name} crate")
     else:
-        print(f"\nFailed to update playlist")
+        print("\nFailed to update playlist")
         sys.exit(1)
 
 

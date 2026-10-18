@@ -2,7 +2,6 @@
 Tests for ELO metadata functions in metadata.py.
 """
 
-import pytest
 
 from music_minion.domain.library.metadata import (
     strip_elo_from_comment,

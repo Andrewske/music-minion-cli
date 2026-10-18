@@ -7,7 +7,6 @@ Used for migrating from MP3 to Opus format while preserving all track history
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from loguru import logger
 
@@ -110,7 +109,6 @@ def _match_tier3_fuzzy(
     """
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.metrics.pairwise import cosine_similarity
-    import numpy as np
 
     if not tracks:
         return []

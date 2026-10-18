@@ -9,10 +9,8 @@ from datetime import datetime
 from typing import Optional, Any
 
 from rich.console import Console
-from rich.live import Live
 from rich.panel import Panel
 from rich.text import Text
-from rich.align import Align
 
 from music_minion.domain import playlists
 from music_minion.domain import playback

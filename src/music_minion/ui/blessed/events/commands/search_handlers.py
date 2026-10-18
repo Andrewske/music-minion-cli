@@ -61,7 +61,7 @@ def handle_search_play_track(
                 "green",
             )
         else:
-            ui_state = add_history_line(ui_state, f"❌ Failed to play track", "red")
+            ui_state = add_history_line(ui_state, "❌ Failed to play track", "red")
     except Exception as e:
         ui_state = add_history_line(ui_state, f"❌ Error playing track: {e}", "red")
 

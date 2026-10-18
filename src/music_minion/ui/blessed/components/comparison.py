@@ -664,7 +664,7 @@ def _render_loading_skeleton(
 
     # Session progress
     if line_num < height:
-        progress_text = f"   Session: 0 comparisons | Loading..."
+        progress_text = "   Session: 0 comparisons | Loading..."
         write_at(term, 0, y + line_num, term.cyan(progress_text))
         line_num += 1
 

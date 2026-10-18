@@ -47,7 +47,7 @@ def handle_add_command(ctx: AppContext, args: list[str]) -> tuple[AppContext, bo
         log(f"❌ Playlist '{name}' not found in {active_library} library", "error")
         if active_library != "local":
             log(
-                f"   Tip: Switch to local library with 'library active local' to access local playlists",
+                "   Tip: Switch to local library with 'library active local' to access local playlists",
                 "info",
             )
         return ctx, True
@@ -138,7 +138,7 @@ def handle_remove_command(ctx: AppContext, args: list[str]) -> tuple[AppContext,
         log(f"❌ Playlist '{name}' not found in {active_library} library", "error")
         if active_library != "local":
             log(
-                f"   Tip: Switch to local library with 'library active local' to access local playlists",
+                "   Tip: Switch to local library with 'library active local' to access local playlists",
                 "info",
             )
         return ctx, True
@@ -249,10 +249,6 @@ def handle_metadata_command(
 
     # Signal to blessed UI to open metadata editor
     # This will be handled via InternalCommand in keyboard handler
-    from music_minion.ui.blessed.state import InternalCommand
-    from music_minion.ui.blessed.events.commands.metadata_handlers import (
-        handle_show_metadata_editor,
-    )
 
     # For non-blessed mode, show error
     if not hasattr(ctx, "ui_state"):

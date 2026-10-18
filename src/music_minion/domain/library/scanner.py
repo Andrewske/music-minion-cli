@@ -189,7 +189,7 @@ def scan_music_library_optimized(
                 logger.error(f"Error processing {file_path_str}: {e}")
 
     if show_progress:
-        print(f"\nScan complete:")
+        print("\nScan complete:")
         print(f"  Processed: {processed} new/changed files")
         print(f"  Skipped: {skipped} unchanged files")
 

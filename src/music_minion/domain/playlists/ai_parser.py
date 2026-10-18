@@ -14,7 +14,6 @@ from .filters import (
     TEXT_OPERATORS,
     NUMERIC_OPERATORS,
     NUMERIC_FIELDS,
-    TEXT_FIELDS,
     validate_filter,
 )
 

@@ -15,8 +15,6 @@ import time
 from functools import partial
 from pathlib import Path
 
-import requests
-from loguru import logger
 
 print = partial(print, flush=True)
 
@@ -25,10 +23,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from music_minion.core.database import get_db_connection, init_database
 from music_minion.domain.library.providers.soundcloud.api import (
-    API_BASE_URL,
-    _ensure_valid_token,
-    _format_playlist_urn,
-    _format_track_urn,
     create_playlist,
     delete_playlist,
     reorder_playlist,
@@ -225,7 +219,7 @@ def main() -> None:
         print(f"  {year}a (Jan-Jun): {len(h1)} tracks")
         print(f"  {year}b (Jul-Dec): {len(h2)} tracks")
         if len(h1) > 500 or len(h2) > 500:
-            print(f"    ⚠ EXCEEDS 500 — needs further splitting!")
+            print("    ⚠ EXCEEDS 500 — needs further splitting!")
 
     # Steps:
     # 1. Delete existing empty yearly playlists for 2023/2024/2025 on SC
@@ -233,11 +227,11 @@ def main() -> None:
     # 3. Push tracks via reorder_playlist (all under 500, single PUT)
     # 4. Sync local DB
 
-    print(f"\n── Plan ──")
-    print(f"  Delete on SC: 2023, 2024, 2025 (empty yearly playlists)")
-    print(f"  Create on SC: 2023a, 2023b, 2024a, 2024b, 2025a, 2025b")
+    print("\n── Plan ──")
+    print("  Delete on SC: 2023, 2024, 2025 (empty yearly playlists)")
+    print("  Create on SC: 2023a, 2023b, 2024a, 2024b, 2025a, 2025b")
     api_calls = 3 + 6 + 6  # 3 deletes + 6 creates + 6 reorders
-    print(f"  Reorder: 6 playlists (all under 500, single PUT each)")
+    print("  Reorder: 6 playlists (all under 500, single PUT each)")
     print(f"  Estimated API calls: {api_calls}")
     print(f"  Estimated time: ~{api_calls * 2.5 / 60:.1f} minutes")
 

@@ -285,7 +285,7 @@ def main():
                 logger.info("Running post-migration verification...")
                 verify_post_migration(conn, track_ids)
 
-        except Exception as e:
+        except Exception:
             if not args.dry_run:
                 conn.rollback()
                 logger.exception("Migration failed - rolled back all changes")

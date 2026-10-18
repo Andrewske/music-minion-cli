@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 from loguru import logger
 
-from music_minion.core.db_adapter import get_radio_db_connection, is_postgres
+from music_minion.core.db_adapter import get_radio_db_connection
 
 from .models import Station
 

@@ -12,8 +12,6 @@ from music_minion.ui.blessed.state import (
     set_editor_mode,
     add_editor_change,
     start_field_editing,
-    save_field_edit,
-    cancel_field_edit,
 )
 
 
@@ -36,7 +34,7 @@ def handle_show_metadata_editor(
     # Load all track metadata
     track = database.get_track_by_id(track_id)
     if not track:
-        ui_state = add_history_line(ui_state, f"❌ Track not found", "red")
+        ui_state = add_history_line(ui_state, "❌ Track not found", "red")
         return ctx, ui_state
 
     # Load ratings, notes, tags
@@ -189,7 +187,7 @@ def handle_metadata_editor_save(
     track_id = ui_state.editor_data.get("id")
     if not track_id:
         ui_state = hide_metadata_editor(ui_state)
-        ui_state = add_history_line(ui_state, f"❌ Error: No track ID", "red")
+        ui_state = add_history_line(ui_state, "❌ Error: No track ID", "red")
         return ctx, ui_state
 
     success, error_msg = _save_all_changes(track_id, ui_state.editor_changes)
@@ -225,14 +223,14 @@ def handle_metadata_editor_save(
             # Update editor data with refreshed values, clear changes
             ui_state = replace(ui_state, editor_data=track_data, editor_changes={})
             ui_state = add_history_line(
-                ui_state, f"✅ Metadata saved and reloaded", "green"
+                ui_state, "✅ Metadata saved and reloaded", "green"
             )
             ui_state = set_feedback(ui_state, "Metadata saved", "✓")
         else:
             # Failed to reload, close editor
             ui_state = hide_metadata_editor(ui_state)
             ui_state = add_history_line(
-                ui_state, f"✅ Metadata saved (failed to reload)", "yellow"
+                ui_state, "✅ Metadata saved (failed to reload)", "yellow"
             )
     else:
         ui_state = add_history_line(

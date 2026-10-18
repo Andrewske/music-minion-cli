@@ -1398,7 +1398,6 @@ def _report_conversion_result(
     ctx: AppContext, result: "ConversionResult"
 ) -> tuple[AppContext, bool]:
     """Report conversion result to user."""
-    from ..domain.playlists.conversion import ConversionResult
 
     log("\n" + "=" * 60, level="info")
     if result.success:
@@ -1492,7 +1491,7 @@ def handle_playlist_convert_command(
 
     if local_playlist and local_playlist.get("library") in (None, "local"):
         # It's a local playlist - convert to SoundCloud
-        log(f"\n🎵 Starting Local → SoundCloud conversion", level="info")
+        log("\n🎵 Starting Local → SoundCloud conversion", level="info")
         log(f"   Source: {source_name} (local)", level="info")
         log(f"   Target: {soundcloud_name}", level="info")
         log("", level="info")

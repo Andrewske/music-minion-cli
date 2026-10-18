@@ -125,8 +125,8 @@ def add_filter(
 
         if row["type"] != "smart":
             raise ValueError(
-                f"Cannot add filters to manual playlist. "
-                f"Only smart playlists support filters."
+                "Cannot add filters to manual playlist. "
+                "Only smart playlists support filters."
             )
 
         # Insert filter

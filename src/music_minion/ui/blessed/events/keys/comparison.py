@@ -16,7 +16,7 @@ from music_minion.domain.rating.elo import (
     get_k_factor,
     update_ratings,
 )
-from music_minion.ui.blessed.state import ComparisonState, InternalCommand, UIState
+from music_minion.ui.blessed.state import InternalCommand, UIState
 
 from .utils import parse_key
 
@@ -153,7 +153,7 @@ def handle_comparison_choice(
             else new_winner_rating,
             session_id="",  # Empty string for sessionless
         )
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to record comparison")
         return state, None
 

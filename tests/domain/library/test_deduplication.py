@@ -1,6 +1,5 @@
 """Tests for track matching deduplication."""
 
-import pytest
 
 from music_minion.domain.library.deduplication import strip_featuring_artists
 

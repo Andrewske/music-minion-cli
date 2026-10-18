@@ -9,7 +9,6 @@ Usage:
 """
 
 import argparse
-import json
 import sys
 import time
 from dataclasses import dataclass, field
@@ -612,7 +611,7 @@ def print_plan(plan: ConsolidationPlan) -> None:
         print("  All yearly playlists already exist")
 
     # Phase 2
-    print(f"\n── Phase 2: Merge Monthly → Yearly ──")
+    print("\n── Phase 2: Merge Monthly → Yearly ──")
     for year_name, tracks in sorted(plan.yearly_tracks.items()):
         sources = plan.yearly_source_playlists.get(year_name, [])
         print(f"  {year_name}: {len(tracks)} unique tracks from {len(sources)} playlists")
@@ -620,7 +619,7 @@ def print_plan(plan: ConsolidationPlan) -> None:
             print(f"    ← {src}")
 
     # Phase 3
-    print(f"\n── Phase 3: Genre Merges ──")
+    print("\n── Phase 3: Genre Merges ──")
     bhd_existing_count = len(get_playlist_sc_track_ids(BHD_DB_ID))
     print(f"  BassHeadsDelight: {bhd_existing_count} existing + "
           f"{len(plan.bhd_new_tracks) - bhd_existing_count} new = "
@@ -636,7 +635,7 @@ def print_plan(plan: ConsolidationPlan) -> None:
     print(f"  Tags: {len(plan.tag_assignments)} tracks to tag")
 
     # Phase 4
-    print(f"\n── Phase 4: Orphan Track Bucketing ──")
+    print("\n── Phase 4: Orphan Track Bucketing ──")
     total_orphans = sum(len(v) for v in plan.orphan_yearly.values())
     if total_orphans:
         for year_name, tracks in sorted(plan.orphan_yearly.items()):
@@ -645,7 +644,7 @@ def print_plan(plan: ConsolidationPlan) -> None:
         print("  No orphan tracks found")
 
     # Phase 5
-    print(f"\n── Phase 5: Deletions ──")
+    print("\n── Phase 5: Deletions ──")
     print(f"  SC + Local: {len(plan.sc_deletes)} playlists")
     for _, _, name in sorted(plan.sc_deletes, key=lambda x: x[2]):
         print(f"    ✕ {name}")
@@ -654,10 +653,10 @@ def print_plan(plan: ConsolidationPlan) -> None:
         print(f"    ✕ {name} (local only)")
 
     # Summary
-    print(f"\n── Summary ──")
+    print("\n── Summary ──")
     print(f"  Estimated API calls: {plan.total_api_calls}")
     print(f"  Estimated time: ~{plan.total_api_calls * 2.5 / 60:.1f} minutes")
-    print(f"\n  Run with --execute to apply changes.")
+    print("\n  Run with --execute to apply changes.")
     print("=" * 70)
 
 

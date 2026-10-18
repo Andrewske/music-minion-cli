@@ -303,10 +303,10 @@ def auto_export_if_enabled(playlist_id: int, ctx: Optional[AppContext] = None) -
             use_relative_paths=cfg.playlists.use_relative_paths,
             syncthing_config=cfg.syncthing,
         )
-    except (ValueError, FileNotFoundError, ImportError, OSError) as e:
+    except (ValueError, FileNotFoundError, ImportError, OSError):
         # Expected errors - log but don't interrupt workflow
         logger.exception("Auto-export failed")
-    except Exception as e:
+    except Exception:
         # Unexpected errors - log for debugging
         logger.exception("Unexpected error during auto-export")
 
@@ -413,7 +413,6 @@ def sync_context_to_globals(ctx: AppContext) -> None:
     Args:
         ctx: Application context to sync from
     """
-    import sys
 
     # Get main module
     if "music_minion.main" in sys.modules:
@@ -429,7 +428,6 @@ def create_context_from_globals() -> AppContext:
     Returns:
         AppContext initialized from global state
     """
-    import sys
     from rich.console import Console
 
     # Get main module

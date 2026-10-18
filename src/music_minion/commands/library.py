@@ -9,7 +9,6 @@ import re
 import threading
 from typing import Any, Callable, Optional
 
-from loguru import logger
 
 from music_minion.context import AppContext
 from music_minion.core import config, database
@@ -1687,7 +1686,7 @@ def handle_youtube_add(ctx: AppContext, args: list[str]) -> tuple[AppContext, bo
     title = parsed.title
     album = parsed.album
 
-    log(f"📥 Importing YouTube video...", level="info")
+    log("📥 Importing YouTube video...", level="info")
     if artist or title or album:
         log(
             f"   Using custom metadata: {artist or '[uploader]'} - {title or '[video title]'}",
@@ -1769,7 +1768,7 @@ def handle_youtube_add_playlist(
 
         result = youtube.import_playlist(playlist_id)
 
-        log(f"✓ Playlist import complete!", level="info")
+        log("✓ Playlist import complete!", level="info")
         log(f"  Imported: {result.imported_count} tracks", level="info")
         log(f"  Skipped: {result.skipped_count} duplicates", level="info")
 
