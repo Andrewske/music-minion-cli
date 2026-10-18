@@ -62,3 +62,27 @@ export function clearTrackSource(el: HTMLAudioElement): void {
   el.removeAttribute('src');
   el.load();
 }
+
+// Imperative <audio> setters. These mutate DOM elements, not React state; they
+// live outside hooks so callers don't trip react-hooks/immutability.
+
+export function setAudioVolume(el: HTMLAudioElement | null, volume: number): void {
+  if (el) el.volume = volume;
+}
+
+export function setAudioMuted(el: HTMLAudioElement | null, muted: boolean): void {
+  if (el) el.muted = muted;
+}
+
+export function seekAudio(el: HTMLAudioElement, seconds: number): void {
+  el.currentTime = seconds;
+}
+
+/** Pause, unbind, and forget which track the element held. */
+export function releaseAudioElement(el: HTMLAudioElement | null): void {
+  if (!el) return;
+  el.pause();
+  clearTrackSource(el);
+  delete el.dataset.trackId;
+  delete el.dataset.srcBoundAt;
+}

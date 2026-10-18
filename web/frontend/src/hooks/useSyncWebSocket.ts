@@ -11,6 +11,8 @@ export function useSyncWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef(0);
+  // Latest connect(), read by the reconnect timer to avoid a self-referential useCallback
+  const connectRef = useRef<() => void>(() => {});
 
   const handleMessage = useCallback((event: MessageEvent) => {
     try {
@@ -156,8 +158,9 @@ export function useSyncWebSocket() {
         );
         console.log(`Reconnecting in ${delay}ms...`);
 
+        // Go through the ref so reconnects always use the latest connect
         reconnectTimeoutRef.current = window.setTimeout(() => {
-          connect();
+          connectRef.current();
         }, delay);
       };
 
@@ -166,6 +169,10 @@ export function useSyncWebSocket() {
       // Connection failed, will retry via onclose
     }
   }, [handleMessage]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {

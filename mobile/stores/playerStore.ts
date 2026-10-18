@@ -2,8 +2,7 @@
  * Mobile player store — injects RN-specific deps into shared factory.
  */
 import { createPlayerStore, getCurrentPosition, getDefaultApiClient } from '@music-minion/shared';
-import type { PlayContext, PlayerStore } from '@music-minion/shared';
-import type { StorageAdapter } from '@music-minion/shared';
+import type { PlayContext, PlayerStore, StorageAdapter } from '@music-minion/shared';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const getApiBase = (): string => {

@@ -13,7 +13,15 @@ import {
 } from '@music-minion/shared';
 import { usePlayerStore, getCurrentPosition } from '../stores/playerStore';
 import { useActiveAudioElement, useAudioPair, type AudioKey } from '../contexts/AudioElementContext';
-import { bindTrackSource, clearTrackSource, streamUrlFor } from '../lib/audioSource';
+import {
+  bindTrackSource,
+  clearTrackSource,
+  releaseAudioElement,
+  seekAudio,
+  setAudioMuted,
+  setAudioVolume,
+  streamUrlFor,
+} from '../lib/audioSource';
 
 const HAVE_CURRENT_DATA = 2;
 const PRELOAD_DEBOUNCE_MS = 500;
@@ -206,31 +214,21 @@ export function usePlayer() {
 
   // Volume/mute apply to BOTH elements every time
   useEffect(() => {
-    if (audioA) audioA.volume = store.volume;
-    if (audioB) audioB.volume = store.volume;
+    setAudioVolume(audioA, store.volume);
+    setAudioVolume(audioB, store.volume);
   }, [audioA, audioB, store.volume]);
 
   useEffect(() => {
-    if (audioA) audioA.muted = store.isMuted;
-    if (audioB) audioB.muted = store.isMuted;
+    setAudioMuted(audioA, store.isMuted);
+    setAudioMuted(audioB, store.isMuted);
   }, [audioA, audioB, store.isMuted]);
 
   // Device transfer / not the leader tab: when this tab must not own audio,
   // pause and clear both elements
   useEffect(() => {
     if (isAudioOwner) return;
-    if (audioA) {
-      audioA.pause();
-      clearTrackSource(audioA);
-      delete audioA.dataset.trackId;
-      delete audioA.dataset.srcBoundAt;
-    }
-    if (audioB) {
-      audioB.pause();
-      clearTrackSource(audioB);
-      delete audioB.dataset.trackId;
-      delete audioB.dataset.srcBoundAt;
-    }
+    releaseAudioElement(audioA);
+    releaseAudioElement(audioB);
     lastLoadedTrackIdRef.current = null;
   }, [audioA, audioB, isAudioOwner]);
 
@@ -327,7 +325,7 @@ export function usePlayer() {
     const actualPosition = activeAudio.currentTime;
 
     if (Math.abs(expectedPosition - actualPosition) > 1) {
-      activeAudio.currentTime = expectedPosition;
+      seekAudio(activeAudio, expectedPosition);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeAudio, store.lastSeekAt, isAudioOwner, store.currentTrack]);

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { getHistory, getStats, getTopTracks } from '../api/history';
 import { StatCard } from './StatCard';
@@ -147,25 +147,11 @@ export function HistoryPage(): JSX.Element {
     queryFn: () => getTopTracks(10, days ?? 30),
   });
 
-  // Local state for top tracks to handle emoji updates
-  const [topTracks, setTopTracks] = useState<TopTrack[]>([]);
-
-  // Local state for history entries to handle emoji updates
-  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
-
-  // Sync local state with query data
-  useEffect(() => {
-    if (topTracksData) {
-      setTopTracks(topTracksData);
-    }
-  }, [topTracksData]);
-
-  // Sync history entries with infinite query data
-  useEffect(() => {
-    if (historyData?.pages) {
-      setHistoryEntries(historyData.pages.flat());
-    }
-  }, [historyData]);
+  const topTracks: TopTrack[] = topTracksData ?? [];
+  const historyEntries = useMemo<HistoryEntry[]>(
+    () => historyData?.pages.flat() ?? [],
+    [historyData],
+  );
 
 
   return (

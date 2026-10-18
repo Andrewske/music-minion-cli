@@ -27,7 +27,7 @@ function toTrack(t: ArtistLibraryTrack): Track {
   };
 }
 
-export const isSaved = (t: ArtistLibraryTrack): boolean =>
+const isSaved = (t: ArtistLibraryTrack): boolean =>
   t.is_liked || t.playlists.length > 0;
 
 interface TrackRowProps {

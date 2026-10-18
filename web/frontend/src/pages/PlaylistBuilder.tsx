@@ -46,17 +46,18 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType, soundc
     }));
   };
 
-  // Derive queue index from ID
-  const queueIndex = queueTrackId
-    ? builder.tracks.findIndex(t => t.id === queueTrackId)
-    : 0;
+  // Derive queue index from ID; null or not found (filtered out) means first track
+  const foundIndex = queueTrackId === null
+    ? 0
+    : builder.tracks.findIndex(t => t.id === queueTrackId);
+  const queueIndex = foundIndex === -1 ? 0 : foundIndex;
 
-  // If queueTrackId not found (filtered out), reset to first track
-  useEffect(() => {
-    if (builder.tracks.length > 0 && (queueTrackId === null || queueIndex === -1)) {
-      setQueueTrackId(builder.tracks[0].id);
-    }
-  }, [builder.tracks, queueTrackId, queueIndex]);
+  // Reset queue to first track when sorting changes (adjusted during render)
+  const [prevSorting, setPrevSorting] = useState(builder.sorting);
+  if (builder.sorting !== prevSorting) {
+    setPrevSorting(builder.sorting);
+    setQueueTrackId(null);
+  }
 
   // Current track for display: prefer global player track if it matches this builder's context,
   // otherwise fall back to the local queue position
@@ -73,14 +74,6 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType, soundc
       };
     }
   }, [playlistId]);
-
-  // Reset queue to first track when sorting changes
-  useEffect(() => {
-    if (builder.tracks.length > 0) {
-      setQueueTrackId(builder.tracks[0].id);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [builder.sorting]);
 
   // Handle keyboard shortcuts via WebSocket (useRef pattern)
   useIPCWebSocket({

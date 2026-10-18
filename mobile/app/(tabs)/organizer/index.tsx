@@ -40,7 +40,7 @@ export default function OrganizerPickerScreen() {
   if (error) {
     return (
       <View className="flex-1 bg-background justify-center items-center px-6">
-        <Text className="text-error text-lg mb-2">Can't reach server</Text>
+        <Text className="text-error text-lg mb-2">Can&apos;t reach server</Text>
         <Text className="text-text-secondary text-center">
           Is Tailscale running?
         </Text>

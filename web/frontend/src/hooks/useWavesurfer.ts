@@ -236,7 +236,6 @@ export function useWavesurfer({ trackId, isPlaying, onFinish, onReady, onSeek, o
         wavesurferRef.current = null;
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackId, initWavesurfer]); // isPlaying handled by separate effect below
 
   // Effect responds to isPlaying changes
@@ -296,9 +295,7 @@ export function useWavesurfer({ trackId, isPlaying, onFinish, onReady, onSeek, o
       await apiRefreshWaveform(trackId);
       // Re-init wavesurfer with fresh data
       retryLoad();
-    } catch (err) {
-      // Surface auth/network errors to caller for toast display
-      throw err;
+      // Auth/network errors propagate to the caller for toast display
     } finally {
       setIsRefreshing(false);
     }
