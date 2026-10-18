@@ -12,7 +12,7 @@ from typing import Literal, Optional
 
 import pytest
 
-from backend import queue_manager
+from web.backend import queue_manager
 
 
 @dataclass

@@ -2,13 +2,12 @@
 
 import pytest
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from music_minion.domain.library.models import Track
 from music_minion.domain.radio.models import NowPlaying, Station
 from music_minion.domain.radio.scheduler import (
     SchedulerState,
-    _record_history,
     get_current_state,
     get_next_track_path,
     get_scheduler_info,
@@ -37,6 +36,7 @@ def mock_station() -> Station:
         name="Test Station",
         playlist_id=10,
         mode="shuffle",
+        source_filter="all",
         is_active=True,
         created_at=datetime.now(),
         updated_at=datetime.now(),

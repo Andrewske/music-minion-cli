@@ -4,6 +4,8 @@ import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 from fastapi.testclient import TestClient
 
+from web.backend.schemas import PlayContext
+
 
 def create_test_session(
     session_id: str = "test-session-123",
@@ -29,10 +31,9 @@ def create_test_session(
 @pytest.mark.asyncio
 async def test_queue_update_removes_assigned_track():
     """Assigning a track should remove it from queue in real-time."""
-    from backend.routers.player import update_organizer_queue
-    from backend.player_state import PlaybackState
+    from web.backend.routers.player import update_organizer_queue
+    from web.backend.player_state import PlaybackState
     from asyncio import Lock
-    from unittest.mock import MagicMock
 
     # Create initial state
     initial_state = PlaybackState(
@@ -43,10 +44,9 @@ async def test_queue_update_removes_assigned_track():
         ),
         current_track={"id": 1, "title": "Track 1"},
         queue_index=0,
-        current_context={
-            "type": "organizer",
-            "session_id": "test-session-123"
-        }
+        current_context=PlayContext(
+            type="organizer", playlist_id=1, session_id="test-session-123"
+        )
     )
 
     # Mock session after assigning track 2
@@ -63,10 +63,10 @@ async def test_queue_update_removes_assigned_track():
     mock_db_conn.__enter__ = MagicMock(return_value=mock_db_conn)
     mock_db_conn.__exit__ = MagicMock(return_value=False)
 
-    with patch("backend.player_state.get_state", return_value=initial_state), \
-         patch("backend.queries.buckets.get_session_with_data", return_value=mock_session), \
-         patch("backend.player_state.update_state", new_callable=AsyncMock) as mock_update, \
-         patch("backend.routers.player._player_lock", real_lock), \
+    with patch("web.backend.routers.player.get_state", return_value=initial_state), \
+         patch("web.backend.queries.buckets.get_session_with_data", return_value=mock_session), \
+         patch("web.backend.routers.player.update_state", new_callable=AsyncMock) as mock_update, \
+         patch("web.backend.routers.player._player_lock", real_lock), \
          patch("music_minion.core.database.get_db_connection", return_value=mock_db_conn):
 
         await update_organizer_queue("test-session-123")
@@ -86,10 +86,9 @@ async def test_queue_update_removes_assigned_track():
 @pytest.mark.asyncio
 async def test_queue_update_adds_unassigned_track():
     """Unassigning a track should add it back to queue in real-time."""
-    from backend.routers.player import update_organizer_queue
-    from backend.player_state import PlaybackState
+    from web.backend.routers.player import update_organizer_queue
+    from web.backend.player_state import PlaybackState
     from asyncio import Lock
-    from unittest.mock import MagicMock
 
     # Create initial state - queue missing track 2 (was assigned)
     initial_state = PlaybackState(
@@ -99,11 +98,9 @@ async def test_queue_update_adds_unassigned_track():
         ),
         current_track={"id": 1},
         queue_index=0,
-        current_context={
-            "type": "organizer",
-            "playlist_id": 1,
-            "session_id": "test-session-123"
-        }
+        current_context=PlayContext(
+            type="organizer", playlist_id=1, session_id="test-session-123"
+        )
     )
 
     # Mock session after unassigning track 2
@@ -120,11 +117,11 @@ async def test_queue_update_adds_unassigned_track():
     mock_db_conn.__enter__ = MagicMock(return_value=mock_db_conn)
     mock_db_conn.__exit__ = MagicMock(return_value=False)
 
-    with patch("backend.player_state.get_state", return_value=initial_state), \
-         patch("backend.queries.buckets.get_session_with_data", return_value=mock_session), \
-         patch("backend.queries.tracks.batch_fetch_tracks_with_metadata", return_value=[{"id": 2, "title": "Track 2"}]), \
-         patch("backend.player_state.update_state", new_callable=AsyncMock) as mock_update, \
-         patch("backend.routers.player._player_lock", real_lock), \
+    with patch("web.backend.routers.player.get_state", return_value=initial_state), \
+         patch("web.backend.queries.buckets.get_session_with_data", return_value=mock_session), \
+         patch("web.backend.queries.tracks.batch_fetch_tracks_with_metadata", return_value=[{"id": 2, "title": "Track 2"}]), \
+         patch("web.backend.routers.player.update_state", new_callable=AsyncMock) as mock_update, \
+         patch("web.backend.routers.player._player_lock", real_lock), \
          patch("music_minion.core.database.get_db_connection", return_value=mock_db_conn):
 
         await update_organizer_queue("test-session-123")
@@ -146,7 +143,7 @@ async def test_queue_update_adds_unassigned_track():
 @pytest.fixture
 def client():
     """Create FastAPI test client."""
-    from backend.main import app
+    from web.backend.main import app
     return TestClient(app)
 
 
@@ -155,7 +152,7 @@ def test_play_endpoint_rejects_invalid_organizer_session(client):
     from unittest.mock import patch
 
     # Test missing session
-    with patch("backend.queries.buckets.get_session_with_data", return_value=None):
+    with patch("web.backend.queries.buckets.get_session_with_data", return_value=None):
         response = client.post("/api/player/play", json={
             "trackId": 1,
             "context": {
@@ -168,7 +165,7 @@ def test_play_endpoint_rejects_invalid_organizer_session(client):
 
     # Test inactive session
     mock_session = create_test_session(status="applied")
-    with patch("backend.queries.buckets.get_session_with_data", return_value=mock_session):
+    with patch("web.backend.queries.buckets.get_session_with_data", return_value=mock_session):
         response = client.post("/api/player/play", json={
             "trackId": 1,
             "context": {

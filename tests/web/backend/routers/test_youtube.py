@@ -1,20 +1,11 @@
 """Tests for YouTube API router."""
 
-import sys
 import time
-from pathlib import Path
-from unittest.mock import patch
 
-import pytest
 
-# Add web directory to path for imports
-web_path = Path(__file__).parent.parent.parent.parent.parent / "web"
-sys.path.insert(0, str(web_path))
-
-from backend.routers.youtube import (
+from web.backend.routers.youtube import (
     JOB_TTL_SECONDS,
     JobStatus,
-    _cleanup_old_jobs,
     _jobs,
     _jobs_lock,
     create_job,
@@ -45,7 +36,7 @@ class TestJobManagement:
 
         assert job is not None
         assert job["status"] == JobStatus.PENDING
-        assert job["progress"] is None
+        assert job["progress"] == 0
         assert job["result"] is None
         assert job["error"] is None
 

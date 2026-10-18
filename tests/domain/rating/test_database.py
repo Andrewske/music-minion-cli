@@ -3,250 +3,62 @@ Tests for rating database functions.
 """
 
 import pytest
-import sqlite3
-from pathlib import Path
-import tempfile
-import os
 
-from music_minion.core.database import get_db_connection, get_database_path
+from music_minion.core.database import get_db_connection
+
+TEST_TRACKS = [
+    (1, "Track 1", "Artist A", "/path/to/track1.mp3", "local"),
+    (2, "Track 2", "Artist B", "/path/to/track2.opus", "local"),
+    (3, "Track 3", "Artist C", None, "soundcloud"),
+    (4, "Track 4", "Artist D", None, "spotify"),
+    (5, "Track 5", "Artist E", "", "local"),
+    (6, "Track 6", "Artist F", "   ", "local"),
+    (7, "Track 7", "Artist G", "/path/to/track7.m4a", "local"),
+]
+
+
+def _insert_playlist(conn, name: str) -> int:
+    cursor = conn.execute(
+        "INSERT INTO playlists (name, type) VALUES (?, 'manual')", (name,)
+    )
+    return cursor.lastrowid
 
 
 @pytest.fixture
-def test_db():
-    """Create a temporary test database with sample tracks."""
-    # Use a temporary database for testing
-    original_db_path = get_database_path()
-    temp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
-    temp_db_path = Path(temp_db.name)
-    temp_db.close()
-
-    # Override database path for testing
-    import music_minion.core.database as db_module
-
-    original_get_db_path = db_module.get_database_path
-    db_module.get_database_path = lambda: temp_db_path
-
-    # Create schema and insert test data
+def test_db() -> None:
+    """Seed the per-test isolated database (root conftest) with tracks + 'All'."""
     with get_db_connection() as conn:
-        # Create minimal tracks table
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS tracks (
-                id INTEGER PRIMARY KEY,
-                title TEXT NOT NULL,
-                artist TEXT NOT NULL,
-                album TEXT,
-                genre TEXT,
-                year INTEGER,
-                bpm INTEGER,
-                local_path TEXT,
-                soundcloud_id TEXT,
-                spotify_id TEXT,
-                youtube_id TEXT,
-                source TEXT DEFAULT 'local',
-                duration REAL
-            )
-        """
-        )
-
-        # Create elo_ratings table
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS elo_ratings (
-                track_id INTEGER PRIMARY KEY,
-                rating REAL DEFAULT 1500.0,
-                comparison_count INTEGER DEFAULT 0
-            )
-        """
-        )
-
-        # Insert test tracks
-        test_tracks = [
-            # Valid tracks with local paths
-            (1, "Track 1", "Artist A", "/path/to/track1.mp3", "local"),
-            (2, "Track 2", "Artist B", "/path/to/track2.opus", "local"),
-            # Invalid tracks (NULL local_path)
-            (3, "Track 3", "Artist C", None, "soundcloud"),
-            (4, "Track 4", "Artist D", None, "spotify"),
-            # Invalid track (empty string local_path)
-            (5, "Track 5", "Artist E", "", "local"),
-            # Valid track with whitespace path (should be filtered)
-            (6, "Track 6", "Artist F", "   ", "local"),
-            # More valid tracks
-            (7, "Track 7", "Artist G", "/path/to/track7.m4a", "local"),
-        ]
-
         conn.executemany(
-            """
-            INSERT INTO tracks (id, title, artist, local_path, source)
-            VALUES (?, ?, ?, ?, ?)
-        """,
-            test_tracks,
+            "INSERT INTO tracks (id, title, artist, local_path, source)"
+            " VALUES (?, ?, ?, ?, ?)",
+            TEST_TRACKS,
         )
-
+        _insert_playlist(conn, "All")
         conn.commit()
-
-    yield temp_db_path
-
-    # Cleanup
-    db_module.get_database_path = original_get_db_path
-    os.unlink(temp_db_path)
-
-
-# Legacy tests commented out - get_filtered_tracks was removed from database.py
-# def test_get_filtered_tracks_excludes_null_paths(test_db):
-#     """Verify tracks with NULL local_path are excluded."""
-#     tracks = get_filtered_tracks()
-#
-#     # Should only return tracks 1, 2, 7 (valid local paths)
-#     assert len(tracks) == 3, f"Expected 3 tracks, got {len(tracks)}"
-#
-#     # Verify all returned tracks have non-null, non-empty paths
-#     for track in tracks:
-#         assert track["local_path"], f"Track {track['id']} has invalid path"
-#         assert track["local_path"].strip(), f"Track {track['id']} has whitespace path"
-#
-#     # Verify specific tracks are included/excluded
-#     track_ids = {track["id"] for track in tracks}
-#     assert track_ids == {1, 2, 7}, f"Expected {{1, 2, 7}}, got {track_ids}"
-#
-#
-# def test_get_filtered_tracks_with_filters_still_excludes_null_paths(test_db):
-#     """Verify NULL path filtering works with other filters."""
-#     # This would return all tracks if not for NULL path filter
-#     tracks = get_filtered_tracks(source_filter="local")
-#
-#     # Should only return tracks 1, 2, 7 (source='local' AND valid path)
-#     assert len(tracks) == 3
-#
-#     # Verify tracks 5 and 6 (empty/whitespace paths) are excluded
-#     track_ids = {track["id"] for track in tracks}
-#     assert 5 not in track_ids, "Track 5 (empty path) should be excluded"
-#     assert 6 not in track_ids, "Track 6 (whitespace path) should be excluded"
-#
-#
-# def test_get_filtered_tracks_default_ratings(test_db):
-#     """Verify tracks without elo_ratings get default 1500.0 rating."""
-#     tracks = get_filtered_tracks()
-#
-#     # All tracks should have default rating of 1500.0 since we didn't insert ratings
-#     for track in tracks:
-#         assert track["rating"] == 1500.0, f"Track {track['id']} has wrong default rating"
-#         assert (
-#             track["comparison_count"] == 0
-#         ), f"Track {track['id']} has wrong default comparison_count"
 
 
 def test_record_comparison_column_names():
     """Verify INSERT uses correct column names matching schema."""
-    from music_minion.core.database import get_db_connection
-
     with get_db_connection() as conn:
-        cursor = conn.execute('PRAGMA table_info(playlist_comparison_history)')
-        cols = {row['name'] for row in cursor.fetchall()}
+        cursor = conn.execute("PRAGMA table_info(playlist_comparison_history)")
+        cols = {row["name"] for row in cursor.fetchall()}
 
     required = {
-        'track_a_playlist_rating_before',
-        'track_a_playlist_rating_after',
-        'track_b_playlist_rating_before',
-        'track_b_playlist_rating_after',
+        "track_a_playlist_rating_before",
+        "track_a_playlist_rating_after",
+        "track_b_playlist_rating_before",
+        "track_b_playlist_rating_after",
     }
     assert required.issubset(cols), f"Missing columns: {required - cols}"
 
 
 @pytest.fixture
-def test_playlist():
-    """Create a test playlist for comparison tests."""
-    from music_minion.core.database import get_db_connection
-    from dataclasses import dataclass
-    import music_minion.core.config as config_module
-
-    # Reset cache at start to avoid stale values from previous tests
-    config_module.ALL_PLAYLIST_ID = None
-
-    @dataclass
-    class TestPlaylist:
-        id: int
-
+def test_playlist(test_db) -> int:
+    """A single empty playlist for comparison tests."""
     with get_db_connection() as conn:
-        # Ensure playlists table exists
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS playlists (
-                id INTEGER PRIMARY KEY,
-                name TEXT NOT NULL,
-                filter_source TEXT,
-                filter_genre TEXT,
-                filter_year INTEGER
-            )
-            """
-        )
-
-        # Create "All" playlist (required by record_playlist_comparison)
-        conn.execute(
-            "INSERT OR IGNORE INTO playlists (name) VALUES ('All')"
-        )
-
-        # Create test playlist
-        cursor = conn.execute(
-            "INSERT INTO playlists (name) VALUES ('Test Playlist')"
-        )
-        playlist_id = cursor.lastrowid
-
-        # Ensure playlist_elo_ratings table exists
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS playlist_elo_ratings (
-                track_id INTEGER NOT NULL,
-                playlist_id INTEGER NOT NULL,
-                rating REAL DEFAULT 1500.0,
-                comparison_count INTEGER DEFAULT 0,
-                wins INTEGER DEFAULT 0,
-                losses INTEGER DEFAULT 0,
-                last_compared TIMESTAMP,
-                PRIMARY KEY (track_id, playlist_id)
-            )
-            """
-        )
-
-        # Ensure playlist_comparison_history table exists
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS playlist_comparison_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                track_a_id INTEGER NOT NULL,
-                track_b_id INTEGER NOT NULL,
-                winner_id INTEGER NOT NULL,
-                playlist_id INTEGER NOT NULL,
-                track_a_playlist_rating_before REAL,
-                track_a_playlist_rating_after REAL,
-                track_b_playlist_rating_before REAL,
-                track_b_playlist_rating_after REAL,
-                track_a_global_rating_before REAL,
-                track_a_global_rating_after REAL,
-                track_b_global_rating_before REAL,
-                track_b_global_rating_after REAL,
-                session_id TEXT NOT NULL DEFAULT '',
-                timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-
+        playlist_id = _insert_playlist(conn, "Test Playlist")
         conn.commit()
-
-    yield TestPlaylist(id=playlist_id)
-
-    # Cleanup
-    with get_db_connection() as conn:
-        conn.execute("DELETE FROM playlists WHERE id = ?", (playlist_id,))
-        conn.execute("DELETE FROM playlists WHERE name = 'All'")
-        conn.execute("DELETE FROM playlist_elo_ratings WHERE playlist_id = ?", (playlist_id,))
-        conn.execute("DELETE FROM playlist_comparison_history WHERE playlist_id = ?", (playlist_id,))
-        conn.commit()
-
-    # Reset All playlist ID cache
-    import music_minion.core.config as config_module
-    config_module.ALL_PLAYLIST_ID = None
+    return playlist_id
 
 
 def test_record_comparison_basic(test_db, test_playlist):
@@ -255,7 +67,7 @@ def test_record_comparison_basic(test_db, test_playlist):
 
     # Should not raise
     record_playlist_comparison(
-        playlist_id=test_playlist.id,
+        playlist_id=test_playlist,
         track_a_id=1,
         track_b_id=2,
         winner_id=1,
@@ -267,43 +79,22 @@ def test_record_comparison_basic(test_db, test_playlist):
 
 
 @pytest.fixture
-def two_playlist_setup():
-    """Create two playlists with overlapping tracks for cross-playlist tests."""
-    from music_minion.core.database import get_db_connection
-    import music_minion.core.config as config_module
-
-    config_module.ALL_PLAYLIST_ID = None
-
+def two_playlist_setup(test_db) -> dict[str, int]:
+    """Two playlists with overlapping tracks for cross-playlist tests."""
     with get_db_connection() as conn:
-        conn.execute("CREATE TABLE IF NOT EXISTS playlists (id INTEGER PRIMARY KEY, name TEXT NOT NULL, filter_source TEXT, filter_genre TEXT, filter_year INTEGER)")
-        conn.execute("CREATE TABLE IF NOT EXISTS playlist_elo_ratings (track_id INTEGER NOT NULL, playlist_id INTEGER NOT NULL, rating REAL DEFAULT 1500.0, comparison_count INTEGER DEFAULT 0, wins INTEGER DEFAULT 0, losses INTEGER DEFAULT 0, last_compared TIMESTAMP, PRIMARY KEY (track_id, playlist_id))")
-        conn.execute("CREATE TABLE IF NOT EXISTS playlist_comparison_history (id INTEGER PRIMARY KEY AUTOINCREMENT, track_a_id INTEGER NOT NULL, track_b_id INTEGER NOT NULL, winner_id INTEGER NOT NULL, playlist_id INTEGER NOT NULL, track_a_playlist_rating_before REAL, track_a_playlist_rating_after REAL, track_b_playlist_rating_before REAL, track_b_playlist_rating_after REAL, track_a_global_rating_before REAL, track_a_global_rating_after REAL, track_b_global_rating_before REAL, track_b_global_rating_after REAL, session_id TEXT NOT NULL DEFAULT '', timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)")
-        conn.execute("CREATE TABLE IF NOT EXISTS playlist_tracks (playlist_id INTEGER NOT NULL, track_id INTEGER NOT NULL, PRIMARY KEY (playlist_id, track_id))")
-
-        # Playlist A has tracks 1, 2, 3
-        conn.execute("INSERT INTO playlists (name) VALUES ('Playlist A')")
-        playlist_a_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        conn.execute("INSERT INTO playlists (name) VALUES ('Playlist B')")
-        playlist_b_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-
-        for track_id in [1, 2, 3]:
-            conn.execute("INSERT OR IGNORE INTO playlist_tracks VALUES (?, ?)", (playlist_a_id, track_id))
-        # Playlist B has tracks 1, 2 (same pair as A) plus track 4
-        for track_id in [1, 2, 4]:
-            conn.execute("INSERT OR IGNORE INTO playlist_tracks VALUES (?, ?)", (playlist_b_id, track_id))
-
+        playlist_a_id = _insert_playlist(conn, "Playlist A")
+        playlist_b_id = _insert_playlist(conn, "Playlist B")
+        # Playlist A has tracks 1, 2, 3; playlist B has 1, 2 (same pair) plus 4
+        memberships = [(playlist_a_id, t, i) for i, t in enumerate([1, 2, 3])]
+        memberships += [(playlist_b_id, t, i) for i, t in enumerate([1, 2, 4])]
+        conn.executemany(
+            "INSERT INTO playlist_tracks (playlist_id, track_id, position)"
+            " VALUES (?, ?, ?)",
+            memberships,
+        )
         conn.commit()
 
-    yield {"playlist_a": playlist_a_id, "playlist_b": playlist_b_id}
-
-    with get_db_connection() as conn:
-        conn.execute("DELETE FROM playlists WHERE id IN (?, ?)", (playlist_a_id, playlist_b_id))
-        conn.execute("DELETE FROM playlist_tracks WHERE playlist_id IN (?, ?)", (playlist_a_id, playlist_b_id))
-        conn.execute("DELETE FROM playlist_comparison_history WHERE playlist_id IN (?, ?)", (playlist_a_id, playlist_b_id))
-        conn.execute("DELETE FROM playlist_elo_ratings WHERE playlist_id IN (?, ?)", (playlist_a_id, playlist_b_id))
-        conn.commit()
-
-    config_module.ALL_PLAYLIST_ID = None
+    return {"playlist_a": playlist_a_id, "playlist_b": playlist_b_id}
 
 
 def test_global_pair_skipping(test_db, two_playlist_setup):
