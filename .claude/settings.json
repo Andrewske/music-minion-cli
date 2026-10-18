@@ -30,14 +30,16 @@
       "Bash(docker compose logs *)",
       "Bash(gh pr checks *)"
     ],
-    "deny": [
-      "Read(./.env)",
-      "Read(./.env.*)",
-      "Read(!.env.example)",
+    "ask": [
       "Bash(scripts/deploy-to-pi.sh*)",
       "Bash(./scripts/deploy-to-pi.sh*)",
       "Bash(bash scripts/deploy-to-pi.sh*)",
       "Bash(bash ./scripts/deploy-to-pi.sh*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(!.env.example)"
     ]
   },
   "hooks": {
