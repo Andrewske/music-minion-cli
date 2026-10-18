@@ -13,7 +13,10 @@ from music_minion.core.database import (
     db_track_to_library_track,
     get_track_tags,
 )
-from .client import analyze_track_with_ai, AIError, get_api_key
+from loguru import logger
+
+from music_minion.core.output import log
+from .client import analyze_track_with_ai, get_openai_client
 from .prompt_manager import (
     get_active_prompt,
     get_learnings,
@@ -36,13 +39,7 @@ def propose_prompt_improvements(
         Tuple of (new_prompt, explanation) or None if failed
     """
     try:
-        api_key = get_api_key()
-        if not api_key:
-            raise AIError("No API key configured")
-
-        import openai
-
-        client = openai.OpenAI(api_key=api_key)
+        client = get_openai_client()
 
         enhancement_prompt = f"""You are helping improve an AI music tagging system's prompt based on user feedback.
 
@@ -94,7 +91,8 @@ Example format:
         return result["improved_prompt"], result["changes_summary"]
 
     except Exception as e:
-        print(f"❌ Error proposing improvements: {e}")
+        logger.exception("Prompt improvement proposal failed")
+        log(f"❌ Error proposing improvements: {e}", level="error")
         return None
 
 
