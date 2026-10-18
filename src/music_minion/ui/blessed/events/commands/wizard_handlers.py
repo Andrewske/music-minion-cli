@@ -1,6 +1,5 @@
 """Wizard-related command handlers."""
 
-import uuid
 from music_minion.context import AppContext
 from music_minion.ui.blessed.state import (
     UIState,

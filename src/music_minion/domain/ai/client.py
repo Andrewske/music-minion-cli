@@ -13,7 +13,6 @@ from loguru import logger
 from music_minion.core.config import get_config_dir
 from music_minion.core.database import (
     add_tags,
-    get_track_by_path,
     get_track_notes,
     get_track_tags,
     log_ai_request,

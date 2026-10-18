@@ -44,7 +44,7 @@ def render_track_viewer(term: Terminal, state: UIState, y: int, height: int) -> 
     # Header - different based on mode
     if line_num < height:
         if viewer_mode == "detail":
-            header_text = f"   🎵 Track Details"
+            header_text = "   🎵 Track Details"
         else:
             header_text = f"   📋 Playlist: {playlist_name}"
         write_at(term, 0, y + line_num, term.bold_cyan(header_text))

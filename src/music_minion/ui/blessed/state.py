@@ -2,12 +2,10 @@
 
 from collections import deque
 from dataclasses import dataclass, field, replace
-from datetime import datetime
 from time import time
 from typing import Any, Optional
 
 from music_minion.domain.rating.database import (
-    RatingCoverageFilters,
     RatingCoverageStats,
 )
 from music_minion.ui.blessed.helpers.scrolling import (

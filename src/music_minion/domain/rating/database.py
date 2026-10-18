@@ -12,7 +12,6 @@ from loguru import logger
 
 from music_minion.core.database import get_db_connection
 from music_minion.domain.playlists.crud import get_playlist_track_count
-from music_minion.domain.rating.elo import update_ratings
 
 
 @dataclass

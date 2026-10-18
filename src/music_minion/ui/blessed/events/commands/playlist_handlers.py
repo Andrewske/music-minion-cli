@@ -142,7 +142,7 @@ def handle_playlist_deletion(
         ui_state = add_history_line(
             ui_state, f"✅ Deleted playlist: {playlist_name}", "green"
         )
-        ui_state = set_feedback(ui_state, f"✓ Deleted", "✓")
+        ui_state = set_feedback(ui_state, "✓ Deleted", "✓")
 
         # Refresh playlist palette if visible
         if ui_state.palette_visible and ui_state.palette_mode == "playlist":

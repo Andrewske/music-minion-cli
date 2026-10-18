@@ -9,7 +9,7 @@ Provides core functionality for the web-based playlist builder:
 
 import sqlite3
 from datetime import datetime
-from typing import Any, Optional
+from typing import Optional
 
 from loguru import logger
 
@@ -311,7 +311,7 @@ def skip_track(playlist_id: int, track_id: int) -> dict:
 
         return {"skipped_track_id": track_id, "success": True}
 
-    except sqlite3.Error as e:
+    except sqlite3.Error:
         logger.exception(f"Failed to skip track {track_id} for playlist {playlist_id}")
         return {"skipped_track_id": track_id, "success": False}
 
@@ -330,7 +330,7 @@ def add_track(playlist_id: int, track_id: int) -> dict:
         success = add_track_to_playlist_crud(playlist_id, track_id)
         return {"added_track_id": track_id, "success": success}
 
-    except Exception as e:
+    except Exception:
         logger.exception(f"Failed to add track {track_id} to playlist {playlist_id}")
         return {"added_track_id": track_id, "success": False}
 

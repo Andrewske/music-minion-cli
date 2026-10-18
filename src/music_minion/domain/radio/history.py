@@ -6,7 +6,7 @@ pagination, and aggregation for stats and analytics.
 """
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Optional
 
 from loguru import logger

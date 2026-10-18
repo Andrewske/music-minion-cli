@@ -9,10 +9,9 @@ Provides RESTful API for the web-based playlist builder with:
 - Context activation (web mode)
 """
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from typing import Optional
 
-from ..deps import get_db
 from ..schemas import (
     BuilderStartSessionRequest,
     BuilderStartSessionResponse,

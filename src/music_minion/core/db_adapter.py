@@ -10,7 +10,6 @@ import os
 import sqlite3
 from contextlib import contextmanager
 from typing import Any, Iterator, Optional, Protocol, Union
-from urllib.parse import urlparse
 
 from loguru import logger
 
@@ -142,7 +141,7 @@ def get_radio_db_connection() -> Iterator[Union[sqlite3.Connection, PostgresConn
         import psycopg2
 
         url = get_database_url()
-        logger.debug(f"Connecting to PostgreSQL")
+        logger.debug("Connecting to PostgreSQL")
 
         conn = psycopg2.connect(url)
         wrapped = PostgresConnection(conn)

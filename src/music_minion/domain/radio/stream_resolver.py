@@ -89,7 +89,7 @@ def resolve_stream_url(source_url: str) -> Optional[str]:
     except yt_dlp.utils.DownloadError as e:
         logger.warning(f"yt-dlp download error for {source_url}: {e}")
         return None
-    except Exception as e:
+    except Exception:
         logger.exception(f"Unexpected error resolving stream URL for {source_url}")
         return None
 

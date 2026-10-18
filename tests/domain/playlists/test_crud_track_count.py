@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from music_minion.core.database import get_db_connection, get_database_path
+from music_minion.core.database import get_db_connection
 from music_minion.domain.playlists.crud import get_all_playlists
 
 

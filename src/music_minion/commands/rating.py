@@ -4,9 +4,7 @@ Rating command handlers for Music Minion CLI.
 Handles: archive, like, love, note, unlike, rankings, rate
 """
 
-import uuid
 from datetime import datetime
-from typing import Optional
 
 from loguru import logger
 

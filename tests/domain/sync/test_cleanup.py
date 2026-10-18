@@ -1,6 +1,5 @@
 """Unit tests for file move detection and cleanup logic."""
 
-import os
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
