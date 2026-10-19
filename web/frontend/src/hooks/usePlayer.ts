@@ -212,6 +212,24 @@ export function usePlayer() {
     }
   }, []);
 
+  // Any successful playback means the autoplay block is lifted — clear the
+  // "tap to play" overlay. Without this it stays up forever and covers the
+  // whole player bar.
+  useEffect(() => {
+    if (!audioA || !audioB) return;
+    const clearGestureFlag = (): void => {
+      if (usePlayerStore.getState().needsUserGesture) {
+        usePlayerStore.setState({ needsUserGesture: false });
+      }
+    };
+    audioA.addEventListener('playing', clearGestureFlag);
+    audioB.addEventListener('playing', clearGestureFlag);
+    return () => {
+      audioA.removeEventListener('playing', clearGestureFlag);
+      audioB.removeEventListener('playing', clearGestureFlag);
+    };
+  }, [audioA, audioB]);
+
   // Volume/mute apply to BOTH elements every time
   useEffect(() => {
     setAudioVolume(audioA, store.volume);

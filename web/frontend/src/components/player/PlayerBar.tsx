@@ -141,6 +141,19 @@ export function PlayerBar(): JSX.Element {
     return () => clearInterval(interval);
   }, [currentTrack?.id, currentTrack?.duration, isPlaying, audioServesCurrentTrack, audio]);
 
+  // Autoplay was blocked while the store already says "playing", so resume()
+  // is a no-op. The browser needs play() called synchronously inside the tap.
+  const unlockPlayback = (): void => {
+    usePlayerStore.setState({ needsUserGesture: false });
+    if (!isPlaying || !audio || !audioServesCurrentTrack) {
+      void resume();
+      return;
+    }
+    audio.play().catch((err: Error) => {
+      if (err.name === 'NotAllowedError') usePlayerStore.setState({ needsUserGesture: true });
+    });
+  };
+
   const activeDeviceName =
     availableDevices.find((d) => d.id === activeDeviceId)?.name ?? 'Unknown Device';
 
@@ -329,7 +342,8 @@ export function PlayerBar(): JSX.Element {
       {/* iOS "tap to play" overlay */}
       {needsUserGesture && (
         <button
-          onClick={resume}
+          type="button"
+          onClick={unlockPlayback}
           className="absolute inset-0 bg-black/50 flex items-center justify-center"
         >
           <span className="text-white">Tap to play</span>
