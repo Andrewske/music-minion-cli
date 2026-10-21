@@ -11,6 +11,7 @@ from music_minion.core.database import (
     _migrate_v62_decision_ledger,
     _migrate_v64_track_predictions,
     _migrate_v67_decision_verdicts,
+    _migrate_v68_feed_flags,
 )
 from web.backend import jev_client, jev_scorer
 from web.backend.jev_client import JevConfig, JevPrediction
@@ -110,6 +111,7 @@ def db_path(tmp_path, monkeypatch):
     conn.executescript(MINIMAL_SCHEMA_SQL)
     _migrate_v62_decision_ledger(conn)
     _migrate_v67_decision_verdicts(conn)
+    _migrate_v68_feed_flags(conn)
     _migrate_v64_track_predictions(conn)
     conn.commit()
     conn.close()
@@ -425,3 +427,38 @@ def test_record_decision_explicit_snapshot_wins(db_path) -> None:
     assert result is not None
     assert result["model_version"] == "explicit"
     assert result["feature_snapshot"] == {"a": 1}
+
+
+def test_score_new_tracks_skips_a_track_flagged_mid_batch(
+    db_path, configured, monkeypatch
+) -> None:
+    conn = _conn(db_path)
+    _seed_repost_track(conn, sc_id="t1")
+    conn.execute(
+        """INSERT INTO discovery_tracks
+        (id, soundcloud_id, title, access, first_seen)
+        VALUES (2, 't2', 'Other', 'playable', '2026-09-21 00:00:00')"""
+    )
+    conn.execute(
+        """INSERT INTO discovery_track_reposters
+        (discovery_track_id, discovery_artist_id) VALUES (2, 1)"""
+    )
+    conn.commit()
+    conn.close()
+    scored: list[str] = []
+
+    def flag_the_other_track(config, state, question, timeout_s=10.0):
+        title = json.loads(state)["track"]["title"]
+        scored.append(title)
+        # While the first call is in flight, the user flags the other track.
+        other = "t1" if title == "Other" else "t2"
+        with _conn(db_path) as writer:
+            writer.execute(
+                "INSERT INTO sc_track_flags (soundcloud_id, reason, source) VALUES (?, 'other', 'user')",
+                (other,),
+            )
+        return JevPrediction(0.5, None, config.model_id, {})
+
+    monkeypatch.setattr(jev_client, "ask_noul", flag_the_other_track)
+    assert jev_scorer.score_new_tracks(sleep_s=0) == 1
+    assert len(scored) == 1

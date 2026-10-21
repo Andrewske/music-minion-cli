@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   useInfiniteQuery,
   useMutation,
@@ -17,7 +17,6 @@ import {
   getFeed,
   getFeedRefetchInterval,
   isFeedSyncFailed,
-  materializeFeedItems,
   prepareFeedQueue,
   applyMaterializedIds,
   type PreparedFeedQueue,
@@ -27,7 +26,6 @@ import {
 import type {
   FeedItem,
   FeedVerdict,
-  ReviewedItem,
   FeedPage as FeedPageData,
   FeedRankPreset,
   FeedSort,
@@ -37,14 +35,18 @@ import { MIN_SCORE_PRESETS, type FeedTab } from '../../routes/feed';
 import { syncFeed } from '../../api/artists';
 import { useFeedSyncStatus } from '../../hooks/useArtists';
 import { useNoteEditor } from '../../hooks/useNoteEditor';
+import { usePlayFeedRow } from '../../hooks/usePlayFeedRow';
 import type { ListenStats } from '../../lib/feedListen';
 import { getListenStats } from '../../stores/listenStore';
 import { usePlayerStore } from '../../stores/playerStore';
 import type { Track } from '@music-minion/shared';
+import { FLAG_REASON_LABELS, flagFeedItem, unflagFeedItem, type FlagReason } from '../../api/feedFilters';
 import { FeedTrackCard } from './FeedTrackCard';
+import { FlagDialog, type FlagTarget } from './FlagDialog';
 import { NoteDialog } from './NoteDialog';
 import { ReviewedList } from './ReviewedList';
-import { REVIEWED_QUERY_KEY, cacheMaterializedReviewed } from './reviewed';
+import { FEED_QUERY_PREFIX, invalidateFlagViews, removeFromAllFeeds, restoreFeeds } from './feedCache';
+import { REVIEWED_QUERY_KEY } from './reviewed';
 
 const ROW_HEIGHT = 92;
 const NOTE_TOAST_MS = 5_000;
@@ -56,15 +58,6 @@ function toTrack(item: FeedItem, localTrackId = item.local_track_id): Track {
     id: localTrackId as number,
     title: item.title ?? 'Untitled',
     artist: artist?.display_name ?? artist?.slug ?? 'Unknown artist',
-    duration: item.duration_ms / 1000,
-  };
-}
-
-function reviewedToTrack(item: ReviewedItem, localTrackId: number): Track {
-  return {
-    id: localTrackId,
-    title: item.title ?? 'Untitled',
-    artist: item.artist_name ?? 'Unknown artist',
     duration: item.duration_ms / 1000,
   };
 }
@@ -119,6 +112,7 @@ export function FeedPage(): JSX.Element {
   const currentTrackId = usePlayerStore((state) => state.currentTrack?.id ?? null);
   const parentRef = useRef<HTMLDivElement>(null);
   const noteEditor = useNoteEditor();
+  const [flagTarget, setFlagTarget] = useState<FlagTarget | null>(null);
 
   const feedQueryKey = ['feed', { source, maxRank, inLibrary, sort, minScore }] as const;
   const feedQuery = useInfiniteQuery({
@@ -180,6 +174,15 @@ export function FeedPage(): JSX.Element {
     });
   };
 
+  // Verdicts, flags and Undo share one mutation key so feed polling pauses
+  // for all of them; the last one to settle refetches every feed variant,
+  // replacing any poll that read before the write committed.
+  const refetchFeedsWhenIdle = (): void => {
+    if (queryClient.isMutating({ mutationKey: FEED_DECISION_MUTATION_KEY }) === 1) {
+      void queryClient.invalidateQueries({ queryKey: FEED_QUERY_PREFIX });
+    }
+  };
+
   const decisionMutation = useMutation({
     mutationKey: FEED_DECISION_MUTATION_KEY,
     mutationFn: ({ item, decision, listen }: { item: FeedItem; decision: FeedVerdict; listen: ListenStats }) =>
@@ -190,22 +193,14 @@ export function FeedPage(): JSX.Element {
         maxPositionMs: listen.maxPositionMs,
       }),
     onMutate: async ({ item, decision }) => {
-      await queryClient.cancelQueries({ queryKey: feedQueryKey });
-      const previous = queryClient.getQueryData<InfiniteData<FeedPageData>>(feedQueryKey);
       // Every verdict, keep included, moves the track to the Reviewed tab.
-      queryClient.setQueryData<InfiniteData<FeedPageData>>(feedQueryKey, (old) => old && ({
-        ...old,
-        pages: old.pages.map((page) => ({
-          ...page,
-          items: page.items.filter((candidate) => candidate.soundcloud_id !== item.soundcloud_id),
-        })),
-      }));
+      const snapshot = await removeFromAllFeeds(queryClient, item.soundcloud_id);
       // Advance immediately; the note prompt never blocks the next track.
       if (decision !== 'keep') offerNote(item, decision);
-      return { previous };
+      return { snapshot };
     },
     onError: (_error, _variables, context) => {
-      if (context?.previous) queryClient.setQueryData(feedQueryKey, context.previous);
+      if (context?.snapshot) restoreFeeds(queryClient, context.snapshot);
       toast.error('Decision failed — the track was restored to the feed');
     },
     onSuccess: (response, { decision }) => {
@@ -217,10 +212,43 @@ export function FeedPage(): JSX.Element {
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: REVIEWED_QUERY_KEY });
-      // Replaces any poll that read before the decision committed.
-      if (queryClient.isMutating({ mutationKey: FEED_DECISION_MUTATION_KEY }) === 1) {
-        void queryClient.invalidateQueries({ queryKey: feedQueryKey });
-      }
+      refetchFeedsWhenIdle();
+    },
+  });
+
+  const unflagMutation = useMutation({
+    mutationKey: FEED_DECISION_MUTATION_KEY,
+    mutationFn: unflagFeedItem,
+    onSuccess: () => toast.success('Back in the feed'),
+    onError: () => toast.error('Undo failed'),
+    onSettled: () => {
+      invalidateFlagViews(queryClient);
+      refetchFeedsWhenIdle();
+    },
+  });
+
+  // Not a verdict: no listen stats, no SC actions. Artist stats refresh server-side.
+  const flagMutation = useMutation({
+    mutationKey: FEED_DECISION_MUTATION_KEY,
+    mutationFn: ({ soundcloudId, reason, note }: { soundcloudId: string; reason: FlagReason; note: string }) =>
+      flagFeedItem(soundcloudId, reason, note),
+    onMutate: async ({ soundcloudId }) => {
+      setFlagTarget(null);
+      return { snapshot: await removeFromAllFeeds(queryClient, soundcloudId) };
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.snapshot) restoreFeeds(queryClient, context.snapshot);
+      toast.error('Flag failed; the track was restored to the feed');
+    },
+    onSuccess: (_response, { soundcloudId, reason }) => {
+      toast(`Not for feed: ${FLAG_REASON_LABELS[reason]}`, {
+        duration: NOTE_TOAST_MS,
+        action: { label: 'Undo', onClick: () => unflagMutation.mutate(soundcloudId) },
+      });
+    },
+    onSettled: () => {
+      invalidateFlagViews(queryClient);
+      refetchFeedsWhenIdle();
     },
   });
 
@@ -287,22 +315,7 @@ export function FeedPage(): JSX.Element {
     [items, play, queryClient]
   );
 
-  const handlePlayReviewed = useCallback(
-    async (item: ReviewedItem): Promise<void> => {
-      let localTrackId = item.local_track_id;
-      if (localTrackId === null) {
-        const created = await materializeFeedItems([item.soundcloud_id]).catch(() => []);
-        localTrackId = created[0]?.local_track_id ?? null;
-        if (localTrackId !== null) cacheMaterializedReviewed(queryClient, item.soundcloud_id, localTrackId);
-      }
-      if (localTrackId === null) {
-        toast.error('Could not prepare this SoundCloud track for playback');
-        return;
-      }
-      void play(reviewedToTrack(item, localTrackId), { type: 'feed', track_ids: [localTrackId] });
-    },
-    [play, queryClient]
-  );
+  const handlePlayRow = usePlayFeedRow();
 
   type FeedSearchPatch = {
     source?: FeedSource;
@@ -420,7 +433,7 @@ export function FeedPage(): JSX.Element {
       </header>
 
       {tab === 'reviewed' ? (
-        <ReviewedList currentTrackId={currentTrackId} onPlay={(item) => void handlePlayReviewed(item)} onEditNote={noteEditor.open} />
+        <ReviewedList currentTrackId={currentTrackId} onPlay={(item) => void handlePlayRow(item)} onEditNote={noteEditor.open} />
       ) : feedQuery.isLoading ? (
         <div className="flex flex-1 items-center justify-center text-white/40" role="status" aria-label="Loading feed"><Loader2 className="h-6 w-6 animate-spin" /></div>
       ) : feedQuery.isError ? (
@@ -456,6 +469,7 @@ export function FeedPage(): JSX.Element {
                     isUpdating={decisionMutation.isPending && decisionMutation.variables?.item.soundcloud_id === item.soundcloud_id}
                     onPlay={(target) => void handlePlay(target)}
                     onDecide={decide}
+                    onFlag={(target) => setFlagTarget({ soundcloudId: target.soundcloud_id, title: target.title })}
                   />
                 </div>
               );
@@ -464,6 +478,12 @@ export function FeedPage(): JSX.Element {
           {feedQuery.isFetchingNextPage && <div className="flex justify-center py-3 text-white/40" role="status" aria-label="Loading more tracks"><Loader2 className="h-5 w-5 animate-spin" /></div>}
         </div>
       )}
+      <FlagDialog
+        target={flagTarget}
+        isSaving={flagMutation.isPending}
+        onFlag={(soundcloudId, reason, note) => flagMutation.mutate({ soundcloudId, reason, note })}
+        onClose={() => setFlagTarget(null)}
+      />
       <NoteDialog
         target={noteEditor.target}
         isSaving={noteEditor.isSaving}

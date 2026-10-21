@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { AlertCircle, Cloud, Loader2, Music } from 'lucide-react';
+import { AlertCircle, Cloud, EyeOff, Loader2, Music } from 'lucide-react';
 import {
   getFeedEventAt,
   getFeedItemBestRank,
@@ -124,12 +124,29 @@ function SoundCloudSyncState({ item }: { item: FeedItem }): JSX.Element | null {
   );
 }
 
+function NotForFeedButton({ disabled, onClick }: { disabled: boolean; onClick: () => void }): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label="Not for feed; hide without counting against the artist"
+      title="Not for feed"
+      className="flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded p-2 text-white/45 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-obsidian-accent disabled:opacity-50"
+    >
+      <EyeOff className="h-4 w-4" />
+    </button>
+  );
+}
+
 interface FeedTrackCardProps {
   item: FeedItem;
   isPlaying: boolean;
   isUpdating?: boolean;
   onPlay: (item: FeedItem) => void;
   onDecide: (item: FeedItem, decision: FeedVerdict) => void;
+  /** Opens the not-for-feed reason picker; omitted where flagging makes no sense. */
+  onFlag?: (item: FeedItem) => void;
 }
 
 export function FeedTrackCard({
@@ -138,6 +155,7 @@ export function FeedTrackCard({
   isUpdating = false,
   onPlay,
   onDecide,
+  onFlag,
 }: FeedTrackCardProps): JSX.Element {
   const [artworkFailed, setArtworkFailed] = useState(false);
   const decision = getFeedItemDecision(item);
@@ -193,6 +211,7 @@ export function FeedTrackCard({
       <SoundCloudLink item={item} />
       <span className="hidden shrink-0 font-sf-mono text-xs text-white/40 sm:block">{formatDuration(item.duration_ms)}</span>
 
+      {onFlag && <NotForFeedButton disabled={isUpdating} onClick={() => onFlag(item)} />}
       <VerdictButtons
         current={decision}
         hearted={hearted}

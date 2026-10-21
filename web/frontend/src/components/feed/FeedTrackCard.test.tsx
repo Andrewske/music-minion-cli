@@ -72,6 +72,16 @@ describe('FeedTrackCard', () => {
     expect(screen.queryByRole('button', { name: /Hide/ })).not.toBeInTheDocument();
   });
 
+  it('offers Not for feed only when the page can flag', () => {
+    const onFlag = vi.fn();
+    const item = makeItem();
+    const { rerender } = render(<FeedTrackCard item={item} isPlaying={false} onPlay={vi.fn()} onDecide={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /^Not for feed/ })).not.toBeInTheDocument();
+    rerender(<FeedTrackCard item={item} isPlaying={false} onPlay={vi.fn()} onDecide={vi.fn()} onFlag={onFlag} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Not for feed/ }));
+    expect(onFlag).toHaveBeenCalledWith(item);
+  });
+
   it('shows a running SoundCloud job as pending sync', () => {
     render(
       <FeedTrackCard

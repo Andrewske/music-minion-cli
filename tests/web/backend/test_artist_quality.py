@@ -9,6 +9,7 @@ import pytest
 from music_minion.core.database import (
     _migrate_v62_decision_ledger,
     _migrate_v67_decision_verdicts,
+    _migrate_v68_feed_flags,
     migrate_database,
 )
 from web.backend.artist_quality import (
@@ -119,6 +120,7 @@ def conn() -> sqlite3.Connection:
     connection.executescript(SCHEMA_SQL)
     _migrate_v62_decision_ledger(connection)  # real ledger table, index and view
     _migrate_v67_decision_verdicts(connection)
+    _migrate_v68_feed_flags(connection)
     yield connection
     connection.close()
 
@@ -240,6 +242,7 @@ def _seed(conn: sqlite3.Connection) -> None:
     # Legacy labels become ledger rows exactly as the v62 backfill does.
     _migrate_v62_decision_ledger(conn)
     _migrate_v67_decision_verdicts(conn)
+    _migrate_v68_feed_flags(conn)
 
 
 def test_recalculate_persists_rates_with_counts_and_keeps_rank_and_tier(conn) -> None:

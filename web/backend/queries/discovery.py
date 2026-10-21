@@ -15,6 +15,8 @@ from web.backend.artist_quality import (
     rate_or_prior,
     recalculate_artist_role_stats,
 )
+from web.backend.feed_filter_rules import not_flagged_sql
+from web.backend.queries import feed_filters
 
 # SQLite has a limit of 999 variables per query; use batches of 900 to be safe
 _SQLITE_BATCH_SIZE = 900
@@ -358,7 +360,8 @@ def insert_discovery_tracks(tracks: list[dict[str, Any]]) -> int:
             records,
         )
         conn.commit()
-        return len(set(sc_ids) - existing)
+    feed_filters.filter_ingested(sc_ids)
+    return len(set(sc_ids) - existing)
 
 
 def insert_track_reposters(
@@ -519,6 +522,8 @@ def get_unplaced_short_tracks(
     created_at, duration}. Ordered by role-specific Bayesian keep rate then
     repost time, with NULL timestamps last.
 
+    Tracks with an active not-for-feed flag never qualify.
+
     Args:
         exclude_sc_ids: SC IDs already selected this run (avoid dupes).
         owned_sc_ids: SC IDs the user already has (other playlists, love-rated).
@@ -530,7 +535,7 @@ def get_unplaced_short_tracks(
         owned_sc_ids = set()
     with get_db_connection() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT dt.soundcloud_id, dt.duration_ms, dt.first_seen,
                    dt.uploaded_at, dt.released_at,
                    dt.title, dt.artist_name,
@@ -555,6 +560,7 @@ def get_unplaced_short_tracks(
             JOIN discovery_artists da_best ON da_best.id = best.discovery_artist_id
             WHERE dt.workflow_state = 'unseen'
               AND dt.duration_ms <= 600000
+              AND {not_flagged_sql("dt.soundcloud_id")}
             ORDER BY COALESCE(da_best.repost_keep_rate, ?) DESC,
                      best.reposted_at IS NULL, best.reposted_at DESC
             LIMIT ?
@@ -717,7 +723,8 @@ def recalculate_artist_stats(artist_ids: Sequence[int] | None = None) -> None:
     give every actor full credit for every track and are kept for the UI
     only. Each artist/track pair is counted once even when that artist both
     uploaded and reposted it, and only canonical current keep / not_quite /
-    nope decisions from ``sc_track_decisions`` count; legacy hide is absent.
+    nope decisions from ``sc_track_decisions`` count; legacy hide is absent,
+    and so is any track with an active not-for-feed flag (not even seen).
     A not-quite is half a keep, and tracks_dismissed counts nopes only:
     hit_rate = (liked + 0.5 * not_quite) / max(1, liked + not_quite + nope) * 100
 
@@ -728,11 +735,16 @@ def recalculate_artist_stats(artist_ids: Sequence[int] | None = None) -> None:
     endpoint); the filter sits inside the CTE so only those artists'
     contributions are scanned. Role stats are always refreshed globally
     because a track decision changes the fractional credit of every reposter.
+
+    The write lock is taken before the counts are read. Two overlapping
+    recalcs (two quick flags) then run one after the other, and the later
+    one reads the later state, so stale counts never land last.
     """
     ids_json = None if artist_ids is None else json.dumps(list(artist_ids))
     with get_db_connection() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         rows = conn.execute(
-            """
+            f"""
             WITH targets AS (SELECT value AS id FROM json_each(:ids)),
             contributions AS (
                 SELECT dtr.discovery_artist_id AS artist_id, dt.soundcloud_id
@@ -748,6 +760,7 @@ def recalculate_artist_stats(artist_ids: Sequence[int] | None = None) -> None:
                 FROM contributions c
                 JOIN sc_track_decisions d
                   ON d.soundcloud_id = c.soundcloud_id AND d.is_current = 1
+                WHERE {not_flagged_sql("c.soundcloud_id")}
             )
             SELECT
                 da.id,

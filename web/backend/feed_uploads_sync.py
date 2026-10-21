@@ -17,6 +17,7 @@ from music_minion.core.database import get_db_connection
 from music_minion.domain.library.providers.soundcloud.api import get_user_tracks
 
 from web.backend.queries import discovery as discovery_queries
+from web.backend.queries import feed_filters
 from web.backend.soundcloud_metadata import (
     parse_soundcloud_datetime,
     track_metadata,
@@ -192,6 +193,7 @@ def insert_uploads(records: list[dict[str, Any]]) -> int:
                 inserted += 1
                 existing.add(metadata["soundcloud_id"])
         conn.commit()
+    feed_filters.filter_ingested(sc_ids)
     return inserted
 
 

@@ -11,8 +11,18 @@ import {
   type FeedVerdict,
   type ReviewedItem,
 } from '../../api/feed';
+import type { PlayableFeedRow } from '../../hooks/usePlayFeedRow';
+import { FlaggedList } from './FlaggedList';
 import type { NoteTarget } from './NoteDialog';
-import { REVIEWED_FILTERS, REVIEWED_QUERY_KEY, describeListen, formatDecidedAt, reviewedRateOptions } from './reviewed';
+import {
+  REVIEWED_FILTERS,
+  REVIEWED_QUERY_KEY,
+  describeListen,
+  formatDecidedAt,
+  reviewedRateOptions,
+  reviewedFilterLabel,
+  type ReviewedFilter,
+} from './reviewed';
 import { VerdictButtons } from './VerdictButtons';
 
 interface ReviewedRowProps {
@@ -62,13 +72,48 @@ export function ReviewedRow({ item, isUpdating, isPlaying, onPlay, onDecide, onE
 
 interface ReviewedListProps {
   currentTrackId: number | null;
-  onPlay: (item: ReviewedItem) => void;
+  onPlay: (item: PlayableFeedRow) => void;
   onEditNote: (target: NoteTarget) => void;
+}
+
+function FilterChips({ filter, onChange }: { filter: ReviewedFilter | undefined; onChange: (filter: ReviewedFilter | undefined) => void }): JSX.Element {
+  return (
+    <fieldset role="radiogroup" aria-label="Verdict filter" className="flex flex-wrap gap-1.5 pb-2">
+      <legend className="sr-only">Verdict filter</legend>
+      {REVIEWED_FILTERS.map((value) => (
+        <button
+          key={value ?? 'all'}
+          type="button"
+          role="radio"
+          aria-checked={filter === value}
+          onClick={() => onChange(value)}
+          className={`rounded-full border px-3 py-1.5 text-xs ${filter === value ? 'border-obsidian-accent text-obsidian-accent' : 'border-obsidian-border text-white/60 hover:text-white'}`}
+        >
+          {reviewedFilterLabel(value)}
+        </button>
+      ))}
+    </fieldset>
+  );
 }
 
 /** Current decisions, newest first, with a verdict filter and inline changes. */
 export function ReviewedList({ currentTrackId, onPlay, onEditNote }: ReviewedListProps): JSX.Element {
-  const [filter, setFilter] = useState<FeedDecision | undefined>(undefined);
+  const [filter, setFilter] = useState<ReviewedFilter | undefined>(undefined);
+  return (
+    <div className="flex-1 overflow-y-auto pb-4" aria-label="Reviewed tracks">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-2">
+        <FilterChips filter={filter} onChange={setFilter} />
+        {filter === 'flagged' ? (
+          <FlaggedList source="user" currentTrackId={currentTrackId} emptyText="Nothing flagged as not for feed." onPlay={onPlay} />
+        ) : (
+          <DecisionList filter={filter} currentTrackId={currentTrackId} onPlay={onPlay} onEditNote={onEditNote} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DecisionList({ filter, currentTrackId, onPlay, onEditNote }: ReviewedListProps & { filter: FeedDecision | undefined }): JSX.Element {
   const queryClient = useQueryClient();
   const reviewedQuery = useInfiniteQuery({
     queryKey: [...REVIEWED_QUERY_KEY, { filter }],
@@ -88,48 +133,31 @@ export function ReviewedList({ currentTrackId, onPlay, onEditNote }: ReviewedLis
   const items = reviewedQuery.data?.pages.flatMap((page) => page.items) ?? [];
 
   return (
-    <div className="flex-1 overflow-y-auto pb-4" aria-label="Reviewed tracks">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-2">
-        <fieldset role="radiogroup" aria-label="Verdict filter" className="flex flex-wrap gap-1.5 pb-2">
-          <legend className="sr-only">Verdict filter</legend>
-          {REVIEWED_FILTERS.map((value) => (
-            <button
-              key={value ?? 'all'}
-              type="button"
-              role="radio"
-              aria-checked={filter === value}
-              onClick={() => setFilter(value)}
-              className={`rounded-full border px-3 py-1.5 text-xs ${filter === value ? 'border-obsidian-accent text-obsidian-accent' : 'border-obsidian-border text-white/60 hover:text-white'}`}
-            >
-              {value ? FEED_VERDICT_LABELS[value] : 'All'}
-            </button>
-          ))}
-        </fieldset>
-        {reviewedQuery.isLoading ? (
-          <div className="flex justify-center py-8 text-white/40" role="status" aria-label="Loading reviewed tracks"><Loader2 className="h-6 w-6 animate-spin" /></div>
-        ) : reviewedQuery.isError ? (
-          <p className="py-8 text-center text-sm text-white/50" role="alert">Failed to load reviewed tracks</p>
-        ) : items.length === 0 ? (
-          <p className="py-8 text-center text-sm text-white/40">Nothing reviewed with this verdict yet.</p>
-        ) : (
-          items.map((item) => (
-            <ReviewedRow
-              key={item.decision_id}
-              item={item}
-              isPlaying={item.local_track_id !== null && item.local_track_id === currentTrackId}
-              isUpdating={verdictMutation.isPending && verdictMutation.variables?.item.soundcloud_id === item.soundcloud_id}
-              onPlay={onPlay}
-              onDecide={(target, verdict) => verdictMutation.mutate({ item: target, verdict })}
-              onEditNote={onEditNote}
-            />
-          ))
-        )}
-        {reviewedQuery.hasNextPage && (
-          <button type="button" onClick={() => void reviewedQuery.fetchNextPage()} disabled={reviewedQuery.isFetchingNextPage} className="mx-auto rounded border border-obsidian-border px-4 py-2 text-xs text-white/70 hover:text-white disabled:opacity-50">
-            {reviewedQuery.isFetchingNextPage ? 'Loading…' : 'Load more'}
-          </button>
-        )}
-      </div>
-    </div>
+    <>
+    {reviewedQuery.isLoading ? (
+      <div className="flex justify-center py-8 text-white/40" role="status" aria-label="Loading reviewed tracks"><Loader2 className="h-6 w-6 animate-spin" /></div>
+    ) : reviewedQuery.isError ? (
+      <p className="py-8 text-center text-sm text-white/50" role="alert">Failed to load reviewed tracks</p>
+    ) : items.length === 0 ? (
+      <p className="py-8 text-center text-sm text-white/40">Nothing reviewed with this verdict yet.</p>
+    ) : (
+      items.map((item) => (
+        <ReviewedRow
+          key={item.decision_id}
+          item={item}
+          isPlaying={item.local_track_id !== null && item.local_track_id === currentTrackId}
+          isUpdating={verdictMutation.isPending && verdictMutation.variables?.item.soundcloud_id === item.soundcloud_id}
+          onPlay={onPlay}
+          onDecide={(target, verdict) => verdictMutation.mutate({ item: target, verdict })}
+          onEditNote={onEditNote}
+        />
+      ))
+    )}
+    {reviewedQuery.hasNextPage && (
+      <button type="button" onClick={() => void reviewedQuery.fetchNextPage()} disabled={reviewedQuery.isFetchingNextPage} className="mx-auto rounded border border-obsidian-border px-4 py-2 text-xs text-white/70 hover:text-white disabled:opacity-50">
+        {reviewedQuery.isFetchingNextPage ? 'Loading…' : 'Load more'}
+      </button>
+    )}
+    </>
   );
 }

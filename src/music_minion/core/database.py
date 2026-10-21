@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 67  # not_quite verdicts, listen time, track notes
+SCHEMA_VERSION = 68  # not-for-feed flags + feed filter rules
 
 
 # Initial top 50 curated emojis for music reactions
@@ -349,6 +349,107 @@ def _migrate_v67_decision_verdicts(conn) -> None:
             updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+
+_V68_FILTER_RULES_DDL = """
+    CREATE TABLE IF NOT EXISTS feed_filter_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL
+            CHECK (kind IN ('duration_min', 'title_regex', 'tag_match')),
+        pattern TEXT,
+        threshold REAL,
+        reason TEXT NOT NULL CHECK (reason IN ('live_mix', 'podcast', 'other')),
+        enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+        -- Bumped on every edit/toggle. A run only acts on the version it read.
+        version INTEGER NOT NULL DEFAULT 1,
+        seed_key TEXT UNIQUE,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+"""
+
+_V68_TRACK_FLAGS_DDL = """
+    CREATE TABLE IF NOT EXISTS sc_track_flags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        soundcloud_id TEXT NOT NULL,
+        reason TEXT NOT NULL CHECK (reason IN ('live_mix', 'podcast', 'other')),
+        source TEXT NOT NULL CHECK (source IN ('user', 'rule', 'agent')),
+        -- A deleted rule's rescued flags survive as track-level exemptions.
+        rule_id INTEGER REFERENCES feed_filter_rules(id) ON DELETE SET NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        rescued_at TIMESTAMP
+    )
+"""
+
+# Starting points from #30, split so each rule's reason and precision are
+# meaningful; together they cover the issue's single title regex. The `mix`
+# alternative skips track versions ("Original Mix", "Extended Mix") and `ep`
+# needs a word boundary so "Deep 2" doesn't match.
+_V68_SEED_RULES = (
+    ("seed_duration_15m", "Longer than 15 min", "duration_min", None, 15.0, "live_mix"),
+    (
+        "seed_title_live_set",
+        "Live set / mix title",
+        "title_regex",
+        (
+            r"live at|b2b|boiler room|\bset\b"
+            r"|(?<!original )(?<!extended )(?<!radio )(?<!club )(?<!dub )\bmix\b"
+        ),
+        None,
+        "live_mix",
+    ),
+    (
+        "seed_title_podcast",
+        "Podcast / radio show title",
+        "title_regex",
+        r"radio show|podcast|\bep\.? ?\d+",
+        None,
+        "podcast",
+    ),
+)
+
+
+def _table_exists(conn, name: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)
+    ).fetchone()
+    return row is not None
+
+
+def _migrate_v68_feed_flags(conn) -> None:
+    """Not-for-feed flags and the filter rules that write them (#30).
+
+    Flags are not verdicts, so they get their own table instead of
+    sc_track_decisions. One active (unrescued) flag per track; one flag per
+    rule per track ever, so a rescued track is never re-flagged by that rule.
+    ``rule_id`` is a real foreign key: a flag can't name a missing rule, and
+    deleting a rule keeps its rescued rows (rule_id NULL) as exemptions.
+    Seeds are inserted only when the rules table is new, so a seed the user
+    deleted never comes back on a re-run.
+    """
+    seed = not _table_exists(conn, "feed_filter_rules")
+    conn.execute(_V68_FILTER_RULES_DDL)
+    # A rules table from an earlier draft of v68 has no version column.
+    _add_column_if_missing(
+        conn, "feed_filter_rules", "version INTEGER NOT NULL DEFAULT 1"
+    )
+    conn.execute(_V68_TRACK_FLAGS_DDL)
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_sc_track_flags_active
+        ON sc_track_flags(soundcloud_id) WHERE rescued_at IS NULL
+    """)
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_sc_track_flags_rule
+        ON sc_track_flags(rule_id, soundcloud_id) WHERE rule_id IS NOT NULL
+    """)
+    if seed:
+        conn.executemany(
+            """INSERT OR IGNORE INTO feed_filter_rules
+                (seed_key, name, kind, pattern, threshold, reason)
+            VALUES (?, ?, ?, ?, ?, ?)""",
+            _V68_SEED_RULES,
+        )
 
 
 def _migrate_v64_track_predictions(conn) -> None:
@@ -3283,6 +3384,14 @@ def migrate_database(conn, current_version: int) -> None:
         conn.execute("RELEASE SAVEPOINT migrate_feed_v67")
         conn.commit()
         logger.info("  ✓ Migration to v67 complete: not_quite verdicts + notes")
+
+    if current_version < 68:
+        logger.info("Running migration to v68: not-for-feed flags + filter rules...")
+        conn.execute("SAVEPOINT migrate_feed_v68")
+        _migrate_v68_feed_flags(conn)
+        conn.execute("RELEASE SAVEPOINT migrate_feed_v68")
+        conn.commit()
+        logger.info("  ✓ Migration to v68 complete: feed flags + filter rules")
 
 
 def init_database() -> None:
