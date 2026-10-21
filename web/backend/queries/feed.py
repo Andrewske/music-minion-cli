@@ -7,6 +7,7 @@ from typing import Any, Literal, NamedTuple
 from loguru import logger
 
 from music_minion.core.database import get_db_connection
+from web.backend.feed_filter_rules import not_flagged_sql
 
 Decision = Literal["keep", "not_quite", "nope"]
 FeedSource = Literal["all", "releases", "reposts"]
@@ -245,7 +246,7 @@ def get_feed_page(
     tracks sort last). Rows inserted by a sync mid-scroll land above the
     cursor, so later pages never shift. `top200` is shorthand for max_rank=200.
     Any current decision (keeps included) removes a track; reviewed tracks
-    live in `get_reviewed_page`.
+    live in `get_reviewed_page`. So does an active not-for-feed flag.
     """
     _validate_source(source)
     _validate_sort(sort)
@@ -360,6 +361,7 @@ def _page_keys_sql(cursor_sql: str, order_sql: str) -> str:
                 SELECT 1 FROM sc_track_decisions d
                 WHERE d.soundcloud_id = c.soundcloud_id AND d.is_current = 1
           )
+          AND {not_flagged_sql("c.soundcloud_id")}
           AND (:in_library = 0 OR EXISTS(
                 SELECT 1 FROM tracks t
                 WHERE t.artist_normalized = LOWER(TRIM(COALESCE(c.uploader_display_name, '')))

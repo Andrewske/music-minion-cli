@@ -11,6 +11,7 @@ from music_minion.core.database import (
     _migrate_v62_decision_ledger,
     _migrate_v64_track_predictions,
     _migrate_v67_decision_verdicts,
+    _migrate_v68_feed_flags,
 )
 from web.backend import jev_client, jev_scorer
 from web.backend.jev_client import JevConfig, JevPrediction
@@ -110,6 +111,7 @@ def db_path(tmp_path, monkeypatch):
     conn.executescript(MINIMAL_SCHEMA_SQL)
     _migrate_v62_decision_ledger(conn)
     _migrate_v67_decision_verdicts(conn)
+    _migrate_v68_feed_flags(conn)
     _migrate_v64_track_predictions(conn)
     conn.commit()
     conn.close()

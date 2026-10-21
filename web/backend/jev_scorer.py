@@ -19,6 +19,7 @@ from loguru import logger
 from music_minion.core.database import get_db_connection
 
 from web.backend import jev_client
+from web.backend.feed_filter_rules import not_flagged_sql
 from web.backend.queries import feed as feed_queries
 
 TASTE_PROFILE_PATH = Path(__file__).parent / "data" / "taste-profile.md"
@@ -69,9 +70,10 @@ def _age_days(timestamp: str | None, now: datetime) -> float | None:
 
 def _overall_history(conn: Any) -> dict[str, Any]:
     row = conn.execute(
-        """SELECT SUM(decision = 'keep') AS keeps, COUNT(*) AS total
-        FROM sc_track_decisions WHERE is_current = 1
-          AND decision IN ('keep', 'not_quite', 'nope')"""
+        f"""SELECT SUM(sd.decision = 'keep') AS keeps, COUNT(*) AS total
+        FROM sc_track_decisions sd WHERE sd.is_current = 1
+          AND sd.decision IN ('keep', 'not_quite', 'nope')
+          AND {not_flagged_sql("sd.soundcloud_id")}"""
     ).fetchone()
     total = row["total"] or 0
     rate = round((row["keeps"] or 0) / total, 3) if total else None
@@ -127,7 +129,7 @@ def _track_state_dict(conn: Any, row: Any, now: datetime) -> dict[str, Any]:
 
 
 def _candidates_sql() -> str:
-    """Undecided, unscored tracks inside the feed's window, newest first.
+    """Undecided, unflagged, unscored tracks inside the feed's window, newest first.
 
     Uses the feed's own window predicates so we never pay to score tracks
     the feed can't show (the April 2026 import holds ~226k stale reposts).
@@ -169,6 +171,7 @@ WHERE NOT EXISTS (
       SELECT 1 FROM sc_track_decisions d
       WHERE d.soundcloud_id = f.soundcloud_id AND d.is_current = 1
   )
+  AND {not_flagged_sql("f.soundcloud_id")}
   AND NOT EXISTS (
       SELECT 1 FROM sc_track_predictions sp
       WHERE sp.soundcloud_id = f.soundcloud_id

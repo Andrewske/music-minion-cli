@@ -15,6 +15,8 @@ from web.backend.artist_quality import (
     rate_or_prior,
     recalculate_artist_role_stats,
 )
+from web.backend.feed_filter_rules import not_flagged_sql
+from web.backend.queries import feed_filters
 
 # SQLite has a limit of 999 variables per query; use batches of 900 to be safe
 _SQLITE_BATCH_SIZE = 900
@@ -358,7 +360,8 @@ def insert_discovery_tracks(tracks: list[dict[str, Any]]) -> int:
             records,
         )
         conn.commit()
-        return len(set(sc_ids) - existing)
+    feed_filters.filter_ingested(sc_ids)
+    return len(set(sc_ids) - existing)
 
 
 def insert_track_reposters(
@@ -717,7 +720,8 @@ def recalculate_artist_stats(artist_ids: Sequence[int] | None = None) -> None:
     give every actor full credit for every track and are kept for the UI
     only. Each artist/track pair is counted once even when that artist both
     uploaded and reposted it, and only canonical current keep / not_quite /
-    nope decisions from ``sc_track_decisions`` count; legacy hide is absent.
+    nope decisions from ``sc_track_decisions`` count; legacy hide is absent,
+    and so is any track with an active not-for-feed flag (not even seen).
     A not-quite is half a keep, and tracks_dismissed counts nopes only:
     hit_rate = (liked + 0.5 * not_quite) / max(1, liked + not_quite + nope) * 100
 
@@ -732,7 +736,7 @@ def recalculate_artist_stats(artist_ids: Sequence[int] | None = None) -> None:
     ids_json = None if artist_ids is None else json.dumps(list(artist_ids))
     with get_db_connection() as conn:
         rows = conn.execute(
-            """
+            f"""
             WITH targets AS (SELECT value AS id FROM json_each(:ids)),
             contributions AS (
                 SELECT dtr.discovery_artist_id AS artist_id, dt.soundcloud_id
@@ -748,6 +752,7 @@ def recalculate_artist_stats(artist_ids: Sequence[int] | None = None) -> None:
                 FROM contributions c
                 JOIN sc_track_decisions d
                   ON d.soundcloud_id = c.soundcloud_id AND d.is_current = 1
+                WHERE {not_flagged_sql("c.soundcloud_id")}
             )
             SELECT
                 da.id,

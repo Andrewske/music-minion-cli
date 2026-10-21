@@ -14,6 +14,7 @@ from web.backend.feed_rating import monthly_playlist_name
 from web.backend.feed_uploads_sync import run_uploads_backfill
 from web.backend.queries import discovery as discovery_queries
 from web.backend.queries import feed as feed_queries
+from web.backend.queries import feed_filters as filter_queries
 from web.backend.sc_push_worker import enqueue_feed_action_drain
 from web.backend.soundcloud_auth import get_web_provider_state
 
@@ -43,6 +44,13 @@ class RateRequest(BaseModel):
 
 class NoteRequest(BaseModel):
     note: str = Field(max_length=feed_queries.MAX_NOTE_LENGTH)
+
+
+class FlagRequest(BaseModel):
+    """Not for feed: a reason chip plus an optional note (shared notes table)."""
+
+    reason: Literal["live_mix", "podcast", "other"]
+    note: str | None = Field(default=None, max_length=feed_queries.MAX_NOTE_LENGTH)
 
 
 def _resolve_decision(body: RateRequest) -> str:
@@ -168,6 +176,37 @@ def put_track_note(soundcloud_id: str, body: NoteRequest) -> dict[str, Any]:
         "soundcloud_id": soundcloud_id,
         "note": stored["note"] if stored else None,
         "updated_at": stored["updated_at"] if stored else None,
+    }
+
+
+def _require_known_track(soundcloud_id: str) -> None:
+    if not feed_queries.track_is_known(soundcloud_id):
+        raise HTTPException(
+            status_code=404, detail=f"SoundCloud track {soundcloud_id} not found"
+        )
+
+
+@router.post("/{soundcloud_id}/flag")
+def flag_track(soundcloud_id: str, body: FlagRequest) -> dict[str, Any]:
+    """Hide a track as not for feed. Not a verdict: no decision row is written."""
+    _require_known_track(soundcloud_id)
+    flag = filter_queries.flag_track(soundcloud_id, body.reason, body.note)
+    return {"soundcloud_id": soundcloud_id, "flag": flag}
+
+
+@router.delete("/{soundcloud_id}/flag")
+def unflag_track(soundcloud_id: str) -> dict[str, Any]:
+    """Undo a user flag or rescue a rule/agent flag; the track returns to the feed."""
+    result = filter_queries.unflag_track(soundcloud_id)
+    if result is None:
+        raise HTTPException(
+            status_code=404, detail=f"SoundCloud track {soundcloud_id} is not flagged"
+        )
+    return {
+        "soundcloud_id": soundcloud_id,
+        "source": result["source"],
+        "removed": result["removed"],
+        "rescued_at": result.get("rescued_at"),
     }
 
 

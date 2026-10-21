@@ -39,6 +39,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Sequence
 
+from web.backend.feed_filter_rules import not_flagged_sql
 from web.backend.soundcloud_metadata import parse_soundcloud_datetime
 
 LABEL_BY_DECISION: dict[str, int] = {"keep": 1, "not_quite": 0, "nope": 0}
@@ -111,10 +112,12 @@ def _normalized_name_sql(column: str) -> str:
     )
 
 
-_CURRENT_LABEL_SQL = """
-SELECT soundcloud_id, decision, decided_at, surface
-FROM sc_track_decisions
-WHERE is_current = 1 AND decision IN ('keep', 'not_quite', 'nope')
+# Not-for-feed flagged tracks are "not a track", never a taste label.
+_CURRENT_LABEL_SQL = f"""
+SELECT sd.soundcloud_id, sd.decision, sd.decided_at, sd.surface
+FROM sc_track_decisions sd
+WHERE sd.is_current = 1 AND sd.decision IN ('keep', 'not_quite', 'nope')
+  AND {not_flagged_sql("sd.soundcloud_id")}
 """
 
 
