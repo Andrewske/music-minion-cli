@@ -89,6 +89,7 @@ export type {
   MaterializeFeedItemResponse, PreparedFeedQueue,
   ReviewedItem, ReviewedPage, GetReviewedParams, FeedNoteResponse,
 } from './api/feed';
+export * from './api/feedFilters';
 
 // Playback error policy (shared window/breaker/retry decision logic)
 export {

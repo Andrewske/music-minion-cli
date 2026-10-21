@@ -1,13 +1,24 @@
-import type { FeedDecision, ReviewedItem } from '../../api/feed';
+import { FEED_VERDICT_LABELS, type FeedDecision, type ReviewedItem } from '../../api/feed';
 import { formatListenTime } from '../../lib/feedListen';
 
 export const REVIEWED_QUERY_KEY = ['feed-reviewed'] as const;
-export const REVIEWED_FILTERS: ReadonlyArray<FeedDecision | undefined> = [
+/** Not-for-feed flags (user, rule and agent); shared by the Reviewed tab and Settings. */
+export const FLAGGED_QUERY_KEY = ['feed-flagged'] as const;
+export const FILTER_RULES_QUERY_KEY = ['feed-filter-rules'] as const;
+/** A verdict, or 'flagged' for the user's not-for-feed flags (not a verdict). */
+export type ReviewedFilter = FeedDecision | 'flagged';
+export const REVIEWED_FILTERS: ReadonlyArray<ReviewedFilter | undefined> = [
   undefined,
   'keep',
   'not_quite',
   'nope',
+  'flagged',
 ];
+
+export function reviewedFilterLabel(filter: ReviewedFilter | undefined): string {
+  if (filter === undefined) return 'All';
+  return filter === 'flagged' ? 'Not for feed' : FEED_VERDICT_LABELS[filter];
+}
 
 export function formatDecidedAt(iso: string): string {
   const date = new Date(iso);

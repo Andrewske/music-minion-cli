@@ -4,8 +4,9 @@ import { EmojiSettingsSection } from './EmojiSettingsSection';
 import { SoundCloudImportSection } from './SoundCloudImportSection';
 import { GenreSettingsSection } from './GenreSettingsSection';
 import { MatchingReview } from './MatchingReview';
+import { FeedFiltersSection } from './FeedFiltersSection';
 
-type SettingsTab = 'youtube' | 'emoji' | 'soundcloud' | 'genres' | 'matching';
+type SettingsTab = 'youtube' | 'emoji' | 'soundcloud' | 'genres' | 'matching' | 'feed-filters';
 
 export function SettingsPage() {
   const search = useSearch({ from: '/settings' });
@@ -94,6 +95,19 @@ export function SettingsPage() {
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-obsidian-accent" />
             )}
           </button>
+          <button
+            onClick={() => handleTabChange('feed-filters')}
+            className={`px-6 py-3 font-medium transition-colors relative ${
+              activeTab === 'feed-filters'
+                ? 'text-obsidian-accent'
+                : 'text-white/60 hover:text-white'
+            }`}
+          >
+            Feed filters
+            {activeTab === 'feed-filters' && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-obsidian-accent" />
+            )}
+          </button>
         </div>
 
         {/* Content */}
@@ -103,6 +117,7 @@ export function SettingsPage() {
           {activeTab === 'soundcloud' && <SoundCloudImportSection />}
           {activeTab === 'genres' && <GenreSettingsSection />}
           {activeTab === 'matching' && <MatchingReview />}
+          {activeTab === 'feed-filters' && <FeedFiltersSection />}
         </div>
       </div>
     </div>
