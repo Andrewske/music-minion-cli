@@ -103,3 +103,38 @@ def ask_noul(
     )
     response.raise_for_status()
     return _parse_noul_response(response.json(), config.model_id)
+
+
+def _parse_noul_answers(payload: dict, question_ids: list[str]) -> dict[str, float]:
+    """Noul value per question id; questions Jev didn't answer are left out."""
+    answers = payload.get("answers") or {}
+    nouls = {qid: (answers.get(qid) or {}).get("noul") for qid in question_ids}
+    return {qid: float(noul) for qid, noul in nouls.items() if noul is not None}
+
+
+def ask_nouls(
+    config: JevConfig, state: str, questions: dict[str, str], timeout_s: float = 30.0
+) -> dict[str, float]:
+    """Ask several Noul questions about one state in a single call.
+
+    Used to batch tracks: each question id names one track. Raises on HTTP
+    errors; an empty answer set is a ValueError so callers count a failure.
+    """
+    response = httpx.post(
+        f"{config.base_url}{SYSTEMONE_PATH}",
+        json={
+            "model": config.model_id,
+            "state": state,
+            "questions": {
+                qid: {"type": "noul", "instructions": text}
+                for qid, text in questions.items()
+            },
+        },
+        headers={"Authorization": f"Bearer {config.api_key}"},
+        timeout=timeout_s,
+    )
+    response.raise_for_status()
+    nouls = _parse_noul_answers(response.json(), list(questions))
+    if not nouls:
+        raise ValueError(f"Jev answered none of {len(questions)} questions")
+    return nouls

@@ -112,7 +112,7 @@ def delete_rule(rule_id: int) -> bool:
     return cursor.rowcount > 0
 
 
-def _enabled_rules(conn: Any) -> list[dict[str, Any]]:
+def enabled_rules(conn: Any) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT * FROM feed_filter_rules WHERE enabled = 1 ORDER BY id"
     ).fetchall()
@@ -142,15 +142,20 @@ _CANDIDATES_SQL = f"""
            COALESCE(u.title, dt.title) AS title,
            COALESCE(NULLIF(u.duration_ms, 0), dt.duration_ms, 0) AS duration_ms,
            COALESCE(u.genre, dt.genre) AS genre,
-           COALESCE(u.tag_list, dt.tag_list) AS tag_list
+           COALESCE(u.tag_list, dt.tag_list) AS tag_list,
+           COALESCE(da.display_name, uda.display_name, dt.artist_name) AS uploader
     FROM ids
     LEFT JOIN sc_artist_uploads u ON u.soundcloud_id = ids.soundcloud_id
+    LEFT JOIN discovery_artists da ON da.id = u.discovery_artist_id
     LEFT JOIN discovery_tracks dt ON dt.soundcloud_id = ids.soundcloud_id
+    LEFT JOIN discovery_artists uda
+      ON uda.soundcloud_user_id = dt.uploader_soundcloud_id
     WHERE NOT EXISTS (
             SELECT 1 FROM sc_track_decisions d
             WHERE d.soundcloud_id = ids.soundcloud_id AND d.is_current = 1)
       AND NOT EXISTS (
             SELECT 1 FROM sc_track_flags f WHERE f.soundcloud_id = ids.soundcloud_id)
+    GROUP BY ids.soundcloud_id
 """
 
 
@@ -159,6 +164,16 @@ def _candidate_track(row: Any) -> dict[str, Any]:
     track = dict(row)
     track["tags"] = parse_tag_list(track.pop("tag_list"))
     return track
+
+
+def unreviewed_candidates(
+    conn: Any, soundcloud_ids: list[str] | None
+) -> list[dict[str, Any]]:
+    """Unreviewed, never-flagged tracks: the given ids, or the feed window."""
+    ids_json = None if soundcloud_ids is None else json.dumps(soundcloud_ids)
+    params = {"ids": ids_json, **window_params()}
+    rows = conn.execute(_CANDIDATES_SQL, params).fetchall()
+    return [_candidate_track(row) for row in rows]
 
 
 def _rule_flags(
@@ -181,14 +196,11 @@ def apply_rules(soundcloud_ids: list[str] | None = None) -> int:
     """
     if soundcloud_ids is not None and not soundcloud_ids:
         return 0
-    ids_json = None if soundcloud_ids is None else json.dumps(soundcloud_ids)
     with get_db_connection() as conn:
-        rules = _enabled_rules(conn)
+        rules = enabled_rules(conn)
         if not rules:
             return 0
-        params = {"ids": ids_json, **window_params()}
-        rows = conn.execute(_CANDIDATES_SQL, params).fetchall()
-        tracks = [_candidate_track(row) for row in rows]
+        tracks = unreviewed_candidates(conn, soundcloud_ids)
         flags = _rule_flags(tracks, rules)
         conn.executemany(
             """INSERT OR IGNORE INTO sc_track_flags
@@ -275,7 +287,7 @@ def unflag_track(soundcloud_id: str) -> dict[str, Any] | None:
 
 _FLAGGED_SQL = """
     SELECT f.id AS flag_id, f.soundcloud_id, f.reason, f.source, f.rule_id,
-           f.created_at, r.name AS rule_name,
+           f.created_at, f.confidence, r.name AS rule_name,
            COALESCE(u.local_track_id, dt.local_track_id) AS local_track_id,
            COALESCE(u.title, dt.title) AS title,
            COALESCE(da.display_name, uda.display_name, dt.artist_name) AS artist_name,
@@ -295,10 +307,30 @@ _FLAGGED_SQL = """
     WHERE f.rescued_at IS NULL
       AND f.source IN (SELECT value FROM json_each(:sources))
       AND (:rule_id IS NULL OR f.rule_id = :rule_id)
-      AND (:cursor_id IS NULL OR f.id < :cursor_id)
-    ORDER BY f.id DESC
+      AND {cursor_sql}
+    ORDER BY {order_sql}
     LIMIT :limit
 """
+
+# Lowest agent confidence first (most likely mistakes on top); rule and user
+# flags carry no confidence and sort after every agent flag.
+_CONFIDENCE_KEY = "COALESCE(f.confidence, 2.0)"
+_FLAGGED_ORDERINGS: dict[str, tuple[str, str]] = {
+    "newest": ("(:cursor_id IS NULL OR f.id < :cursor_id)", "f.id DESC"),
+    "confidence": (
+        f"""(:cursor_id IS NULL OR {_CONFIDENCE_KEY} > :cursor_confidence
+             OR ({_CONFIDENCE_KEY} = :cursor_confidence AND f.id > :cursor_id))""",
+        f"{_CONFIDENCE_KEY} ASC, f.id ASC",
+    ),
+}
+FLAGGED_SORTS: tuple[str, ...] = tuple(_FLAGGED_ORDERINGS)
+
+
+def _flagged_sql(sort: str) -> str:
+    if sort not in _FLAGGED_ORDERINGS:
+        raise ValueError(f"Invalid flagged sort {sort!r}; valid are {FLAGGED_SORTS}")
+    cursor_sql, order_sql = _FLAGGED_ORDERINGS[sort]
+    return _FLAGGED_SQL.format(cursor_sql=cursor_sql, order_sql=order_sql)
 
 
 def list_flagged(
@@ -306,8 +338,14 @@ def list_flagged(
     rule_id: int | None = None,
     limit: int = 50,
     cursor_id: int | None = None,
+    sort: str = "newest",
+    cursor_confidence: float | None = None,
 ) -> list[dict[str, Any]]:
-    """Active flags newest first with track metadata; cursor is the last flag_id."""
+    """Active flags with track metadata, newest first or lowest confidence first.
+
+    The cursor is the previous page's last flag_id (plus its confidence when
+    sorting by confidence).
+    """
     invalid = [source for source in sources if source not in FLAG_SOURCES]
     if invalid or not sources:
         raise ValueError(f"Invalid flag sources {sources!r}; valid are {FLAG_SOURCES}")
@@ -316,7 +354,8 @@ def list_flagged(
         "rule_id": rule_id,
         "limit": max(1, min(limit, 100)),
         "cursor_id": cursor_id,
+        "cursor_confidence": 2.0 if cursor_confidence is None else cursor_confidence,
     }
     with get_db_connection() as conn:
-        rows = conn.execute(_FLAGGED_SQL, params).fetchall()
+        rows = conn.execute(_flagged_sql(sort), params).fetchall()
     return [dict(row) for row in rows]

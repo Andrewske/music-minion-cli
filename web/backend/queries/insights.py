@@ -11,7 +11,7 @@ from music_minion.core.database import get_db_connection
 from web.backend import feed_insights
 from web.backend.feed_filter_rules import not_flagged_sql
 from web.backend.queries.feed import utc_iso
-from web.backend.soundcloud_metadata import parse_soundcloud_datetime
+from web.backend.soundcloud_metadata import parse_soundcloud_datetime, parse_tag_list
 
 _REPOSTER_SEPARATOR = "\x1f"
 MAX_INSIGHT_TRACKS = 200
@@ -60,6 +60,7 @@ def _row_to_track(row: Any) -> dict[str, Any]:
     track = dict(row)
     names = track.pop("reposter_names") or ""
     track["reposters"] = sorted(set(filter(None, names.split(_REPOSTER_SEPARATOR))))
+    track["tags"] = parse_tag_list(track["tag_list"])
     track["age_days"] = _age_days(track["released_at"], track["decided_at"])
     return track
 

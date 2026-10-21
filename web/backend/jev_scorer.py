@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,7 @@ from music_minion.core.database import get_db_connection
 from web.backend import jev_client
 from web.backend.feed_filter_rules import not_flagged_sql
 from web.backend.queries import feed as feed_queries
+from web.backend.queries import insights as insight_queries
 
 TASTE_PROFILE_PATH = Path(__file__).parent / "data" / "taste-profile.md"
 MAX_REPOSTERS_IN_STATE = 5
@@ -39,6 +41,23 @@ def load_taste_profile() -> tuple[str, str] | None:
     text = TASTE_PROFILE_PATH.read_text(encoding="utf-8")
     version = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
     return text, version
+
+
+def with_review_evidence(profile_text: str) -> str:
+    """Append generated evidence (top lift features, recent near-miss and nope
+    notes) to the hand-written profile.
+
+    The profile version stays the hash of the hand-written file, so fresh
+    evidence never triggers a full rescore; ``state_sent`` still records the
+    exact text each prediction saw. Offline evaluation keeps using the bare
+    profile because the evidence is computed from the labels it tests on.
+    """
+    try:
+        evidence = insight_queries.taste_evidence()
+    except sqlite3.Error:
+        logger.exception("jev: review evidence failed; scoring with the bare profile")
+        return profile_text
+    return f"{profile_text.rstrip()}\n\n{evidence}\n" if evidence else profile_text
 
 
 def build_state(track: dict[str, Any], taste_profile: str) -> str:
@@ -225,6 +244,7 @@ def score_new_tracks(sleep_s: float = 0.1) -> int:
         logger.warning(f"jev: taste profile missing at {TASTE_PROFILE_PATH}, skipping")
         return 0
     profile_text, profile_version = profile
+    profile_text = with_review_evidence(profile_text)
     now = datetime.now(timezone.utc)
     scored = failed = 0
     with get_db_connection() as conn:
