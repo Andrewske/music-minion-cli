@@ -4,6 +4,10 @@ A rule is a dict with ``kind`` / ``pattern`` / ``threshold`` (plus id, name,
 reason, enabled); a track is a dict with ``title`` / ``duration_ms`` /
 ``genre`` and optionally ``tags``. Nothing here touches the database, so the
 rules engine is unit-testable on plain dicts.
+
+Title regexes compile and match with the ``regex`` module, never ``re``, so a
+pattern that passes validation is exactly what runs at match time. Each match
+has a hard timeout; the stdlib parser check below is only a fast first filter.
 """
 
 import re
@@ -12,6 +16,8 @@ import re._parser as sre_parser
 from collections.abc import Callable, Iterable
 from functools import lru_cache
 from typing import Any
+
+import regex
 
 FLAG_REASONS: tuple[str, ...] = ("live_mix", "podcast", "other")
 FLAG_SOURCES: tuple[str, ...] = ("user", "rule", "agent")
@@ -22,6 +28,10 @@ MAX_DURATION_MINUTES = 600.0
 MAX_REGEX_LENGTH = 200
 # Titles are matched on a bounded prefix so even a slow pattern stays fast.
 MAX_MATCHED_TITLE_LENGTH = 300
+# Per-match wall clock bound. A timeout counts as no match.
+MATCH_TIMEOUT_SECONDS = 0.05
+# A rule that times out this many times in one run is disabled.
+RULE_TIMEOUT_LIMIT = 3
 
 _REPEATS = (
     sre_constants.MAX_REPEAT,
@@ -58,13 +68,16 @@ def _matches_duration(track: dict[str, Any], rule: dict[str, Any]) -> bool:
 
 
 @lru_cache(maxsize=64)
-def _compiled_title_pattern(pattern: str) -> re.Pattern[str]:
-    return re.compile(pattern, re.IGNORECASE)
+def _compiled_title_pattern(pattern: str) -> Any:
+    """The one compile used by validation and matching; raises regex.error."""
+    return regex.compile(pattern, regex.IGNORECASE)
 
 
 def _matches_title(track: dict[str, Any], rule: dict[str, Any]) -> bool:
+    """Raises TimeoutError when the match exceeds MATCH_TIMEOUT_SECONDS."""
     title = (track.get("title") or "")[:MAX_MATCHED_TITLE_LENGTH]
-    return _compiled_title_pattern(rule["pattern"]).search(title) is not None
+    pattern = _compiled_title_pattern(rule["pattern"])
+    return pattern.search(title, timeout=MATCH_TIMEOUT_SECONDS) is not None
 
 
 def _matches_tags(track: dict[str, Any], rule: dict[str, Any]) -> bool:
@@ -81,17 +94,38 @@ _MATCHERS: dict[str, Callable[[dict[str, Any], dict[str, Any]], bool]] = {
 
 
 def rule_matches(track: dict[str, Any], rule: dict[str, Any]) -> bool:
-    """True when an enabled rule catches the track."""
+    """True when an enabled rule catches the track; a timeout counts as no match."""
+    try:
+        return _rule_matches_or_timeout(track, rule)
+    except TimeoutError:
+        return False
+
+
+def _rule_matches_or_timeout(track: dict[str, Any], rule: dict[str, Any]) -> bool:
     if not rule.get("enabled", True):
         return False
     return _MATCHERS[rule["kind"]](track, rule)
+
+
+def match_rules(
+    track: dict[str, Any], rules: Iterable[dict[str, Any]]
+) -> tuple[dict[str, Any] | None, list[int]]:
+    """The first rule (in order) that catches the track, and ids of rules that timed out."""
+    timed_out: list[int] = []
+    for rule in rules:
+        try:
+            if _rule_matches_or_timeout(track, rule):
+                return rule, timed_out
+        except TimeoutError:
+            timed_out.append(rule["id"])
+    return None, timed_out
 
 
 def first_matching_rule(
     track: dict[str, Any], rules: Iterable[dict[str, Any]]
 ) -> dict[str, Any] | None:
     """The first rule (in the given order) that catches the track."""
-    return next((rule for rule in rules if rule_matches(track, rule)), None)
+    return match_rules(track, rules)[0]
 
 
 def rule_precision(hits: int, rescues: int) -> float | None:
@@ -135,16 +169,24 @@ def _has_nested_quantifier(pattern: Any, inside_repeat: bool = False) -> bool:
     return False
 
 
+def _stdlib_parse(text: str) -> Any | None:
+    """The stdlib parse tree, or None for syntax only the regex module knows."""
+    try:
+        return sre_parser.parse(text, re.IGNORECASE)
+    except re.error:
+        return None
+
+
 def _validated_regex(text: str) -> None:
     if len(text) > MAX_REGEX_LENGTH:
         raise ValueError(f"Regex is longer than {MAX_REGEX_LENGTH} characters")
     try:
-        parsed = sre_parser.parse(text, re.IGNORECASE)
-    except re.error as error:
-        raise ValueError(
-            f"Invalid regex {text!r}: {error.msg} at position {error.pos}"
-        ) from error
-    if _has_nested_quantifier(parsed):
+        _compiled_title_pattern(text)
+    except regex.error as error:
+        position = "" if error.pos is None else f" at position {error.pos}"
+        raise ValueError(f"Invalid regex {text!r}: {error.msg}{position}") from error
+    parsed = _stdlib_parse(text)
+    if parsed is not None and _has_nested_quantifier(parsed):
         raise ValueError(
             f"Regex {text!r} repeats a group that contains a quantifier or "
             "alternation (like (a+)+), which can hang matching; flatten it"

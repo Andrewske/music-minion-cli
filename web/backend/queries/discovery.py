@@ -735,9 +735,14 @@ def recalculate_artist_stats(artist_ids: Sequence[int] | None = None) -> None:
     endpoint); the filter sits inside the CTE so only those artists'
     contributions are scanned. Role stats are always refreshed globally
     because a track decision changes the fractional credit of every reposter.
+
+    The write lock is taken before the counts are read. Two overlapping
+    recalcs (two quick flags) then run one after the other, and the later
+    one reads the later state, so stale counts never land last.
     """
     ids_json = None if artist_ids is None else json.dumps(list(artist_ids))
     with get_db_connection() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         rows = conn.execute(
             f"""
             WITH targets AS (SELECT value AS id FROM json_each(:ids)),

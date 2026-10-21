@@ -13,12 +13,27 @@ from web.backend.feed_filter_rules import not_flagged_sql
 # Artist stats CTE query
 # ---------------------------------------------------------------------------
 
-# Feed volume ignores tracks with an active not-for-feed flag (#30).
+# Feed volume (Pareto) ignores tracks with an active not-for-feed flag (#30).
 _FEED_EVENTS_UNFLAGGED_SQL = f"""
   SELECT dtr.discovery_artist_id, dtr.seen_at
   FROM discovery_track_reposters dtr
   JOIN discovery_tracks dt ON dt.id = dtr.discovery_track_id
   WHERE {not_flagged_sql("dt.soundcloud_id")}
+"""
+
+# Taste volume (feed noise) skips flagged events; recency counts every event,
+# since posting a flagged mix still means the artist is active.
+_UNFLAGGED_EVENT = not_flagged_sql("dt.soundcloud_id")
+_FEED_STATS_SQL = f"""
+  SELECT dtr.discovery_artist_id,
+         COUNT(*) FILTER (WHERE dtr.seen_at > datetime('now', '-7 days')
+                            AND {_UNFLAGGED_EVENT}) / 7.0 AS noise_7d,
+         COUNT(*) FILTER (WHERE dtr.seen_at > datetime('now', '-30 days')
+                            AND {_UNFLAGGED_EVENT}) / 30.0 AS noise_30d,
+         MAX(dtr.seen_at) AS last_activity_at
+  FROM discovery_track_reposters dtr
+  LEFT JOIN discovery_tracks dt ON dt.id = dtr.discovery_track_id
+  GROUP BY dtr.discovery_artist_id
 """
 
 ARTISTS_STATS_SQL = f"""
@@ -28,13 +43,7 @@ WITH library_counts AS (
   INNER JOIN tracks t ON t.artist_normalized = amr.local_name
   GROUP BY amr.discovery_artist_id
 ),
-feed_stats AS (
-  SELECT discovery_artist_id,
-         COUNT(*) FILTER (WHERE seen_at > datetime('now', '-7 days')) / 7.0 AS noise_7d,
-         COUNT(*) FILTER (WHERE seen_at > datetime('now', '-30 days')) / 30.0 AS noise_30d,
-         MAX(seen_at) AS last_activity_at
-  FROM ({_FEED_EVENTS_UNFLAGGED_SQL}) GROUP BY discovery_artist_id
-),
+feed_stats AS ({_FEED_STATS_SQL}),
 repost_counts AS (
   SELECT dtr.discovery_artist_id, COUNT(DISTINCT t.id) AS repost_count
   FROM discovery_track_reposters dtr
