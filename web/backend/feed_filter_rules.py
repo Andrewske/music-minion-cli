@@ -2,8 +2,9 @@
 
 A rule is a dict with ``kind`` / ``pattern`` / ``threshold`` (plus id, name,
 reason, enabled); a track is a dict with ``title`` / ``duration_ms`` /
-``genre`` and optionally ``tags``. Nothing here touches the database, so the
-rules engine is unit-testable on plain dicts.
+``genre`` and optionally ``tags`` (the parsed SoundCloud ``tag_list``).
+Nothing here touches the database, so the rules engine is unit-testable on
+plain dicts.
 """
 
 import re

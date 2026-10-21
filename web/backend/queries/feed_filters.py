@@ -23,6 +23,7 @@ from web.backend.feed_filter_rules import (
     validate_rule,
 )
 from web.backend.queries.feed import set_track_note, utc_iso, window_params
+from web.backend.soundcloud_metadata import parse_tag_list
 
 _RULE_FIELDS = ("name", "kind", "pattern", "threshold", "reason", "enabled")
 
@@ -140,7 +141,8 @@ _CANDIDATES_SQL = f"""
     SELECT ids.soundcloud_id,
            COALESCE(u.title, dt.title) AS title,
            COALESCE(NULLIF(u.duration_ms, 0), dt.duration_ms, 0) AS duration_ms,
-           COALESCE(u.genre, dt.genre) AS genre
+           COALESCE(u.genre, dt.genre) AS genre,
+           COALESCE(u.tag_list, dt.tag_list) AS tag_list
     FROM ids
     LEFT JOIN sc_artist_uploads u ON u.soundcloud_id = ids.soundcloud_id
     LEFT JOIN discovery_tracks dt ON dt.soundcloud_id = ids.soundcloud_id
@@ -150,6 +152,13 @@ _CANDIDATES_SQL = f"""
       AND NOT EXISTS (
             SELECT 1 FROM sc_track_flags f WHERE f.soundcloud_id = ids.soundcloud_id)
 """
+
+
+def _candidate_track(row: Any) -> dict[str, Any]:
+    """Rule-matching dict; SoundCloud tags feed tag_match alongside genre."""
+    track = dict(row)
+    track["tags"] = parse_tag_list(track.pop("tag_list"))
+    return track
 
 
 def _rule_flags(
@@ -178,7 +187,8 @@ def apply_rules(soundcloud_ids: list[str] | None = None) -> int:
         if not rules:
             return 0
         params = {"ids": ids_json, **window_params()}
-        tracks = [dict(row) for row in conn.execute(_CANDIDATES_SQL, params)]
+        rows = conn.execute(_CANDIDATES_SQL, params).fetchall()
+        tracks = [_candidate_track(row) for row in rows]
         flags = _rule_flags(tracks, rules)
         conn.executemany(
             """INSERT OR IGNORE INTO sc_track_flags
