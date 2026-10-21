@@ -1,0 +1,39 @@
+# Auto-advance — when a track ends, the next queued track starts on its own
+# (no button press). Seeks to ~98% so the end arrives within seconds.
+appId: com.musicminion.app
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "tab-home"
+    timeout: 30000
+- runFlow: subflows/play_search_track.yml
+- assertTrue:
+    condition: ${output.queueLength >= output.startIndex + 1}
+    label: "Queue has a next track"
+- copyTextFrom:
+    id: "now-playing-title"
+- runScript:
+    file: scripts/copied-as-regex.js
+    env:
+      KEY: "firstTitle"
+
+- tapOn:
+    id: "seek-slider"
+    point: "98%,50%"
+
+# Ended → playbackEvents.handleEnded → store.next(): queue index +1.
+- extendedWaitUntil:
+    visible:
+      id: "now-playing-queue-info"
+      text: ${(output.startIndex + 1) + ' / .* in queue'}
+    timeout: 60000
+- assertNotVisible:
+    id: "now-playing-title"
+    text: ${output.firstTitle}
+# The new track actually plays (not just a UI index bump).
+- extendedWaitUntil:
+    visible:
+      id: "seek-position"
+      text: "0:0[3-9]"
+    timeout: 45000

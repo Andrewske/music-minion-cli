@@ -60,6 +60,11 @@ else
   echo "✓ Emulator already running."
 fi
 
+# Pin everything to the emulator: a phone/tablet on wireless adb would
+# otherwise be picked by adb (and by Maestro) and every flow fails to launch.
+EMU_SERIAL="$(adb devices | grep -o '^emulator-[0-9]*' | head -1)"
+export ANDROID_SERIAL="$EMU_SERIAL"
+
 # Disabling animations cuts flakiness and speeds up the run.
 adb shell settings put global window_animation_scale 0 >/dev/null 2>&1 || true
 adb shell settings put global transition_animation_scale 0 >/dev/null 2>&1 || true
@@ -67,8 +72,10 @@ adb shell settings put global animator_duration_scale 0 >/dev/null 2>&1 || true
 
 # --- 2. build + install -------------------------------------------------------
 if [ "$DO_BUILD" -eq 1 ]; then
-  echo "▶ Building + installing release APK (expo run:android)..."
-  ( cd "$PROJECT_DIR" && "$EXPO_BIN" run:android --variant release )
+  echo "▶ Building + installing release APK (expo run:android, EXPO_PUBLIC_E2E=1)..."
+  # EXPO_PUBLIC_E2E=1 enables the test seams in services/e2eHooks.ts (e.g. the
+  # bad-stream arm used by 09_bad_stream_skip.yml). Never set it for EAS/ship.
+  ( cd "$PROJECT_DIR" && EXPO_PUBLIC_E2E=1 "$EXPO_BIN" run:android --variant release --device "$AVD_NAME" )
 fi
 
 # --- 3. run flows -------------------------------------------------------------
@@ -80,12 +87,12 @@ if [ -d "$FLOW_ARG" ]; then
   pass=0; fail=0; failed=""
   for flow in "$FLOW_ARG"/[0-9]*.yml; do
     name="$(basename "$flow")"
-    if maestro test "$flow"; then echo "  ✓ $name"; pass=$((pass + 1))
+    if maestro --device "$EMU_SERIAL" test "$flow"; then echo "  ✓ $name"; pass=$((pass + 1))
     else echo "  ✗ $name"; fail=$((fail + 1)); failed="$failed $name"; fi
     sleep 3
   done
   echo "═══ $pass passed, $fail failed ═══${failed:+ FAILED:$failed}"
   [ "$fail" -eq 0 ]
 else
-  maestro test "$FLOW_ARG"
+  maestro --device "$EMU_SERIAL" test "$FLOW_ARG"
 fi

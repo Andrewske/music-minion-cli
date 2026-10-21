@@ -1,0 +1,52 @@
+# Seek slider — tap the slider at ~75% and confirm playback lands near that
+# point and keeps playing from there.
+appId: com.musicminion.app
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "tab-home"
+    timeout: 30000
+- runFlow: subflows/play_search_track.yml
+
+- copyTextFrom:
+    id: "seek-duration"
+- runScript:
+    file: scripts/clock-to-seconds.js
+    env:
+      KEY: "duration"
+- assertTrue:
+    condition: ${output.duration > 30}
+    label: "Track duration is known (slider has a real range)"
+
+- tapOn:
+    id: "seek-slider"
+    point: "75%,50%"
+- runScript:
+    file: scripts/sleep.js
+    env:
+      MS: "3000"
+- copyTextFrom:
+    id: "seek-position"
+- runScript:
+    file: scripts/clock-to-seconds.js
+    env:
+      KEY: "afterSeek"
+- assertTrue:
+    condition: ${output.afterSeek >= output.duration * 0.6 && output.afterSeek <= output.duration * 0.9}
+    label: "Position jumped to ~75% of the track"
+
+# Playback resumes at the new point (still advancing, not stalled/reset).
+- runScript:
+    file: scripts/sleep.js
+    env:
+      MS: "4000"
+- copyTextFrom:
+    id: "seek-position"
+- runScript:
+    file: scripts/clock-to-seconds.js
+    env:
+      KEY: "later"
+- assertTrue:
+    condition: ${output.later >= output.afterSeek + 2}
+    label: "Playback continues from the seek point"

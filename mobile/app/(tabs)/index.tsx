@@ -2,7 +2,7 @@
  * Home / Track Browser — search tracks, tap to play.
  * FlatList with performance tuning for large libraries.
  */
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -44,22 +44,31 @@ export default function HomeScreen() {
   const queueIndex = usePlayerStore((s) => s.queueIndex);
 
   const isSearching = debouncedQuery.length >= 2;
-  const displayTracks: Track[] = isSearching
-    ? (searchResults?.map((r) => ({
-        id: r.id,
-        title: r.title,
-        artist: r.artist ?? undefined,
-        album: r.album ?? undefined,
-      })) ?? [])
-    : queue;
+  const displayTracks: Track[] = useMemo(
+    () =>
+      isSearching
+        ? (searchResults?.map((r) => ({
+            id: r.id,
+            title: r.title,
+            artist: r.artist ?? undefined,
+            album: r.album ?? undefined,
+          })) ?? [])
+        : queue,
+    [isSearching, searchResults, queue]
+  );
 
   const handlePlayTrack = useCallback((track: Track, index: number) => {
     if (isSearching) {
-      play(track, { type: 'search', query: debouncedQuery, track_ids: [track.id] });
+      // Backend never implemented the 'search' context (resolves to an empty
+      // queue → 400 "No tracks in queue"). Queue the tapped result through the
+      // rest of the results as an explicit id list — same pattern as the
+      // artist page ('feed' context = play these ids in order).
+      const trackIds = displayTracks.slice(index).map((t) => t.id);
+      play(track, { type: 'feed', track_ids: trackIds, shuffle: false });
     } else {
       play(track, { type: 'track', start_index: index });
     }
-  }, [play, isSearching, debouncedQuery]);
+  }, [play, isSearching, displayTracks]);
 
   const clearSearch = useCallback(() => {
     setSearchQuery('');

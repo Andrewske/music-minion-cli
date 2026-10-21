@@ -35,6 +35,7 @@ import {
   type PlayerStore,
 } from '@music-minion/shared';
 import { usePlayerStore } from '../stores/playerStore';
+import { resolveStreamUrl } from './e2eHooks';
 
 /** Same physical event surfacing twice (dual listeners, fg/bg edge) lands well inside this. */
 const DEDUPE_WINDOW_MS = 1_000;
@@ -46,6 +47,8 @@ let errorWindow: ErrorWindowState = initialErrorWindow;
 let retriedTrackId: number | null = null;
 let lastEndedHandledAt = 0;
 let lastErrorHandledAt = 0;
+/** When the last in-place retry was issued — errors after it are NEW events. */
+let retryIssuedAt = 0;
 let skipTimer: ReturnType<typeof setTimeout> | null = null;
 let foregroundListenersRegistered = false;
 
@@ -70,10 +73,11 @@ export function resetRetryTracking(): void {
 function retryCurrentTrack(store: PlayerStore): void {
   const track = store.currentTrack;
   if (!track) return;
+  retryIssuedAt = Date.now();
   try {
     TrackPlayer.setMediaItem({
       mediaId: String(track.id),
-      url: `${getStreamUrl(track.id)}?retry=${Date.now()}`,
+      url: `${resolveStreamUrl(track.id)}?retry=${Date.now()}`,
       title: track.title,
       artist: track.artist ?? 'Unknown Artist',
       duration: track.duration,
@@ -113,8 +117,19 @@ function handleEnded(now: number): void {
   }
 }
 
+/**
+ * Duplicate = a second delivery of the error we already handled: inside the
+ * dedupe window AND no retry issued since. A fast-failing URL (404 on the
+ * LAN) re-errors within ~300ms of the retry; that is a NEW error and must
+ * escalate to skip, or playback sits dead with no banner (found by
+ * .maestro/09_bad_stream_skip.yml).
+ */
+function isDuplicateError(now: number): boolean {
+  return now - lastErrorHandledAt < DEDUPE_WINDOW_MS && lastErrorHandledAt > retryIssuedAt;
+}
+
 function handleError(now: number): void {
-  if (now - lastErrorHandledAt < DEDUPE_WINDOW_MS) return;
+  if (isDuplicateError(now)) return;
   lastErrorHandledAt = now;
 
   // Capture the errored track id NOW — a server prune may advance

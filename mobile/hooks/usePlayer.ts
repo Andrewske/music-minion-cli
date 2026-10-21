@@ -5,7 +5,8 @@ import TrackPlayer, {
   usePlaybackState,
 } from '@rntp/player';
 import { usePlayerStore, getCurrentPosition } from '../stores/playerStore';
-import { getStreamUrl, getDefaultApiClient } from '@music-minion/shared';
+import { getDefaultApiClient } from '@music-minion/shared';
+import { resolveStreamUrl } from '../services/e2eHooks';
 import {
   registerForegroundPlaybackListeners,
   resetRetryTracking,
@@ -73,7 +74,7 @@ export function usePlayer() {
       try {
         TrackPlayer.setMediaItem({
           mediaId: track.id.toString(),
-          url: getStreamUrl(track.id),
+          url: resolveStreamUrl(track.id),
           title: track.title,
           artist: track.artist ?? 'Unknown Artist',
           duration: track.duration,

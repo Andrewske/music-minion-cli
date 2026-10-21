@@ -69,7 +69,7 @@ adb emu kill        # or: pkill -f qemu-system-x86_64
 ```
 mobile/scripts/e2e.sh        # runner (boot + build + run)
 mobile/scripts/ship.sh       # existing build/install/OTA helper (EAS path — NOT used for E2E)
-mobile/.maestro/*.yml        # 5 flows + config.yaml
+mobile/.maestro/*.yml        # 11 flows + subflows/ + scripts/ + config.yaml
 mobile/.env                  # EXPO_PUBLIC_API_URL (baked into release bundle at build)
 mobile/eas.json              # build profiles (development/preview/production)
 ```
