@@ -446,15 +446,18 @@ def _migrate_v68_feed_flags(conn) -> None:
         )
 
 
+# 'claimed' reserves a track for one classifier run before Jev is asked (no
+# probability yet); 'invalid' records a malformed answer so it isn't re-asked.
 _V69_CLASSIFICATIONS_DDL = """
     CREATE TABLE IF NOT EXISTS sc_track_classifications (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         soundcloud_id TEXT NOT NULL UNIQUE,
         model_id TEXT NOT NULL,
-        mix_probability REAL NOT NULL,
+        mix_probability REAL,
         podcast_probability REAL,
         status TEXT NOT NULL CHECK (status IN (
-            'auto_flagged', 'pending', 'below_threshold', 'confirmed', 'dismissed')),
+            'claimed', 'invalid', 'auto_flagged', 'pending', 'below_threshold',
+            'confirmed', 'dismissed')),
         state_sent TEXT,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP

@@ -49,10 +49,11 @@ describe('feed agent API', () => {
 
 describe('feed agent helpers', () => {
   it('summarizes a run', () => {
-    const base = { candidates: 12, classified: 12, auto_flagged: 2, pending: 3, failed_batches: 0 };
+    const base = { candidates: 12, classified: 12, auto_flagged: 2, pending: 3, invalid: 0, failed_batches: 0 };
     expect(describeClassifyResult(base)).toBe('Checked 12 of 12: 2 filtered, 3 to review');
     expect(describeClassifyResult({ ...base, failed_batches: 1, classified: 2 })).toContain('(1 batch failed)');
     expect(describeClassifyResult({ ...base, candidates: 0 })).toBe('No ambiguous tracks to check');
+    expect(describeClassifyResult({ ...base, invalid: 2 })).toContain('(2 unreadable answers)');
   });
 
   it('formats confidence only for agent flags', () => {

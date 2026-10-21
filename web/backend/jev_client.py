@@ -13,9 +13,11 @@ response {"model", "answers": {"<id>": {"type": "noul", "noul": 0.99}}, "usage"}
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -75,16 +77,45 @@ def _build_noul_request(config: JevConfig, state: str, question: str) -> dict:
     }
 
 
+def valid_probability(value: Any) -> float | None:
+    """`value` as a probability, or None unless it is a finite number in [0, 1].
+
+    JSON booleans, strings, NaN and Infinity are all rejected: a malformed
+    answer must never read as a confident one.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+        return None
+    return float(value)
+
+
+def _answers_object(payload: Any) -> dict:
+    answers = payload.get("answers") if isinstance(payload, dict) else None
+    if not isinstance(answers, dict):
+        # ValueError, not TypeError: callers count it as a failed batch.
+        raise ValueError(  # noqa: TRY004
+            f"Jev response has no answers object (got {type(answers).__name__})"
+        )
+    return answers
+
+
+def _answer_noul(answer: Any) -> float | None:
+    return valid_probability(answer.get("noul")) if isinstance(answer, dict) else None
+
+
 def _parse_noul_response(payload: dict, fallback_model: str) -> JevPrediction:
     """Pull the single Noul answer out of a systemone response."""
-    answer = (payload.get("answers") or {}).get("keep")
+    answer = _answers_object(payload).get("keep")
     if answer is None:
         raise ValueError(f"Jev response has no 'keep' answer: {list(payload.keys())}")
-    noul = answer.get("noul")
-    if noul is None:
-        raise ValueError(f"Jev answer has no noul value: {list(answer.keys())}")
+    probability = _answer_noul(answer)
+    if probability is None:
+        raise ValueError(
+            f"Jev 'keep' answer is not a probability in [0, 1]: {answer!r}"
+        )
     return JevPrediction(
-        probability=float(noul),
+        probability=probability,
         confidence=answer.get("confidence"),
         model_id=payload.get("model", fallback_model),
         raw=payload,
@@ -105,20 +136,31 @@ def ask_noul(
     return _parse_noul_response(response.json(), config.model_id)
 
 
-def _parse_noul_answers(payload: dict, question_ids: list[str]) -> dict[str, float]:
-    """Noul value per question id; questions Jev didn't answer are left out."""
-    answers = payload.get("answers") or {}
-    nouls = {qid: (answers.get(qid) or {}).get("noul") for qid in question_ids}
-    return {qid: float(noul) for qid, noul in nouls.items() if noul is not None}
+def _parse_noul_answers(
+    payload: Any, question_ids: list[str]
+) -> dict[str, float | None]:
+    """Noul value per answered question id.
+
+    Questions Jev didn't answer are left out; an answer that isn't a finite
+    probability in [0, 1] maps to None so callers can record it as invalid.
+    A response without an answers object is a ValueError.
+    """
+    answers = _answers_object(payload)
+    return {
+        qid: _answer_noul(answers[qid])
+        for qid in question_ids
+        if answers.get(qid) is not None
+    }
 
 
 def ask_nouls(
     config: JevConfig, state: str, questions: dict[str, str], timeout_s: float = 30.0
-) -> dict[str, float]:
+) -> dict[str, float | None]:
     """Ask several Noul questions about one state in a single call.
 
     Used to batch tracks: each question id names one track. Raises on HTTP
     errors; an empty answer set is a ValueError so callers count a failure.
+    Malformed answers come back as None (see `_parse_noul_answers`).
     """
     response = httpx.post(
         f"{config.base_url}{SYSTEMONE_PATH}",

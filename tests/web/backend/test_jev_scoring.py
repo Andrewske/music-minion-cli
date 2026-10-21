@@ -448,7 +448,7 @@ def test_ask_nouls_batches_questions(monkeypatch) -> None:
     monkeypatch.setattr(jev_client.httpx, "post", fake_post)
     config = JevConfig("https://x", "k", "jev-latest")
     nouls = jev_client.ask_nouls(config, "{}", {"mix_t0": "A?", "mix_t1": "B?"})
-    assert nouls == {"mix_t0": 0.9}
+    assert nouls == {"mix_t0": 0.9, "mix_t1": None}  # {} is malformed, not missing
     assert sent["url"] == "https://x/v1/systemone"
     assert sent["body"]["questions"]["mix_t1"] == {"type": "noul", "instructions": "B?"}
 
@@ -464,6 +464,40 @@ def test_ask_nouls_with_no_answers_raises(monkeypatch) -> None:
     monkeypatch.setattr(jev_client.httpx, "post", lambda *a, **k: Empty())
     with pytest.raises(ValueError, match="answered none"):
         jev_client.ask_nouls(JevConfig("https://x", "k", "m"), "{}", {"q": "?"})
+
+
+@pytest.mark.parametrize(
+    "noul",
+    [5, -0.1, 1.0001, float("inf"), float("nan"), True, False, "0.9", None, [0.9]],
+)
+def test_invalid_probabilities_are_rejected(noul) -> None:
+    assert jev_client.valid_probability(noul) is None
+
+
+@pytest.mark.parametrize("noul", [0, 1, 0.0, 0.42, 1.0])
+def test_valid_probabilities_pass(noul) -> None:
+    assert jev_client.valid_probability(noul) == float(noul)
+
+
+def test_parse_answers_marks_malformed_answers_invalid() -> None:
+    payload = json.loads(
+        '{"answers": {"a": {"noul": Infinity}, "b": {"noul": NaN}, '
+        '"c": {"noul": true}, "d": "0.9", "e": [1], "f": {"noul": 0.7}}}'
+    )
+    ids = ["a", "b", "c", "d", "e", "f", "missing"]
+    parsed = jev_client._parse_noul_answers(payload, ids)
+    assert parsed == {"a": None, "b": None, "c": None, "d": None, "e": None, "f": 0.7}
+
+
+@pytest.mark.parametrize("payload", [[], "x", {"answers": []}, {"answers": "no"}])
+def test_parse_answers_without_answers_object_is_value_error(payload) -> None:
+    with pytest.raises(ValueError, match="no answers object"):
+        jev_client._parse_noul_answers(payload, ["a"])
+
+
+def test_single_noul_out_of_range_is_value_error() -> None:
+    with pytest.raises(ValueError, match="not a probability"):
+        jev_client._parse_noul_response({"answers": {"keep": {"noul": 5}}}, "m")
 
 
 def test_scoring_profile_includes_review_evidence(

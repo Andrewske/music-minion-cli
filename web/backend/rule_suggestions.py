@@ -46,7 +46,11 @@ def keyword_regex(keyword: str) -> str:
     """Case-insensitive title regex for a normalized keyword or phrase."""
     if keyword in _VARIANT_REGEX:
         return rf"\b(?:{_VARIANT_REGEX[keyword]})\b"
-    words = [_VARIANT_REGEX.get(word, re.escape(word)) for word in keyword.split()]
+    # Group each variant: its alternatives must not swallow the other words.
+    words = [
+        f"(?:{_VARIANT_REGEX[word]})" if word in _VARIANT_REGEX else re.escape(word)
+        for word in keyword.split()
+    ]
     return r"\b" + r"\W+".join(words) + r"\b"
 
 
@@ -133,6 +137,20 @@ def _count(rule: dict[str, Any], tracks: Iterable[dict[str, Any]]) -> list[dict]
     return [track for track in tracks if rule_matches(track, {**rule, "id": 0})]
 
 
+def unique_tracks(tracks: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One entry per soundcloud_id (first wins), so a track that is both
+    rescued and later kept counts once. Tracks without an id are kept."""
+    seen: set[str] = set()
+    unique = []
+    for track in tracks:
+        sc_id = track.get("soundcloud_id")
+        if sc_id is None or sc_id not in seen:
+            unique.append(track)
+        if sc_id is not None:
+            seen.add(sc_id)
+    return unique
+
+
 def _majority_reason(flags: list[dict[str, Any]]) -> str:
     reasons = Counter(flag.get("reason") or "other" for flag in flags)
     return reasons.most_common(1)[0][0]
@@ -196,13 +214,20 @@ def mine_suggestions(
     not_mixes: list[dict[str, Any]],
     reviewed: list[dict[str, Any]],
     rules: list[dict[str, Any]],
+    resolved: Iterable[str] = (),
 ) -> list[dict[str, Any]]:
-    """Ranked rule suggestions from Kevin's flags; see the module docstring."""
-    existing = {signature(rule) for rule in rules}
+    """Ranked rule suggestions from Kevin's flags; see the module docstring.
+
+    `resolved` holds signatures Kevin already accepted or dismissed. They
+    are dropped before redundancy filtering and the top-N cut, so a
+    dismissed suggestion never hides a new one.
+    """
+    existing = {signature(rule) for rule in rules} | set(resolved)
     new_flags = [flag for flag in flags if first_matching_rule(flag, rules) is None]
-    real_tracks = not_mixes + [
-        track for track in reviewed if track["decision"] in ("keep", "not_quite")
-    ]
+    real_tracks = unique_tracks(
+        not_mixes
+        + [track for track in reviewed if track["decision"] in ("keep", "not_quite")]
+    )
     scored = (
         score_candidate(rule, new_flags, len(flags), real_tracks)
         for rule in candidate_rules(new_flags)

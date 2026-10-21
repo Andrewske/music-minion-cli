@@ -34,6 +34,7 @@ export interface ClassifyResult {
   classified: number;
   auto_flagged: number;
   pending: number;
+  invalid: number;
   failed_batches: number;
 }
 
@@ -112,5 +113,6 @@ export function describeClassifyResult(result: ClassifyResult): string {
   if (result.candidates === 0) return 'No ambiguous tracks to check';
   const parts = [`${result.auto_flagged} filtered`, `${result.pending} to review`];
   const failed = result.failed_batches > 0 ? ` (${result.failed_batches} batch${result.failed_batches === 1 ? '' : 'es'} failed)` : '';
-  return `Checked ${result.classified} of ${result.candidates}: ${parts.join(', ')}${failed}`;
+  const invalid = result.invalid > 0 ? ` (${result.invalid} unreadable answer${result.invalid === 1 ? '' : 's'})` : '';
+  return `Checked ${result.classified} of ${result.candidates}: ${parts.join(', ')}${failed}${invalid}`;
 }

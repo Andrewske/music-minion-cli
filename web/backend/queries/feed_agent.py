@@ -7,6 +7,7 @@ rule-creation path, and verdicts are never touched here.
 """
 
 import json
+import uuid
 from typing import Any
 
 from loguru import logger
@@ -34,13 +35,14 @@ _TRACK_COLUMNS = """
     COALESCE(da.display_name, uda.display_name, dt.artist_name) AS uploader
 """
 
-_TRACK_JOINS = """
+_TRACK_JOINS = (
+    """
     LEFT JOIN sc_artist_uploads u ON u.soundcloud_id = {column}
     LEFT JOIN discovery_artists da ON da.id = u.discovery_artist_id
     LEFT JOIN discovery_tracks dt ON dt.soundcloud_id = {column}
-    LEFT JOIN discovery_artists uda
-      ON uda.soundcloud_user_id = dt.uploader_soundcloud_id
 """
+    + insight_queries.UPLOADER_ARTIST_JOIN
+)
 
 
 def _track_dict(row: Any) -> dict[str, Any]:
@@ -106,11 +108,71 @@ def classified_ids(conn: Any) -> set[str]:
 
 
 def ambiguous_pool(conn: Any) -> list[dict[str, Any]]:
-    """Unreviewed, never-flagged, unclassified tracks in the feed window."""
+    """Unreviewed, never-flagged, unclassified tracks in the feed window,
+    one entry per track (uploader aliases can repeat a candidate row)."""
     done = classified_ids(conn)
-    tracks = filter_queries.unreviewed_candidates(conn, None)
-    return [track for track in tracks if track["soundcloud_id"] not in done]
+    pool: dict[str, dict[str, Any]] = {}
+    for track in filter_queries.unreviewed_candidates(conn, None):
+        if track["soundcloud_id"] not in done:
+            pool.setdefault(track["soundcloud_id"], track)
+    return list(pool.values())
 
+
+# A run claims its tracks before asking Jev, so overlapping runs never ask
+# about (or flag) the same track twice. Claims left by a crashed run expire.
+STALE_CLAIM_MINUTES = 60
+
+
+def new_claim_token() -> str:
+    return f"claim:{uuid.uuid4().hex}"
+
+
+def expire_stale_claims(conn: Any) -> None:
+    conn.execute(
+        """DELETE FROM sc_track_classifications WHERE status = 'claimed'
+          AND created_at < datetime('now', ?)""",
+        (f"-{STALE_CLAIM_MINUTES} minutes",),
+    )
+    conn.commit()
+
+
+def claim_tracks(
+    conn: Any, tracks: list[dict[str, Any]], model_id: str, token: str
+) -> list[dict[str, Any]]:
+    """Reserve unclassified tracks for this run; returns the ones it won."""
+    claimed = [
+        track
+        for track in tracks
+        if conn.execute(
+            """INSERT OR IGNORE INTO sc_track_classifications
+                (soundcloud_id, model_id, status, state_sent)
+            VALUES (?, ?, 'claimed', ?)""",
+            (track["soundcloud_id"], model_id, token),
+        ).rowcount
+        == 1
+    ]
+    conn.commit()
+    return claimed
+
+
+def release_claims(conn: Any, token: str) -> None:
+    """Drop this run's unanswered claims so a later run can ask again."""
+    conn.execute(
+        """DELETE FROM sc_track_classifications
+        WHERE status = 'claimed' AND state_sent = ?""",
+        (token,),
+    )
+    conn.commit()
+
+
+_SAVE_CLASSIFICATION_SQL = """
+    UPDATE sc_track_classifications
+    SET model_id = :model_id, mix_probability = :mix_probability,
+        podcast_probability = :podcast_probability, status = :status,
+        state_sent = :state, updated_at = CURRENT_TIMESTAMP
+    WHERE soundcloud_id = :soundcloud_id AND status = 'claimed'
+      AND state_sent = :token
+"""
 
 # The pool was read before the Jev call, so recheck at write time (as rule
 # flags do): a track rated, flagged or rescued meanwhile is left alone.
@@ -122,19 +184,19 @@ _INSERT_AGENT_FLAG_SQL = f"""
 
 
 def save_classification(
-    conn: Any, result: dict[str, Any], model_id: str, state: str
-) -> None:
-    """One classification row; an auto_flagged result also writes the flag."""
-    conn.execute(
-        """INSERT OR IGNORE INTO sc_track_classifications
-            (soundcloud_id, model_id, mix_probability, podcast_probability,
-             status, state_sent)
-        VALUES (:soundcloud_id, :model_id, :mix_probability,
-                :podcast_probability, :status, :state)""",
-        {**result, "model_id": model_id, "state": state},
-    )
+    conn: Any, result: dict[str, Any], model_id: str, state: str, token: str
+) -> bool:
+    """Fill in this run's claim; an auto_flagged result also writes the flag.
+
+    False (and no flag) when the claim is gone, so a replayed or expired
+    result can never flag a track another run or Kevin already handled.
+    """
+    params = {**result, "model_id": model_id, "state": state, "token": token}
+    if conn.execute(_SAVE_CLASSIFICATION_SQL, params).rowcount != 1:
+        return False
     if result["status"] == "auto_flagged":
         conn.execute(_INSERT_AGENT_FLAG_SQL, result)
+    return True
 
 
 _CLASSIFICATIONS_SQL = f"""
@@ -251,6 +313,15 @@ def save_suggestions(suggestions: list[dict[str, Any]]) -> int:
     return int(row[0])
 
 
+def resolved_signatures() -> set[str]:
+    """Signatures Kevin already accepted or dismissed: never suggested again."""
+    with get_db_connection() as conn:
+        rows = conn.execute(
+            "SELECT signature FROM feed_rule_suggestions WHERE status != 'pending'"
+        ).fetchall()
+    return {row["signature"] for row in rows}
+
+
 def mine_rule_suggestions() -> dict[str, Any]:
     """Re-mine Kevin's flags and rescues; returns the pending suggestions."""
     mined = rule_suggestions.mine_suggestions(
@@ -258,6 +329,7 @@ def mine_rule_suggestions() -> dict[str, Any]:
         load_not_mix_examples(),
         insight_queries.load_reviewed_tracks(),
         filter_queries.list_rules(),
+        resolved_signatures(),
     )
     save_suggestions(mined)
     logger.info(f"feed agent: mined {len(mined)} rule suggestions")

@@ -23,7 +23,11 @@ SuggestionStatus = Literal["pending", "accepted", "dismissed"]
 
 
 class ClassifyRequest(BaseModel):
-    max_tracks: int = Field(default=feed_classifier.DEFAULT_MAX_TRACKS, ge=1, le=200)
+    max_tracks: int = Field(
+        default=feed_classifier.DEFAULT_MAX_TRACKS,
+        ge=1,
+        le=feed_classifier.MAX_TRACKS_PER_RUN,
+    )
 
 
 class SuggestionOverrides(BaseModel):

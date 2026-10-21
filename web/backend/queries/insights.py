@@ -16,6 +16,25 @@ from web.backend.soundcloud_metadata import parse_soundcloud_datetime, parse_tag
 _REPOSTER_SEPARATOR = "\x1f"
 MAX_INSIGHT_TRACKS = 200
 
+# discovery_artists.soundcloud_user_id isn't unique (one account can have
+# several rows), so the uploader is the oldest row for that account: one
+# joined row per track, never one per alias.
+UPLOADER_ARTIST_JOIN = """
+    LEFT JOIN discovery_artists uda ON uda.id = (
+        SELECT MIN(a.id) FROM discovery_artists a
+        WHERE a.soundcloud_user_id = dt.uploader_soundcloud_id)
+"""
+
+# One name per reposting account, for the same reason.
+_REPOSTER_NAMES_SQL = """
+    SELECT GROUP_CONCAT(name, char(31)) FROM (
+        SELECT ra.display_name AS name, MIN(ra.id)
+        FROM discovery_track_reposters dtr
+        JOIN discovery_artists ra ON ra.id = dtr.discovery_artist_id
+        WHERE dtr.discovery_track_id = dt.id
+        GROUP BY COALESCE(ra.soundcloud_user_id, 'id:' || ra.id))
+"""
+
 _REVIEWED_TRACKS_SQL = f"""
     SELECT d.id AS decision_id, d.soundcloud_id, d.decision, d.decided_at,
            {utc_iso("d.decided_at")} AS decided_key,
@@ -31,16 +50,12 @@ _REVIEWED_TRACKS_SQL = f"""
            COALESCE(u.released_at, dt.released_at, u.uploaded_at, dt.uploaded_at)
                AS released_at,
            n.note,
-           (SELECT GROUP_CONCAT(ra.display_name, char(31))
-            FROM discovery_track_reposters dtr
-            JOIN discovery_artists ra ON ra.id = dtr.discovery_artist_id
-            WHERE dtr.discovery_track_id = dt.id) AS reposter_names
+           ({_REPOSTER_NAMES_SQL}) AS reposter_names
     FROM sc_track_decisions d
     LEFT JOIN sc_artist_uploads u ON u.soundcloud_id = d.soundcloud_id
     LEFT JOIN discovery_artists da ON da.id = u.discovery_artist_id
     LEFT JOIN discovery_tracks dt ON dt.soundcloud_id = d.soundcloud_id
-    LEFT JOIN discovery_artists uda
-      ON uda.soundcloud_user_id = dt.uploader_soundcloud_id
+    {UPLOADER_ARTIST_JOIN}
     LEFT JOIN sc_track_notes n ON n.soundcloud_id = d.soundcloud_id
     WHERE d.is_current = 1 AND d.decision IN ('keep', 'not_quite', 'nope')
       AND {not_flagged_sql("d.soundcloud_id")}
@@ -66,10 +81,16 @@ def _row_to_track(row: Any) -> dict[str, Any]:
 
 
 def load_reviewed_tracks() -> list[dict[str, Any]]:
-    """Every current, unflagged keep / not quite / nope, newest verdict first."""
+    """Every current, unflagged keep / not quite / nope, newest verdict first.
+
+    Exactly one entry per track, so no join can make a verdict count twice.
+    """
     with get_db_connection() as conn:
         rows = conn.execute(_REVIEWED_TRACKS_SQL).fetchall()
-    return [_row_to_track(row) for row in rows]
+    first_per_track: dict[str, Any] = {}
+    for row in rows:
+        first_per_track.setdefault(row["soundcloud_id"], row)
+    return [_row_to_track(row) for row in first_per_track.values()]
 
 
 def get_insights(dimension: str, min_count: int) -> dict[str, Any]:
