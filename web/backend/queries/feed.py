@@ -634,6 +634,32 @@ class ListenStats(NamedTuple):
 NO_LISTEN = ListenStats()
 
 
+def _max_or_none(a: float | None, b: float | None) -> float | None:
+    present = [value for value in (a, b) if value is not None]
+    return max(present) if present else None
+
+
+def _merge_listen(conn: Any, soundcloud_id: str, listen: ListenStats) -> ListenStats:
+    """Carry the current row's listen stats into a re-rate.
+
+    A re-rate without a replay sends nothing and keeps the old numbers; a
+    replay keeps the larger of each value, since the session tally may or may
+    not include the listening that preceded the original verdict.
+    """
+    previous = conn.execute(
+        """SELECT listen_seconds, max_position_ms FROM sc_track_decisions
+        WHERE soundcloud_id = ? AND is_current = 1""",
+        (soundcloud_id,),
+    ).fetchone()
+    if previous is None:
+        return listen
+    max_position = _max_or_none(listen.max_position_ms, previous["max_position_ms"])
+    return ListenStats(
+        _max_or_none(listen.listen_seconds, previous["listen_seconds"]),
+        None if max_position is None else int(max_position),
+    )
+
+
 def _track_exists(conn: Any, soundcloud_id: str) -> bool:
     return (
         conn.execute(
@@ -707,6 +733,7 @@ def record_decision(
                 conn, soundcloud_id
             )
         conn.execute("BEGIN IMMEDIATE")
+        row.update(_merge_listen(conn, soundcloud_id, listen)._asdict())
         row_id = _append_current_decision(conn, row)
         _sync_legacy_status(conn, soundcloud_id, decision, row["decided_at"])
         conn.commit()

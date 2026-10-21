@@ -775,6 +775,40 @@ class TestRateUpload:
         assert current["listen_seconds"] == 42.5
         assert current["max_position_ms"] == 61000
 
+    def test_rerate_without_replay_carries_listen_stats_forward(self, client) -> None:
+        from web.backend.queries.feed import get_current_decision
+
+        _, uid = self._seed()
+        client.post(
+            f"/api/feed/{uid}/rate",
+            json={"decision": "nope", "listen_seconds": 42.5, "max_position_ms": 61000},
+        )
+        resp = client.post(
+            f"/api/feed/{uid}/rate",
+            json={"decision": "not_quite", "surface": "web_reviewed"},
+        )
+        assert resp.status_code == 200
+        current = get_current_decision("9001")
+        assert current["decision"] == "not_quite"
+        assert current["listen_seconds"] == 42.5
+        assert current["max_position_ms"] == 61000
+
+    def test_rerate_after_replay_keeps_the_larger_listen_stats(self, client) -> None:
+        from web.backend.queries.feed import get_current_decision
+
+        _, uid = self._seed()
+        client.post(
+            f"/api/feed/{uid}/rate",
+            json={"decision": "nope", "listen_seconds": 42.5, "max_position_ms": 61000},
+        )
+        client.post(
+            f"/api/feed/{uid}/rate",
+            json={"decision": "keep", "listen_seconds": 90, "max_position_ms": 30000},
+        )
+        current = get_current_decision("9001")
+        assert current["listen_seconds"] == 90
+        assert current["max_position_ms"] == 61000
+
     def test_negative_listen_stats_are_rejected(self, client) -> None:
         _, uid = self._seed()
         resp = client.post(
