@@ -1,51 +1,75 @@
 import { describe, expect, it } from 'vitest';
 import {
   INITIAL_LISTEN_STATE,
-  MAX_SAMPLE_GAP_MS,
   formatListenTime,
   listenStatsFor,
-  recordListenSample,
-  type ListenSample,
+  playedListenStatsFor,
+  recordListenEvent,
+  type ListenEvent,
   type ListenState,
 } from './feedListen';
 
-const replay = (samples: ListenSample[]): ListenState =>
-  samples.reduce(recordListenSample, INITIAL_LISTEN_STATE);
+const replay = (events: ListenEvent[]): ListenState => events.reduce(recordListenEvent, INITIAL_LISTEN_STATE);
 
-const at = (at: number, positionMs: number, isPlaying = true, trackId: number | null = 1): ListenSample => ({
+const progress = (positionMs: number, trackId = 1, source = 'A'): ListenEvent => ({
+  kind: 'progress',
+  source,
   trackId,
-  isPlaying,
   positionMs,
-  at,
+});
+const seek = (positionMs: number, trackId = 1, source = 'A'): ListenEvent => ({
+  kind: 'seek',
+  source,
+  trackId,
+  positionMs,
 });
 
 describe('feed listen accounting', () => {
-  it('counts wall-clock time between playing samples of the same track', () => {
-    const state = replay([at(0, 0), at(1_000, 1_000), at(2_000, 2_000)]);
+  it('counts media position advanced between progress events', () => {
+    const state = replay([progress(0), progress(250), progress(500), progress(2_000)]);
     expect(listenStatsFor(state, 1)).toEqual({ listenSeconds: 2, maxPositionMs: 2_000 });
   });
 
+  it('counts nothing while buffering or stalled, since the position never moves', () => {
+    const state = replay([progress(1_000), progress(1_000), progress(1_000), progress(1_000)]);
+    expect(listenStatsFor(state, 1).listenSeconds).toBe(0);
+  });
+
   it('records a forward seek as position reached, not time played', () => {
-    const state = replay([at(0, 0), at(1_000, 1_000), at(2_000, 90_000)]);
-    expect(listenStatsFor(state, 1)).toEqual({ listenSeconds: 2, maxPositionMs: 90_000 });
+    const state = replay([progress(0), progress(1_000), seek(90_000), progress(90_250)]);
+    expect(listenStatsFor(state, 1)).toEqual({ listenSeconds: 1.3, maxPositionMs: 90_250 });
   });
 
-  it('ignores paused time and caps long gaps from a sleeping tab', () => {
-    const paused = replay([at(0, 0), at(1_000, 1_000), at(2_000, 1_000, false), at(60_000, 1_000, false)]);
-    expect(listenStatsFor(paused, 1).listenSeconds).toBe(1);
-    const asleep = replay([at(0, 0), at(600_000, 600_000)]);
-    expect(listenStatsFor(asleep, 1).listenSeconds).toBe(MAX_SAMPLE_GAP_MS / 1000);
+  it('keeps the furthest position across a rapid forward-and-back seek', () => {
+    const state = replay([progress(0), progress(1_000), seek(120_000), seek(10_000), progress(10_250)]);
+    expect(listenStatsFor(state, 1)).toEqual({ listenSeconds: 1.3, maxPositionMs: 120_000 });
   });
 
-  it('keeps tallies per track across track changes', () => {
-    const state = replay([at(0, 0), at(3_000, 3_000), at(4_000, 0, true, 2), at(5_000, 1_000, true, 2)]);
-    expect(listenStatsFor(state, 1)).toEqual({ listenSeconds: 3, maxPositionMs: 3_000 });
+  it('ignores backward jumps and untrusted large jumps without a seek event', () => {
+    const state = replay([progress(0), progress(1_000), progress(500), progress(60_000)]);
+    expect(listenStatsFor(state, 1).listenSeconds).toBe(1);
+  });
+
+  it('keeps tallies per track and cursors per element', () => {
+    const state = replay([
+      progress(0, 1, 'A'),
+      progress(3_000, 1, 'A'),
+      progress(0, 2, 'B'),
+      progress(1_000, 2, 'B'),
+      progress(3_500, 1, 'A'),
+    ]);
+    expect(listenStatsFor(state, 1)).toEqual({ listenSeconds: 3.5, maxPositionMs: 3_500 });
     expect(listenStatsFor(state, 2)).toEqual({ listenSeconds: 1, maxPositionMs: 1_000 });
   });
 
-  it('reports zero for tracks that never played', () => {
+  it('reports zero for tracks that never played, and undefined from the played-only variant', () => {
     expect(listenStatsFor(INITIAL_LISTEN_STATE, 7)).toEqual({ listenSeconds: 0, maxPositionMs: 0 });
     expect(listenStatsFor(INITIAL_LISTEN_STATE, null)).toEqual({ listenSeconds: 0, maxPositionMs: 0 });
+    expect(playedListenStatsFor(INITIAL_LISTEN_STATE, 7)).toBeUndefined();
+    expect(playedListenStatsFor(replay([progress(0), progress(800)]), 1)).toEqual({
+      listenSeconds: 0.8,
+      maxPositionMs: 800,
+    });
   });
 
   it('formats seconds as m:ss', () => {

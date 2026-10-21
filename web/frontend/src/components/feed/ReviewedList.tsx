@@ -12,7 +12,7 @@ import {
   type ReviewedItem,
 } from '../../api/feed';
 import type { NoteTarget } from './NoteDialog';
-import { REVIEWED_FILTERS, REVIEWED_QUERY_KEY, describeListen, formatDecidedAt } from './reviewed';
+import { REVIEWED_FILTERS, REVIEWED_QUERY_KEY, describeListen, formatDecidedAt, reviewedRateOptions } from './reviewed';
 import { VerdictButtons } from './VerdictButtons';
 
 interface ReviewedRowProps {
@@ -78,7 +78,7 @@ export function ReviewedList({ currentTrackId, onPlay, onEditNote }: ReviewedLis
   });
   const verdictMutation = useMutation({
     mutationFn: ({ item, verdict }: { item: ReviewedItem; verdict: FeedVerdict }) =>
-      rateFeedItem(item.soundcloud_id, verdict, { surface: 'web_reviewed' }),
+      rateFeedItem(item.soundcloud_id, verdict, reviewedRateOptions(item.local_track_id)),
     onSuccess: (_response, { verdict }) => {
       toast.success(`Changed to ${FEED_VERDICT_LABELS[verdict]}`);
     },

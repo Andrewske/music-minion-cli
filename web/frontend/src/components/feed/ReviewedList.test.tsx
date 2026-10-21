@@ -2,7 +2,9 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { ReviewedItem } from '../../api/feed';
 import { ReviewedRow } from './ReviewedList';
-import { describeListen } from './reviewed';
+import { describeListen, reviewedRateOptions } from './reviewed';
+import { INITIAL_LISTEN_STATE } from '../../lib/feedListen';
+import { useListenStore } from '../../stores/listenStore';
 
 const makeItem = (overrides: Partial<ReviewedItem> = {}): ReviewedItem => ({
   decision_id: 1,
@@ -68,5 +70,21 @@ describe('ReviewedRow', () => {
 describe('describeListen', () => {
   it('omits the reached position when unknown', () => {
     expect(describeListen({ listen_seconds: 5, max_position_ms: null })).toBe('0:05 played');
+  });
+});
+
+describe('reviewedRateOptions', () => {
+  it('sends listen stats from the global tracker when the track was replayed', () => {
+    useListenStore.setState(INITIAL_LISTEN_STATE);
+    const { record } = useListenStore.getState();
+    record({ kind: 'progress', source: 'A', trackId: 7, positionMs: 0 });
+    record({ kind: 'progress', source: 'A', trackId: 7, positionMs: 3_000 });
+    expect(reviewedRateOptions(7)).toEqual({ surface: 'web_reviewed', listenSeconds: 3, maxPositionMs: 3_000 });
+  });
+
+  it('omits listen stats when not replayed so the backend carries them forward', () => {
+    useListenStore.setState(INITIAL_LISTEN_STATE);
+    expect(reviewedRateOptions(7)).toEqual({ surface: 'web_reviewed' });
+    expect(reviewedRateOptions(null)).toEqual({ surface: 'web_reviewed' });
   });
 });
