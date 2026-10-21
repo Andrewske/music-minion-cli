@@ -81,7 +81,7 @@ def delete_rule(rule_id: int) -> dict[str, Any]:
 
 @router.post("/run")
 def run_rules() -> dict[str, Any]:
-    """Apply enabled rules to every unreviewed, never-flagged track."""
+    """Apply enabled rules to unreviewed, never-flagged tracks in the feed window."""
     return {"flagged": filter_queries.apply_rules(None)}
 
 

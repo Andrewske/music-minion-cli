@@ -280,6 +280,15 @@ class TestIngestAndRescue:
         assert feed_filters.apply_rules(None) == 0
         assert _feed_ids(client) == {"11", "12"}
 
+    def test_run_only_scans_the_feed_window(self, test_db, monkeypatch) -> None:  # noqa: F811
+        from web.backend.queries import feed_filters
+
+        monkeypatch.setattr("web.backend.queries.feed.FEED_WINDOW_DAYS", 90)
+        _seed_uploads({"12": "Sunday Podcast 3"})  # July 2026: outside the window
+        assert feed_filters.apply_rules(None) == 0
+        # Ingest hooks pass explicit ids and ignore the window.
+        assert feed_filters.apply_rules(["12"]) == 1
+
     def test_rules_skip_decided_tracks(self, test_db) -> None:  # noqa: F811
         from web.backend.queries import feed_filters
 

@@ -22,7 +22,7 @@ from web.backend.feed_filter_rules import (
     rule_precision,
     validate_rule,
 )
-from web.backend.queries.feed import set_track_note
+from web.backend.queries.feed import set_track_note, utc_iso, window_params
 
 _RULE_FIELDS = ("name", "kind", "pattern", "threshold", "reason", "enabled")
 
@@ -120,13 +120,22 @@ def _enabled_rules(conn: Any) -> list[dict[str, Any]]:
 
 # Unreviewed tracks no rule may touch yet: no current decision, never flagged
 # and never rescued (a rescue is the user saying "this is a real track").
-_CANDIDATES_SQL = """
+# Without explicit ids only the feed's window is scanned: the stale import
+# holds ~226k tracks the feed never shows, and flagging them would bury the
+# Settings list and skew precision.
+_CANDIDATES_SQL = f"""
     WITH ids AS (
-        SELECT soundcloud_id FROM discovery_tracks
-        WHERE :ids IS NULL OR soundcloud_id IN (SELECT value FROM json_each(:ids))
+        SELECT dt.soundcloud_id FROM discovery_tracks dt
+        WHERE dt.soundcloud_id IN (SELECT value FROM json_each(:ids))
+           OR (:ids IS NULL AND (:since_seen IS NULL OR dt.first_seen >= :since_seen
+               OR EXISTS (SELECT 1 FROM discovery_track_reposters dtr
+                          WHERE dtr.discovery_track_id = dt.id
+                            AND dtr.seen_at >= :since_seen)))
         UNION
-        SELECT soundcloud_id FROM sc_artist_uploads
-        WHERE :ids IS NULL OR soundcloud_id IN (SELECT value FROM json_each(:ids))
+        SELECT u.soundcloud_id FROM sc_artist_uploads u
+        WHERE u.soundcloud_id IN (SELECT value FROM json_each(:ids))
+           OR (:ids IS NULL AND (:since_event IS NULL
+               OR {utc_iso("u.uploaded_at")} >= :since_event))
     )
     SELECT ids.soundcloud_id,
            COALESCE(u.title, dt.title) AS title,
@@ -158,7 +167,8 @@ def _rule_flags(
 def apply_rules(soundcloud_ids: list[str] | None = None) -> int:
     """Flag unreviewed tracks caught by an enabled rule; returns flags written.
 
-    Pass the ids just ingested, or None to re-run over every unreviewed track.
+    Pass the ids just ingested, or None to re-run over every unreviewed track
+    inside the feed window.
     """
     if soundcloud_ids is not None and not soundcloud_ids:
         return 0
@@ -167,7 +177,8 @@ def apply_rules(soundcloud_ids: list[str] | None = None) -> int:
         rules = _enabled_rules(conn)
         if not rules:
             return 0
-        tracks = [dict(row) for row in conn.execute(_CANDIDATES_SQL, {"ids": ids_json})]
+        params = {"ids": ids_json, **window_params()}
+        tracks = [dict(row) for row in conn.execute(_CANDIDATES_SQL, params)]
         flags = _rule_flags(tracks, rules)
         conn.executemany(
             """INSERT OR IGNORE INTO sc_track_flags
