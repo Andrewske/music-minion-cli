@@ -4,6 +4,7 @@ Jev is always mocked: no test reaches OpenRouter.
 """
 
 import json
+import sqlite3
 
 import httpx
 import pytest
@@ -21,6 +22,7 @@ from web.backend.feed_classifier import (
     classification_status,
 )
 from web.backend.jev_client import INCOMPLETE, JevConfig, valid_probability
+from web.backend.queries import feed_agent
 from web.backend.queries import feed_filters as filter_queries
 from web.backend.rule_suggestions import keyword_regex, mine_suggestions
 
@@ -283,10 +285,12 @@ class TestClassifierPure:
             "podcast_12",
         }
 
-    def test_batch_results_skip_unanswered(self) -> None:
+    def test_batch_results_mark_unanswered_tracks_incomplete(self) -> None:
         batch = [{"soundcloud_id": "1"}, {"soundcloud_id": "2"}]
-        (result,) = batch_results(batch, {"mix_1": 0.9, "podcast_1": 0.8})
-        assert result["status"] == "auto_flagged" and result["reason"] == "podcast"
+        first, second = batch_results(batch, {"mix_1": 0.9, "podcast_1": 0.8})
+        assert first["status"] == "auto_flagged" and first["reason"] == "podcast"
+        assert second["status"] == "incomplete"
+        assert second["mix_probability"] is None
 
     def test_batch_results_match_by_track_id_not_position(self) -> None:
         batch = [{"soundcloud_id": "1"}, {"soundcloud_id": "2"}]
@@ -538,7 +542,9 @@ class TestClassifyRun:
         assert {r["soundcloud_id"]: r["status"] for r in rows} == {
             "100": "invalid",
             "101": "auto_flagged",
+            "102": "retry",
         }
+        assert _attempts("102") == 1
         # Only the unanswered track is asked again.
         assert client.post("/api/feed-filters/classify").json()["candidates"] == 1
         assert set(calls[-1]) == {"mix_102", "podcast_102"}
@@ -590,6 +596,51 @@ class TestClassifyRun:
         assert _statuses()["100"] == "invalid" and _attempts("100") == 3
         assert client.post("/api/feed-filters/classify").json()["candidates"] == 0
         assert not _flags()
+
+    def test_never_answered_track_is_counted_then_marked_invalid(
+        self, client, jev, monkeypatch
+    ) -> None:
+        _seed({"100": ("Ghost", 10), "101": ("Fine", 10)})
+        # Jev answers 101 and gives 100 a JSON null; the parser leaves 100 out.
+        payload = {"answers": {"mix_100": None, "mix_101": {"noul": 0.1}}}
+        monkeypatch.setattr(jev_client, "ask_nouls", _real_ask_nouls)
+        monkeypatch.setattr(
+            jev_client.httpx, "post", lambda *a, **k: _FakeResponse(payload)
+        )
+        for attempt in (1, 2):
+            assert client.post("/api/feed-filters/classify").json()["incomplete"] == 1
+            assert _statuses()["100"] == "retry" and _attempts("100") == attempt
+        third = client.post("/api/feed-filters/classify").json()
+        assert (third["candidates"], third["invalid"]) == (1, 1)
+        assert _statuses()["100"] == "invalid" and _attempts("100") == 3
+        assert client.post("/api/feed-filters/classify").json()["candidates"] == 0
+        assert not _flags()
+
+    def test_save_failure_rolls_back_the_whole_batch(
+        self, client, jev, monkeypatch
+    ) -> None:
+        _, answers = jev
+        _seed({"100": ("Alpha", 10), "101": ("Beta", 10), "102": ("Gamma", 10)})
+        answers.update({"Alpha": 0.95, "Beta": 0.95})
+        real_save = feed_agent.save_classification
+        saves: list[str] = []
+
+        def fail_on_second(conn, result, *args):
+            saves.append(result["soundcloud_id"])
+            if len(saves) == 2:
+                raise sqlite3.OperationalError("disk I/O error")
+            return real_save(conn, result, *args)
+
+        monkeypatch.setattr(feed_agent, "save_classification", fail_on_second)
+        summary = client.post("/api/feed-filters/classify").json()
+        assert summary["failed_batches"] == 1 and summary["classified"] == 0
+        # The first track's classification and agent flag were rolled back,
+        # and every claim was released.
+        assert _statuses() == {} and not _flags()
+        monkeypatch.setattr(feed_agent, "save_classification", real_save)
+        rerun = client.post("/api/feed-filters/classify").json()
+        assert (rerun["candidates"], rerun["auto_flagged"]) == (3, 2)
+        assert set(_flags()) == {"100", "101"}
 
     def test_recovered_provider_classifies_a_retry_track(self, client, jev) -> None:
         _, answers = jev
@@ -785,7 +836,20 @@ class TestSuggestionsApi:
         assert accepted.status_code == 201, accepted.text
         rule = accepted.json()["rule"]
         assert (rule["kind"], rule["reason"]) == ("title_regex", "podcast")
+        assert rule["version"] == 1
         assert accepted.json()["suggestion"]["rule_id"] == rule["id"]
+        # The accepted rule flags at the version the run read.
+        with get_db_connection() as conn:
+            artist_id = conn.execute("SELECT id FROM discovery_artists").fetchone()[0]
+            _insert_upload(
+                conn,
+                artist_id,
+                "309",
+                "2026-07-01T00:00:00+00:00",
+                title="Guest Hour 9",
+            )
+            conn.commit()
+        assert filter_queries.apply_rules(["309"]) == 1
         again = client.post(f"/api/feed-filters/suggestions/{suggestion['id']}/accept")
         assert again.status_code == 409
 

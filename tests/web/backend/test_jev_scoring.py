@@ -454,7 +454,7 @@ def test_ask_nouls_batches_questions(monkeypatch) -> None:
     assert sent["body"]["questions"]["mix_t1"] == {"type": "noul", "instructions": "B?"}
 
 
-def test_ask_nouls_with_no_answers_raises(monkeypatch) -> None:
+def test_ask_nouls_with_no_answers_returns_none_answered(monkeypatch) -> None:
     class Empty:
         def raise_for_status(self) -> None:
             return None
@@ -463,8 +463,8 @@ def test_ask_nouls_with_no_answers_raises(monkeypatch) -> None:
             return {"answers": {}}
 
     monkeypatch.setattr(jev_client.httpx, "post", lambda *a, **k: Empty())
-    with pytest.raises(ValueError, match="answered none"):
-        jev_client.ask_nouls(JevConfig("https://x", "k", "m"), "{}", {"q": "?"})
+    # The classifier counts each unanswered track as incomplete.
+    assert jev_client.ask_nouls(JevConfig("https://x", "k", "m"), "{}", {"q": "?"}) == {}
 
 
 @pytest.mark.parametrize(

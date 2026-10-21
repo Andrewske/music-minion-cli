@@ -9,9 +9,9 @@ Confidence policy (the probability that the track is a mix, set or show):
 - >= 0.85 writes a ``source='agent'`` flag carrying that confidence;
 - 0.5 to 0.85 becomes a suggestion Kevin can confirm or dismiss in Settings;
 - below 0.5 only the classification record is kept, so it is not asked again;
-- an answer with no probability at all is likely transient: the track is
-  left as ``retry`` for a later run, and its third such answer makes it
-  ``invalid``;
+- an answer with no probability at all (missing, null, or no value) is
+  likely transient: the track is left as ``retry`` for a later run, and its
+  third such answer makes it ``invalid``;
 - a value that isn't a probability in [0, 1] (out of range, a string, NaN,
   a boolean) is recorded as ``invalid`` at once. Invalid tracks are never
   flagged and not asked again until Kevin resets them in Settings.
@@ -19,7 +19,8 @@ Confidence policy (the probability that the track is a mix, set or show):
 Each batch first claims its tracks (see ``queries.feed_agent.claim_tracks``),
 so overlapping runs never ask about or flag the same track twice. Answers
 are matched to tracks by SoundCloud id, never by position. Any error while
-asking about or saving one batch fails only that batch.
+asking about or saving one batch fails only that batch, and rolls back
+everything that batch wrote.
 
 Runs on demand only (a Settings button); there is no background schedule.
 """
@@ -146,17 +147,14 @@ def _mix_status(mix: jev_client.NoulAnswer) -> str:
     return "invalid" if mix is None else classification_status(mix)
 
 
-def track_result(
-    sc_id: str, nouls: dict[str, jev_client.NoulAnswer]
-) -> dict[str, Any] | None:
-    """The classification row for one track; None when Jev didn't answer.
+def track_result(sc_id: str, nouls: dict[str, jev_client.NoulAnswer]) -> dict[str, Any]:
+    """The classification row for one track.
 
-    A mix answer with no value is ``incomplete`` (retried later); a
-    malformed one (None) is ``invalid``.
+    A mix answer that is missing, null or has no value is ``incomplete``
+    (retried later, and counted, so a track Jev never answers ends up
+    ``invalid``); a malformed one (None) is ``invalid``.
     """
-    if f"mix_{sc_id}" not in nouls:
-        return None
-    mix = nouls[f"mix_{sc_id}"]
+    mix = nouls.get(f"mix_{sc_id}", jev_client.INCOMPLETE)
     podcast = nouls.get(f"podcast_{sc_id}")
     podcast = None if podcast == jev_client.INCOMPLETE else podcast
     status = _mix_status(mix)
@@ -174,9 +172,8 @@ def track_result(
 def batch_results(
     batch: list[dict[str, Any]], nouls: dict[str, jev_client.NoulAnswer]
 ) -> list[dict[str, Any]]:
-    """Classification rows for the tracks Jev answered, matched by id."""
-    results = (track_result(track["soundcloud_id"], nouls) for track in batch)
-    return [result for result in results if result is not None]
+    """One classification row per track in the batch, matched by id."""
+    return [track_result(track["soundcloud_id"], nouls) for track in batch]
 
 
 def chunks(items: list[Any], size: int) -> Iterator[list[Any]]:
@@ -233,15 +230,21 @@ def _classify_batch(
     batch: list[dict[str, Any]],
     examples: tuple[list[dict[str, Any]], list[dict[str, Any]]],
 ) -> list[dict[str, Any]]:
-    """Claim, ask, save. Unanswered or failed claims are released."""
+    """Claim, ask, save. The batch's writes commit together or not at all:
+    any error rolls back every row and flag it wrote, and the claims are
+    then released for a later run."""
     token = feed_agent.new_claim_token()
     claimed = feed_agent.claim_tracks(conn, batch, config.model_id, token)
     if not claimed:
         return []
     try:
-        return _ask_and_save(conn, config, claimed, examples, token)
-    finally:
+        results = _ask_and_save(conn, config, claimed, examples, token)
         conn.commit()
+        return results
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
         feed_agent.release_claims(conn, token)
 
 

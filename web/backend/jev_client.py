@@ -172,8 +172,10 @@ def ask_nouls(
     """Ask several Noul questions about one state in a single call.
 
     Used to batch tracks: each question id names one track. Raises on HTTP
-    errors; an empty answer set is a ValueError so callers count a failure.
-    Malformed answers come back as None or INCOMPLETE (see
+    errors and on a response with no answers object. Unanswered questions
+    are left out, even when that is all of them: the classifier counts each
+    as an incomplete answer, so a track Jev never answers can't be retried
+    forever. Malformed answers come back as None or INCOMPLETE (see
     `_parse_noul_answers`).
     """
     response = httpx.post(
@@ -190,7 +192,4 @@ def ask_nouls(
         timeout=timeout_s,
     )
     response.raise_for_status()
-    nouls = _parse_noul_answers(response.json(), list(questions))
-    if not nouls:
-        raise ValueError(f"Jev answered none of {len(questions)} questions")
-    return nouls
+    return _parse_noul_answers(response.json(), list(questions))
