@@ -22,7 +22,7 @@ from web.backend.feed_filter_rules import (
     FLAG_SOURCES,
     RULE_TIMEOUT_LIMIT,
     flaggable_track_sql,
-    match_rules,
+    match_each,
     rule_precision,
     validate_rule,
 )
@@ -206,20 +206,14 @@ def unreviewed_candidates(
 def _rule_flags(
     tracks: list[dict[str, Any]], rules: list[dict[str, Any]]
 ) -> tuple[list[tuple[str, str, int]], dict[int, int]]:
-    """(soundcloud_id, reason, rule_id) per caught track, plus timeouts per rule id.
-
-    A rule that hits RULE_TIMEOUT_LIMIT timeouts is skipped for the rest of
-    the run, so one slow pattern can't stall a scan of thousands of tracks.
-    """
-    flags = []
-    timeouts: dict[int, int] = {}
-    for track in tracks:
-        live = [r for r in rules if timeouts.get(r["id"], 0) < RULE_TIMEOUT_LIMIT]
-        rule, timed_out = match_rules(track, live)
-        for rule_id in timed_out:
-            timeouts[rule_id] = timeouts.get(rule_id, 0) + 1
-        if rule is not None:
-            flags.append((track["soundcloud_id"], rule["reason"], rule["id"]))
+    """(soundcloud_id, reason, rule_id) per caught track, plus timeouts per rule id
+    (see `match_each`)."""
+    matches, timeouts = match_each(tracks, rules)
+    flags = [
+        (track["soundcloud_id"], rule["reason"], rule["id"])
+        for track, rule in zip(tracks, matches, strict=True)
+        if rule is not None
+    ]
     return flags, timeouts
 
 

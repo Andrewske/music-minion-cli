@@ -9,12 +9,17 @@ Confidence policy (the probability that the track is a mix, set or show):
 - >= 0.85 writes a ``source='agent'`` flag carrying that confidence;
 - 0.5 to 0.85 becomes a suggestion Kevin can confirm or dismiss in Settings;
 - below 0.5 only the classification record is kept, so it is not asked again;
-- an answer that isn't a probability in [0, 1] is recorded as ``invalid``
-  (never flagged, never asked again).
+- an answer with no probability at all is likely transient: the track is
+  left as ``retry`` for a later run, and its third such answer makes it
+  ``invalid``;
+- a value that isn't a probability in [0, 1] (out of range, a string, NaN,
+  a boolean) is recorded as ``invalid`` at once. Invalid tracks are never
+  flagged and not asked again until Kevin resets them in Settings.
 
 Each batch first claims its tracks (see ``queries.feed_agent.claim_tracks``),
 so overlapping runs never ask about or flag the same track twice. Answers
-are matched to tracks by SoundCloud id, never by position.
+are matched to tracks by SoundCloud id, never by position. Any error while
+asking about or saving one batch fails only that batch.
 
 Runs on demand only (a Settings button); there is no background schedule.
 """
@@ -23,12 +28,11 @@ import json
 from collections.abc import Iterator
 from typing import Any
 
-import httpx
 from loguru import logger
 
 from music_minion.core.database import get_db_connection
 from web.backend import jev_client
-from web.backend.feed_filter_rules import first_matching_rule
+from web.backend.feed_filter_rules import match_each
 from web.backend.feed_insights import safe_text
 from web.backend.queries import feed_agent
 from web.backend.queries import feed_filters as filter_queries
@@ -54,11 +58,28 @@ TASK = (
 )
 
 
-def is_ambiguous(track: dict[str, Any], rules: list[dict[str, Any]]) -> bool:
-    """8 to 20 minutes long and caught by no enabled rule."""
+def in_ambiguous_range(track: dict[str, Any]) -> bool:
+    """8 to 20 minutes long: too long to be sure it's a track, too short
+    for the duration rules."""
     minutes = (track.get("duration_ms") or 0) / 60_000
-    in_range = AMBIGUOUS_MIN_MINUTES <= minutes <= AMBIGUOUS_MAX_MINUTES
-    return in_range and first_matching_rule(track, rules) is None
+    return AMBIGUOUS_MIN_MINUTES <= minutes <= AMBIGUOUS_MAX_MINUTES
+
+
+def ambiguous_tracks(
+    tracks: list[dict[str, Any]], rules: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Tracks in the ambiguous range that no enabled rule catches.
+
+    Uses the rule runner's per-run timeout accounting, so a slow rule is
+    skipped after RULE_TIMEOUT_LIMIT timeouts instead of costing every track.
+    """
+    in_range = [track for track in tracks if in_ambiguous_range(track)]
+    matches, timeouts = match_each(in_range, rules)
+    for rule_id, count in timeouts.items():
+        logger.warning(f"feed agent: rule {rule_id} timed out on {count} titles")
+    return [
+        track for track, rule in zip(in_range, matches, strict=True) if rule is None
+    ]
 
 
 def classification_status(mix_probability: float) -> str:
@@ -119,28 +140,39 @@ def build_questions(track_ids: list[str]) -> dict[str, str]:
     return questions
 
 
-def track_result(sc_id: str, nouls: dict[str, float | None]) -> dict[str, Any] | None:
+def _mix_status(mix: jev_client.NoulAnswer) -> str:
+    if mix == jev_client.INCOMPLETE:
+        return "incomplete"
+    return "invalid" if mix is None else classification_status(mix)
+
+
+def track_result(
+    sc_id: str, nouls: dict[str, jev_client.NoulAnswer]
+) -> dict[str, Any] | None:
     """The classification row for one track; None when Jev didn't answer.
 
-    A malformed mix answer (None) is recorded as ``invalid``.
+    A mix answer with no value is ``incomplete`` (retried later); a
+    malformed one (None) is ``invalid``.
     """
     if f"mix_{sc_id}" not in nouls:
         return None
     mix = nouls[f"mix_{sc_id}"]
     podcast = nouls.get(f"podcast_{sc_id}")
-    if mix is None:
-        logger.warning(f"feed agent: Jev gave track {sc_id} an invalid answer")
+    podcast = None if podcast == jev_client.INCOMPLETE else podcast
+    status = _mix_status(mix)
+    if status in ("incomplete", "invalid"):
+        logger.warning(f"feed agent: Jev gave track {sc_id} an {status} answer")
     return {
         "soundcloud_id": sc_id,
-        "mix_probability": mix,
+        "mix_probability": mix if isinstance(mix, float) else None,
         "podcast_probability": podcast,
-        "status": "invalid" if mix is None else classification_status(mix),
+        "status": status,
         "reason": flag_reason(podcast),
     }
 
 
 def batch_results(
-    batch: list[dict[str, Any]], nouls: dict[str, float | None]
+    batch: list[dict[str, Any]], nouls: dict[str, jev_client.NoulAnswer]
 ) -> list[dict[str, Any]]:
     """Classification rows for the tracks Jev answered, matched by id."""
     results = (track_result(track["soundcloud_id"], nouls) for track in batch)
@@ -159,8 +191,23 @@ def _summary() -> dict[str, int]:
         "auto_flagged": 0,
         "pending": 0,
         "invalid": 0,
+        "incomplete": 0,
         "failed_batches": 0,
     }
+
+
+def _save_result(
+    conn: Any, model_id: str, result: dict[str, Any], state: str, token: str
+) -> dict[str, Any] | None:
+    """Persist one result on this run's claim; None when the claim is gone.
+
+    An incomplete answer comes back as 'retry' or (third time) 'invalid'.
+    """
+    if result["status"] != "incomplete":
+        saved = feed_agent.save_classification(conn, result, model_id, state, token)
+        return result if saved else None
+    status = feed_agent.record_incomplete(conn, result["soundcloud_id"], token)
+    return {**result, "status": status} if status else None
 
 
 def _ask_and_save(
@@ -173,11 +220,11 @@ def _ask_and_save(
     state = build_state(claimed, *examples)
     ids = [track["soundcloud_id"] for track in claimed]
     nouls = jev_client.ask_nouls(config, state, build_questions(ids))
-    return [
-        result
+    saved = (
+        _save_result(conn, config.model_id, result, state, token)
         for result in batch_results(claimed, nouls)
-        if feed_agent.save_classification(conn, result, config.model_id, state, token)
-    ]
+    )
+    return [result for result in saved if result is not None]
 
 
 def _classify_batch(
@@ -198,18 +245,20 @@ def _classify_batch(
         feed_agent.release_claims(conn, token)
 
 
+_TALLY_KEYS = {"invalid": "invalid", "retry": "incomplete"}
+
+
 def _tally(summary: dict[str, int], results: list[dict[str, Any]]) -> None:
     for result in results:
         status = result["status"]
-        summary["invalid" if status == "invalid" else "classified"] += 1
+        summary[_TALLY_KEYS.get(status, "classified")] += 1
         if status in ("auto_flagged", "pending"):
             summary[status] += 1
 
 
 def _ambiguous_tracks(conn: Any, max_tracks: int) -> list[dict[str, Any]]:
     rules = filter_queries.enabled_rules(conn)
-    pool = feed_agent.ambiguous_pool(conn)
-    return [track for track in pool if is_ambiguous(track, rules)][:max_tracks]
+    return ambiguous_tracks(feed_agent.ambiguous_pool(conn), rules)[:max_tracks]
 
 
 def _run_batches(
@@ -224,7 +273,7 @@ def _run_batches(
         try:
             _tally(summary, _classify_batch(conn, config, batch, examples))
             consecutive_failures = 0
-        except (httpx.HTTPError, ValueError):
+        except Exception:  # noqa: BLE001 - one bad batch must not end the run
             consecutive_failures += 1
             summary["failed_batches"] += 1
             logger.exception(f"feed agent: Jev batch of {len(batch)} failed")
@@ -236,8 +285,9 @@ def classify_ambiguous_tracks(max_tracks: int = DEFAULT_MAX_TRACKS) -> dict[str,
     """Ask Jev about up to `max_tracks` (capped at MAX_TRACKS_PER_RUN)
     ambiguous tracks; returns a summary.
 
-    Raises RuntimeError when Jev isn't configured. A failed batch is logged
-    and skipped; three failures in a row stop the run.
+    Raises RuntimeError when Jev isn't configured. A failed batch (HTTP
+    error, unparseable response, anything else) is logged and its claims
+    released; three failures in a row stop the run.
     """
     max_tracks = max(1, min(max_tracks, MAX_TRACKS_PER_RUN))
     config = jev_client.get_jev_config()

@@ -51,6 +51,18 @@ def classify(body: ClassifyRequest | None = None) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail=str(error)) from error
 
 
+@router.get("/classifications/unreadable")
+def get_unreadable() -> dict[str, int]:
+    """How many tracks got unreadable Jev answers and are no longer asked."""
+    return {"count": feed_agent.count_invalid()}
+
+
+@router.post("/classifications/unreadable/retry")
+def retry_unreadable() -> dict[str, int]:
+    """Reset unreadable tracks so the next classifier run asks about them again."""
+    return {"reset": feed_agent.reset_invalid()}
+
+
 @router.get("/classifications")
 def get_classifications(status: ClassificationStatus = "pending") -> dict[str, Any]:
     return {"items": feed_agent.list_classifications(status)}

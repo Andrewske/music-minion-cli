@@ -137,6 +137,25 @@ def match_rules(
     return None, timed_out
 
 
+def match_each(
+    tracks: Iterable[dict[str, Any]], rules: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any] | None], dict[int, int]]:
+    """The first matching rule per track (None when none), plus timeouts per rule id.
+
+    A rule that hits RULE_TIMEOUT_LIMIT timeouts is skipped for the rest of
+    the run, so one slow pattern can't stall a scan of thousands of tracks.
+    """
+    matches: list[dict[str, Any] | None] = []
+    timeouts: dict[int, int] = {}
+    for track in tracks:
+        live = [r for r in rules if timeouts.get(r["id"], 0) < RULE_TIMEOUT_LIMIT]
+        rule, timed_out = match_rules(track, live)
+        for rule_id in timed_out:
+            timeouts[rule_id] = timeouts.get(rule_id, 0) + 1
+        matches.append(rule)
+    return matches, timeouts
+
+
 def first_matching_rule(
     track: dict[str, Any], rules: Iterable[dict[str, Any]]
 ) -> dict[str, Any] | None:

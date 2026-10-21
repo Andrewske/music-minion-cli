@@ -447,7 +447,10 @@ def _migrate_v68_feed_flags(conn) -> None:
 
 
 # 'claimed' reserves a track for one classifier run before Jev is asked (no
-# probability yet); 'invalid' records a malformed answer so it isn't re-asked.
+# probability yet). 'retry' keeps a track whose answer came back incomplete
+# claimable by a later run; `attempts` counts those answers and the third
+# one makes it 'invalid', like an explicitly malformed value. Invalid tracks
+# aren't re-asked until Kevin resets them from Settings.
 _V69_CLASSIFICATIONS_DDL = """
     CREATE TABLE IF NOT EXISTS sc_track_classifications (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -456,8 +459,9 @@ _V69_CLASSIFICATIONS_DDL = """
         mix_probability REAL,
         podcast_probability REAL,
         status TEXT NOT NULL CHECK (status IN (
-            'claimed', 'invalid', 'auto_flagged', 'pending', 'below_threshold',
-            'confirmed', 'dismissed')),
+            'claimed', 'retry', 'invalid', 'auto_flagged', 'pending',
+            'below_threshold', 'confirmed', 'dismissed')),
+        attempts INTEGER NOT NULL DEFAULT 0,
         state_sent TEXT,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP

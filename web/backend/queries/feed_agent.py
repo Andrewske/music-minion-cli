@@ -103,7 +103,10 @@ def load_not_mix_examples(limit: int = 500) -> list[dict[str, Any]]:
 
 
 def classified_ids(conn: Any) -> set[str]:
-    rows = conn.execute("SELECT soundcloud_id FROM sc_track_classifications")
+    """Tracks with a classification row; 'retry' rows can be asked again."""
+    rows = conn.execute(
+        "SELECT soundcloud_id FROM sc_track_classifications WHERE status != 'retry'"
+    )
     return {row["soundcloud_id"] for row in rows}
 
 
@@ -121,19 +124,43 @@ def ambiguous_pool(conn: Any) -> list[dict[str, Any]]:
 # A run claims its tracks before asking Jev, so overlapping runs never ask
 # about (or flag) the same track twice. Claims left by a crashed run expire.
 STALE_CLAIM_MINUTES = 60
+# Incomplete answers a track may get before it is recorded as invalid.
+MAX_INCOMPLETE_ATTEMPTS = 3
+
+# Inserts a fresh claim or takes over a 'retry' row (keeping its attempts).
+# rowcount is 0 when another status already owns the track.
+_CLAIM_SQL = """
+    INSERT INTO sc_track_classifications (soundcloud_id, model_id, status, state_sent)
+    VALUES (?, ?, 'claimed', ?)
+    ON CONFLICT(soundcloud_id) DO UPDATE SET
+        status = 'claimed', model_id = excluded.model_id,
+        state_sent = excluded.state_sent, created_at = CURRENT_TIMESTAMP
+    WHERE sc_track_classifications.status = 'retry'
+"""
 
 
 def new_claim_token() -> str:
     return f"claim:{uuid.uuid4().hex}"
 
 
-def expire_stale_claims(conn: Any) -> None:
+def _unclaim(conn: Any, where: str, param: str) -> None:
+    """Drop claims matching `where`: back to 'retry' when they carry earlier
+    incomplete attempts (so the count survives), deleted otherwise."""
     conn.execute(
-        """DELETE FROM sc_track_classifications WHERE status = 'claimed'
-          AND created_at < datetime('now', ?)""",
-        (f"-{STALE_CLAIM_MINUTES} minutes",),
+        "UPDATE sc_track_classifications SET status = 'retry'"
+        f" WHERE status = 'claimed' AND attempts > 0 AND {where}",
+        (param,),
+    )
+    conn.execute(
+        "DELETE FROM sc_track_classifications"
+        f" WHERE status = 'claimed' AND attempts = 0 AND {where}",
+        (param,),
     )
     conn.commit()
+
+
+def expire_stale_claims(conn: Any) -> None:
+    _unclaim(conn, "created_at < datetime('now', ?)", f"-{STALE_CLAIM_MINUTES} minutes")
 
 
 def claim_tracks(
@@ -143,12 +170,7 @@ def claim_tracks(
     claimed = [
         track
         for track in tracks
-        if conn.execute(
-            """INSERT OR IGNORE INTO sc_track_classifications
-                (soundcloud_id, model_id, status, state_sent)
-            VALUES (?, ?, 'claimed', ?)""",
-            (track["soundcloud_id"], model_id, token),
-        ).rowcount
+        if conn.execute(_CLAIM_SQL, (track["soundcloud_id"], model_id, token)).rowcount
         == 1
     ]
     conn.commit()
@@ -157,12 +179,54 @@ def claim_tracks(
 
 def release_claims(conn: Any, token: str) -> None:
     """Drop this run's unanswered claims so a later run can ask again."""
-    conn.execute(
-        """DELETE FROM sc_track_classifications
-        WHERE status = 'claimed' AND state_sent = ?""",
-        (token,),
-    )
-    conn.commit()
+    _unclaim(conn, "state_sent = ?", token)
+
+
+_INCOMPLETE_SQL = """
+    UPDATE sc_track_classifications
+    SET attempts = attempts + 1, updated_at = CURRENT_TIMESTAMP,
+        status = CASE WHEN attempts + 1 >= :limit THEN 'invalid' ELSE 'retry' END
+    WHERE soundcloud_id = :soundcloud_id AND status = 'claimed'
+      AND state_sent = :token
+"""
+
+
+def record_incomplete(conn: Any, soundcloud_id: str, token: str) -> str | None:
+    """Count an incomplete answer on this run's claim; returns the new status
+    ('retry', or 'invalid' once MAX_INCOMPLETE_ATTEMPTS is reached), or None
+    when the claim is gone."""
+    params = {
+        "soundcloud_id": soundcloud_id,
+        "token": token,
+        "limit": MAX_INCOMPLETE_ATTEMPTS,
+    }
+    if conn.execute(_INCOMPLETE_SQL, params).rowcount != 1:
+        return None
+    row = conn.execute(
+        "SELECT status FROM sc_track_classifications WHERE soundcloud_id = ?",
+        (soundcloud_id,),
+    ).fetchone()
+    return row["status"]
+
+
+def count_invalid() -> int:
+    """Tracks whose answers were unreadable; they are not asked again."""
+    with get_db_connection() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM sc_track_classifications WHERE status = 'invalid'"
+        ).fetchone()
+    return int(row[0])
+
+
+def reset_invalid() -> int:
+    """Forget unreadable classifications so the next run asks Jev again."""
+    with get_db_connection() as conn:
+        deleted = conn.execute(
+            "DELETE FROM sc_track_classifications WHERE status = 'invalid'"
+        ).rowcount
+        conn.commit()
+    logger.info(f"feed agent: reset {deleted} unreadable classifications")
+    return deleted
 
 
 _SAVE_CLASSIFICATION_SQL = """

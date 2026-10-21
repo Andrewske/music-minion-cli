@@ -12,15 +12,15 @@ from fastapi.testclient import TestClient
 
 from music_minion.core.database import get_db_connection
 from tests.test_feed_uploads import _insert_artist, _insert_upload, test_db  # noqa: F401
-from web.backend import jev_client
+from web.backend import feed_filter_rules, jev_client
 from web.backend.feed_classifier import (
+    ambiguous_tracks,
     batch_results,
     build_questions,
     build_state,
     classification_status,
-    is_ambiguous,
 )
-from web.backend.jev_client import JevConfig
+from web.backend.jev_client import INCOMPLETE, JevConfig, valid_probability
 from web.backend.queries import feed_filters as filter_queries
 from web.backend.rule_suggestions import keyword_regex, mine_suggestions
 
@@ -219,10 +219,53 @@ class TestClassifierPure:
 
     def test_ambiguous_is_8_to_20_min_without_rule_hit(self) -> None:
         rule = {"id": 1, "kind": "title_regex", "pattern": "live at", "enabled": True}
-        assert is_ambiguous({"title": "Tune", "duration_ms": 9 * MIN}, [rule])
-        assert not is_ambiguous({"title": "Tune", "duration_ms": 5 * MIN}, [rule])
-        assert not is_ambiguous({"title": "Tune", "duration_ms": 25 * MIN}, [rule])
-        assert not is_ambiguous({"title": "Live at X", "duration_ms": 9 * MIN}, [rule])
+        tracks = [
+            {"title": "Tune", "duration_ms": 9 * MIN},
+            {"title": "Short", "duration_ms": 5 * MIN},
+            {"title": "Long", "duration_ms": 25 * MIN},
+            {"title": "Live at X", "duration_ms": 9 * MIN},
+        ]
+        assert [t["title"] for t in ambiguous_tracks(tracks, [rule])] == ["Tune"]
+
+    def test_slow_rule_is_skipped_after_three_timeouts(self, monkeypatch) -> None:
+        calls: list[int] = []
+
+        def slow(track: dict, rule: dict) -> bool:
+            calls.append(rule["id"])
+            raise TimeoutError
+
+        monkeypatch.setitem(feed_filter_rules._MATCHERS, "title_regex", slow)
+        rule = {"id": 7, "kind": "title_regex", "pattern": "x", "enabled": True}
+        tracks = [{"title": f"T{n}", "duration_ms": 9 * MIN} for n in range(10)]
+        assert len(ambiguous_tracks(tracks, [rule])) == 10
+        assert calls == [7, 7, 7]
+
+    @pytest.mark.parametrize(
+        "value", [10**400, -(10**400), 1.5, -0.1, float("nan"), float("inf"), True]
+    )
+    def test_out_of_range_values_are_not_probabilities(self, value) -> None:
+        assert valid_probability(value) is None
+
+    def test_parse_separates_incomplete_from_invalid(self) -> None:
+        payload = {
+            "answers": {
+                "a": {"type": "noul"},
+                "b": {"type": "noul", "noul": None},
+                "c": "0.9",
+                "d": {"type": "noul", "noul": "0.9"},
+                "e": {"type": "noul", "noul": 10**400},
+                "f": {"type": "noul", "noul": 1},
+            }
+        }
+        parsed = jev_client._parse_noul_answers(payload, list("abcdefg"))
+        assert parsed == {
+            "a": INCOMPLETE,
+            "b": INCOMPLETE,
+            "c": INCOMPLETE,
+            "d": None,
+            "e": None,
+            "f": 1.0,
+        }
 
     def test_state_and_questions(self) -> None:
         batch = [
@@ -254,6 +297,12 @@ class TestClassifierPure:
     def test_invalid_mix_answer_is_recorded_invalid(self) -> None:
         (result,) = batch_results([{"soundcloud_id": "1"}], {"mix_1": None})
         assert result["status"] == "invalid" and result["mix_probability"] is None
+
+    def test_incomplete_mix_answer_is_marked_incomplete(self) -> None:
+        nouls = {"mix_1": INCOMPLETE, "podcast_1": INCOMPLETE}
+        (result,) = batch_results([{"soundcloud_id": "1"}], nouls)
+        assert result["status"] == "incomplete"
+        assert result["mix_probability"] is result["podcast_probability"] is None
 
     def test_metadata_is_sanitized_for_the_prompt(self) -> None:
         track = {
@@ -324,6 +373,38 @@ def jev(monkeypatch):
     return calls, answers
 
 
+class _FakeResponse:
+    def __init__(self, payload: object) -> None:
+        self.payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> object:
+        return self.payload
+
+
+def _connect_error(*_args, **_kwargs):
+    raise httpx.ConnectError("down")
+
+
+def _statuses() -> dict[str, str]:
+    with get_db_connection() as conn:
+        rows = conn.execute(
+            "SELECT soundcloud_id, status FROM sc_track_classifications"
+        ).fetchall()
+    return {row["soundcloud_id"]: row["status"] for row in rows}
+
+
+def _attempts(sc_id: str) -> int:
+    with get_db_connection() as conn:
+        row = conn.execute(
+            "SELECT attempts FROM sc_track_classifications WHERE soundcloud_id = ?",
+            (sc_id,),
+        ).fetchone()
+    return row["attempts"]
+
+
 def _flags() -> dict[str, dict]:
     with get_db_connection() as conn:
         rows = conn.execute("SELECT * FROM sc_track_flags").fetchall()
@@ -347,6 +428,7 @@ class TestClassifyRun:
             "auto_flagged": 1,
             "pending": 1,
             "invalid": 0,
+            "incomplete": 0,
             "failed_batches": 0,
         }
         flag = _flags()["100"]
@@ -479,6 +561,135 @@ class TestClassifyRun:
         assert summary["failed_batches"] == 2 and summary["classified"] == 0
         # Claims were released, so a later run retries them.
         assert client.post("/api/feed-filters/classify").json()["candidates"] == 12
+
+    def test_incomplete_answers_are_retried_then_marked_invalid(
+        self, client, jev, monkeypatch
+    ) -> None:
+        calls, _ = jev
+        _seed({"100": ("Flaky", 10), "101": ("Fine", 10)})
+
+        def incomplete(config, state, questions, timeout_s=30.0):
+            calls.append(questions)
+            answers = {"mix_100": INCOMPLETE, "podcast_100": INCOMPLETE}
+            return answers | ({"mix_101": 0.1} if "mix_101" in questions else {})
+
+        monkeypatch.setattr(jev_client, "ask_nouls", incomplete)
+        first = client.post("/api/feed-filters/classify").json()
+        assert (first["incomplete"], first["invalid"], first["classified"]) == (1, 0, 1)
+        assert _statuses() == {"100": "retry", "101": "below_threshold"}
+
+        # A failed call in between neither counts as an attempt nor loses one.
+        monkeypatch.setattr(jev_client, "ask_nouls", _connect_error)
+        assert client.post("/api/feed-filters/classify").json()["failed_batches"] == 1
+        assert _statuses()["100"] == "retry" and _attempts("100") == 1
+
+        monkeypatch.setattr(jev_client, "ask_nouls", incomplete)
+        assert client.post("/api/feed-filters/classify").json()["incomplete"] == 1
+        third = client.post("/api/feed-filters/classify").json()
+        assert (third["candidates"], third["invalid"]) == (1, 1)
+        assert _statuses()["100"] == "invalid" and _attempts("100") == 3
+        assert client.post("/api/feed-filters/classify").json()["candidates"] == 0
+        assert not _flags()
+
+    def test_recovered_provider_classifies_a_retry_track(self, client, jev) -> None:
+        _, answers = jev
+        _seed({"100": ("Flaky", 10)})
+        with get_db_connection() as conn:
+            conn.execute(
+                """INSERT INTO sc_track_classifications
+                    (soundcloud_id, model_id, status, attempts)
+                VALUES ('100', 'jev-test', 'retry', 2)"""
+            )
+            conn.commit()
+        answers |= {"Flaky": 0.95}
+        summary = client.post("/api/feed-filters/classify").json()
+        assert summary["auto_flagged"] == 1
+        assert _statuses() == {"100": "auto_flagged"} and set(_flags()) == {"100"}
+
+    def test_oversized_integer_is_invalid_and_later_batches_run(
+        self, client, jev, monkeypatch
+    ) -> None:
+        _seed({str(100 + n): (f"T{n}", 10) for n in range(12)})
+
+        def post(url, json, **kwargs):
+            ids = [qid[4:] for qid in json["questions"] if qid.startswith("mix_")]
+            nouls = {i: 10**400 if i == "100" else 0.1 for i in ids}
+            answers = {
+                f"mix_{i}": {"type": "noul", "noul": v} for i, v in nouls.items()
+            }
+            return _FakeResponse({"answers": answers})
+
+        monkeypatch.setattr(jev_client, "ask_nouls", _real_ask_nouls)
+        monkeypatch.setattr(jev_client.httpx, "post", post)
+        summary = client.post("/api/feed-filters/classify").json()
+        assert (summary["invalid"], summary["classified"]) == (1, 11)
+        assert summary["failed_batches"] == 0 and _statuses()["100"] == "invalid"
+
+    def test_unexpected_batch_error_fails_only_that_batch(
+        self, client, jev, monkeypatch
+    ) -> None:
+        calls, _ = jev
+        _seed({str(100 + n): (f"T{n}", 10) for n in range(12)})
+        real_ask = jev_client.ask_nouls
+
+        def overflow_once(config, state, questions, timeout_s=30.0):
+            if not calls:
+                calls.append(questions)
+                raise OverflowError("int too large to convert to float")
+            return real_ask(config, state, questions, timeout_s)
+
+        monkeypatch.setattr(jev_client, "ask_nouls", overflow_once)
+        summary = client.post("/api/feed-filters/classify").json()
+        assert (summary["failed_batches"], summary["classified"]) == (1, 2)
+        # The failed batch's claims were released, so the next run asks again.
+        assert client.post("/api/feed-filters/classify").json()["candidates"] == 10
+
+    def test_retry_unreadable_resets_invalid_tracks(
+        self, client, jev, monkeypatch
+    ) -> None:
+        _, answers = jev
+        _seed({"100": ("Weird", 10)})
+        fake_ask = jev_client.ask_nouls
+        monkeypatch.setattr(jev_client, "ask_nouls", lambda *a, **k: {"mix_100": None})
+        client.post("/api/feed-filters/classify")
+        assert client.get("/api/feed-filters/classifications/unreadable").json() == {
+            "count": 1
+        }
+        retry = client.post("/api/feed-filters/classifications/unreadable/retry")
+        assert retry.json() == {"reset": 1}
+        assert client.get("/api/feed-filters/classifications/unreadable").json() == {
+            "count": 0
+        }
+        monkeypatch.setattr(jev_client, "ask_nouls", fake_ask)
+        answers |= {"Weird": 0.6}
+        assert client.post("/api/feed-filters/classify").json()["pending"] == 1
+
+    def test_classifier_skips_a_slow_rule_after_three_timeouts(
+        self, client, jev, monkeypatch
+    ) -> None:
+        _seed({str(100 + n): (f"T{n}", 10) for n in range(10)})
+        created = client.post(
+            "/api/feed-filters/rules",
+            json={
+                "name": "slow",
+                "kind": "title_regex",
+                "pattern": "slowpoke",
+                "reason": "other",
+            },
+        )
+        assert created.status_code == 201
+        real = feed_filter_rules._MATCHERS["title_regex"]
+        calls: dict[str, int] = {}
+
+        def slow_for_one(track: dict, rule: dict) -> bool:
+            if rule["pattern"] != "slowpoke":
+                return real(track, rule)
+            calls[rule["pattern"]] = calls.get(rule["pattern"], 0) + 1
+            raise TimeoutError
+
+        monkeypatch.setitem(feed_filter_rules._MATCHERS, "title_regex", slow_for_one)
+        summary = client.post("/api/feed-filters/classify").json()
+        assert summary["candidates"] == 10 and calls == {"slowpoke": 3}
 
     def test_classification_cap_is_enforced(self, client, jev) -> None:
         from web.backend import feed_classifier

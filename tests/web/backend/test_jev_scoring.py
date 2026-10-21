@@ -448,7 +448,8 @@ def test_ask_nouls_batches_questions(monkeypatch) -> None:
     monkeypatch.setattr(jev_client.httpx, "post", fake_post)
     config = JevConfig("https://x", "k", "jev-latest")
     nouls = jev_client.ask_nouls(config, "{}", {"mix_t0": "A?", "mix_t1": "B?"})
-    assert nouls == {"mix_t0": 0.9, "mix_t1": None}  # {} is malformed, not missing
+    # {} answered the question but carries no value: incomplete, not invalid.
+    assert nouls == {"mix_t0": 0.9, "mix_t1": jev_client.INCOMPLETE}
     assert sent["url"] == "https://x/v1/systemone"
     assert sent["body"]["questions"]["mix_t1"] == {"type": "noul", "instructions": "B?"}
 
@@ -479,14 +480,23 @@ def test_valid_probabilities_pass(noul) -> None:
     assert jev_client.valid_probability(noul) == float(noul)
 
 
-def test_parse_answers_marks_malformed_answers_invalid() -> None:
+def test_parse_answers_marks_malformed_values_invalid() -> None:
     payload = json.loads(
         '{"answers": {"a": {"noul": Infinity}, "b": {"noul": NaN}, '
         '"c": {"noul": true}, "d": "0.9", "e": [1], "f": {"noul": 0.7}}}'
     )
     ids = ["a", "b", "c", "d", "e", "f", "missing"]
     parsed = jev_client._parse_noul_answers(payload, ids)
-    assert parsed == {"a": None, "b": None, "c": None, "d": None, "e": None, "f": 0.7}
+    # d and e are not answer objects, so they carry no value: incomplete.
+    incomplete = jev_client.INCOMPLETE
+    assert parsed == {
+        "a": None,
+        "b": None,
+        "c": None,
+        "d": incomplete,
+        "e": incomplete,
+        "f": 0.7,
+    }
 
 
 @pytest.mark.parametrize("payload", [[], "x", {"answers": []}, {"answers": "no"}])

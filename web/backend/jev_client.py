@@ -13,17 +13,23 @@ response {"model", "answers": {"<id>": {"type": "noul", "noul": 0.99}}, "usage"}
 
 from __future__ import annotations
 
-import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Final, Literal
 
 import httpx
 
 DEFAULT_BASE_URL = "https://openrouter.ai/api"
 DEFAULT_MODEL_ID = "jev-latest"
 SYSTEMONE_PATH = "/v1/systemone"
+
+# An answer object that carries no Noul value at all (e.g. {"type": "noul"}).
+# Unlike an invalid value it is likely transient, so callers may ask again.
+INCOMPLETE: Final = "incomplete"
+
+# A probability, None for an explicitly invalid value, or INCOMPLETE.
+NoulAnswer = float | None | Literal["incomplete"]
 
 
 @dataclass(frozen=True)
@@ -81,11 +87,12 @@ def valid_probability(value: Any) -> float | None:
     """`value` as a probability, or None unless it is a finite number in [0, 1].
 
     JSON booleans, strings, NaN and Infinity are all rejected: a malformed
-    answer must never read as a confident one.
+    answer must never read as a confident one. The range check runs before
+    any float conversion, so a huge JSON integer is rejected, not overflowed.
     """
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+    if not 0 <= value <= 1:  # False for NaN
         return None
     return float(value)
 
@@ -102,6 +109,13 @@ def _answers_object(payload: Any) -> dict:
 
 def _answer_noul(answer: Any) -> float | None:
     return valid_probability(answer.get("noul")) if isinstance(answer, dict) else None
+
+
+def _batch_answer(answer: Any) -> NoulAnswer:
+    """INCOMPLETE when the answer has no Noul value, else `_answer_noul`."""
+    if not isinstance(answer, dict) or answer.get("noul") is None:
+        return INCOMPLETE
+    return _answer_noul(answer)
 
 
 def _parse_noul_response(payload: dict, fallback_model: str) -> JevPrediction:
@@ -136,18 +150,17 @@ def ask_noul(
     return _parse_noul_response(response.json(), config.model_id)
 
 
-def _parse_noul_answers(
-    payload: Any, question_ids: list[str]
-) -> dict[str, float | None]:
+def _parse_noul_answers(payload: Any, question_ids: list[str]) -> dict[str, NoulAnswer]:
     """Noul value per answered question id.
 
-    Questions Jev didn't answer are left out; an answer that isn't a finite
-    probability in [0, 1] maps to None so callers can record it as invalid.
-    A response without an answers object is a ValueError.
+    Questions Jev didn't answer are left out; an answer with no Noul value
+    is INCOMPLETE; a value that isn't a finite probability in [0, 1] maps to
+    None so callers can record it as invalid. A response without an answers
+    object is a ValueError.
     """
     answers = _answers_object(payload)
     return {
-        qid: _answer_noul(answers[qid])
+        qid: _batch_answer(answers[qid])
         for qid in question_ids
         if answers.get(qid) is not None
     }
@@ -155,12 +168,13 @@ def _parse_noul_answers(
 
 def ask_nouls(
     config: JevConfig, state: str, questions: dict[str, str], timeout_s: float = 30.0
-) -> dict[str, float | None]:
+) -> dict[str, NoulAnswer]:
     """Ask several Noul questions about one state in a single call.
 
     Used to batch tracks: each question id names one track. Raises on HTTP
     errors; an empty answer set is a ValueError so callers count a failure.
-    Malformed answers come back as None (see `_parse_noul_answers`).
+    Malformed answers come back as None or INCOMPLETE (see
+    `_parse_noul_answers`).
     """
     response = httpx.post(
         f"{config.base_url}{SYSTEMONE_PATH}",
