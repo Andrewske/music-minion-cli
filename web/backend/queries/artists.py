@@ -7,11 +7,21 @@ from typing import Any
 
 from loguru import logger
 
+from web.backend.feed_filter_rules import not_flagged_sql
+
 # ---------------------------------------------------------------------------
 # Artist stats CTE query
 # ---------------------------------------------------------------------------
 
-ARTISTS_STATS_SQL = """
+# Feed volume ignores tracks with an active not-for-feed flag (#30).
+_FEED_EVENTS_UNFLAGGED_SQL = f"""
+  SELECT dtr.discovery_artist_id, dtr.seen_at
+  FROM discovery_track_reposters dtr
+  JOIN discovery_tracks dt ON dt.id = dtr.discovery_track_id
+  WHERE {not_flagged_sql("dt.soundcloud_id")}
+"""
+
+ARTISTS_STATS_SQL = f"""
 WITH library_counts AS (
   SELECT amr.discovery_artist_id, COUNT(*) AS library_count
   FROM artist_match_resolved amr
@@ -23,7 +33,7 @@ feed_stats AS (
          COUNT(*) FILTER (WHERE seen_at > datetime('now', '-7 days')) / 7.0 AS noise_7d,
          COUNT(*) FILTER (WHERE seen_at > datetime('now', '-30 days')) / 30.0 AS noise_30d,
          MAX(seen_at) AS last_activity_at
-  FROM discovery_track_reposters GROUP BY discovery_artist_id
+  FROM ({_FEED_EVENTS_UNFLAGGED_SQL}) GROUP BY discovery_artist_id
 ),
 repost_counts AS (
   SELECT dtr.discovery_artist_id, COUNT(DISTINCT t.id) AS repost_count
@@ -914,10 +924,10 @@ def get_pareto_artists(conn: sqlite3.Connection) -> dict[str, Any]:
     - Ties at the boundary (ROWS frame with tiebreaker avoids over-including)
     - Empty events (returns zeros with empty list)
     """
-    sql = """
+    sql = f"""
     WITH feed_totals AS (
       SELECT discovery_artist_id, COUNT(*) AS event_count
-      FROM discovery_track_reposters
+      FROM ({_FEED_EVENTS_UNFLAGGED_SQL})
       WHERE seen_at > datetime('now', '-30 days')
       GROUP BY discovery_artist_id
     ),
@@ -941,7 +951,8 @@ def get_pareto_artists(conn: sqlite3.Connection) -> dict[str, Any]:
     if not rows:
         # Check if there are any events at all (to distinguish empty table vs all artists)
         total_row = conn.execute(
-            "SELECT COUNT(*) FROM discovery_track_reposters WHERE seen_at > datetime('now', '-30 days')"
+            f"SELECT COUNT(*) FROM ({_FEED_EVENTS_UNFLAGGED_SQL}) "
+            "WHERE seen_at > datetime('now', '-30 days')"
         ).fetchone()
         total = total_row[0] if total_row else 0
         return {

@@ -527,6 +527,8 @@ def get_unplaced_short_tracks(
     created_at, duration}. Ordered by role-specific Bayesian keep rate then
     repost time, with NULL timestamps last.
 
+    Tracks with an active not-for-feed flag never qualify.
+
     Args:
         exclude_sc_ids: SC IDs already selected this run (avoid dupes).
         owned_sc_ids: SC IDs the user already has (other playlists, love-rated).
@@ -538,7 +540,7 @@ def get_unplaced_short_tracks(
         owned_sc_ids = set()
     with get_db_connection() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT dt.soundcloud_id, dt.duration_ms, dt.first_seen,
                    dt.uploaded_at, dt.released_at,
                    dt.title, dt.artist_name,
@@ -563,6 +565,7 @@ def get_unplaced_short_tracks(
             JOIN discovery_artists da_best ON da_best.id = best.discovery_artist_id
             WHERE dt.workflow_state = 'unseen'
               AND dt.duration_ms <= 600000
+              AND {not_flagged_sql("dt.soundcloud_id")}
             ORDER BY COALESCE(da_best.repost_keep_rate, ?) DESC,
                      best.reposted_at IS NULL, best.reposted_at DESC
             LIMIT ?

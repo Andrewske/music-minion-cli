@@ -187,21 +187,30 @@ def _require_known_track(soundcloud_id: str) -> None:
 
 
 @router.post("/{soundcloud_id}/flag")
-def flag_track(soundcloud_id: str, body: FlagRequest) -> dict[str, Any]:
-    """Hide a track as not for feed. Not a verdict: no decision row is written."""
+def flag_track(
+    soundcloud_id: str, body: FlagRequest, background_tasks: BackgroundTasks
+) -> dict[str, Any]:
+    """Hide a track as not for feed. Not a verdict: no decision row is written.
+
+    A flagged track stops counting toward artist stats, so they're refreshed.
+    """
     _require_known_track(soundcloud_id)
     flag = filter_queries.flag_track(soundcloud_id, body.reason, body.note)
+    background_tasks.add_task(filter_queries.refresh_artist_stats_for, [soundcloud_id])
     return {"soundcloud_id": soundcloud_id, "flag": flag}
 
 
 @router.delete("/{soundcloud_id}/flag")
-def unflag_track(soundcloud_id: str) -> dict[str, Any]:
+def unflag_track(
+    soundcloud_id: str, background_tasks: BackgroundTasks
+) -> dict[str, Any]:
     """Undo a user flag or rescue a rule/agent flag; the track returns to the feed."""
     result = filter_queries.unflag_track(soundcloud_id)
     if result is None:
         raise HTTPException(
             status_code=404, detail=f"SoundCloud track {soundcloud_id} is not flagged"
         )
+    background_tasks.add_task(filter_queries.refresh_artist_stats_for, [soundcloud_id])
     return {
         "soundcloud_id": soundcloud_id,
         "source": result["source"],

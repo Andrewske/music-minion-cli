@@ -2,7 +2,7 @@
 
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from web.backend.feed_filter_rules import MAX_PATTERN_LENGTH, MAX_RULE_NAME_LENGTH
@@ -73,11 +73,16 @@ def update_rule(rule_id: int, body: RuleUpdate) -> dict[str, Any]:
 
 
 @router.delete("/rules/{rule_id}")
-def delete_rule(rule_id: int) -> dict[str, Any]:
-    """Deleting a rule also drops its flags, so its tracks return to the feed."""
-    if not filter_queries.delete_rule(rule_id):
+def delete_rule(rule_id: int, background_tasks: BackgroundTasks) -> dict[str, Any]:
+    """Deleting a rule drops its active flags, so its tracks return to the feed.
+
+    Rescued tracks stay exempt from every other rule.
+    """
+    released = filter_queries.delete_rule(rule_id)
+    if released is None:
         raise HTTPException(status_code=404, detail=f"Filter rule {rule_id} not found")
-    return {"deleted": True, "id": rule_id}
+    background_tasks.add_task(filter_queries.refresh_artist_stats_for, released)
+    return {"deleted": True, "id": rule_id, "released": len(released)}
 
 
 @router.post("/run")

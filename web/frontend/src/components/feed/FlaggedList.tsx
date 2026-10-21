@@ -94,6 +94,7 @@ export function FlaggedList({ source, ruleId, sort = 'newest', currentTrackId, e
       void queryClient.invalidateQueries({ queryKey: FLAGGED_QUERY_KEY });
       void queryClient.invalidateQueries({ queryKey: ['feed'] });
       void queryClient.invalidateQueries({ queryKey: FILTER_RULES_QUERY_KEY });
+      void queryClient.invalidateQueries({ queryKey: ['artists'] });
     },
   });
   const items = flaggedQuery.data?.pages.flatMap((page) => page.items) ?? [];

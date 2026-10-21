@@ -636,6 +636,32 @@ class ListenStats(NamedTuple):
 NO_LISTEN = ListenStats()
 
 
+def _max_or_none(a: float | None, b: float | None) -> float | None:
+    present = [value for value in (a, b) if value is not None]
+    return max(present) if present else None
+
+
+def _merge_listen(conn: Any, soundcloud_id: str, listen: ListenStats) -> ListenStats:
+    """Carry the current row's listen stats into a re-rate.
+
+    A re-rate without a replay sends nothing and keeps the old numbers; a
+    replay keeps the larger of each value, since the session tally may or may
+    not include the listening that preceded the original verdict.
+    """
+    previous = conn.execute(
+        """SELECT listen_seconds, max_position_ms FROM sc_track_decisions
+        WHERE soundcloud_id = ? AND is_current = 1""",
+        (soundcloud_id,),
+    ).fetchone()
+    if previous is None:
+        return listen
+    max_position = _max_or_none(listen.max_position_ms, previous["max_position_ms"])
+    return ListenStats(
+        _max_or_none(listen.listen_seconds, previous["listen_seconds"]),
+        None if max_position is None else int(max_position),
+    )
+
+
 def _track_exists(conn: Any, soundcloud_id: str) -> bool:
     return (
         conn.execute(
@@ -709,6 +735,7 @@ def record_decision(
                 conn, soundcloud_id
             )
         conn.execute("BEGIN IMMEDIATE")
+        row.update(_merge_listen(conn, soundcloud_id, listen)._asdict())
         row_id = _append_current_decision(conn, row)
         _sync_legacy_status(conn, soundcloud_id, decision, row["decided_at"])
         conn.commit()
@@ -996,15 +1023,22 @@ def get_action_counts() -> dict[str, int]:
 
 def get_contributing_artist_ids(soundcloud_id: str) -> list[int]:
     """Uploader plus every reposter of a track: the artists a decision trains."""
+    return get_contributing_artist_ids_for([soundcloud_id])
+
+
+def get_contributing_artist_ids_for(soundcloud_ids: list[str]) -> list[int]:
+    """Batched get_contributing_artist_ids over many tracks, deduplicated."""
     with get_db_connection() as conn:
         rows = conn.execute(
-            """SELECT discovery_artist_id FROM sc_artist_uploads WHERE soundcloud_id = ?
+            """WITH ids AS (SELECT value AS soundcloud_id FROM json_each(:ids))
+            SELECT discovery_artist_id FROM sc_artist_uploads
+            WHERE soundcloud_id IN (SELECT soundcloud_id FROM ids)
             UNION
             SELECT dtr.discovery_artist_id
             FROM discovery_track_reposters dtr
             JOIN discovery_tracks dt ON dt.id = dtr.discovery_track_id
-            WHERE dt.soundcloud_id = ?""",
-            (soundcloud_id, soundcloud_id),
+            WHERE dt.soundcloud_id IN (SELECT soundcloud_id FROM ids)""",
+            {"ids": json.dumps(soundcloud_ids)},
         ).fetchall()
     return [row["discovery_artist_id"] for row in rows]
 

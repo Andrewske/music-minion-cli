@@ -226,12 +226,91 @@ def _insert_prediction(
     )
 
 
+_STILL_ELIGIBLE_SQL = f"""
+SELECT NOT EXISTS (
+           SELECT 1 FROM sc_track_decisions d
+           WHERE d.soundcloud_id = :soundcloud_id AND d.is_current = 1)
+       AND {not_flagged_sql(":soundcloud_id")} AS eligible
+"""
+
+
+def _still_eligible(conn: Any, soundcloud_id: str) -> bool:
+    """Fresh check that a candidate wasn't rated or flagged since the batch query."""
+    row = conn.execute(_STILL_ELIGIBLE_SQL, {"soundcloud_id": soundcloud_id}).fetchone()
+    return bool(row["eligible"])
+
+
+def _state_if_eligible(row: Any, profile_text: str, now: datetime) -> str | None:
+    """The prompt state for a candidate, or None when it's no longer eligible.
+
+    Each check opens a fresh connection with no open transaction, so it sees
+    flags and verdicts committed while earlier tracks were being scored.
+    """
+    with get_db_connection() as conn:
+        if not _still_eligible(conn, row["soundcloud_id"]):
+            return None
+        return build_state(_track_state_dict(conn, row, now), profile_text)
+
+
+def _save_prediction(
+    row: Any,
+    config: jev_client.JevConfig,
+    profile_version: str,
+    prediction: jev_client.JevPrediction,
+    state: str,
+) -> None:
+    """Commit one prediction right away, so no write lock spans an API call."""
+    with get_db_connection() as conn:
+        _insert_prediction(
+            conn, row["soundcloud_id"], config.model_id, profile_version, prediction, state
+        )
+        conn.commit()
+
+
+def _load_candidates(config: jev_client.JevConfig, profile_version: str) -> list[Any]:
+    with get_db_connection() as conn:
+        return conn.execute(
+            _candidates_sql(),
+            {
+                "model_id": config.model_id,
+                "profile_version": profile_version,
+                **feed_queries.window_params(),
+            },
+        ).fetchall()
+
+
+def _score_candidates(
+    rows: list[Any], config: jev_client.JevConfig, profile: tuple[str, str], sleep_s: float
+) -> tuple[int, int]:
+    """Score rows one at a time, rechecking each first; returns (scored, failed)."""
+    profile_text, profile_version = profile
+    now = datetime.now(timezone.utc)
+    scored = failed = 0
+    for row in rows:
+        state = _state_if_eligible(row, profile_text, now)
+        if state is None:
+            continue
+        try:
+            prediction = jev_client.ask_noul(config, state, NOUL_QUESTION)
+        except Exception:
+            failed += 1
+            logger.exception(f"jev: scoring failed for {row['soundcloud_id']}")
+            if failed >= 5 and scored == 0:
+                break  # endpoint is down; don't burn the whole batch
+            continue
+        _save_prediction(row, config, profile_version, prediction, state)
+        scored += 1
+        time.sleep(sleep_s)
+    return scored, failed
+
+
 def score_new_tracks(sleep_s: float = 0.1) -> int:
     """Score every undecided, not-yet-scored track in the feed window.
 
     Uncapped: ~250 tracks arrive per day, and the window bounds the worst
     case (a taste-profile edit rescoring ~7k tracks) to roughly 35 minutes.
-    Returns tracks scored.
+    A track rated or flagged after the candidate query is skipped, never
+    sent to the paid endpoint. Returns tracks scored.
     """
     config = jev_client.get_jev_config()
     if config is None:
@@ -244,43 +323,10 @@ def score_new_tracks(sleep_s: float = 0.1) -> int:
         logger.warning(f"jev: taste profile missing at {TASTE_PROFILE_PATH}, skipping")
         return 0
     profile_text, profile_version = profile
-    profile_text = with_review_evidence(profile_text)
-    now = datetime.now(timezone.utc)
-    scored = failed = 0
-    with get_db_connection() as conn:
-        rows = conn.execute(
-            _candidates_sql(),
-            {
-                "model_id": config.model_id,
-                "profile_version": profile_version,
-                **feed_queries.window_params(),
-            },
-        ).fetchall()
-        for row in rows:
-            state = build_state(_track_state_dict(conn, row, now), profile_text)
-            try:
-                prediction = jev_client.ask_noul(config, state, NOUL_QUESTION)
-            except Exception:
-                failed += 1
-                logger.exception(f"jev: scoring failed for {row['soundcloud_id']}")
-                if failed >= 5 and scored == 0:
-                    break  # endpoint is down; don't burn the whole batch
-                continue
-            _insert_prediction(
-                conn,
-                row["soundcloud_id"],
-                config.model_id,
-                profile_version,
-                prediction,
-                state,
-            )
-            scored += 1
-            # Periodic commits keep a crashed batch's work and let the feed
-            # show scores while a long backfill is still running.
-            if scored % 25 == 0:
-                conn.commit()
-            time.sleep(sleep_s)
-        conn.commit()
+    # Review evidence is prompt context, not part of the profile version.
+    prompt_profile = (with_review_evidence(profile_text), profile_version)
+    rows = _load_candidates(config, profile_version)
+    scored, failed = _score_candidates(rows, config, prompt_profile, sleep_s)
     if scored or failed:
         logger.info(f"jev: scored {scored} tracks ({failed} failures)")
     return scored

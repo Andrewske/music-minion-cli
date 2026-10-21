@@ -106,6 +106,26 @@ class TestRuleMatching:
 
 
 class TestRuleValidation:
+    @pytest.mark.parametrize(
+        "pattern", [r"(a+)+$", r"(a|aa)*", r"(?:\w+\s?)+$", r"(x*)*y"]
+    )
+    def test_rejects_nested_quantifiers(self, pattern: str) -> None:
+        with pytest.raises(ValueError, match="can hang matching"):
+            validate_rule(
+                {"name": "x", "kind": "title_regex", "pattern": pattern, "reason": "other"}
+            )
+
+    def test_rejects_overlong_regex(self) -> None:
+        with pytest.raises(ValueError, match="Regex is longer"):
+            validate_rule(
+                {"name": "x", "kind": "title_regex", "pattern": "a" * 201, "reason": "other"}
+            )
+
+    def test_matching_reads_a_bounded_title_prefix(self) -> None:
+        rule = _regex_rule("needle")
+        assert not rule_matches({"title": "x" * 300 + "needle"}, rule)
+        assert rule_matches({"title": "x" * 290 + "needle"}, rule)
+
     def test_invalid_regex_has_clear_error(self) -> None:
         with pytest.raises(ValueError, match=r"Invalid regex '\(live': .*position"):
             validate_rule(
@@ -314,6 +334,71 @@ class TestIngestAndRescue:
         assert client.delete(f"/api/feed-filters/rules/{rule_id}").status_code == 200
         assert _feed_ids(client) == {"12"}
 
+    def test_deleting_a_rule_keeps_rescues_so_no_other_rule_reflags(
+        self, client
+    ) -> None:
+        from web.backend.queries import feed_filters
+
+        # 12 matches both the podcast title rule and a broader catch-all.
+        _seed_uploads({"12": "Sunday Podcast 3"})
+        feed_filters.apply_rules(None)
+        assert client.delete("/api/feed/12/flag").json()["removed"] is False
+        client.post(
+            "/api/feed-filters/rules",
+            json={"name": "Sunday", "kind": "title_regex", "pattern": "sunday", "reason": "other"},
+        )
+        rule_id = _rule_id("seed_title_podcast")
+        assert client.delete(f"/api/feed-filters/rules/{rule_id}").status_code == 200
+
+        assert feed_filters.apply_rules(None) == 0
+        assert _feed_ids(client) == {"12"}
+        with get_db_connection() as conn:
+            rescue = conn.execute(
+                "SELECT rule_id, rescued_at FROM sc_track_flags WHERE soundcloud_id = '12'"
+            ).fetchone()
+        assert rescue["rule_id"] is None and rescue["rescued_at"] is not None
+
+    def test_run_writes_nothing_for_a_rule_deleted_mid_run(
+        self, test_db, monkeypatch  # noqa: F811
+    ) -> None:
+        from web.backend.queries import feed_filters
+
+        _seed_uploads({"12": "Sunday Podcast 3"})
+        rule_id = _rule_id("seed_title_podcast")
+        real_rule_flags = feed_filters._rule_flags
+
+        def delete_rule_after_matching(tracks, rules):
+            flags = real_rule_flags(tracks, rules)
+            assert feed_filters.delete_rule(rule_id) == []
+            return flags
+
+        monkeypatch.setattr(feed_filters, "_rule_flags", delete_rule_after_matching)
+        assert feed_filters.apply_rules(None) == 0
+        with get_db_connection() as conn:
+            assert conn.execute("SELECT COUNT(*) FROM sc_track_flags").fetchone()[0] == 0
+
+    def test_run_skips_a_track_rescued_or_rated_mid_run(
+        self, test_db, monkeypatch  # noqa: F811
+    ) -> None:
+        from web.backend.queries import feed, feed_filters
+
+        _seed_uploads({"12": "Sunday Podcast 3"})
+        real_rule_flags = feed_filters._rule_flags
+
+        def rate_after_matching(tracks, rules):
+            flags = real_rule_flags(tracks, rules)
+            feed.record_decision("12", "nope", "test")
+            return flags
+
+        monkeypatch.setattr(feed_filters, "_rule_flags", rate_after_matching)
+        assert feed_filters.apply_rules(None) == 0
+
+    def test_flags_cannot_reference_a_missing_rule(self, test_db) -> None:  # noqa: F811
+        with get_db_connection() as conn, pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO sc_track_flags (soundcloud_id, reason, source, rule_id) VALUES ('1', 'other', 'rule', 999)"
+            )
+
 
 class TestUserFlag:
     def test_flag_hides_without_a_decision_and_saves_note(self, client) -> None:
@@ -451,6 +536,100 @@ class TestFlagExclusions:
             conn.commit()
             decisions = load_track_decisions(conn)
         assert sorted(d.soundcloud_id for d in decisions) == ["41", "42"]
+
+    def test_flag_and_unflag_refresh_artist_stats(self, client) -> None:
+        artist_id = _seed_uploads({"11": "Real Track", "12": "Other Track"})
+        client.post("/api/feed/11/rate", json={"decision": "keep"})
+        client.post("/api/feed/12/rate", json={"decision": "nope"})
+
+        def stats() -> tuple:
+            with get_db_connection() as conn:
+                return tuple(
+                    conn.execute(
+                        "SELECT tracks_seen, tracks_dismissed FROM discovery_artists WHERE id = ?",
+                        (artist_id,),
+                    ).fetchone()
+                )
+
+        assert stats() == (2, 1)
+        client.post("/api/feed/12/flag", json={"reason": "other"})
+        assert stats() == (1, 0)
+        client.delete("/api/feed/12/flag")
+        assert stats() == (2, 1)
+
+    def test_reposts_backfill_skips_flagged_tracks(self, test_db) -> None:  # noqa: F811
+        from web.backend.queries.discovery import get_unplaced_short_tracks
+
+        with get_db_connection() as conn:
+            conn.execute(
+                """INSERT INTO discovery_artists (id, soundcloud_user_id, slug, is_following)
+                VALUES (900, 'u900', 'rep', 1)"""
+            )
+            for row_id, sc_id in ((901, "61"), (902, "62")):
+                conn.execute(
+                    """INSERT INTO discovery_tracks
+                        (id, soundcloud_id, title, duration_ms, workflow_state)
+                    VALUES (?, ?, 'T', 200000, 'unseen')""",
+                    (row_id, sc_id),
+                )
+                conn.execute(
+                    """INSERT INTO discovery_track_reposters
+                        (discovery_track_id, discovery_artist_id) VALUES (?, 900)""",
+                    (row_id,),
+                )
+            conn.execute(
+                "INSERT INTO sc_track_flags (soundcloud_id, reason, source) VALUES ('62', 'podcast', 'user')"
+            )
+            conn.commit()
+        pool = get_unplaced_short_tracks(max_rank=None)
+        assert [t["id"] for t in pool] == ["61"]
+
+    def test_fresh_reposts_drop_flagged_tracks(self, test_db) -> None:  # noqa: F811
+        from web.backend.discovery_sync import _drop_flagged
+
+        with get_db_connection() as conn:
+            conn.execute(
+                "INSERT INTO sc_track_flags (soundcloud_id, reason, source) VALUES ('72', 'other', 'user')"
+            )
+            conn.commit()
+        kept = _drop_flagged([{"id": 71}, {"id": 72}])
+        assert [t["id"] for t in kept] == [71]
+
+    def test_feed_volume_stats_ignore_flagged_tracks(self, test_db) -> None:  # noqa: F811
+        from web.backend.queries.artists import (
+            _FEED_EVENTS_UNFLAGGED_SQL,
+            ARTISTS_STATS_SQL,
+            get_pareto_artists,
+        )
+
+        with get_db_connection() as conn:
+            conn.execute(
+                """INSERT INTO discovery_artists (id, soundcloud_user_id, slug, is_following)
+                VALUES (900, 'u900', 'rep', 1)"""
+            )
+            for row_id, sc_id in ((901, "81"), (902, "82")):
+                conn.execute(
+                    "INSERT INTO discovery_tracks (id, soundcloud_id, title) VALUES (?, ?, 'T')",
+                    (row_id, sc_id),
+                )
+                conn.execute(
+                    """INSERT INTO discovery_track_reposters
+                        (discovery_track_id, discovery_artist_id, seen_at)
+                    VALUES (?, 900, datetime('now'))""",
+                    (row_id,),
+                )
+            conn.execute(
+                "INSERT INTO sc_track_flags (soundcloud_id, reason, source) VALUES ('82', 'live_mix', 'rule')"
+            )
+            conn.commit()
+            # The fragment both feed_noise_7d/30d and the Pareto query read.
+            events = conn.execute(
+                f"SELECT COUNT(*) FROM ({_FEED_EVENTS_UNFLAGGED_SQL})"
+            ).fetchone()[0]
+            pareto = get_pareto_artists(conn)
+        assert _FEED_EVENTS_UNFLAGGED_SQL in ARTISTS_STATS_SQL
+        assert events == 1
+        assert pareto["total_events"] == 1
 
     def test_jev_skips_flagged_tracks(self, test_db) -> None:  # noqa: F811
         from web.backend import jev_scorer

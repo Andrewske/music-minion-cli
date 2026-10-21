@@ -23,6 +23,7 @@ from music_minion.domain.library.providers.soundcloud.api import (
 )
 from web.backend.artist_quality import rate_or_prior as _rate_or_prior
 from web.backend.queries import discovery as discovery_queries
+from web.backend.queries import feed_filters
 from web.backend.soundcloud_metadata import (
     parse_soundcloud_datetime,
     raw_repost_timestamp,
@@ -390,6 +391,15 @@ def _select_tracks_waterfall(
     return selected
 
 
+def _drop_flagged(tracks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Remove tracks with an active not-for-feed flag from a fresh fetch."""
+    flagged = feed_filters.active_flagged_ids(str(t["id"]) for t in tracks)
+    if not flagged:
+        return tracks
+    logger.info(f"Filtered {len(flagged)} not-for-feed tracks from fresh fetch")
+    return [t for t in tracks if str(t["id"]) not in flagged]
+
+
 def _split_by_duration(
     tracks: list[dict[str, Any]],
     threshold_ms: int = 600_000,
@@ -656,8 +666,11 @@ def run_discovery_sync(
             f"from fresh fetch ({len(all_fetched)} remain)"
         )
 
-    # Step 8: Split by duration
+    # Step 8: Split by duration. Not-for-feed flags (written by the ingest
+    # hook above) keep tracks out of the reposts playlist; the mixes playlist
+    # exists for long sets, which is exactly what the live-mix rules flag.
     short_tracks, mix_tracks = _split_by_duration(all_fetched)
+    short_tracks = _drop_flagged(short_tracks)
 
     # Step 9: Merge fresh + backfill into one pool, select via waterfall
     if progress_callback:
