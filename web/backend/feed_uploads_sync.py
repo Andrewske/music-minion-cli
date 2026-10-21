@@ -138,9 +138,9 @@ def insert_uploads(records: list[dict[str, Any]]) -> int:
                 """INSERT INTO sc_artist_uploads
                     (discovery_artist_id, soundcloud_id, title, permalink_url,
                      artwork_url, duration_ms, uploaded_at, local_track_id, access,
-                     event_type, uploader_soundcloud_id, genre, released_at,
-                     metadata_updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'upload', ?, ?, ?, ?)
+                     event_type, uploader_soundcloud_id, genre, tag_list,
+                     released_at, metadata_updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'upload', ?, ?, ?, ?, ?)
                 ON CONFLICT(soundcloud_id) DO UPDATE SET
                     discovery_artist_id = excluded.discovery_artist_id,
                     title = COALESCE(NULLIF(excluded.title, ''), sc_artist_uploads.title),
@@ -169,6 +169,9 @@ def insert_uploads(records: list[dict[str, Any]]) -> int:
                     genre = COALESCE(
                         NULLIF(excluded.genre, ''), sc_artist_uploads.genre
                     ),
+                    tag_list = COALESCE(
+                        NULLIF(excluded.tag_list, ''), sc_artist_uploads.tag_list
+                    ),
                     released_at = COALESCE(
                         excluded.released_at, sc_artist_uploads.released_at
                     ),
@@ -185,6 +188,7 @@ def insert_uploads(records: list[dict[str, Any]]) -> int:
                     metadata["access"],
                     metadata["uploader_soundcloud_id"],
                     metadata["genre"],
+                    metadata["tag_list"],
                     metadata["released_at"],
                     metadata["metadata_updated_at"],
                 ),

@@ -12,6 +12,7 @@ from music_minion.core.database import (
     _migrate_v64_track_predictions,
     _migrate_v67_decision_verdicts,
     _migrate_v68_feed_flags,
+    _migrate_v69_feed_insights,
 )
 from web.backend import jev_client, jev_scorer
 from web.backend.jev_client import JevConfig, JevPrediction
@@ -112,6 +113,7 @@ def db_path(tmp_path, monkeypatch):
     _migrate_v62_decision_ledger(conn)
     _migrate_v67_decision_verdicts(conn)
     _migrate_v68_feed_flags(conn)
+    _migrate_v69_feed_insights(conn)
     _migrate_v64_track_predictions(conn)
     conn.commit()
     conn.close()
@@ -427,6 +429,132 @@ def test_record_decision_explicit_snapshot_wins(db_path) -> None:
     assert result is not None
     assert result["model_version"] == "explicit"
     assert result["feature_snapshot"] == {"a": 1}
+
+
+def test_ask_nouls_batches_questions(monkeypatch) -> None:
+    sent: dict = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"answers": {"mix_t0": {"noul": 0.9}, "mix_t1": {}}}
+
+    def fake_post(url, json, headers, timeout):
+        sent.update(url=url, body=json)
+        return FakeResponse()
+
+    monkeypatch.setattr(jev_client.httpx, "post", fake_post)
+    config = JevConfig("https://x", "k", "jev-latest")
+    nouls = jev_client.ask_nouls(config, "{}", {"mix_t0": "A?", "mix_t1": "B?"})
+    # {} answered the question but carries no value: incomplete, not invalid.
+    assert nouls == {"mix_t0": 0.9, "mix_t1": jev_client.INCOMPLETE}
+    assert sent["url"] == "https://x/v1/systemone"
+    assert sent["body"]["questions"]["mix_t1"] == {"type": "noul", "instructions": "B?"}
+
+
+def test_ask_nouls_with_no_answers_returns_none_answered(monkeypatch) -> None:
+    class Empty:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"answers": {}}
+
+    monkeypatch.setattr(jev_client.httpx, "post", lambda *a, **k: Empty())
+    # The classifier counts each unanswered track as incomplete.
+    assert jev_client.ask_nouls(JevConfig("https://x", "k", "m"), "{}", {"q": "?"}) == {}
+
+
+@pytest.mark.parametrize(
+    "noul",
+    [5, -0.1, 1.0001, float("inf"), float("nan"), True, False, "0.9", None, [0.9]],
+)
+def test_invalid_probabilities_are_rejected(noul) -> None:
+    assert jev_client.valid_probability(noul) is None
+
+
+@pytest.mark.parametrize("noul", [0, 1, 0.0, 0.42, 1.0])
+def test_valid_probabilities_pass(noul) -> None:
+    assert jev_client.valid_probability(noul) == float(noul)
+
+
+def test_parse_answers_marks_malformed_values_invalid() -> None:
+    payload = json.loads(
+        '{"answers": {"a": {"noul": Infinity}, "b": {"noul": NaN}, '
+        '"c": {"noul": true}, "d": "0.9", "e": [1], "f": {"noul": 0.7}}}'
+    )
+    ids = ["a", "b", "c", "d", "e", "f", "missing"]
+    parsed = jev_client._parse_noul_answers(payload, ids)
+    # d and e are not answer objects, so they carry no value: incomplete.
+    incomplete = jev_client.INCOMPLETE
+    assert parsed == {
+        "a": None,
+        "b": None,
+        "c": None,
+        "d": incomplete,
+        "e": incomplete,
+        "f": 0.7,
+    }
+
+
+@pytest.mark.parametrize("payload", [[], "x", {"answers": []}, {"answers": "no"}])
+def test_parse_answers_without_answers_object_is_value_error(payload) -> None:
+    with pytest.raises(ValueError, match="no answers object"):
+        jev_client._parse_noul_answers(payload, ["a"])
+
+
+def test_single_noul_out_of_range_is_value_error() -> None:
+    with pytest.raises(ValueError, match="not a probability"):
+        jev_client._parse_noul_response({"answers": {"keep": {"noul": 5}}}, "m")
+
+
+def test_scoring_profile_includes_review_evidence(
+    db_path, configured, monkeypatch
+) -> None:
+    conn = _conn(db_path)
+    _seed_repost_track(conn)
+    conn.close()
+    monkeypatch.setattr(
+        jev_scorer.insight_queries, "taste_evidence", lambda: "## Evidence\n- x"
+    )
+    states: list[str] = []
+
+    def capture(config, state, question, timeout_s=10.0):
+        states.append(state)
+        return JevPrediction(0.5, None, config.model_id, {})
+
+    monkeypatch.setattr(jev_client, "ask_noul", capture)
+    jev_scorer.score_new_tracks(sleep_s=0)
+    profile = json.loads(states[0])["taste_profile"]
+    assert profile.endswith("## Evidence\n- x\n")
+    assert profile.startswith("# Kevin's SoundCloud feed taste profile")
+
+
+def test_evidence_failure_falls_back_to_bare_profile(monkeypatch) -> None:
+    def broken() -> str:
+        raise sqlite3.OperationalError("no such table")
+
+    monkeypatch.setattr(jev_scorer.insight_queries, "taste_evidence", broken)
+    assert jev_scorer.with_review_evidence("profile") == "profile"
+
+
+def test_real_evidence_reads_the_db(db_path) -> None:
+    conn = _conn(db_path)
+    _seed_repost_track(conn)
+    conn.execute(
+        "INSERT INTO sc_track_decisions (soundcloud_id, decision, surface) "
+        "VALUES ('t1', 'nope', 'test')"
+    )
+    conn.execute(
+        "INSERT INTO sc_track_notes (soundcloud_id, note) VALUES ('t1', 'flat')"
+    )
+    conn.commit()
+    conn.close()
+    text = jev_scorer.with_review_evidence("profile")
+    assert 'nope on "Bass Anthem": flat' in text
+    assert "Overall keep rate: 0%" in text
 
 
 def test_score_new_tracks_skips_a_track_flagged_mid_batch(

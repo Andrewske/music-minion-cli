@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 68  # not-for-feed flags + feed filter rules
+SCHEMA_VERSION = 69  # feed insights: tags, agent classifications, suggestions
 
 
 # Initial top 50 curated emojis for music reactions
@@ -450,6 +450,65 @@ def _migrate_v68_feed_flags(conn) -> None:
             VALUES (?, ?, ?, ?, ?, ?)""",
             _V68_SEED_RULES,
         )
+
+
+# 'claimed' reserves a track for one classifier run before Jev is asked (no
+# probability yet). 'retry' keeps a track whose answer came back incomplete
+# claimable by a later run; `attempts` counts those answers and the third
+# one makes it 'invalid', like an explicitly malformed value. Invalid tracks
+# aren't re-asked until Kevin resets them from Settings.
+_V69_CLASSIFICATIONS_DDL = """
+    CREATE TABLE IF NOT EXISTS sc_track_classifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        soundcloud_id TEXT NOT NULL UNIQUE,
+        model_id TEXT NOT NULL,
+        mix_probability REAL,
+        podcast_probability REAL,
+        status TEXT NOT NULL CHECK (status IN (
+            'claimed', 'retry', 'invalid', 'auto_flagged', 'pending',
+            'below_threshold', 'confirmed', 'dismissed')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        state_sent TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+"""
+
+_V69_SUGGESTIONS_DDL = """
+    CREATE TABLE IF NOT EXISTS feed_rule_suggestions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        signature TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL
+            CHECK (kind IN ('duration_min', 'title_regex', 'tag_match')),
+        pattern TEXT,
+        threshold REAL,
+        reason TEXT NOT NULL CHECK (reason IN ('live_mix', 'podcast', 'other')),
+        support INTEGER NOT NULL,
+        counter INTEGER NOT NULL DEFAULT 0,
+        evidence TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending'
+            CHECK (status IN ('pending', 'accepted', 'dismissed')),
+        rule_id INTEGER,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+"""
+
+
+def _migrate_v69_feed_insights(conn) -> None:
+    """SoundCloud tags, agent flag confidence, mix classifications, and
+    mined rule suggestions (#31). Every step checks before it changes, so a
+    re-run is a no-op."""
+    _add_column_if_missing(conn, "discovery_tracks", "tag_list TEXT")
+    _add_column_if_missing(conn, "sc_artist_uploads", "tag_list TEXT")
+    _add_column_if_missing(conn, "sc_track_flags", "confidence REAL")
+    conn.execute(_V69_CLASSIFICATIONS_DDL)
+    conn.execute(_V69_SUGGESTIONS_DDL)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_sc_track_classifications_status
+        ON sc_track_classifications(status, mix_probability)
+    """)
 
 
 def _migrate_v64_track_predictions(conn) -> None:
@@ -3392,6 +3451,14 @@ def migrate_database(conn, current_version: int) -> None:
         conn.execute("RELEASE SAVEPOINT migrate_feed_v68")
         conn.commit()
         logger.info("  ✓ Migration to v68 complete: feed flags + filter rules")
+
+    if current_version < 69:
+        logger.info("Running migration to v69: feed insights + agent filters...")
+        conn.execute("SAVEPOINT migrate_feed_v69")
+        _migrate_v69_feed_insights(conn)
+        conn.execute("RELEASE SAVEPOINT migrate_feed_v69")
+        conn.commit()
+        logger.info("  ✓ Migration to v69 complete: tags, classifications, suggestions")
 
 
 def init_database() -> None:

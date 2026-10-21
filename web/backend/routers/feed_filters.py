@@ -14,6 +14,7 @@ RuleKind = Literal["duration_min", "title_regex", "tag_match"]
 FlagReason = Literal["live_mix", "podcast", "other"]
 # 'filtered' = everything a rule or the agent caught (the Settings list).
 FlaggedSource = Literal["filtered", "user", "rule", "agent"]
+FlaggedSort = Literal["newest", "confidence"]
 _SOURCES_BY_FILTER: dict[str, tuple[str, ...]] = {
     "filtered": ("rule", "agent"),
     "user": ("user",),
@@ -96,10 +97,20 @@ def get_flagged_tracks(
     rule_id: int | None = None,
     limit: int = Query(default=50, ge=1, le=100),
     cursor: int | None = Query(default=None, ge=1),
+    sort: FlaggedSort = "newest",
+    cursor_confidence: float | None = None,
 ) -> dict[str, Any]:
-    """Active flags newest first; `cursor` is the previous page's last flag_id."""
+    """Active flags newest first, or lowest agent confidence first.
+
+    `cursor` is the previous page's last flag_id; with sort=confidence also
+    pass its `next_cursor_confidence`.
+    """
     items = filter_queries.list_flagged(
-        _SOURCES_BY_FILTER[source], rule_id, limit, cursor
+        _SOURCES_BY_FILTER[source], rule_id, limit, cursor, sort, cursor_confidence
     )
-    next_cursor = items[-1]["flag_id"] if len(items) == limit else None
-    return {"items": items, "next_cursor": next_cursor}
+    last = items[-1] if len(items) == limit else None
+    return {
+        "items": items,
+        "next_cursor": last["flag_id"] if last else None,
+        "next_cursor_confidence": last["confidence"] if last else None,
+    }

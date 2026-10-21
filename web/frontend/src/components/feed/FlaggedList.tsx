@@ -7,6 +7,7 @@ import {
   getFlaggedTracks,
   unflagFeedItem,
   type FlaggedItem,
+  type FlaggedSort,
   type FlaggedSourceFilter,
 } from '../../api/feedFilters';
 import { describeFlag, formatFlagDuration } from './flagged';
@@ -63,19 +64,27 @@ export function FlaggedRow({ item, isPlaying, isUpdating, onPlay, onUnflag }: Fl
 interface FlaggedListProps {
   source: FlaggedSourceFilter;
   ruleId?: number;
+  sort?: FlaggedSort;
   currentTrackId: number | null;
   emptyText: string;
   onPlay: (item: FlaggedItem) => void;
 }
 
-/** Active flags, newest first; un-flag / rescue returns the track to the feed. */
-export function FlaggedList({ source, ruleId, currentTrackId, emptyText, onPlay }: FlaggedListProps): JSX.Element {
+interface FlaggedCursor {
+  cursor: number;
+  cursorConfidence: number | null;
+}
+
+/** Active flags, newest or lowest agent confidence first; un-flag / rescue returns the track to the feed. */
+export function FlaggedList({ source, ruleId, sort = 'newest', currentTrackId, emptyText, onPlay }: FlaggedListProps): JSX.Element {
   const queryClient = useQueryClient();
   const flaggedQuery = useInfiniteQuery({
-    queryKey: [...FLAGGED_QUERY_KEY, { source, ruleId }],
-    queryFn: ({ pageParam }) => getFlaggedTracks({ source, ruleId, cursor: pageParam, limit: FLAGGED_PAGE_SIZE }),
-    initialPageParam: undefined as number | undefined,
-    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+    queryKey: [...FLAGGED_QUERY_KEY, { source, ruleId, sort }],
+    queryFn: ({ pageParam }) =>
+      getFlaggedTracks({ source, ruleId, sort, limit: FLAGGED_PAGE_SIZE, cursor: pageParam?.cursor, cursorConfidence: pageParam?.cursorConfidence }),
+    initialPageParam: undefined as FlaggedCursor | undefined,
+    getNextPageParam: (lastPage): FlaggedCursor | undefined =>
+      lastPage.next_cursor === null ? undefined : { cursor: lastPage.next_cursor, cursorConfidence: lastPage.next_cursor_confidence },
   });
   const unflagMutation = useMutation({
     mutationFn: (item: FlaggedItem) => unflagFeedItem(item.soundcloud_id),

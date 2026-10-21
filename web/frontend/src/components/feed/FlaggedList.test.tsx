@@ -12,6 +12,7 @@ const makeItem = (overrides: Partial<FlaggedItem> = {}): FlaggedItem => ({
   rule_id: 1,
   rule_name: 'Longer than 15 min',
   created_at: '2026-10-01T12:00:00Z',
+  confidence: null,
   local_track_id: null,
   title: 'Live at Fabric',
   artist_name: 'Some DJ',
@@ -52,6 +53,7 @@ describe('flag helpers', () => {
     expect(describeFlag({ reason: 'other', source: 'user', rule_name: null })).toBe('Other');
     expect(describeFlag({ reason: 'podcast', source: 'rule', rule_name: null })).toBe('Podcast / radio show · deleted rule');
     expect(describeFlag({ reason: 'live_mix', source: 'agent', rule_name: null })).toBe('Live mix / set · agent');
+    expect(describeFlag({ reason: 'podcast', source: 'agent', rule_name: null, confidence: 0.91 })).toBe('Podcast / radio show · agent 91%');
   });
 
   it('formats durations with hours only when needed', () => {

@@ -19,6 +19,7 @@ import {
   type FilterRuleInput,
   type FilterRuleKind,
   type FlagReason,
+  type FlaggedSort,
 } from '../../api/feedFilters';
 import { usePlayFeedRow } from '../../hooks/usePlayFeedRow';
 import { usePlayerStore } from '../../stores/playerStore';
@@ -26,6 +27,7 @@ import { FlaggedList } from '../feed/FlaggedList';
 import { ruleErrorMessage } from '../feed/flagged';
 import { FILTER_RULES_QUERY_KEY, FLAGGED_QUERY_KEY } from '../feed/reviewed';
 import { Switch } from '../ui/switch';
+import { AgentReviewPanel, RuleSuggestionsPanel } from './FeedAgentSection';
 
 const FIELD = 'rounded border border-obsidian-border bg-black/30 px-2 py-1.5 text-sm text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent';
 
@@ -198,18 +200,25 @@ function RunRulesButton(): JSX.Element {
 
 function FilteredTracks({ rules }: { rules: FilterRule[] }): JSX.Element {
   const [ruleId, setRuleId] = useState<number | undefined>(undefined);
+  const [sort, setSort] = useState<FlaggedSort>('newest');
   const currentTrackId = usePlayerStore((state) => state.currentTrack?.id ?? null);
   const playRow = usePlayFeedRow();
   return (
     <section className="space-y-3" aria-label="Filtered tracks">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-lg font-semibold text-white">Filtered tracks</h3>
-        <select aria-label="Filter by rule" value={ruleId ?? ''} onChange={(event) => setRuleId(event.target.value ? Number(event.target.value) : undefined)} className={FIELD}>
-          <option value="">All rules</option>
-          {rules.map((rule) => <option key={rule.id} value={rule.id}>{rule.name}</option>)}
-        </select>
+        <div className="flex flex-wrap items-center gap-2">
+          <select aria-label="Filter by rule" value={ruleId ?? ''} onChange={(event) => setRuleId(event.target.value ? Number(event.target.value) : undefined)} className={FIELD}>
+            <option value="">All rules and agent</option>
+            {rules.map((rule) => <option key={rule.id} value={rule.id}>{rule.name}</option>)}
+          </select>
+          <select aria-label="Sort filtered tracks" value={sort} onChange={(event) => setSort(event.target.value as FlaggedSort)} className={FIELD}>
+            <option value="newest">Newest first</option>
+            <option value="confidence">Lowest agent confidence first</option>
+          </select>
+        </div>
       </div>
-      <FlaggedList source="filtered" ruleId={ruleId} currentTrackId={currentTrackId} emptyText="No tracks filtered yet." onPlay={(item) => void playRow(item)} />
+      <FlaggedList source="filtered" ruleId={ruleId} sort={sort} currentTrackId={currentTrackId} emptyText="No tracks filtered yet." onPlay={(item) => void playRow(item)} />
     </section>
   );
 }
@@ -237,6 +246,8 @@ export function FeedFiltersSection(): JSX.Element {
         )}
         <NewRuleForm />
       </section>
+      <RuleSuggestionsPanel />
+      <AgentReviewPanel />
       <FilteredTracks rules={rules} />
     </div>
   );

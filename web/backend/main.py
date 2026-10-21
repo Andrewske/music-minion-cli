@@ -62,14 +62,12 @@ app.mount(
 # CORS: Allow environment override for production
 allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
 default_origins = [
-    "http://localhost:5173",   # Vite dev
-    "http://localhost:8081",   # Expo/Metro dev
+    "http://localhost:5173",  # Vite dev
+    "http://localhost:8081",  # Expo/Metro dev
 ]
 
 allowed_origins = (
-    allowed_origins_env.split(",")
-    if allowed_origins_env
-    else default_origins
+    allowed_origins_env.split(",") if allowed_origins_env else default_origins
 )
 
 # Auto-allow Tailscale origins (*.ts.net) for mobile app access
@@ -105,6 +103,8 @@ from .routers import (
     discovery,
     feed,
     feed_filters,
+    feed_agent,
+    insights,
 )
 from .routers.playlists import router as playlists_router
 
@@ -127,6 +127,8 @@ app.include_router(genres.router)
 app.include_router(discovery.router)
 app.include_router(feed.router)
 app.include_router(feed_filters.router)
+app.include_router(feed_agent.router)
+app.include_router(insights.router)
 
 
 @app.get("/health")

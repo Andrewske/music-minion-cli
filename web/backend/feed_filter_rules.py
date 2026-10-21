@@ -2,8 +2,9 @@
 
 A rule is a dict with ``kind`` / ``pattern`` / ``threshold`` (plus id, name,
 reason, enabled); a track is a dict with ``title`` / ``duration_ms`` /
-``genre`` and optionally ``tags``. Nothing here touches the database, so the
-rules engine is unit-testable on plain dicts.
+``genre`` and optionally ``tags`` (the parsed SoundCloud ``tag_list``).
+Nothing here touches the database, so the rules engine is unit-testable on
+plain dicts.
 
 Title regexes compile and match with the ``regex`` module, never ``re``, so a
 pattern that passes validation is exactly what runs at match time. Each match
@@ -53,6 +54,21 @@ def active_flag_exists_sql(column: str) -> str:
 def not_flagged_sql(column: str) -> str:
     """SQL predicate excluding flagged tracks from feeds, stats and training."""
     return f"NOT {active_flag_exists_sql(column)}"
+
+
+def flaggable_track_sql(param: str) -> str:
+    """SQL predicate checked at write time before a rule or the agent flags a track.
+
+    The track must still be undecided and have no flag row at all: an active
+    flag already hides it, and a rescued one is the user's permanent "this is
+    a real track" exemption.
+    """
+    return (
+        "NOT EXISTS (SELECT 1 FROM sc_track_decisions d "
+        f"WHERE d.soundcloud_id = {param} AND d.is_current = 1) "
+        "AND NOT EXISTS (SELECT 1 FROM sc_track_flags f "
+        f"WHERE f.soundcloud_id = {param})"
+    )
 
 
 def split_tags(value: str | None) -> list[str]:
@@ -119,6 +135,25 @@ def match_rules(
         except TimeoutError:
             timed_out.append(rule["id"])
     return None, timed_out
+
+
+def match_each(
+    tracks: Iterable[dict[str, Any]], rules: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any] | None], dict[int, int]]:
+    """The first matching rule per track (None when none), plus timeouts per rule id.
+
+    A rule that hits RULE_TIMEOUT_LIMIT timeouts is skipped for the rest of
+    the run, so one slow pattern can't stall a scan of thousands of tracks.
+    """
+    matches: list[dict[str, Any] | None] = []
+    timeouts: dict[int, int] = {}
+    for track in tracks:
+        live = [r for r in rules if timeouts.get(r["id"], 0) < RULE_TIMEOUT_LIMIT]
+        rule, timed_out = match_rules(track, live)
+        for rule_id in timed_out:
+            timeouts[rule_id] = timeouts.get(rule_id, 0) + 1
+        matches.append(rule)
+    return matches, timeouts
 
 
 def first_matching_rule(

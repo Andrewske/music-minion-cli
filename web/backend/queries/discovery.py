@@ -297,6 +297,7 @@ def insert_discovery_tracks(tracks: list[dict[str, Any]]) -> int:
             t.get("duration_ms", 0),
             t.get("uploader_soundcloud_id"),
             t.get("genre"),
+            t.get("tag_list"),
             t.get("artwork_url"),
             t.get("permalink_url"),
             t.get("access"),
@@ -324,9 +325,10 @@ def insert_discovery_tracks(tracks: list[dict[str, Any]]) -> int:
             """
             INSERT INTO discovery_tracks
                 (soundcloud_id, slug, title, artist_name, duration_ms,
-                 uploader_soundcloud_id, genre, artwork_url, permalink_url,
-                 access, uploaded_at, released_at, metadata_updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 uploader_soundcloud_id, genre, tag_list, artwork_url,
+                 permalink_url, access, uploaded_at, released_at,
+                 metadata_updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(soundcloud_id) DO UPDATE SET
                 slug = COALESCE(NULLIF(excluded.slug, ''), discovery_tracks.slug),
                 title = COALESCE(NULLIF(excluded.title, ''), discovery_tracks.title),
@@ -342,6 +344,9 @@ def insert_discovery_tracks(tracks: list[dict[str, Any]]) -> int:
                     discovery_tracks.uploader_soundcloud_id
                 ),
                 genre = COALESCE(NULLIF(excluded.genre, ''), discovery_tracks.genre),
+                tag_list = COALESCE(
+                    NULLIF(excluded.tag_list, ''), discovery_tracks.tag_list
+                ),
                 artwork_url = COALESCE(
                     excluded.artwork_url, discovery_tracks.artwork_url
                 ),

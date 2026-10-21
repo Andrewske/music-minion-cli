@@ -210,6 +210,7 @@ MINIMAL_SCHEMA_SQL = [
         duration_ms INTEGER,
         uploader_soundcloud_id TEXT,
         genre TEXT,
+        tag_list TEXT,
         artwork_url TEXT,
         permalink_url TEXT,
         access TEXT,
@@ -321,6 +322,7 @@ MINIMAL_SCHEMA_SQL = [
         event_type TEXT DEFAULT 'upload',
         uploader_soundcloud_id TEXT,
         genre TEXT,
+        tag_list TEXT,
         released_at TIMESTAMP,
         metadata_updated_at TIMESTAMP
     )""",

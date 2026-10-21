@@ -6,6 +6,8 @@ export type FlagSource = 'user' | 'rule' | 'agent';
 /** 'filtered' = everything a rule or the agent caught. */
 export type FlaggedSourceFilter = 'filtered' | FlagSource;
 export type FilterRuleKind = 'duration_min' | 'title_regex' | 'tag_match';
+/** 'confidence' = lowest agent confidence first; rule/user flags after. */
+export type FlaggedSort = 'newest' | 'confidence';
 
 export const FLAG_REASONS: readonly FlagReason[] = ['live_mix', 'podcast', 'other'];
 export const FLAG_REASON_LABELS: Record<FlagReason, string> = {
@@ -38,6 +40,8 @@ export interface FlaggedItem {
   rule_id: number | null;
   rule_name: string | null;
   created_at: string;
+  /** Agent flags only: Jev's probability that this is a mix / set / show. */
+  confidence: number | null;
   local_track_id: number | null;
   title: string | null;
   artist_name: string | null;
@@ -51,6 +55,7 @@ export interface FlaggedItem {
 export interface FlaggedPage {
   items: FlaggedItem[];
   next_cursor: number | null;
+  next_cursor_confidence: number | null;
 }
 
 export interface FilterRule {
@@ -92,7 +97,10 @@ export interface GetFlaggedParams {
   source?: FlaggedSourceFilter;
   ruleId?: number;
   cursor?: number;
+  /** With sort 'confidence': the previous page's next_cursor_confidence. */
+  cursorConfidence?: number | null;
   limit?: number;
+  sort?: FlaggedSort;
 }
 
 export const FLAGGED_PAGE_SIZE = 50;
@@ -120,6 +128,8 @@ export async function getFlaggedTracks(params: GetFlaggedParams = {}): Promise<F
   query.set('source', params.source ?? 'filtered');
   if (params.ruleId !== undefined) query.set('rule_id', String(params.ruleId));
   if (params.cursor !== undefined) query.set('cursor', String(params.cursor));
+  if (params.sort && params.sort !== 'newest') query.set('sort', params.sort);
+  if (params.cursorConfidence != null) query.set('cursor_confidence', String(params.cursorConfidence));
   return getDefaultApiClient().request<FlaggedPage>(`/feed-filters/tracks?${query.toString()}`);
 }
 
@@ -150,6 +160,11 @@ export async function deleteFilterRule(ruleId: number): Promise<{ deleted: boole
 /** Apply enabled rules to every unreviewed, never-flagged track. */
 export async function runFilterRules(): Promise<{ flagged: number }> {
   return getDefaultApiClient().post<{ flagged: number }>('/feed-filters/run');
+}
+
+/** "87%" agent confidence, or null for rule and user flags. */
+export function formatConfidence(confidence: number | null): string | null {
+  return confidence === null ? null : `${Math.round(confidence * 100)}%`;
 }
 
 /** "92%" or "-" before the rule has caught anything. */
