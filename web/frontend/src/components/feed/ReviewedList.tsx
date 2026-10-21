@@ -19,6 +19,7 @@ import {
   REVIEWED_QUERY_KEY,
   describeListen,
   formatDecidedAt,
+  reviewedRateOptions,
   reviewedFilterLabel,
   type ReviewedFilter,
 } from './reviewed';
@@ -122,7 +123,7 @@ function DecisionList({ filter, currentTrackId, onPlay, onEditNote }: ReviewedLi
   });
   const verdictMutation = useMutation({
     mutationFn: ({ item, verdict }: { item: ReviewedItem; verdict: FeedVerdict }) =>
-      rateFeedItem(item.soundcloud_id, verdict, { surface: 'web_reviewed' }),
+      rateFeedItem(item.soundcloud_id, verdict, reviewedRateOptions(item.local_track_id)),
     onSuccess: (_response, { verdict }) => {
       toast.success(`Changed to ${FEED_VERDICT_LABELS[verdict]}`);
     },

@@ -21,7 +21,6 @@ import {
   applyMaterializedIds,
   type PreparedFeedQueue,
   rateFeedItem,
-  saveFeedNote,
   startFeedBackfill,
 } from '../../api/feed';
 import type {
@@ -35,15 +34,16 @@ import type {
 import { MIN_SCORE_PRESETS, type FeedTab } from '../../routes/feed';
 import { syncFeed } from '../../api/artists';
 import { useFeedSyncStatus } from '../../hooks/useArtists';
-import { useFeedListenTracker } from '../../hooks/useFeedListenTracker';
+import { useNoteEditor } from '../../hooks/useNoteEditor';
 import { usePlayFeedRow } from '../../hooks/usePlayFeedRow';
 import type { ListenStats } from '../../lib/feedListen';
+import { getListenStats } from '../../stores/listenStore';
 import { usePlayerStore } from '../../stores/playerStore';
 import type { Track } from '@music-minion/shared';
 import { FLAG_REASON_LABELS, flagFeedItem, unflagFeedItem, type FlagReason } from '../../api/feedFilters';
 import { FeedTrackCard } from './FeedTrackCard';
 import { FlagDialog, type FlagTarget } from './FlagDialog';
-import { NoteDialog, type NoteTarget } from './NoteDialog';
+import { NoteDialog } from './NoteDialog';
 import { ReviewedList } from './ReviewedList';
 import { FLAGGED_QUERY_KEY, REVIEWED_QUERY_KEY } from './reviewed';
 
@@ -110,8 +110,7 @@ export function FeedPage(): JSX.Element {
   const play = usePlayerStore((state) => state.play);
   const currentTrackId = usePlayerStore((state) => state.currentTrack?.id ?? null);
   const parentRef = useRef<HTMLDivElement>(null);
-  const listenStatsFor = useFeedListenTracker();
-  const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null);
+  const noteEditor = useNoteEditor();
   const [flagTarget, setFlagTarget] = useState<FlagTarget | null>(null);
 
   const feedQueryKey = ['feed', { source, maxRank, inLibrary, sort, minScore }] as const;
@@ -164,23 +163,12 @@ export function FeedPage(): JSX.Element {
     }
   }, [virtualItems, items.length, feedQuery]);
 
-  const noteMutation = useMutation({
-    mutationFn: ({ soundcloudId, note }: { soundcloudId: string; note: string }) =>
-      saveFeedNote(soundcloudId, note),
-    onSuccess: () => {
-      setNoteTarget(null);
-      toast.success('Note saved');
-    },
-    onError: () => toast.error('Note failed to save'),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: REVIEWED_QUERY_KEY }),
-  });
-
   const offerNote = (item: FeedItem, decision: FeedVerdict): void => {
     toast(FEED_VERDICT_LABELS[decision], {
       duration: NOTE_TOAST_MS,
       action: {
         label: 'Add note',
-        onClick: () => setNoteTarget({ soundcloudId: item.soundcloud_id, title: item.title, note: null }),
+        onClick: () => noteEditor.open({ soundcloudId: item.soundcloud_id, title: item.title, note: null }),
       },
     });
   };
@@ -263,7 +251,7 @@ export function FeedPage(): JSX.Element {
   });
 
   const decide = (item: FeedItem, decision: FeedVerdict): void => {
-    decisionMutation.mutate({ item, decision, listen: listenStatsFor(item.local_track_id) });
+    decisionMutation.mutate({ item, decision, listen: getListenStats(item.local_track_id) });
   };
 
   const syncMutation = useMutation({
@@ -443,7 +431,7 @@ export function FeedPage(): JSX.Element {
       </header>
 
       {tab === 'reviewed' ? (
-        <ReviewedList currentTrackId={currentTrackId} onPlay={(item) => void handlePlayRow(item)} onEditNote={setNoteTarget} />
+        <ReviewedList currentTrackId={currentTrackId} onPlay={(item) => void handlePlayRow(item)} onEditNote={noteEditor.open} />
       ) : feedQuery.isLoading ? (
         <div className="flex flex-1 items-center justify-center text-white/40" role="status" aria-label="Loading feed"><Loader2 className="h-6 w-6 animate-spin" /></div>
       ) : feedQuery.isError ? (
@@ -495,10 +483,10 @@ export function FeedPage(): JSX.Element {
         onClose={() => setFlagTarget(null)}
       />
       <NoteDialog
-        target={noteTarget}
-        isSaving={noteMutation.isPending}
-        onSave={(soundcloudId, note) => noteMutation.mutate({ soundcloudId, note })}
-        onClose={() => setNoteTarget(null)}
+        target={noteEditor.target}
+        isSaving={noteEditor.isSaving}
+        onSave={noteEditor.save}
+        onClose={noteEditor.close}
       />
     </div>
   );
