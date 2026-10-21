@@ -9,7 +9,7 @@ import {
   isFeedSyncFailed,
   isFeedSyncPending,
 } from '@music-minion/shared';
-import type { FeedArtist, FeedDecision, FeedItem } from '@music-minion/shared';
+import type { FeedArtist, FeedItem, FeedVerdict } from '@music-minion/shared';
 
 const formatRelativeDate = (dateStr: string): string => {
   const date = new Date(dateStr);
@@ -65,7 +65,7 @@ interface FeedTrackCardProps {
   isPlaying: boolean;
   isUpdating?: boolean;
   onPlay: (item: FeedItem) => void;
-  onDecide: (item: FeedItem, decision: FeedDecision) => void;
+  onDecide: (item: FeedItem, decision: FeedVerdict) => void;
 }
 
 function DecisionButton({ label, glyph, active, disabled, onPress, testID }: {
@@ -153,8 +153,8 @@ export function FeedTrackCard({ item, isPlaying, isUpdating = false, onPlay, onD
       <View className="mt-1 flex-row items-center justify-between">
         <View className="min-w-0 flex-1 pr-2"><SyncState item={item} /></View>
         <View className="flex-row items-center" accessibilityLabel="Feed decisions">
-          <DecisionButton label="Nope; hide and count against this recommendation" glyph="👎" active={decision === 'nope'} disabled={isUpdating} onPress={() => onDecide(item, 'nope')} testID={`feed-nope-${item.soundcloud_id}`} />
-          <DecisionButton label="Hide without affecting recommendations" glyph="◌" active={decision === 'hide'} disabled={isUpdating} onPress={() => onDecide(item, 'hide')} testID={`feed-hide-${item.soundcloud_id}`} />
+          <DecisionButton label="Nope; clear pass, counts against this recommendation" glyph="👎" active={decision === 'nope'} disabled={isUpdating} onPress={() => onDecide(item, 'nope')} testID={`feed-nope-${item.soundcloud_id}`} />
+          <DecisionButton label="Not quite; close but not a keep" glyph="😐" active={decision === 'not_quite'} disabled={isUpdating} onPress={() => onDecide(item, 'not_quite')} testID={`feed-not-quite-${item.soundcloud_id}`} />
           <DecisionButton label="Keep; like on SoundCloud and add to monthly playlist" glyph={hearted ? '♥' : '♡'} active={hearted} disabled={isUpdating || decision === 'keep'} onPress={() => onDecide(item, 'keep')} testID={`feed-keep-${item.soundcloud_id}`} />
         </View>
       </View>

@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { AlertCircle, Cloud, EyeOff, Heart, Loader2, Music, ThumbsDown } from 'lucide-react';
+import { AlertCircle, Cloud, Loader2, Music } from 'lucide-react';
 import {
   getFeedEventAt,
   getFeedItemBestRank,
@@ -10,10 +10,11 @@ import {
   isFeedSyncFailed,
   isFeedSyncPending,
 } from '../../api/feed';
-import type { FeedArtist, FeedDecision, FeedItem } from '../../api/feed';
+import type { FeedArtist, FeedItem, FeedVerdict } from '../../api/feed';
 import { SoundCloudIcon } from '../icons/SoundCloudIcon';
 import { ArtistHoverCard } from './ArtistHoverCard';
 import { FeedWaveform } from './FeedWaveform';
+import { VerdictButtons } from './VerdictButtons';
 
 function formatFeedRelativeDate(dateStr: string): string {
   const date = new Date(dateStr);
@@ -128,39 +129,7 @@ interface FeedTrackCardProps {
   isPlaying: boolean;
   isUpdating?: boolean;
   onPlay: (item: FeedItem) => void;
-  onDecide: (item: FeedItem, decision: FeedDecision) => void;
-}
-
-function ActionButton({
-  label,
-  title,
-  active,
-  disabled,
-  onClick,
-  children,
-}: {
-  label: string;
-  title: string;
-  active?: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}): JSX.Element {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={label}
-      aria-pressed={active}
-      title={title}
-      className={`min-h-10 min-w-10 rounded p-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-obsidian-accent disabled:opacity-50 ${
-        active ? 'bg-obsidian-accent/15 text-obsidian-accent' : 'text-white/45 hover:bg-white/10 hover:text-white'
-      }`}
-    >
-      {children}
-    </button>
-  );
+  onDecide: (item: FeedItem, decision: FeedVerdict) => void;
 }
 
 export function FeedTrackCard({
@@ -173,7 +142,7 @@ export function FeedTrackCard({
   const [artworkFailed, setArtworkFailed] = useState(false);
   const decision = getFeedItemDecision(item);
   const hearted = isFeedItemHearted(item);
-  const hidden = decision === 'hide' || decision === 'nope';
+  const passed = decision !== null && decision !== 'keep';
   const playable = item.access !== 'blocked';
   const eventAt = getFeedEventAt(item);
 
@@ -184,7 +153,7 @@ export function FeedTrackCard({
         isPlaying
           ? 'border-obsidian-accent/40 bg-obsidian-accent/10'
           : 'border-obsidian-border bg-obsidian-surface hover:border-white/20'
-      } ${hidden ? 'opacity-60' : ''}`}
+      } ${passed ? 'opacity-60' : ''}`}
     >
       <button
         type="button"
@@ -224,17 +193,12 @@ export function FeedTrackCard({
       <SoundCloudLink item={item} />
       <span className="hidden shrink-0 font-sf-mono text-xs text-white/40 sm:block">{formatDuration(item.duration_ms)}</span>
 
-      <div className="flex shrink-0 items-center gap-0.5" aria-label="Feed decisions">
-        <ActionButton label="Nope; hide and count against this recommendation" title="Nope" active={decision === 'nope'} disabled={isUpdating} onClick={() => onDecide(item, 'nope')}>
-          <ThumbsDown className="h-4 w-4" />
-        </ActionButton>
-        <ActionButton label="Hide without affecting recommendations" title="Hide" active={decision === 'hide'} disabled={isUpdating} onClick={() => onDecide(item, 'hide')}>
-          <EyeOff className="h-4 w-4" />
-        </ActionButton>
-        <ActionButton label="Keep; like on SoundCloud and add to monthly playlist" title="Heart" active={hearted} disabled={isUpdating || decision === 'keep'} onClick={() => onDecide(item, 'keep')}>
-          <Heart className={`h-4 w-4 ${hearted ? 'fill-current' : ''}`} />
-        </ActionButton>
-      </div>
+      <VerdictButtons
+        current={decision}
+        hearted={hearted}
+        disabled={isUpdating}
+        onDecide={(verdict) => onDecide(item, verdict)}
+      />
     </article>
   );
 }

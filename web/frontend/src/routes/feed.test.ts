@@ -8,22 +8,26 @@ const validate = (search: Record<string, unknown>) =>
 
 describe('/feed search params', () => {
   it('restores source, rank preset, and toggles from the URL', () => {
-    expect(validate({ source: 'reposts', maxRank: '75', inLibrary: 'true', showHidden: true })).toEqual({
+    expect(validate({ source: 'reposts', maxRank: '75', inLibrary: 'true', tab: 'reviewed' })).toEqual({
       source: 'reposts',
       maxRank: 75,
       inLibrary: true,
-      showHidden: true,
+      tab: 'reviewed',
     });
   });
 
   it('drops invalid values and omits the defaults from the URL', () => {
-    expect(validate({ source: 'bogus', maxRank: '76', inLibrary: 'no' })).toEqual({
+    expect(validate({ source: 'bogus', maxRank: '76', inLibrary: 'no', tab: 'feed' })).toEqual({
       source: undefined,
       maxRank: undefined,
       inLibrary: undefined,
-      showHidden: undefined,
+      tab: undefined,
     });
     expect(validate({ source: 'all' }).source).toBeUndefined();
+  });
+
+  it('ignores the retired showHidden toggle', () => {
+    expect(validate({ showHidden: 'true' })).not.toHaveProperty('showHidden');
   });
 
   it('maps the legacy top200 flag onto the Top 200 preset', () => {

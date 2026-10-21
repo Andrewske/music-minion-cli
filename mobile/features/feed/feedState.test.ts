@@ -41,11 +41,8 @@ describe('mobile feed screen behavior', () => {
     });
   });
 
-  it('keeps hearts visible with pending SC state and removes Nope/hide choices', () => {
-    const kept = optimisticallyDecideFeedItems([item()], '7', 'keep');
-    expect(kept[0].current_decision).toBe('keep');
-    expect(kept[0].action_state.like).toBe('pending');
-    expect(optimisticallyDecideFeedItems([item()], '7', 'nope')).toEqual([]);
-    expect(optimisticallyDecideFeedItems([item()], '7', 'hide')).toEqual([]);
+  it('removes the decided track for every verdict, keeps included', () => {
+    const other = { ...item(), soundcloud_id: '8' };
+    expect(optimisticallyDecideFeedItems([item(), other], '7')).toEqual([other]);
   });
 });

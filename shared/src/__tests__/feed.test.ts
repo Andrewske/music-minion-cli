@@ -3,8 +3,8 @@ import { createApiClient, setDefaultApiClient } from '../api/client';
 import {
   FEED_PAGE_SIZE,
   applyFeedDecision,
-  feedRatingToDecision,
   getFeed,
+  getReviewed,
   getFeedItemBestRank,
   getFeedRefetchInterval,
   hasPendingFeedSync,
@@ -15,6 +15,7 @@ import {
   mergeFeedDecisionResponse,
   normalizeFeedItem,
   rateFeedItem,
+  saveFeedNote,
   type FeedItem,
 } from '../api/feed';
 
@@ -67,16 +68,15 @@ describe('feed API', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/feed?limit=100', expect.any(Object));
   });
 
-  it('serializes unified source, rank, cursor, and visibility filters', async () => {
+  it('serializes unified source, rank, cursor, and library filters', async () => {
     await getFeed({
       source: 'reposts',
       maxRank: 75,
       cursor: 'opaque cursor',
       inLibrary: true,
-      showHidden: true,
     });
     expect(fetchMock.mock.calls[0][0]).toBe(
-      '/api/feed?cursor=opaque+cursor&limit=100&source=reposts&max_rank=75&in_library=true&show_hidden=true'
+      '/api/feed?cursor=opaque+cursor&limit=100&source=reposts&max_rank=75&in_library=true'
     );
   });
 
@@ -121,7 +121,7 @@ describe('feed API', () => {
 
   it('uses the SoundCloud id and canonical decision for actions', async () => {
     fetchMock.mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
-    await rateFeedItem('12/34', 1, { surface: 'mobile', modelVersion: 'v1' });
+    await rateFeedItem('12/34', 'keep', { surface: 'mobile', modelVersion: 'v1' });
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/feed/12%2F34/rate',
       expect.objectContaining({
@@ -129,8 +129,35 @@ describe('feed API', () => {
         body: JSON.stringify({ decision: 'keep', surface: 'mobile', model_version: 'v1' }),
       })
     );
-    expect(feedRatingToDecision(-1)).toBe('nope');
-    expect(feedRatingToDecision(0)).toBe('hide');
+  });
+
+  it('sends listen time with a verdict, including zero for unplayed tracks', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
+    await rateFeedItem('9', 'not_quite', { listenSeconds: 0, maxPositionMs: 0 });
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/feed/9/rate',
+      expect.objectContaining({
+        body: JSON.stringify({ decision: 'not_quite', listen_seconds: 0, max_position_ms: 0 }),
+      })
+    );
+  });
+
+  it('requests reviewed pages with a verdict filter and cursor', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: () => Promise.resolve({ items: [], next_cursor: null }) });
+    await getReviewed({ decision: 'not_quite', cursor: 'abc', limit: 20 });
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/feed/reviewed?limit=20&decision=not_quite&cursor=abc',
+      expect.anything()
+    );
+  });
+
+  it('saves a note with PUT', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
+    await saveFeedNote('a/b', 'too long');
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/feed/a%2Fb/note',
+      expect.objectContaining({ method: 'PUT', body: JSON.stringify({ note: 'too long' }) })
+    );
   });
 
   it('queues from the clicked item in feed order, materializing missing tracks', async () => {
@@ -164,6 +191,10 @@ describe('feed API', () => {
 });
 
 describe('feed decisions', () => {
+  it('maps not_quite to the dismissed legacy status', () => {
+    expect(applyFeedDecision(item(), 'not_quite').status).toBe('dismissed');
+  });
+
   it('keeps the card locally and exposes pending SoundCloud actions', () => {
     const updated = applyFeedDecision(item(), 'keep');
     expect(updated.current_decision).toBe('keep');
