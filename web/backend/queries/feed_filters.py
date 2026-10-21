@@ -36,7 +36,7 @@ _RULE_FIELDS = ("name", "kind", "pattern", "threshold", "reason", "enabled")
 
 _RULES_SQL = """
     SELECT r.id, r.name, r.kind, r.pattern, r.threshold, r.reason, r.enabled,
-           r.seed_key, r.created_at, r.updated_at,
+           r.version, r.seed_key, r.created_at, r.updated_at,
            COUNT(f.id) AS hits,
            COUNT(f.rescued_at) AS rescues
     FROM feed_filter_rules r
@@ -86,6 +86,8 @@ def update_rule(rule_id: int, changes: dict[str, Any]) -> dict[str, Any] | None:
     """Apply a partial edit, re-validating the merged rule. None if missing.
 
     Existing flags stay put: an edit changes what the rule catches next.
+    Bumping ``version`` makes any in-flight run drop what it matched with
+    the old rule, and stops it from disabling the edited one.
     """
     current = get_rule(rule_id)
     if current is None:
@@ -98,7 +100,7 @@ def update_rule(rule_id: int, changes: dict[str, Any]) -> dict[str, Any] | None:
             """UPDATE feed_filter_rules
             SET name = :name, kind = :kind, pattern = :pattern,
                 threshold = :threshold, reason = :reason, enabled = :enabled,
-                updated_at = CURRENT_TIMESTAMP
+                version = version + 1, updated_at = CURRENT_TIMESTAMP
             WHERE id = :id""",
             {**rule, "enabled": int(rule["enabled"]), "id": rule_id},
         )
@@ -198,31 +200,47 @@ def _rule_flags(
     return flags, timeouts
 
 
-def _disable_slow_rules(conn: Any, timeouts: dict[int, int]) -> list[int]:
+_DISABLE_RULE_SQL = """
+    UPDATE feed_filter_rules
+    SET enabled = 0, version = version + 1, updated_at = CURRENT_TIMESTAMP
+    WHERE id = :rule_id AND version = :version
+"""
+
+
+def _disable_slow_rules(
+    conn: Any, timeouts: dict[int, int], rules: list[dict[str, Any]]
+) -> list[int]:
     """Log every rule that timed out and disable those that hit the limit.
 
-    Disabling bumps ``updated_at``, so the write-time recheck also drops any
+    Only the version this run read is disabled: if Kevin edited the rule
+    mid-run, the timeouts belong to the old pattern and the edit stands.
+    Disabling bumps ``version``, so the write-time recheck also drops any
     flag the rule caught earlier in this run. Settings then shows it as off.
     """
     for rule_id, count in timeouts.items():
         logger.warning(f"feed filters: rule {rule_id} timed out on {count} titles")
+    versions = {rule["id"]: rule["version"] for rule in rules}
     slow = [
         rule_id for rule_id, count in timeouts.items() if count >= RULE_TIMEOUT_LIMIT
     ]
-    if slow:
-        conn.executemany(
-            "UPDATE feed_filter_rules SET enabled = 0, updated_at = CURRENT_TIMESTAMP"
-            " WHERE id = ?",
-            [(rule_id,) for rule_id in slow],
+    disabled = [
+        rule_id
+        for rule_id in slow
+        if conn.execute(
+            _DISABLE_RULE_SQL, {"rule_id": rule_id, "version": versions[rule_id]}
+        ).rowcount
+    ]
+    conn.commit()
+    if disabled:
+        logger.warning(
+            f"feed filters: disabled rules {disabled} after repeated timeouts"
         )
-        conn.commit()
-        logger.warning(f"feed filters: disabled rules {slow} after repeated timeouts")
-    return slow
+    return disabled
 
 
 # Matching runs in Python between the read and the write, so every insert
 # re-checks, inside the write transaction, that the rule still exists
-# unedited and enabled and that the track is still undecided with no flag
+# enabled at the version the run read and that the track is still undecided with no flag
 # (active or rescued). A rule deleted, disabled or edited mid-run, or a track
 # rated or rescued mid-run, writes nothing.
 _INSERT_RULE_FLAG_SQL = """
@@ -230,7 +248,7 @@ _INSERT_RULE_FLAG_SQL = """
     SELECT :soundcloud_id, :reason, 'rule', :rule_id
     WHERE EXISTS (
             SELECT 1 FROM feed_filter_rules r
-            WHERE r.id = :rule_id AND r.enabled = 1 AND r.updated_at = :updated_at)
+            WHERE r.id = :rule_id AND r.enabled = 1 AND r.version = :version)
       AND NOT EXISTS (
             SELECT 1 FROM sc_track_decisions d
             WHERE d.soundcloud_id = :soundcloud_id AND d.is_current = 1)
@@ -243,7 +261,7 @@ def _write_rule_flags(
     conn: Any, flags: list[tuple[str, str, int]], rules: list[dict[str, Any]]
 ) -> int:
     """Insert flags under BEGIN IMMEDIATE, revalidating each; returns rows written."""
-    updated_at = {rule["id"]: rule["updated_at"] for rule in rules}
+    versions = {rule["id"]: rule["version"] for rule in rules}
     conn.execute("BEGIN IMMEDIATE")
     written = 0
     for soundcloud_id, reason, rule_id in flags:
@@ -251,7 +269,7 @@ def _write_rule_flags(
             "soundcloud_id": soundcloud_id,
             "reason": reason,
             "rule_id": rule_id,
-            "updated_at": updated_at[rule_id],
+            "version": versions[rule_id],
         }
         written += conn.execute(_INSERT_RULE_FLAG_SQL, params).rowcount
     conn.commit()
@@ -275,7 +293,7 @@ def apply_rules(soundcloud_ids: list[str] | None = None) -> int:
         params = {"ids": ids_json, **window_params()}
         tracks = [dict(row) for row in conn.execute(_CANDIDATES_SQL, params)]
         flags, timeouts = _rule_flags(tracks, rules)
-        _disable_slow_rules(conn, timeouts)
+        _disable_slow_rules(conn, timeouts, rules)
         written = _write_rule_flags(conn, flags, rules) if flags else 0
     if written:
         logger.info(f"feed filters: flagged {written} of {len(tracks)} tracks")
