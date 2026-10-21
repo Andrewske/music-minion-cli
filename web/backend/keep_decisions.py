@@ -1,8 +1,10 @@
-"""One track-level keep/nope decision per SoundCloud track.
+"""One track-level keep / not quite / nope decision per SoundCloud track.
 
 Labels come from the canonical decision ledger (``sc_track_decisions``):
-the single current row per track, ``keep`` -> 1, ``nope`` -> 0. ``hide`` is
-a workflow choice, never a label, so hidden tracks are excluded. Track
+the single current row per track, ``keep`` -> 1, ``not_quite`` -> 0,
+``nope`` -> 0. Not quite is a real negative for P(keep): a near miss is the
+most informative label the model gets. Legacy ``hide`` rows were a workflow
+choice, never a label, so they stay excluded. Track
 metadata, uploader resolution and reposter events are joined in from
 ``discovery_tracks`` / ``sc_artist_uploads``; the legacy ``status`` columns
 are never consulted.
@@ -39,7 +41,21 @@ from typing import Sequence
 
 from web.backend.soundcloud_metadata import parse_soundcloud_datetime
 
-LABEL_BY_DECISION: dict[str, int] = {"keep": 1, "nope": 0}
+LABEL_BY_DECISION: dict[str, int] = {"keep": 1, "not_quite": 0, "nope": 0}
+# Per-label training weight hook, so near-miss vs nope weighting can be tuned
+# without touching the labels. 1.0 everywhere means plain unweighted fitting.
+LABEL_WEIGHT_BY_DECISION: dict[str, float] = {
+    "keep": 1.0,
+    "not_quite": 1.0,
+    "nope": 1.0,
+}
+# Artist-quality credit: a not-quite is half a keep for hit rates.
+KEEP_CREDIT_BY_DECISION: dict[str, float] = {
+    "keep": 1.0,
+    "not_quite": 0.5,
+    "nope": 0.0,
+}
+TRAINING_DECISIONS: tuple[str, ...] = tuple(LABEL_BY_DECISION)
 MIGRATION_SURFACE_SUFFIX = "_migration"
 UPLOAD_MIGRATION_SURFACE = "upload_feed_migration"
 
@@ -72,6 +88,20 @@ class TrackDecision:
     reposters: tuple[ReposterEvent, ...]
     decided_at: datetime | None = None
     decided_at_source: str = "unknown"
+    decision: str | None = None
+
+
+def keep_credit(decision: TrackDecision) -> float:
+    """Artist hit-rate credit; falls back to the label when the verdict is unknown."""
+    if decision.decision is None:
+        return float(decision.label)
+    return KEEP_CREDIT_BY_DECISION[decision.decision]
+
+
+def label_weight(decision: TrackDecision) -> float:
+    if decision.decision is None:
+        return 1.0
+    return LABEL_WEIGHT_BY_DECISION[decision.decision]
 
 
 def _normalized_name_sql(column: str) -> str:
@@ -84,7 +114,7 @@ def _normalized_name_sql(column: str) -> str:
 _CURRENT_LABEL_SQL = """
 SELECT soundcloud_id, decision, decided_at, surface
 FROM sc_track_decisions
-WHERE is_current = 1 AND decision IN ('keep', 'nope')
+WHERE is_current = 1 AND decision IN ('keep', 'not_quite', 'nope')
 """
 
 
@@ -120,7 +150,7 @@ def _load_reposters(
     return {track_id: tuple(events) for track_id, events in grouped.items()}
 
 
-# One row per current keep/nope decision. A track may exist in either or both
+# One row per current keep/not_quite/nope decision. A track may exist in either or both
 # of discovery_tracks (repost builder) and sc_artist_uploads (upload feed), so
 # every metadata column is coalesced across the two.
 _DECISIONS_SQL = f"""
@@ -216,11 +246,12 @@ def _track_decision(
         reposters=reposters,
         decided_at=decided_at,
         decided_at_source=decided_at_source,
+        decision=row["decision"],
     )
 
 
 def load_track_decisions(conn: sqlite3.Connection) -> list[TrackDecision]:
-    """Return exactly one keep/nope decision per SoundCloud track.
+    """Return exactly one keep/not_quite/nope decision per SoundCloud track.
 
     Reads the current row of the ``sc_track_decisions`` ledger; the unique
     partial index on ``is_current = 1`` guarantees one label per track.

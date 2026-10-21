@@ -56,19 +56,20 @@ describe('FeedTrackCard', () => {
     expect(screen.getByText('#12')).toBeInTheDocument();
   });
 
-  it('offers keyboard-accessible play, Nope, neutral hide, and keep actions', () => {
+  it('offers keyboard-accessible play, Nope, Not quite, and Keep actions', () => {
     const onPlay = vi.fn();
     const onDecide = vi.fn();
     const item = makeItem();
     render(<FeedTrackCard item={item} isPlaying={false} onPlay={onPlay} onDecide={onDecide} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Play Signal Path' }));
-    fireEvent.click(screen.getByRole('button', { name: /Nope/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Hide without/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Keep/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Nope/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Not quite/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Keep/ }));
 
     expect(onPlay).toHaveBeenCalledWith(item);
-    expect(onDecide.mock.calls.map((call) => call[1])).toEqual(['nope', 'hide', 'keep']);
+    expect(onDecide.mock.calls.map((call) => call[1])).toEqual(['nope', 'not_quite', 'keep']);
+    expect(screen.queryByRole('button', { name: /Hide/ })).not.toBeInTheDocument();
   });
 
   it('shows a running SoundCloud job as pending sync', () => {

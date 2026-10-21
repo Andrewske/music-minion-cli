@@ -26,9 +26,8 @@ import {
   prepareFeedQueue,
   applyMaterializedIds,
   type PreparedFeedQueue,
-  mergeFeedDecisionResponse,
   rateFeedItem,
-  type FeedDecision,
+  type FeedVerdict,
   type FeedItem,
   type FeedPage,
   type FeedRankPreset,
@@ -118,12 +117,12 @@ export default function FeedScreen() {
 
   const decisionMutation = useMutation({
     mutationKey: FEED_DECISION_MUTATION_KEY,
-    mutationFn: ({ item, decision }: { item: FeedItem; decision: FeedDecision }) =>
+    mutationFn: ({ item, decision }: { item: FeedItem; decision: FeedVerdict }) =>
       rateFeedItem(item.soundcloud_id, decision, {
         surface: 'mobile',
         modelVersion: item.prediction_model_version ?? undefined,
       }),
-    onMutate: async ({ item, decision }) => {
+    onMutate: async ({ item }) => {
       await queryClient.cancelQueries({ queryKey: feedQueryKey });
       const previous = queryClient.getQueryData<InfiniteData<FeedPage>>(feedQueryKey);
       queryClient.setQueryData<InfiniteData<FeedPage>>(feedQueryKey, (old) => {
@@ -132,11 +131,7 @@ export default function FeedScreen() {
           ...old,
           pages: old.pages.map((page) => ({
             ...page,
-            items: optimisticallyDecideFeedItems(
-              page.items,
-              item.soundcloud_id,
-              decision
-            ),
+            items: optimisticallyDecideFeedItems(page.items, item.soundcloud_id),
           })),
         };
       });
@@ -146,21 +141,7 @@ export default function FeedScreen() {
       if (context?.previous) queryClient.setQueryData(feedQueryKey, context.previous);
       Toast.show({ type: 'error', text1: 'Decision failed', text2: 'Your previous choice was restored.' });
     },
-    onSuccess: (response, { item, decision }) => {
-      queryClient.setQueryData<InfiniteData<FeedPage>>(feedQueryKey, (old) => {
-        if (!old) return old;
-        return {
-          ...old,
-          pages: old.pages.map((page) => ({
-            ...page,
-            items: page.items.map((candidate) =>
-              candidate.soundcloud_id === item.soundcloud_id
-                ? mergeFeedDecisionResponse(candidate, response)
-                : candidate
-            ),
-          })),
-        };
-      });
+    onSuccess: (response, { decision }) => {
       if (isFeedSyncFailed(response.action_state)) {
         Toast.show({ type: 'error', text1: 'Kept locally', text2: 'SoundCloud sync needs attention.' });
       } else if (decision === 'keep') {

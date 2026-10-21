@@ -2,13 +2,16 @@ import { createFileRoute } from '@tanstack/react-router';
 import type { FeedRankPreset, FeedSort, FeedSource } from '../api/feed';
 import { FeedPage } from '../components/feed/FeedPage';
 
+export type FeedTab = 'feed' | 'reviewed';
+
 export type FeedSearch = {
   source?: FeedSource;
   maxRank?: FeedRankPreset;
   inLibrary?: boolean;
-  showHidden?: boolean;
   sort?: FeedSort;
   minScore?: number;
+  /** Omitted for the default feed tab. */
+  tab?: FeedTab;
 };
 
 const SOURCES: FeedSource[] = ['all', 'releases', 'reposts'];
@@ -35,9 +38,9 @@ export const Route = createFileRoute('/feed')({
       source: source === 'all' ? undefined : source,
       maxRank,
       inLibrary: search.inLibrary === true || search.inLibrary === 'true' || undefined,
-      showHidden: search.showHidden === true || search.showHidden === 'true' || undefined,
       sort: search.sort === 'score' ? 'score' : undefined,
       minScore,
+      tab: search.tab === 'reviewed' ? 'reviewed' : undefined,
     };
   },
 });

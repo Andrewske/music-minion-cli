@@ -22,6 +22,7 @@ import {
   setAudioVolume,
   streamUrlFor,
 } from '../lib/audioSource';
+import { useAudioListenTracker } from './useAudioListenTracker';
 
 const HAVE_CURRENT_DATA = 2;
 const PRELOAD_DEBOUNCE_MS = 500;
@@ -94,7 +95,7 @@ function retrySameTrack(
   el.addEventListener(
     'canplay',
     () => {
-      if (resumeAt > 0) el.currentTime = resumeAt;
+      if (resumeAt > 0) seekAudio(el, resumeAt);
       if (usePlayerStore.getState().isPlaying) {
         el.play().catch(handlePlayError);
       }
@@ -194,6 +195,10 @@ export function usePlayer() {
   // audio in them plays everything twice and their ended/error handlers
   // double-fire /next against the leader's playback.
   const isAudioOwner = store.isThisDeviceActive && store.isAudioLeader;
+
+  // Listen time for feed verdicts, from real playback on the persistent
+  // elements so it survives route changes and ignores buffering.
+  useAudioListenTracker(audioA, audioB);
 
   // Initialize device on mount
   useEffect(() => {

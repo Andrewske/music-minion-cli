@@ -181,3 +181,101 @@ def test_failed_migration_can_be_rolled_back_without_partial_schema() -> None:
     }
     assert "workflow_state" not in columns
     assert conn.execute("SELECT COUNT(*) FROM sc_track_decisions").fetchone()[0] == 0
+
+
+@pytest.fixture
+def v66_conn(monkeypatch) -> sqlite3.Connection:
+    """A v66 DB: decisions exist, the CHECK still lacks not_quite."""
+    conn = _v60_connection()
+    _seed_legacy_decisions(conn)
+    with monkeypatch.context() as patched:
+        patched.setattr(
+            "music_minion.core.database._migrate_v67_decision_verdicts",
+            lambda _conn: None,
+        )
+        migrate_database(conn, 60)
+    conn.commit()
+    return conn
+
+
+def _ledger_rows(conn: sqlite3.Connection) -> list[tuple]:
+    return [
+        tuple(row)
+        for row in conn.execute(
+            """SELECT id, soundcloud_id, decision, decided_at, surface, is_current
+            FROM sc_track_decisions ORDER BY id"""
+        )
+    ]
+
+
+def test_v67_rebuild_preserves_rows_and_allows_not_quite(v66_conn) -> None:
+    conn = v66_conn
+    before = _ledger_rows(conn)
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO sc_track_decisions (soundcloud_id, decision, surface, is_current)"
+            " VALUES ('x', 'not_quite', 't', 0)"
+        )
+
+    migrate_database(conn, 66)
+
+    assert _ledger_rows(conn) == before
+    conn.execute(
+        """UPDATE sc_track_decisions SET is_current = 0
+        WHERE soundcloud_id = 'repost-only'"""
+    )
+    conn.execute(
+        """INSERT INTO sc_track_decisions
+        (soundcloud_id, decision, surface, listen_seconds, max_position_ms)
+        VALUES ('repost-only', 'not_quite', 'web', 31.5, 90000)"""
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO sc_track_decisions (soundcloud_id, decision, surface, is_current)"
+            " VALUES ('x', 'maybe', 't', 0)"
+        )
+    training = conn.execute(
+        """SELECT soundcloud_id, decision FROM sc_current_training_decisions
+        ORDER BY soundcloud_id"""
+    ).fetchall()
+    # Legacy hide stays out of training; not_quite is in.
+    assert [tuple(row) for row in training] == [
+        ("both", "keep"),
+        ("repost-only", "not_quite"),
+    ]
+
+
+def test_v67_keeps_one_current_row_per_track(v66_conn) -> None:
+    conn = v66_conn
+    migrate_database(conn, 66)
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            """INSERT INTO sc_track_decisions (soundcloud_id, decision, surface)
+            VALUES ('both', 'nope', 'web')"""
+        )
+
+
+def test_v67_is_idempotent_and_keeps_notes(v66_conn) -> None:
+    conn = v66_conn
+    migrate_database(conn, 66)
+    conn.execute(
+        "INSERT INTO sc_track_notes (soundcloud_id, note) VALUES ('both', 'too long')"
+    )
+    conn.execute(
+        """INSERT INTO sc_track_decisions
+        (soundcloud_id, decision, surface, is_current) VALUES ('both', 'not_quite', 'w', 0)"""
+    )
+    before = _ledger_rows(conn)
+
+    migrate_database(conn, 66)
+
+    assert _ledger_rows(conn) == before
+    assert conn.execute("SELECT note FROM sc_track_notes").fetchone()[0] == "too long"
+    columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(sc_track_decisions)")
+    }
+    assert {"listen_seconds", "max_position_ms"} <= columns
+    leftovers = conn.execute(
+        "SELECT name FROM sqlite_master WHERE name = 'sc_track_decisions_v67'"
+    ).fetchall()
+    assert leftovers == []

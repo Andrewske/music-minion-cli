@@ -6,8 +6,17 @@ export const FEED_RANK_PRESETS = [25, 50, 75, 100, 200] as const;
 export type FeedSource = 'all' | 'releases' | 'reposts';
 export type FeedSort = 'event_at' | 'score';
 export type FeedRankPreset = (typeof FEED_RANK_PRESETS)[number];
-export type FeedRating = -1 | 0 | 1;
-export type FeedDecision = 'keep' | 'nope' | 'hide';
+/** Verdicts the feed can write. */
+export type FeedVerdict = 'keep' | 'not_quite' | 'nope';
+/** Anything a ledger row can hold; legacy 'hide' rows are read-only. */
+export type FeedDecision = FeedVerdict | 'hide';
+export const FEED_VERDICTS: readonly FeedVerdict[] = ['keep', 'not_quite', 'nope'];
+export const FEED_VERDICT_LABELS: Record<FeedDecision, string> = {
+  keep: 'Keep',
+  not_quite: 'Not quite',
+  nope: 'Nope',
+  hide: 'Hidden (legacy)',
+};
 export type FeedItemStatus = 'visible' | 'hidden' | 'dismissed' | 'liked';
 /** Mirrors sc_feed_action_jobs.status; 'running' is a claimed-but-unfinished job. */
 export type FeedActionStatus = 'pending' | 'running' | 'complete' | 'error' | null;
@@ -79,7 +88,6 @@ export interface GetFeedParams {
   source?: FeedSource;
   maxRank?: FeedRankPreset;
   inLibrary?: boolean;
-  showHidden?: boolean;
   sort?: FeedSort;
   /** Hide tracks whose predicted keep probability is below this (0-1). */
   minScore?: number;
@@ -89,6 +97,10 @@ export interface RateFeedItemOptions {
   surface?: 'web' | 'mobile' | string;
   modelVersion?: string;
   featureSnapshot?: Record<string, unknown>;
+  /** In-app player: seconds actually played before the verdict. */
+  listenSeconds?: number;
+  /** In-app player: furthest position reached, in ms. */
+  maxPositionMs?: number;
 }
 
 export interface RateFeedItemResponse {
@@ -105,12 +117,6 @@ export interface MaterializeFeedItemResponse {
   soundcloud_id: string;
   local_track_id: number;
 }
-
-export const feedRatingToDecision = (rating: FeedRating): FeedDecision => {
-  if (rating === 1) return 'keep';
-  if (rating === -1) return 'nope';
-  return 'hide';
-};
 
 export const getFeedItemDecision = (item: FeedItem): FeedDecision | null => {
   if (item.current_decision !== undefined) return item.current_decision;
@@ -177,12 +183,11 @@ export const normalizeFeedItem = (item: FeedItem): FeedItem => {
 
 export const applyFeedDecision = (
   item: FeedItem,
-  decision: FeedDecision
+  decision: FeedVerdict
 ): FeedItem => ({
   ...item,
   current_decision: decision,
-  status:
-    decision === 'keep' ? 'liked' : decision === 'nope' ? 'dismissed' : 'hidden',
+  status: decision === 'keep' ? 'liked' : 'dismissed',
   action_state:
     decision === 'keep'
       ? { like: 'pending', monthly_playlist: 'pending', error: null }
@@ -237,7 +242,6 @@ export async function getFeed(params: GetFeedParams = {}): Promise<FeedPage> {
   if (params.source) queryParams.set('source', params.source);
   if (params.maxRank) queryParams.set('max_rank', String(params.maxRank));
   if (params.inLibrary) queryParams.set('in_library', 'true');
-  if (params.showHidden) queryParams.set('show_hidden', 'true');
   if (params.sort && params.sort !== 'event_at') queryParams.set('sort', params.sort);
   if (params.minScore !== undefined) queryParams.set('min_score', String(params.minScore));
 
@@ -247,20 +251,77 @@ export async function getFeed(params: GetFeedParams = {}): Promise<FeedPage> {
 
 export async function rateFeedItem(
   soundcloudId: string | number,
-  decisionOrRating: FeedDecision | FeedRating,
+  decision: FeedVerdict,
   options: RateFeedItemOptions = {}
 ): Promise<RateFeedItemResponse> {
-  const decision =
-    typeof decisionOrRating === 'number'
-      ? feedRatingToDecision(decisionOrRating)
-      : decisionOrRating;
   const body: Record<string, unknown> = { decision };
   if (options.surface) body.surface = options.surface;
   if (options.modelVersion) body.model_version = options.modelVersion;
   if (options.featureSnapshot) body.feature_snapshot = options.featureSnapshot;
+  if (options.listenSeconds !== undefined) body.listen_seconds = options.listenSeconds;
+  if (options.maxPositionMs !== undefined) body.max_position_ms = options.maxPositionMs;
   return getDefaultApiClient().post<RateFeedItemResponse>(
     `/feed/${encodeURIComponent(String(soundcloudId))}/rate`,
     body
+  );
+}
+
+/** One current ledger decision, as listed by the Feed page's Reviewed tab. */
+export interface ReviewedItem {
+  decision_id: number;
+  soundcloud_id: string;
+  decision: FeedDecision;
+  decided_at: string;
+  decided_key: string;
+  surface: string;
+  listen_seconds: number | null;
+  max_position_ms: number | null;
+  local_track_id: number | null;
+  title: string | null;
+  artist_name: string | null;
+  artwork_url: string | null;
+  permalink_url: string | null;
+  duration_ms: number;
+  access: string | null;
+  note: string | null;
+  note_updated_at: string | null;
+}
+
+export interface ReviewedPage {
+  items: ReviewedItem[];
+  next_cursor: string | null;
+}
+
+export interface GetReviewedParams {
+  decision?: FeedDecision;
+  cursor?: string;
+  limit?: number;
+}
+
+export const REVIEWED_PAGE_SIZE = 50;
+
+export async function getReviewed(params: GetReviewedParams = {}): Promise<ReviewedPage> {
+  const queryParams = new URLSearchParams();
+  queryParams.set('limit', String(params.limit ?? REVIEWED_PAGE_SIZE));
+  if (params.decision) queryParams.set('decision', params.decision);
+  if (params.cursor) queryParams.set('cursor', params.cursor);
+  return getDefaultApiClient().request<ReviewedPage>(`/feed/reviewed?${queryParams.toString()}`);
+}
+
+export interface FeedNoteResponse {
+  soundcloud_id: string;
+  note: string | null;
+  updated_at: string | null;
+}
+
+/** Upsert the per-track note; an empty note deletes it. */
+export async function saveFeedNote(
+  soundcloudId: string,
+  note: string
+): Promise<FeedNoteResponse> {
+  return getDefaultApiClient().request<FeedNoteResponse>(
+    `/feed/${encodeURIComponent(soundcloudId)}/note`,
+    { method: 'PUT', body: JSON.stringify({ note }) }
   );
 }
 

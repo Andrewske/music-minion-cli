@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -165,3 +166,23 @@ def test_undated_decisions_are_dropped() -> None:
         **{**_decision("a", 1, decided_days=0).__dict__, "decided_at": None}
     )
     assert training_examples([undated]) == []
+
+
+def test_examples_carry_the_verdict_and_label_weight() -> None:
+    near = replace(_decision("near", 0, 1.0), decision="not_quite")
+    (example,) = training_examples([near])
+    assert example.label == 0
+    assert example.decision == "not_quite"
+    assert example.weight == 1.0
+
+
+def test_not_quite_history_credits_artists_with_half_a_keep() -> None:
+    reposter = _reposter(5, 10, event_days=0, seen_days=0)
+    earlier = replace(
+        _decision("near", 0, 1.0, reposters=(reposter,)), decision="not_quite"
+    )
+    later = _decision("next", 1, 2.0, reposters=(reposter,))
+    examples = {e.soundcloud_id: e for e in training_examples([earlier, later])}
+    assert examples["next"].features.reposter_keep_rate == pytest.approx(
+        bayesian_keep_rate(0.5, 1.0)
+    )

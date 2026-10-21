@@ -17,7 +17,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 66  # SC stream checkpoint + daily sweep timestamp
+SCHEMA_VERSION = 67  # not_quite verdicts, listen time, track notes
 
 
 # Initial top 50 curated emojis for music reactions
@@ -271,6 +271,83 @@ def _migrate_v62_decision_ledger(conn) -> None:
                model_version, feature_snapshot
         FROM sc_track_decisions
         WHERE is_current = 1 AND decision IN ('keep', 'nope')
+    """)
+
+
+_V67_DECISIONS_DDL = """
+    CREATE TABLE sc_track_decisions_v67 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        soundcloud_id TEXT NOT NULL,
+        decision TEXT NOT NULL
+            CHECK (decision IN ('keep', 'not_quite', 'nope', 'hide')),
+        decided_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        surface TEXT NOT NULL,
+        model_version TEXT,
+        feature_snapshot TEXT,
+        is_current BOOLEAN NOT NULL DEFAULT 1 CHECK (is_current IN (0, 1)),
+        listen_seconds REAL,
+        max_position_ms INTEGER
+    )
+"""
+
+_V62_DECISION_COLUMNS = (
+    "id, soundcloud_id, decision, decided_at, surface, model_version, "
+    "feature_snapshot, is_current"
+)
+
+
+def _decision_ledger_allows_not_quite(conn) -> bool:
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'sc_track_decisions'"
+    ).fetchone()
+    return row is not None and "not_quite" in row[0]
+
+
+def _create_decision_ledger_indexes(conn) -> None:
+    """Indexes + training view for the v67 ledger (training adds not_quite)."""
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_sc_track_decisions_current
+        ON sc_track_decisions(soundcloud_id) WHERE is_current = 1
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_sc_track_decisions_training
+        ON sc_track_decisions(decision, soundcloud_id) WHERE is_current = 1
+    """)
+    conn.execute("DROP VIEW IF EXISTS sc_current_training_decisions")
+    conn.execute("""
+        CREATE VIEW sc_current_training_decisions AS
+        SELECT soundcloud_id, decision, decided_at, surface,
+               model_version, feature_snapshot
+        FROM sc_track_decisions
+        WHERE is_current = 1 AND decision IN ('keep', 'not_quite', 'nope')
+    """)
+
+
+def _migrate_v67_decision_verdicts(conn) -> None:
+    """Allow 'not_quite', add listen columns, and add per-track notes (#29).
+
+    SQLite can't alter a CHECK constraint, so the ledger is rebuilt once:
+    copy every row (ids preserved), swap tables, recreate indexes and view.
+    Re-running is a no-op because the rebuilt table already allows not_quite.
+    """
+    if not _decision_ledger_allows_not_quite(conn):
+        conn.execute("DROP VIEW IF EXISTS sc_current_training_decisions")
+        conn.execute("DROP TABLE IF EXISTS sc_track_decisions_v67")
+        conn.execute(_V67_DECISIONS_DDL)
+        conn.execute(f"""
+            INSERT INTO sc_track_decisions_v67 ({_V62_DECISION_COLUMNS})
+            SELECT {_V62_DECISION_COLUMNS} FROM sc_track_decisions
+        """)
+        conn.execute("DROP TABLE sc_track_decisions")
+        conn.execute("ALTER TABLE sc_track_decisions_v67 RENAME TO sc_track_decisions")
+    _create_decision_ledger_indexes(conn)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS sc_track_notes (
+            soundcloud_id TEXT PRIMARY KEY,
+            note TEXT NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
     """)
 
 
@@ -3197,6 +3274,15 @@ def migrate_database(conn, current_version: int) -> None:
             _add_column_if_missing(conn, "sc_feed_sync_state", column_ddl)
         conn.commit()
         logger.info("  ✓ Migration to v66 complete: SC stream checkpoint")
+
+    if current_version < 67:
+        logger.info("Running migration to v67: keep / not quite / nope verdicts...")
+        # Savepoint: a failed copy leaves the v66 ledger untouched.
+        conn.execute("SAVEPOINT migrate_feed_v67")
+        _migrate_v67_decision_verdicts(conn)
+        conn.execute("RELEASE SAVEPOINT migrate_feed_v67")
+        conn.commit()
+        logger.info("  ✓ Migration to v67 complete: not_quite verdicts + notes")
 
 
 def init_database() -> None:

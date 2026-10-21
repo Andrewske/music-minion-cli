@@ -120,6 +120,20 @@ def _grid_table(grid: Sequence[dict[str, float]]) -> list[str]:
     return lines
 
 
+def _near_miss_table(near_miss: dict[str, dict[str, Any]]) -> list[str]:
+    lines = [
+        "| System | Not quite (n) | Nope (n) | Mean not quite | Mean nope | AUC |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+    for name, row in near_miss.items():
+        lines.append(
+            f"| {name} | {int(row['not_quite_count'])} | {int(row['nope_count'])} | "
+            f"{_fmt(row['not_quite_mean'])} | {_fmt(row['nope_mean'])} | "
+            f"{_fmt(row['auc'])} |"
+        )
+    return lines
+
+
 COLD_START_NOTES: tuple[str, ...] = (
     "Unknown uploader (no SoundCloud ID, upload event, or name match): "
     "`followed_uploader = 0`, uploader rank treated as outside the top 200 "
@@ -180,6 +194,14 @@ def render_evaluation_markdown(
         "### Paired improvements of the model over baselines",
         "",
         *_delta_table(report["paired_deltas"]),
+        "",
+        "## Not quite vs nope (test set)",
+        "",
+        "Both are label 0. AUC is the chance a random not-quite scores above a",
+        "random nope: near 0.5 means the model can't tell a near miss from a",
+        "clear pass, so it learned surface features rather than taste.",
+        "",
+        *_near_miss_table(report.get("not_quite_vs_nope", {})),
         "",
         "## Calibration (model, test set)",
         "",

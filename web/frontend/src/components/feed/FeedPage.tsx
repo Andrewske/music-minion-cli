@@ -13,33 +13,41 @@ import {
   FEED_DECISION_MUTATION_KEY,
   FEED_PAGE_SIZE,
   FEED_RANK_PRESETS,
-  applyFeedDecision,
+  FEED_VERDICT_LABELS,
   getFeed,
   getFeedRefetchInterval,
   isFeedSyncFailed,
+  materializeFeedItems,
   prepareFeedQueue,
   applyMaterializedIds,
   type PreparedFeedQueue,
-  mergeFeedDecisionResponse,
   rateFeedItem,
   startFeedBackfill,
 } from '../../api/feed';
 import type {
-  FeedDecision,
   FeedItem,
+  FeedVerdict,
+  ReviewedItem,
   FeedPage as FeedPageData,
   FeedRankPreset,
   FeedSort,
   FeedSource,
 } from '../../api/feed';
-import { MIN_SCORE_PRESETS } from '../../routes/feed';
+import { MIN_SCORE_PRESETS, type FeedTab } from '../../routes/feed';
 import { syncFeed } from '../../api/artists';
 import { useFeedSyncStatus } from '../../hooks/useArtists';
+import { useNoteEditor } from '../../hooks/useNoteEditor';
+import type { ListenStats } from '../../lib/feedListen';
+import { getListenStats } from '../../stores/listenStore';
 import { usePlayerStore } from '../../stores/playerStore';
 import type { Track } from '@music-minion/shared';
 import { FeedTrackCard } from './FeedTrackCard';
+import { NoteDialog } from './NoteDialog';
+import { ReviewedList } from './ReviewedList';
+import { REVIEWED_QUERY_KEY, cacheMaterializedReviewed } from './reviewed';
 
 const ROW_HEIGHT = 92;
+const NOTE_TOAST_MS = 5_000;
 const routeApi = getRouteApi('/feed');
 
 function toTrack(item: FeedItem, localTrackId = item.local_track_id): Track {
@@ -50,6 +58,40 @@ function toTrack(item: FeedItem, localTrackId = item.local_track_id): Track {
     artist: artist?.display_name ?? artist?.slug ?? 'Unknown artist',
     duration: item.duration_ms / 1000,
   };
+}
+
+function reviewedToTrack(item: ReviewedItem, localTrackId: number): Track {
+  return {
+    id: localTrackId,
+    title: item.title ?? 'Untitled',
+    artist: item.artist_name ?? 'Unknown artist',
+    duration: item.duration_ms / 1000,
+  };
+}
+
+/** Feed tabs: the live feed and the Reviewed history that replaced "show hidden". */
+function FeedTabs({ tab, onChange }: { tab: FeedTab; onChange: (tab: FeedTab) => void }): JSX.Element {
+  return (
+    <div role="tablist" aria-label="Feed view" className="flex items-center rounded-full border border-obsidian-border p-0.5">
+      {([
+        ['feed', 'Feed'],
+        ['reviewed', 'Reviewed'],
+      ] as const).map(([value, label]) => (
+        <button
+          key={value}
+          type="button"
+          role="tab"
+          aria-selected={tab === value}
+          onClick={() => onChange(value)}
+          className={`rounded-full px-3 py-1 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent ${
+            tab === value ? 'bg-obsidian-accent/20 text-obsidian-accent' : 'text-white/60 hover:text-white'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function formatLastSync(iso: string | null | undefined): string {
@@ -67,17 +109,18 @@ export function FeedPage(): JSX.Element {
     source = 'all',
     maxRank,
     inLibrary = false,
-    showHidden = false,
     sort = 'event_at',
     minScore,
+    tab = 'feed',
   } = routeApi.useSearch();
   const navigate = useNavigate({ from: '/feed' });
   const queryClient = useQueryClient();
   const play = usePlayerStore((state) => state.play);
   const currentTrackId = usePlayerStore((state) => state.currentTrack?.id ?? null);
   const parentRef = useRef<HTMLDivElement>(null);
+  const noteEditor = useNoteEditor();
 
-  const feedQueryKey = ['feed', { source, maxRank, inLibrary, showHidden, sort, minScore }] as const;
+  const feedQueryKey = ['feed', { source, maxRank, inLibrary, sort, minScore }] as const;
   const feedQuery = useInfiniteQuery({
     queryKey: feedQueryKey,
     queryFn: ({ pageParam }) =>
@@ -87,7 +130,6 @@ export function FeedPage(): JSX.Element {
         source,
         maxRank,
         inLibrary,
-        showHidden,
         sort,
         minScore,
       }),
@@ -114,7 +156,7 @@ export function FeedPage(): JSX.Element {
 
   useEffect(() => {
     parentRef.current?.scrollTo({ top: 0 });
-  }, [source, maxRank, inLibrary, showHidden, sort, minScore]);
+  }, [source, maxRank, inLibrary, sort, minScore]);
 
   useEffect(() => {
     const last = virtualItems[virtualItems.length - 1];
@@ -128,54 +170,45 @@ export function FeedPage(): JSX.Element {
     }
   }, [virtualItems, items.length, feedQuery]);
 
+  const offerNote = (item: FeedItem, decision: FeedVerdict): void => {
+    toast(FEED_VERDICT_LABELS[decision], {
+      duration: NOTE_TOAST_MS,
+      action: {
+        label: 'Add note',
+        onClick: () => noteEditor.open({ soundcloudId: item.soundcloud_id, title: item.title, note: null }),
+      },
+    });
+  };
+
   const decisionMutation = useMutation({
     mutationKey: FEED_DECISION_MUTATION_KEY,
-    mutationFn: ({ item, decision }: { item: FeedItem; decision: FeedDecision }) =>
+    mutationFn: ({ item, decision, listen }: { item: FeedItem; decision: FeedVerdict; listen: ListenStats }) =>
       rateFeedItem(item.soundcloud_id, decision, {
         surface: 'web',
         modelVersion: item.prediction_model_version ?? undefined,
+        listenSeconds: listen.listenSeconds,
+        maxPositionMs: listen.maxPositionMs,
       }),
     onMutate: async ({ item, decision }) => {
       await queryClient.cancelQueries({ queryKey: feedQueryKey });
       const previous = queryClient.getQueryData<InfiniteData<FeedPageData>>(feedQueryKey);
-      queryClient.setQueryData<InfiniteData<FeedPageData>>(feedQueryKey, (old) => {
-        if (!old) return old;
-        return {
-          ...old,
-          pages: old.pages.map((page) => ({
-            ...page,
-            items:
-              decision !== 'keep' && !showHidden
-                ? page.items.filter((candidate) => candidate.soundcloud_id !== item.soundcloud_id)
-                : page.items.map((candidate) =>
-                    candidate.soundcloud_id === item.soundcloud_id
-                      ? applyFeedDecision(candidate, decision)
-                      : candidate
-                  ),
-          })),
-        };
-      });
+      // Every verdict, keep included, moves the track to the Reviewed tab.
+      queryClient.setQueryData<InfiniteData<FeedPageData>>(feedQueryKey, (old) => old && ({
+        ...old,
+        pages: old.pages.map((page) => ({
+          ...page,
+          items: page.items.filter((candidate) => candidate.soundcloud_id !== item.soundcloud_id),
+        })),
+      }));
+      // Advance immediately; the note prompt never blocks the next track.
+      if (decision !== 'keep') offerNote(item, decision);
       return { previous };
     },
     onError: (_error, _variables, context) => {
       if (context?.previous) queryClient.setQueryData(feedQueryKey, context.previous);
-      toast.error('Decision failed — your previous choice was restored');
+      toast.error('Decision failed — the track was restored to the feed');
     },
-    onSuccess: (response, { item, decision }) => {
-      queryClient.setQueryData<InfiniteData<FeedPageData>>(feedQueryKey, (old) => {
-        if (!old) return old;
-        return {
-          ...old,
-          pages: old.pages.map((page) => ({
-            ...page,
-            items: page.items.map((candidate) =>
-              candidate.soundcloud_id === item.soundcloud_id
-                ? mergeFeedDecisionResponse(candidate, response)
-                : candidate
-            ),
-          })),
-        };
-      });
+    onSuccess: (response, { decision }) => {
       if (isFeedSyncFailed(response.action_state)) {
         toast.error('Kept locally; SoundCloud sync needs attention');
       } else if (decision === 'keep') {
@@ -183,12 +216,17 @@ export function FeedPage(): JSX.Element {
       }
     },
     onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: REVIEWED_QUERY_KEY });
       // Replaces any poll that read before the decision committed.
       if (queryClient.isMutating({ mutationKey: FEED_DECISION_MUTATION_KEY }) === 1) {
         void queryClient.invalidateQueries({ queryKey: feedQueryKey });
       }
     },
   });
+
+  const decide = (item: FeedItem, decision: FeedVerdict): void => {
+    decisionMutation.mutate({ item, decision, listen: getListenStats(item.local_track_id) });
+  };
 
   const syncMutation = useMutation({
     mutationFn: syncFeed,
@@ -249,13 +287,30 @@ export function FeedPage(): JSX.Element {
     [items, play, queryClient]
   );
 
+  const handlePlayReviewed = useCallback(
+    async (item: ReviewedItem): Promise<void> => {
+      let localTrackId = item.local_track_id;
+      if (localTrackId === null) {
+        const created = await materializeFeedItems([item.soundcloud_id]).catch(() => []);
+        localTrackId = created[0]?.local_track_id ?? null;
+        if (localTrackId !== null) cacheMaterializedReviewed(queryClient, item.soundcloud_id, localTrackId);
+      }
+      if (localTrackId === null) {
+        toast.error('Could not prepare this SoundCloud track for playback');
+        return;
+      }
+      void play(reviewedToTrack(item, localTrackId), { type: 'feed', track_ids: [localTrackId] });
+    },
+    [play, queryClient]
+  );
+
   type FeedSearchPatch = {
     source?: FeedSource;
     maxRank?: FeedRankPreset;
     inLibrary?: boolean;
-    showHidden?: boolean;
     sort?: FeedSort;
     minScore?: number;
+    tab?: FeedTab;
   };
   const updateSearch = (patch: FeedSearchPatch): void => {
     void navigate({
@@ -271,87 +326,90 @@ export function FeedPage(): JSX.Element {
           <Rss className="h-5 w-5 text-obsidian-accent" /> Feed
         </h1>
 
-        <fieldset role="radiogroup" className="flex items-center rounded-full border border-obsidian-border p-0.5" aria-label="Feed source">
-          <legend className="sr-only">Feed source</legend>
-          {(['all', 'releases', 'reposts'] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              role="radio"
-              aria-checked={source === value}
-              onClick={() => updateSearch({ source: value === 'all' ? undefined : value })}
-              className={`rounded-full px-3 py-1 text-xs capitalize focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent ${
-                source === value ? 'bg-obsidian-accent/20 text-obsidian-accent' : 'text-white/60 hover:text-white'
-              }`}
-            >
-              {value}
-            </button>
-          ))}
-        </fieldset>
+        <FeedTabs tab={tab} onChange={(next) => updateSearch({ tab: next === 'feed' ? undefined : next })} />
 
-        <label className="flex items-center gap-2 text-xs text-white/60">
-          Rank
-          <select
-            aria-label="Maximum artist rank"
-            value={maxRank ?? ''}
-            onChange={(event) =>
-              updateSearch({
-                maxRank: event.target.value
-                  ? (Number(event.target.value) as FeedRankPreset)
-                  : undefined,
-              })
-            }
-            className="rounded border border-obsidian-border bg-obsidian-surface px-2 py-1.5 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent"
-          >
-            <option value="">All</option>
-            {FEED_RANK_PRESETS.map((rank) => <option key={rank} value={rank}>Top {rank}</option>)}
-          </select>
-        </label>
-
-        <fieldset role="radiogroup" className="flex items-center rounded-full border border-obsidian-border p-0.5" aria-label="Feed sort">
-          <legend className="sr-only">Feed sort</legend>
-          {([
-            ['event_at', 'Newest'],
-            ['score', 'Score'],
-          ] as const).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              role="radio"
-              aria-checked={sort === value}
-              onClick={() => updateSearch({ sort: value === 'event_at' ? undefined : value })}
-              className={`rounded-full px-3 py-1 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent ${
-                sort === value ? 'bg-obsidian-accent/20 text-obsidian-accent' : 'text-white/60 hover:text-white'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </fieldset>
-
-        <label className="flex items-center gap-2 text-xs text-white/60">
-          Min score
-          <select
-            aria-label="Minimum keep probability"
-            value={minScore ?? ''}
-            onChange={(event) =>
-              updateSearch({ minScore: event.target.value ? Number(event.target.value) : undefined })
-            }
-            className="rounded border border-obsidian-border bg-obsidian-surface px-2 py-1.5 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent"
-          >
-            <option value="">Off</option>
-            {MIN_SCORE_PRESETS.map((score) => (
-              <option key={score} value={score}>{Math.round(score * 100)}%+</option>
+        {tab === 'feed' && (
+          <>
+          <fieldset role="radiogroup" className="flex items-center rounded-full border border-obsidian-border p-0.5" aria-label="Feed source">
+            <legend className="sr-only">Feed source</legend>
+            {(['all', 'releases', 'reposts'] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={source === value}
+                onClick={() => updateSearch({ source: value === 'all' ? undefined : value })}
+                className={`rounded-full px-3 py-1 text-xs capitalize focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent ${
+                  source === value ? 'bg-obsidian-accent/20 text-obsidian-accent' : 'text-white/60 hover:text-white'
+                }`}
+              >
+                {value}
+              </button>
             ))}
-          </select>
-        </label>
+          </fieldset>
 
-        <button type="button" aria-pressed={inLibrary} onClick={() => updateSearch({ inLibrary: inLibrary ? undefined : true })} className={`rounded-full border px-3 py-1.5 text-xs ${inLibrary ? 'border-obsidian-accent text-obsidian-accent' : 'border-obsidian-border text-white/60'}`}>
-          In library
-        </button>
-        <button type="button" aria-pressed={showHidden} onClick={() => updateSearch({ showHidden: showHidden ? undefined : true })} className={`rounded-full border px-3 py-1.5 text-xs ${showHidden ? 'border-obsidian-accent text-obsidian-accent' : 'border-obsidian-border text-white/60'}`}>
-          Show hidden
-        </button>
+          <label className="flex items-center gap-2 text-xs text-white/60">
+            Rank
+            <select
+              aria-label="Maximum artist rank"
+              value={maxRank ?? ''}
+              onChange={(event) =>
+                updateSearch({
+                  maxRank: event.target.value
+                    ? (Number(event.target.value) as FeedRankPreset)
+                    : undefined,
+                })
+              }
+              className="rounded border border-obsidian-border bg-obsidian-surface px-2 py-1.5 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent"
+            >
+              <option value="">All</option>
+              {FEED_RANK_PRESETS.map((rank) => <option key={rank} value={rank}>Top {rank}</option>)}
+            </select>
+          </label>
+
+          <fieldset role="radiogroup" className="flex items-center rounded-full border border-obsidian-border p-0.5" aria-label="Feed sort">
+            <legend className="sr-only">Feed sort</legend>
+            {([
+              ['event_at', 'Newest'],
+              ['score', 'Score'],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={sort === value}
+                onClick={() => updateSearch({ sort: value === 'event_at' ? undefined : value })}
+                className={`rounded-full px-3 py-1 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent ${
+                  sort === value ? 'bg-obsidian-accent/20 text-obsidian-accent' : 'text-white/60 hover:text-white'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </fieldset>
+
+          <label className="flex items-center gap-2 text-xs text-white/60">
+            Min score
+            <select
+              aria-label="Minimum keep probability"
+              value={minScore ?? ''}
+              onChange={(event) =>
+                updateSearch({ minScore: event.target.value ? Number(event.target.value) : undefined })
+              }
+              className="rounded border border-obsidian-border bg-obsidian-surface px-2 py-1.5 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent"
+            >
+              <option value="">Off</option>
+              {MIN_SCORE_PRESETS.map((score) => (
+                <option key={score} value={score}>{Math.round(score * 100)}%+</option>
+              ))}
+            </select>
+          </label>
+
+          <button type="button" aria-pressed={inLibrary} onClick={() => updateSearch({ inLibrary: inLibrary ? undefined : true })} className={`rounded-full border px-3 py-1.5 text-xs ${inLibrary ? 'border-obsidian-accent text-obsidian-accent' : 'border-obsidian-border text-white/60'}`}>
+            In library
+          </button>
+          </>
+        )}
 
         <div className="ml-auto flex items-center gap-1 text-xs text-white/40">
           <span>Synced {formatLastSync(syncStatus?.last_run_at)}</span>
@@ -361,7 +419,9 @@ export function FeedPage(): JSX.Element {
         </div>
       </header>
 
-      {feedQuery.isLoading ? (
+      {tab === 'reviewed' ? (
+        <ReviewedList currentTrackId={currentTrackId} onPlay={(item) => void handlePlayReviewed(item)} onEditNote={noteEditor.open} />
+      ) : feedQuery.isLoading ? (
         <div className="flex flex-1 items-center justify-center text-white/40" role="status" aria-label="Loading feed"><Loader2 className="h-6 w-6 animate-spin" /></div>
       ) : feedQuery.isError ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-white/50" role="alert">
@@ -395,7 +455,7 @@ export function FeedPage(): JSX.Element {
                     isPlaying={item.local_track_id !== null && item.local_track_id === currentTrackId}
                     isUpdating={decisionMutation.isPending && decisionMutation.variables?.item.soundcloud_id === item.soundcloud_id}
                     onPlay={(target) => void handlePlay(target)}
-                    onDecide={(target, decision) => decisionMutation.mutate({ item: target, decision })}
+                    onDecide={decide}
                   />
                 </div>
               );
@@ -404,6 +464,12 @@ export function FeedPage(): JSX.Element {
           {feedQuery.isFetchingNextPage && <div className="flex justify-center py-3 text-white/40" role="status" aria-label="Loading more tracks"><Loader2 className="h-5 w-5 animate-spin" /></div>}
         </div>
       )}
+      <NoteDialog
+        target={noteEditor.target}
+        isSaving={noteEditor.isSaving}
+        onSave={noteEditor.save}
+        onClose={noteEditor.close}
+      />
     </div>
   );
 }

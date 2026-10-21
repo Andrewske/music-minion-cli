@@ -1,5 +1,5 @@
-import type { FeedDecision, FeedItem, FeedRankPreset, FeedSource } from '@music-minion/shared';
-import { FEED_RANK_PRESETS, applyFeedDecision } from '@music-minion/shared';
+import type { FeedItem, FeedRankPreset, FeedSource } from '@music-minion/shared';
+import { FEED_RANK_PRESETS } from '@music-minion/shared';
 
 export interface FeedScreenState {
   source: FeedSource;
@@ -26,15 +26,10 @@ export function parseFeedScreenState(params: {
   return { source, maxRank, inLibrary };
 }
 
+/** Every verdict, keep included, removes the track from the feed. */
 export function optimisticallyDecideFeedItems(
   items: FeedItem[],
-  soundcloudId: string,
-  decision: FeedDecision
+  soundcloudId: string
 ): FeedItem[] {
-  if (decision !== 'keep') {
-    return items.filter((item) => item.soundcloud_id !== soundcloudId);
-  }
-  return items.map((item) =>
-    item.soundcloud_id === soundcloudId ? applyFeedDecision(item, decision) : item
-  );
+  return items.filter((item) => item.soundcloud_id !== soundcloudId);
 }

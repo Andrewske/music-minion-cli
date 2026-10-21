@@ -22,7 +22,12 @@ from datetime import datetime, timedelta
 from typing import Sequence
 
 from web.backend.artist_quality import bayesian_keep_rate, role_attributions
-from web.backend.keep_decisions import ReposterEvent, TrackDecision
+from web.backend.keep_decisions import (
+    ReposterEvent,
+    TrackDecision,
+    keep_credit,
+    label_weight,
+)
 from web.backend.preference_model import TrackFeatures, TrainingExample
 
 SEEN_AT_BACKFILL_WINDOW = timedelta(hours=1)
@@ -148,14 +153,14 @@ def _record_decision(
     for artist_id, role, weight in role_attributions(as_of):
         key = (artist_id, role)
         updated[key] = updated.get(key, RoleTally()).add(
-            decision.label * weight, weight
+            keep_credit(decision) * weight, weight
         )
     actors = {event.artist_id for event in reposters}
     if decision.uploader_id is not None:
         actors.add(decision.uploader_id)
     for artist_id in actors:
         key = (artist_id, "legacy")
-        updated[key] = updated.get(key, RoleTally()).add(float(decision.label), 1.0)
+        updated[key] = updated.get(key, RoleTally()).add(keep_credit(decision), 1.0)
     return updated
 
 
@@ -184,6 +189,8 @@ def training_examples(decisions: Sequence[TrackDecision]) -> list[TrainingExampl
                 label=decision.label,
                 features=features_at_decision(decision, reposters, history),
                 decided_at_source=decision.decided_at_source,
+                decision=decision.decision,
+                weight=label_weight(decision),
             )
         )
         pending.append((decision, reposters))

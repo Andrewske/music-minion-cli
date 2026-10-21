@@ -59,6 +59,8 @@ class TrainingExample:
     label: int
     features: TrackFeatures
     decided_at_source: str = "unknown"
+    decision: str | None = None
+    weight: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -280,7 +282,8 @@ def fit_model(
     estimator = LogisticRegression(
         C=regularization_c, max_iter=5_000, random_state=0, solver="lbfgs"
     )
-    estimator.fit((matrix - means) / scales, labels)
+    weights = np.asarray([example.weight for example in examples], dtype=float)
+    estimator.fit((matrix - means) / scales, labels, sample_weight=weights)
     ordered = sorted(examples, key=lambda row: (row.decided_at, row.soundcloud_id))
     return ModelArtifact(
         version=version,
@@ -364,6 +367,30 @@ def evaluate_probabilities(
         "bottom_decile_keep_rate": float(y[order[-bottom:]].mean()),
     }
     result["auc"] = float(roc_auc_score(y, p)) if 0 < y.sum() < len(y) else 0.5
+    return result
+
+
+def near_miss_separation(
+    decisions: Sequence[str | None], probabilities: Sequence[float]
+) -> dict[str, float | None]:
+    """How the model scores not-quite tracks against nopes (both label 0).
+
+    ``auc`` is P(random not_quite scores above random nope); 0.5 means the
+    model can't tell a near miss from a clear pass, i.e. it learned surface
+    features rather than taste. None when either group is empty.
+    """
+    near = [p for d, p in zip(decisions, probabilities) if d == "not_quite"]
+    nope = [p for d, p in zip(decisions, probabilities) if d == "nope"]
+    result: dict[str, float | None] = {
+        "not_quite_count": float(len(near)),
+        "nope_count": float(len(nope)),
+        "not_quite_mean": float(np.mean(near)) if near else None,
+        "nope_mean": float(np.mean(nope)) if nope else None,
+        "auc": None,
+    }
+    if near and nope:
+        groups = np.asarray([1] * len(near) + [0] * len(nope))
+        result["auc"] = float(roc_auc_score(groups, [*near, *nope]))
     return result
 
 
@@ -675,6 +702,11 @@ def evaluate_model(
         for name, predictions in systems.items()
     }
     deltas = _paired_deltas(labels, systems, bootstrap_iterations)
+    test_decisions = [row.decision for row in split.test]
+    near_miss = {
+        name: near_miss_separation(test_decisions, predictions)
+        for name, predictions in systems.items()
+    }
     passed, failed = ship_gate(
         comparisons["logistic_regression"]["metrics"],
         comparisons["prior"]["metrics"],
@@ -691,6 +723,7 @@ def evaluate_model(
         "regularization": {"selected_c": c, "grid": grid},
         "comparisons": comparisons,
         "paired_deltas": deltas,
+        "not_quite_vs_nope": near_miss,
         "feature_ablations": _ablation_report(split, genres, c, version),
         "coefficients": sorted(
             (

@@ -6,7 +6,11 @@ import sqlite3
 
 import pytest
 
-from music_minion.core.database import _migrate_v62_decision_ledger, migrate_database
+from music_minion.core.database import (
+    _migrate_v62_decision_ledger,
+    _migrate_v67_decision_verdicts,
+    migrate_database,
+)
 from web.backend.artist_quality import (
     aggregate_artist_role_stats,
     bayesian_keep_rate,
@@ -15,7 +19,8 @@ from web.backend.artist_quality import (
     recalculate_artist_role_stats,
     role_attributions,
 )
-from web.backend.keep_decisions import ReposterEvent, TrackDecision
+from web.backend.keep_decisions import ReposterEvent, TrackDecision, keep_credit
+from web.backend.queries.discovery import weighted_hit_rate
 
 SCHEMA_SQL = """
 CREATE TABLE discovery_artists (
@@ -77,8 +82,10 @@ def _decision(
     label: int,
     uploader: int | None = None,
     reposters: tuple[int, ...] = (),
+    decision: str | None = None,
 ) -> TrackDecision:
     return TrackDecision(
+        decision=decision,
         soundcloud_id=sc_id,
         label=label,
         event_type="both" if uploader and reposters else "repost",
@@ -111,6 +118,7 @@ def conn() -> sqlite3.Connection:
     connection.row_factory = sqlite3.Row
     connection.executescript(SCHEMA_SQL)
     _migrate_v62_decision_ledger(connection)  # real ledger table, index and view
+    _migrate_v67_decision_verdicts(connection)
     yield connection
     connection.close()
 
@@ -156,6 +164,42 @@ def test_uploader_and_reposter_roles_are_kept_apart() -> None:
     assert stats[(3, "repost")].keep_rate == pytest.approx(bayesian_keep_rate(0.5, 0.5))
 
 
+def test_not_quite_earns_half_a_keep_in_both_roles() -> None:
+    decisions = [
+        _decision("kept", 1, uploader=1, reposters=(2,), decision="keep"),
+        _decision("near", 0, uploader=1, reposters=(2,), decision="not_quite"),
+        _decision("pass", 0, uploader=1, reposters=(2,), decision="nope"),
+    ]
+    stats = {(s.artist_id, s.role): s for s in aggregate_artist_role_stats(decisions)}
+    assert stats[(1, "upload")].kept_weight == pytest.approx(1.5)
+    assert stats[(1, "upload")].rated_weight == 3
+    assert stats[(2, "repost")].kept_weight == pytest.approx(1.5)
+    legacy = legacy_full_credit_stats(decisions)
+    assert legacy[1] == pytest.approx((1.5, 3.0, 0.5))
+
+
+def test_keep_credit_falls_back_to_the_label_without_a_verdict() -> None:
+    assert keep_credit(_decision("a", 1)) == 1.0
+    assert keep_credit(_decision("b", 0)) == 0.0
+    assert keep_credit(_decision("c", 0, decision="not_quite")) == 0.5
+
+
+@pytest.mark.parametrize(
+    ("keeps", "not_quites", "nopes", "expected"),
+    [
+        (0, 0, 0, 0.0),
+        (1, 1, 0, 75.0),
+        (1, 1, 2, 37.5),
+        (0, 2, 0, 50.0),
+        (2, 0, 2, 50.0),
+    ],
+)
+def test_weighted_hit_rate_counts_not_quite_as_half(
+    keeps: int, not_quites: int, nopes: int, expected: float
+) -> None:
+    assert weighted_hit_rate(keeps, not_quites, nopes) == pytest.approx(expected)
+
+
 def test_legacy_full_credit_replays_every_track_per_actor() -> None:
     decisions = [_decision("one", 1, uploader=1, reposters=(2, 3, 4))]
     legacy = legacy_full_credit_stats(decisions)
@@ -195,6 +239,7 @@ def _seed(conn: sqlite3.Connection) -> None:
     )
     # Legacy labels become ledger rows exactly as the v62 backfill does.
     _migrate_v62_decision_ledger(conn)
+    _migrate_v67_decision_verdicts(conn)
 
 
 def test_recalculate_persists_rates_with_counts_and_keeps_rank_and_tier(conn) -> None:

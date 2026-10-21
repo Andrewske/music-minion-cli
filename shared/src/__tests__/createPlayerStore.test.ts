@@ -452,6 +452,23 @@ describe('optimistic transport actions', () => {
     expect(pos).toBeLessThan(91_000);
   });
 
+  it('seeks in the same millisecond still get distinct lastSeekAt stamps', () => {
+    const store = seedStore();
+    pendingFetch();
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+    const stamps: number[] = [];
+    const unsubscribe = store.subscribe((s) => stamps.push(s.lastSeekAt));
+
+    void store.getState().seek(10_000);
+    void store.getState().seek(150_000);
+    void store.getState().seek(20_000);
+
+    unsubscribe();
+    nowSpy.mockRestore();
+    expect(new Set(stamps).size).toBe(3);
+    expect(stamps).toEqual([...stamps].sort((a, b) => a - b));
+  });
+
   it('seek rolls back position and clock on POST failure', async () => {
     const store = seedStore();
     const startedAtBefore = store.getState().trackStartedAt;

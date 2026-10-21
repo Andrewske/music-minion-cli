@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -21,6 +22,7 @@ from web.backend.preference_model import (
     evaluate_probabilities,
     feature_dict,
     fit_model,
+    near_miss_separation,
     normalize_genre,
     paired_bootstrap_delta,
     score_features,
@@ -217,6 +219,48 @@ def test_evaluation_report_has_baselines_ablations_calibration_and_verdict() -> 
     assert report["decided_at_sources"] == {"test": 120}
     assert report["recommendation"] in {"ship-shadow", "no-ship"}
     assert report["coefficients"][0]["feature"] in artifact.feature_names
+
+
+def test_near_miss_separation_reports_means_and_auc() -> None:
+    result = near_miss_separation(
+        ["not_quite", "not_quite", "nope", "nope", "keep", None],
+        [0.6, 0.4, 0.3, 0.5, 0.9, 0.1],
+    )
+    assert result["not_quite_count"] == 2
+    assert result["nope_count"] == 2
+    assert result["not_quite_mean"] == pytest.approx(0.5)
+    assert result["nope_mean"] == pytest.approx(0.4)
+    # Pairs (nq > nope): 0.6>0.3, 0.6>0.5, 0.4>0.3, 0.4<0.5 -> 3 of 4.
+    assert result["auc"] == pytest.approx(0.75)
+
+
+def test_near_miss_separation_is_empty_without_both_groups() -> None:
+    result = near_miss_separation(["nope", "keep"], [0.2, 0.8])
+    assert result["not_quite_mean"] is None
+    assert result["auc"] is None
+
+
+def test_evaluation_reports_not_quite_vs_nope_for_every_system() -> None:
+    examples = [
+        replace(row, decision="keep" if row.label else ("not_quite", "nope")[i % 2])
+        for i, row in enumerate(_examples(120, group_size=3))
+    ]
+    _, report = evaluate_model(examples, "near-miss", bootstrap_iterations=5)
+    near_miss = report["not_quite_vs_nope"]
+    assert set(near_miss) == set(report["comparisons"])
+    model = near_miss["logistic_regression"]
+    assert model["not_quite_count"] > 0 and model["nope_count"] > 0
+    assert 0.0 <= model["auc"] <= 1.0
+
+
+def test_label_weights_reach_the_fit() -> None:
+    examples = _examples()
+    upweighted = [
+        replace(row, weight=5.0) if row.label == 1 else row for row in examples
+    ]
+    plain = fit_model(examples, "plain")
+    weighted = fit_model(upweighted, "weighted")
+    assert weighted.intercept > plain.intercept
 
 
 def test_unknown_features_score_at_a_stable_cold_start_value() -> None:
