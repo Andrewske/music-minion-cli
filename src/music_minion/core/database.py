@@ -361,6 +361,8 @@ _V68_FILTER_RULES_DDL = """
         threshold REAL,
         reason TEXT NOT NULL CHECK (reason IN ('live_mix', 'podcast', 'other')),
         enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+        -- Bumped on every edit/toggle. A run only acts on the version it read.
+        version INTEGER NOT NULL DEFAULT 1,
         seed_key TEXT UNIQUE,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -428,6 +430,10 @@ def _migrate_v68_feed_flags(conn) -> None:
     """
     seed = not _table_exists(conn, "feed_filter_rules")
     conn.execute(_V68_FILTER_RULES_DDL)
+    # A rules table from an earlier draft of v68 has no version column.
+    _add_column_if_missing(
+        conn, "feed_filter_rules", "version INTEGER NOT NULL DEFAULT 1"
+    )
     conn.execute(_V68_TRACK_FLAGS_DDL)
     conn.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS idx_sc_track_flags_active

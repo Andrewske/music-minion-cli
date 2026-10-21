@@ -189,6 +189,17 @@ class TestMigrationV68:
         _migrate_v68_feed_flags(conn)
         assert conn.execute("SELECT COUNT(*) FROM feed_filter_rules").fetchone()[0] == 2
 
+    def test_rerun_adds_version_to_an_early_v68_rules_table(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.execute(
+            "CREATE TABLE feed_filter_rules (id INTEGER PRIMARY KEY, name TEXT,"
+            " seed_key TEXT UNIQUE, enabled INTEGER NOT NULL DEFAULT 1)"
+        )
+        conn.execute("INSERT INTO feed_filter_rules (name) VALUES ('old')")
+        _migrate_v68_feed_flags(conn)
+        _migrate_v68_feed_flags(conn)
+        assert conn.execute("SELECT version FROM feed_filter_rules").fetchall() == [(1,)]
+
     def test_seed_rules_pass_validation(self) -> None:
         for rule in _seed_rules().values():
             validate_rule(rule)
@@ -392,6 +403,31 @@ class TestIngestAndRescue:
 
         monkeypatch.setattr(feed_filters, "_rule_flags", rate_after_matching)
         assert feed_filters.apply_rules(None) == 0
+
+    def test_run_drops_flags_from_a_rule_edited_mid_run_in_the_same_second(
+        self, test_db, monkeypatch  # noqa: F811
+    ) -> None:
+        from web.backend.queries import feed_filters
+
+        _seed_uploads({"12": "Sunday Podcast 3"})
+        rule_id = _rule_id("seed_title_podcast")
+        real_rule_flags = feed_filters._rule_flags
+
+        def edit_rule_after_matching(tracks, rules):
+            flags = real_rule_flags(tracks, rules)
+            feed_filters.update_rule(rule_id, {"pattern": "radio show"})
+            # Same CURRENT_TIMESTAMP second as the read: only version differs.
+            with get_db_connection() as conn:
+                conn.execute(
+                    "UPDATE feed_filter_rules SET updated_at = ? WHERE id = ?",
+                    (next(r for r in rules if r["id"] == rule_id)["updated_at"], rule_id),
+                )
+                conn.commit()
+            return flags
+
+        monkeypatch.setattr(feed_filters, "_rule_flags", edit_rule_after_matching)
+        assert feed_filters.apply_rules(None) == 0
+        assert feed_filters.get_rule(rule_id)["version"] == 2
 
     def test_flags_cannot_reference_a_missing_rule(self, test_db) -> None:  # noqa: F811
         with get_db_connection() as conn, pytest.raises(sqlite3.IntegrityError):
@@ -707,6 +743,30 @@ class TestRegexRuntimeBound:
         assert feed_filters.apply_rules(None) == 1  # only the podcast seed rule
         assert feed_filters.get_rule(slow["id"])["enabled"] is False
         assert feed_filters.get_active_flag("19") is not None
+
+
+    def test_run_never_disables_a_rule_edited_while_it_timed_out(
+        self, test_db, monkeypatch  # noqa: F811
+    ) -> None:
+        from web.backend.queries import feed_filters
+
+        _seed_uploads({str(10 + n): SLOW_TITLE for n in range(1, 6)})
+        slow = feed_filters.create_rule(
+            {"name": "Slow", "kind": "title_regex", "pattern": SLOW_PATTERN, "reason": "other"}
+        )
+        real_rule_flags = feed_filters._rule_flags
+
+        def fix_rule_after_matching(tracks, rules):
+            result = real_rule_flags(tracks, rules)
+            assert result[1][slow["id"]] >= 3
+            feed_filters.update_rule(slow["id"], {"pattern": "podcast"})
+            return result
+
+        monkeypatch.setattr(feed_filters, "_rule_flags", fix_rule_after_matching)
+        feed_filters.apply_rules(None)
+        fixed = feed_filters.get_rule(slow["id"])
+        assert fixed["enabled"] is True and fixed["pattern"] == "podcast"
+        assert fixed["version"] == 2
 
 
 class TestArtistRecalcSerialized:

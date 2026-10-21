@@ -1,5 +1,5 @@
 import { renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   attachListenTracker,
   attachStoreSeekTracker,
@@ -21,6 +21,7 @@ function fakeAudio(trackId?: number): FakeAudio {
   const target = new EventTarget();
   const el = {
     currentTime: 0,
+    duration: NaN,
     dataset: trackId === undefined ? {} : { trackId: String(trackId) },
     addEventListener: target.addEventListener.bind(target),
     removeEventListener: target.removeEventListener.bind(target),
@@ -35,6 +36,11 @@ function fakeAudio(trackId?: number): FakeAudio {
 
 beforeEach(() => {
   useListenStore.setState(INITIAL_LISTEN_STATE);
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('audio listen tracker', () => {
@@ -89,6 +95,64 @@ describe('audio listen tracker', () => {
     usePlayerStore.setState({ positionMs: 150_000, lastSeekAt: 1 });
     usePlayerStore.setState({ positionMs: 20_000, lastSeekAt: 2 });
     expect(getListenStats(7)).toEqual({ listenSeconds: 0, maxPositionMs: 150_000 });
+    detach();
+    usePlayerStore.setState({ currentTrack: null, lastSeekAt: 0 });
+  });
+
+  it('caps a seek past the end at the media duration', () => {
+    const audio = fakeAudio(1);
+    audio.duration = 1;
+    const detach = attachListenTracker(audio, 'A', useListenStore.getState().record);
+    // Chromium clamps the element to 1s, but the request still says 150s.
+    seekAudio(audio as unknown as HTMLAudioElement, 150);
+    audio.fire('seeked', 1_000);
+    expect(getListenStats(1).maxPositionMs).toBe(1_000);
+    detach();
+  });
+
+  it('re-caps a seek recorded before the media knew its duration', () => {
+    const audio = fakeAudio(1);
+    const detach = attachListenTracker(audio, 'A', useListenStore.getState().record);
+    seekAudio(audio as unknown as HTMLAudioElement, 150);
+    expect(getListenStats(1).maxPositionMs).toBe(150_000);
+    audio.duration = 1;
+    audio.fire('durationchange', 1_000);
+    expect(getListenStats(1).maxPositionMs).toBe(1_000);
+    detach();
+  });
+
+  it('caps store seeks at the library duration until the media reports one', () => {
+    usePlayerStore.setState({
+      currentTrack: { id: 8, duration: 60 } as Track,
+      isAudioLeader: true,
+      isPlaying: false,
+      lastSeekAt: 0,
+    });
+    const detach = attachStoreSeekTracker(useListenStore.getState().record);
+    usePlayerStore.setState({ positionMs: 150_000, lastSeekAt: 1 });
+    expect(getListenStats(8).maxPositionMs).toBe(60_000);
+    detach();
+    usePlayerStore.setState({ currentTrack: null, lastSeekAt: 0 });
+  });
+
+  it('keeps the peak of store seeks that share one millisecond', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
+    usePlayerStore.setState({
+      currentTrack: { id: 9 } as Track,
+      isAudioLeader: true,
+      isPlaying: false,
+      isThisDeviceActive: true,
+      positionMs: 0,
+      lastSeekAt: 0,
+    });
+    const detach = attachStoreSeekTracker(useListenStore.getState().record);
+    const { seek } = usePlayerStore.getState();
+    void seek(10_000);
+    void seek(150_000);
+    void seek(20_000);
+    expect(getListenStats(9).maxPositionMs).toBe(150_000);
+    expect(usePlayerStore.getState().positionMs).toBe(20_000);
     detach();
     usePlayerStore.setState({ currentTrack: null, lastSeekAt: 0 });
   });
