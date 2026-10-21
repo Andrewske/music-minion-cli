@@ -167,6 +167,15 @@ export function getCurrentPosition(state: PlayerState): number {
 }
 
 /**
+ * A fresh lastSeekAt stamp. It is a change token, not just a clock: two seeks
+ * in the same millisecond must still produce two distinct values, or
+ * subscribers (audio engines, listen tracker) see only the last one.
+ */
+export function nextSeekStamp(prev: number): number {
+  return Math.max(Date.now(), prev + 1);
+}
+
+/**
  * Optimistic transport actions (pause/resume/seek/next/prev) are only allowed
  * when the audio is LOCAL: this device is active, or nothing is active yet.
  * When remote-controlling another device the UI keeps round-trip behavior —
@@ -323,7 +332,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
       set(updates);
       return () => {
         if (get().lastStateSeq !== seqAtApply) return; // server truth landed — don't regress it
-        set({ ...snapshot, lastSeekAt: Date.now() });
+        set({ ...snapshot, lastSeekAt: nextSeekStamp(get().lastSeekAt) });
       };
     };
 
@@ -495,7 +504,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
             positionMs: 0,
             trackStartedAt: restartedAt,
             // Restart is a seek-to-0 from the audio engine's perspective.
-            lastSeekAt: Date.now(),
+            lastSeekAt: nextSeekStamp(state.lastSeekAt),
           });
         } else {
           const prevTrack = state.queue[state.queueIndex - 1];
@@ -531,7 +540,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
         rollback = applyOptimistic({
           positionMs: target,
           trackStartedAt: state.isPlaying ? Date.now() + state.clockOffset : null,
-          lastSeekAt: Date.now(),
+          lastSeekAt: nextSeekStamp(state.lastSeekAt),
         });
       }
       try {
@@ -543,7 +552,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
         if (!response.ok) throw new Error('Failed to seek');
         // Remote-control path (non-optimistic): keep the original round-trip
         // behavior — bump lastSeekAt only after the server accepted the seek.
-        if (!rollback) set({ lastSeekAt: Date.now() });
+        if (!rollback) set({ lastSeekAt: nextSeekStamp(get().lastSeekAt) });
       } catch (error) {
         rollback?.();
         set({ playbackError: error instanceof Error ? error.message : 'Seek failed' });
@@ -708,7 +717,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
         scrobbledThisPlaythrough,
         isThisDeviceActive: state.activeDeviceId === get().thisDeviceId,
         currentContext: state.currentContext ?? get().currentContext,
-        lastSeekAt: isRemoteSeek ? Date.now() : current.lastSeekAt,
+        lastSeekAt: isRemoteSeek ? nextSeekStamp(current.lastSeekAt) : current.lastSeekAt,
       });
 
       // Slim broadcast advertising newer queue content than we hold: the slim

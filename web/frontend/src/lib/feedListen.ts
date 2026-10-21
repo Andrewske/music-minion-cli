@@ -6,10 +6,12 @@
  * Played time is the media position advanced between two progress events on
  * the same element and track, so buffering, stalls and blocked autoplay
  * (position never moves) count as nothing, and a seek never counts as
- * listening. Seek targets do count toward the furthest position reached.
+ * listening. Seek targets do count toward the furthest position reached,
+ * capped at the track's length once that is known: the media element's own
+ * duration wins over the library's `duration`.
  */
 
-export type ListenEventKind = 'progress' | 'seek';
+export type ListenEventKind = 'progress' | 'seek' | 'duration';
 
 export interface ListenEvent {
   kind: ListenEventKind;
@@ -17,11 +19,18 @@ export interface ListenEvent {
   source: string;
   trackId: number;
   positionMs: number;
+  /** The audio element's duration, when it has loaded metadata. */
+  mediaDurationMs?: number;
+  /** The library's duration for the track, used until the media's is known. */
+  trackDurationMs?: number;
 }
 
 export interface ListenTally {
   listenedMs: number;
+  /** Furthest position requested or played, uncapped; stats cap it. */
   maxPositionMs: number;
+  mediaDurationMs?: number;
+  trackDurationMs?: number;
 }
 
 interface ListenCursor {
@@ -50,12 +59,22 @@ function playedSince(cursor: ListenCursor | undefined, event: ListenEvent): numb
   return advanced > 0 && advanced <= MAX_PROGRESS_STEP_MS ? advanced : 0;
 }
 
+function knownDuration(ms: number | undefined): number | undefined {
+  return ms !== undefined && Number.isFinite(ms) && ms > 0 ? Math.round(ms) : undefined;
+}
+
+function mergeTally(prior: ListenTally, event: ListenEvent, playedMs: number): ListenTally {
+  return {
+    listenedMs: prior.listenedMs + playedMs,
+    maxPositionMs: Math.max(prior.maxPositionMs, Math.round(event.positionMs)),
+    mediaDurationMs: knownDuration(event.mediaDurationMs) ?? prior.mediaDurationMs,
+    trackDurationMs: knownDuration(event.trackDurationMs) ?? prior.trackDurationMs,
+  };
+}
+
 export function recordListenEvent(state: ListenState, event: ListenEvent): ListenState {
   const prior = state.tallies[event.trackId] ?? EMPTY_TALLY;
-  const tally: ListenTally = {
-    listenedMs: prior.listenedMs + playedSince(state.cursors[event.source], event),
-    maxPositionMs: Math.max(prior.maxPositionMs, Math.round(event.positionMs)),
-  };
+  const tally = mergeTally(prior, event, playedSince(state.cursors[event.source], event));
   return {
     tallies: { ...state.tallies, [event.trackId]: tally },
     cursors: { ...state.cursors, [event.source]: { trackId: event.trackId, positionMs: event.positionMs } },
@@ -63,9 +82,11 @@ export function recordListenEvent(state: ListenState, event: ListenEvent): Liste
 }
 
 function toStats(tally: ListenTally): ListenStats {
+  // A seek past the end lands at the end, so the furthest point is the length.
+  const lengthMs = tally.mediaDurationMs ?? tally.trackDurationMs ?? Infinity;
   return {
     listenSeconds: Math.round(tally.listenedMs / 100) / 10,
-    maxPositionMs: tally.maxPositionMs,
+    maxPositionMs: Math.min(tally.maxPositionMs, lengthMs),
   };
 }
 

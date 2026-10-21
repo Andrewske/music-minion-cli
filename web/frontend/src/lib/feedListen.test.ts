@@ -25,6 +25,22 @@ const seek = (positionMs: number, trackId = 1, source = 'A'): ListenEvent => ({
 });
 
 describe('feed listen accounting', () => {
+  it('caps the furthest point at the media duration, preferring it over the library duration', () => {
+    const state = replay([
+      { ...seek(150_000), trackDurationMs: 60_000 },
+      { ...seek(150_000), mediaDurationMs: 1_000 },
+    ]);
+    expect(listenStatsFor(state, 1).maxPositionMs).toBe(1_000);
+  });
+
+  it('ignores unknown durations (NaN, Infinity, 0)', () => {
+    const state = replay([
+      { ...seek(150_000), mediaDurationMs: NaN },
+      { ...seek(150_000), mediaDurationMs: Infinity, trackDurationMs: 0 },
+    ]);
+    expect(listenStatsFor(state, 1).maxPositionMs).toBe(150_000);
+  });
+
   it('counts media position advanced between progress events', () => {
     const state = replay([progress(0), progress(250), progress(500), progress(2_000)]);
     expect(listenStatsFor(state, 1)).toEqual({ listenSeconds: 2, maxPositionMs: 2_000 });
