@@ -95,7 +95,7 @@ function retrySameTrack(
   el.addEventListener(
     'canplay',
     () => {
-      if (resumeAt > 0) el.currentTime = resumeAt;
+      if (resumeAt > 0) seekAudio(el, resumeAt);
       if (usePlayerStore.getState().isPlaying) {
         el.play().catch(handlePlayError);
       }

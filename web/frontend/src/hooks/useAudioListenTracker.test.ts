@@ -1,10 +1,21 @@
 import { renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { attachListenTracker, useAudioListenTracker, type ListenMedia } from './useAudioListenTracker';
+import {
+  attachListenTracker,
+  attachStoreSeekTracker,
+  useAudioListenTracker,
+  type ListenMedia,
+} from './useAudioListenTracker';
+import { seekAudio } from '../lib/audioSource';
 import { INITIAL_LISTEN_STATE } from '../lib/feedListen';
+import { usePlayerStore } from '../stores/playerStore';
+import type { Track } from '@music-minion/shared';
 import { getListenStats, getPlayedListenStats, useListenStore } from '../stores/listenStore';
 
-type FakeAudio = ListenMedia & { fire: (type: string, positionMs: number) => void };
+type FakeAudio = ListenMedia & {
+  fire: (type: string, positionMs: number) => void;
+  dispatchEvent: (event: Event) => boolean;
+};
 
 function fakeAudio(trackId?: number): FakeAudio {
   const target = new EventTarget();
@@ -13,6 +24,7 @@ function fakeAudio(trackId?: number): FakeAudio {
     dataset: trackId === undefined ? {} : { trackId: String(trackId) },
     addEventListener: target.addEventListener.bind(target),
     removeEventListener: target.removeEventListener.bind(target),
+    dispatchEvent: target.dispatchEvent.bind(target),
     fire: (type: string, positionMs: number): void => {
       el.currentTime = positionMs / 1000;
       target.dispatchEvent(new Event(type));
@@ -51,6 +63,34 @@ describe('audio listen tracker', () => {
     audio.fire('timeupdate', 20_500);
     expect(getListenStats(1)).toEqual({ listenSeconds: 1.5, maxPositionMs: 150_000 });
     detach();
+  });
+
+  it('keeps the furthest target when two seeks land before the browser events fire', () => {
+    const audio = fakeAudio(1);
+    const detach = attachListenTracker(audio, 'A', useListenStore.getState().record);
+    audio.fire('timeupdate', 0);
+    // A real element reads back the latest target in its queued seeking/seeked events.
+    seekAudio(audio as unknown as HTMLAudioElement, 150);
+    seekAudio(audio as unknown as HTMLAudioElement, 20);
+    audio.fire('seeking', 20_000);
+    audio.fire('seeked', 20_000);
+    expect(getListenStats(1)).toEqual({ listenSeconds: 0, maxPositionMs: 150_000 });
+    detach();
+  });
+
+  it('records store seeks that React batches into one audio seek', () => {
+    usePlayerStore.setState({
+      currentTrack: { id: 7 } as Track,
+      isAudioLeader: true,
+      isPlaying: false,
+      lastSeekAt: 0,
+    });
+    const detach = attachStoreSeekTracker(useListenStore.getState().record);
+    usePlayerStore.setState({ positionMs: 150_000, lastSeekAt: 1 });
+    usePlayerStore.setState({ positionMs: 20_000, lastSeekAt: 2 });
+    expect(getListenStats(7)).toEqual({ listenSeconds: 0, maxPositionMs: 150_000 });
+    detach();
+    usePlayerStore.setState({ currentTrack: null, lastSeekAt: 0 });
   });
 
   it('ignores elements with no bound track', () => {

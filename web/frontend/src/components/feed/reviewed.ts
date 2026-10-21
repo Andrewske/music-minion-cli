@@ -1,4 +1,11 @@
-import { FEED_VERDICT_LABELS, type FeedDecision, type RateFeedItemOptions, type ReviewedItem } from '../../api/feed';
+import type { InfiniteData, QueryClient } from '@tanstack/react-query';
+import {
+  FEED_VERDICT_LABELS,
+  type FeedDecision,
+  type RateFeedItemOptions,
+  type ReviewedItem,
+  type ReviewedPage,
+} from '../../api/feed';
 import { formatListenTime } from '../../lib/feedListen';
 import { getPlayedListenStats } from '../../stores/listenStore';
 
@@ -44,4 +51,34 @@ export function reviewedRateOptions(localTrackId: number | null): RateFeedItemOp
   return listen
     ? { surface: 'web_reviewed', listenSeconds: listen.listenSeconds, maxPositionMs: listen.maxPositionMs }
     : { surface: 'web_reviewed' };
+}
+
+/** The cached Reviewed pages with one soundcloud row pointed at its new local track. */
+export function withMaterializedId(
+  data: InfiniteData<ReviewedPage> | undefined,
+  soundcloudId: string,
+  localTrackId: number,
+): InfiniteData<ReviewedPage> | undefined {
+  if (!data) return data;
+  const pages = data.pages.map((page) => ({
+    ...page,
+    items: page.items.map((row) =>
+      row.soundcloud_id === soundcloudId ? { ...row, local_track_id: localTrackId } : row,
+    ),
+  }));
+  return { ...data, pages };
+}
+
+/**
+ * Playing a Reviewed row with no local track creates one. Every cached
+ * Reviewed variant learns its id, so a re-rate finds this session's listen tally.
+ */
+export function cacheMaterializedReviewed(
+  queryClient: QueryClient,
+  soundcloudId: string,
+  localTrackId: number,
+): void {
+  queryClient.setQueriesData<InfiniteData<ReviewedPage>>({ queryKey: REVIEWED_QUERY_KEY }, (old) =>
+    withMaterializedId(old, soundcloudId, localTrackId),
+  );
 }

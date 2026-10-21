@@ -1,8 +1,9 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { ReviewedItem } from '../../api/feed';
+import { QueryClient, type InfiniteData } from '@tanstack/react-query';
+import type { ReviewedItem, ReviewedPage } from '../../api/feed';
 import { ReviewedRow } from './ReviewedList';
-import { describeListen, reviewedRateOptions } from './reviewed';
+import { REVIEWED_QUERY_KEY, cacheMaterializedReviewed, describeListen, reviewedRateOptions } from './reviewed';
 import { INITIAL_LISTEN_STATE } from '../../lib/feedListen';
 import { useListenStore } from '../../stores/listenStore';
 
@@ -86,5 +87,27 @@ describe('reviewedRateOptions', () => {
     useListenStore.setState(INITIAL_LISTEN_STATE);
     expect(reviewedRateOptions(7)).toEqual({ surface: 'web_reviewed' });
     expect(reviewedRateOptions(null)).toEqual({ surface: 'web_reviewed' });
+  });
+});
+
+describe('cacheMaterializedReviewed', () => {
+  it('lets a re-rate send the tally of a row that had no local track before playback', () => {
+    useListenStore.setState(INITIAL_LISTEN_STATE);
+    const queryClient = new QueryClient();
+    const key = [...REVIEWED_QUERY_KEY, { filter: undefined }];
+    const page: ReviewedPage = { items: [makeItem({ local_track_id: null })], next_cursor: null };
+    queryClient.setQueryData<InfiniteData<ReviewedPage>>(key, { pages: [page], pageParams: [undefined] });
+    // Play materializes track 55, then the player tallies it.
+    cacheMaterializedReviewed(queryClient, '42', 55);
+    const { record } = useListenStore.getState();
+    record({ kind: 'progress', source: 'A', trackId: 55, positionMs: 0 });
+    record({ kind: 'progress', source: 'A', trackId: 55, positionMs: 4_000 });
+    const row = queryClient.getQueryData<InfiniteData<ReviewedPage>>(key)?.pages[0].items[0];
+    expect(row?.local_track_id).toBe(55);
+    expect(reviewedRateOptions(row?.local_track_id ?? null)).toEqual({
+      surface: 'web_reviewed',
+      listenSeconds: 4,
+      maxPositionMs: 4_000,
+    });
   });
 });

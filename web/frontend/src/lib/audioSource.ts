@@ -74,8 +74,16 @@ export function setAudioMuted(el: HTMLAudioElement | null, muted: boolean): void
   if (el) el.muted = muted;
 }
 
+/**
+ * Fired synchronously by seekAudio with the requested target in ms. The
+ * browser's own seeking/seeked events are queued and read currentTime late, so
+ * two quick seeks would only ever report the second target.
+ */
+export const SEEK_REQUEST_EVENT = 'mm-seek-request';
+
 export function seekAudio(el: HTMLAudioElement, seconds: number): void {
   el.currentTime = seconds;
+  el.dispatchEvent(new CustomEvent<number>(SEEK_REQUEST_EVENT, { detail: seconds * 1000 }));
 }
 
 /** Pause, unbind, and forget which track the element held. */
