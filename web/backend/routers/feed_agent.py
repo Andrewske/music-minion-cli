@@ -6,12 +6,13 @@ only; a rule exists only once Kevin accepts a suggestion.
 
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 
 from web.backend import feed_classifier
 from web.backend.feed_filter_rules import MAX_PATTERN_LENGTH, MAX_RULE_NAME_LENGTH
 from web.backend.queries import feed_agent
+from web.backend.queries import feed_filters as filter_queries
 
 router = APIRouter(prefix="/api/feed-filters", tags=["feed-agent"])
 
@@ -62,9 +63,18 @@ def _resolve(classification_id: int, confirm: bool) -> dict[str, Any]:
 
 
 @router.post("/classifications/{classification_id}/confirm")
-def confirm_classification(classification_id: int) -> dict[str, Any]:
-    """Kevin agrees it's a mix/show: the track gets his own flag."""
-    return _resolve(classification_id, confirm=True)
+def confirm_classification(
+    classification_id: int, background_tasks: BackgroundTasks
+) -> dict[str, Any]:
+    """Kevin agrees it's a mix/show: the track gets his own flag.
+
+    Like any flag, it changes which tracks count toward artist stats.
+    """
+    resolved = _resolve(classification_id, confirm=True)
+    background_tasks.add_task(
+        filter_queries.refresh_artist_stats_for, [resolved["soundcloud_id"]]
+    )
+    return resolved
 
 
 @router.post("/classifications/{classification_id}/dismiss")

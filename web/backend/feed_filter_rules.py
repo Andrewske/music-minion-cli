@@ -46,6 +46,21 @@ def not_flagged_sql(column: str) -> str:
     return f"NOT {active_flag_exists_sql(column)}"
 
 
+def flaggable_track_sql(param: str) -> str:
+    """SQL predicate checked at write time before a rule or the agent flags a track.
+
+    The track must still be undecided and have no flag row at all: an active
+    flag already hides it, and a rescued one is the user's permanent "this is
+    a real track" exemption.
+    """
+    return (
+        "NOT EXISTS (SELECT 1 FROM sc_track_decisions d "
+        f"WHERE d.soundcloud_id = {param} AND d.is_current = 1) "
+        "AND NOT EXISTS (SELECT 1 FROM sc_track_flags f "
+        f"WHERE f.soundcloud_id = {param})"
+    )
+
+
 def split_tags(value: str | None) -> list[str]:
     """Lowercased, trimmed, non-empty tags from a comma/slash separated string."""
     if not value:

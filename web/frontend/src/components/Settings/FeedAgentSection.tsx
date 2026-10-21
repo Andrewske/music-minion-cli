@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bot, Check, Loader2, Sparkles, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { FEED_QUERY_PREFIX, invalidateFlagViews } from '../feed/feedCache';
 import {
   acceptRuleSuggestion,
   classifyAmbiguousTracks,
@@ -25,7 +26,7 @@ import {
 } from '../../api/feedFilters';
 import { usePlayFeedRow } from '../../hooks/usePlayFeedRow';
 import { formatFlagDuration, ruleErrorMessage } from '../feed/flagged';
-import { FILTER_RULES_QUERY_KEY, FLAGGED_QUERY_KEY } from '../feed/reviewed';
+import { FILTER_RULES_QUERY_KEY } from '../feed/reviewed';
 import { CLASSIFICATIONS_QUERY_KEY, SUGGESTIONS_QUERY_KEY, suggestionOverrides } from './feedAgent';
 
 const FIELD = 'rounded border border-obsidian-border bg-black/30 px-2 py-1.5 text-sm text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent';
@@ -169,8 +170,8 @@ function useClassifyMutations(): {
   const queryClient = useQueryClient();
   const refresh = (): void => {
     void queryClient.invalidateQueries({ queryKey: CLASSIFICATIONS_QUERY_KEY });
-    void queryClient.invalidateQueries({ queryKey: FLAGGED_QUERY_KEY });
-    void queryClient.invalidateQueries({ queryKey: ['feed'] });
+    void queryClient.invalidateQueries({ queryKey: FEED_QUERY_PREFIX });
+    invalidateFlagViews(queryClient);
   };
   const classifyMutation = useMutation({
     mutationFn: () => classifyAmbiguousTracks(),

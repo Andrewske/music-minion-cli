@@ -13,6 +13,7 @@ from loguru import logger
 
 from music_minion.core.database import get_db_connection
 from web.backend import rule_suggestions
+from web.backend.feed_filter_rules import flaggable_track_sql
 from web.backend.queries import feed_filters as filter_queries
 from web.backend.queries import insights as insight_queries
 from web.backend.soundcloud_metadata import parse_tag_list
@@ -111,6 +112,15 @@ def ambiguous_pool(conn: Any) -> list[dict[str, Any]]:
     return [track for track in tracks if track["soundcloud_id"] not in done]
 
 
+# The pool was read before the Jev call, so recheck at write time (as rule
+# flags do): a track rated, flagged or rescued meanwhile is left alone.
+_INSERT_AGENT_FLAG_SQL = f"""
+    INSERT OR IGNORE INTO sc_track_flags (soundcloud_id, reason, source, confidence)
+    SELECT :soundcloud_id, :reason, 'agent', :mix_probability
+    WHERE {flaggable_track_sql(":soundcloud_id")}
+"""
+
+
 def save_classification(
     conn: Any, result: dict[str, Any], model_id: str, state: str
 ) -> None:
@@ -124,12 +134,7 @@ def save_classification(
         {**result, "model_id": model_id, "state": state},
     )
     if result["status"] == "auto_flagged":
-        conn.execute(
-            """INSERT OR IGNORE INTO sc_track_flags
-                (soundcloud_id, reason, source, confidence)
-            VALUES (?, ?, 'agent', ?)""",
-            (result["soundcloud_id"], result["reason"], result["mix_probability"]),
-        )
+        conn.execute(_INSERT_AGENT_FLAG_SQL, result)
 
 
 _CLASSIFICATIONS_SQL = f"""

@@ -104,6 +104,22 @@ class TestMining:
         }
         assert patterns == {"talk", "talk show"}
 
+    def test_variant_keyword_regexes_pass_rule_validation(self) -> None:
+        from web.backend.feed_filter_rules import validate_rule
+        from web.backend.rule_suggestions import _VARIANT_REGEX
+
+        for keyword in [*_VARIANT_REGEX, "radio show", "guest mix 12"]:
+            validate_rule(
+                {"name": "x", "kind": "title_regex", "pattern": keyword_regex(keyword), "reason": "other"}
+            )
+
+    def test_unacceptable_candidates_are_never_suggested(self, monkeypatch) -> None:
+        from web.backend import rule_suggestions
+
+        monkeypatch.setattr(rule_suggestions, "keyword_regex", lambda _kw: "(a+)+$")
+        flags = [_flag(f"Radio Show {n}") for n in range(4)]
+        assert mine_suggestions(flags, [], [], []) == []
+
     def test_variant_keyword_regex_matches_every_spelling(self) -> None:
         import re
 
@@ -242,6 +258,31 @@ class TestClassifyRun:
         assert [item["soundcloud_id"] for item in pending] == ["101"]
         assert client.post("/api/feed-filters/classify").json()["candidates"] == 0
 
+    def test_agent_never_flags_a_track_rated_or_rescued_mid_run(
+        self, client, jev, monkeypatch
+    ) -> None:
+        from web.backend.queries import feed as feed_queries
+
+        _, answers = jev
+        _seed({"100": ("Track A", 10), "101": ("Track B", 10)})
+        answers |= {"Track A": 0.95, "Track B": 0.95}
+        real_ask = jev_client.ask_nouls
+
+        # While Jev runs, Kevin nopes 100 and a rule flag on 101 is rescued.
+        def rate_and_rescue_first(config, state, questions, timeout_s=30.0):
+            feed_queries.record_decision("100", "nope", "test")
+            with get_db_connection() as conn:
+                conn.execute(
+                    "INSERT INTO sc_track_flags (soundcloud_id, reason, source, rescued_at) "
+                    "VALUES ('101', 'other', 'rule', CURRENT_TIMESTAMP)"
+                )
+                conn.commit()
+            return real_ask(config, state, questions, timeout_s)
+
+        monkeypatch.setattr(jev_client, "ask_nouls", rate_and_rescue_first)
+        client.post("/api/feed-filters/classify")
+        assert {sc_id: flag["source"] for sc_id, flag in _flags().items()} == {"101": "rule"}
+
     def test_failed_batch_is_counted(self, client, jev, monkeypatch) -> None:
         _seed({"100": ("Track", 10)})
 
@@ -256,8 +297,14 @@ class TestClassifyRun:
         monkeypatch.setattr(jev_client, "get_jev_config", lambda: None)
         assert client.post("/api/feed-filters/classify").status_code == 503
 
-    def test_confirm_flags_and_dismiss_becomes_negative(self, client, jev) -> None:
+    def test_confirm_flags_and_dismiss_becomes_negative(
+        self, client, jev, monkeypatch
+    ) -> None:
         _, answers = jev
+        refreshed: list[list[str]] = []
+        monkeypatch.setattr(
+            filter_queries, "refresh_artist_stats_for", lambda ids: refreshed.append(list(ids))
+        )
         _seed({"100": ("Maybe Show", 10), "101": ("Maybe Song", 10)})
         answers |= {"Maybe Show": 0.7, "Maybe Song": 0.6}
         client.post("/api/feed-filters/classify")
@@ -269,6 +316,7 @@ class TestClassifyRun:
         )
         assert confirmed.json()["status"] == "confirmed"
         assert _flags()["100"]["source"] == "user"
+        assert refreshed == [["100"]]
         client.post(f"/api/feed-filters/classifications/{by_id['101']}/dismiss")
         assert "101" not in _flags()
         again = client.post(f"/api/feed-filters/classifications/{by_id['101']}/confirm")

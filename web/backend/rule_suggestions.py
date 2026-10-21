@@ -21,7 +21,12 @@ from collections.abc import Iterable
 from typing import Any
 
 from web.backend import feed_insights
-from web.backend.feed_filter_rules import first_matching_rule, rule_matches, split_tags
+from web.backend.feed_filter_rules import (
+    first_matching_rule,
+    rule_matches,
+    split_tags,
+    validate_rule,
+)
 
 MIN_SUPPORT = 3
 MIN_PRECISION = 0.8
@@ -99,13 +104,23 @@ def _duration_candidates() -> list[dict[str, Any]]:
     ]
 
 
+def _acceptable(rule: dict[str, Any]) -> bool:
+    """Passes the same validation accepting it will (regex guard included)."""
+    try:
+        validate_rule({**rule, "reason": "other"})
+    except ValueError:
+        return False
+    return True
+
+
 def candidate_rules(flags: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Every rule the flags could justify, before any scoring."""
-    return [
+    """Every acceptable rule the flags could justify, before any scoring."""
+    candidates = [
         *_keyword_candidates(flags),
         *_tag_candidates(flags),
         *_duration_candidates(),
     ]
+    return [rule for rule in candidates if _acceptable(rule)]
 
 
 def signature(rule: dict[str, Any]) -> str:

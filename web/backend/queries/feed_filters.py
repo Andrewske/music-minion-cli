@@ -21,6 +21,7 @@ from web.backend.feed_filter_rules import (
     FLAG_REASONS,
     FLAG_SOURCES,
     first_matching_rule,
+    flaggable_track_sql,
     rule_precision,
     validate_rule,
 )
@@ -213,17 +214,13 @@ def _rule_flags(
 # unedited and enabled and that the track is still undecided with no flag
 # (active or rescued). A rule deleted, disabled or edited mid-run, or a track
 # rated or rescued mid-run, writes nothing.
-_INSERT_RULE_FLAG_SQL = """
+_INSERT_RULE_FLAG_SQL = f"""
     INSERT OR IGNORE INTO sc_track_flags (soundcloud_id, reason, source, rule_id)
     SELECT :soundcloud_id, :reason, 'rule', :rule_id
     WHERE EXISTS (
             SELECT 1 FROM feed_filter_rules r
             WHERE r.id = :rule_id AND r.enabled = 1 AND r.updated_at = :updated_at)
-      AND NOT EXISTS (
-            SELECT 1 FROM sc_track_decisions d
-            WHERE d.soundcloud_id = :soundcloud_id AND d.is_current = 1)
-      AND NOT EXISTS (
-            SELECT 1 FROM sc_track_flags f WHERE f.soundcloud_id = :soundcloud_id)
+      AND {flaggable_track_sql(":soundcloud_id")}
 """
 
 
