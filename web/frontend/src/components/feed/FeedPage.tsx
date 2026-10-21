@@ -45,7 +45,8 @@ import { FeedTrackCard } from './FeedTrackCard';
 import { FlagDialog, type FlagTarget } from './FlagDialog';
 import { NoteDialog } from './NoteDialog';
 import { ReviewedList } from './ReviewedList';
-import { FLAGGED_QUERY_KEY, REVIEWED_QUERY_KEY } from './reviewed';
+import { FEED_QUERY_PREFIX, invalidateFlagViews, removeFromAllFeeds, restoreFeeds } from './feedCache';
+import { REVIEWED_QUERY_KEY } from './reviewed';
 
 const ROW_HEIGHT = 92;
 const NOTE_TOAST_MS = 5_000;
@@ -173,17 +174,13 @@ export function FeedPage(): JSX.Element {
     });
   };
 
-  const removeFromFeed = async (soundcloudId: string): Promise<InfiniteData<FeedPageData> | undefined> => {
-    await queryClient.cancelQueries({ queryKey: feedQueryKey });
-    const previous = queryClient.getQueryData<InfiniteData<FeedPageData>>(feedQueryKey);
-    queryClient.setQueryData<InfiniteData<FeedPageData>>(feedQueryKey, (old) => old && ({
-      ...old,
-      pages: old.pages.map((page) => ({
-        ...page,
-        items: page.items.filter((candidate) => candidate.soundcloud_id !== soundcloudId),
-      })),
-    }));
-    return previous;
+  // Verdicts, flags and Undo share one mutation key so feed polling pauses
+  // for all of them; the last one to settle refetches every feed variant,
+  // replacing any poll that read before the write committed.
+  const refetchFeedsWhenIdle = (): void => {
+    if (queryClient.isMutating({ mutationKey: FEED_DECISION_MUTATION_KEY }) === 1) {
+      void queryClient.invalidateQueries({ queryKey: FEED_QUERY_PREFIX });
+    }
   };
 
   const decisionMutation = useMutation({
@@ -197,13 +194,13 @@ export function FeedPage(): JSX.Element {
       }),
     onMutate: async ({ item, decision }) => {
       // Every verdict, keep included, moves the track to the Reviewed tab.
-      const previous = await removeFromFeed(item.soundcloud_id);
+      const snapshot = await removeFromAllFeeds(queryClient, item.soundcloud_id);
       // Advance immediately; the note prompt never blocks the next track.
       if (decision !== 'keep') offerNote(item, decision);
-      return { previous };
+      return { snapshot };
     },
     onError: (_error, _variables, context) => {
-      if (context?.previous) queryClient.setQueryData(feedQueryKey, context.previous);
+      if (context?.snapshot) restoreFeeds(queryClient, context.snapshot);
       toast.error('Decision failed — the track was restored to the feed');
     },
     onSuccess: (response, { decision }) => {
@@ -215,30 +212,32 @@ export function FeedPage(): JSX.Element {
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: REVIEWED_QUERY_KEY });
-      // Replaces any poll that read before the decision committed.
-      if (queryClient.isMutating({ mutationKey: FEED_DECISION_MUTATION_KEY }) === 1) {
-        void queryClient.invalidateQueries({ queryKey: feedQueryKey });
-      }
+      refetchFeedsWhenIdle();
     },
   });
 
   const unflagMutation = useMutation({
+    mutationKey: FEED_DECISION_MUTATION_KEY,
     mutationFn: unflagFeedItem,
     onSuccess: () => toast.success('Back in the feed'),
     onError: () => toast.error('Undo failed'),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ['feed'] }),
+    onSettled: () => {
+      invalidateFlagViews(queryClient);
+      refetchFeedsWhenIdle();
+    },
   });
 
-  // Not a verdict: no listen stats, no artist stats refresh, no SC actions.
+  // Not a verdict: no listen stats, no SC actions. Artist stats refresh server-side.
   const flagMutation = useMutation({
+    mutationKey: FEED_DECISION_MUTATION_KEY,
     mutationFn: ({ soundcloudId, reason, note }: { soundcloudId: string; reason: FlagReason; note: string }) =>
       flagFeedItem(soundcloudId, reason, note),
     onMutate: async ({ soundcloudId }) => {
       setFlagTarget(null);
-      return { previous: await removeFromFeed(soundcloudId) };
+      return { snapshot: await removeFromAllFeeds(queryClient, soundcloudId) };
     },
     onError: (_error, _variables, context) => {
-      if (context?.previous) queryClient.setQueryData(feedQueryKey, context.previous);
+      if (context?.snapshot) restoreFeeds(queryClient, context.snapshot);
       toast.error('Flag failed; the track was restored to the feed');
     },
     onSuccess: (_response, { soundcloudId, reason }) => {
@@ -247,7 +246,10 @@ export function FeedPage(): JSX.Element {
         action: { label: 'Undo', onClick: () => unflagMutation.mutate(soundcloudId) },
       });
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: FLAGGED_QUERY_KEY }),
+    onSettled: () => {
+      invalidateFlagViews(queryClient);
+      refetchFeedsWhenIdle();
+    },
   });
 
   const decide = (item: FeedItem, decision: FeedVerdict): void => {

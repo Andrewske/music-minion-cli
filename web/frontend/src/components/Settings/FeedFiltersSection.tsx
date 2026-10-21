@@ -51,6 +51,7 @@ function useRuleMutations(): {
     void queryClient.invalidateQueries({ queryKey: FILTER_RULES_QUERY_KEY });
     void queryClient.invalidateQueries({ queryKey: FLAGGED_QUERY_KEY });
     void queryClient.invalidateQueries({ queryKey: ['feed'] });
+    void queryClient.invalidateQueries({ queryKey: ['artists'] });
   };
   const updateMutation = useMutation({
     mutationFn: ({ rule, changes }: { rule: FilterRule; changes: Partial<FilterRuleInput> }) => updateFilterRule(rule.id, changes),
