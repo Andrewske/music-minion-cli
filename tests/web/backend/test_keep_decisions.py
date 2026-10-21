@@ -7,8 +7,13 @@ from datetime import datetime, timezone
 
 import pytest
 
-from music_minion.core.database import _migrate_v62_decision_ledger
+from music_minion.core.database import (
+    _migrate_v62_decision_ledger,
+    _migrate_v67_decision_verdicts,
+)
 from web.backend.keep_decisions import (
+    LABEL_BY_DECISION,
+    LABEL_WEIGHT_BY_DECISION,
     load_sync_run_starts,
     load_track_decisions,
     resolve_decision_time,
@@ -79,6 +84,7 @@ def conn() -> sqlite3.Connection:
     connection.row_factory = sqlite3.Row
     connection.executescript(SCHEMA_SQL)
     _migrate_v62_decision_ledger(connection)  # real table, index and view
+    _migrate_v67_decision_verdicts(connection)
     connection.executemany(
         "INSERT INTO discovery_artists (id, soundcloud_user_id, slug, display_name,"
         " display_name_normalized, ranking, is_following) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -124,11 +130,12 @@ def _decide(conn, sc_id, decision, decided_at=LIVE_AT, surface="repost_builder")
     )
 
 
-def test_only_current_keep_and_nope_ledger_rows_are_labels(conn) -> None:
-    for sc_id in ("keep", "nope", "hidden", "flipped", "pending", "fresh"):
+def test_current_keep_not_quite_and_nope_rows_are_labels(conn) -> None:
+    for sc_id in ("keep", "nope", "near", "hidden", "flipped", "pending", "fresh"):
         _track(conn, sc_id)
     _decide(conn, "keep", "keep")
     _decide(conn, "nope", "nope")
+    _decide(conn, "near", "not_quite")
     _decide(conn, "hidden", "hide")
     _decide(conn, "flipped", "keep")
     _decide(conn, "flipped", "hide")  # hide supersedes the earlier keep
@@ -139,9 +146,25 @@ def test_only_current_keep_and_nope_ledger_rows_are_labels(conn) -> None:
         "UPDATE discovery_tracks SET status = 'liked' WHERE soundcloud_id = 'fresh'"
     )
     decisions = {d.soundcloud_id: d for d in load_track_decisions(conn)}
-    assert set(decisions) == {"keep", "nope"}
+    assert set(decisions) == {"keep", "nope", "near"}
     assert decisions["keep"].label == 1
     assert decisions["nope"].label == 0
+    assert decisions["near"].label == 0
+    assert decisions["near"].decision == "not_quite"
+    training_view = {
+        row["soundcloud_id"]
+        for row in conn.execute(
+            "SELECT soundcloud_id FROM sc_current_training_decisions"
+        )
+    }
+    assert training_view == {"keep", "nope", "near"}
+
+
+def test_label_and_weight_maps_cover_every_trainable_verdict() -> None:
+    assert LABEL_BY_DECISION == {"keep": 1, "not_quite": 0, "nope": 0}
+    assert set(LABEL_WEIGHT_BY_DECISION) == set(LABEL_BY_DECISION)
+    assert all(weight == 1.0 for weight in LABEL_WEIGHT_BY_DECISION.values())
+    assert "hide" not in LABEL_BY_DECISION
 
 
 def test_redecision_uses_only_the_current_row(conn) -> None:
@@ -254,6 +277,7 @@ def test_migrated_rows_only_trust_a_real_upload_rated_at(conn) -> None:
     )
     _upload(conn, "unrated-upload", status="liked", first_seen="2026-01-04 00:00:00")
     _migrate_v62_decision_ledger(conn)
+    _migrate_v67_decision_verdicts(conn)
     surfaces = {
         row["soundcloud_id"]: row["surface"]
         for row in conn.execute("SELECT soundcloud_id, surface FROM sc_track_decisions")
@@ -350,6 +374,7 @@ def test_migrated_batch_decisions_are_stamped_with_the_next_sync_start(conn) -> 
     _track(conn, "open", status="liked", playlist_batch=3, first_seen="2026-01-11")
     _track(conn, "nobatch", status="liked", first_seen="2026-01-06 00:00:00")
     _migrate_v62_decision_ledger(conn)
+    _migrate_v67_decision_verdicts(conn)
     now = datetime(2026, 2, 1, tzinfo=timezone.utc)
     decisions = {d.soundcloud_id: d for d in timeline_track_decisions(conn, now=now)}
     assert decisions["batch1"].decided_at == datetime(2026, 1, 10, tzinfo=timezone.utc)
@@ -367,6 +392,7 @@ def test_timeline_mixes_ledger_stamps_with_migration_proxies(conn) -> None:
     _runs(conn)
     _track(conn, "migrated", status="liked", playlist_batch=1, first_seen="2026-01-02")
     _migrate_v62_decision_ledger(conn)
+    _migrate_v67_decision_verdicts(conn)
     _track(conn, "live", playlist_batch=3)
     _decide(conn, "live", "nope", decided_at="2026-01-12T00:00:00+00:00")
     now = datetime(2026, 2, 1, tzinfo=timezone.utc)

@@ -27,7 +27,7 @@ MAX_REPOSTERS_IN_STATE = 5
 NOUL_QUESTION = (
     "Given Kevin's taste profile and this track's stats, will Kevin choose "
     "'keep' (add to his library) when this track appears in his SoundCloud "
-    "feed? Keep means he likes it enough to save; nope or hide means he passes."
+    "feed? Keep means he likes it enough to save; not quite or nope means he passes."
 )
 
 
@@ -71,7 +71,7 @@ def _overall_history(conn: Any) -> dict[str, Any]:
     row = conn.execute(
         """SELECT SUM(decision = 'keep') AS keeps, COUNT(*) AS total
         FROM sc_track_decisions WHERE is_current = 1
-          AND decision IN ('keep', 'nope')"""
+          AND decision IN ('keep', 'not_quite', 'nope')"""
     ).fetchone()
     total = row["total"] or 0
     rate = round((row["keeps"] or 0) / total, 3) if total else None

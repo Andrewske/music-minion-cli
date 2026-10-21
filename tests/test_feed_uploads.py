@@ -222,9 +222,13 @@ def test_db(tmp_path, monkeypatch):
     conn.row_factory = sqlite3.Row
     for stmt in MINIMAL_SCHEMA_SQL:
         conn.execute(stmt)
-    from music_minion.core.database import _migrate_v64_track_predictions
+    from music_minion.core.database import (
+        _migrate_v64_track_predictions,
+        _migrate_v67_decision_verdicts,
+    )
 
     _migrate_v64_track_predictions(conn)
+    _migrate_v67_decision_verdicts(conn)
     conn.execute("INSERT INTO sc_feed_sync_state (id) VALUES (1)")
     conn.commit()
     conn.close()
@@ -595,8 +599,9 @@ class TestGetFeedPage:
             _insert_upload(conn, aid, "4", "2026-07-04T00:00:00+00:00", "dismissed")
             conn.commit()
 
+        # Any current decision leaves the feed, keeps included.
         items = get_feed_page(limit=10)
-        assert [i["soundcloud_id"] for i in items] == ["2", "1"]
+        assert [i["soundcloud_id"] for i in items] == ["1"]
 
     def test_cursor_stable_under_new_inserts(self, test_db) -> None:
         from music_minion.core.database import get_db_connection
@@ -726,20 +731,56 @@ class TestRateUpload:
         assert artist["tracks_dismissed"] == 1
         assert artist["hit_rate"] == 0
 
-    def test_zero_hides_without_penalty(self, client) -> None:
+    def test_hide_can_no_longer_be_written(self, client) -> None:
+        _, uid = self._seed()
+        assert (
+            client.post(f"/api/feed/{uid}/rate", json={"decision": "hide"}).status_code
+            == 422
+        )
+        assert (
+            client.post(f"/api/feed/{uid}/rate", json={"value": 0}).status_code == 422
+        )
+
+    def test_not_quite_counts_as_half_a_keep(self, client) -> None:
         from music_minion.core.database import get_db_connection
 
         aid, uid = self._seed()
-        resp = client.post(f"/api/feed/{uid}/rate", json={"value": 0})
+        with patch("web.backend.routers.feed.enqueue_feed_action_drain") as wake:
+            resp = client.post(f"/api/feed/{uid}/rate", json={"decision": "not_quite"})
         assert resp.status_code == 200
-        assert resp.json()["status"] == "hidden"
+        assert resp.json()["current_decision"] == "not_quite"
+        assert resp.json()["status"] == "dismissed"
+        wake.assert_not_called()
 
         with get_db_connection() as conn:
             artist = conn.execute(
                 "SELECT * FROM discovery_artists WHERE id = ?", (aid,)
             ).fetchone()
-        assert artist["tracks_dismissed"] == 0
+            jobs = conn.execute("SELECT COUNT(*) FROM sc_feed_action_jobs").fetchone()
         assert artist["tracks_liked"] == 0
+        assert artist["tracks_dismissed"] == 0
+        assert artist["hit_rate"] == 50
+        assert jobs[0] == 0
+
+    def test_listen_stats_are_stored_on_the_ledger_row(self, client) -> None:
+        from web.backend.queries.feed import get_current_decision
+
+        _, uid = self._seed()
+        resp = client.post(
+            f"/api/feed/{uid}/rate",
+            json={"decision": "nope", "listen_seconds": 42.5, "max_position_ms": 61000},
+        )
+        assert resp.status_code == 200
+        current = get_current_decision("9001")
+        assert current["listen_seconds"] == 42.5
+        assert current["max_position_ms"] == 61000
+
+    def test_negative_listen_stats_are_rejected(self, client) -> None:
+        _, uid = self._seed()
+        resp = client.post(
+            f"/api/feed/{uid}/rate", json={"decision": "nope", "listen_seconds": -1}
+        )
+        assert resp.status_code == 422
 
     def test_plus_one_commits_and_enqueues_sc_flow(self, client) -> None:
         from music_minion.core.database import get_db_connection
@@ -793,7 +834,7 @@ class TestRateUpload:
         assert resp.status_code == 422
 
     def test_unknown_upload_404(self, client) -> None:
-        resp = client.post("/api/feed/12345/rate", json={"value": 0})
+        resp = client.post("/api/feed/12345/rate", json={"decision": "not_quite"})
         assert resp.status_code == 404
 
 
@@ -1004,18 +1045,23 @@ class TestCanonicalDecisionLedger:
             conn.commit()
 
         record_decision("track", "keep", "web_feed", "model-1", {"uploader_rank": 1})
-        record_decision("track", "hide", "mobile_feed")
         record_decision("track", "nope", "repost_builder")
+        record_decision("track", "not_quite", "mobile_feed")
         history = get_decision_history("track")
-        assert [row["decision"] for row in history] == ["keep", "hide", "nope"]
+        assert [row["decision"] for row in history] == ["keep", "nope", "not_quite"]
         assert sum(row["is_current"] for row in history) == 1
         assert history[-1]["feature_snapshot"] is None
         with get_db_connection() as conn:
             training = conn.execute(
-                """SELECT soundcloud_id, decision FROM sc_track_decisions
-                WHERE is_current = 1 AND decision IN ('keep', 'nope')"""
+                "SELECT soundcloud_id, decision FROM sc_current_training_decisions"
             ).fetchall()
-        assert [tuple(row) for row in training] == [("track", "nope")]
+        assert [tuple(row) for row in training] == [("track", "not_quite")]
+
+    def test_record_decision_rejects_hide(self, test_db) -> None:
+        from web.backend.queries.feed import record_decision
+
+        with pytest.raises(ValueError, match="hide"):
+            record_decision("track", "hide", "web_feed")  # type: ignore[arg-type]
 
 
 class TestDurableFeedActions:
@@ -1302,36 +1348,30 @@ class TestUnifiedFeedApi:
         assert set(unfiltered) == {"both", "far-only"}
         assert unfiltered["both"]["reposter_count"] == 2
 
-    def test_nope_and_hide_hidden_unless_show_hidden(self, test_db) -> None:
+    def test_any_decision_removes_the_track_from_the_feed(self, test_db) -> None:
         from music_minion.core.database import get_db_connection
         from web.backend.queries.feed import get_feed_page, record_decision
 
         with get_db_connection() as conn:
             reposter = _insert_artist(conn, "re", name="Re")
-            for sc_id in ("kept", "noped", "hidden", "fresh"):
+            for day, sc_id in enumerate(("kept", "nq", "noped", "legacy", "fresh"), 1):
                 _insert_repost_track(
-                    conn, reposter, sc_id, f"2026/07/0{len(sc_id)} 00:00:00 +0000"
+                    conn, reposter, sc_id, f"2026/07/0{day} 00:00:00 +0000"
                 )
+            # Legacy hide rows can't be written through the API any more.
+            conn.execute(
+                """INSERT INTO sc_track_decisions (soundcloud_id, decision, surface)
+                VALUES ('legacy', 'hide', 'test')"""
+            )
             conn.commit()
         record_decision("kept", "keep", "test")
+        record_decision("nq", "not_quite", "test")
         record_decision("noped", "nope", "test")
-        record_decision("hidden", "hide", "test")
 
         visible = {i["soundcloud_id"]: i for i in get_feed_page()}
-        assert set(visible) == {"kept", "fresh"}
-        assert visible["kept"]["current_decision"] == "keep"
-        assert visible["kept"]["status"] == "liked"
+        assert set(visible) == {"fresh"}
         assert visible["fresh"]["current_decision"] is None
-
-        everything = {
-            i["soundcloud_id"]: i["status"] for i in get_feed_page(show_hidden=True)
-        }
-        assert everything == {
-            "kept": "liked",
-            "noped": "dismissed",
-            "hidden": "hidden",
-            "fresh": "visible",
-        }
+        assert visible["fresh"]["status"] == "visible"
 
     def test_limit_and_cursor_validation(self, client) -> None:
         assert client.get("/api/feed", params={"limit": 101}).status_code == 422
@@ -1611,3 +1651,106 @@ class TestMonthlyTimezone:
             "web.backend.feed_rating.configured_feed_timezone", lambda: timezone.utc
         )
         assert monthly_playlist_name(late_night_utc) == "Aug 26"
+
+
+class TestReviewedAndNotes:
+    def _seed(self) -> None:
+        from music_minion.core.database import get_db_connection
+        from web.backend.queries.feed import ListenStats, record_decision
+
+        with get_db_connection() as conn:
+            artist = _insert_artist(conn, "up", name="Uploader Artist")
+            reposter = _insert_artist(conn, "re", name="Re")
+            _insert_upload(
+                conn, artist, "rel", "2026-07-01T00:00:00+00:00", title="Rel"
+            )
+            for sc_id in ("rp1", "rp2"):
+                _insert_repost_track(conn, reposter, sc_id, "2026/07/02 00:00:00 +0000")
+            _insert_repost_track(
+                conn, reposter, "undecided", "2026/07/03 00:00:00 +0000"
+            )
+            conn.commit()
+        record_decision("rel", "keep", "web", decided_at="2026-07-10T00:00:00+00:00")
+        record_decision(
+            "rp1",
+            "not_quite",
+            "web",
+            decided_at="2026-07-11T00:00:00+00:00",
+            listen=ListenStats(12.0, 30000),
+        )
+        record_decision("rp2", "nope", "web", decided_at="2026-07-12T00:00:00+00:00")
+
+    def test_lists_current_decisions_newest_first_with_metadata(self, client) -> None:
+        self._seed()
+        resp = client.get("/api/feed/reviewed")
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        assert [i["soundcloud_id"] for i in items] == ["rp2", "rp1", "rel"]
+        rel = items[2]
+        assert rel["title"] == "Rel"
+        assert rel["artist_name"] == "Uploader Artist"
+        assert items[1]["listen_seconds"] == 12.0
+        assert items[1]["max_position_ms"] == 30000
+        assert items[1]["title"] == "Track rp1"
+
+    def test_filter_and_cursor_paging(self, client) -> None:
+        self._seed()
+        not_quite = client.get("/api/feed/reviewed", params={"decision": "not_quite"})
+        assert [i["soundcloud_id"] for i in not_quite.json()["items"]] == ["rp1"]
+        page1 = client.get("/api/feed/reviewed", params={"limit": 2}).json()
+        assert [i["soundcloud_id"] for i in page1["items"]] == ["rp2", "rp1"]
+        page2 = client.get(
+            "/api/feed/reviewed", params={"limit": 2, "cursor": page1["next_cursor"]}
+        ).json()
+        assert [i["soundcloud_id"] for i in page2["items"]] == ["rel"]
+        assert page2["next_cursor"] is None
+        assert (
+            client.get("/api/feed/reviewed", params={"cursor": "junk"}).status_code
+            == 400
+        )
+        assert (
+            client.get("/api/feed/reviewed", params={"decision": "x"}).status_code
+            == 422
+        )
+
+    def test_changing_a_verdict_appends_and_cancels_keep_jobs(self, client) -> None:
+        from web.backend.queries.feed import enqueue_keep_actions, get_decision_history
+
+        self._seed()
+        enqueue_keep_actions("rel", "Jul 26")
+        resp = client.post("/api/feed/rel/rate", json={"decision": "not_quite"})
+        assert resp.status_code == 200
+        assert [r["decision"] for r in get_decision_history("rel")] == [
+            "keep",
+            "not_quite",
+        ]
+        assert resp.json()["action_state"] == {
+            "like": None,
+            "monthly_playlist": None,
+            "error": None,
+        }
+        reviewed = client.get("/api/feed/reviewed").json()["items"]
+        assert reviewed[0]["soundcloud_id"] == "rel"
+        assert reviewed[0]["decision"] == "not_quite"
+
+    def test_note_upsert_survives_verdict_change_and_blank_deletes(
+        self, client
+    ) -> None:
+        self._seed()
+        resp = client.put("/api/feed/rp1/note", json={"note": "  vocals too much  "})
+        assert resp.status_code == 200
+        assert resp.json()["note"] == "vocals too much"
+        client.put("/api/feed/rp1/note", json={"note": "edit: vocals"})
+        client.post("/api/feed/rp1/rate", json={"decision": "keep"})
+        item = client.get("/api/feed/reviewed").json()["items"][0]
+        assert (item["soundcloud_id"], item["note"]) == ("rp1", "edit: vocals")
+
+        cleared = client.put("/api/feed/rp1/note", json={"note": "   "})
+        assert cleared.json()["note"] is None
+        item = client.get("/api/feed/reviewed").json()["items"][0]
+        assert item["note"] is None
+
+    def test_note_for_unknown_track_404(self, client) -> None:
+        assert (
+            client.put("/api/feed/nope-404/note", json={"note": "x"}).status_code == 404
+        )

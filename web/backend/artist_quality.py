@@ -10,6 +10,8 @@ Attribution semantics (covered by tests):
   one rated unit in total, not ten.
 * Rates are Beta-binomial posterior means around the population prior, so an
   artist with one keep does not jump to 100%.
+* A not-quite verdict earns half a keep (``keep_credit``); the model label
+  for the same track is still 0.
 * ``ranking`` and ``tier`` are editorial. Nothing here writes them.
 """
 
@@ -21,7 +23,11 @@ from typing import Any, Sequence
 
 from loguru import logger
 
-from web.backend.keep_decisions import TrackDecision, load_track_decisions
+from web.backend.keep_decisions import (
+    TrackDecision,
+    keep_credit,
+    load_track_decisions,
+)
 
 DEFAULT_PRIOR = 0.22
 DEFAULT_PRIOR_STRENGTH = 10.0
@@ -81,7 +87,7 @@ def aggregate_artist_role_stats(
         seen.add(decision.soundcloud_id)
         for artist_id, role, weight in role_attributions(decision):
             values = totals.setdefault((artist_id, role), [0.0, 0.0])
-            values[0] += decision.label * weight
+            values[0] += keep_credit(decision) * weight
             values[1] += weight
     return [
         ArtistRoleStat(
@@ -109,7 +115,7 @@ def legacy_full_credit_stats(
             actors.add(decision.uploader_id)
         for artist_id in actors:
             values = totals.setdefault(artist_id, [0.0, 0.0])
-            values[0] += decision.label
+            values[0] += keep_credit(decision)
             values[1] += 1.0
     return {
         artist_id: (kept, rated, kept / rated if rated else 0.0)

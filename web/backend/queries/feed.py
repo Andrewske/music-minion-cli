@@ -2,17 +2,21 @@
 
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Any, Literal, Optional
+from typing import Any, Literal, NamedTuple
 
 from loguru import logger
 
 from music_minion.core.database import get_db_connection
 
-Decision = Literal["keep", "nope", "hide"]
+Decision = Literal["keep", "not_quite", "nope"]
 FeedSource = Literal["all", "releases", "reposts"]
 FeedSort = Literal["event_at", "score"]
 
-DECISIONS: tuple[str, ...] = ("keep", "nope", "hide")
+# Writable verdicts. Legacy 'hide' rows stay valid in the ledger but nothing
+# can write new ones.
+DECISIONS: tuple[str, ...] = ("keep", "not_quite", "nope")
+REVIEWED_FILTERS: tuple[str, ...] = (*DECISIONS, "hide")
+MAX_NOTE_LENGTH = 2000
 FEED_SOURCES: tuple[str, ...] = ("all", "releases", "reposts")
 FEED_SORTS: tuple[str, ...] = ("event_at", "score")
 
@@ -22,7 +26,7 @@ _SORT_SCORE_SQL = "COALESCE(p.probability, -1.0)"
 # Only recent activity is ranked. The April 2026 import alone holds ~226k
 # stale repost links; ranking all of them cost ~5s per page on the pi.
 # None disables the window (tests use fixed historical dates).
-FEED_WINDOW_DAYS: Optional[int] = 90
+FEED_WINDOW_DAYS: int | None = 90
 
 _LATEST_PRED_CTE = """latest_pred AS (
             SELECT soundcloud_id, probability, confidence, model_id
@@ -65,8 +69,16 @@ def _validate_sort(sort: str) -> None:
         raise ValueError(f"Invalid feed sort {sort!r}; valid values are {FEED_SORTS}")
 
 
+_LEGACY_STATUS_BY_DECISION = {
+    "keep": "liked",
+    "not_quite": "dismissed",
+    "nope": "dismissed",
+    "hide": "hidden",
+}
+
+
 def _decision_to_legacy_status(decision: str) -> str:
-    return {"keep": "liked", "nope": "dismissed", "hide": "hidden"}[decision]
+    return _LEGACY_STATUS_BY_DECISION[decision]
 
 
 def _row_to_artist(row: Any) -> dict[str, Any]:
@@ -84,7 +96,7 @@ def _row_to_artist(row: Any) -> dict[str, Any]:
     }
 
 
-def _legacy_status(decision: Optional[str]) -> str:
+def _legacy_status(decision: str | None) -> str:
     if decision is None:
         return "visible"
     return _decision_to_legacy_status(decision)
@@ -131,7 +143,7 @@ def _row_to_feed_item(row: Any) -> dict[str, Any]:
 
 
 def _attach_reposters(
-    conn: Any, items: list[dict[str, Any]], max_rank: Optional[int]
+    conn: Any, items: list[dict[str, Any]], max_rank: int | None
 ) -> None:
     if not items:
         return
@@ -216,16 +228,15 @@ def _sort_clauses(sort: str) -> tuple[str, str]:
 
 def get_feed_page(
     limit: int = 30,
-    cursor_event_at: Optional[str] = None,
-    cursor_soundcloud_id: Optional[str] = None,
+    cursor_event_at: str | None = None,
+    cursor_soundcloud_id: str | None = None,
     source: FeedSource = "all",
-    max_rank: Optional[int] = None,
+    max_rank: int | None = None,
     in_library: bool = False,
-    show_hidden: bool = False,
     top200: bool = False,
     sort: FeedSort = "event_at",
-    min_score: Optional[float] = None,
-    cursor_score: Optional[float] = None,
+    min_score: float | None = None,
+    cursor_score: float | None = None,
 ) -> list[dict[str, Any]]:
     """Fetch one deduplicated page; filters are applied before keyset paging.
 
@@ -233,6 +244,8 @@ def get_feed_page(
     (or (score, soundcloud_id) when sorting by keep probability; unscored
     tracks sort last). Rows inserted by a sync mid-scroll land above the
     cursor, so later pages never shift. `top200` is shorthand for max_rank=200.
+    Any current decision (keeps included) removes a track; reviewed tracks
+    live in `get_reviewed_page`.
     """
     _validate_source(source)
     _validate_sort(sort)
@@ -251,7 +264,6 @@ def get_feed_page(
         "cursor_soundcloud_id": cursor_soundcloud_id or "",
         "cursor_score": cursor_score,
         "min_score": min_score,
-        "show_hidden": int(show_hidden),
         "in_library": int(in_library),
         "limit": limit,
         **window_params(),
@@ -267,7 +279,7 @@ def get_feed_page(
     return items
 
 
-def window_params() -> dict[str, Optional[str]]:
+def window_params() -> dict[str, str | None]:
     """Cutoffs in each column's stored format, so the seen_at index applies."""
     if FEED_WINDOW_DAYS is None:
         return {"since_seen": None, "since_event": None}
@@ -343,10 +355,11 @@ def _page_keys_sql(cursor_sql: str, order_sql: str) -> str:
         {_LATEST_PRED_CTE}
         SELECT c.soundcloud_id
         FROM keys c
-        LEFT JOIN sc_track_decisions d
-          ON d.soundcloud_id = c.soundcloud_id AND d.is_current = 1
         LEFT JOIN latest_pred p ON p.soundcloud_id = c.soundcloud_id
-        WHERE (:show_hidden = 1 OR d.decision IS NULL OR d.decision = 'keep')
+        WHERE NOT EXISTS (
+                SELECT 1 FROM sc_track_decisions d
+                WHERE d.soundcloud_id = c.soundcloud_id AND d.is_current = 1
+          )
           AND (:in_library = 0 OR EXISTS(
                 SELECT 1 FROM tracks t
                 WHERE t.artist_normalized = LOWER(TRIM(COALESCE(c.uploader_display_name, '')))
@@ -493,7 +506,7 @@ def _hydrate_feed_items(
     return [by_id[sc_id] for sc_id in page_ids if sc_id in by_id]
 
 
-def get_feed_track(soundcloud_id: str) -> Optional[dict[str, Any]]:
+def get_feed_track(soundcloud_id: str) -> dict[str, Any] | None:
     """Return the best available metadata for one ingested SoundCloud track."""
     with get_db_connection() as conn:
         row = conn.execute(
@@ -516,7 +529,7 @@ def get_feed_track(soundcloud_id: str) -> Optional[dict[str, Any]]:
     return dict(row) if row else None
 
 
-def materialize_feed_track(soundcloud_id: str) -> Optional[int]:
+def materialize_feed_track(soundcloud_id: str) -> int | None:
     """Create one streaming-only library row on first play/keep."""
     metadata = get_feed_track(soundcloud_id)
     if metadata is None:
@@ -570,7 +583,7 @@ def materialize_feed_tracks(soundcloud_ids: list[str]) -> dict[str, int]:
     return materialized
 
 
-def get_current_decision(soundcloud_id: str) -> Optional[dict[str, Any]]:
+def get_current_decision(soundcloud_id: str) -> dict[str, Any] | None:
     with get_db_connection() as conn:
         row = conn.execute(
             "SELECT * FROM sc_track_decisions WHERE soundcloud_id = ? AND is_current = 1",
@@ -599,7 +612,7 @@ def get_decision_history(soundcloud_id: str) -> list[dict[str, Any]]:
 
 def _latest_prediction_snapshot(
     conn: Any, soundcloud_id: str
-) -> tuple[Optional[str], Optional[str]]:
+) -> tuple[str | None, str | None]:
     """(model_id, state_sent JSON) of the newest prediction shown for a track."""
     row = conn.execute(
         """SELECT model_id, state_sent FROM sc_track_predictions
@@ -611,76 +624,105 @@ def _latest_prediction_snapshot(
     return row["model_id"], row["state_sent"]
 
 
-def record_decision(
-    soundcloud_id: str,
-    decision: Decision,
-    surface: str,
-    model_version: Optional[str] = None,
-    feature_snapshot: Optional[dict[str, Any]] = None,
-    decided_at: Optional[str] = None,
-) -> Optional[dict[str, Any]]:
-    """Append a decision and atomically make it the track's sole current row."""
-    _validate_decision(decision)
-    decided_at = decided_at or datetime.now(timezone.utc).isoformat()
-    snapshot_json = (
-        json.dumps(feature_snapshot, sort_keys=True, separators=(",", ":"))
-        if feature_snapshot is not None
-        else None
-    )
-    with get_db_connection() as conn:
-        exists = conn.execute(
+class ListenStats(NamedTuple):
+    """In-app player listening before a verdict: played time and furthest point."""
+
+    listen_seconds: float | None = None
+    max_position_ms: int | None = None
+
+
+NO_LISTEN = ListenStats()
+
+
+def _track_exists(conn: Any, soundcloud_id: str) -> bool:
+    return (
+        conn.execute(
             """SELECT 1 FROM sc_artist_uploads WHERE soundcloud_id = ?
             UNION ALL SELECT 1 FROM discovery_tracks WHERE soundcloud_id = ? LIMIT 1""",
             (soundcloud_id, soundcloud_id),
         ).fetchone()
-        if not exists:
+        is not None
+    )
+
+
+def _append_current_decision(conn: Any, row: dict[str, Any]) -> int:
+    """Demote the old current row and insert `row` as current (caller commits)."""
+    conn.execute(
+        "UPDATE sc_track_decisions SET is_current = 0 WHERE soundcloud_id = ? AND is_current = 1",
+        (row["soundcloud_id"],),
+    )
+    cursor = conn.execute(
+        """INSERT INTO sc_track_decisions
+            (soundcloud_id, decision, decided_at, surface, model_version,
+             feature_snapshot, listen_seconds, max_position_ms, is_current)
+        VALUES (:soundcloud_id, :decision, :decided_at, :surface, :model_version,
+                :feature_snapshot, :listen_seconds, :max_position_ms, 1)""",
+        row,
+    )
+    return int(cursor.lastrowid)
+
+
+def _sync_legacy_status(
+    conn: Any, soundcloud_id: str, decision: str, decided_at: str
+) -> None:
+    legacy_status = _decision_to_legacy_status(decision)
+    conn.execute(
+        "UPDATE sc_artist_uploads SET status = ?, rated_at = ? WHERE soundcloud_id = ?",
+        (legacy_status, decided_at, soundcloud_id),
+    )
+    conn.execute(
+        """UPDATE discovery_tracks
+        SET workflow_state = 'processed', status = ? WHERE soundcloud_id = ?""",
+        (legacy_status, soundcloud_id),
+    )
+
+
+def record_decision(
+    soundcloud_id: str,
+    decision: Decision,
+    surface: str,
+    model_version: str | None = None,
+    feature_snapshot: dict[str, Any] | None = None,
+    decided_at: str | None = None,
+    listen: ListenStats = NO_LISTEN,
+) -> dict[str, Any] | None:
+    """Append a decision and atomically make it the track's sole current row."""
+    _validate_decision(decision)
+    row = {
+        "soundcloud_id": soundcloud_id,
+        "decision": decision,
+        "decided_at": decided_at or datetime.now(timezone.utc).isoformat(),
+        "surface": surface,
+        "model_version": model_version,
+        "feature_snapshot": _snapshot_json(feature_snapshot),
+        **listen._asdict(),
+    }
+    with get_db_connection() as conn:
+        if not _track_exists(conn, soundcloud_id):
             return None
         # The ledger stores what the model saw at decision time: when the
         # caller didn't pass a snapshot, adopt the latest shown prediction.
-        if model_version is None and snapshot_json is None:
-            model_version, snapshot_json = _latest_prediction_snapshot(
+        if model_version is None and row["feature_snapshot"] is None:
+            row["model_version"], row["feature_snapshot"] = _latest_prediction_snapshot(
                 conn, soundcloud_id
             )
         conn.execute("BEGIN IMMEDIATE")
-        conn.execute(
-            "UPDATE sc_track_decisions SET is_current = 0 WHERE soundcloud_id = ? AND is_current = 1",
-            (soundcloud_id,),
-        )
-        cursor = conn.execute(
-            """INSERT INTO sc_track_decisions
-                (soundcloud_id, decision, decided_at, surface, model_version,
-                 feature_snapshot, is_current)
-            VALUES (?, ?, ?, ?, ?, ?, 1)""",
-            (
-                soundcloud_id,
-                decision,
-                decided_at,
-                surface,
-                model_version,
-                snapshot_json,
-            ),
-        )
-        legacy_status = _decision_to_legacy_status(decision)
-        conn.execute(
-            "UPDATE sc_artist_uploads SET status = ?, rated_at = ? WHERE soundcloud_id = ?",
-            (legacy_status, decided_at, soundcloud_id),
-        )
-        conn.execute(
-            """UPDATE discovery_tracks
-            SET workflow_state = 'processed', status = ? WHERE soundcloud_id = ?""",
-            (
-                legacy_status if legacy_status != "hidden" else "dismissed",
-                soundcloud_id,
-            ),
-        )
+        row_id = _append_current_decision(conn, row)
+        _sync_legacy_status(conn, soundcloud_id, decision, row["decided_at"])
         conn.commit()
-        row = conn.execute(
-            "SELECT * FROM sc_track_decisions WHERE id = ?", (cursor.lastrowid,)
+        stored = conn.execute(
+            "SELECT * FROM sc_track_decisions WHERE id = ?", (row_id,)
         ).fetchone()
-    result = dict(row)
+    result = dict(stored)
     if feature_snapshot is not None:
         result["feature_snapshot"] = feature_snapshot
     return result
+
+
+def _snapshot_json(feature_snapshot: dict[str, Any] | None) -> str | None:
+    if feature_snapshot is None:
+        return None
+    return json.dumps(feature_snapshot, sort_keys=True, separators=(",", ":"))
 
 
 def record_decisions(
@@ -720,10 +762,99 @@ def record_decisions(
             conn.execute(
                 f"UPDATE discovery_tracks SET workflow_state = 'processed', status = ? "
                 f"WHERE soundcloud_id IN ({placeholders})",
-                [legacy_status if legacy_status != "hidden" else "dismissed", *batch],
+                [legacy_status, *batch],
             )
         conn.commit()
     return len(unique_ids)
+
+
+_REVIEWED_SQL = f"""
+    SELECT d.id AS decision_id, d.soundcloud_id, d.decision, d.decided_at,
+           {utc_iso("d.decided_at")} AS decided_key, d.surface,
+           d.listen_seconds, d.max_position_ms,
+           COALESCE(u.local_track_id, dt.local_track_id) AS local_track_id,
+           COALESCE(u.title, dt.title) AS title,
+           COALESCE(da.display_name, uda.display_name, dt.artist_name) AS artist_name,
+           COALESCE(u.artwork_url, dt.artwork_url) AS artwork_url,
+           COALESCE(u.permalink_url, dt.permalink_url) AS permalink_url,
+           COALESCE(u.duration_ms, dt.duration_ms, 0) AS duration_ms,
+           COALESCE(u.access, dt.access) AS access,
+           n.note, n.updated_at AS note_updated_at
+    FROM sc_track_decisions d
+    LEFT JOIN sc_artist_uploads u ON u.soundcloud_id = d.soundcloud_id
+    LEFT JOIN discovery_artists da ON da.id = u.discovery_artist_id
+    LEFT JOIN discovery_tracks dt ON dt.soundcloud_id = d.soundcloud_id
+    LEFT JOIN discovery_artists uda
+      ON uda.soundcloud_user_id = dt.uploader_soundcloud_id
+    LEFT JOIN sc_track_notes n ON n.soundcloud_id = d.soundcloud_id
+    WHERE d.is_current = 1
+      AND (:decision IS NULL OR d.decision = :decision)
+      AND (:cursor_key IS NULL OR {utc_iso("d.decided_at")} < :cursor_key
+           OR ({utc_iso("d.decided_at")} = :cursor_key AND d.id < :cursor_id))
+    ORDER BY {utc_iso("d.decided_at")} DESC, d.id DESC
+    LIMIT :limit
+"""
+
+
+def get_reviewed_page(
+    decision: str | None = None,
+    limit: int = 50,
+    cursor_key: str | None = None,
+    cursor_id: int | None = None,
+) -> list[dict[str, Any]]:
+    """Current decisions newest first, with track metadata, listen time and note.
+
+    Cursor is the previous page's last (decided_key, decision_id).
+    """
+    if decision is not None and decision not in REVIEWED_FILTERS:
+        raise ValueError(
+            f"Invalid reviewed filter {decision!r}; valid values are {REVIEWED_FILTERS}"
+        )
+    params = {
+        "decision": decision,
+        "limit": max(1, min(limit, 100)),
+        "cursor_key": cursor_key,
+        "cursor_id": cursor_id if cursor_id is not None else 0,
+    }
+    with get_db_connection() as conn:
+        rows = conn.execute(_REVIEWED_SQL, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_track_note(soundcloud_id: str) -> dict[str, Any] | None:
+    with get_db_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM sc_track_notes WHERE soundcloud_id = ?", (soundcloud_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def set_track_note(soundcloud_id: str, note: str) -> dict[str, Any] | None:
+    """Upsert a per-track note; a blank note deletes it (returns None).
+
+    Notes are keyed by track, not decision row, so they survive verdict changes.
+    """
+    text = note.strip()[:MAX_NOTE_LENGTH]
+    with get_db_connection() as conn:
+        if not text:
+            conn.execute(
+                "DELETE FROM sc_track_notes WHERE soundcloud_id = ?", (soundcloud_id,)
+            )
+            conn.commit()
+            return None
+        conn.execute(
+            """INSERT INTO sc_track_notes (soundcloud_id, note) VALUES (?, ?)
+            ON CONFLICT(soundcloud_id) DO UPDATE
+            SET note = excluded.note, updated_at = CURRENT_TIMESTAMP""",
+            (soundcloud_id, text),
+        )
+        conn.commit()
+    return get_track_note(soundcloud_id)
+
+
+def track_is_known(soundcloud_id: str) -> bool:
+    with get_db_connection() as conn:
+        return _track_exists(conn, soundcloud_id)
 
 
 def enqueue_keep_actions(soundcloud_id: str, playlist_name: str) -> None:
@@ -752,7 +883,7 @@ def cancel_pending_actions(soundcloud_id: str) -> int:
         return cursor.rowcount
 
 
-def claim_due_action() -> Optional[dict[str, Any]]:
+def claim_due_action() -> dict[str, Any] | None:
     """Atomically claim the oldest due job for the single SC writer."""
     with get_db_connection() as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -778,7 +909,7 @@ def claim_due_action() -> Optional[dict[str, Any]]:
         return claimed
 
 
-def get_next_action_delay() -> Optional[float]:
+def get_next_action_delay() -> float | None:
     """Seconds until the next retryable job becomes due."""
     with get_db_connection() as conn:
         row = conn.execute(
@@ -829,7 +960,7 @@ def recover_interrupted_actions() -> int:
         return cursor.rowcount
 
 
-def reconcile_actions(soundcloud_id: Optional[str] = None) -> int:
+def reconcile_actions(soundcloud_id: str | None = None) -> int:
     """Manual reconciliation: make unfinished jobs immediately retryable."""
     with get_db_connection() as conn:
         if soundcloud_id is None:
@@ -876,14 +1007,14 @@ def get_contributing_artist_ids(soundcloud_id: str) -> list[int]:
     return [row["discovery_artist_id"] for row in rows]
 
 
-def get_action_state(soundcloud_id: str) -> dict[str, Optional[str]]:
+def get_action_state(soundcloud_id: str) -> dict[str, str | None]:
     item: dict[str, Any] = {"soundcloud_id": soundcloud_id, "action_state": {}}
     with get_db_connection() as conn:
         _attach_action_states(conn, [item])
     return item["action_state"]
 
 
-def get_upload(upload_id: int) -> Optional[dict[str, Any]]:
+def get_upload(upload_id: int) -> dict[str, Any] | None:
     with get_db_connection() as conn:
         row = conn.execute(
             "SELECT * FROM sc_artist_uploads WHERE id = ?", (upload_id,)
@@ -891,7 +1022,7 @@ def get_upload(upload_id: int) -> Optional[dict[str, Any]]:
     return dict(row) if row else None
 
 
-def get_cached_monthly_playlist_id(name: str) -> Optional[str]:
+def get_cached_monthly_playlist_id(name: str) -> str | None:
     with get_db_connection() as conn:
         row = conn.execute(
             "SELECT sc_playlist_id FROM sc_monthly_playlists WHERE name = ?", (name,)

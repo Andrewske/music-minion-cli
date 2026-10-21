@@ -270,7 +270,7 @@ def get_seen_track_ids() -> set[str]:
                OR EXISTS (
                    SELECT 1 FROM sc_track_decisions d
                    WHERE d.soundcloud_id = dt.soundcloud_id AND d.is_current = 1
-                     AND d.decision IN ('keep', 'nope')
+                     AND d.decision IN ('keep', 'not_quite', 'nope')
                )
         """)
         return {row["soundcloud_id"] for row in cursor.fetchall()}
@@ -705,15 +705,21 @@ def update_artist_uploads_last_checked(artist_id: int, new_upload_count: int) ->
         conn.commit()
 
 
+def weighted_hit_rate(keeps: int, not_quites: int, nopes: int) -> float:
+    """Percent hit rate where a not-quite counts as half a keep."""
+    return (keeps + 0.5 * not_quites) / max(1, keeps + not_quites + nopes) * 100
+
+
 def recalculate_artist_stats(artist_ids: Sequence[int] | None = None) -> None:
     """Recalculate legacy display counters and the role-specific keep rates.
 
     Legacy columns (tracks_seen, tracks_liked, tracks_dismissed, hit_rate)
     give every actor full credit for every track and are kept for the UI
     only. Each artist/track pair is counted once even when that artist both
-    uploaded and reposted it, and only canonical current keep/nope decisions
-    from ``sc_track_decisions`` count; hide is deliberately absent.
-    hit_rate = liked / max(1, liked + dismissed) * 100
+    uploaded and reposted it, and only canonical current keep / not_quite /
+    nope decisions from ``sc_track_decisions`` count; legacy hide is absent.
+    A not-quite is half a keep, and tracks_dismissed counts nopes only:
+    hit_rate = (liked + 0.5 * not_quite) / max(1, liked + not_quite + nope) * 100
 
     Selection reads ``upload_keep_rate`` / ``repost_keep_rate`` instead,
     which :func:`recalculate_artist_role_stats` refreshes for all artists.
@@ -749,7 +755,9 @@ def recalculate_artist_stats(artist_ids: Sequence[int] | None = None) -> None:
                 COALESCE(SUM(CASE WHEN l.decision = 'keep' THEN 1 ELSE 0 END), 0)
                     AS tracks_liked,
                 COALESCE(SUM(CASE WHEN l.decision = 'nope' THEN 1 ELSE 0 END), 0)
-                    AS tracks_dismissed
+                    AS tracks_dismissed,
+                COALESCE(SUM(CASE WHEN l.decision = 'not_quite' THEN 1 ELSE 0 END), 0)
+                    AS tracks_not_quite
             FROM discovery_artists da
             LEFT JOIN labeled l ON l.artist_id = da.id
             WHERE :ids IS NULL OR da.id IN (SELECT id FROM targets)
@@ -763,9 +771,11 @@ def recalculate_artist_stats(artist_ids: Sequence[int] | None = None) -> None:
                 row["tracks_seen"],
                 row["tracks_liked"],
                 row["tracks_dismissed"],
-                row["tracks_liked"]
-                / max(1, row["tracks_liked"] + row["tracks_dismissed"])
-                * 100,
+                weighted_hit_rate(
+                    row["tracks_liked"],
+                    row["tracks_not_quite"],
+                    row["tracks_dismissed"],
+                ),
                 row["id"],
             )
             for row in rows

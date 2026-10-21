@@ -4,11 +4,11 @@ import base64
 import binascii
 import json
 import threading
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from web.backend.feed_rating import monthly_playlist_name
 from web.backend.feed_uploads_sync import run_uploads_backfill
@@ -19,17 +19,30 @@ from web.backend.soundcloud_auth import get_web_provider_state
 
 router = APIRouter(prefix="/api/feed", tags=["feed"])
 
-_RATING_TO_DECISION = {-1: "nope", 0: "hide", 1: "keep"}
+# Legacy numeric ratings. 0 used to mean 'hide', which can no longer be
+# written, so it is rejected rather than silently becoming a training label.
+_RATING_TO_DECISION = {-1: "nope", 1: "keep"}
+_DECISION_TO_STATUS = {"keep": "liked", "not_quite": "dismissed", "nope": "dismissed"}
 
 
 class RateRequest(BaseModel):
-    """Either `decision` (canonical) or legacy `value` (-1/0/+1) must be set."""
+    """Either `decision` (canonical) or legacy `value` (-1/+1) must be set.
 
-    decision: Optional[Literal["keep", "nope", "hide"]] = None
-    value: Optional[Literal[-1, 0, 1]] = None
+    `listen_seconds` / `max_position_ms` come from the in-app player: time
+    actually played before the verdict and the furthest position reached.
+    """
+
+    decision: Literal["keep", "not_quite", "nope"] | None = None
+    value: Literal[-1, 1] | None = None
     surface: str = "web_feed"
-    model_version: Optional[str] = None
-    feature_snapshot: Optional[dict[str, Any]] = None
+    model_version: str | None = None
+    feature_snapshot: dict[str, Any] | None = None
+    listen_seconds: float | None = Field(default=None, ge=0)
+    max_position_ms: int | None = Field(default=None, ge=0)
+
+
+class NoteRequest(BaseModel):
+    note: str = Field(max_length=feed_queries.MAX_NOTE_LENGTH)
 
 
 def _resolve_decision(body: RateRequest) -> str:
@@ -40,10 +53,32 @@ def _resolve_decision(body: RateRequest) -> str:
     raise HTTPException(status_code=422, detail="decision or value is required")
 
 
+def _encode_reviewed_cursor(item: dict[str, Any]) -> str:
+    payload = json.dumps([item["decided_key"], item["decision_id"]]).encode()
+    return base64.urlsafe_b64encode(payload).decode().rstrip("=")
+
+
+def _decode_reviewed_cursor(
+    cursor: str | None,
+) -> tuple[str | None, int | None]:
+    if not cursor:
+        return None, None
+    try:
+        padding = "=" * (-len(cursor) % 4)
+        key, decision_id = json.loads(base64.urlsafe_b64decode(cursor + padding))
+        if not isinstance(key, str) or not isinstance(decision_id, int):
+            raise TypeError("cursor values have the wrong types")
+        return key, decision_id
+    except (ValueError, TypeError, binascii.Error, json.JSONDecodeError):
+        raise HTTPException(status_code=400, detail="Invalid reviewed cursor")
+
+
 def _encode_cursor(item: dict[str, Any], sort: str) -> str:
     if sort == "score":
         # Unscored tracks share the sentinel used for SQL ordering (-1.0).
-        score = item["keep_probability"] if item["keep_probability"] is not None else -1.0
+        score = (
+            item["keep_probability"] if item["keep_probability"] is not None else -1.0
+        )
         values: list[Any] = ["score", score, item["soundcloud_id"]]
     else:
         values = [item["event_at"], item["soundcloud_id"]]
@@ -52,8 +87,8 @@ def _encode_cursor(item: dict[str, Any], sort: str) -> str:
 
 
 def _decode_cursor(
-    cursor: Optional[str], sort: str
-) -> tuple[Optional[str], Optional[str], Optional[float]]:
+    cursor: str | None, sort: str
+) -> tuple[str | None, str | None, float | None]:
     """Returns (event_at, soundcloud_id, score); rejects cross-sort cursors."""
     if not cursor:
         return None, None, None
@@ -83,14 +118,13 @@ def _decode_cursor(
 @router.get("")
 def get_feed(
     limit: int = Query(default=30, ge=1, le=100),
-    cursor: Optional[str] = None,
+    cursor: str | None = None,
     source: Literal["all", "releases", "reposts"] = "all",
-    max_rank: Optional[int] = Query(default=None, ge=1),
+    max_rank: int | None = Query(default=None, ge=1),
     in_library: bool = False,
-    show_hidden: bool = False,
     top200: bool = False,
     sort: Literal["event_at", "score"] = "event_at",
-    min_score: Optional[float] = Query(default=None, ge=0.0, le=1.0),
+    min_score: float | None = Query(default=None, ge=0.0, le=1.0),
 ) -> dict[str, Any]:
     cursor_event_at, cursor_soundcloud_id, cursor_score = _decode_cursor(cursor, sort)
     items = feed_queries.get_feed_page(
@@ -100,7 +134,6 @@ def get_feed(
         source=source,
         max_rank=max_rank,
         in_library=in_library,
-        show_hidden=show_hidden,
         top200=top200,
         sort=sort,
         min_score=min_score,
@@ -108,6 +141,34 @@ def get_feed(
     )
     next_cursor = _encode_cursor(items[-1], sort) if len(items) == limit else None
     return {"items": items, "next_cursor": next_cursor}
+
+
+@router.get("/reviewed")
+def get_reviewed(
+    decision: Literal["keep", "not_quite", "nope", "hide"] | None = None,
+    limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = None,
+) -> dict[str, Any]:
+    """Current decisions newest first; `hide` lists legacy rows only."""
+    cursor_key, cursor_id = _decode_reviewed_cursor(cursor)
+    items = feed_queries.get_reviewed_page(decision, limit, cursor_key, cursor_id)
+    next_cursor = _encode_reviewed_cursor(items[-1]) if len(items) == limit else None
+    return {"items": items, "next_cursor": next_cursor}
+
+
+@router.put("/{soundcloud_id}/note")
+def put_track_note(soundcloud_id: str, body: NoteRequest) -> dict[str, Any]:
+    """Upsert the per-track note; an empty note deletes it."""
+    if not feed_queries.track_is_known(soundcloud_id):
+        raise HTTPException(
+            status_code=404, detail=f"SoundCloud track {soundcloud_id} not found"
+        )
+    stored = feed_queries.set_track_note(soundcloud_id, body.note)
+    return {
+        "soundcloud_id": soundcloud_id,
+        "note": stored["note"] if stored else None,
+        "updated_at": stored["updated_at"] if stored else None,
+    }
 
 
 @router.post("/backfill")
@@ -171,6 +232,7 @@ def rate_track(
         body.surface,
         body.model_version,
         body.feature_snapshot,
+        listen=feed_queries.ListenStats(body.listen_seconds, body.max_position_ms),
     )
     if updated is None:
         raise HTTPException(
@@ -190,7 +252,7 @@ def rate_track(
     return {
         "soundcloud_id": soundcloud_id,
         "current_decision": decision,
-        "status": {"keep": "liked", "nope": "dismissed", "hide": "hidden"}[decision],
+        "status": _DECISION_TO_STATUS[decision],
         "decided_at": updated["decided_at"],
         "local_track_id": local_track_id,
         "action_state": feed_queries.get_action_state(soundcloud_id),
@@ -226,7 +288,7 @@ def get_decision_history(soundcloud_id: str) -> dict[str, Any]:
 
 
 @router.post("/actions/reconcile")
-def reconcile_actions(soundcloud_id: Optional[str] = None) -> dict[str, Any]:
+def reconcile_actions(soundcloud_id: str | None = None) -> dict[str, Any]:
     reset = feed_queries.reconcile_actions(soundcloud_id)
     enqueue_feed_action_drain()
     return {"reset": reset}
