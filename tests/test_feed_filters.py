@@ -598,6 +598,7 @@ class TestFlagExclusions:
     def test_feed_volume_stats_ignore_flagged_tracks(self, test_db) -> None:  # noqa: F811
         from web.backend.queries.artists import (
             _FEED_EVENTS_UNFLAGGED_SQL,
+            _FEED_STATS_SQL,
             ARTISTS_STATS_SQL,
             get_pareto_artists,
         )
@@ -627,7 +628,9 @@ class TestFlagExclusions:
                 f"SELECT COUNT(*) FROM ({_FEED_EVENTS_UNFLAGGED_SQL})"
             ).fetchone()[0]
             pareto = get_pareto_artists(conn)
-        assert _FEED_EVENTS_UNFLAGGED_SQL in ARTISTS_STATS_SQL
+            noise = conn.execute(f"SELECT noise_7d FROM ({_FEED_STATS_SQL})").fetchone()[0]
+        assert _FEED_STATS_SQL in ARTISTS_STATS_SQL
+        assert noise == pytest.approx(1 / 7)
         assert events == 1
         assert pareto["total_events"] == 1
 
@@ -652,3 +655,186 @@ class TestFlagExclusions:
                 },
             ).fetchall()
         assert [row["soundcloud_id"] for row in rows] == ["51"]
+
+
+# ---------------------------------------------------------------------------
+# Round 2: regex runtime bound, artist recalc races, activity, rule deletion
+# ---------------------------------------------------------------------------
+
+# Passes the static guard (no nested quantifier) yet backtracks polynomially:
+# stdlib re takes well over 20s on 300 "a"s; the regex module ~0.3s.
+SLOW_PATTERN = r"\w*\s*" * 6 + r"\d"
+SLOW_TITLE = "a" * 300
+
+
+class TestRegexRuntimeBound:
+    def test_slow_pattern_passes_validation_but_times_out_as_no_match(self) -> None:
+        import time
+
+        from web.backend.feed_filter_rules import match_rules
+
+        rule = validate_rule(
+            {"name": "x", "kind": "title_regex", "pattern": SLOW_PATTERN, "reason": "other"}
+        )
+        live = {**rule, "id": 5}
+        started = time.monotonic()
+        assert not rule_matches({"title": SLOW_TITLE}, live)
+        assert match_rules({"title": SLOW_TITLE}, [live]) == (None, [5])
+        assert time.monotonic() - started < 1.0
+
+    def test_validation_and_matching_share_one_engine(self) -> None:
+        # Variable-width lookbehind: stdlib re rejects it, the regex module runs it.
+        rule = validate_rule(
+            {"name": "x", "kind": "title_regex", "pattern": r"(?<=a+)b", "reason": "other"}
+        )
+        assert rule_matches({"title": "aab"}, {**rule, "id": 1})
+        assert not rule_matches({"title": "b"}, {**rule, "id": 1})
+
+    def test_rejects_what_the_matcher_cannot_compile(self) -> None:
+        with pytest.raises(ValueError, match=r"Invalid regex '\[z-a\]': .*position"):
+            validate_rule(
+                {"name": "x", "kind": "title_regex", "pattern": "[z-a]", "reason": "other"}
+            )
+
+    def test_run_disables_a_rule_that_keeps_timing_out(self, test_db) -> None:  # noqa: F811
+        from web.backend.queries import feed_filters
+
+        titles = {str(10 + n): SLOW_TITLE for n in range(1, 6)}
+        _seed_uploads({**titles, "19": "Sunday Podcast 3"})
+        slow = feed_filters.create_rule(
+            {"name": "Slow", "kind": "title_regex", "pattern": SLOW_PATTERN, "reason": "other"}
+        )
+        assert feed_filters.apply_rules(None) == 1  # only the podcast seed rule
+        assert feed_filters.get_rule(slow["id"])["enabled"] is False
+        assert feed_filters.get_active_flag("19") is not None
+
+
+class TestArtistRecalcSerialized:
+    def test_overlapping_recalcs_never_leave_stale_counts(
+        self, test_db, monkeypatch  # noqa: F811
+    ) -> None:
+        import threading
+
+        from web.backend.queries import discovery, feed_filters
+
+        with get_db_connection() as conn:
+            artist_id = _insert_artist(conn)
+            _insert_upload(conn, artist_id, "41", "2026-07-01T00:00:00+00:00", status="liked")
+            _insert_upload(conn, artist_id, "42", "2026-07-02T00:00:00+00:00", status="dismissed")
+            conn.commit()
+
+        paused, release = threading.Event(), threading.Event()
+        real_rate = discovery.weighted_hit_rate
+        calls = []
+
+        def pause_first_recalc(*args: int) -> float:
+            calls.append(args)
+            if len(calls) == 1:  # first recalc: counts already read, not written
+                paused.set()
+                release.wait(5)
+            return real_rate(*args)
+
+        monkeypatch.setattr(discovery, "weighted_hit_rate", pause_first_recalc)
+        stale = threading.Thread(target=discovery.recalculate_artist_stats, args=([artist_id],))
+        stale.start()
+        assert paused.wait(5)
+
+        def flag_and_refresh() -> None:
+            feed_filters.flag_track("42", "live_mix")
+            feed_filters.refresh_artist_stats_for(["42"])
+
+        fresh = threading.Thread(target=flag_and_refresh)
+        fresh.start()
+        fresh.join(0.5)  # blocks on the first recalc's write lock once fixed
+        release.set()
+        stale.join(5)
+        fresh.join(5)
+        with get_db_connection() as conn:
+            row = conn.execute(
+                "SELECT tracks_seen, tracks_dismissed FROM discovery_artists WHERE id = ?",
+                (artist_id,),
+            ).fetchone()
+        assert tuple(row) == (1, 0)
+
+    def test_refresh_logs_any_failure(self, test_db, monkeypatch) -> None:  # noqa: F811
+        from loguru import logger
+
+        from web.backend.queries import discovery, feed_filters
+
+        def boom(_ids: list[int]) -> None:
+            raise RuntimeError("recalc exploded")
+
+        messages: list[str] = []
+        sink = logger.add(lambda m: messages.append(m), level="ERROR")
+        monkeypatch.setattr(discovery, "recalculate_artist_stats", boom)
+        monkeypatch.setattr(feed_filters, "get_contributing_artist_ids_for", lambda _ids: [1])
+        try:
+            feed_filters.refresh_artist_stats_for(["42"])
+        finally:
+            logger.remove(sink)
+        assert any("artist stats refresh failed" in m for m in messages)
+
+
+class TestArtistActivityCountsFlags:
+    def test_flagged_latest_repost_keeps_the_artist_active(self, test_db) -> None:  # noqa: F811
+        from web.backend.queries.artists import (
+            _FEED_STATS_SQL,
+            ARTISTS_STATS_SQL,
+            _derive_activity_state,
+        )
+
+        with get_db_connection() as conn:
+            conn.execute(
+                """INSERT INTO discovery_artists (id, soundcloud_user_id, slug, is_following)
+                VALUES (900, 'u900', 'rep', 1)"""
+            )
+            for row_id, sc_id, seen in ((901, "81", "-40 days"), (902, "82", "-1 days")):
+                conn.execute(
+                    "INSERT INTO discovery_tracks (id, soundcloud_id, title) VALUES (?, ?, 'T')",
+                    (row_id, sc_id),
+                )
+                conn.execute(
+                    """INSERT INTO discovery_track_reposters
+                        (discovery_track_id, discovery_artist_id, seen_at)
+                    VALUES (?, 900, datetime('now', ?))""",
+                    (row_id, seen),
+                )
+            conn.execute(
+                "INSERT INTO sc_track_flags (soundcloud_id, reason, source) VALUES ('82', 'live_mix', 'rule')"
+            )
+            conn.commit()
+            stats = conn.execute(f"SELECT * FROM ({_FEED_STATS_SQL})").fetchone()
+        assert _FEED_STATS_SQL in ARTISTS_STATS_SQL
+        assert _derive_activity_state(stats["last_activity_at"]) == "active"
+        assert (stats["noise_7d"], stats["noise_30d"]) == (0, 0)
+
+
+class TestRuleDeleteWithoutForeignKey:
+    def _drop_flag_foreign_key(self) -> None:
+        """Rebuild sc_track_flags like a dev DB that ran the first v68 (no FK)."""
+        with get_db_connection() as conn:
+            ddl = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE name = 'sc_track_flags'"
+            ).fetchone()["sql"]
+            conn.execute("PRAGMA foreign_keys=OFF")
+            conn.execute("ALTER TABLE sc_track_flags RENAME TO old_flags")
+            conn.execute(ddl.replace(" REFERENCES feed_filter_rules(id) ON DELETE SET NULL", ""))
+            conn.execute("INSERT INTO sc_track_flags SELECT * FROM old_flags")
+            conn.execute("DROP TABLE old_flags")
+            conn.commit()
+
+    def test_delete_leaves_no_active_or_dangling_flag(self, test_db) -> None:  # noqa: F811
+        from web.backend.queries import feed_filters
+
+        self._drop_flag_foreign_key()
+        _seed_uploads({"12": "Sunday Podcast 3", "13": "Sunday Podcast 4"})
+        feed_filters.apply_rules(None)
+        feed_filters.unflag_track("12")
+        rule_id = _rule_id("seed_title_podcast")
+        assert feed_filters.delete_rule(rule_id) == ["13"]
+        with get_db_connection() as conn:
+            rows = conn.execute(
+                "SELECT soundcloud_id, rule_id, rescued_at FROM sc_track_flags"
+            ).fetchall()
+        assert [(r["soundcloud_id"], r["rule_id"]) for r in rows] == [("12", None)]
+        assert rows[0]["rescued_at"] is not None

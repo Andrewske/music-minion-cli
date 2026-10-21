@@ -20,8 +20,9 @@ from music_minion.core.database import get_db_connection
 from web.backend.feed_filter_rules import (
     FLAG_REASONS,
     FLAG_SOURCES,
-    first_matching_rule,
+    RULE_TIMEOUT_LIMIT,
     flaggable_track_sql,
+    match_rules,
     rule_precision,
     validate_rule,
 )
@@ -110,9 +111,11 @@ def update_rule(rule_id: int, changes: dict[str, Any]) -> dict[str, Any] | None:
 def delete_rule(rule_id: int) -> list[str] | None:
     """Delete a rule and its active flags; None when the rule doesn't exist.
 
-    Returns the soundcloud ids released back to the feed. Rescued flags are
-    kept: the v68 foreign key sets their ``rule_id`` to NULL, and the row
-    still stops every other rule from flagging that track again.
+    Returns the soundcloud ids released back to the feed. Every active flag
+    naming the rule is deleted, so none is left pointing at a missing rule.
+    Rescued flags are kept with ``rule_id`` NULL, and the row still stops
+    every other rule from flagging that track again. Both are done here, not
+    left to the v68 foreign key, which dev DBs from the first v68 lack.
     """
     with get_db_connection() as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -120,11 +123,14 @@ def delete_rule(rule_id: int) -> list[str] | None:
             row["soundcloud_id"]
             for row in conn.execute(
                 """DELETE FROM sc_track_flags
-                WHERE rule_id = ? AND source = 'rule' AND rescued_at IS NULL
+                WHERE rule_id = ? AND rescued_at IS NULL
                 RETURNING soundcloud_id""",
                 (rule_id,),
             ).fetchall()
         ]
+        conn.execute(
+            "UPDATE sc_track_flags SET rule_id = NULL WHERE rule_id = ?", (rule_id,)
+        )
         cursor = conn.execute("DELETE FROM feed_filter_rules WHERE id = ?", (rule_id,))
         if cursor.rowcount == 0:
             conn.rollback()
@@ -199,14 +205,44 @@ def unreviewed_candidates(
 
 def _rule_flags(
     tracks: list[dict[str, Any]], rules: list[dict[str, Any]]
-) -> list[tuple[str, str, int]]:
-    """(soundcloud_id, reason, rule_id) for each track the first rule catches."""
+) -> tuple[list[tuple[str, str, int]], dict[int, int]]:
+    """(soundcloud_id, reason, rule_id) per caught track, plus timeouts per rule id.
+
+    A rule that hits RULE_TIMEOUT_LIMIT timeouts is skipped for the rest of
+    the run, so one slow pattern can't stall a scan of thousands of tracks.
+    """
     flags = []
+    timeouts: dict[int, int] = {}
     for track in tracks:
-        rule = first_matching_rule(track, rules)
+        live = [r for r in rules if timeouts.get(r["id"], 0) < RULE_TIMEOUT_LIMIT]
+        rule, timed_out = match_rules(track, live)
+        for rule_id in timed_out:
+            timeouts[rule_id] = timeouts.get(rule_id, 0) + 1
         if rule is not None:
             flags.append((track["soundcloud_id"], rule["reason"], rule["id"]))
-    return flags
+    return flags, timeouts
+
+
+def _disable_slow_rules(conn: Any, timeouts: dict[int, int]) -> list[int]:
+    """Log every rule that timed out and disable those that hit the limit.
+
+    Disabling bumps ``updated_at``, so the write-time recheck also drops any
+    flag the rule caught earlier in this run. Settings then shows it as off.
+    """
+    for rule_id, count in timeouts.items():
+        logger.warning(f"feed filters: rule {rule_id} timed out on {count} titles")
+    slow = [
+        rule_id for rule_id, count in timeouts.items() if count >= RULE_TIMEOUT_LIMIT
+    ]
+    if slow:
+        conn.executemany(
+            "UPDATE feed_filter_rules SET enabled = 0, updated_at = CURRENT_TIMESTAMP"
+            " WHERE id = ?",
+            [(rule_id,) for rule_id in slow],
+        )
+        conn.commit()
+        logger.warning(f"feed filters: disabled rules {slow} after repeated timeouts")
+    return slow
 
 
 # Matching runs in Python between the read and the write, so every insert
@@ -257,7 +293,8 @@ def apply_rules(soundcloud_ids: list[str] | None = None) -> int:
         if not rules:
             return 0
         tracks = unreviewed_candidates(conn, soundcloud_ids)
-        flags = _rule_flags(tracks, rules)
+        flags, timeouts = _rule_flags(tracks, rules)
+        _disable_slow_rules(conn, timeouts)
         written = _write_rule_flags(conn, flags, rules) if flags else 0
     if written:
         logger.info(f"feed filters: flagged {written} of {len(tracks)} tracks")
@@ -276,8 +313,9 @@ def filter_ingested(soundcloud_ids: list[str]) -> int:
 def refresh_artist_stats_for(soundcloud_ids: Iterable[str]) -> None:
     """Recompute persisted artist aggregates after flags change which tracks count.
 
-    One batched recalc for every uploader/reposter of the given tracks. Runs
-    as a background task, so failures are logged, never raised.
+    One batched recalc for every uploader/reposter of the given tracks.
+    Overlapping calls are serialized inside ``recalculate_artist_stats``.
+    Runs as a background task, so any failure is logged, never raised.
     """
     # Local import: queries.discovery imports this module for its ingest hook.
     from web.backend.queries import discovery as discovery_queries
@@ -289,7 +327,7 @@ def refresh_artist_stats_for(soundcloud_ids: Iterable[str]) -> None:
         artist_ids = get_contributing_artist_ids_for(unique_ids)
         if artist_ids:
             discovery_queries.recalculate_artist_stats(artist_ids)
-    except sqlite3.Error:
+    except Exception:  # noqa: BLE001 - background task: nothing above would log it
         logger.exception(
             f"feed filters: artist stats refresh failed for {len(unique_ids)} tracks"
         )

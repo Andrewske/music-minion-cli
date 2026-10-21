@@ -1,7 +1,9 @@
 import { useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type { Track } from '@music-minion/shared';
 import { materializeFeedItems } from '../api/feed';
+import { cacheMaterializedReviewed } from '../components/feed/reviewed';
 import { usePlayerStore } from '../stores/playerStore';
 
 /** The fields a reviewed or flagged row needs to be played on its own. */
@@ -25,12 +27,14 @@ function rowToTrack(item: PlayableFeedRow, localTrackId: number): Track {
 /** Play one feed row, creating its streaming-only library track first if needed. */
 export function usePlayFeedRow(): (item: PlayableFeedRow) => Promise<void> {
   const play = usePlayerStore((state) => state.play);
+  const queryClient = useQueryClient();
   return useCallback(
     async (item: PlayableFeedRow): Promise<void> => {
       let localTrackId = item.local_track_id;
       if (localTrackId === null) {
         const created = await materializeFeedItems([item.soundcloud_id]).catch(() => []);
         localTrackId = created[0]?.local_track_id ?? null;
+        if (localTrackId !== null) cacheMaterializedReviewed(queryClient, item.soundcloud_id, localTrackId);
       }
       if (localTrackId === null) {
         toast.error('Could not prepare this SoundCloud track for playback');
@@ -38,6 +42,6 @@ export function usePlayFeedRow(): (item: PlayableFeedRow) => Promise<void> {
       }
       void play(rowToTrack(item, localTrackId), { type: 'feed', track_ids: [localTrackId] });
     },
-    [play]
+    [play, queryClient]
   );
 }
