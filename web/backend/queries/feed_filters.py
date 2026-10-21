@@ -4,11 +4,13 @@ Flags are not taste labels: they live in ``sc_track_flags``, never in
 ``sc_track_decisions``. An active (unrescued) flag hides a track from the
 feed and keeps it out of artist stats and keep-model training. Rules never
 delete track data; they only write flags, and a rescue only stamps
-``rescued_at``.
+``rescued_at``. A rescued row is the track's permanent exemption from every
+rule, so it outlives the rule that wrote it (``rule_id`` goes NULL).
 """
 
 import json
 import sqlite3
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -22,7 +24,12 @@ from web.backend.feed_filter_rules import (
     rule_precision,
     validate_rule,
 )
-from web.backend.queries.feed import set_track_note, utc_iso, window_params
+from web.backend.queries.feed import (
+    get_contributing_artist_ids_for,
+    set_track_note,
+    utc_iso,
+    window_params,
+)
 
 _RULE_FIELDS = ("name", "kind", "pattern", "threshold", "reason", "enabled")
 
@@ -98,17 +105,30 @@ def update_rule(rule_id: int, changes: dict[str, Any]) -> dict[str, Any] | None:
     return get_rule(rule_id)
 
 
-def delete_rule(rule_id: int) -> bool:
-    """Delete a rule and the flags it wrote, returning its tracks to the feed."""
+def delete_rule(rule_id: int) -> list[str] | None:
+    """Delete a rule and its active flags; None when the rule doesn't exist.
+
+    Returns the soundcloud ids released back to the feed. Rescued flags are
+    kept: the v68 foreign key sets their ``rule_id`` to NULL, and the row
+    still stops every other rule from flagging that track again.
+    """
     with get_db_connection() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        conn.execute(
-            "DELETE FROM sc_track_flags WHERE rule_id = ? AND source = 'rule'",
-            (rule_id,),
-        )
+        released = [
+            row["soundcloud_id"]
+            for row in conn.execute(
+                """DELETE FROM sc_track_flags
+                WHERE rule_id = ? AND source = 'rule' AND rescued_at IS NULL
+                RETURNING soundcloud_id""",
+                (rule_id,),
+            ).fetchall()
+        ]
         cursor = conn.execute("DELETE FROM feed_filter_rules WHERE id = ?", (rule_id,))
+        if cursor.rowcount == 0:
+            conn.rollback()
+            return None
         conn.commit()
-    return cursor.rowcount > 0
+    return released
 
 
 def _enabled_rules(conn: Any) -> list[dict[str, Any]]:
@@ -164,11 +184,50 @@ def _rule_flags(
     return flags
 
 
+# Matching runs in Python between the read and the write, so every insert
+# re-checks, inside the write transaction, that the rule still exists
+# unedited and enabled and that the track is still undecided with no flag
+# (active or rescued). A rule deleted, disabled or edited mid-run, or a track
+# rated or rescued mid-run, writes nothing.
+_INSERT_RULE_FLAG_SQL = """
+    INSERT OR IGNORE INTO sc_track_flags (soundcloud_id, reason, source, rule_id)
+    SELECT :soundcloud_id, :reason, 'rule', :rule_id
+    WHERE EXISTS (
+            SELECT 1 FROM feed_filter_rules r
+            WHERE r.id = :rule_id AND r.enabled = 1 AND r.updated_at = :updated_at)
+      AND NOT EXISTS (
+            SELECT 1 FROM sc_track_decisions d
+            WHERE d.soundcloud_id = :soundcloud_id AND d.is_current = 1)
+      AND NOT EXISTS (
+            SELECT 1 FROM sc_track_flags f WHERE f.soundcloud_id = :soundcloud_id)
+"""
+
+
+def _write_rule_flags(
+    conn: Any, flags: list[tuple[str, str, int]], rules: list[dict[str, Any]]
+) -> int:
+    """Insert flags under BEGIN IMMEDIATE, revalidating each; returns rows written."""
+    updated_at = {rule["id"]: rule["updated_at"] for rule in rules}
+    conn.execute("BEGIN IMMEDIATE")
+    written = 0
+    for soundcloud_id, reason, rule_id in flags:
+        params = {
+            "soundcloud_id": soundcloud_id,
+            "reason": reason,
+            "rule_id": rule_id,
+            "updated_at": updated_at[rule_id],
+        }
+        written += conn.execute(_INSERT_RULE_FLAG_SQL, params).rowcount
+    conn.commit()
+    return written
+
+
 def apply_rules(soundcloud_ids: list[str] | None = None) -> int:
     """Flag unreviewed tracks caught by an enabled rule; returns flags written.
 
     Pass the ids just ingested, or None to re-run over every unreviewed track
-    inside the feed window.
+    inside the feed window. Rules only flag undecided tracks, which carry no
+    artist-stat weight, so no stats refresh is needed here.
     """
     if soundcloud_ids is not None and not soundcloud_ids:
         return 0
@@ -180,15 +239,10 @@ def apply_rules(soundcloud_ids: list[str] | None = None) -> int:
         params = {"ids": ids_json, **window_params()}
         tracks = [dict(row) for row in conn.execute(_CANDIDATES_SQL, params)]
         flags = _rule_flags(tracks, rules)
-        conn.executemany(
-            """INSERT OR IGNORE INTO sc_track_flags
-                (soundcloud_id, reason, source, rule_id) VALUES (?, ?, 'rule', ?)""",
-            flags,
-        )
-        conn.commit()
-    if flags:
-        logger.info(f"feed filters: flagged {len(flags)} of {len(tracks)} tracks")
-    return len(flags)
+        written = _write_rule_flags(conn, flags, rules) if flags else 0
+    if written:
+        logger.info(f"feed filters: flagged {written} of {len(tracks)} tracks")
+    return written
 
 
 def filter_ingested(soundcloud_ids: list[str]) -> int:
@@ -198,6 +252,41 @@ def filter_ingested(soundcloud_ids: list[str]) -> int:
     except sqlite3.Error:
         logger.exception(f"feed filters: rules failed for {len(soundcloud_ids)} tracks")
         return 0
+
+
+def refresh_artist_stats_for(soundcloud_ids: Iterable[str]) -> None:
+    """Recompute persisted artist aggregates after flags change which tracks count.
+
+    One batched recalc for every uploader/reposter of the given tracks. Runs
+    as a background task, so failures are logged, never raised.
+    """
+    # Local import: queries.discovery imports this module for its ingest hook.
+    from web.backend.queries import discovery as discovery_queries
+
+    unique_ids = list(dict.fromkeys(soundcloud_ids))
+    if not unique_ids:
+        return
+    try:
+        artist_ids = get_contributing_artist_ids_for(unique_ids)
+        if artist_ids:
+            discovery_queries.recalculate_artist_stats(artist_ids)
+    except sqlite3.Error:
+        logger.exception(
+            f"feed filters: artist stats refresh failed for {len(unique_ids)} tracks"
+        )
+
+
+def active_flagged_ids(soundcloud_ids: Iterable[str]) -> set[str]:
+    """The subset of ids with an active (unrescued) not-for-feed flag."""
+    ids_json = json.dumps(list(dict.fromkeys(soundcloud_ids)))
+    with get_db_connection() as conn:
+        rows = conn.execute(
+            """SELECT soundcloud_id FROM sc_track_flags
+            WHERE rescued_at IS NULL
+              AND soundcloud_id IN (SELECT value FROM json_each(?))""",
+            (ids_json,),
+        ).fetchall()
+    return {row["soundcloud_id"] for row in rows}
 
 
 def _validate_reason(reason: str) -> None:

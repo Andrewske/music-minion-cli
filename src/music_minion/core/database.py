@@ -373,7 +373,8 @@ _V68_TRACK_FLAGS_DDL = """
         soundcloud_id TEXT NOT NULL,
         reason TEXT NOT NULL CHECK (reason IN ('live_mix', 'podcast', 'other')),
         source TEXT NOT NULL CHECK (source IN ('user', 'rule', 'agent')),
-        rule_id INTEGER,
+        -- A deleted rule's rescued flags survive as track-level exemptions.
+        rule_id INTEGER REFERENCES feed_filter_rules(id) ON DELETE SET NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         rescued_at TIMESTAMP
     )
@@ -420,6 +421,8 @@ def _migrate_v68_feed_flags(conn) -> None:
     Flags are not verdicts, so they get their own table instead of
     sc_track_decisions. One active (unrescued) flag per track; one flag per
     rule per track ever, so a rescued track is never re-flagged by that rule.
+    ``rule_id`` is a real foreign key: a flag can't name a missing rule, and
+    deleting a rule keeps its rescued rows (rule_id NULL) as exemptions.
     Seeds are inserted only when the rules table is new, so a seed the user
     deleted never comes back on a re-run.
     """

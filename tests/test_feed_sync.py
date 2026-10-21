@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from music_minion.core.database import _migrate_v68_feed_flags
 from music_minion.domain.library.provider import ProviderConfig, ProviderState
 from music_minion.domain.library.providers.soundcloud.api import (
     MAX_REPOSTS_PAGES,
@@ -357,6 +358,7 @@ def test_db(tmp_path, monkeypatch):
     conn.row_factory = sqlite3.Row
     for stmt in MINIMAL_SCHEMA_SQL:
         conn.execute(stmt)
+    _migrate_v68_feed_flags(conn)
     conn.execute("INSERT INTO sc_feed_sync_state (id) VALUES (1)")
     conn.commit()
     conn.close()

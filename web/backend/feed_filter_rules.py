@@ -7,7 +7,10 @@ rules engine is unit-testable on plain dicts.
 """
 
 import re
+import re._constants as sre_constants  # stdlib parser internals, stable since 3.11
+import re._parser as sre_parser
 from collections.abc import Callable, Iterable
+from functools import lru_cache
 from typing import Any
 
 FLAG_REASONS: tuple[str, ...] = ("live_mix", "podcast", "other")
@@ -16,6 +19,15 @@ RULE_KINDS: tuple[str, ...] = ("duration_min", "title_regex", "tag_match")
 MAX_RULE_NAME_LENGTH = 100
 MAX_PATTERN_LENGTH = 500
 MAX_DURATION_MINUTES = 600.0
+MAX_REGEX_LENGTH = 200
+# Titles are matched on a bounded prefix so even a slow pattern stays fast.
+MAX_MATCHED_TITLE_LENGTH = 300
+
+_REPEATS = (
+    sre_constants.MAX_REPEAT,
+    sre_constants.MIN_REPEAT,
+    sre_constants.POSSESSIVE_REPEAT,
+)
 
 _TAG_SPLIT = re.compile(r"[,;/|]")
 
@@ -45,10 +57,14 @@ def _matches_duration(track: dict[str, Any], rule: dict[str, Any]) -> bool:
     return duration_ms > float(rule["threshold"]) * 60_000
 
 
+@lru_cache(maxsize=64)
+def _compiled_title_pattern(pattern: str) -> re.Pattern[str]:
+    return re.compile(pattern, re.IGNORECASE)
+
+
 def _matches_title(track: dict[str, Any], rule: dict[str, Any]) -> bool:
-    return (
-        re.search(rule["pattern"], track.get("title") or "", re.IGNORECASE) is not None
-    )
+    title = (track.get("title") or "")[:MAX_MATCHED_TITLE_LENGTH]
+    return _compiled_title_pattern(rule["pattern"]).search(title) is not None
 
 
 def _matches_tags(track: dict[str, Any], rule: dict[str, Any]) -> bool:
@@ -85,6 +101,56 @@ def rule_precision(hits: int, rescues: int) -> float | None:
     return 1.0 - rescues / hits
 
 
+def _sub_patterns(op: Any, av: Any) -> list[Any]:
+    """Child sub-patterns of one parsed regex node."""
+    if op in _REPEATS:
+        return [av[2]]
+    if op is sre_constants.SUBPATTERN:
+        return [av[3]]
+    if op is sre_constants.BRANCH:
+        return list(av[1])
+    if op is sre_constants.ATOMIC_GROUP:
+        return [av]
+    if op in (sre_constants.ASSERT, sre_constants.ASSERT_NOT):
+        return [av[1]]
+    if op is sre_constants.GROUPREF_EXISTS:
+        return [child for child in av[1:] if child is not None]
+    return []
+
+
+def _has_nested_quantifier(pattern: Any, inside_repeat: bool = False) -> bool:
+    """True when a repeated group holds another quantifier or an alternation.
+
+    That shape (``(a+)+``, ``(a|a)*``) is what makes backtracking blow up
+    (ReDoS). Rules are hand-written, so rejecting it outright is simpler than
+    proving a particular pattern safe.
+    """
+    for op, av in pattern:
+        if inside_repeat and (op in _REPEATS or op is sre_constants.BRANCH):
+            return True
+        repeats = op in _REPEATS and av[1] > 1
+        children = _sub_patterns(op, av)
+        if any(_has_nested_quantifier(c, inside_repeat or repeats) for c in children):
+            return True
+    return False
+
+
+def _validated_regex(text: str) -> None:
+    if len(text) > MAX_REGEX_LENGTH:
+        raise ValueError(f"Regex is longer than {MAX_REGEX_LENGTH} characters")
+    try:
+        parsed = sre_parser.parse(text, re.IGNORECASE)
+    except re.error as error:
+        raise ValueError(
+            f"Invalid regex {text!r}: {error.msg} at position {error.pos}"
+        ) from error
+    if _has_nested_quantifier(parsed):
+        raise ValueError(
+            f"Regex {text!r} repeats a group that contains a quantifier or "
+            "alternation (like (a+)+), which can hang matching; flatten it"
+        )
+
+
 def _validated_pattern(kind: str, pattern: Any) -> str:
     text = str(pattern or "").strip()
     if not text:
@@ -94,12 +160,7 @@ def _validated_pattern(kind: str, pattern: Any) -> str:
     if kind == "tag_match" and not split_tags(text):
         raise ValueError("A tag_match rule needs at least one comma-separated tag")
     if kind == "title_regex":
-        try:
-            re.compile(text, re.IGNORECASE)
-        except re.error as error:
-            raise ValueError(
-                f"Invalid regex {text!r}: {error.msg} at position {error.pos}"
-            ) from error
+        _validated_regex(text)
     return text
 
 

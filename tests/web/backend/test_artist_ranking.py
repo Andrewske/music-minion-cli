@@ -5,6 +5,7 @@ import sqlite3
 
 import pytest
 
+from music_minion.core.database import _migrate_v68_feed_flags
 from web.backend.queries.artists import (
     get_artist_stats,
     recompute_tier_rankings,
@@ -92,6 +93,7 @@ def conn():
     conn.row_factory = sqlite3.Row
     for stmt in SCHEMA_SQL:
         conn.execute(stmt)
+    _migrate_v68_feed_flags(conn)
     yield conn
     conn.close()
 

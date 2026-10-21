@@ -1023,15 +1023,22 @@ def get_action_counts() -> dict[str, int]:
 
 def get_contributing_artist_ids(soundcloud_id: str) -> list[int]:
     """Uploader plus every reposter of a track: the artists a decision trains."""
+    return get_contributing_artist_ids_for([soundcloud_id])
+
+
+def get_contributing_artist_ids_for(soundcloud_ids: list[str]) -> list[int]:
+    """Batched get_contributing_artist_ids over many tracks, deduplicated."""
     with get_db_connection() as conn:
         rows = conn.execute(
-            """SELECT discovery_artist_id FROM sc_artist_uploads WHERE soundcloud_id = ?
+            """WITH ids AS (SELECT value AS soundcloud_id FROM json_each(:ids))
+            SELECT discovery_artist_id FROM sc_artist_uploads
+            WHERE soundcloud_id IN (SELECT soundcloud_id FROM ids)
             UNION
             SELECT dtr.discovery_artist_id
             FROM discovery_track_reposters dtr
             JOIN discovery_tracks dt ON dt.id = dtr.discovery_track_id
-            WHERE dt.soundcloud_id = ?""",
-            (soundcloud_id, soundcloud_id),
+            WHERE dt.soundcloud_id IN (SELECT soundcloud_id FROM ids)""",
+            {"ids": json.dumps(soundcloud_ids)},
         ).fetchall()
     return [row["discovery_artist_id"] for row in rows]
 
