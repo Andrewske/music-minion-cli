@@ -44,7 +44,7 @@ import type { Track } from '@music-minion/shared';
 import { FeedTrackCard } from './FeedTrackCard';
 import { NoteDialog } from './NoteDialog';
 import { ReviewedList } from './ReviewedList';
-import { REVIEWED_QUERY_KEY } from './reviewed';
+import { REVIEWED_QUERY_KEY, cacheMaterializedReviewed } from './reviewed';
 
 const ROW_HEIGHT = 92;
 const NOTE_TOAST_MS = 5_000;
@@ -293,6 +293,7 @@ export function FeedPage(): JSX.Element {
       if (localTrackId === null) {
         const created = await materializeFeedItems([item.soundcloud_id]).catch(() => []);
         localTrackId = created[0]?.local_track_id ?? null;
+        if (localTrackId !== null) cacheMaterializedReviewed(queryClient, item.soundcloud_id, localTrackId);
       }
       if (localTrackId === null) {
         toast.error('Could not prepare this SoundCloud track for playback');
@@ -300,7 +301,7 @@ export function FeedPage(): JSX.Element {
       }
       void play(reviewedToTrack(item, localTrackId), { type: 'feed', track_ids: [localTrackId] });
     },
-    [play]
+    [play, queryClient]
   );
 
   type FeedSearchPatch = {
