@@ -3,6 +3,7 @@ import { criterionChanges, ruleCriterion, type FlagReason } from '../../api/feed
 
 export const SUGGESTIONS_QUERY_KEY = ['feed-filters', 'suggestions'] as const;
 export const CLASSIFICATIONS_QUERY_KEY = ['feed-filters', 'classifications'] as const;
+export const UNREADABLE_QUERY_KEY = ['feed-filters', 'classifications', 'unreadable'] as const;
 
 /** Only the fields Kevin changed are sent; the server re-validates the rule. */
 export function suggestionOverrides(suggestion: RuleSuggestion, criterion: string, reason: FlagReason): SuggestionOverrides | undefined {

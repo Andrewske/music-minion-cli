@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, Check, Loader2, Sparkles, X } from 'lucide-react';
+import { Bot, Check, Loader2, RotateCcw, Sparkles, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { FEED_QUERY_PREFIX, invalidateFlagViews } from '../feed/feedCache';
 import {
@@ -10,8 +10,10 @@ import {
   dismissRuleSuggestion,
   getClassifications,
   getRuleSuggestions,
+  getUnreadableCount,
   mineRuleSuggestions,
   resolveClassification,
+  retryUnreadable,
   type FeedClassification,
   type RuleSuggestion,
   type SuggestionOverrides,
@@ -27,7 +29,7 @@ import {
 import { usePlayFeedRow } from '../../hooks/usePlayFeedRow';
 import { formatFlagDuration, ruleErrorMessage } from '../feed/flagged';
 import { FILTER_RULES_QUERY_KEY } from '../feed/reviewed';
-import { CLASSIFICATIONS_QUERY_KEY, SUGGESTIONS_QUERY_KEY, suggestionOverrides } from './feedAgent';
+import { CLASSIFICATIONS_QUERY_KEY, SUGGESTIONS_QUERY_KEY, UNREADABLE_QUERY_KEY, suggestionOverrides } from './feedAgent';
 
 const FIELD = 'rounded border border-obsidian-border bg-black/30 px-2 py-1.5 text-sm text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent';
 const SMALL_BUTTON = 'flex min-h-9 items-center gap-1.5 rounded border border-obsidian-border px-3 text-xs text-white/70 hover:text-white disabled:opacity-50';
@@ -192,10 +194,45 @@ function useClassifyMutations(): {
   };
 }
 
+interface UnreadableNoticeProps {
+  count: number;
+  isRetrying: boolean;
+  onRetry: () => void;
+}
+
+/** Tracks Jev gave unreadable answers for; they're skipped until reset. */
+export function UnreadableNotice({ count, isRetrying, onRetry }: UnreadableNoticeProps): JSX.Element | null {
+  if (count === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-obsidian-border px-3 py-2">
+      <p className="text-sm text-white/50">
+        {count} track{count === 1 ? '' : 's'} got unreadable answers and won't be checked again.
+      </p>
+      <button type="button" onClick={onRetry} disabled={isRetrying} className={SMALL_BUTTON}>
+        {isRetrying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+        Retry unreadable
+      </button>
+    </div>
+  );
+}
+
+function useUnreadable(): UnreadableNoticeProps {
+  const queryClient = useQueryClient();
+  const countQuery = useQuery({ queryKey: UNREADABLE_QUERY_KEY, queryFn: getUnreadableCount });
+  const retryMutation = useMutation({
+    mutationFn: retryUnreadable,
+    onSuccess: (reset) => toast.success(`${reset} track${reset === 1 ? '' : 's'} will be checked on the next run`),
+    onError: () => toast.error('Could not reset unreadable tracks'),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: UNREADABLE_QUERY_KEY }),
+  });
+  return { count: countQuery.data ?? 0, isRetrying: retryMutation.isPending, onRetry: () => retryMutation.mutate() };
+}
+
 /** Jev's mix / set / show calls between 50% and 85%: Kevin decides. */
 export function AgentReviewPanel(): JSX.Element {
   const classificationsQuery = useQuery({ queryKey: CLASSIFICATIONS_QUERY_KEY, queryFn: () => getClassifications('pending') });
   const { classify, isClassifying, resolve, busyId } = useClassifyMutations();
+  const unreadable = useUnreadable();
   const playRow = usePlayFeedRow();
   const items = classificationsQuery.data ?? [];
   const play = (item: FeedClassification): void => void playRow({ ...item, artist_name: item.uploader });
@@ -213,6 +250,7 @@ export function AgentReviewPanel(): JSX.Element {
           Check ambiguous tracks
         </button>
       </div>
+      <UnreadableNotice {...unreadable} />
       {classificationsQuery.isError && <p className="text-sm text-white/50" role="alert">Failed to load agent suggestions</p>}
       {!classificationsQuery.isLoading && !classificationsQuery.isError && items.length === 0 && (
         <p className="text-sm text-white/40">Nothing waiting for review.</p>

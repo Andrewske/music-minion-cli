@@ -34,7 +34,10 @@ export interface ClassifyResult {
   classified: number;
   auto_flagged: number;
   pending: number;
+  /** Unreadable answers: never flagged, not asked again until reset. */
   invalid: number;
+  /** Answers with no value at all: asked again next run (up to 3 times). */
+  incomplete: number;
   failed_batches: number;
 }
 
@@ -78,6 +81,18 @@ export async function getClassifications(status: ClassificationStatus = 'pending
   return response.items;
 }
 
+/** Tracks whose Jev answers were unreadable, so they are no longer asked. */
+export async function getUnreadableCount(): Promise<number> {
+  const response = await getDefaultApiClient().request<{ count: number }>('/feed-filters/classifications/unreadable');
+  return response.count;
+}
+
+/** Resets unreadable tracks so the next "Check ambiguous tracks" asks again. */
+export async function retryUnreadable(): Promise<number> {
+  const response = await getDefaultApiClient().post<{ reset: number }>('/feed-filters/classifications/unreadable/retry');
+  return response.reset;
+}
+
 /** Confirm = Kevin agrees it's a mix / show and the track gets his own flag. */
 export async function resolveClassification(id: number, confirm: boolean): Promise<FeedClassification> {
   return getDefaultApiClient().post<FeedClassification>(
@@ -114,5 +129,6 @@ export function describeClassifyResult(result: ClassifyResult): string {
   const parts = [`${result.auto_flagged} filtered`, `${result.pending} to review`];
   const failed = result.failed_batches > 0 ? ` (${result.failed_batches} batch${result.failed_batches === 1 ? '' : 'es'} failed)` : '';
   const invalid = result.invalid > 0 ? ` (${result.invalid} unreadable answer${result.invalid === 1 ? '' : 's'})` : '';
-  return `Checked ${result.classified} of ${result.candidates}: ${parts.join(', ')}${failed}${invalid}`;
+  const incomplete = result.incomplete > 0 ? ` (${result.incomplete} to retry)` : '';
+  return `Checked ${result.classified} of ${result.candidates}: ${parts.join(', ')}${failed}${invalid}${incomplete}`;
 }

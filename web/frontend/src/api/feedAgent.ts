@@ -2,7 +2,7 @@
 export {
   classifyAmbiguousTracks, getClassifications, resolveClassification,
   mineRuleSuggestions, getRuleSuggestions, acceptRuleSuggestion,
-  dismissRuleSuggestion, describeClassifyResult,
+  dismissRuleSuggestion, describeClassifyResult, getUnreadableCount, retryUnreadable,
 } from '@music-minion/shared';
 export type {
   ClassificationStatus, FeedClassification, ClassifyResult, SuggestionStatus,

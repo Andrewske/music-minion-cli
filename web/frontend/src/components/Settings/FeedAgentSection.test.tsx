@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { FeedClassification, RuleSuggestion } from '../../api/feedAgent';
-import { ClassificationRow, SuggestionRow } from './FeedAgentSection';
+import { ClassificationRow, SuggestionRow, UnreadableNotice } from './FeedAgentSection';
 import { suggestionOverrides } from './feedAgent';
 
 vi.mock('../../hooks/usePlayFeedRow', () => ({ usePlayFeedRow: () => vi.fn() }));
@@ -73,5 +73,20 @@ describe('ClassificationRow', () => {
     expect(onResolve).toHaveBeenCalledWith(classification, true);
     fireEvent.click(screen.getByRole('button', { name: 'Keep Sunset Session in feed' }));
     expect(onResolve).toHaveBeenCalledWith(classification, false);
+  });
+});
+
+describe('UnreadableNotice', () => {
+  it('is hidden with nothing unreadable', () => {
+    const { container } = render(<UnreadableNotice count={0} isRetrying={false} onRetry={vi.fn()} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('shows the count and retries', () => {
+    const onRetry = vi.fn();
+    render(<UnreadableNotice count={3} isRetrying={false} onRetry={onRetry} />);
+    expect(screen.getByText(/3 tracks got unreadable answers/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Retry unreadable/ }));
+    expect(onRetry).toHaveBeenCalledOnce();
   });
 });
