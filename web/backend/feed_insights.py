@@ -44,7 +44,7 @@ NO_GENRE = "(no genre)"
 _VARIANTS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
     (re.compile(pattern), replacement)
     for pattern, replacement in (
-        (r"\ba\s*c+ap+el+a\b", "acapella"),
+        (r"\ba\s*c+ap+el+as?\b", "acapella"),
         (r"\bdub\s+step\b", "dubstep"),
         (r"\bd\s*n\s*b\b|\bd\s*&\s*b\b|\bdrum\s*(?:&|and|n|'n')\s*bass\b", "dnb"),
         (r"\bfeaturing\b|\bfeat\b|\bft\b", "feat"),
@@ -263,8 +263,13 @@ def top_lift_features(
         for dimension in dimensions
         for row in aggregate(tracks, dimension, min_count)
     ]
-    positives = sorted((r for r in rows if r["lift"] > 0), key=lambda r: -r["lift"])
-    negatives = sorted((r for r in rows if r["lift"] < 0), key=lambda r: r["lift"])
+    # Ties (common at 0% keep) go to the value with more evidence.
+    positives = sorted(
+        (r for r in rows if r["lift"] > 0), key=lambda r: (-r["lift"], -r["seen"])
+    )
+    negatives = sorted(
+        (r for r in rows if r["lift"] < 0), key=lambda r: (r["lift"], -r["seen"])
+    )
     return positives[:limit], negatives[:limit]
 
 

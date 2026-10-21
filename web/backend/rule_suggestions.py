@@ -30,7 +30,7 @@ DURATION_THRESHOLDS: tuple[float, ...] = (8, 10, 12, 15, 20, 30, 45, 60)
 
 # Variant-merged keywords match every spelling in the raw title.
 _VARIANT_REGEX: dict[str, str] = {
-    "acapella": r"a\s*c+ap+el+a",
+    "acapella": r"a\s*c+ap+el+as?",
     "dnb": r"d\s*n\s*b|d\s*&\s*b|drum\s*(?:&|and|n|'n')\s*bass",
     "b2b": r"b\s*2\s*b",
     "free download": r"free\s*(?:download|dl)",

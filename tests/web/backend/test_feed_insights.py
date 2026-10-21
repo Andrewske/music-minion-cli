@@ -77,7 +77,8 @@ class TestKeepPctAndLift:
 
 class TestNormalization:
     @pytest.mark.parametrize(
-        "raw", ["A Cappella", "acappella", "Acapella", "a capella", "ACCAPELLA"]
+        "raw",
+        ["A Cappella", "acappella", "Acapella", "a capella", "ACCAPELLA", "Acapellas"],
     )
     def test_acapella_variants_merge(self, raw: str) -> None:
         assert normalize_text(raw) == "acapella"

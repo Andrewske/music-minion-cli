@@ -1,10 +1,18 @@
-import { FLAG_REASON_LABELS, type FlaggedItem } from '../../api/feedFilters';
+import { FLAG_REASON_LABELS, formatConfidence, type FlaggedItem } from '../../api/feedFilters';
 
-/** "Live mix / set · Longer than 15 min" for rule flags, the reason alone for user flags. */
-export function describeFlag(item: Pick<FlaggedItem, 'reason' | 'source' | 'rule_name'>): string {
+type DescribedFlag = Pick<FlaggedItem, 'reason' | 'source' | 'rule_name'> & { confidence?: number | null };
+
+/**
+ * "Live mix / set · Longer than 15 min" for rule flags, "… · agent 87%" for
+ * agent flags, the reason alone for user flags.
+ */
+export function describeFlag(item: DescribedFlag): string {
   const reason = FLAG_REASON_LABELS[item.reason];
   if (item.source === 'rule') return `${reason} · ${item.rule_name ?? 'deleted rule'}`;
-  if (item.source === 'agent') return `${reason} · agent`;
+  if (item.source === 'agent') {
+    const confidence = formatConfidence(item.confidence ?? null);
+    return confidence ? `${reason} · agent ${confidence}` : `${reason} · agent`;
+  }
   return reason;
 }
 

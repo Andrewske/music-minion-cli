@@ -90,6 +90,8 @@ export type {
   ReviewedItem, ReviewedPage, GetReviewedParams, FeedNoteResponse,
 } from './api/feed';
 export * from './api/feedFilters';
+export * from './api/feedAgent';
+export * from './api/insights';
 
 // Playback error policy (shared window/breaker/retry decision logic)
 export {

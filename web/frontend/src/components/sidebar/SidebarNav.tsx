@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
-import { House, Clock, Trophy, ListMusic, Layers, Settings, ChevronDown, Users, Rss } from 'lucide-react';
+import { House, Clock, Trophy, ListMusic, Layers, Settings, ChevronDown, Users, Rss, Lightbulb } from 'lucide-react';
 
 interface NavItem {
   href: string;
@@ -11,6 +11,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { href: '/', label: 'Home', icon: House },
   { href: '/feed', label: 'Feed', icon: Rss },
+  { href: '/insights', label: 'Insights', icon: Lightbulb },
   { href: '/history', label: 'History', icon: Clock },
   { href: '/artists', label: 'Artists', icon: Users },
   { href: '/comparison', label: 'Comparison', icon: Trophy },
