@@ -9,6 +9,7 @@ import * as Haptics from 'expo-haptics';
 import { getDefaultApiClient } from '@music-minion/shared';
 import { usePlayer } from '../../hooks/usePlayer';
 import { SeekSlider } from './SeekSlider';
+import { armBadStream, E2E_ENABLED } from '../../services/e2eHooks';
 import { PlaybackErrorBanner } from './PlaybackErrorBanner';
 
 /** Backend artwork URL — baseUrl already includes the `/api` prefix. */
@@ -25,6 +26,7 @@ export function NowPlaying({ onCollapse }: NowPlayingProps) {
     currentTrack,
     isPlaying,
     shuffleEnabled,
+    scrobbledThisPlaythrough,
     queue,
     queueIndex,
     pause,
@@ -89,7 +91,12 @@ export function NowPlaying({ onCollapse }: NowPlayingProps) {
       </View>
 
       {/* Track info */}
-      <Text style={styles.title} numberOfLines={2}>
+      <Text
+        testID="now-playing-title"
+        style={styles.title}
+        numberOfLines={2}
+        onLongPress={E2E_ENABLED ? armBadStream : undefined}
+      >
         {currentTrack.title}
       </Text>
       <Text style={styles.artist} numberOfLines={1}>
@@ -105,11 +112,13 @@ export function NowPlaying({ onCollapse }: NowPlayingProps) {
 
       {/* Main controls */}
       <View style={styles.mainControls}>
-        <Pressable style={styles.mainBtn} onPress={handlePrev}>
+        <Pressable testID="now-playing-prev" style={styles.mainBtn} onPress={handlePrev}>
           <Text style={styles.mainBtnText}>⏮</Text>
         </Pressable>
 
         <Pressable
+          testID="now-playing-play-pause"
+          accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
           style={[styles.mainBtn, styles.playMainBtn]}
           onPress={handlePlayPause}
         >
@@ -118,7 +127,7 @@ export function NowPlaying({ onCollapse }: NowPlayingProps) {
           </Text>
         </Pressable>
 
-        <Pressable style={styles.mainBtn} onPress={handleNext}>
+        <Pressable testID="now-playing-next" style={styles.mainBtn} onPress={handleNext}>
           <Text style={styles.mainBtnText}>⏭</Text>
         </Pressable>
       </View>
@@ -134,10 +143,17 @@ export function NowPlaying({ onCollapse }: NowPlayingProps) {
           </Text>
         </Pressable>
 
-        <Text style={styles.queueInfo}>
+        <Text testID="now-playing-queue-info" style={styles.queueInfo}>
           {queueIndex + 1} / {queue.length} in queue
         </Text>
       </View>
+
+      {/* Scrobble indicator: this playthrough has counted as a play */}
+      {scrobbledThisPlaythrough && (
+        <Text testID="now-playing-scrobbled" style={styles.scrobbled}>
+          ✓ Counted as played
+        </Text>
+      )}
     </ScrollView>
   );
 }
@@ -246,5 +262,10 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 12,
     fontFamily: 'monospace',
+  },
+  scrobbled: {
+    color: '#666',
+    fontSize: 12,
+    marginTop: 16,
   },
 });

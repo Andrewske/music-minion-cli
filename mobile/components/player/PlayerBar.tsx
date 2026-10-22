@@ -69,7 +69,7 @@ export function PlayerBar() {
       <PlaybackErrorBanner />
       <View testID="player-bar" style={[styles.bar, { paddingBottom: 10 + insets.bottom }]}>
         {/* Track info — tap to expand NowPlaying sheet */}
-        <Pressable style={styles.info} onPress={handleExpand}>
+        <Pressable testID="player-bar-expand" style={styles.info} onPress={handleExpand}>
           <Text testID="player-track-title" style={styles.title} numberOfLines={1}>
             {currentTrack.title}
           </Text>
@@ -96,6 +96,8 @@ export function PlayerBar() {
           </Pressable>
 
           <Pressable
+            testID="player-play-pause"
+            accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
             style={[styles.controlBtn, styles.playBtn]}
             onPress={handlePlayPause}
             hitSlop={8}
@@ -105,7 +107,7 @@ export function PlayerBar() {
             </Text>
           </Pressable>
 
-          <Pressable style={styles.controlBtn} onPress={handleNext} hitSlop={8}>
+          <Pressable testID="player-next" style={styles.controlBtn} onPress={handleNext} hitSlop={8}>
             <Text style={styles.controlIcon}>⏭</Text>
           </Pressable>
         </View>

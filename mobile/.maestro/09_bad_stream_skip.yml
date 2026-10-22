@@ -1,0 +1,58 @@
+# Bad stream URL — a track whose stream 404s gets one retry, surfaces
+# "Failed to load", then auto-skips to the next track. App must not crash.
+#
+# REQUIRES an E2E build (EXPO_PUBLIC_E2E=1, set by scripts/e2e.sh): the
+# long-press on the Now Playing title arms services/e2eHooks.ts so the NEXT
+# track loads from a URL the backend 404s. No backend data is touched.
+appId: com.musicminion.app
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "tab-home"
+    timeout: 30000
+- runFlow: subflows/play_search_track.yml
+- assertTrue:
+    condition: ${output.queueLength >= output.startIndex + 2}
+    label: "Queue has two tracks after the current one"
+
+# Arm the seam, then skip: the next track (startIndex + 1) is the broken one.
+- longPressOn:
+    id: "now-playing-title"
+- tapOn:
+    id: "now-playing-next"
+- extendedWaitUntil:
+    visible:
+      id: "now-playing-queue-info"
+      text: ${(output.startIndex + 1) + ' / .* in queue'}
+    timeout: 15000
+- copyTextFrom:
+    id: "now-playing-title"
+- runScript:
+    file: scripts/copied-as-regex.js
+    env:
+      KEY: "brokenTitle"
+
+# Error → retry once → error → banner + skip after ~2s.
+- extendedWaitUntil:
+    visible:
+      id: "playback-error-banner"
+    timeout: 30000
+- assertVisible:
+    text: "${'Failed to load: ' + output.brokenTitle}"
+- extendedWaitUntil:
+    visible:
+      id: "now-playing-queue-info"
+      text: ${(output.startIndex + 2) + ' / .* in queue'}
+    timeout: 30000
+
+# The skipped-to track plays normally; app still alive.
+- extendedWaitUntil:
+    visible:
+      id: "seek-position"
+      text: "0:0[3-9]"
+    timeout: 45000
+- tapOn:
+    id: "playback-error-dismiss"
+- assertNotVisible:
+    id: "playback-error-banner"

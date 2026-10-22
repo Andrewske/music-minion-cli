@@ -21,6 +21,7 @@ export function SeekSlider({ position, duration, onSeek }: SeekSliderProps) {
   return (
     <View style={styles.container}>
       <Slider
+        testID="seek-slider"
         style={styles.slider}
         value={position}
         minimumValue={0}
@@ -31,8 +32,8 @@ export function SeekSlider({ position, duration, onSeek }: SeekSliderProps) {
         onSlidingComplete={onSeek}
       />
       <View style={styles.times}>
-        <Text style={styles.time}>{formatTime(position)}</Text>
-        <Text style={styles.time}>{formatTime(duration)}</Text>
+        <Text testID="seek-position" style={styles.time}>{formatTime(position)}</Text>
+        <Text testID="seek-duration" style={styles.time}>{formatTime(duration)}</Text>
       </View>
     </View>
   );

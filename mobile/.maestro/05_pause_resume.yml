@@ -1,0 +1,64 @@
+# Pause / resume — playback position freezes while paused and advances again
+# after resume (asserts on RNTP's reported position, not just the icon).
+appId: com.musicminion.app
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "tab-home"
+    timeout: 30000
+- runFlow: subflows/play_search_track.yml
+
+# Pause → button flips to "Play", position stops moving.
+- tapOn:
+    id: "now-playing-play-pause"
+- extendedWaitUntil:
+    visible:
+      id: "now-playing-play-pause"
+      text: "Play"
+    timeout: 10000
+- runScript:
+    file: scripts/sleep.js
+    env:
+      MS: "1500"
+- copyTextFrom:
+    id: "seek-position"
+- runScript:
+    file: scripts/clock-to-seconds.js
+    env:
+      KEY: "pausedAt"
+- runScript:
+    file: scripts/sleep.js
+    env:
+      MS: "4000"
+- copyTextFrom:
+    id: "seek-position"
+- runScript:
+    file: scripts/clock-to-seconds.js
+    env:
+      KEY: "stillPausedAt"
+- assertTrue:
+    condition: ${output.stillPausedAt == output.pausedAt}
+    label: "Position frozen while paused"
+
+# Resume → button flips back to "Pause", position advances.
+- tapOn:
+    id: "now-playing-play-pause"
+- extendedWaitUntil:
+    visible:
+      id: "now-playing-play-pause"
+      text: "Pause"
+    timeout: 10000
+- runScript:
+    file: scripts/sleep.js
+    env:
+      MS: "4000"
+- copyTextFrom:
+    id: "seek-position"
+- runScript:
+    file: scripts/clock-to-seconds.js
+    env:
+      KEY: "resumedAt"
+- assertTrue:
+    condition: ${output.resumedAt >= output.pausedAt + 2}
+    label: "Position advances after resume"

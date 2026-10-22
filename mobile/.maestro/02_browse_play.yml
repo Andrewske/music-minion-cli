@@ -10,10 +10,16 @@ appId: com.musicminion.app
 # 2+ chars trigger the debounced search query.
 - eraseText
 - inputText: "the"
-- assertVisible:
-    id: "track-card"
+- extendedWaitUntil:
+    visible:
+      id: "track-card"
+    timeout: 30000
+# With the keyboard up, the first tap on the list only dismisses it.
+- hideKeyboard
 - tapOn:
     id: "track-card"
 # Playback started → persistent player bar shows the track title.
-- assertVisible:
-    id: "player-track-title"
+- extendedWaitUntil:
+    visible:
+      id: "player-track-title"
+    timeout: 30000

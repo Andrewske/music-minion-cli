@@ -1,0 +1,36 @@
+# Subflow: search QUERY, play the first result, open Now Playing, and wait
+# until RNTP reports real progress (position >= 0:03 = audio is decoding).
+# env: QUERY (default "the"). Sets output.startIndex / output.queueLength.
+appId: com.musicminion.app
+---
+- tapOn:
+    id: "tab-home"
+- tapOn:
+    id: "home-search-input"
+- eraseText
+- inputText: ${QUERY || "the"}
+- extendedWaitUntil:
+    visible:
+      id: "track-card"
+    timeout: 30000
+# With the keyboard up, the first tap on the list only dismisses it.
+- hideKeyboard
+- tapOn:
+    id: "track-card"
+- extendedWaitUntil:
+    visible:
+      id: "player-bar-expand"
+    timeout: 30000
+- tapOn:
+    id: "player-bar-expand"
+- extendedWaitUntil:
+    visible:
+      id: "seek-position"
+      text: "0:0[3-9]"
+    timeout: 45000
+# Record queue position. Search queues the tapped result + the rest of the
+# results, so there is always a "next" track for advance/skip flows.
+- copyTextFrom:
+    id: "now-playing-queue-info"
+- evalScript: ${output.startIndex = parseInt(maestro.copiedText.split('/')[0].trim(), 10)}
+- evalScript: ${output.queueLength = parseInt(maestro.copiedText.split('/')[1].trim(), 10)}

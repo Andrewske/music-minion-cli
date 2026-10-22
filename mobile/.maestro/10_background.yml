@@ -1,0 +1,60 @@
+# Background playback — send the app to the home screen, wait, come back,
+# and confirm RNTP kept advancing the whole time (the player service was not
+# paused or killed when the activity backgrounded). Also checks the media
+# notification (the lockscreen/notification surface) shows the track.
+#
+# Emulator limits: proves the native player kept running, NOT that sound
+# reached a speaker, and doesn't cover screen-off/Doze. Verify those on a
+# physical device.
+appId: com.musicminion.app
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "tab-home"
+    timeout: 30000
+- runFlow: subflows/play_search_track.yml
+- copyTextFrom:
+    id: "now-playing-title"
+- runScript:
+    file: scripts/copied-as-regex.js
+    env:
+      KEY: "title"
+- copyTextFrom:
+    id: "seek-position"
+- runScript:
+    file: scripts/clock-to-seconds.js
+    env:
+      KEY: "beforeBackground"
+
+- pressKey: Home
+- runScript:
+    file: scripts/sleep.js
+    env:
+      MS: "12000"
+
+# Media notification lists the playing track while backgrounded.
+- swipe:
+    start: "50%,0%"
+    end: "50%,70%"
+- extendedWaitUntil:
+    visible:
+      text: ${output.title}
+    timeout: 10000
+- pressKey: Back
+
+- launchApp:
+    stopApp: false
+- extendedWaitUntil:
+    visible:
+      id: "seek-position"
+    timeout: 15000
+- copyTextFrom:
+    id: "seek-position"
+- runScript:
+    file: scripts/clock-to-seconds.js
+    env:
+      KEY: "afterBackground"
+- assertTrue:
+    condition: ${output.afterBackground >= output.beforeBackground + 10}
+    label: "Playback advanced while backgrounded"
