@@ -2,6 +2,7 @@
 SQLite database operations for Music Minion CLI
 """
 
+import os
 import sqlite3
 import unicodedata
 from contextlib import contextmanager
@@ -130,9 +131,31 @@ def seed_initial_emojis(conn) -> None:
         )
 
 
+DB_PATH_ENV = "MUSIC_MINION_DB_PATH"
+DB_OWNER_ENV = "MUSIC_MINION_DB_OWNER"
+
+
 def get_database_path() -> Path:
-    """Get the path to the SQLite database file."""
-    return get_data_dir() / "music_minion.db"
+    """Get the path to the SQLite database file (MUSIC_MINION_DB_PATH overrides)."""
+    override = os.environ.get(DB_PATH_ENV)
+    return Path(override) if override else get_data_dir() / "music_minion.db"
+
+
+def ensure_db_owner(db_path: Path) -> None:
+    """Refuse to open the real DB on a machine that doesn't own it.
+
+    The pi owns the live DB (its container sets MUSIC_MINION_DB_OWNER=1). Any
+    other copy is stale, and writes to it would never reach the pi. An explicit
+    MUSIC_MINION_DB_PATH (e.g. a dev snapshot) is allowed.
+    """
+    if os.environ.get(DB_OWNER_ENV) == "1" or os.environ.get(DB_PATH_ENV):
+        return
+    raise RuntimeError(
+        f"Refusing to open {db_path}: the pi owns the live database and this "
+        f"copy is stale. Use the web app, or run against a snapshot with "
+        f"scripts/pull-db-snapshot.sh and {DB_PATH_ENV}=<snapshot path>. "
+        f"Set {DB_OWNER_ENV}=1 only on the machine that owns the DB."
+    )
 
 
 @contextmanager
@@ -3484,6 +3507,7 @@ def ensure_schema_not_newer(conn: sqlite3.Connection, db_path: Path) -> None:
 def init_database() -> None:
     """Initialize the database with required tables."""
     db_path = get_database_path()
+    ensure_db_owner(db_path)
     logger.info(f"Initializing database at: {db_path}")
 
     # Ensure data directory exists

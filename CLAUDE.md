@@ -109,6 +109,8 @@ except Exception:
 - IPC: `music-minion skip|love|like|la|nq|ni|add <playlist>|web-*`
 - Opus migration: `music-minion locate-opus /path [--apply]`
 - Tests: `uv run pytest` or `uv run pytest path/to/test.py::test_case`
+- Dev against real data: `scripts/pull-db-snapshot.sh`, then `MUSIC_MINION_DB_PATH=<snapshot> uv run music-minion --web`
+- One-off tools on the live DB: `scripts/on-pi.sh music-minion <cmd>` or `scripts/on-pi.sh scripts/<x>.py`
 - Lint: `uv run ruff check src` / `uv run ruff format src`
 
 **Web Development Workflow**:
@@ -138,6 +140,7 @@ Logs are captured to `music-minion-{uvicorn,vite}.log` in the project root for e
 **Syncthing** (Linux ↔ Windows):
 - Purpose: Sync library + playlists between Music Minion (Linux) and Serato (Windows)
 - Syncs: Audio files + metadata (COMMENT field), M3U8/crate playlists
+- **Never syncs the DB**: the `music-minion-share` folder is paused; Syncthing corrupts live SQLite (WAL)
 - Settings: Send & Receive, Simple versioning (5-10), Watch enabled
 - Reference: `docs/reference/syncthing-setup.md`
 - **Auto-cleanup**: `sync local` automatically deletes `.sync-conflict-*` tracks and removes orphaned records
@@ -209,7 +212,7 @@ Bucket interface includes:
 
 ## Files
 
-- Database: SQLite at `~/.local/share/music-minion/music_minion.db` (schema in `core/database.py`)
+- Database: SQLite at `~/.local/share/music-minion/music_minion.db` (schema in `core/database.py`). **The pi owns it** (container sets `MUSIC_MINION_DB_OWNER=1`); elsewhere `init_database()` refuses the default path unless `MUSIC_MINION_DB_PATH` points at a snapshot
 - Learnings: `ai-learnings.md`
 - Open work: `TODOS.md`
 

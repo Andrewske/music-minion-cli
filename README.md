@@ -185,7 +185,7 @@ music-minion nq                       # Add to "Not Quite"
 music-minion ni                       # Add to "Not Interested" and skip
 ```
 
-Run `music-minion --help` for the full list (web-* controls, locate-opus, sync-radio).
+Run `music-minion --help` for the full list (web-* controls, locate-opus).
 
 ### Temporal Context Capture
 
