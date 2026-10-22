@@ -1,12 +1,14 @@
 import os
 import logging
+import sqlite3
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI
+from loguru import logger
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from music_minion.core.config import get_data_dir
 
@@ -132,8 +134,17 @@ app.include_router(insights.router)
 
 
 @app.get("/health")
-async def health_check():
-    return {"status": "healthy"}
+def health_check() -> JSONResponse:
+    """Healthy only if the DB answers; deploys roll back on a 503."""
+    from music_minion.core.database import get_db_connection
+
+    try:
+        with get_db_connection() as conn:
+            conn.execute("SELECT 1 FROM schema_version LIMIT 1").fetchone()
+    except sqlite3.Error as e:
+        logger.exception("Health check: database unavailable")
+        return JSONResponse({"status": "unhealthy", "error": str(e)}, status_code=503)
+    return JSONResponse({"status": "healthy"})
 
 
 # Static file serving for production (must come after all API routes)

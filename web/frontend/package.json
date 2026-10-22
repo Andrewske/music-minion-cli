@@ -36,7 +36,7 @@
     "emoji-mart": "^5.6.0",
     "hls.js": "^1.7.1",
     "lucide-react": "^0.564.0",
-    "page-chat-core": "git+https://git.piserver:8443/andrewske/page-chat-core.git#v0.1.0",
+    "page-chat-core": "github:Andrewske/page-chat-core#v0.1.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-markdown": "^10.1.0",
