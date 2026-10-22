@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 
 // https://vite.dev/config/
@@ -11,6 +12,7 @@ export default defineConfig({
       autoCodeSplitting: true,
     }),
     react(),
+    tailwindcss(),
   ],
   // react-dom is installed in web/frontend/node_modules, not the hoisted root, so
   // hoisted deps (e.g. @radix-ui/react-portal) can't resolve it without dedupe.

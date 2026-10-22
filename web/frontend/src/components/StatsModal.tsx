@@ -15,11 +15,11 @@ function StatCardSkeleton() {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 animate-pulse">
       <div className="flex items-center gap-3 mb-2">
-        <div className="w-8 h-8 bg-slate-800 rounded"></div>
-        <div className="w-16 h-9 bg-slate-800 rounded"></div>
+        <div className="w-8 h-8 bg-slate-800 rounded-sm"></div>
+        <div className="w-16 h-9 bg-slate-800 rounded-sm"></div>
       </div>
-      <div className="w-20 h-4 bg-slate-800 rounded mb-1"></div>
-      <div className="w-16 h-3 bg-slate-800 rounded"></div>
+      <div className="w-20 h-4 bg-slate-800 rounded-sm mb-1"></div>
+      <div className="w-16 h-3 bg-slate-800 rounded-sm"></div>
     </div>
   );
 }
@@ -43,13 +43,13 @@ function StatsSkeleton() {
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
-          <div className="h-6 bg-slate-800 rounded w-48 mb-4 animate-pulse"></div>
+          <div className="h-6 bg-slate-800 rounded-sm w-48 mb-4 animate-pulse"></div>
           <div className="space-y-3">
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="space-y-2">
                 <div className="flex justify-between">
-                  <div className="w-24 h-4 bg-slate-800 rounded animate-pulse"></div>
-                  <div className="w-16 h-4 bg-slate-800 rounded animate-pulse"></div>
+                  <div className="w-24 h-4 bg-slate-800 rounded-sm animate-pulse"></div>
+                  <div className="w-16 h-4 bg-slate-800 rounded-sm animate-pulse"></div>
                 </div>
                 <div className="w-full h-6 bg-slate-800 rounded-full animate-pulse"></div>
               </div>
@@ -58,18 +58,18 @@ function StatsSkeleton() {
         </div>
 
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
-          <div className="h-6 bg-slate-800 rounded w-40 mb-4 animate-pulse"></div>
+          <div className="h-6 bg-slate-800 rounded-sm w-40 mb-4 animate-pulse"></div>
           <div className="space-y-3">
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="flex justify-between items-center py-2 border-b border-slate-800/50">
                 <div className="flex items-center gap-3">
-                  <div className="w-6 h-4 bg-slate-800 rounded animate-pulse"></div>
+                  <div className="w-6 h-4 bg-slate-800 rounded-sm animate-pulse"></div>
                   <div className="space-y-1">
-                    <div className="w-32 h-4 bg-slate-800 rounded animate-pulse"></div>
-                    <div className="w-24 h-3 bg-slate-800 rounded animate-pulse"></div>
+                    <div className="w-32 h-4 bg-slate-800 rounded-sm animate-pulse"></div>
+                    <div className="w-24 h-3 bg-slate-800 rounded-sm animate-pulse"></div>
                   </div>
                 </div>
-                <div className="w-12 h-4 bg-slate-800 rounded animate-pulse"></div>
+                <div className="w-12 h-4 bg-slate-800 rounded-sm animate-pulse"></div>
               </div>
             ))}
           </div>
@@ -117,7 +117,7 @@ export function StatsModal({ isOpen, onClose, playlistId }: StatsModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs"
       onClick={handleBackdropClick}
     >
       <div className="relative max-w-6xl w-full mx-4 max-h-[90vh] bg-slate-950 border border-slate-800 rounded-xl shadow-2xl overflow-hidden">
@@ -229,8 +229,8 @@ export function StatsModal({ isOpen, onClose, playlistId }: StatsModalProps) {
                                   className={`
                                     absolute inset-y-0 left-0 rounded-full transition-all duration-500 ease-out
                                     ${isTopGenre
-                                      ? 'bg-gradient-to-r from-amber-500 to-amber-400'
-                                      : 'bg-gradient-to-r from-slate-600 to-slate-500'
+                                      ? 'bg-linear-to-r/srgb from-amber-500 to-amber-400'
+                                      : 'bg-linear-to-r/srgb from-slate-600 to-slate-500'
                                     }
                                   `}
                                   style={{ width: `${genre.percentage}%` }}
@@ -296,10 +296,10 @@ export function StatsModal({ isOpen, onClose, playlistId }: StatsModalProps) {
                 <div className="mt-6">
                   {isPlaylistTracksLoading ? (
                     <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 animate-pulse">
-                      <div className="h-6 bg-slate-800 rounded w-48 mb-4"></div>
+                      <div className="h-6 bg-slate-800 rounded-sm w-48 mb-4"></div>
                       <div className="space-y-3">
                         {Array.from({ length: 5 }).map((_, i) => (
-                          <div key={i} className="h-12 bg-slate-800 rounded"></div>
+                          <div key={i} className="h-12 bg-slate-800 rounded-sm"></div>
                         ))}
                       </div>
                     </div>

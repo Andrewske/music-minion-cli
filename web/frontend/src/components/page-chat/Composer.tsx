@@ -100,7 +100,7 @@ export function Composer({ busy, sending, onSend, onStop }: ComposerProps): JSX.
           maxLength={MAX_MESSAGE_CHARS}
           placeholder="Ask, or request a change…"
           aria-label="Message"
-          className="max-h-32 min-h-11 flex-1 resize-none bg-transparent px-2 py-2.5 text-[15px] text-white placeholder:text-white/30 focus:outline-none"
+          className="max-h-32 min-h-11 flex-1 resize-none bg-transparent px-2 py-2.5 text-[15px] text-white placeholder:text-white/30 focus:outline-hidden"
         />
         <button
           type="button"

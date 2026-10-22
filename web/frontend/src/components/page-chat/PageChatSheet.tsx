@@ -152,7 +152,7 @@ export function PageChatSheet(): JSX.Element {
         onInteractOutside={(e) => e.preventDefault()}
         className={cn(
           'fixed inset-x-0 bottom-0 z-50 flex h-[75dvh] flex-col gap-3 border-t border-obsidian-border bg-obsidian-black p-4 shadow-2xl',
-          'pb-[calc(1rem+env(safe-area-inset-bottom))] font-inter focus:outline-none',
+          'pb-[calc(1rem+env(safe-area-inset-bottom))] font-inter focus:outline-hidden',
           'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-200 data-[state=open]:duration-300',
           'data-[state=open]:slide-in-from-bottom data-[state=closed]:slide-out-to-bottom',
           'md:inset-y-0 md:left-auto md:right-0 md:h-auto md:w-[420px] md:border-l md:border-t-0',

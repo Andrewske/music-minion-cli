@@ -125,7 +125,7 @@ export default function FilterEditor({
             handleFieldChange(e.target.value);
             resetValidationError();
           }}
-          className="w-full bg-black border border-obsidian-border px-3 py-2 text-white focus:border-obsidian-accent/50 focus:outline-none transition-colors"
+          className="w-full bg-black border border-obsidian-border px-3 py-2 text-white focus:border-obsidian-accent/50 focus:outline-hidden transition-colors"
         >
           <option value="">Choose field...</option>
           <option value="title">Title</option>
@@ -150,7 +150,7 @@ export default function FilterEditor({
               setOperator(e.target.value);
               resetValidationError();
             }}
-            className="w-full bg-black border border-obsidian-border px-3 py-2 text-white focus:border-obsidian-accent/50 focus:outline-none transition-colors"
+            className="w-full bg-black border border-obsidian-border px-3 py-2 text-white focus:border-obsidian-accent/50 focus:outline-hidden transition-colors"
           >
             <option value="">Choose condition...</option>
             <option value="contains">contains (~)</option>
@@ -172,7 +172,7 @@ export default function FilterEditor({
               setOperator(e.target.value);
               resetValidationError();
             }}
-            className="w-full bg-black border border-obsidian-border px-3 py-2 text-white focus:border-obsidian-accent/50 focus:outline-none transition-colors"
+            className="w-full bg-black border border-obsidian-border px-3 py-2 text-white focus:border-obsidian-accent/50 focus:outline-hidden transition-colors"
           >
             <option value="">Choose condition...</option>
             <option value="equals">equals (=)</option>
@@ -195,7 +195,7 @@ export default function FilterEditor({
               setOperator(e.target.value);
               resetValidationError();
             }}
-            className="w-full bg-black border border-obsidian-border px-3 py-2 text-white focus:border-obsidian-accent/50 focus:outline-none transition-colors"
+            className="w-full bg-black border border-obsidian-border px-3 py-2 text-white focus:border-obsidian-accent/50 focus:outline-hidden transition-colors"
           >
             <option value="">Choose condition...</option>
             <option value="has">has emoji</option>
@@ -215,7 +215,7 @@ export default function FilterEditor({
               setValue(e.target.value);
               resetValidationError();
             }}
-            className="w-full bg-black border border-obsidian-border px-3 py-2 text-white focus:border-obsidian-accent/50 focus:outline-none transition-colors"
+            className="w-full bg-black border border-obsidian-border px-3 py-2 text-white focus:border-obsidian-accent/50 focus:outline-hidden transition-colors"
           >
             <option value="">Choose genre...</option>
             {uniqueGenres.map(({ name, count }) => (
@@ -244,7 +244,7 @@ export default function FilterEditor({
               resetValidationError();
             }}
             placeholder={getPlaceholder(field, operator)}
-            className="w-full bg-black border border-obsidian-border px-3 py-2 text-white focus:border-obsidian-accent/50 focus:outline-none transition-colors"
+            className="w-full bg-black border border-obsidian-border px-3 py-2 text-white focus:border-obsidian-accent/50 focus:outline-hidden transition-colors"
           />
         </div>
       )}
@@ -270,7 +270,7 @@ export default function FilterEditor({
 
       {/* Validation Error Display */}
       {validationError && (
-        <div className="mt-2 p-2 bg-red-900/50 border border-red-700 rounded text-xs text-red-300">
+        <div className="mt-2 p-2 bg-red-900/50 border border-red-700 rounded-sm text-xs text-red-300">
           {validationError}
         </div>
       )}

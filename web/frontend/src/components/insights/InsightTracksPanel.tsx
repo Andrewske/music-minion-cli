@@ -17,7 +17,7 @@ export function InsightTrackRow({ track, onPlay }: { track: InsightTrack; onPlay
   const title = track.title ?? 'Untitled';
   return (
     <li className="flex items-center gap-3 border-t border-obsidian-border py-2">
-      <button type="button" onClick={() => onPlay(track)} disabled={track.access === 'blocked'} aria-label={`Play ${title}`} className="shrink-0 rounded p-1.5 text-white/50 hover:bg-white/10 hover:text-white disabled:opacity-40">
+      <button type="button" onClick={() => onPlay(track)} disabled={track.access === 'blocked'} aria-label={`Play ${title}`} className="shrink-0 rounded-sm p-1.5 text-white/50 hover:bg-white/10 hover:text-white disabled:opacity-40">
         <Play className="h-3.5 w-3.5" />
       </button>
       <div className="min-w-0 flex-1">
@@ -49,14 +49,14 @@ export function InsightTracksPanel({ dimension, value, onClose }: InsightTracksP
   const play = (track: InsightTrack): void => void playRow({ ...track, artist_name: track.uploader });
   const data = tracksQuery.data;
   return (
-    <section aria-label={`Tracks for ${value}`} className="rounded border border-obsidian-border bg-obsidian-surface p-3">
+    <section aria-label={`Tracks for ${value}`} className="rounded-sm border border-obsidian-border bg-obsidian-surface p-3">
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="text-[11px] uppercase tracking-wide text-white/40">{INSIGHT_DIMENSION_LABELS[dimension]}</p>
           <h3 className="text-base font-semibold text-white">{value}</h3>
           {data && <p className="text-xs text-white/50">{data.total} reviewed track{data.total === 1 ? '' : 's'}{data.total > data.items.length ? `, newest ${data.items.length} shown` : ''}</p>}
         </div>
-        <button type="button" onClick={onClose} aria-label="Close track list" className="rounded p-1.5 text-white/50 hover:bg-white/10 hover:text-white">
+        <button type="button" onClick={onClose} aria-label="Close track list" className="rounded-sm p-1.5 text-white/50 hover:bg-white/10 hover:text-white">
           <X className="h-4 w-4" />
         </button>
       </div>

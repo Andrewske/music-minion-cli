@@ -45,11 +45,11 @@ export function ReviewedRow({ item, isUpdating, isPlaying, onPlay, onDecide, onE
         isPlaying ? 'border-obsidian-accent/40 bg-obsidian-accent/10' : 'border-obsidian-border bg-obsidian-surface'
       }`}
     >
-      <button type="button" onClick={() => playable && onPlay(item)} disabled={!playable} aria-label={`Play ${item.title ?? 'track'}`} className="shrink-0 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent disabled:opacity-40">
+      <button type="button" onClick={() => playable && onPlay(item)} disabled={!playable} aria-label={`Play ${item.title ?? 'track'}`} className="shrink-0 rounded-sm focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-obsidian-accent disabled:opacity-40">
         {item.artwork_url && !artworkFailed ? (
-          <img src={item.artwork_url} alt="" width={44} height={44} loading="lazy" onError={() => setArtworkFailed(true)} className="h-11 w-11 rounded object-cover" />
+          <img src={item.artwork_url} alt="" width={44} height={44} loading="lazy" onError={() => setArtworkFailed(true)} className="h-11 w-11 rounded-sm object-cover" />
         ) : (
-          <span className="flex h-11 w-11 items-center justify-center rounded bg-white/5"><Music className="h-4 w-4 text-white/40" /></span>
+          <span className="flex h-11 w-11 items-center justify-center rounded-sm bg-white/5"><Music className="h-4 w-4 text-white/40" /></span>
         )}
       </button>
       <div className="min-w-0 flex-1">
@@ -61,7 +61,7 @@ export function ReviewedRow({ item, isUpdating, isPlaying, onPlay, onDecide, onE
           <span>{describeListen(item)}</span>
         </p>
       </div>
-      <button type="button" onClick={editNote} aria-label={item.note ? `Edit note: ${item.note}` : 'Add note'} className="flex min-h-10 max-w-xs items-center gap-1.5 rounded px-2 text-left text-xs text-white/50 hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent">
+      <button type="button" onClick={editNote} aria-label={item.note ? `Edit note: ${item.note}` : 'Add note'} className="flex min-h-10 max-w-xs items-center gap-1.5 rounded-sm px-2 text-left text-xs text-white/50 hover:bg-white/10 hover:text-white focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-obsidian-accent">
         <Pencil className="h-3.5 w-3.5 shrink-0" />
         <span className={`truncate ${item.note ? 'italic text-white/70' : ''}`}>{item.note ?? 'Add note'}</span>
       </button>
@@ -154,7 +154,7 @@ function DecisionList({ filter, currentTrackId, onPlay, onEditNote }: ReviewedLi
       ))
     )}
     {reviewedQuery.hasNextPage && (
-      <button type="button" onClick={() => void reviewedQuery.fetchNextPage()} disabled={reviewedQuery.isFetchingNextPage} className="mx-auto rounded border border-obsidian-border px-4 py-2 text-xs text-white/70 hover:text-white disabled:opacity-50">
+      <button type="button" onClick={() => void reviewedQuery.fetchNextPage()} disabled={reviewedQuery.isFetchingNextPage} className="mx-auto rounded-sm border border-obsidian-border px-4 py-2 text-xs text-white/70 hover:text-white disabled:opacity-50">
         {reviewedQuery.isFetchingNextPage ? 'Loading…' : 'Load more'}
       </button>
     )}

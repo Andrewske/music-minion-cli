@@ -66,7 +66,7 @@ export function EmojiPicker({ onSelect, onClose, allowClear = false }: EmojiPick
 
   return (
     <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-60"
       onClick={onClose}
     >
       <div
@@ -81,7 +81,7 @@ export function EmojiPicker({ onSelect, onClose, allowClear = false }: EmojiPick
                 onSelect(null);
                 onClose();
               }}
-              className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm font-medium"
+              className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-sm text-sm font-medium"
             >
               Clear Emoji
             </button>

@@ -9,7 +9,7 @@ export function SidebarToggle({ isExpanded, onToggle }: SidebarToggleProps): JSX
   return (
     <button
       onClick={onToggle}
-      className="p-2 text-white/60 hover:text-white hover:bg-white/5 rounded transition-colors"
+      className="p-2 text-white/60 hover:text-white hover:bg-white/5 rounded-sm transition-colors"
       aria-label={isExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
     >
       {isExpanded ? <ChevronLeft className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}

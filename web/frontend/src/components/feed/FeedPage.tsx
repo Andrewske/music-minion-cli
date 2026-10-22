@@ -76,7 +76,7 @@ function FeedTabs({ tab, onChange }: { tab: FeedTab; onChange: (tab: FeedTab) =>
           role="tab"
           aria-selected={tab === value}
           onClick={() => onChange(value)}
-          className={`rounded-full px-3 py-1 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent ${
+          className={`rounded-full px-3 py-1 text-xs focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-obsidian-accent ${
             tab === value ? 'bg-obsidian-accent/20 text-obsidian-accent' : 'text-white/60 hover:text-white'
           }`}
         >
@@ -352,7 +352,7 @@ export function FeedPage(): JSX.Element {
                 role="radio"
                 aria-checked={source === value}
                 onClick={() => updateSearch({ source: value === 'all' ? undefined : value })}
-                className={`rounded-full px-3 py-1 text-xs capitalize focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent ${
+                className={`rounded-full px-3 py-1 text-xs capitalize focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-obsidian-accent ${
                   source === value ? 'bg-obsidian-accent/20 text-obsidian-accent' : 'text-white/60 hover:text-white'
                 }`}
               >
@@ -373,7 +373,7 @@ export function FeedPage(): JSX.Element {
                     : undefined,
                 })
               }
-              className="rounded border border-obsidian-border bg-obsidian-surface px-2 py-1.5 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent"
+              className="rounded-sm border border-obsidian-border bg-obsidian-surface px-2 py-1.5 text-white focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-obsidian-accent"
             >
               <option value="">All</option>
               {FEED_RANK_PRESETS.map((rank) => <option key={rank} value={rank}>Top {rank}</option>)}
@@ -392,7 +392,7 @@ export function FeedPage(): JSX.Element {
                 role="radio"
                 aria-checked={sort === value}
                 onClick={() => updateSearch({ sort: value === 'event_at' ? undefined : value })}
-                className={`rounded-full px-3 py-1 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent ${
+                className={`rounded-full px-3 py-1 text-xs focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-obsidian-accent ${
                   sort === value ? 'bg-obsidian-accent/20 text-obsidian-accent' : 'text-white/60 hover:text-white'
                 }`}
               >
@@ -409,7 +409,7 @@ export function FeedPage(): JSX.Element {
               onChange={(event) =>
                 updateSearch({ minScore: event.target.value ? Number(event.target.value) : undefined })
               }
-              className="rounded border border-obsidian-border bg-obsidian-surface px-2 py-1.5 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent"
+              className="rounded-sm border border-obsidian-border bg-obsidian-surface px-2 py-1.5 text-white focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-obsidian-accent"
             >
               <option value="">Off</option>
               {MIN_SCORE_PRESETS.map((score) => (
@@ -426,7 +426,7 @@ export function FeedPage(): JSX.Element {
 
         <div className="ml-auto flex items-center gap-1 text-xs text-white/40">
           <span>Synced {formatLastSync(syncStatus?.last_run_at)}</span>
-          <button type="button" onClick={() => syncMutation.mutate()} disabled={feedSyncRunning} aria-label="Sync feed now" className="rounded p-2 text-white/60 hover:bg-white/5 hover:text-white disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent">
+          <button type="button" onClick={() => syncMutation.mutate()} disabled={feedSyncRunning} aria-label="Sync feed now" className="rounded-sm p-2 text-white/60 hover:bg-white/5 hover:text-white disabled:opacity-50 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-obsidian-accent">
             <RefreshCw className={`h-4 w-4 ${feedSyncRunning ? 'animate-spin' : ''}`} />
           </button>
         </div>
@@ -439,7 +439,7 @@ export function FeedPage(): JSX.Element {
       ) : feedQuery.isError ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-white/50" role="alert">
           <span>Failed to load feed</span>
-          <button type="button" onClick={() => void feedQuery.refetch()} className="rounded border border-obsidian-border px-3 py-1.5 text-white/70">Try again</button>
+          <button type="button" onClick={() => void feedQuery.refetch()} className="rounded-sm border border-obsidian-border px-3 py-1.5 text-white/70">Try again</button>
         </div>
       ) : items.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-white/40">
@@ -447,7 +447,7 @@ export function FeedPage(): JSX.Element {
           {backfillRunning ? (
             <p className="flex items-center gap-2" role="status"><Loader2 className="h-4 w-4 animate-spin" />Backfill running</p>
           ) : (
-            <button type="button" onClick={() => backfillMutation.mutate()} className="rounded border border-obsidian-accent px-4 py-2 text-obsidian-accent hover:bg-obsidian-accent/10">Backfill feed history</button>
+            <button type="button" onClick={() => backfillMutation.mutate()} className="rounded-sm border border-obsidian-accent px-4 py-2 text-obsidian-accent hover:bg-obsidian-accent/10">Backfill feed history</button>
           )}
         </div>
       ) : (

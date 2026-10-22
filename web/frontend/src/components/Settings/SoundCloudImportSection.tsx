@@ -421,7 +421,7 @@ function ReviewStep({
                           <button
                             type="button"
                             onClick={() => onConfirmMatch(match.sc_track_id)}
-                            className="px-2 py-1 bg-green-700 hover:bg-green-600 text-white text-xs rounded transition-colors"
+                            className="px-2 py-1 bg-green-700 hover:bg-green-600 text-white text-xs rounded-sm transition-colors"
                           >
                             Confirm
                           </button>
@@ -429,14 +429,14 @@ function ReviewStep({
                         <button
                           type="button"
                           onClick={() => setFixingTrackId(match.sc_track_id)}
-                          className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-white text-xs rounded transition-colors"
+                          className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-white text-xs rounded-sm transition-colors"
                         >
                           Fix
                         </button>
                         <button
                           type="button"
                           onClick={() => onMarkMissing(match.sc_track_id)}
-                          className="px-2 py-1 bg-slate-700 hover:bg-red-600 text-white text-xs rounded transition-colors"
+                          className="px-2 py-1 bg-slate-700 hover:bg-red-600 text-white text-xs rounded-sm transition-colors"
                         >
                           Missing
                         </button>
@@ -445,7 +445,7 @@ function ReviewStep({
                       <button
                         type="button"
                         onClick={() => onUndoMissing(match.sc_track_id)}
-                        className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-white text-xs rounded transition-colors"
+                        className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-white text-xs rounded-sm transition-colors"
                       >
                         Undo
                       </button>

@@ -125,7 +125,7 @@ function FilterEditor({ initialFilter, onSave, onCancel }: FilterEditorProps): J
   const isNumeric = ['year', 'bpm'].includes(field);
 
   const inputClass = `w-full bg-black border border-obsidian-border px-3 py-2 text-white text-sm
-    focus:border-obsidian-accent/50 focus:outline-none transition-colors`;
+    focus:border-obsidian-accent/50 focus:outline-hidden transition-colors`;
 
   const handleSave = (): void => {
     if (field && operator && value) {

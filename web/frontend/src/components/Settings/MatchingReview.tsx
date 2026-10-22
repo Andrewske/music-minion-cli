@@ -31,7 +31,7 @@ function scoreBadgeClass(score: number): string {
 function ScoreBadge({ score }: { score: number }): JSX.Element {
   return (
     <span
-      className={`inline-block px-2 py-0.5 rounded border text-xs font-mono font-medium ${scoreBadgeClass(score)}`}
+      className={`inline-block px-2 py-0.5 rounded-sm border text-xs font-mono font-medium ${scoreBadgeClass(score)}`}
     >
       {(score * 100).toFixed(0)}%
     </span>
@@ -96,7 +96,7 @@ function ScoreFilter({ minScore, maxScore, onMinChange, onMaxChange }: ScoreFilt
           step={0.05}
           value={minScore}
           onChange={(e) => onMinChange(Math.min(parseFloat(e.target.value) || 0, maxScore))}
-          className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-white text-xs focus:ring-1 focus:ring-obsidian-accent focus:border-transparent"
+          className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded-sm text-white text-xs focus:ring-1 focus:ring-obsidian-accent focus:border-transparent"
         />
         <span className="text-white/40">–</span>
         <input
@@ -106,7 +106,7 @@ function ScoreFilter({ minScore, maxScore, onMinChange, onMaxChange }: ScoreFilt
           step={0.05}
           value={maxScore}
           onChange={(e) => onMaxChange(Math.max(parseFloat(e.target.value) || 1, minScore))}
-          className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-white text-xs focus:ring-1 focus:ring-obsidian-accent focus:border-transparent"
+          className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded-sm text-white text-xs focus:ring-1 focus:ring-obsidian-accent focus:border-transparent"
         />
       </div>
     </div>
@@ -166,7 +166,7 @@ function CandidateRow({ candidate, onAccept, onReject, isPending }: CandidateRow
             type="button"
             onClick={() => onAccept(candidate.id)}
             disabled={isPending}
-            className="px-3 py-1.5 bg-green-700 hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium rounded transition-colors"
+            className="px-3 py-1.5 bg-green-700 hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium rounded-sm transition-colors"
           >
             Accept
           </button>
@@ -174,7 +174,7 @@ function CandidateRow({ candidate, onAccept, onReject, isPending }: CandidateRow
             type="button"
             onClick={() => onReject(candidate.id)}
             disabled={isPending}
-            className="px-3 py-1.5 bg-slate-700 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium rounded transition-colors"
+            className="px-3 py-1.5 bg-slate-700 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium rounded-sm transition-colors"
           >
             Reject
           </button>
@@ -207,7 +207,7 @@ function Pagination({ page, pageSize, count, onPageChange }: PaginationProps): J
           type="button"
           onClick={() => onPageChange(page - 1)}
           disabled={!hasPrev}
-          className="px-3 py-1 bg-slate-800 border border-slate-700 rounded disabled:opacity-40 hover:bg-slate-700 transition-colors text-white text-xs"
+          className="px-3 py-1 bg-slate-800 border border-slate-700 rounded-sm disabled:opacity-40 hover:bg-slate-700 transition-colors text-white text-xs"
         >
           Previous
         </button>
@@ -215,7 +215,7 @@ function Pagination({ page, pageSize, count, onPageChange }: PaginationProps): J
           type="button"
           onClick={() => onPageChange(page + 1)}
           disabled={!hasNext}
-          className="px-3 py-1 bg-slate-800 border border-slate-700 rounded disabled:opacity-40 hover:bg-slate-700 transition-colors text-white text-xs"
+          className="px-3 py-1 bg-slate-800 border border-slate-700 rounded-sm disabled:opacity-40 hover:bg-slate-700 transition-colors text-white text-xs"
         >
           Next
         </button>

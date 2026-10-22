@@ -101,7 +101,7 @@ function SortableTrack({ track, bucketId, isPlaying, onTrackClick }: SortableTra
         <div className="text-xs text-white/50 truncate">{track.artist ?? 'Unknown Artist'}</div>
       </div>
       {unavailable && (
-        <span className="shrink-0 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/30">
+        <span className="shrink-0 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded-sm bg-red-500/15 text-red-400 border border-red-500/30">
           Unavailable
         </span>
       )}
@@ -236,9 +236,9 @@ export function BucketComponent({
 
         {/* Keyboard shortcut badge */}
         <div className="hidden sm:flex items-center gap-1 text-xs text-white/30">
-          <kbd className="px-1.5 py-0.5 bg-white/10 rounded">Shift</kbd>
+          <kbd className="px-1.5 py-0.5 bg-white/10 rounded-sm">Shift</kbd>
           <span>+</span>
-          <kbd className="px-1.5 py-0.5 bg-white/10 rounded">{shortcutNumber}</kbd>
+          <kbd className="px-1.5 py-0.5 bg-white/10 rounded-sm">{shortcutNumber}</kbd>
         </div>
 
         {/* Action buttons — desktop */}

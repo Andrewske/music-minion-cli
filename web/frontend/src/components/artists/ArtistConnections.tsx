@@ -26,7 +26,7 @@ function ConnectionTrackRow({ track }: { track: ConnectionTrack }): ReactElement
         {track.artist && <span className="text-white/35"> — {track.artist}</span>}
       </span>
       <span
-        className={`shrink-0 px-1.5 py-0.5 rounded font-sf-mono text-[10px] uppercase tracking-wide ${tag.cls}`}
+        className={`shrink-0 px-1.5 py-0.5 rounded-sm font-sf-mono text-[10px] uppercase tracking-wide ${tag.cls}`}
       >
         {tag.label}
       </span>
@@ -67,7 +67,7 @@ function ConnectionCard({ connection }: { connection: ArtistConnection }): React
   const hiddenCount = connection.tracks.length - tracks.length;
 
   return (
-    <div className="rounded border border-obsidian-border bg-obsidian-surface">
+    <div className="rounded-sm border border-obsidian-border bg-obsidian-surface">
       <div className="flex items-center gap-3 px-3 py-2.5 border-b border-obsidian-border/60">
         {connection.avatar_url ? (
           <img
@@ -91,7 +91,7 @@ function ConnectionCard({ connection }: { connection: ArtistConnection }): React
           {connection.shared_count} shared
         </span>
       </div>
-      <ul className="py-1 divide-y divide-white/[0.03]">
+      <ul className="py-1 divide-y divide-white/3">
         {tracks.map((t) => (
           <ConnectionTrackRow key={`${t.track_id}:${t.relation}`} track={t} />
         ))}

@@ -50,7 +50,7 @@ function NoteForm({
           if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) save();
         }}
         placeholder="What made it miss?"
-        className="w-full resize-none rounded border border-obsidian-border bg-black/30 p-2 text-sm text-white placeholder:text-white/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent"
+        className="w-full resize-none rounded-sm border border-obsidian-border bg-black/30 p-2 text-sm text-white placeholder:text-white/30 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-obsidian-accent"
       />
       <AlertDialogFooter>
         <AlertDialogCancel>Cancel</AlertDialogCancel>

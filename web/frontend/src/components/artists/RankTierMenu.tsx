@@ -134,7 +134,7 @@ export function RankTierMenu({ artist }: RankTierMenuProps): ReactElement | null
                 onChange={handleRankChange}
                 onKeyDown={stopTypeahead}
                 placeholder={artist.ranking != null ? `#${artist.ranking}` : '#'}
-                className="w-16 px-2 py-1 bg-obsidian-bg border border-obsidian-border text-white placeholder:text-white/30 font-sf-mono text-xs focus:outline-none focus:ring-1 focus:ring-obsidian-accent"
+                className="w-16 px-2 py-1 bg-obsidian-bg border border-obsidian-border text-white placeholder:text-white/30 font-sf-mono text-xs focus:outline-hidden focus:ring-1 focus:ring-obsidian-accent"
               />
               <button
                 type="submit"

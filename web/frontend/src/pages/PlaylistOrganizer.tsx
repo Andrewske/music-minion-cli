@@ -28,7 +28,7 @@ import type { PlaylistTrackEntry } from '../types';
 
 function DragPreviewRow({ track }: { track: PlaylistTrackEntry }): JSX.Element {
   return (
-    <div className="bg-obsidian-surface border-2 border-obsidian-accent rounded shadow-2xl cursor-grabbing transform scale-105 opacity-95">
+    <div className="bg-obsidian-surface border-2 border-obsidian-accent rounded-sm shadow-2xl cursor-grabbing transform scale-105 opacity-95">
       <div className="flex items-center w-full px-3 py-2 text-sm">
         {/* Drag handle icon */}
         <div className="flex-none w-10 text-white/30">
@@ -36,12 +36,12 @@ function DragPreviewRow({ track }: { track: PlaylistTrackEntry }): JSX.Element {
         </div>
 
         {/* Title - flex 3 */}
-        <div className="flex-[3] min-w-0 px-2 text-white/90 truncate">
+        <div className="flex-3 min-w-0 px-2 text-white/90 truncate">
           {track.title}
         </div>
 
         {/* Artist - flex 2 */}
-        <div className="flex-[2] min-w-0 px-2 text-white/70 truncate">
+        <div className="flex-2 min-w-0 px-2 text-white/70 truncate">
           {track.artist ?? '-'}
         </div>
 

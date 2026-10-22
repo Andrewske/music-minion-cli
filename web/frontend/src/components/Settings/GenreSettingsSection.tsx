@@ -114,7 +114,7 @@ export function GenreSettingsSection(): JSX.Element {
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, genre.id)}
-                        className="flex-1 bg-white/10 px-2 py-1 rounded text-sm"
+                        className="flex-1 bg-white/10 px-2 py-1 rounded-sm text-sm"
                         autoFocus
                       />
                       <button
@@ -145,7 +145,7 @@ export function GenreSettingsSection(): JSX.Element {
                 <td className="text-center px-4 py-2">
                   <button
                     onClick={() => setEmojiPickerFor(genre.id)}
-                    className="text-lg hover:bg-white/10 px-2 py-1 rounded"
+                    className="text-lg hover:bg-white/10 px-2 py-1 rounded-sm"
                   >
                     {genre.emoji_id ?? '➕'}
                   </button>

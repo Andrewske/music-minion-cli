@@ -47,7 +47,7 @@ export function InsightTable({ label, rows, selectedValue, onSelect }: InsightTa
               className={`cursor-pointer border-t border-obsidian-border ${selected ? 'bg-obsidian-accent/10' : 'hover:bg-white/5'}`}
             >
               <td className="py-1.5 pr-2">
-                <button type="button" onClick={(event) => { event.stopPropagation(); onSelect(row); }} aria-pressed={selected} className={`text-left text-sm ${selected ? 'text-obsidian-accent' : 'text-white'} focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent`}>
+                <button type="button" onClick={(event) => { event.stopPropagation(); onSelect(row); }} aria-pressed={selected} className={`text-left text-sm ${selected ? 'text-obsidian-accent' : 'text-white'} focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-obsidian-accent`}>
                   {row.value}
                 </button>
               </td>

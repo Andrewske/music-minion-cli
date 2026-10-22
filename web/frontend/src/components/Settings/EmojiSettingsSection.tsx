@@ -174,7 +174,7 @@ export function EmojiSettingsSection(): JSX.Element {
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, emoji.emoji_id)}
-                        className="w-full px-2 py-1 bg-obsidian-border text-white border border-slate-600 focus:border-obsidian-accent focus:outline-none"
+                        className="w-full px-2 py-1 bg-obsidian-border text-white border border-slate-600 focus:border-obsidian-accent focus:outline-hidden"
                         placeholder="Enter custom name..."
                         autoFocus
                       />

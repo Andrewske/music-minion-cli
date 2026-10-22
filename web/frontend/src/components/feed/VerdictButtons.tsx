@@ -60,7 +60,7 @@ export function VerdictButtons({
             aria-label={spec.label}
             aria-pressed={active}
             title={spec.title}
-            className={`flex min-h-10 min-w-10 items-center justify-center gap-1.5 rounded p-2 text-xs transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-obsidian-accent disabled:cursor-default ${
+            className={`flex min-h-10 min-w-10 items-center justify-center gap-1.5 rounded p-2 text-xs transition-colors focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-obsidian-accent disabled:cursor-default ${
               active ? 'bg-obsidian-accent/15 text-obsidian-accent' : 'text-white/45 hover:bg-white/10 hover:text-white disabled:opacity-50'
             }`}
           >

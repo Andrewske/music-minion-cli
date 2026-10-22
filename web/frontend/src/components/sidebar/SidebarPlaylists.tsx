@@ -156,14 +156,14 @@ export function SidebarPlaylists({ sidebarExpanded }: SidebarPlaylistsProps): JS
             : 'text-white/60 hover:text-white hover:bg-white/5'
           }`}
       >
-        <ListMusic className="w-4 h-4 flex-shrink-0" />
-        {isPinned && <Pin className="w-3 h-3 flex-shrink-0 text-obsidian-accent" />}
+        <ListMusic className="w-4 h-4 shrink-0" />
+        {isPinned && <Pin className="w-3 h-3 shrink-0 text-obsidian-accent" />}
         <span className="truncate text-sm">{playlist.name}</span>
         <span className="ml-auto text-xs text-white/40 flex items-center gap-1">
           {isHovered && (
             <span
               onClick={handlePinToggle}
-              className="p-0.5 hover:bg-white/10 rounded cursor-pointer"
+              className="p-0.5 hover:bg-white/10 rounded-sm cursor-pointer"
               title={isPinned ? 'Unpin' : 'Pin to top'}
             >
               <Pin className={`w-3 h-3 ${isPinned ? 'text-obsidian-accent' : 'text-white/40'}`} />

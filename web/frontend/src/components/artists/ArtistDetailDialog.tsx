@@ -118,7 +118,7 @@ function AddOverrideForm({ artistId }: AddOverrideFormProps): ReactElement {
         value={localName}
         onChange={handleNameChange}
         placeholder="Local artist name"
-        className="w-full px-3 py-1.5 bg-obsidian-bg border border-obsidian-border text-white placeholder:text-white/30 font-sf-mono text-xs focus:outline-none focus:ring-1 focus:ring-obsidian-accent"
+        className="w-full px-3 py-1.5 bg-obsidian-bg border border-obsidian-border text-white placeholder:text-white/30 font-sf-mono text-xs focus:outline-hidden focus:ring-1 focus:ring-obsidian-accent"
       />
       <div className="flex items-center gap-4">
         <label className="flex items-center gap-1.5 cursor-pointer">
@@ -369,7 +369,7 @@ export function ArtistDetailDialog({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        <Dialog.Overlay className="fixed inset-0 bg-black/80 backdrop-blur-xs z-50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-2xl max-h-[85vh] overflow-y-auto bg-obsidian-surface border border-obsidian-border p-6 space-y-5 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0">
           {/* Dialog title (visually hidden, required for a11y) */}
           <Dialog.Title className="sr-only">Artist details</Dialog.Title>
@@ -378,7 +378,7 @@ export function ArtistDetailDialog({
           <Dialog.Close asChild>
             <button
               type="button"
-              className="absolute top-4 right-4 text-white/40 hover:text-white/80 transition-colors focus:outline-none focus:ring-1 focus:ring-obsidian-accent"
+              className="absolute top-4 right-4 text-white/40 hover:text-white/80 transition-colors focus:outline-hidden focus:ring-1 focus:ring-obsidian-accent"
               aria-label="Close"
             >
               <X size={18} />

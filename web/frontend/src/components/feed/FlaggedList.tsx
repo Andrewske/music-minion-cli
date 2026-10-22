@@ -32,11 +32,11 @@ export function FlaggedRow({ item, isPlaying, isUpdating, onPlay, onUnflag }: Fl
         isPlaying ? 'border-obsidian-accent/40 bg-obsidian-accent/10' : 'border-obsidian-border bg-obsidian-surface'
       }`}
     >
-      <button type="button" onClick={() => playable && onPlay(item)} disabled={!playable} aria-label={`Play ${item.title ?? 'track'}`} className="shrink-0 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent disabled:opacity-40">
+      <button type="button" onClick={() => playable && onPlay(item)} disabled={!playable} aria-label={`Play ${item.title ?? 'track'}`} className="shrink-0 rounded-sm focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-obsidian-accent disabled:opacity-40">
         {item.artwork_url && !artworkFailed ? (
-          <img src={item.artwork_url} alt="" width={44} height={44} loading="lazy" onError={() => setArtworkFailed(true)} className="h-11 w-11 rounded object-cover" />
+          <img src={item.artwork_url} alt="" width={44} height={44} loading="lazy" onError={() => setArtworkFailed(true)} className="h-11 w-11 rounded-sm object-cover" />
         ) : (
-          <span className="flex h-11 w-11 items-center justify-center rounded bg-white/5"><Music className="h-4 w-4 text-white/40" /></span>
+          <span className="flex h-11 w-11 items-center justify-center rounded-sm bg-white/5"><Music className="h-4 w-4 text-white/40" /></span>
         )}
       </button>
       <div className="min-w-0 flex-1">
@@ -53,7 +53,7 @@ export function FlaggedRow({ item, isPlaying, isUpdating, onPlay, onUnflag }: Fl
         onClick={() => onUnflag(item)}
         disabled={isUpdating}
         aria-label={`${action} ${item.title ?? 'track'}`}
-        className="min-h-10 shrink-0 rounded border border-obsidian-border px-3 text-xs text-white/70 hover:border-obsidian-accent hover:text-obsidian-accent disabled:opacity-50"
+        className="min-h-10 shrink-0 rounded-sm border border-obsidian-border px-3 text-xs text-white/70 hover:border-obsidian-accent hover:text-obsidian-accent disabled:opacity-50"
       >
         {action}
       </button>
@@ -119,7 +119,7 @@ export function FlaggedList({ source, ruleId, sort = 'newest', currentTrackId, e
         />
       ))}
       {flaggedQuery.hasNextPage && (
-        <button type="button" onClick={() => void flaggedQuery.fetchNextPage()} disabled={flaggedQuery.isFetchingNextPage} className="mx-auto rounded border border-obsidian-border px-4 py-2 text-xs text-white/70 hover:text-white disabled:opacity-50">
+        <button type="button" onClick={() => void flaggedQuery.fetchNextPage()} disabled={flaggedQuery.isFetchingNextPage} className="mx-auto rounded-sm border border-obsidian-border px-4 py-2 text-xs text-white/70 hover:text-white disabled:opacity-50">
           {flaggedQuery.isFetchingNextPage ? 'Loading…' : 'Load more'}
         </button>
       )}
