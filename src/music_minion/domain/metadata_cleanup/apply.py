@@ -91,7 +91,9 @@ def read_current(path: Path) -> dict[str, str]:
 
 
 def new_backup_dir() -> Path:
-    backup = BACKUPS_DIR / datetime.now().strftime("%Y%m%d-%H%M%S")
+    """Microseconds in the name: the web review applies one track at a time,
+    often several per second, and each apply gets its own undo log."""
+    backup = BACKUPS_DIR / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     backup.mkdir(parents=True, exist_ok=False)
     return backup
 

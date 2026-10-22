@@ -92,6 +92,7 @@ export type {
 export * from './api/feedFilters';
 export * from './api/feedAgent';
 export * from './api/insights';
+export * from './api/cleanup';
 
 // Playback error policy (shared window/breaker/retry decision logic)
 export {

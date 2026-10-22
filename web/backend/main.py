@@ -107,6 +107,7 @@ from .routers import (
     feed_filters,
     feed_agent,
     insights,
+    cleanup,
 )
 from .routers.playlists import router as playlists_router
 
@@ -131,6 +132,7 @@ app.include_router(feed.router)
 app.include_router(feed_filters.router)
 app.include_router(feed_agent.router)
 app.include_router(insights.router)
+app.include_router(cleanup.router)
 
 
 @app.get("/health")

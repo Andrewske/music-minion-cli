@@ -1,17 +1,23 @@
 import { useState } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
-import { House, Clock, Trophy, ListMusic, Layers, Settings, ChevronDown, Users, Rss, Lightbulb } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { House, Clock, Trophy, ListMusic, Layers, Settings, ChevronDown, Users, Rss, Lightbulb, Tags } from 'lucide-react';
+import { getPendingCleanupCount } from '../../api/cleanup';
+import { CLEANUP_COUNT_KEY } from '../cleanup/cleanupView';
 
 interface NavItem {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
+  /** Shows a count badge (only the Tag review queue for now). */
+  badge?: 'cleanup';
 }
 
 const navItems: NavItem[] = [
   { href: '/', label: 'Home', icon: House },
   { href: '/feed', label: 'Feed', icon: Rss },
   { href: '/insights', label: 'Insights', icon: Lightbulb },
+  { href: '/cleanup', label: 'Tag review', icon: Tags, badge: 'cleanup' },
   { href: '/history', label: 'History', icon: Clock },
   { href: '/artists', label: 'Artists', icon: Users },
   { href: '/comparison', label: 'Comparison', icon: Trophy },
@@ -19,6 +25,31 @@ const navItems: NavItem[] = [
   { href: '/playlist-organizer', label: 'Playlist Organizer', icon: Layers },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
+
+/** Pending metadata-cleanup tracks; refetched when the window regains focus. */
+function PendingCleanupBadge({ isExpanded }: { isExpanded: boolean }): JSX.Element | null {
+  const { data } = useQuery({
+    queryKey: CLEANUP_COUNT_KEY,
+    queryFn: getPendingCleanupCount,
+    refetchOnWindowFocus: true,
+    staleTime: 60_000,
+  });
+  const count = data?.count ?? 0;
+  if (count === 0) return null;
+  const label = `${count} pending`;
+  if (!isExpanded) {
+    return (
+      <span aria-label={label} className="absolute right-1 top-1 min-w-4 rounded-full bg-obsidian-accent px-1 text-center font-sf-mono text-[10px] leading-4 text-black">
+        {count}
+      </span>
+    );
+  }
+  return (
+    <span aria-label={label} className="ml-auto rounded-full bg-obsidian-accent/15 px-2 py-0.5 font-sf-mono text-[11px] text-obsidian-accent">
+      {count}
+    </span>
+  );
+}
 
 interface SidebarNavProps {
   isExpanded: boolean;
@@ -57,7 +88,7 @@ export function SidebarNav({ isExpanded, onNavigate }: SidebarNavProps): JSX.Ele
                   to={item.href}
                   aria-label={item.label}
                   onClick={onNavigate}
-                  className={`flex items-center gap-3 px-3 py-2 rounded transition-colors ${
+                  className={`relative flex items-center gap-3 px-3 py-2 rounded transition-colors ${
                     isActive
                       ? 'bg-obsidian-accent/10 border-l-2 border-l-obsidian-accent text-obsidian-accent'
                       : 'text-white/60 hover:text-white hover:bg-white/5'
@@ -65,6 +96,7 @@ export function SidebarNav({ isExpanded, onNavigate }: SidebarNavProps): JSX.Ele
                 >
                   <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-obsidian-accent' : ''}`} />
                   {isExpanded && <span className="text-sm">{item.label}</span>}
+                  {item.badge === 'cleanup' && <PendingCleanupBadge isExpanded={isExpanded} />}
                 </Link>
                 {!isExpanded && (
                   <div
