@@ -3461,6 +3461,26 @@ def migrate_database(conn, current_version: int) -> None:
         logger.info("  ✓ Migration to v69 complete: tags, classifications, suggestions")
 
 
+def ensure_schema_not_newer(conn: sqlite3.Connection, db_path: Path) -> None:
+    """Refuse to open a DB migrated by newer code.
+
+    Older code would otherwise stamp its own SCHEMA_VERSION over the newer one,
+    and the next newer start would re-run migrations that already ran.
+    """
+    has_table = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_version'"
+    ).fetchone()
+    if not has_table:
+        return
+    db_version = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
+    if db_version is not None and db_version > SCHEMA_VERSION:
+        raise RuntimeError(
+            f"Database {db_path} is at schema v{db_version}, but this code only "
+            f"knows up to v{SCHEMA_VERSION}. Refusing to open it: deploy newer "
+            "code or restore a backup taken at the matching schema version."
+        )
+
+
 def init_database() -> None:
     """Initialize the database with required tables."""
     db_path = get_database_path()
@@ -3470,6 +3490,8 @@ def init_database() -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     with get_db_connection() as conn:
+        ensure_schema_not_newer(conn, db_path)
+
         # Create schema version table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS schema_version (
