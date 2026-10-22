@@ -12,6 +12,9 @@ export default defineConfig({
     }),
     react(),
   ],
+  // react-dom is installed in web/frontend/node_modules, not the hoisted root, so
+  // hoisted deps (e.g. @radix-ui/react-portal) can't resolve it without dedupe.
+  resolve: { dedupe: ['react', 'react-dom'] },
   server: {
     port: 5173,
     proxy: {
