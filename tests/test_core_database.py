@@ -1,9 +1,12 @@
 """Tests for database functions."""
 
+from pathlib import Path
+
 import pytest
 
 from music_minion.core.database import (
     SCHEMA_VERSION,
+    get_database_path,
     get_db_connection,
     get_unique_genres,
     init_database,
@@ -49,3 +52,28 @@ def test_init_database_accepts_current_schema() -> None:
     init_database()
 
     assert _schema_version() == SCHEMA_VERSION
+
+
+def test_ensure_db_owner_refuses_without_owner_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A machine that doesn't own the DB must not open the default path."""
+    monkeypatch.delenv("MUSIC_MINION_DB_OWNER")
+    monkeypatch.delenv("MUSIC_MINION_DB_PATH")
+
+    with pytest.raises(RuntimeError, match="the pi owns the live database"):
+        init_database()
+
+
+def test_explicit_db_path_is_allowed_without_owner_flag(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Dev snapshots opt in by pointing MUSIC_MINION_DB_PATH at a copy."""
+    snapshot = tmp_path / "snapshot.db"
+    monkeypatch.delenv("MUSIC_MINION_DB_OWNER")
+    monkeypatch.setenv("MUSIC_MINION_DB_PATH", str(snapshot))
+
+    init_database()
+
+    assert get_database_path() == snapshot
+    assert snapshot.exists()
