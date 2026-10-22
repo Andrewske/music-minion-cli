@@ -115,7 +115,7 @@ export function BucketEditDialog({
               <Dialog.Close asChild>
                 <button
                   type="button"
-                  className="rounded-sm opacity-70 ring-offset-slate-950 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:pointer-events-none"
+                  className="rounded-xs opacity-70 ring-offset-slate-950 transition-opacity hover:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:pointer-events-none"
                   aria-label="Close"
                 >
                   <X className="h-5 w-5 text-slate-400" />
@@ -140,7 +140,7 @@ export function BucketEditDialog({
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="e.g., Opening, Peak Time, Cool Down"
-                    className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-md text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-obsidian-accent focus:border-transparent"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-md text-white placeholder:text-slate-500 focus:outline-hidden focus:ring-2 focus:ring-obsidian-accent focus:border-transparent"
                   />
                 </div>
 
@@ -194,7 +194,7 @@ export function BucketEditDialog({
                       id="bucket-playlist-link"
                       value={selectedPlaylistId}
                       onChange={handlePlaylistChange}
-                      className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-obsidian-accent focus:border-transparent"
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-md text-white focus:outline-hidden focus:ring-2 focus:ring-obsidian-accent focus:border-transparent"
                     >
                       <option value="unlink">Not linked</option>
                       {availablePlaylists.map((p) => (

@@ -71,7 +71,7 @@ export function ProgressBar({
             {visibleFailures.map((failure) => (
               <div
                 key={failure.video_id}
-                className="text-sm text-red-400/80 bg-red-900/10 border border-red-500/10 rounded px-3 py-2"
+                className="text-sm text-red-400/80 bg-red-900/10 border border-red-500/10 rounded-sm px-3 py-2"
               >
                 <span className="mr-2">❌</span>
                 <span className="font-medium">{failure.title}</span>

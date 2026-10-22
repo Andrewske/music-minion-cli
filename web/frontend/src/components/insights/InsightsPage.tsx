@@ -86,7 +86,7 @@ function Controls({ minCount, sort, update }: { minCount: number; sort: InsightS
     update({ minCount: parsed === DEFAULT_INSIGHT_MIN_COUNT ? undefined : parsed });
   };
   const toggle = (value: InsightSort): string =>
-    `rounded px-3 py-1.5 text-xs ${sort === value ? 'bg-obsidian-accent/20 text-obsidian-accent' : 'text-white/60 hover:text-white'}`;
+    `rounded-sm px-3 py-1.5 text-xs ${sort === value ? 'bg-obsidian-accent/20 text-obsidian-accent' : 'text-white/60 hover:text-white'}`;
   return (
     <div className="flex flex-wrap items-center gap-3">
       <label className="flex items-center gap-2 text-xs text-white/60">
@@ -94,11 +94,11 @@ function Controls({ minCount, sort, update }: { minCount: number; sort: InsightS
         <input
           type="number" min={1} max={MAX_MIN_COUNT} value={draft} aria-label="Minimum times seen"
           onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => event.key === 'Enter' && commit()}
-          className="w-16 rounded border border-obsidian-border bg-black/30 px-2 py-1 font-sf-mono text-xs text-white"
+          className="w-16 rounded-sm border border-obsidian-border bg-black/30 px-2 py-1 font-sf-mono text-xs text-white"
         />
         times
       </label>
-      <div className="flex rounded border border-obsidian-border" role="group" aria-label="Sort by">
+      <div className="flex rounded-sm border border-obsidian-border" role="group" aria-label="Sort by">
         <button type="button" aria-pressed={sort === 'lift'} onClick={() => update({ sort: undefined })} className={toggle('lift')}>Lift</button>
         <button type="button" aria-pressed={sort === 'count'} onClick={() => update({ sort: 'count' })} className={toggle('count')}>Count</button>
       </div>

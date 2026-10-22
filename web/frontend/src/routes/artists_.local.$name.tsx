@@ -56,7 +56,7 @@ function LocalArtistPage(): ReactElement {
 
         {/* Header — local artist: no SoundCloud profile, counts derived from tracks */}
         <header className="flex items-center gap-4">
-          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-obsidian-accent/20 to-obsidian-surface flex items-center justify-center">
+          <div className="w-20 h-20 rounded-full bg-linear-to-br/srgb from-obsidian-accent/20 to-obsidian-surface flex items-center justify-center">
             <Music className="w-8 h-8 text-white/30" />
           </div>
           <div className="min-w-0">

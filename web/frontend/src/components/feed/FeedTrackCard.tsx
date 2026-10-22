@@ -57,7 +57,7 @@ function KeepScoreBadge({ item }: { item: FeedItem }): JSX.Element | null {
   return (
     <span
       title={`Predicted keep probability${item.prediction_model_version ? ` (${item.prediction_model_version})` : ''}`}
-      className={`shrink-0 rounded px-1.5 py-0.5 font-sf-mono text-[10px] ${tone}`}
+      className={`shrink-0 rounded-sm px-1.5 py-0.5 font-sf-mono text-[10px] ${tone}`}
     >
       {percent}%
     </span>
@@ -82,7 +82,7 @@ function Attribution({ item }: { item: FeedItem }): JSX.Element {
         </span>
       )}
       {bestRank !== null && (
-        <span className="shrink-0 rounded bg-white/5 px-1.5 py-0.5 font-sf-mono text-[10px] text-white/60">
+        <span className="shrink-0 rounded-sm bg-white/5 px-1.5 py-0.5 font-sf-mono text-[10px] text-white/60">
           #{bestRank}
         </span>
       )}
@@ -100,7 +100,7 @@ function SoundCloudLink({ item }: { item: FeedItem }): JSX.Element | null {
       rel="noopener noreferrer"
       aria-label={`Open ${item.title ?? 'track'} on SoundCloud`}
       title="Open on SoundCloud"
-      className="flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded p-2 text-white/45 transition-colors hover:bg-white/10 hover:text-[#ff5500] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-obsidian-accent"
+      className="flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-sm p-2 text-white/45 transition-colors hover:bg-white/10 hover:text-[#ff5500] focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-obsidian-accent"
     >
       <SoundCloudIcon className="h-4 w-4" />
     </a>
@@ -132,7 +132,7 @@ function NotForFeedButton({ disabled, onClick }: { disabled: boolean; onClick: (
       disabled={disabled}
       aria-label="Not for feed; hide without counting against the artist"
       title="Not for feed"
-      className="flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded p-2 text-white/45 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-obsidian-accent disabled:opacity-50"
+      className="flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-sm p-2 text-white/45 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-obsidian-accent disabled:opacity-50"
     >
       <EyeOff className="h-4 w-4" />
     </button>
@@ -178,19 +178,19 @@ export function FeedTrackCard({
         onClick={() => playable && onPlay(item)}
         disabled={!playable}
         aria-label={`Play ${item.title ?? 'track'}`}
-        className="shrink-0 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-obsidian-accent disabled:cursor-not-allowed disabled:opacity-40"
+        className="shrink-0 rounded-sm focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-obsidian-accent disabled:cursor-not-allowed disabled:opacity-40"
       >
         {item.artwork_url && !artworkFailed ? (
-          <img src={item.artwork_url} alt="" width={52} height={52} loading="lazy" onError={() => setArtworkFailed(true)} className="h-[52px] w-[52px] rounded object-cover" />
+          <img src={item.artwork_url} alt="" width={52} height={52} loading="lazy" onError={() => setArtworkFailed(true)} className="h-[52px] w-[52px] rounded-sm object-cover" />
         ) : (
-          <span className="flex h-[52px] w-[52px] items-center justify-center rounded bg-gradient-to-br from-obsidian-accent/20 to-obsidian-surface">
+          <span className="flex h-[52px] w-[52px] items-center justify-center rounded-sm bg-linear-to-br/srgb from-obsidian-accent/20 to-obsidian-surface">
             <Music className="h-5 w-5 text-white/40" />
           </span>
         )}
       </button>
 
       <div className="min-w-0 flex-1 text-left md:w-64 md:flex-none">
-        <button type="button" onClick={() => playable && onPlay(item)} disabled={!playable} className="block w-full rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent disabled:cursor-not-allowed">
+        <button type="button" onClick={() => playable && onPlay(item)} disabled={!playable} className="block w-full rounded-sm text-left focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-obsidian-accent disabled:cursor-not-allowed">
           <span className={`block truncate text-sm ${isPlaying ? 'text-obsidian-accent' : 'text-white'}`} title={item.title ?? undefined}>
             {item.title ?? 'Untitled'}
             {!playable && <Cloud className="ml-1 inline h-3 w-3 text-white/40" />}

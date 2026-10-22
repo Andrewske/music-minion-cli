@@ -148,7 +148,7 @@ function Backdrop({ artworkUrl, title }: { artworkUrl?: string; title: string })
       />
       <div
         aria-hidden
-        className="absolute inset-0 pointer-events-none bg-gradient-to-b from-black/50 via-black/60 to-black/80"
+        className="absolute inset-0 pointer-events-none bg-linear-to-b/srgb from-black/50 via-black/60 to-black/80"
       />
     </>
   );
@@ -227,7 +227,7 @@ export function CurrentTrackBanner({
           <ArtThumbnail artworkUrl={artworkUrl} title={currentTrack.title} />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <span className="font-medium text-white/95 truncate drop-shadow-sm">
+              <span className="font-medium text-white/95 truncate drop-shadow-xs">
                 {currentTrack.title}
               </span>
               <ScHeart liked={scLiked ?? false} />
@@ -264,8 +264,8 @@ export function CurrentTrackBanner({
         <div className="flex items-center justify-between text-xs">
           {/* Desktop hint */}
           <div className="hidden md:block text-white/40">
-            Press <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/60">Shift</kbd> +{' '}
-            <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/60">1</kbd>-<kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/60">{Math.min(buckets.length, 9)}</kbd> to assign to bucket
+            Press <kbd className="px-1.5 py-0.5 bg-white/10 rounded-sm text-white/60">Shift</kbd> +{' '}
+            <kbd className="px-1.5 py-0.5 bg-white/10 rounded-sm text-white/60">1</kbd>-<kbd className="px-1.5 py-0.5 bg-white/10 rounded-sm text-white/60">{Math.min(buckets.length, 9)}</kbd> to assign to bucket
           </div>
 
           {/* Mobile hint */}

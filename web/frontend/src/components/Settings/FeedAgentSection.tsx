@@ -31,8 +31,8 @@ import { formatFlagDuration, ruleErrorMessage } from '../feed/flagged';
 import { FILTER_RULES_QUERY_KEY } from '../feed/reviewed';
 import { CLASSIFICATIONS_QUERY_KEY, SUGGESTIONS_QUERY_KEY, UNREADABLE_QUERY_KEY, suggestionOverrides } from './feedAgent';
 
-const FIELD = 'rounded border border-obsidian-border bg-black/30 px-2 py-1.5 text-sm text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent';
-const SMALL_BUTTON = 'flex min-h-9 items-center gap-1.5 rounded border border-obsidian-border px-3 text-xs text-white/70 hover:text-white disabled:opacity-50';
+const FIELD = 'rounded-sm border border-obsidian-border bg-black/30 px-2 py-1.5 text-sm text-white focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-obsidian-accent';
+const SMALL_BUTTON = 'flex min-h-9 items-center gap-1.5 rounded-sm border border-obsidian-border px-3 text-xs text-white/70 hover:text-white disabled:opacity-50';
 
 interface SuggestionRowProps {
   suggestion: RuleSuggestion;
@@ -45,7 +45,7 @@ export function SuggestionRow({ suggestion, isBusy, onAccept, onDismiss }: Sugge
   const [criterion, setCriterion] = useState(ruleCriterion(suggestion));
   const [reason, setReason] = useState<FlagReason>(suggestion.reason);
   return (
-    <article aria-label={`Suggestion ${suggestion.name}`} className="space-y-2 rounded border border-obsidian-border bg-obsidian-surface px-3 py-2">
+    <article aria-label={`Suggestion ${suggestion.name}`} className="space-y-2 rounded-sm border border-obsidian-border bg-obsidian-surface px-3 py-2">
       <div>
         <p className="text-sm text-white">{suggestion.name}</p>
         <p className="text-xs text-white/50">{suggestion.evidence}</p>
@@ -146,7 +146,7 @@ interface ClassificationRowProps {
 export function ClassificationRow({ item, isBusy, onPlay, onResolve }: ClassificationRowProps): JSX.Element {
   const title = item.title ?? 'Untitled';
   return (
-    <article aria-label={`${title} agent suggestion`} className="flex flex-wrap items-center gap-3 rounded border border-obsidian-border bg-obsidian-surface px-3 py-2 md:flex-nowrap">
+    <article aria-label={`${title} agent suggestion`} className="flex flex-wrap items-center gap-3 rounded-sm border border-obsidian-border bg-obsidian-surface px-3 py-2 md:flex-nowrap">
       <button type="button" onClick={() => onPlay(item)} disabled={item.access === 'blocked'} className="min-w-0 flex-1 text-left disabled:opacity-40" aria-label={`Play ${title}`}>
         <p className="truncate text-sm text-white">{title}</p>
         <p className="truncate text-xs text-white/50">{item.uploader ?? 'Unknown artist'}{item.genre ? ` · ${item.genre}` : ''}</p>
@@ -204,7 +204,7 @@ interface UnreadableNoticeProps {
 export function UnreadableNotice({ count, isRetrying, onRetry }: UnreadableNoticeProps): JSX.Element | null {
   if (count === 0) return null;
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-obsidian-border px-3 py-2">
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-obsidian-border px-3 py-2">
       <p className="text-sm text-white/50">
         {count} track{count === 1 ? '' : 's'} got unreadable answers and won't be checked again.
       </p>

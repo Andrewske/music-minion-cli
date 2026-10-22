@@ -81,7 +81,7 @@ export function UnassignedTrackTable({
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="truncate">{info.getValue() as string ?? '-'}</span>
             {reposters && reposters.length > 0 && (
-              <div className="flex -space-x-1.5 flex-shrink-0">
+              <div className="flex -space-x-1.5 shrink-0">
                 {reposters.slice(0, 4).map((r) => (
                   <img
                     key={r.slug}
@@ -219,7 +219,7 @@ export function UnassignedTrackTable({
         }}
       >
         {unavailable && (
-          <span className="absolute right-2 top-1/2 -translate-y-1/2 z-10 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/30">
+          <span className="absolute right-2 top-1/2 -translate-y-1/2 z-10 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded-sm bg-red-500/15 text-red-400 border border-red-500/30">
             Unavailable
           </span>
         )}
@@ -231,7 +231,7 @@ export function UnassignedTrackTable({
           <div
             {...attributes}
             {...listeners}
-            className="cursor-grab active:cursor-grabbing text-white/30 hover:text-white/60 focus:outline-none focus:ring-2 focus:ring-obsidian-accent"
+            className="cursor-grab active:cursor-grabbing text-white/30 hover:text-white/60 focus:outline-hidden focus:ring-2 focus:ring-obsidian-accent"
             onClick={(e) => e.stopPropagation()} // Prevent row click when grabbing
             tabIndex={0}
             role="button"

@@ -67,7 +67,7 @@ export function GenreSelectionModal({
   return (
     <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" />
+        <Dialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50" />
         <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-zinc-900 rounded-lg p-6 w-full max-w-md max-h-[80vh] overflow-y-auto z-50">
           <Dialog.Title className="text-lg font-semibold mb-4">
             Select Genres
@@ -124,7 +124,7 @@ export function GenreSelectionModal({
             <button
               onClick={handleSave}
               disabled={saving}
-              className="px-4 py-2 bg-white/10 rounded hover:bg-white/20 disabled:opacity-50"
+              className="px-4 py-2 bg-white/10 rounded-sm hover:bg-white/20 disabled:opacity-50"
             >
               {saving ? 'Saving...' : 'Save'}
             </button>

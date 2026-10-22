@@ -85,7 +85,7 @@ export function ArtistHoverCard({ artist, children }: ArtistHoverCardProps): Rea
             align="start"
             sideOffset={6}
             collisionPadding={8}
-            className="z-50 w-72 rounded bg-obsidian-surface border border-obsidian-border shadow-xl shadow-black/50 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
+            className="z-50 w-72 rounded-sm bg-obsidian-surface border border-obsidian-border shadow-xl shadow-black/50 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
           >
             {/* Header — renders instantly from feed data */}
             <header className="flex items-center gap-3 px-4 py-3">
@@ -228,7 +228,7 @@ export function ArtistHoverCard({ artist, children }: ArtistHoverCardProps): Rea
                 <button
                   onClick={() => setConfirmOpen(true)}
                   disabled={!stats || unfollowMutation.isPending}
-                  className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded text-xs text-white/50 hover:text-red-400 hover:bg-red-400/10 border border-transparent hover:border-red-400/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-sm text-xs text-white/50 hover:text-red-400 hover:bg-red-400/10 border border-transparent hover:border-red-400/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <UserMinus size={13} />
                   Unfollow

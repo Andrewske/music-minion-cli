@@ -19,7 +19,7 @@ interface ArtistFiltersBarProps {
 }
 
 const SELECT_CLASS =
-  'bg-obsidian-surface border border-obsidian-border px-3 py-1.5 text-sm text-white font-sf-mono focus:border-obsidian-accent/40 focus:outline-none';
+  'bg-obsidian-surface border border-obsidian-border px-3 py-1.5 text-sm text-white font-sf-mono focus:border-obsidian-accent/40 focus:outline-hidden';
 
 export function ArtistFiltersBar({
   search,
@@ -35,7 +35,7 @@ export function ArtistFiltersBar({
   trailingSlot,
 }: ArtistFiltersBarProps): ReactElement {
   return (
-    <div className="sticky top-0 z-10 bg-black/80 backdrop-blur-sm border-b border-obsidian-border -mx-6 px-6 py-3 flex items-center gap-3 flex-wrap">
+    <div className="sticky top-0 z-10 bg-black/80 backdrop-blur-xs border-b border-obsidian-border -mx-6 px-6 py-3 flex items-center gap-3 flex-wrap">
       {/* Search */}
       <div className="relative flex-1 min-w-[200px]">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 pointer-events-none" />
@@ -44,7 +44,7 @@ export function ArtistFiltersBar({
           placeholder="Search artists…"
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
-          className="w-full bg-obsidian-surface border border-obsidian-border px-3 py-1.5 pl-9 text-sm text-white placeholder:text-white/40 focus:border-obsidian-accent/40 focus:outline-none"
+          className="w-full bg-obsidian-surface border border-obsidian-border px-3 py-1.5 pl-9 text-sm text-white placeholder:text-white/40 focus:border-obsidian-accent/40 focus:outline-hidden"
         />
       </div>
 

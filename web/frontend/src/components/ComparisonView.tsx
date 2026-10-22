@@ -157,7 +157,7 @@ export function ComparisonView({ playlistId }: ComparisonViewProps = {}) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center p-4">
         <div className="text-center max-w-md w-full">
-          <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-indigo-500 mb-4">
+          <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-linear-to-r/srgb from-emerald-400 to-indigo-500 mb-4">
             Ranking Complete
           </h1>
           <p className="text-white/60 mb-8 text-lg">
@@ -188,7 +188,7 @@ export function ComparisonView({ playlistId }: ComparisonViewProps = {}) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center p-4">
         <div className="text-center max-w-lg w-full">
-          <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-indigo-500 mb-4">
+          <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-linear-to-r/srgb from-emerald-400 to-indigo-500 mb-4">
             Music Minion
           </h1>
           <p className="text-white/60 mb-8 text-lg">

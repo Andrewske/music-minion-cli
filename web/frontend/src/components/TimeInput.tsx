@@ -22,7 +22,7 @@ export function TimeInput({
         onChange={(e) => onChange(e.target.value)}
         className={`
           bg-slate-800 border rounded-lg px-3 py-2 text-white
-          focus:outline-none focus:ring-2 focus:ring-emerald-500
+          focus:outline-hidden focus:ring-2 focus:ring-emerald-500
           ${error ? 'border-red-500' : 'border-slate-700'}
         `}
       />

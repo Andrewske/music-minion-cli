@@ -190,7 +190,7 @@ function PlaylistSelection() {
                 autoFocus
                 className="w-full bg-black border border-obsidian-border px-4 py-3
                   text-white placeholder-white/20 text-sm
-                  focus:border-obsidian-accent/50 focus:outline-none transition-colors"
+                  focus:border-obsidian-accent/50 focus:outline-hidden transition-colors"
                 disabled={createMutation.isPending}
               />
               {error && (

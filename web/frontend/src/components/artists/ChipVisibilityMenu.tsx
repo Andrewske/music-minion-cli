@@ -43,7 +43,7 @@ export function ChipVisibilityMenu(): ReactElement {
                 key={key}
                 checked={isChecked}
                 onCheckedChange={() => toggleChip(key)}
-                className="flex items-center gap-2 px-3 py-1.5 font-sf-mono text-xs text-white/70 hover:text-white hover:bg-white/5 cursor-pointer focus:outline-none focus:bg-white/5"
+                className="flex items-center gap-2 px-3 py-1.5 font-sf-mono text-xs text-white/70 hover:text-white hover:bg-white/5 cursor-pointer focus:outline-hidden focus:bg-white/5"
               >
                 <DropdownMenu.ItemIndicator>
                   <span className="w-3 h-3 inline-flex items-center justify-center text-obsidian-accent">✓</span>
@@ -57,7 +57,7 @@ export function ChipVisibilityMenu(): ReactElement {
           <DropdownMenu.Separator className="my-1 border-t border-obsidian-border" />
           <DropdownMenu.Item
             onSelect={() => useArtistViewStore.getState().showAll()}
-            className="px-3 py-1.5 font-sf-mono text-xs text-white/40 hover:text-white hover:bg-white/5 cursor-pointer focus:outline-none focus:bg-white/5"
+            className="px-3 py-1.5 font-sf-mono text-xs text-white/40 hover:text-white hover:bg-white/5 cursor-pointer focus:outline-hidden focus:bg-white/5"
           >
             Show all
           </DropdownMenu.Item>

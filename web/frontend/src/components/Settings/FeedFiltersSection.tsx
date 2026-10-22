@@ -29,7 +29,7 @@ import { FILTER_RULES_QUERY_KEY, FLAGGED_QUERY_KEY } from '../feed/reviewed';
 import { Switch } from '../ui/switch';
 import { AgentReviewPanel, RuleSuggestionsPanel } from './FeedAgentSection';
 
-const FIELD = 'rounded border border-obsidian-border bg-black/30 px-2 py-1.5 text-sm text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-obsidian-accent';
+const FIELD = 'rounded-sm border border-obsidian-border bg-black/30 px-2 py-1.5 text-sm text-white focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-obsidian-accent';
 
 function criterionPlaceholder(kind: FilterRuleKind): string {
   if (kind === 'duration_min') return 'Minutes, e.g. 15';
@@ -110,7 +110,7 @@ export function RuleRow({ rule, onUpdate, onDelete }: RuleRowProps): JSX.Element
       <td className="py-2 pr-2 text-right font-sf-mono text-xs text-white/70">{rule.rescues}</td>
       <td className="py-2 pr-2 text-right font-sf-mono text-xs text-white">{formatPrecision(rule.precision)}</td>
       <td className="py-2 text-right">
-        <button type="button" onClick={() => onDelete(rule)} aria-label={`Delete ${rule.name}`} className="rounded p-2 text-white/40 hover:bg-white/10 hover:text-red-400">
+        <button type="button" onClick={() => onDelete(rule)} aria-label={`Delete ${rule.name}`} className="rounded-sm p-2 text-white/40 hover:bg-white/10 hover:text-red-400">
           <Trash2 className="h-4 w-4" />
         </button>
       </td>
@@ -191,7 +191,7 @@ function RunRulesButton(): JSX.Element {
     },
   });
   return (
-    <button type="button" onClick={() => runMutation.mutate()} disabled={runMutation.isPending} className="flex items-center gap-2 rounded border border-obsidian-border px-3 py-1.5 text-xs text-white/70 hover:text-white disabled:opacity-50">
+    <button type="button" onClick={() => runMutation.mutate()} disabled={runMutation.isPending} className="flex items-center gap-2 rounded-sm border border-obsidian-border px-3 py-1.5 text-xs text-white/70 hover:text-white disabled:opacity-50">
       {runMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
       Run on unreviewed tracks
     </button>

@@ -47,8 +47,8 @@ export function GenreChart({ genres, className = '' }: GenreChartProps) {
                     className={`
                       absolute inset-y-0 left-0 rounded-full transition-all duration-500 ease-out
                       ${isTopGenre
-                        ? 'bg-gradient-to-r from-amber-500 to-amber-400'
-                        : 'bg-gradient-to-r from-slate-600 to-slate-500'
+                        ? 'bg-linear-to-r/srgb from-amber-500 to-amber-400'
+                        : 'bg-linear-to-r/srgb from-slate-600 to-slate-500'
                       }
                     `}
                     style={{ width: `${percentage}%` }}

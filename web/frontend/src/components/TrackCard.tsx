@@ -56,7 +56,7 @@ export function TrackCard({ track, isPlaying, className = '', onArchive, onWinne
 
     return (
       <div className={`
-        flex items-center gap-2 px-3 py-1.5 rounded-full text-sm border backdrop-blur-sm
+        flex items-center gap-2 px-3 py-1.5 rounded-full text-sm border backdrop-blur-xs
         transition-colors duration-300
         ${isBootstrap
           ? 'bg-obsidian-surface/50 border-obsidian-border text-white/40'
@@ -106,7 +106,7 @@ export function TrackCard({ track, isPlaying, className = '', onArchive, onWinne
     >
       {/* Background Glow Effect for playing state */}
       {isPlaying && (
-        <div className="absolute inset-0 bg-gradient-to-t from-obsidian-accent/5 to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-linear-to-t/srgb from-obsidian-accent/5 to-transparent pointer-events-none" />
       )}
 
       {/* Clickable content area */}
@@ -136,8 +136,8 @@ export function TrackCard({ track, isPlaying, className = '', onArchive, onWinne
 
             {/* Metadata Grid */}
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm text-white/50 font-sf-mono mb-2">
-              <span className="min-h-[1rem]">{track.year ?? '----'}</span>
-              <span className="min-h-[1rem]">{track.bpm ? `${track.bpm} BPM` : '--- BPM'}</span>
+              <span className="min-h-4">{track.year ?? '----'}</span>
+              <span className="min-h-4">{track.bpm ? `${track.bpm} BPM` : '--- BPM'}</span>
             </div>
           </div>
         </button>

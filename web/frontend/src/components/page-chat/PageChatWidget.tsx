@@ -35,7 +35,7 @@ export function PageChatWidget(): JSX.Element {
           title="Chat with the page agent"
           className={cn(
             'fixed right-3 z-40 flex h-10 w-10 items-center justify-center rounded-full md:right-4',
-            'border border-obsidian-border bg-obsidian-surface/80 text-white/60 backdrop-blur',
+            'border border-obsidian-border bg-obsidian-surface/80 text-white/60 backdrop-blur-sm',
             'transition-colors hover:border-obsidian-accent hover:text-white',
             chatButtonOffset(pathname)
           )}

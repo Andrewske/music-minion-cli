@@ -267,7 +267,7 @@ export const TrackQueueTable = ({
               const newSorting = [{ id: e.target.value, desc: sorting[0]?.desc ?? false }];
               onSortingChange(newSorting);
             }}
-            className="bg-black border border-obsidian-border px-2 py-1 text-white text-xs rounded"
+            className="bg-black border border-obsidian-border px-2 py-1 text-white text-xs rounded-sm"
           >
             {columns.map(col => (
               <option key={col.id} value={col.id}>{String(col.header)}</option>

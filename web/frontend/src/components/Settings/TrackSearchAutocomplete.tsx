@@ -112,12 +112,12 @@ export function TrackSearchAutocomplete({
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Search for a track..."
-          className="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded text-white text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+          className="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded-sm text-white text-sm placeholder-slate-500 focus:outline-hidden focus:ring-2 focus:ring-orange-500 focus:border-transparent"
         />
         <button
           type="button"
           onClick={onCancel}
-          className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded transition-colors"
+          className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded-sm transition-colors"
         >
           Cancel
         </button>
@@ -125,7 +125,7 @@ export function TrackSearchAutocomplete({
 
       {/* Results dropdown */}
       {(results.length > 0 || isLoading || error) && (
-        <div className="absolute z-50 mt-1 w-full bg-slate-800 border border-slate-600 rounded shadow-lg max-h-60 overflow-y-auto">
+        <div className="absolute z-50 mt-1 w-full bg-slate-800 border border-slate-600 rounded-sm shadow-lg max-h-60 overflow-y-auto">
           {isLoading && (
             <div className="px-3 py-2 text-slate-400 text-sm">Searching...</div>
           )}

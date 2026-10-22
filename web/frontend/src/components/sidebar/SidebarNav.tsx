@@ -63,7 +63,7 @@ export function SidebarNav({ isExpanded, onNavigate }: SidebarNavProps): JSX.Ele
                       : 'text-white/60 hover:text-white hover:bg-white/5'
                   }`}
                 >
-                  <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-obsidian-accent' : ''}`} />
+                  <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-obsidian-accent' : ''}`} />
                   {isExpanded && <span className="text-sm">{item.label}</span>}
                 </Link>
                 {!isExpanded && (

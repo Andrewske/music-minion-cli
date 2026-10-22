@@ -46,7 +46,7 @@ function TrackRow({ track, isPlaying, onPlay }: TrackRowProps): ReactElement {
           : 'bg-obsidian-surface border-obsidian-border hover:border-white/20'
       }`}
     >
-      <span className="shrink-0 w-8 h-8 rounded bg-white/5 flex items-center justify-center">
+      <span className="shrink-0 w-8 h-8 rounded-sm bg-white/5 flex items-center justify-center">
         <Play
           className={`w-3.5 h-3.5 ${
             isPlaying ? 'text-obsidian-accent' : 'text-white/30 group-hover:text-white'

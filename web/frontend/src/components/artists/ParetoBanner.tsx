@@ -23,7 +23,7 @@ export function ParetoBanner({ onReview }: ParetoBannerProps): ReactElement | nu
     return (
       <aside
         role="status"
-        className="flex items-center gap-3 bg-white/[0.02] border border-white/10 px-4 py-3 mb-6"
+        className="flex items-center gap-3 bg-white/2 border border-white/10 px-4 py-3 mb-6"
       >
         <BarChart3 className="w-4 h-4 text-white/30 shrink-0" />
         <p className="font-inter text-sm text-white/40">

@@ -65,7 +65,7 @@ export function DeviceSelector(): JSX.Element {
             return (
               <div key={device.id} className="flex items-center gap-1 px-2 py-1.5">
                 {isActive && (
-                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse flex-shrink-0" />
+                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shrink-0" />
                 )}
                 <input
                   ref={inputRef}
@@ -76,7 +76,7 @@ export function DeviceSelector(): JSX.Element {
                     if (e.key === 'Escape') cancelRename();
                     e.stopPropagation();
                   }}
-                  className="flex-1 bg-black/50 border border-obsidian-border rounded px-2 py-0.5 text-sm text-white outline-none focus:border-obsidian-accent min-w-0"
+                  className="flex-1 bg-black/50 border border-obsidian-border rounded-sm px-2 py-0.5 text-sm text-white outline-hidden focus:border-obsidian-accent min-w-0"
                 />
                 <button onClick={confirmRename} className="p-1 text-green-400 hover:text-green-300">
                   <Check className="w-3.5 h-3.5" />

@@ -40,7 +40,7 @@ export function SkippedTracksDialog({
             </Dialog.Title>
             <Dialog.Close asChild>
               <button
-                className="rounded-sm opacity-70 ring-offset-slate-950 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:pointer-events-none"
+                className="rounded-xs opacity-70 ring-offset-slate-950 transition-opacity hover:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:pointer-events-none"
                 aria-label="Close"
               >
                 <X className="h-5 w-5 text-slate-400" />
@@ -75,7 +75,7 @@ export function SkippedTracksDialog({
                     <button
                       onClick={() => onUnskip(track.id)}
                       disabled={isUnskipping}
-                      className="ml-4 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded transition-colors text-sm font-medium whitespace-nowrap"
+                      className="ml-4 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-sm transition-colors text-sm font-medium whitespace-nowrap"
                     >
                       Restore
                     </button>

@@ -14,7 +14,7 @@ export function TrackArtwork({ trackId, size = 48, className = '' }: TrackArtwor
   if (failed) {
     return (
       <div
-        className={`shrink-0 rounded bg-gradient-to-br from-obsidian-accent/20 to-obsidian-surface flex items-center justify-center ${className}`}
+        className={`shrink-0 rounded-sm bg-linear-to-br/srgb from-obsidian-accent/20 to-obsidian-surface flex items-center justify-center ${className}`}
         style={{ width: size, height: size }}
         aria-hidden="true"
       >
@@ -30,7 +30,7 @@ export function TrackArtwork({ trackId, size = 48, className = '' }: TrackArtwor
       loading="lazy"
       width={size}
       height={size}
-      className={`shrink-0 rounded object-cover ${className}`}
+      className={`shrink-0 rounded-sm object-cover ${className}`}
       style={{ width: size, height: size }}
       onError={() => setFailed(true)}
     />

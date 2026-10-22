@@ -114,7 +114,7 @@ export function PlaylistTracksTable({ tracks }: PlaylistTracksTableProps): JSX.E
           <select
             value={sortField}
             onChange={(e) => setSortField(e.target.value as SortField)}
-            className="bg-slate-800 text-slate-200 text-sm rounded px-2 py-1 border border-slate-700"
+            className="bg-slate-800 text-slate-200 text-sm rounded-sm px-2 py-1 border border-slate-700"
           >
             {(Object.keys(sortFieldLabels) as SortField[]).map((field) => (
               <option key={field} value={field}>{sortFieldLabels[field]}</option>
