@@ -92,10 +92,24 @@ def _run_sync() -> None:
         if cleanup["deleted"] > 0:
             logger.info(f"Removed {cleanup['deleted']} orphaned tracks")
 
+        _refresh_smart_playlists()
+
     except Exception:
         logger.exception("Sync failed")
     finally:
         _sync_in_progress = False
+
+
+def _refresh_smart_playlists() -> None:
+    """Re-materialize smart playlists so newly scanned tracks show up.
+
+    Smart playlists store their matches in playlist_tracks; without this, new
+    downloads sit in the library but never appear in e.g. the "2026" playlist.
+    """
+    from music_minion.domain.playlists.filters import refresh_all_smart_playlists
+
+    count = refresh_all_smart_playlists()
+    logger.info(f"Refreshed {count} smart playlist(s)")
 
 
 def _export_to_files(cfg: config.Config) -> None:
@@ -152,6 +166,8 @@ def _run_full_sync() -> None:
             logger.info(f"Relocated {cleanup['relocated']} moved files")
         if cleanup["deleted"] > 0:
             logger.info(f"Removed {cleanup['deleted']} orphaned tracks")
+
+        _refresh_smart_playlists()
 
     except Exception:
         logger.exception("Full sync failed")
