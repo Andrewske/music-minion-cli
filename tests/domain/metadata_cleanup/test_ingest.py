@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from mutagen.id3 import ID3, TIT2, TPE1, WOAF
 
+from music_minion.domain.metadata_cleanup import __main__ as cli
 from music_minion.domain.metadata_cleanup import apply as apply_mod
 from music_minion.domain.metadata_cleanup import ingest, plan, records
 from music_minion.domain.metadata_cleanup.codex_runner import CodexSettings
@@ -79,7 +80,10 @@ def test_run_ingest_applies_agreed_and_queues_the_rest(
 
     summary = ingest.run_ingest("2026", CodexSettings(), "http://sync")
 
-    assert summary == {"new": 2, "written": 1, "failed": 0, "pending": 1}
+    assert summary == {
+        "new": 2, "written": 1, "failed": 0, "pending": 1, "codex_missing": 0,
+    }  # fmt: skip
+    assert ingest.exit_code(summary) == 0
     tags = ID3(library / ok)
     assert (str(tags["TIT2"]), str(tags["TPE1"]), str(tags["TPE4"])) == (
         "Song (R Flip)",
@@ -122,3 +126,47 @@ def test_resolve_pending_writes_decided_tracks(
     assert result == {"changes": 1, "resolved": 1, "written": 1}
     assert str(ID3(library / track_id)["TPE1"]) == "B"
     assert ingest.load_ledger()["https://sc/x"]["status"] == "applied"
+
+
+def test_failed_codex_batches_are_counted_and_exit_nonzero(
+    library: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for n in range(3):
+        _mp3(library / f"2026/Oct 26/{n}.mp3", f"T{n}", f"https://sc/{n}")
+    monkeypatch.setattr(ingest, "clean_rows", lambda rows, settings: ([], []))
+
+    summary = ingest.run_ingest("2026", CodexSettings(), None)
+
+    assert summary == {
+        "new": 3, "written": 0, "failed": 0, "pending": 0, "codex_missing": 3,
+    }  # fmt: skip
+    assert ingest.exit_code(summary) == 1
+    assert ingest.load_ledger() == {}  # all three stay "new" for the next run
+
+
+def test_ingest_cli_exits_nonzero_when_codex_returns_nothing(
+    library: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _mp3(library / "2026/Oct 26/x.mp3", "T", "https://sc/x")
+    monkeypatch.setattr(ingest, "clean_rows", lambda rows, settings: ([], []))
+
+    assert cli.main(["ingest", "--year", "2026", "--no-sync"]) == 1
+
+
+def test_one_run_missing_a_track_counts_it(
+    library: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    track_id = "2026/Oct 26/x.mp3"
+    _mp3(library / track_id, "T", "https://sc/x")
+    runs = iter([[_proposal(track_id, ["A"])], []])  # run a answers, run b fails
+    monkeypatch.setattr(ingest, "clean_rows", lambda rows, s: (next(runs), []))
+
+    assert ingest.run_ingest("2026", CodexSettings(), None)["codex_missing"] == 1
+
+
+def test_exit_code_flags_write_failures_and_ignores_empty_runs(
+    library: Path,
+) -> None:
+    assert ingest.exit_code({"new": 0}) == 0
+    assert ingest.exit_code({"failed": 1, "codex_missing": 0}) == 1
+    assert cli.main(["ingest", "--year", "2026", "--no-sync"]) == 0  # nothing new

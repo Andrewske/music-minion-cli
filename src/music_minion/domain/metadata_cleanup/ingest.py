@@ -1,6 +1,6 @@
 """Unattended cleanup of newly downloaded tracks (runs after the nightly scdl job).
 
-New = an MP3 in the year folder whose SoundCloud URL (or path) is not in the
+New = an MP3 or M4A in the year folder whose SoundCloud URL (or path) is not in the
 ledger. Each new track is cleaned twice; when both runs agree and neither
 hedges, the tags are written. Everything else waits in the ledger as
 "pending" for `review --mode pending` + `apply --pending --write`.
@@ -114,6 +114,19 @@ def trigger_sync(url: str) -> None:
         logger.exception(f"Could not trigger music-minion sync at {url}")
 
 
+def count_codex_missing(rows: list[dict], a: dict, b: dict) -> int:
+    """Tracks with no proposal from run a or run b (failed/mangled codex batch).
+
+    They stay "new" and are retried next run, but must not pass silently.
+    """
+    return sum(1 for row in rows if row["id"] not in a or row["id"] not in b)
+
+
+def exit_code(summary: dict[str, int]) -> int:
+    """Non-zero when any track failed to write or got no codex answer."""
+    return 1 if summary.get("codex_missing", 0) or summary.get("failed", 0) else 0
+
+
 def run_ingest(year: str, settings: CodexSettings, sync_url: str | None) -> dict:
     ledger = load_ledger()
     new = find_new(scan(records.MUSIC_ROOT / year), ledger)
@@ -127,19 +140,19 @@ def run_ingest(year: str, settings: CodexSettings, sync_url: str | None) -> dict
     backup, written, failed = (
         apply_mod.apply_changes(changes) if changes else (None, 0, [])
     )
-    for track_id in failed:
-        entries = {k: v for k, v in entries.items() if v["id"] != track_id}
+    entries = {k: v for k, v in entries.items() if v["id"] not in failed}
     save_ledger({**ledger, **entries})
     if written and sync_url:
         trigger_sync(sync_url)
-    pending = sum(1 for e in entries.values() if e["status"] == "pending")
     summary = {
         "new": len(new),
         "written": written,
         "failed": len(failed),
-        "pending": pending,
+        "pending": sum(1 for e in entries.values() if e["status"] == "pending"),
+        "codex_missing": count_codex_missing(rows, a, b),
     }
-    logger.info(f"Metadata cleanup: {summary} backup={backup}")
+    log_level = "ERROR" if exit_code(summary) else "INFO"
+    logger.log(log_level, f"Metadata cleanup: {summary} backup={backup}")
     return summary
 
 

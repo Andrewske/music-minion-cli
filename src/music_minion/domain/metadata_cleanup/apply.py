@@ -1,23 +1,28 @@
-"""Write cleaned title/artist/remixer tags to MP3s, with backups and undo.
+"""Write cleaned title/artist/remixer tags to MP3/M4A files, with backups and undo.
 
-Only TIT2, TPE1 and TPE4 are touched. Every other frame (Serato GEOB data,
+MP3: only TIT2, TPE1 and TPE4 are touched. Every other frame (Serato GEOB data,
 artwork, key, BPM, comments) is preserved, and each file keeps its ID3 version.
+M4A: only ©nam, ©ART and the REMIXER freeform atom are touched. Every other atom
+(covr, ©cmt, purl, Serato and SoundCloud freeform atoms) is preserved.
 """
 
 import json
 import os
 import shutil
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
 from mutagen.id3 import ID3, TIT2, TPE1, TPE4
+from mutagen.mp4 import MP4, MP4FreeForm, MP4Tags
 
 from music_minion.domain.metadata_cleanup import records
 
 BACKUPS_DIR = records.WORK_DIR / "backups"
 _FRAMES = {"title": ("TIT2", TIT2), "artist": ("TPE1", TPE1), "remixer": ("TPE4", TPE4)}
+_MP4_ATOMS = {"title": "©nam", "artist": "©ART", "remixer": records.MP4_REMIXER}
 
 
 def _set_frames(tags: ID3, values: dict[str, str]) -> None:
@@ -28,16 +33,52 @@ def _set_frames(tags: ID3, values: dict[str, str]) -> None:
             tags.add(frame_cls(encoding=3, text=[value]))
 
 
+def _write_id3(temp: Path, values: dict[str, str]) -> None:
+    tags = ID3(temp)
+    version = tags.version[1]
+    _set_frames(tags, values)
+    tags.save(temp, v2_version=4 if version >= 4 else 3)
+
+
+def _mp4_value(atom: str, value: str) -> list:
+    if atom.startswith(records.MP4_FREEFORM):
+        return [MP4FreeForm(value.encode("utf-8"))]
+    return [value]
+
+
+def _set_atoms(tags: MP4Tags, values: dict[str, str]) -> None:
+    """Empty value deletes the atom, mirroring how the ID3 path drops frames."""
+    for key, value in values.items():
+        atom = _MP4_ATOMS[key]
+        tags.pop(atom, None)
+        if value:
+            tags[atom] = _mp4_value(atom, value)
+
+
+def _write_mp4(temp: Path, values: dict[str, str]) -> None:
+    audio = MP4(temp)
+    if audio.tags is None:
+        audio.add_tags()
+    _set_atoms(audio.tags, values)
+    audio.save()
+
+
+_WRITERS: dict[str, Callable[[Path, dict[str, str]], None]] = {
+    ".mp3": _write_id3,
+    ".m4a": _write_mp4,
+}
+
+
 def write_tags(path: Path, values: dict[str, str]) -> None:
     """Atomic edit: copy -> modify temp -> os.replace. mtime changes on purpose
     so music-minion's change detection re-imports the file."""
+    writer = _WRITERS.get(path.suffix.lower())
+    if writer is None:
+        raise ValueError(f"write_tags: unsupported audio format for {path}")
     temp = path.with_name(path.name + ".tmp")
     try:
         shutil.copy2(path, temp)
-        tags = ID3(temp)
-        version = tags.version[1]
-        _set_frames(tags, values)
-        tags.save(temp, v2_version=4 if version >= 4 else 3)
+        writer(temp, values)
         os.replace(temp, path)
     except Exception:
         temp.unlink(missing_ok=True)
