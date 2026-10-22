@@ -98,6 +98,25 @@ def _run_sync() -> None:
         _sync_in_progress = False
 
 
+def _export_to_files(cfg: config.Config) -> None:
+    """Write DB metadata and ELO back into audio files, if enabled.
+
+    Off on the pi: Serato also rewrites these files, and Syncthing keeps
+    whichever copy changed last, so two writers lose each other's edits.
+    """
+    if not cfg.sync.write_tags_to_metadata:
+        logger.info("Skipping file exports (write_tags_to_metadata = false)")
+        return
+
+    logger.info("Exporting metadata to files")
+    export_result = sync.sync_metadata_export(show_progress=False)
+    logger.info(f"Exported to {export_result.get('success', 0)} files")
+
+    logger.info("Exporting ELO ratings")
+    elo_result = sync.sync_elo_export(show_progress=False)
+    logger.info(f"Exported ELO to {elo_result.get('success', 0)} files")
+
+
 def _run_full_sync() -> None:
     """Run full sync (background task)."""
     global _sync_in_progress
@@ -125,15 +144,7 @@ def _run_full_sync() -> None:
         result = sync.sync_import(cfg, force_all=True, show_progress=False)
         logger.info(f"Imported {result.get('added', 0)} tags")
 
-        # Export DB metadata to files
-        logger.info("Exporting metadata to files")
-        export_result = sync.sync_metadata_export(show_progress=False)
-        logger.info(f"Exported to {export_result.get('success', 0)} files")
-
-        # Export ELO ratings
-        logger.info("Exporting ELO ratings")
-        elo_result = sync.sync_elo_export(show_progress=False)
-        logger.info(f"Exported ELO to {elo_result.get('success', 0)} files")
+        _export_to_files(cfg)
 
         # Cleanup
         cleanup = sync.detect_missing_and_moved_files(cfg)
