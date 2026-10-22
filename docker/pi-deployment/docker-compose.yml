@@ -1,22 +1,23 @@
+# Lives in ~/music-minion-deploy on the pi, next to config.toml and .env.
+# scripts/deploy-to-pi.sh builds music-minion:<sha> and retags it :current.
 services:
   music-minion:
-    build:
-      context: ../..
-      dockerfile: Dockerfile
+    image: music-minion:current
     container_name: music-minion-web
     restart: unless-stopped
+    user: "1000:1000"
     ports:
       - "127.0.0.1:8642:8642"  # Caddy reverse proxy
     volumes:
-      - /home/kevin/Music:/home/kevin/Music  # Music library (Syncthing, rw for metadata export)
-      - /home/kevin/.local/share/music-minion:/root/.local/share/music-minion  # DB (Syncthing)
+      - /home/kevin/Music:/home/kevin/Music  # Music library (Syncthing)
+      - /home/kevin/.local/share/music-minion:/home/kevin/.local/share/music-minion  # DB, tokens, waveforms
+      - ./config.toml:/app/config.toml:ro
     environment:
       - ALLOWED_ORIGINS=https://music.piserver:8443
       # The pi owns the live DB; other machines refuse to open their stale copy
       - MUSIC_MINION_DB_OWNER=1
-      # Jev feed scoring. Interpolated from ../../.env via `--env-file` (see
-      # scripts/deploy-to-pi.sh); don't env_file that whole .env in, its
-      # DATABASE_URL would switch the app off SQLite.
+      # Interpolated from this directory's .env. Don't env_file it in: only
+      # pass the keys the container needs.
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8642/health"]

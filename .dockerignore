@@ -1,0 +1,16 @@
+# Deploys build from `git archive`; this keeps local `docker build .` equally clean.
+**/node_modules
+**/__pycache__
+**/.venv
+.git
+.env
+config.toml
+*.db
+*.log
+web/frontend/dist
+web/frontend/src/routeTree.gen.ts
+mobile/*
+!mobile/package.json
+docs
+tests
+scripts
