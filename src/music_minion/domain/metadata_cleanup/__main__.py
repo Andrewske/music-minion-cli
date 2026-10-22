@@ -14,6 +14,7 @@ uv run python -m music_minion.domain.metadata_cleanup apply --pending --write
 
 import argparse
 import json
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -226,7 +227,7 @@ def _render_diff(changes: list[dict]) -> str:
 
 
 def cmd_apply(args: argparse.Namespace) -> None:
-    """Dry run by default: writes the diff to a file. --write changes the MP3s."""
+    """Dry run by default: writes the diff to a file. --write changes the audio files."""
     if args.pending:
         sync_url = None if args.no_sync else ingest.DEFAULT_SYNC_URL
         logger.info(f"Pending: {ingest.resolve_pending(args.write, sync_url)}")
@@ -248,13 +249,18 @@ def cmd_apply(args: argparse.Namespace) -> None:
     )
 
 
-def cmd_ingest(args: argparse.Namespace) -> None:
-    """Nightly hook: clean tracks downloaded since the last run."""
+def cmd_ingest(args: argparse.Namespace) -> int:
+    """Nightly hook: clean tracks downloaded since the last run.
+
+    Exits non-zero when a codex batch returned nothing for some tracks or a tag
+    write failed, so the nightly script reports "Metadata cleanup failed".
+    """
     if args.bootstrap:
         logger.info(f"Ledger now holds {ingest.bootstrap(args.year)} tracks")
-        return
+        return 0
     settings = CodexSettings(args.model, args.reasoning, True)
-    ingest.run_ingest(args.year, settings, None if args.no_sync else args.sync_url)
+    sync_url = None if args.no_sync else args.sync_url
+    return ingest.exit_code(ingest.run_ingest(args.year, settings, sync_url))
 
 
 def cmd_restore(args: argparse.Namespace) -> None:
@@ -302,7 +308,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-COMMANDS = {
+COMMANDS: dict[str, Callable[[argparse.Namespace], int | None]] = {
     "extract": cmd_extract,
     "gold": cmd_gold,
     "clean": cmd_clean,
@@ -313,6 +319,12 @@ COMMANDS = {
     "ingest": cmd_ingest,
 }
 
+
+def main(argv: list[str] | None = None) -> int:
+    """Run one subcommand; its int result (None = success) is the exit code."""
+    parsed = build_parser().parse_args(argv)
+    return COMMANDS[parsed.command](parsed) or 0
+
+
 if __name__ == "__main__":
-    parsed = build_parser().parse_args()
-    COMMANDS[parsed.command](parsed)
+    raise SystemExit(main())

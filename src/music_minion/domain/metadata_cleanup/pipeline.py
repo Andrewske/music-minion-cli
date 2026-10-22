@@ -17,7 +17,7 @@ Scanned = list[tuple[Path, dict[str, str]]]
 
 
 def scan(folder: Path) -> Scanned:
-    return [(path, records.read_tags(path)) for path in records.list_mp3s(folder)]
+    return [(path, records.read_tags(path)) for path in records.list_audio(folder)]
 
 
 def resolve(scanned: Scanned) -> dict[str, dict | None]:
