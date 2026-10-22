@@ -104,7 +104,8 @@ class SyncConfig:
     """Configuration for metadata sync and file watching."""
 
     auto_sync_on_startup: bool = True
-    write_tags_to_metadata: bool = True
+    # Off by default: Serato also writes these files, and two writers lose edits
+    write_tags_to_metadata: bool = False
     metadata_tag_field: str = "COMMENT"  # Field to store tags (COMMENT or custom)
     tag_prefix: str = "mm:"  # Prefix for Music Minion tags in metadata
     sync_method: str = "manual"  # 'manual' or 'syncthing' (future)
@@ -410,8 +411,8 @@ use_relative_paths = true
 # Auto-sync file metadata on startup
 auto_sync_on_startup = true
 
-# Write tags to file metadata
-write_tags_to_metadata = true
+# Write tags, metadata and ELO into audio files (off: Serato also writes them)
+write_tags_to_metadata = false
 
 # Metadata field to use for tags (COMMENT is standard)
 metadata_tag_field = "COMMENT"
