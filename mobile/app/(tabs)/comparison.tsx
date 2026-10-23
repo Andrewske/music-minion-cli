@@ -1,8 +1,9 @@
 /**
  * Comparison screen — swipe-to-vote flow.
  *
- * Flow: playlist picker → startComparison → swipe cards → recordComparison → next pair
- * Optimistic: show next pair immediately, fire POST in background.
+ * Flow: playlist picker → startComparison → tap cards to listen → swipe/tap vote
+ * → recordComparison → next pair. Vote lock prevents double-submits while
+ * the POST is in flight.
  * Portrait locked (handled via app.json orientation per-screen in future).
  */
 import { useState, useCallback, useRef } from 'react';
@@ -12,7 +13,6 @@ import {
   Pressable,
   FlatList,
   ActivityIndicator,
-  ScrollView,
 } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Toast from 'react-native-toast-message';
@@ -29,12 +29,13 @@ import type {
 } from '@music-minion/shared';
 import { SwipeableComparisonCard } from '../../components/comparison/SwipeableComparisonCard';
 import { VoteButtons } from '../../components/comparison/VoteButtons';
-import { StreakCounter } from '../../components/comparison/StreakCounter';
-import { ProgressBar } from '../../components/comparison/ProgressBar';
+import { SessionHeader } from '../../components/comparison/SessionHeader';
+import { useComparisonPlayback } from '../../hooks/useComparisonPlayback';
+import { selectComparablePlaylists } from '../../features/comparison/comparisonState';
 
 type ScreenState =
   | { phase: 'picking' }
-  | { phase: 'comparing'; playlistId: number; pair: ComparisonPair; progress: ComparisonProgress }
+  | { phase: 'comparing'; playlistId: number; playlistName: string; pair: ComparisonPair }
   | { phase: 'complete'; progress: ComparisonProgress };
 
 export default function ComparisonScreen() {
@@ -51,14 +52,14 @@ export default function ComparisonScreen() {
 
   // Start comparison mutation
   const startMutation = useMutation({
-    mutationFn: (playlistId: number) => startComparison(playlistId),
-    onSuccess: (response, playlistId) => {
+    mutationFn: (playlist: Playlist) => startComparison(playlist.id),
+    onSuccess: (response, playlist) => {
       if (response.pair) {
         setScreen({
           phase: 'comparing',
-          playlistId,
+          playlistId: playlist.id,
+          playlistName: playlist.name,
           pair: response.pair,
-          progress: response.progress,
         });
       } else {
         setScreen({ phase: 'complete', progress: response.progress });
@@ -79,12 +80,7 @@ export default function ComparisonScreen() {
     onSuccess: (response) => {
       pendingVoteRef.current = false;
       if (response.pair && screen.phase === 'comparing') {
-        setScreen({
-          phase: 'comparing',
-          playlistId: screen.playlistId,
-          pair: response.pair,
-          progress: response.progress,
-        });
+        setScreen({ ...screen, pair: response.pair });
       } else {
         setScreen({ phase: 'complete', progress: response.progress });
       }
@@ -100,8 +96,8 @@ export default function ComparisonScreen() {
     },
   });
 
-  const handleSelectPlaylist = useCallback((playlistId: number) => {
-    startMutation.mutate(playlistId);
+  const handleSelectPlaylist = useCallback((playlist: Playlist) => {
+    startMutation.mutate(playlist);
   }, [startMutation]);
 
   const handleVote = useCallback((winnerId: number) => {
@@ -155,7 +151,7 @@ export default function ComparisonScreen() {
       );
     }
 
-    const localPlaylists = playlists?.filter((p: Playlist) => p.track_count >= 2) ?? [];
+    const localPlaylists = selectComparablePlaylists(playlists);
 
     return (
       <View className="flex-1 bg-background pt-4">
@@ -182,7 +178,7 @@ export default function ComparisonScreen() {
             <Pressable
               testID={index === 0 ? 'comparison-playlist-option' : undefined}
               className="bg-surface rounded-lg px-4 py-4 mb-2 flex-row justify-between items-center active:opacity-70"
-              onPress={() => handleSelectPlaylist(item.id)}
+              onPress={() => handleSelectPlaylist(item)}
               disabled={startMutation.isPending}
             >
               <View className="flex-1 mr-4">
@@ -202,7 +198,7 @@ export default function ComparisonScreen() {
           )}
           ListEmptyComponent={
             <Text className="text-text-secondary text-center mt-8">
-              No playlists with 2+ tracks.{'\n'}Create one in the web app.
+              No manual playlists with 2+ tracks.{'\n'}Create one in the web app.
             </Text>
           }
         />
@@ -244,64 +240,83 @@ export default function ComparisonScreen() {
   }
 
   // === COMPARING ===
-  const { pair, progress } = screen;
+  return (
+    <ComparingView
+      playlistName={screen.playlistName}
+      pair={screen.pair}
+      voteCount={voteCount}
+      voting={recordMutation.isPending}
+      onVoteA={handleVoteA}
+      onVoteB={handleVoteB}
+      onExit={handleReset}
+    />
+  );
+}
+
+interface ComparingViewProps {
+  playlistName: string;
+  pair: ComparisonPair;
+  voteCount: number;
+  voting: boolean;
+  onVoteA: () => void;
+  onVoteB: () => void;
+  onExit: () => void;
+}
+
+/**
+ * One-screen session: header, two flex cards, vote buttons pinned at the
+ * bottom. No ScrollView and no tab-bar offsets: this screen's container
+ * already ends above the tab bar and the root-level PlayerBar (which pads
+ * itself for the bottom inset), so flex layout keeps the buttons visible.
+ */
+function ComparingView({
+  playlistName,
+  pair,
+  voteCount,
+  voting,
+  onVoteA,
+  onVoteB,
+  onExit,
+}: ComparingViewProps): React.JSX.Element {
+  const { playStateFor, toggle, playingElsewhere } = useComparisonPlayback(pair);
 
   return (
-    <ScrollView
-      className="flex-1 bg-background"
-      contentContainerStyle={{ paddingTop: 16, paddingBottom: 120 }}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Progress */}
-      <ProgressBar progress={progress} />
+    <View testID="comparison-session" className="flex-1 bg-background">
+      <SessionHeader playlistName={playlistName} voteCount={voteCount} onExit={onExit} />
 
-      {/* Streak counter */}
-      <StreakCounter voteCount={voteCount} />
-
-      {/* Track A */}
-      <SwipeableComparisonCard
-        track={pair.track_a}
-        label="A"
-        onVote={handleVoteA}
-        disabled={recordMutation.isPending}
-      />
-
-      {/* VS divider */}
-      <View className="items-center py-3">
-        <View className="w-12 h-12 rounded-full bg-surface border-2 border-neutral-700 items-center justify-center">
-          <Text className="text-text-secondary font-bold text-sm tracking-widest">
-            VS
-          </Text>
+      <View className="flex-1 pb-3">
+        <SwipeableComparisonCard
+          track={pair.track_a}
+          label="A"
+          onVote={onVoteA}
+          onPress={() => toggle(pair.track_a)}
+          playState={playStateFor(pair.track_a.id)}
+          playingElsewhere={playingElsewhere}
+          disabled={voting}
+        />
+        <View className="items-center py-1">
+          <Text className="text-text-secondary font-bold text-xs tracking-widest">VS</Text>
         </View>
-      </View>
-
-      {/* Track B */}
-      <SwipeableComparisonCard
-        track={pair.track_b}
-        label="B"
-        onVote={handleVoteB}
-        disabled={recordMutation.isPending}
-      />
-
-      {/* Vote buttons (tap fallback) */}
-      <View className="mt-6">
-        <VoteButtons
-          trackATitle={pair.track_a.title}
-          trackBTitle={pair.track_b.title}
-          onVoteA={handleVoteA}
-          onVoteB={handleVoteB}
-          disabled={recordMutation.isPending}
+        <SwipeableComparisonCard
+          track={pair.track_b}
+          label="B"
+          onVote={onVoteB}
+          onPress={() => toggle(pair.track_b)}
+          playState={playStateFor(pair.track_b.id)}
+          playingElsewhere={playingElsewhere}
+          disabled={voting}
         />
       </View>
 
-      {/* Session info */}
-      <View className="items-center mt-6">
-        <Pressable onPress={handleReset}>
-          <Text className="text-text-secondary text-sm underline">
-            Pick different playlist
-          </Text>
-        </Pressable>
+      <View className="pb-3">
+        <VoteButtons
+          trackATitle={pair.track_a.title}
+          trackBTitle={pair.track_b.title}
+          onVoteA={onVoteA}
+          onVoteB={onVoteB}
+          disabled={voting}
+        />
       </View>
-    </ScrollView>
+    </View>
   );
 }

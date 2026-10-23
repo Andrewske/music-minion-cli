@@ -1,8 +1,7 @@
-# Comparison — open a playlist and confirm we enter the ranking flow.
-# Non-destructive: we do NOT cast a vote (that would mutate live ELO data).
-# Asserting the picker disappeared is robust to both outcomes (a votable pair
-# OR an already-"All caught up!" playlist) and to vote buttons sitting below
-# the scroll fold.
+# Comparison — pick a playlist → play a card → vote → exit back to the picker.
+# NOTE: this casts ONE real vote against the live backend (changes ELO for one
+# pair in the first manual playlist). The issue (#58) asks for the vote step.
+# If the playlist is already "All caught up!", the session steps are skipped.
 appId: com.musicminion.app
 ---
 - launchApp
@@ -18,3 +17,38 @@ appId: com.musicminion.app
     notVisible:
       id: "comparison-playlist-option"
     timeout: 30000
+- runFlow:
+    when:
+      visible:
+        id: "comparison-session"
+    commands:
+      # Everything fits one screen: header, both cards, vote buttons.
+      - assertVisible:
+          id: "comparison-exit"
+      - assertVisible:
+          id: "vote-a"
+      - assertVisible:
+          id: "vote-b"
+      # Tap card A → global player loads it, card shows the playing state.
+      - tapOn:
+          id: "comparison-card-a"
+      - extendedWaitUntil:
+          visible:
+            id: "comparison-card-a-playing"
+          timeout: 30000
+      - assertVisible:
+          id: "player-track-title"
+      # Vote via the button; session progress reflects this session.
+      - tapOn:
+          id: "vote-a"
+      - extendedWaitUntil:
+          visible:
+            text: "1 vote this session"
+          timeout: 30000
+      # Exit from the header returns to the picker.
+      - tapOn:
+          id: "comparison-exit"
+      - extendedWaitUntil:
+          visible:
+            id: "comparison-playlist-option"
+          timeout: 30000
