@@ -1,17 +1,16 @@
 /**
  * Expandable bucket card — shows name, emoji, track count.
- * Tap to expand/collapse track list.
- * Swipe actions on tracks for unassign.
+ * Tap to expand/collapse track list; each track has a remove button.
  */
 import { useState, useCallback } from 'react';
-import { View, Text, Pressable, FlatList, StyleSheet, Alert } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Alert } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import type { Bucket } from '@music-minion/shared';
 import { TrackRow } from './TrackRow';
 
 interface BucketCardProps {
   bucket: Bucket;
-  trackTitles: Map<number, string>;
+  getTrackLabel: (trackId: number) => string;
   onUnassignTrack: (bucketId: string, trackId: number) => void;
   onMoveBucket: (bucketId: string, direction: 'up' | 'down') => void;
   onShuffleBucket: (bucketId: string) => void;
@@ -22,14 +21,14 @@ interface BucketCardProps {
 
 export function BucketCard({
   bucket,
-  trackTitles,
+  getTrackLabel,
   onUnassignTrack,
   onMoveBucket,
   onShuffleBucket,
   onDeleteBucket,
   isFirst,
   isLast,
-}: BucketCardProps) {
+}: BucketCardProps): React.JSX.Element {
   const [expanded, setExpanded] = useState(false);
 
   const handleToggle = useCallback(() => {
@@ -60,7 +59,7 @@ export function BucketCard({
   return (
     <View style={styles.card}>
       {/* Header */}
-      <Pressable style={styles.header} onPress={handleToggle}>
+      <Pressable testID="bucket-card-header" style={styles.header} onPress={handleToggle}>
         <View style={styles.headerLeft}>
           <Text style={styles.emoji}>
             {bucket.emoji_id ?? '📁'}
@@ -117,18 +116,16 @@ export function BucketCard({
           {bucket.track_ids.length === 0 ? (
             <Text style={styles.emptyText}>No tracks assigned</Text>
           ) : (
-            <FlatList
-              data={bucket.track_ids}
-              keyExtractor={(id) => id.toString()}
-              scrollEnabled={false}
-              renderItem={({ item: trackId }) => (
-                <TrackRow
-                  trackId={trackId}
-                  title={trackTitles.get(trackId) ?? `Track #${trackId}`}
-                  onUnassign={() => onUnassignTrack(bucket.id, trackId)}
-                />
-              )}
-            />
+            // Plain map: this card renders inside the session FlatList header,
+            // and nesting a VirtualizedList there breaks virtualization.
+            bucket.track_ids.map((trackId, index) => (
+              <TrackRow
+                key={trackId}
+                testID={index === 0 ? 'bucket-track-remove' : undefined}
+                title={getTrackLabel(trackId)}
+                onUnassign={() => onUnassignTrack(bucket.id, trackId)}
+              />
+            ))
           )}
         </View>
       )}

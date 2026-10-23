@@ -54,3 +54,22 @@ export async function getFolders(parent?: string): Promise<FoldersResponse> {
   }
   return response.json();
 }
+
+export interface TrackName {
+  id: number;
+  title: string | null;
+  artist: string | null;
+}
+
+/** Resolve {id, title, artist} for a batch of track ids. Unknown ids are omitted. */
+export async function lookupTracks(ids: readonly number[]): Promise<TrackName[]> {
+  if (ids.length === 0) return [];
+  return getDefaultApiClient().post<TrackName[]>('/tracks/lookup', { ids });
+}
+
+/** "Artist — Title" display label; falls back gracefully on missing fields. */
+export function formatTrackLabel(track: TrackName): string {
+  const title = track.title?.trim() || `Track #${track.id}`;
+  const artist = track.artist?.trim();
+  return artist ? `${artist} — ${title}` : title;
+}
