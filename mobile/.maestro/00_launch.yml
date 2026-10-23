@@ -1,11 +1,39 @@
 # Cold launch — app is pre-configured (URL baked into bundle via .env),
-# so it must land on the tab bar, NOT the setup gate.
-# Guards the server-url setup-gate fallthrough regression.
+# so it must land on Home with the header menu button, NOT the setup gate.
+# Guards the server-url setup-gate fallthrough regression, then walks the
+# drawer: every destination is listed and Settings carries the connection dot.
 appId: com.musicminion.app
 ---
 - launchApp
-# Cold start has to load the JS bundle + initial render before the tabs mount.
+# Cold start has to load the JS bundle + initial render before the header mounts.
 - extendedWaitUntil:
     visible:
-      id: "tab-home"
+      id: "nav-open"
     timeout: 30000
+- assertVisible:
+    id: "home-search-input"
+- tapOn:
+    id: "nav-open"
+- assertVisible:
+    id: "nav-home"
+- assertVisible:
+    id: "nav-feed"
+- assertVisible:
+    id: "nav-compare"
+- assertVisible:
+    id: "nav-organize"
+- assertVisible:
+    id: "nav-history"
+- assertVisible:
+    id: "nav-settings"
+- assertVisible:
+    id: "nav-connection-dot"
+- tapOn:
+    id: "nav-settings"
+- assertVisible: "Server URL"
+- runFlow:
+    file: subflows/nav_to.yml
+    env:
+      DEST: "home"
+- assertVisible:
+    id: "home-search-input"

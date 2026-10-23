@@ -6,7 +6,7 @@
  * the POST is in flight.
  * Portrait locked (handled via app.json orientation per-screen in future).
  */
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, type ReactNode } from 'react';
 import {
   View,
   Text,
@@ -30,6 +30,8 @@ import type {
 import { SwipeableComparisonCard } from '../../components/comparison/SwipeableComparisonCard';
 import { VoteButtons } from '../../components/comparison/VoteButtons';
 import { SessionHeader } from '../../components/comparison/SessionHeader';
+import { ScreenHeader } from '../../components/ScreenHeader';
+import { PartyPopper } from 'lucide-react-native';
 import { useComparisonPlayback } from '../../hooks/useComparisonPlayback';
 import { selectComparablePlaylists } from '../../features/comparison/comparisonState';
 
@@ -130,35 +132,36 @@ export default function ComparisonScreen() {
   if (screen.phase === 'picking') {
     if (playlistsLoading) {
       return (
-        <View className="flex-1 bg-background justify-center items-center">
-          <ActivityIndicator size="large" color="#7C4DFF" />
-          <Text className="text-text-secondary mt-4">Loading playlists...</Text>
-        </View>
+        <CompareFrame>
+          <View className="flex-1 justify-center items-center">
+            <ActivityIndicator size="large" color="#7C4DFF" />
+            <Text className="text-text-secondary mt-4">Loading playlists...</Text>
+          </View>
+        </CompareFrame>
       );
     }
 
     if (playlistsError) {
       return (
-        <View className="flex-1 bg-background justify-center items-center px-6">
-          <Text className="text-error text-lg mb-2">Can&apos;t reach server</Text>
-          <Text className="text-text-secondary text-center mb-4">
-            {playlistsError instanceof Error ? playlistsError.message : 'Connection failed'}
-          </Text>
-          <Text className="text-text-secondary text-sm text-center">
-            Is Tailscale running?
-          </Text>
-        </View>
+        <CompareFrame>
+          <View className="flex-1 justify-center items-center px-6">
+            <Text className="text-error text-lg mb-2">Can&apos;t reach server</Text>
+            <Text className="text-text-secondary text-center mb-4">
+              {playlistsError instanceof Error ? playlistsError.message : 'Connection failed'}
+            </Text>
+            <Text className="text-text-secondary text-sm text-center">
+              Is Tailscale running?
+            </Text>
+          </View>
+        </CompareFrame>
       );
     }
 
     const localPlaylists = selectComparablePlaylists(playlists);
 
     return (
-      <View className="flex-1 bg-background pt-4">
-        <View className="px-4 mb-6">
-          <Text className="text-text-primary text-2xl font-bold mb-1">
-            Compare
-          </Text>
+      <CompareFrame>
+        <View className="px-4 mb-4">
           <Text className="text-text-secondary text-base">
             Pick a playlist to start ranking tracks
           </Text>
@@ -202,40 +205,44 @@ export default function ComparisonScreen() {
             </Text>
           }
         />
-      </View>
+      </CompareFrame>
     );
   }
 
   // === COMPLETION ===
   if (screen.phase === 'complete') {
     return (
-      <View className="flex-1 bg-background justify-center items-center px-6">
-        <Text className="text-4xl mb-4">🎉</Text>
-        <Text className="text-text-primary text-2xl font-bold mb-2">
-          All caught up!
-        </Text>
-        <Text className="text-text-secondary text-base text-center mb-2">
-          All tracks have been compared
-        </Text>
-        {screen.progress && (
-          <Text className="text-text-secondary text-sm font-mono mb-6">
-            {screen.progress.compared} / {screen.progress.total} comparisons
+      <CompareFrame>
+        <View className="flex-1 justify-center items-center px-6">
+          <View className="mb-4">
+            <PartyPopper size={44} color="#7C4DFF" strokeWidth={1.75} />
+          </View>
+          <Text className="text-text-primary text-2xl font-bold mb-2">
+            All caught up!
           </Text>
-        )}
-        {voteCount > 0 && (
-          <Text className="text-text-secondary text-sm mb-6">
-            You made {voteCount} votes this session
+          <Text className="text-text-secondary text-base text-center mb-2">
+            All tracks have been compared
           </Text>
-        )}
-        <Pressable
-          className="bg-primary rounded-lg px-8 py-4"
-          onPress={handleReset}
-        >
-          <Text className="text-white text-base font-semibold">
-            Pick another playlist
-          </Text>
-        </Pressable>
-      </View>
+          {screen.progress && (
+            <Text className="text-text-secondary text-sm font-mono mb-6">
+              {screen.progress.compared} / {screen.progress.total} comparisons
+            </Text>
+          )}
+          {voteCount > 0 && (
+            <Text className="text-text-secondary text-sm mb-6">
+              You made {voteCount} votes this session
+            </Text>
+          )}
+          <Pressable
+            className="bg-primary rounded-lg px-8 py-4"
+            onPress={handleReset}
+          >
+            <Text className="text-white text-base font-semibold">
+              Pick another playlist
+            </Text>
+          </Pressable>
+        </View>
+      </CompareFrame>
     );
   }
 
@@ -253,6 +260,16 @@ export default function ComparisonScreen() {
   );
 }
 
+/** Picker / loading / done states: the Compare header over the body. */
+function CompareFrame({ children }: { children: ReactNode }): React.JSX.Element {
+  return (
+    <View className="flex-1 bg-background">
+      <ScreenHeader title="Compare" />
+      {children}
+    </View>
+  );
+}
+
 interface ComparingViewProps {
   playlistName: string;
   pair: ComparisonPair;
@@ -265,9 +282,9 @@ interface ComparingViewProps {
 
 /**
  * One-screen session: header, two flex cards, vote buttons pinned at the
- * bottom. No ScrollView and no tab-bar offsets: this screen's container
- * already ends above the tab bar and the root-level PlayerBar (which pads
- * itself for the bottom inset), so flex layout keeps the buttons visible.
+ * bottom. No ScrollView and no bottom offsets: this screen's container
+ * already ends above the root-level PlayerBar (which pads itself for the
+ * bottom inset), so flex layout keeps the buttons visible.
  */
 function ComparingView({
   playlistName,

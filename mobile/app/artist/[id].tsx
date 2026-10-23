@@ -2,7 +2,7 @@
  * Artist page — library tracks for one followed artist.
  * Liked / playlisted tracks pinned on top, then the rest by play count.
  */
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,9 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { getArtist, getArtistLibraryTracks } from '@music-minion/shared';
 import type { ArtistLibraryTrack, Track } from '@music-minion/shared';
+import { Heart, ListMusic, Music } from 'lucide-react-native';
 import { usePlayerStore } from '../../stores/playerStore';
+import { ScreenHeader } from '../../components/ScreenHeader';
 
 const formatDuration = (seconds: number | null): string => {
   if (seconds == null) return '-:--';
@@ -57,7 +59,7 @@ export default function ArtistScreen() {
     enabled: Number.isFinite(artistId),
   });
 
-  const tracks = tracksQuery.data ?? [];
+  const tracks = useMemo(() => tracksQuery.data ?? [], [tracksQuery.data]);
   const saved = tracks.filter(isSaved);
   const rest = tracks.filter((t) => !isSaved(t));
   const sections = [
@@ -82,11 +84,7 @@ export default function ArtistScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <View className="px-4 pt-4 pb-3">
-        <Pressable onPress={() => router.back()} hitSlop={8} testID="artist-back">
-          <Text className="text-text-secondary text-sm">← Back</Text>
-        </Pressable>
-      </View>
+      <ScreenHeader title="Artist" onBack={() => router.back()} backTestID="artist-back" />
 
       {isLoading ? (
         <View className="items-center py-8">
@@ -112,7 +110,7 @@ export default function ArtistScreen() {
                 />
               ) : (
                 <View className="w-16 h-16 rounded-full bg-neutral-800 items-center justify-center">
-                  <Text className="text-text-secondary text-xl">♫</Text>
+                  <Music size={26} color="#9E9E9E" />
                 </View>
               )}
               <View className="flex-1 ml-3">
@@ -150,12 +148,19 @@ export default function ArtistScreen() {
                     {item.title}
                   </Text>
                   {item.playlists.length > 0 && (
-                    <Text className="text-text-secondary text-xs mt-0.5" numberOfLines={1}>
-                      ♪ {item.playlists.map((p) => p.name).join(' · ')}
-                    </Text>
+                    <View className="flex-row items-center mt-0.5">
+                      <ListMusic size={12} color="#9E9E9E" />
+                      <Text className="text-text-secondary text-xs ml-1 flex-1" numberOfLines={1}>
+                        {item.playlists.map((p) => p.name).join(' · ')}
+                      </Text>
+                    </View>
                   )}
                 </View>
-                {item.is_liked && <Text className="text-base mr-2">💜</Text>}
+                {item.is_liked && (
+                  <View className="mr-2" accessibilityLabel="Liked">
+                    <Heart size={16} color="#7C4DFF" fill="#7C4DFF" />
+                  </View>
+                )}
                 {item.play_count > 0 && (
                   <Text className="text-text-secondary text-xs mr-2">{item.play_count}×</Text>
                 )}

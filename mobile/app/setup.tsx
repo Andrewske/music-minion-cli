@@ -46,7 +46,7 @@ export default function SetupScreen() {
       if (data.status === 'healthy') {
         setSuccess(true);
         await saveServerUrl(apiUrl);
-        setTimeout(() => router.replace('/(tabs)'), 800);
+        setTimeout(() => router.replace('/'), 800);
       } else {
         throw new Error('Unexpected response');
       }

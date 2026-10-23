@@ -2,8 +2,14 @@
 appId: com.musicminion.app
 ---
 - launchApp
-- tapOn:
-    id: "tab-home"
+- extendedWaitUntil:
+    visible:
+      id: "nav-open"
+    timeout: 30000
+- runFlow:
+    file: subflows/nav_to.yml
+    env:
+      DEST: "home"
 - tapOn:
     id: "home-search-input"
 - inputText: "a"

@@ -16,6 +16,7 @@ import { useServerUrl } from '../../hooks/useServerUrl';
 import { useShareIntent } from '../../hooks/useShareIntent';
 import { getDefaultApiClient } from '@music-minion/shared';
 import { AppUpdateSection } from '../../components/settings/AppUpdateSection';
+import { ScreenHeader } from '../../components/ScreenHeader';
 
 export default function SettingsScreen() {
   const { serverUrl, saveServerUrl } = useServerUrl();
@@ -91,81 +92,80 @@ export default function SettingsScreen() {
   };
 
   return (
-    <ScrollView className="flex-1 bg-background" contentContainerStyle={{ paddingBottom: 80 }}>
-      <View className="px-4 pt-4">
-        <Text className="text-text-primary text-2xl font-bold mb-6">
-          Settings
-        </Text>
-
-        {/* Server URL */}
-        <Text className="text-text-secondary text-sm mb-2">Server URL</Text>
-        <TextInput
-          className="bg-surface text-text-primary rounded-lg px-4 py-3 text-base border border-neutral-700 mb-3"
-          value={url}
-          onChangeText={setUrl}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="url"
-        />
-
-        <Pressable
-          className="bg-primary rounded-lg py-3 items-center mb-2"
-          onPress={testAndSave}
-          disabled={testing}
-        >
-          {testing ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text className="text-white font-semibold">Save & Test</Text>
-          )}
-        </Pressable>
-
-        {status === 'success' && (
-          <Text className="text-success text-sm mb-4">Connected!</Text>
-        )}
-        {status === 'error' && (
-          <Text className="text-error text-sm mb-4">Connection failed</Text>
-        )}
-
-        {/* Import section */}
-        <View className="mt-8 pt-6 border-t border-neutral-800">
-          <Text className="text-text-primary text-lg font-bold mb-2">
-            Import
-          </Text>
-          <Text className="text-text-secondary text-sm mb-3">
-            Paste a YouTube or SoundCloud URL to import
-          </Text>
-
+    <View className="flex-1 bg-background">
+      <ScreenHeader title="Settings" />
+      <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 80 }}>
+        <View className="px-4 pt-2">
+          {/* Server URL */}
+          <Text className="text-text-secondary text-sm mb-2">Server URL</Text>
           <TextInput
             className="bg-surface text-text-primary rounded-lg px-4 py-3 text-base border border-neutral-700 mb-3"
-            placeholder="https://youtube.com/watch?v=..."
-            placeholderTextColor="#666"
-            value={importUrl}
-            onChangeText={setImportUrl}
+            value={url}
+            onChangeText={setUrl}
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="url"
           />
-
+  
           <Pressable
-            className="bg-surface rounded-lg py-3 items-center border border-primary"
-            onPress={handleImport}
-            disabled={importing || !importUrl.trim()}
+            className="bg-primary rounded-lg py-3 items-center mb-2"
+            onPress={testAndSave}
+            disabled={testing}
           >
-            {importing ? (
-              <ActivityIndicator color="#7C4DFF" />
+            {testing ? (
+              <ActivityIndicator color="#fff" />
             ) : (
-              <Text className="text-primary font-semibold">Import URL</Text>
+              <Text className="text-white font-semibold">Save & Test</Text>
             )}
           </Pressable>
+  
+          {status === 'success' && (
+            <Text className="text-success text-sm mb-4">Connected!</Text>
+          )}
+          {status === 'error' && (
+            <Text className="text-error text-sm mb-4">Connection failed</Text>
+          )}
+  
+          {/* Import section */}
+          <View className="mt-8 pt-6 border-t border-neutral-800">
+            <Text className="text-text-primary text-lg font-bold mb-2">
+              Import
+            </Text>
+            <Text className="text-text-secondary text-sm mb-3">
+              Paste a YouTube or SoundCloud URL to import
+            </Text>
+  
+            <TextInput
+              className="bg-surface text-text-primary rounded-lg px-4 py-3 text-base border border-neutral-700 mb-3"
+              placeholder="https://youtube.com/watch?v=..."
+              placeholderTextColor="#666"
+              value={importUrl}
+              onChangeText={setImportUrl}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+            />
+  
+            <Pressable
+              className="bg-surface rounded-lg py-3 items-center border border-primary"
+              onPress={handleImport}
+              disabled={importing || !importUrl.trim()}
+            >
+              {importing ? (
+                <ActivityIndicator color="#7C4DFF" />
+              ) : (
+                <Text className="text-primary font-semibold">Import URL</Text>
+              )}
+            </Pressable>
+          </View>
+  
+          <AppUpdateSection />
+  
+          <Text className="text-text-secondary text-xs mt-8">
+            Share a URL from any app to import tracks
+          </Text>
         </View>
-
-        <AppUpdateSection />
-
-        <Text className="text-text-secondary text-xs mt-8">
-          Share a URL from any app to import tracks
-        </Text>
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }

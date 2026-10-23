@@ -3,7 +3,10 @@
  * Select a playlist to start/resume a bucket session. The last opened session
  * gets a "Resume" shortcut at the top.
  */
+import type { ReactNode } from 'react';
 import { View, Text, Pressable, FlatList, ActivityIndicator } from 'react-native';
+import { ChevronRight } from 'lucide-react-native';
+import { ScreenHeader } from '../../../components/ScreenHeader';
 import { router } from 'expo-router';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { getPlaylistsByLibrary, createOrResumeSession } from '@music-minion/shared';
@@ -15,7 +18,7 @@ import type { ActiveOrganizerSession } from '../../../stores/organizerStore';
 /** Open a session. The [sessionId] screen is single-instance (see _layout), so this never stacks. */
 function openSession(active: ActiveOrganizerSession): void {
   router.push({
-    pathname: '/(tabs)/organizer/[sessionId]',
+    pathname: '/organizer/[sessionId]',
     params: {
       sessionId: active.sessionId,
       playlistId: String(active.playlistId),
@@ -51,29 +54,30 @@ export default function OrganizerPickerScreen(): React.JSX.Element {
 
   if (isLoading) {
     return (
-      <View className="flex-1 bg-background justify-center items-center">
-        <ActivityIndicator size="large" color="#7C4DFF" />
-      </View>
+      <OrganizeFrame>
+        <View className="flex-1 justify-center items-center">
+          <ActivityIndicator size="large" color="#7C4DFF" />
+        </View>
+      </OrganizeFrame>
     );
   }
 
   if (error) {
     return (
-      <View className="flex-1 bg-background justify-center items-center px-6">
-        <Text className="text-error text-lg mb-2">Can&apos;t reach server</Text>
-        <Text className="text-text-secondary text-center">
-          Is Tailscale running?
-        </Text>
-      </View>
+      <OrganizeFrame>
+        <View className="flex-1 justify-center items-center px-6">
+          <Text className="text-error text-lg mb-2">Can&apos;t reach server</Text>
+          <Text className="text-text-secondary text-center">
+            Is Tailscale running?
+          </Text>
+        </View>
+      </OrganizeFrame>
     );
   }
 
   return (
-    <View className="flex-1 bg-background pt-4">
-      <View className="px-4 mb-6">
-        <Text className="text-text-primary text-2xl font-bold mb-1">
-          Organize
-        </Text>
+    <OrganizeFrame>
+      <View className="px-4 mb-4">
         <Text className="text-text-secondary text-base">
           Pick a playlist to organize into buckets
         </Text>
@@ -91,7 +95,7 @@ export default function OrganizerPickerScreen(): React.JSX.Element {
               {activeSession.playlistName}
             </Text>
           </View>
-          <Text className="text-white text-lg">→</Text>
+          <ChevronRight size={22} color="#FFFFFF" />
         </Pressable>
       )}
 
@@ -125,6 +129,15 @@ export default function OrganizerPickerScreen(): React.JSX.Element {
           </Text>
         }
       />
+    </OrganizeFrame>
+  );
+}
+
+function OrganizeFrame({ children }: { children: ReactNode }): React.JSX.Element {
+  return (
+    <View className="flex-1 bg-background">
+      <ScreenHeader title="Organize" />
+      {children}
     </View>
   );
 }
