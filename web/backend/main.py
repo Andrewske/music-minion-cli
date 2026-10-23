@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 
 from music_minion.core.config import get_data_dir
+from web.backend.timestamps import UtcJSONResponse
 
 # Configure logging for web backend
 logging.basicConfig(
@@ -50,7 +51,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     yield
 
 
-app = FastAPI(title="Music Minion Web API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(
+    title="Music Minion Web API",
+    version="1.0.0",
+    lifespan=lifespan,
+    default_response_class=UtcJSONResponse,
+)
 
 # Mount custom emojis static files. check_dir=False defers the directory
 # check to request time so importing this module never touches disk;
