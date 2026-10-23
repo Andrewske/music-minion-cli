@@ -15,6 +15,7 @@ import Toast from 'react-native-toast-message';
 import { useServerUrl } from '../../hooks/useServerUrl';
 import { useShareIntent } from '../../hooks/useShareIntent';
 import { getDefaultApiClient } from '@music-minion/shared';
+import { AppUpdateSection } from '../../components/settings/AppUpdateSection';
 
 export default function SettingsScreen() {
   const { serverUrl, saveServerUrl } = useServerUrl();
@@ -159,15 +160,11 @@ export default function SettingsScreen() {
           </Pressable>
         </View>
 
-        {/* App info */}
-        <View className="mt-8">
-          <Text className="text-text-secondary text-xs">
-            Music Minion Mobile v0.0.1
-          </Text>
-          <Text className="text-text-secondary text-xs mt-1">
-            Share a URL from any app to import tracks
-          </Text>
-        </View>
+        <AppUpdateSection />
+
+        <Text className="text-text-secondary text-xs mt-8">
+          Share a URL from any app to import tracks
+        </Text>
       </View>
     </ScrollView>
   );

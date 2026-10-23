@@ -94,6 +94,7 @@ app.add_middleware(
 
 # Include routers
 from .routers import (
+    app_updates,
     artists,
     comparisons,
     tracks,
@@ -140,6 +141,7 @@ app.include_router(feed_filters.router)
 app.include_router(feed_agent.router)
 app.include_router(insights.router)
 app.include_router(cleanup.router)
+app.include_router(app_updates.router)
 
 
 @app.get("/health")
