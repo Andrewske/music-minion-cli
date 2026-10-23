@@ -1,3 +1,4 @@
+import mimetypes
 import os
 import logging
 import sqlite3
@@ -152,14 +153,32 @@ def health_check() -> JSONResponse:
 # Static file serving for production (must come after all API routes)
 FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
 
+# Python 3.12's mimetypes table has no .webmanifest entry
+mimetypes.add_type("application/manifest+json", ".webmanifest")
+
+
+def resolve_spa_file(dist: Path, path: str) -> Path:
+    """Return the real file under dist for path, else index.html (SPA route).
+
+    Files copied from web/frontend/public (manifest, icons, fallback artwork)
+    live at the dist root, so they must not be swallowed by the SPA fallback.
+    Paths that escape dist fall back to index.html.
+    """
+    root = dist.resolve()
+    candidate = (root / path).resolve()
+    if path and candidate.is_relative_to(root) and candidate.is_file():
+        return candidate
+    return root / "index.html"
+
+
 if FRONTEND_DIST.exists():
     logging.info(f"Serving frontend from {FRONTEND_DIST}")
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
 
     @app.get("/{path:path}")
     async def serve_spa(path: str = "") -> FileResponse:
-        """Serve React SPA for all non-API routes."""
-        return FileResponse(FRONTEND_DIST / "index.html")
+        """Serve dist root files directly, React SPA for all other routes."""
+        return FileResponse(resolve_spa_file(FRONTEND_DIST, path))
 else:
     logging.info(
         f"Frontend dist not found at {FRONTEND_DIST}, skipping static file serving"
