@@ -1,5 +1,7 @@
-# Organizer — open a session, create a bucket, assign a track via the bucket
-# picker sheet, undo it from the toast, then go back to the picker.
+# Organizer — read-only walk through the session screen.
+# E2E runs against the real pi backend, and assigning a track to a linked
+# bucket syncs it into a real playlist. So this flow never creates buckets
+# or assigns tracks: it opens the bucket sheet and cancels it.
 appId: com.musicminion.app
 ---
 - launchApp
@@ -9,35 +11,31 @@ appId: com.musicminion.app
     id: "organizer-playlist-option"
 - tapOn:
     id: "organizer-playlist-option"
-# Session screen: header names the playlist.
+# Session header names the playlist.
 - assertVisible:
     id: "organizer-session-title"
 - assertVisible:
-    id: "organizer-apply-btn"
-# Create a bucket.
-- tapOn:
-    id: "bucket-name-input"
-- inputText: "Test Bucket"
-- tapOn:
-    id: "create-bucket-btn"
-- assertVisible:
-    text: "Test Bucket"
-# Tapping a track opens the picker; nothing is assigned yet.
-- tapOn:
-    id: "track-row"
-- assertVisible:
-    id: "bucket-picker-sheet"
-- tapOn:
-    id: "bucket-option-0"
-- assertNotVisible:
-    id: "bucket-picker-sheet"
-# Undo from the toast.
-- assertVisible:
-    text: "Added to Test Bucket"
-- tapOn:
-    text: "Tap to undo"
-- assertNotVisible:
-    text: "Added to Test Bucket"
+    id: "organizer-session-counts"
+# Tapping an unassigned track opens the bucket sheet without assigning.
+# The sheet only appears if the session already has a bucket (we don't
+# create one here), so this block is skipped on a bucketless session.
+- runFlow:
+    when:
+      visible:
+        id: "bucket-card-header"
+    commands:
+      - tapOn:
+          id: "track-row"
+      - assertVisible:
+          id: "bucket-picker-sheet"
+      - tapOn:
+          id: "bucket-picker-cancel"
+      - assertNotVisible:
+          id: "bucket-picker-sheet"
+      - assertNotVisible:
+          text: "Tap to undo"
+      - assertVisible:
+          id: "track-row"
 # One tap back lands on the picker, with a Resume entry.
 - tapOn:
     id: "organizer-back-btn"
