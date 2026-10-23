@@ -3,7 +3,7 @@
  */
 import { createPlayerStore, getCurrentPosition, createWebStorageAdapter } from '@music-minion/shared';
 import type { PlayContext, PlayerStore } from '@music-minion/shared';
-import { startAudioLeaderElection } from '../lib/audioLeader';
+import { claimAudioLeadership, startAudioLeaderElection } from '../lib/audioLeader';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
@@ -50,6 +50,24 @@ export const usePlayerStore = createPlayerStore({
 // Tabs share the device-id above, so the backend sees them as one device —
 // elect exactly one tab to own the audio elements (see lib/audioLeader.ts).
 startAudioLeaderElection((isLeader) => usePlayerStore.setState({ isAudioLeader: isLeader }));
+
+// The tab the user taps play in should be the one making sound — claim the
+// audio lock before play/resume/"play here" (no-op without a user gesture).
+const { play, resume, setActiveDevice } = usePlayerStore.getState();
+usePlayerStore.setState({
+  play: (track, context): Promise<void> => {
+    claimAudioLeadership();
+    return play(track, context);
+  },
+  resume: (): Promise<void> => {
+    claimAudioLeadership();
+    return resume();
+  },
+  setActiveDevice: (deviceId): Promise<void> => {
+    if (deviceId === usePlayerStore.getState().thisDeviceId) claimAudioLeadership();
+    return setActiveDevice(deviceId);
+  },
+});
 
 export { getCurrentPosition };
 export type { PlayContext, PlayerStore };

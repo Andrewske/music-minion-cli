@@ -5,6 +5,21 @@ from fastapi import WebSocket
 from loguru import logger
 
 
+def remaining_track_seconds(
+    track: dict | None, position_ms: int, track_started_at: float | None
+) -> float:
+    """Seconds left in the current track at the server clock (0 if over).
+
+    Unknown duration counts as already over, so a dead device can't keep
+    the server "playing" forever.
+    """
+    duration_s = (track or {}).get("duration") or 0
+    if not track_started_at or duration_s <= 0:
+        return 0.0
+    played_s = position_ms / 1000 + (time.time() - track_started_at)
+    return max(0.0, duration_s - played_s)
+
+
 class SyncManager:
     """Manages WebSocket connections and broadcasts state updates.
 
@@ -14,6 +29,9 @@ class SyncManager:
 
     # Seconds a device may stay offline before eviction (overridable in tests)
     grace_period: float = 30
+    # Slack past a track's expected end before an offline active device is
+    # declared dead (covers gapless handoff + /next latency)
+    track_end_margin: float = 60
     # Per-connection send timeout during broadcast (overridable in tests)
     send_timeout: float = 2.0
 
@@ -102,7 +120,15 @@ class SyncManager:
             self.disconnect_timers[device_id].cancel()
 
         async def remove_after_grace():
-            """Remove device after the grace period if it didn't reconnect."""
+            """Evict after the grace period; pause only once it's provably dead.
+
+            A dropped socket doesn't mean audio stopped: Android Chrome kills
+            the WebSocket of a backgrounded tab while its <audio> keeps
+            playing and keeps advancing via HTTP /next. So the active device
+            is dropped from the list after the grace period, but playback is
+            only paused once the current track would have ended without the
+            device advancing it.
+            """
             await asyncio.sleep(self.grace_period)
             dev = self.devices.get(device_id)
             if dev is None or dev["connections"]:
@@ -110,28 +136,46 @@ class SyncManager:
 
             del self.devices[device_id]
             await self.broadcast_device_list()
-
-            # Auto-pause if the genuinely-active device went offline
-            from .player_state import get_state, update_state
-
-            state = get_state()
-            if state.active_device_id == device_id:
-                elapsed_ms = 0
-                if state.track_started_at:
-                    elapsed_ms = int((time.time() - state.track_started_at) * 1000)
-
-                await update_state(
-                    {
-                        "is_playing": False,
-                        "active_device_id": None,
-                        "position_ms": state.position_ms + elapsed_ms,
-                        "track_started_at": None,
-                    }
-                )
-                # Note: broadcast happens inside update_state()
+            await self._pause_when_track_outlived(device_id)
 
         # Start grace timer
         self.disconnect_timers[device_id] = asyncio.create_task(remove_after_grace())
+
+    async def _pause_when_track_outlived(self, device_id: str) -> None:
+        """Pause if the offline active device lets its track run out.
+
+        Re-checks after each track's remaining time: a device that's still
+        playing (offline socket, working HTTP) will have moved on via /next,
+        restarting the clock. Cancelled by register_device on reconnect.
+        """
+        from .player_state import get_state, update_state
+
+        waited = False  # always allow one margin for an in-flight /next
+        while True:
+            state = get_state()
+            if state.active_device_id != device_id or not state.is_playing:
+                return
+            remaining_s = remaining_track_seconds(
+                state.current_track, state.position_ms, state.track_started_at
+            )
+            if remaining_s <= 0 and waited:
+                break
+            await asyncio.sleep(remaining_s + self.track_end_margin)
+            waited = True
+
+        logger.info(f"Offline device {device_id} let its track end; pausing")
+        elapsed_ms = 0
+        if state.track_started_at:
+            elapsed_ms = int((time.time() - state.track_started_at) * 1000)
+        # Note: broadcast happens inside update_state()
+        await update_state(
+            {
+                "is_playing": False,
+                "active_device_id": None,
+                "position_ms": state.position_ms + elapsed_ms,
+                "track_started_at": None,
+            }
+        )
 
     def get_current_state(self) -> dict:
         """Get current application state for new connections."""
