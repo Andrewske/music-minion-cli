@@ -8,7 +8,7 @@ import { StatusBar } from 'expo-status-bar';
 import { ShareIntentProvider, useShareIntentContext } from 'expo-share-intent';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { createApiClient, setDefaultApiClient } from '@music-minion/shared';
 import { hydrateStorage } from '../stores/playerStore';
@@ -36,6 +36,9 @@ function AppContent() {
   const { serverUrl, isConfigured, isLoading } = useServerUrl();
   const pathname = usePathname();
   const { hasShareIntent } = useShareIntentContext();
+  // Edge-to-edge Android draws under the status bar. Inset every screen once
+  // here so scroll content clips below the status bar instead of behind it.
+  const { top: topInset } = useSafeAreaInsets();
 
   // Init API client when server URL is available
   useEffect(() => {
@@ -69,7 +72,7 @@ function AppContent() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#121212' }}>
+    <View style={{ flex: 1, backgroundColor: '#121212', paddingTop: topInset }}>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="setup" />
         <Stack.Screen name="(tabs)" />

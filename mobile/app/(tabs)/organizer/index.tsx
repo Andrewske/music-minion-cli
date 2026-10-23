@@ -49,7 +49,7 @@ export default function OrganizerPickerScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background pt-12">
+    <View className="flex-1 bg-background pt-4">
       <View className="px-4 mb-6">
         <Text className="text-text-primary text-2xl font-bold mb-1">
           Organize

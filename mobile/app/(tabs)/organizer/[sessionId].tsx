@@ -147,7 +147,7 @@ export default function SessionScreen() {
   return (
     <ScrollView className="flex-1 bg-background" contentContainerStyle={{ paddingBottom: 120 }}>
       {/* Header */}
-      <View className="px-4 pt-12 pb-4">
+      <View className="px-4 pt-4 pb-4">
         <View className="flex-row items-center justify-between mb-2">
           <Pressable onPress={() => router.back()}>
             <Text className="text-primary text-base">← Back</Text>

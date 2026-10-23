@@ -6,7 +6,7 @@ pagination, and aggregation for stats and analytics.
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Optional
 
 from loguru import logger
@@ -90,9 +90,10 @@ def start_play(
         track_id: Track being played.
         source_type: Playback source ('local', 'soundcloud', etc.).
         window_minutes: Dedup window. Non-positive disables dedup.
-        now: Override for the current time (testing). Defaults to local now.
+        now: Override for the current time (testing). Defaults to naive UTC now,
+            matching the naive UTC text SQLite stores in started_at.
     """
-    now = now or datetime.now()
+    now = now or _utc_now()
     with get_radio_db_connection() as conn:
         last_play = _get_last_play(conn, track_id)
         if last_play is not None:
@@ -107,7 +108,7 @@ def start_play(
         cursor = conn.execute(
             """
             INSERT INTO radio_history (track_id, source_type, started_at)
-            VALUES (?, ?, datetime('now', 'localtime'))
+            VALUES (?, ?, datetime('now'))
             """,
             (track_id, source_type)
         )
@@ -127,7 +128,7 @@ def end_play(history_id: int, duration_ms: int, reason: str = "skip") -> None:
         conn.execute(
             """
             UPDATE radio_history
-            SET ended_at = datetime('now', 'localtime'), position_ms = ?, end_reason = ?
+            SET ended_at = datetime('now'), position_ms = ?, end_reason = ?
             WHERE id = ?
             """,
             (duration_ms, reason, history_id)
@@ -267,7 +268,7 @@ def get_stats(days: int = 30) -> Stats:
         Stats object with aggregated playback statistics
     """
     with get_radio_db_connection() as conn:
-        start_date = (datetime.now() - timedelta(days=days)).date()
+        start_date = (_utc_now() - timedelta(days=days)).date()
         cursor = conn.execute(
             """
             SELECT
@@ -312,7 +313,7 @@ def get_most_played_tracks(
         List of TrackPlayStats, ordered by play_count DESC
     """
     with get_radio_db_connection() as conn:
-        start_date = (datetime.now() - timedelta(days=days)).date()
+        start_date = (_utc_now() - timedelta(days=days)).date()
 
         query = """
             SELECT
@@ -368,4 +369,9 @@ def _parse_timestamp(ts) -> datetime:
     try:
         return datetime.fromisoformat(ts.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
-        return datetime.now()
+        return _utc_now()
+
+
+def _utc_now() -> datetime:
+    """Naive UTC now. radio_history stores naive UTC text (datetime('now'))."""
+    return datetime.now(UTC).replace(tzinfo=None)
