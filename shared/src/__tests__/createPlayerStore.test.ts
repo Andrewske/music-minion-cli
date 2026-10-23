@@ -524,6 +524,20 @@ describe('optimistic transport actions', () => {
     expect(store.getState().isPlaying).toBe(false);
   });
 
+  it('next() clears pendingLocalAdvance once the POST succeeds, with no broadcast', async () => {
+    // Backgrounded Android tabs lose the WebSocket: the reconcile broadcast
+    // never arrives, so a stuck flag would swallow every later `ended`.
+    const store = seedStore();
+    mockFetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({}) } as Response);
+
+    store.getState().advanceLocal();
+    await store.getState().next();
+
+    const s = store.getState();
+    expect(s.queueIndex).toBe(1);
+    expect(s.pendingLocalAdvance).toBe(false);
+  });
+
   it('next() rolls back the advance and clears pendingLocalAdvance on POST failure', async () => {
     const store = seedStore();
     mockFetch.mockRejectedValueOnce(new Error('skip down'));

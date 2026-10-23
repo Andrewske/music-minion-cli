@@ -29,6 +29,13 @@ const PRELOAD_DEBOUNCE_MS = 500;
 // Signed SoundCloud CDN URLs (behind the proxy 302) expire in ~15min; treat a
 // preloaded src older than this as stale and re-resolve instead of swapping.
 const PRELOAD_MAX_AGE_MS = 10 * 60_000;
+// Start the preloaded next track this many seconds BEFORE the current one
+// ends, letting the old tail overlap the new head. Android Chrome drops its
+// media foreground service the moment no element is playing, and a
+// backgrounded tab may not restart it (Android 17 then mutes the tab), so the
+// handoff must never leave a gap. timeupdate fires every ~250ms, so the real
+// overlap lands between this and ~0.25s.
+const HANDOFF_LEAD_S = 0.5;
 
 type PlayErrorHandler = (err: Error) => void;
 
@@ -288,8 +295,9 @@ export function usePlayer() {
 
     // Step 1: silence old active IMMEDIATELY (silence guarantee).
     // Order matters: pause before unbinding src, all before binding new src.
-    oldActive.pause();
-    clearTrackSource(oldActive);
+    // Release (not just clear) so its stale dataset.trackId can't trip the
+    // preload effect's guards.
+    releaseAudioElement(oldActive);
 
     const expectedTrackId = String(trackId);
 
@@ -355,6 +363,9 @@ export function usePlayer() {
 
   // Preload next track on the inactive element. Debounced 500ms to avoid
   // thrashing the backend SoundCloud resolver on rapid skips.
+  // activeAudio is a dep so the effect re-runs when a load-on-swap finishes:
+  // on a slow network canplay lands after the debounce, the swap-pending
+  // guard bails, and without the re-run nothing was ever preloaded again.
   useEffect(() => {
     if (!isAudioOwner) return;
     if (!store.currentTrack) return;
@@ -391,6 +402,7 @@ export function usePlayer() {
     store.queueIndex,
     store.currentContext?.type,
     isAudioOwner,
+    activeAudio,
   ]);
 
   // Scrobble tracking: fire onTrackPlayed at 50% or 30s (once per playthrough)
@@ -532,49 +544,73 @@ export function usePlayer() {
     };
   }, [activeAudio, handlePlayError]);
 
-  // Track ended: advance to next track (unless in comparison mode, which handles
-  // its own A/B switching via onFinish callback in ComparisonView).
+  // Track handoff: advance to the next track (unless in comparison mode, which
+  // handles its own A/B switching via onFinish callback in ComparisonView).
   // Gapless fast-path: when the inactive element has the next track preloaded
-  // and ready, swap locally FIRST (no audio gap), optimistically advance the
-  // store, then POST /next to reconcile. The broadcast is either an echo
-  // (same track/index — syncState suppresses or no-ops; the track-change
-  // effect sees lastLoadedTrackIdRef already updated and does not reload) or a
-  // divergence (server pruned a dead track), in which case syncState replaces
+  // and ready, start it HANDOFF_LEAD_S before the current track ends (no audio
+  // gap, see HANDOFF_LEAD_S), optimistically advance the store, then POST
+  // /next to reconcile. The broadcast is either an echo (same track/index —
+  // syncState suppresses or no-ops; the track-change effect sees
+  // lastLoadedTrackIdRef already updated and does not reload) or a divergence
+  // (server pruned a dead track), in which case syncState replaces
   // currentTrack and the track-change effect hard-corrects to server truth.
+  // `ended` stays as the fallback: early handoff when nothing usable was
+  // preloaded, or server-driven advance otherwise.
   useEffect(() => {
     if (!activeAudio) return;
+    let handedOff = false;
 
-    const onEnded = (): void => {
+    const mayAdvance = (): boolean => {
       const s = usePlayerStore.getState();
-      if (!s.isThisDeviceActive || !s.isAudioLeader) return;
-      if (s.currentContext?.type === 'comparison') return;
-      // A local advance is already awaiting its reconcile broadcast —
-      // suppress duplicate advance triggers until server truth arrives.
-      if (s.pendingLocalAdvance) return;
-
-      const nextTrack = s.queue[s.queueIndex + 1];
-      if (nextTrack && s.isPlaying && audioA && audioB) {
-        const activeKey = activeKeyRef.current;
-        const inactive = activeKey === 'A' ? audioB : audioA;
-        const opposite: AudioKey = activeKey === 'A' ? 'B' : 'A';
-        if (tryGaplessSwap(inactive, nextTrack.id, setActiveKey, opposite, handlePlayError)) {
-          // Mark the swap done BEFORE the store update so the track-change
-          // effect takes its same-track branch instead of reloading.
-          lastLoadedTrackIdRef.current = nextTrack.id;
-          retriedTrackIdRef.current = null;
-          // advanceLocal sets pendingLocalAdvance, which tells next() to skip
-          // its own optimistic advance — no double-skip from this pair.
-          s.advanceLocal();
-          s.next();
-          return;
-        }
-      }
-      // Queue exhausted or preload not usable — server-driven advance.
-      s.next();
+      if (!s.isThisDeviceActive || !s.isAudioLeader) return false;
+      if (s.currentContext?.type === 'comparison') return false;
+      // A local advance is already awaiting server confirmation —
+      // suppress duplicate advance triggers until it settles.
+      return !s.pendingLocalAdvance;
     };
 
+    const tryLocalAdvance = (): boolean => {
+      const s = usePlayerStore.getState();
+      const nextTrack = s.queue[s.queueIndex + 1];
+      if (!nextTrack || !s.isPlaying || !audioA || !audioB) return false;
+      const activeKey = activeKeyRef.current;
+      const inactive = activeKey === 'A' ? audioB : audioA;
+      const opposite: AudioKey = activeKey === 'A' ? 'B' : 'A';
+      if (!tryGaplessSwap(inactive, nextTrack.id, setActiveKey, opposite, handlePlayError)) {
+        return false;
+      }
+      // Mark the swap done BEFORE the store update so the track-change
+      // effect takes its same-track branch instead of reloading (and leaves
+      // the old element to play out its overlapping tail).
+      lastLoadedTrackIdRef.current = nextTrack.id;
+      retriedTrackIdRef.current = null;
+      // advanceLocal sets pendingLocalAdvance, which tells next() to skip
+      // its own optimistic advance — no double-skip from this pair.
+      s.advanceLocal();
+      void s.next();
+      return true;
+    };
+
+    const onTimeUpdate = (): void => {
+      if (handedOff || !mayAdvance()) return;
+      const remaining = activeAudio.duration - activeAudio.currentTime;
+      if (!Number.isFinite(remaining) || remaining > HANDOFF_LEAD_S) return;
+      handedOff = tryLocalAdvance();
+    };
+
+    const onEnded = (): void => {
+      if (handedOff || !mayAdvance()) return;
+      handedOff = true;
+      // Queue exhausted or preload not usable — server-driven advance.
+      if (!tryLocalAdvance()) void usePlayerStore.getState().next();
+    };
+
+    activeAudio.addEventListener('timeupdate', onTimeUpdate);
     activeAudio.addEventListener('ended', onEnded);
-    return () => activeAudio.removeEventListener('ended', onEnded);
+    return () => {
+      activeAudio.removeEventListener('timeupdate', onTimeUpdate);
+      activeAudio.removeEventListener('ended', onEnded);
+    };
   }, [activeAudio, audioA, audioB, activeKeyRef, setActiveKey, handlePlayError]);
 
   return store;

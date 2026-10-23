@@ -481,4 +481,122 @@ describe('usePlayer dual-element swap', () => {
     });
     expect(nextSpy).toHaveBeenCalledTimes(1);
   });
+
+  it('12. preload still binds when the load-on-swap canplay lands after the debounce', () => {
+    vi.useFakeTimers();
+    renderHook(() => usePlayer(), { wrapper });
+    const [a, b] = getAudioElements();
+
+    act(() => {
+      usePlayerStore.setState({
+        currentTrack: TRACK_A,
+        queue: [TRACK_A, TRACK_B, TRACK_C],
+        queueIndex: 0,
+        isPlaying: true,
+      });
+    });
+    // Slow network: the debounce fires while B is still loading TRACK_A, so
+    // the swap-pending guard bails...
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(a.dataset.trackId).not.toBe(String(TRACK_B.id));
+
+    // ...then canplay completes the swap. The preload must retry.
+    act(() => {
+      b.dispatchEvent(new Event('canplay'));
+    });
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+
+    expect(a.dataset.trackId).toBe(String(TRACK_B.id));
+  });
+
+  describe('track handoff', () => {
+    const nextSpy = vi.fn(() => Promise.resolve());
+
+    function setTiming(el: HTMLAudioElement, duration: number, currentTime: number): void {
+      Object.defineProperty(el, 'duration', { value: duration, configurable: true });
+      Object.defineProperty(el, 'currentTime', { value: currentTime, configurable: true, writable: true });
+    }
+
+    // TRACK_A playing on B (after a completed load-on-swap), TRACK_B
+    // preloaded and ready on A.
+    function setupPlayingWithPreload(): [HTMLAudioElement, HTMLAudioElement] {
+      nextSpy.mockClear();
+      renderHook(() => usePlayer(), { wrapper });
+      const [a, b] = getAudioElements();
+      act(() => {
+        usePlayerStore.setState({
+          currentTrack: TRACK_A,
+          queue: [TRACK_A, TRACK_B, TRACK_C],
+          queueIndex: 0,
+          isPlaying: true,
+          pendingLocalAdvance: false,
+          next: nextSpy,
+        });
+      });
+      act(() => {
+        b.dispatchEvent(new Event('canplay'));
+      });
+      a.dataset.trackId = String(TRACK_B.id);
+      a.dataset.srcBoundAt = String(Date.now());
+      setReadyState(a, 4);
+      playMock.mockClear();
+      pauseMock.mockClear();
+      return [a, b];
+    }
+
+    it('13. starts the preloaded next track just before the end, leaving the old tail playing', () => {
+      const [, b] = setupPlayingWithPreload();
+      setTiming(b, 180, 179.7);
+
+      act(() => {
+        b.dispatchEvent(new Event('timeupdate'));
+      });
+
+      // (jsdom keeps paused=true under the play mock, so the same-track
+      // branch may call play() again — harmless; a real element is playing.)
+      expect(playMock).toHaveBeenCalled();
+      expect(pauseMock).not.toHaveBeenCalled();
+      expect(usePlayerStore.getState().currentTrack?.id).toBe(TRACK_B.id);
+      expect(nextSpy).toHaveBeenCalledTimes(1);
+
+      // The old element's own `ended` must not advance a second time.
+      act(() => {
+        b.dispatchEvent(new Event('ended'));
+      });
+      expect(nextSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('14. no early handoff while the current track has time left', () => {
+      const [, b] = setupPlayingWithPreload();
+      setTiming(b, 180, 120);
+
+      act(() => {
+        b.dispatchEvent(new Event('timeupdate'));
+      });
+
+      expect(playMock).not.toHaveBeenCalled();
+      expect(nextSpy).not.toHaveBeenCalled();
+    });
+
+    it('15. without a usable preload, waits for ended and advances via the server', () => {
+      const [a, b] = setupPlayingWithPreload();
+      delete a.dataset.trackId;
+      setTiming(b, 180, 179.7);
+
+      act(() => {
+        b.dispatchEvent(new Event('timeupdate'));
+      });
+      expect(nextSpy).not.toHaveBeenCalled();
+
+      act(() => {
+        b.dispatchEvent(new Event('ended'));
+      });
+      expect(nextSpy).toHaveBeenCalledTimes(1);
+      expect(usePlayerStore.getState().currentTrack?.id).toBe(TRACK_A.id);
+    });
+  });
 });
