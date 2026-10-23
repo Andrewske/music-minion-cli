@@ -7,6 +7,7 @@ import {
   getCardPlayState,
   playbackFraction,
   selectComparablePlaylists,
+  shouldAutoPlayNextPair,
 } from './comparisonState';
 
 const playlist = (overrides: Partial<Playlist>): Playlist => ({
@@ -88,5 +89,26 @@ describe('formatDuration', () => {
   it('formats m:ss', () => {
     expect(formatDuration(65.4)).toBe('1:05');
     expect(formatDuration(undefined)).toBe('--:--');
+  });
+});
+
+describe('shouldAutoPlayNextPair', () => {
+  const prev: ComparisonPair = { track_a: track(1), track_b: track(2) };
+  const next: ComparisonPair = { track_a: track(3), track_b: track(4) };
+
+  it('auto-plays when a track from the old pair is playing', () => {
+    expect(shouldAutoPlayNextPair(prev, next, 1, true)).toBe(true);
+    expect(shouldAutoPlayNextPair(prev, next, 2, true)).toBe(true);
+  });
+
+  it('does nothing when the comparison was not playing', () => {
+    expect(shouldAutoPlayNextPair(prev, next, 1, false)).toBe(false);
+    expect(shouldAutoPlayNextPair(prev, next, null, true)).toBe(false);
+    expect(shouldAutoPlayNextPair(prev, next, 99, true)).toBe(false);
+  });
+
+  it('leaves a track alone when it carried over into the new pair', () => {
+    const carried: ComparisonPair = { track_a: track(5), track_b: track(1) };
+    expect(shouldAutoPlayNextPair(prev, carried, 1, true)).toBe(false);
   });
 });

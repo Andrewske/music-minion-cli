@@ -52,3 +52,22 @@ export function formatDuration(seconds: number | undefined): string {
   const s = Math.floor(seconds % 60);
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
+
+const pairHas = (pair: ComparisonPair, trackId: number): boolean =>
+  pair.track_a.id === trackId || pair.track_b.id === trackId;
+
+/**
+ * After a vote loads the next pair: auto-play the new track A only when the
+ * player is actively playing a track from the previous pair. Paused, idle,
+ * unrelated playback, or a track that carried over into the new pair are
+ * left alone.
+ */
+export function shouldAutoPlayNextPair(
+  prevPair: ComparisonPair,
+  nextPair: ComparisonPair,
+  currentTrackId: number | null | undefined,
+  isPlaying: boolean,
+): boolean {
+  if (!isPlaying || currentTrackId == null) return false;
+  return pairHas(prevPair, currentTrackId) && !pairHas(nextPair, currentTrackId);
+}

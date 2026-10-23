@@ -1,7 +1,7 @@
-# Comparison — pick a playlist → play a card → vote → exit back to the picker.
-# NOTE: this casts ONE real vote against the live backend (changes ELO for one
-# pair in the first manual playlist). The issue (#58) asks for the vote step.
-# If the playlist is already "All caught up!", the session steps are skipped.
+# Comparison — pick a playlist → play a card → vote buttons ready → exit.
+# Non-destructive: E2E hits the live pi DB, so we never cast a vote (that
+# would mutate ratings). We only assert the vote buttons are on screen and
+# enabled. If the playlist is already "All caught up!", session steps skip.
 appId: com.musicminion.app
 ---
 - launchApp
@@ -38,13 +38,15 @@ appId: com.musicminion.app
           timeout: 30000
       - assertVisible:
           id: "player-track-title"
-      # Vote via the button; session progress reflects this session.
-      - tapOn:
+      # Vote buttons visible and enabled. Do NOT tap (live ratings).
+      - assertVisible:
           id: "vote-a"
-      - extendedWaitUntil:
-          visible:
-            text: "1 vote this session"
-          timeout: 30000
+          enabled: true
+      - assertVisible:
+          id: "vote-b"
+          enabled: true
+      - assertVisible:
+          text: "No votes yet"
       # Exit from the header returns to the picker.
       - tapOn:
           id: "comparison-exit"
