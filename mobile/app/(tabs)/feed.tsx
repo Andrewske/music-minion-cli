@@ -200,7 +200,7 @@ export default function FeedScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <View className="pb-3 pt-12">
+      <View className="pb-3 pt-4">
         <Text className="mb-3 px-4 text-2xl font-bold text-text-primary">Feed</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2 px-4">
           {(['all', 'releases', 'reposts'] as const).map((value) => (

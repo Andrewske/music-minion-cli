@@ -95,7 +95,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1A1A1A',
     borderRightWidth: 1,
     borderRightColor: '#333',
-    paddingTop: 48,
+    paddingTop: 16,
   },
   titleArea: {
     paddingHorizontal: 20,

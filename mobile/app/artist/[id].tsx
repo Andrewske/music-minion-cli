@@ -37,6 +37,7 @@ const toTrack = (t: ArtistLibraryTrack): Track => ({
   duration: t.duration ?? undefined,
 });
 
+/** Saved = liked or in at least one playlist. Header count and section use this. */
 const isSaved = (t: ArtistLibraryTrack): boolean => t.is_liked || t.playlists.length > 0;
 
 export default function ArtistScreen() {
@@ -60,7 +61,7 @@ export default function ArtistScreen() {
   const saved = tracks.filter(isSaved);
   const rest = tracks.filter((t) => !isSaved(t));
   const sections = [
-    ...(saved.length > 0 ? [{ title: `Liked & in playlists · ${saved.length}`, data: saved }] : []),
+    ...(saved.length > 0 ? [{ title: `Saved (liked or in playlists) · ${saved.length}`, data: saved }] : []),
     ...(rest.length > 0 ? [{ title: `Library · ${rest.length}`, data: rest }] : []),
   ];
 
@@ -81,7 +82,7 @@ export default function ArtistScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <View className="px-4 pt-12 pb-3">
+      <View className="px-4 pt-4 pb-3">
         <Pressable onPress={() => router.back()} hitSlop={8} testID="artist-back">
           <Text className="text-text-secondary text-sm">← Back</Text>
         </Pressable>
@@ -121,7 +122,7 @@ export default function ArtistScreen() {
                 <Text className="text-text-secondary text-xs mt-1" numberOfLines={2}>
                   {artist.follower_count != null &&
                     `${formatFollowers(artist.follower_count)} followers  ·  `}
-                  {artist.library_track_count} in library  ·  {artist.sc_liked_count} liked
+                  {artist.library_track_count} in library  ·  {saved.length} saved
                 </Text>
               </View>
             </View>

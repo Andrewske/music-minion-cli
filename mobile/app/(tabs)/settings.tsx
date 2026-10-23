@@ -91,7 +91,7 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView className="flex-1 bg-background" contentContainerStyle={{ paddingBottom: 80 }}>
-      <View className="px-4 pt-12">
+      <View className="px-4 pt-4">
         <Text className="text-text-primary text-2xl font-bold mb-6">
           Settings
         </Text>

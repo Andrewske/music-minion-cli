@@ -78,7 +78,7 @@ export default function HomeScreen() {
   return (
     <View className="flex-1 bg-background">
       {/* Search bar */}
-      <View className="px-4 pt-12 pb-3">
+      <View className="px-4 pt-4 pb-3">
         <View className="flex-row items-center bg-surface rounded-lg border border-neutral-700">
           <TextInput
             testID="home-search-input"

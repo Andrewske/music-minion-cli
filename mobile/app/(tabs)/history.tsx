@@ -1,31 +1,14 @@
 /**
  * History — playback history with stats.
  */
+import type { ReactElement } from 'react';
 import { View, Text, FlatList, ActivityIndicator } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { getHistory, getStats } from '@music-minion/shared';
 import type { HistoryEntry } from '@music-minion/shared';
+import { describeListen, formatRelativeTime } from '../../features/history/historyFormat';
 
-const formatTime = (iso: string): string => {
-  const d = new Date(iso);
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  const diffDays = Math.floor(diffHours / 24);
-  return `${diffDays}d ago`;
-};
-
-const formatDuration = (ms: number): string => {
-  const s = Math.floor(ms / 1000);
-  const m = Math.floor(s / 60);
-  const sec = s % 60;
-  return `${m}:${sec.toString().padStart(2, '0')}`;
-};
-
-export default function HistoryScreen() {
+export default function HistoryScreen(): ReactElement {
   const { data: history, isLoading } = useQuery({
     queryKey: ['history'],
     queryFn: () => getHistory({ limit: 100 }),
@@ -41,7 +24,7 @@ export default function HistoryScreen() {
   return (
     <View className="flex-1 bg-background">
       {/* Header + stats */}
-      <View className="px-4 pt-12 pb-3">
+      <View className="px-4 pt-4 pb-3">
         <Text className="text-text-primary text-2xl font-bold mb-3">
           History
         </Text>
@@ -80,7 +63,7 @@ export default function HistoryScreen() {
           keyExtractor={(item) => item.id.toString()}
           initialNumToRender={20}
           maxToRenderPerBatch={10}
-          renderItem={({ item }: { item: HistoryEntry }) => (
+          renderItem={({ item, index }: { item: HistoryEntry; index: number }) => (
             <View className="px-4 py-3 border-b border-neutral-800 flex-row items-center">
               <View className="flex-1 mr-3">
                 <Text className="text-text-primary text-sm" numberOfLines={1}>
@@ -92,10 +75,10 @@ export default function HistoryScreen() {
               </View>
               <View className="items-end">
                 <Text className="text-text-secondary text-xs font-mono">
-                  {formatDuration(item.duration_ms)}
+                  {describeListen(item, index === 0)}
                 </Text>
                 <Text className="text-neutral-600 text-xs">
-                  {formatTime(item.started_at)}
+                  {formatRelativeTime(item.started_at, Date.now())}
                 </Text>
               </View>
             </View>

@@ -158,7 +158,7 @@ export default function ComparisonScreen() {
     const localPlaylists = playlists?.filter((p: Playlist) => p.track_count >= 2) ?? [];
 
     return (
-      <View className="flex-1 bg-background pt-12">
+      <View className="flex-1 bg-background pt-4">
         <View className="px-4 mb-6">
           <Text className="text-text-primary text-2xl font-bold mb-1">
             Compare
@@ -249,7 +249,7 @@ export default function ComparisonScreen() {
   return (
     <ScrollView
       className="flex-1 bg-background"
-      contentContainerStyle={{ paddingTop: 48, paddingBottom: 120 }}
+      contentContainerStyle={{ paddingTop: 16, paddingBottom: 120 }}
       showsVerticalScrollIndicator={false}
     >
       {/* Progress */}
