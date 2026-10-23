@@ -41,7 +41,27 @@ class PlayRequest(BaseModel):
 
     track_id: int
     context: PlayContext
-    target_device_id: Optional[str] = None
+    target_device_id: str | None = None
+    # The device sending the request. Trusted even when its WebSocket hasn't
+    # registered yet (a phone resuming from background taps play before its
+    # socket reconnects).
+    source_device_id: str | None = None
+
+
+def resolve_active_device(
+    target: str | None, source: str | None, connected: dict
+) -> str | None:
+    """Pick the device that should own playback.
+
+    A target is honored when it's connected or is the requester itself; a
+    stale target (ghost device) falls back to the requester, then to the
+    first connected device. Never routes to an id nobody can vouch for.
+    """
+    if target and (target in connected or target == source):
+        return target
+    if source:
+        return source
+    return next(iter(connected), None)
 
 
 class SeekRequest(BaseModel):
@@ -370,14 +390,9 @@ async def play(request: PlayRequest, db=Depends(get_db)):
             queue_index = i
             break
 
-    # Set active device (default to first connected device if not specified).
-    # A stale target (device no longer connected) must not win — otherwise
-    # playback routes to a ghost and no device ever produces audio.
-    active_device_id = request.target_device_id
-    if active_device_id and active_device_id not in sync_manager.devices:
-        active_device_id = None
-    if not active_device_id and sync_manager.devices:
-        active_device_id = next(iter(sync_manager.devices.keys()))
+    active_device_id = resolve_active_device(
+        request.target_device_id, request.source_device_id, sync_manager.devices
+    )
 
     async with _player_lock:
         # 4. End previous history entry if exists
@@ -468,6 +483,7 @@ class ResumeRequest(BaseModel):
     """Resume playback request."""
 
     target_device_id: str | None = None
+    source_device_id: str | None = None
 
 
 @router.post("/resume")
@@ -484,15 +500,10 @@ async def resume(request: ResumeRequest | None = None):
         if not state.current_track:
             raise HTTPException(400, "No track to resume")
 
-        # Use specified device or keep current, defaulting to first connected.
-        # Stale ids (not in the connected registry) are discarded — see play().
-        active_device_id = state.active_device_id
-        if request and request.target_device_id:
-            active_device_id = request.target_device_id
-        if active_device_id and active_device_id not in sync_manager.devices:
-            active_device_id = None
-        if not active_device_id and sync_manager.devices:
-            active_device_id = next(iter(sync_manager.devices.keys()))
+        # Use specified device or keep current — see resolve_active_device().
+        target = (request and request.target_device_id) or state.active_device_id
+        source = request.source_device_id if request else None
+        active_device_id = resolve_active_device(target, source, sync_manager.devices)
 
         await update_state(
             {

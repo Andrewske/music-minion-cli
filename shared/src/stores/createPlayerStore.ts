@@ -379,6 +379,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
             trackId: track.id,
             context: { ...context, shuffle: context.shuffle ?? shuffleEnabled },
             targetDeviceId: activeIsConnected ? activeDeviceId : thisDeviceId,
+            sourceDeviceId: thisDeviceId,
           }),
         });
 
@@ -442,6 +443,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             target_device_id: activeIsConnected ? activeDeviceId : thisDeviceId,
+            source_device_id: thisDeviceId,
           }),
         });
         if (!response.ok) throw new Error('Failed to resume');
