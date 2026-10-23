@@ -98,3 +98,32 @@ def test_builder_start_session_request_schema():
 def test_builder_start_session_request_requires_playlist_id():
     with pytest.raises(ValidationError):
         BuilderStartSessionRequest()
+
+
+def _track_info_with_bpm(bpm: float | None) -> TrackInfo:
+    return TrackInfo(
+        id=3,
+        title="Fractional BPM",
+        bpm=bpm,
+        rating=1500.0,
+        comparison_count=0,
+        wins=0,
+        losses=0,
+        has_waveform=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [(130.01, 130), (129.99, 130), (77.4, 77), (128, 128), (None, None)],
+)
+def test_track_info_rounds_fractional_bpm(
+    raw: float | None, expected: int | None
+) -> None:
+    """Serato writes REAL bpms like 130.01; the API rounds them for display."""
+    track = _track_info_with_bpm(raw)
+
+    assert track.bpm == expected
+    assert track.model_dump()["bpm"] == expected
+    expected_json = "null" if expected is None else str(expected)
+    assert f'"bpm":{expected_json}' in track.model_dump_json()
