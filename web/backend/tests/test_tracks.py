@@ -169,3 +169,53 @@ class TestScrobbleTrack:
         )
         assert response.status_code == 200
         assert response.json() == {"ok": True}
+
+
+def _seed_tracks(rows: list[tuple[str, str | None]]) -> list[int]:
+    """Insert (title, artist) rows into the isolated test DB and return ids."""
+    with get_db_connection() as conn:
+        ids = [
+            conn.execute(
+                "INSERT INTO tracks (title, artist, source) VALUES (?, ?, 'local')",
+                row,
+            ).lastrowid
+            for row in rows
+        ]
+        conn.commit()
+    return ids
+
+
+class TestLookupTracks:
+    """Test batch track-name lookup endpoint."""
+
+    def test_lookup_returns_names_in_request_order(self):
+        first, second = _seed_tracks([("Alpha", "Zed"), ("Beta", None)])
+        response = client.post("/api/tracks/lookup", json={"ids": [second, first]})
+        assert response.status_code == 200
+        assert response.json() == [
+            {"id": second, "title": "Beta", "artist": None},
+            {"id": first, "title": "Alpha", "artist": "Zed"},
+        ]
+
+    def test_lookup_omits_unknown_and_dedupes(self):
+        (track_id,) = _seed_tracks([("Gamma", "Artist")])
+        response = client.post(
+            "/api/tracks/lookup", json={"ids": [track_id, 987654321, track_id]}
+        )
+        assert response.status_code == 200
+        assert [t["id"] for t in response.json()] == [track_id]
+
+    def test_lookup_handles_more_ids_than_one_chunk(self):
+        ids = _seed_tracks([(f"T{i}", "A") for i in range(620)])
+        response = client.post("/api/tracks/lookup", json={"ids": ids})
+        assert response.status_code == 200
+        assert [t["id"] for t in response.json()] == ids
+
+    def test_lookup_empty_list(self):
+        response = client.post("/api/tracks/lookup", json={"ids": []})
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_lookup_rejects_oversized_request(self):
+        response = client.post("/api/tracks/lookup", json={"ids": list(range(5001))})
+        assert response.status_code == 422

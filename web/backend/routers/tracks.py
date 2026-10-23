@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from loguru import logger
 import mimetypes
+import sqlite3
 import json
 import time
 from pathlib import Path
@@ -137,6 +138,50 @@ async def search_tracks(q: str, limit: int = 20, db=Depends(get_db)) -> list[dic
         (query, query, limit),
     )
     return [dict(row) for row in cursor.fetchall()]
+
+
+TRACK_LOOKUP_MAX_IDS: int = 5000
+_LOOKUP_CHUNK_SIZE: int = 500  # stay well under SQLite's bound-variable limit
+
+
+class TrackLookupRequest(BaseModel):
+    ids: list[int]
+
+
+class TrackLookupItem(BaseModel):
+    id: int
+    title: str | None
+    artist: str | None
+
+
+def lookup_track_names(db_conn: sqlite3.Connection, track_ids: list[int]) -> list[dict]:
+    """Return {id, title, artist} for each existing track id, in request order."""
+    unique_ids = list(dict.fromkeys(track_ids))
+    found: dict[int, dict] = {}
+    for start in range(0, len(unique_ids), _LOOKUP_CHUNK_SIZE):
+        chunk = unique_ids[start : start + _LOOKUP_CHUNK_SIZE]
+        placeholders = ",".join("?" * len(chunk))
+        cursor = db_conn.execute(
+            f"SELECT id, title, artist FROM tracks WHERE id IN ({placeholders})",
+            chunk,
+        )
+        found.update({row["id"]: dict(row) for row in cursor.fetchall()})
+    return [found[tid] for tid in unique_ids if tid in found]
+
+
+@router.post("/tracks/lookup", response_model=list[TrackLookupItem])
+async def lookup_tracks(body: TrackLookupRequest, db=Depends(get_db)) -> list[dict]:
+    """Resolve display names for a batch of track ids.
+
+    Unknown ids are omitted from the response. Used by the mobile organizer to
+    label unassigned and bucket tracks without paging the whole playlist.
+    """
+    if len(body.ids) > TRACK_LOOKUP_MAX_IDS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Too many ids: {len(body.ids)} (max {TRACK_LOOKUP_MAX_IDS})",
+        )
+    return lookup_track_names(db, body.ids)
 
 
 # SC CDN URLs expire after ~15 min; cache well under that so we never

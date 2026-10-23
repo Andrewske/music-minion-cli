@@ -23,8 +23,9 @@ export {
 } from './api/playlists';
 export {
   getStreamUrl, getWaveformData, checkStreamAvailable, archiveTrack,
-  refreshWaveform, purgeSoundcloudWaveforms, getFolders,
+  refreshWaveform, purgeSoundcloudWaveforms, getFolders, lookupTracks, formatTrackLabel,
 } from './api/tracks';
+export type { TrackName } from './api/tracks';
 export { fetchPlayerQueue } from './api/player';
 export type { QueuePage } from './api/player';
 export { getHistory, getStats, getTopTracks } from './api/history';
