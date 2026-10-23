@@ -193,7 +193,6 @@ export function usePlaylistOrganizer({ playlistId, enabled = true }: UsePlaylist
     finalizeSession: useCallback(() => finalizeMutation.mutateAsync(), [finalizeMutation]),
     discardSession: useCallback(() => discardMutation.mutateAsync(), [discardMutation]),
 
-    isAssigning: assignTrackMutation.isPending,
     isApplying: applyMutation.isPending,
     isFinalizing: finalizeMutation.isPending,
   };

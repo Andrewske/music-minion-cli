@@ -1,4 +1,5 @@
-# Organizer — start a session, create a bucket, assign one track.
+# Organizer — open a session, create a bucket, assign a track via the bucket
+# picker sheet, undo it from the toast, then go back to the picker.
 appId: com.musicminion.app
 ---
 - launchApp
@@ -8,9 +9,12 @@ appId: com.musicminion.app
     id: "organizer-playlist-option"
 - tapOn:
     id: "organizer-playlist-option"
-# Session screen: create a bucket.
+# Session screen: header names the playlist.
 - assertVisible:
-    id: "bucket-name-input"
+    id: "organizer-session-title"
+- assertVisible:
+    id: "organizer-apply-btn"
+# Create a bucket.
 - tapOn:
     id: "bucket-name-input"
 - inputText: "Test Bucket"
@@ -18,6 +22,26 @@ appId: com.musicminion.app
     id: "create-bucket-btn"
 - assertVisible:
     text: "Test Bucket"
-# Assign the first unassigned track into the bucket.
+# Tapping a track opens the picker; nothing is assigned yet.
 - tapOn:
     id: "track-row"
+- assertVisible:
+    id: "bucket-picker-sheet"
+- tapOn:
+    id: "bucket-option-0"
+- assertNotVisible:
+    id: "bucket-picker-sheet"
+# Undo from the toast.
+- assertVisible:
+    text: "Added to Test Bucket"
+- tapOn:
+    text: "Tap to undo"
+- assertNotVisible:
+    text: "Added to Test Bucket"
+# One tap back lands on the picker, with a Resume entry.
+- tapOn:
+    id: "organizer-back-btn"
+- assertVisible:
+    id: "organizer-resume-btn"
+- assertVisible:
+    id: "organizer-playlist-option"

@@ -1,6 +1,7 @@
 /**
  * Playlist Organizer — playlist picker.
- * Select a playlist to start/resume a bucket session.
+ * Select a playlist to start/resume a bucket session. The last opened session
+ * gets a "Resume" shortcut at the top.
  */
 import { View, Text, Pressable, FlatList, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
@@ -8,17 +9,36 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { getPlaylistsByLibrary, createOrResumeSession } from '@music-minion/shared';
 import type { Playlist } from '@music-minion/shared';
 import Toast from 'react-native-toast-message';
+import { useOrganizerStore } from '../../../stores/organizerStore';
+import type { ActiveOrganizerSession } from '../../../stores/organizerStore';
 
-export default function OrganizerPickerScreen() {
+/** Open a session. The [sessionId] screen is single-instance (see _layout), so this never stacks. */
+function openSession(active: ActiveOrganizerSession): void {
+  router.push({
+    pathname: '/(tabs)/organizer/[sessionId]',
+    params: {
+      sessionId: active.sessionId,
+      playlistId: String(active.playlistId),
+      playlistName: active.playlistName,
+    },
+  });
+}
+
+export default function OrganizerPickerScreen(): React.JSX.Element {
   const { data: playlists, isLoading, error } = useQuery({
     queryKey: ['playlists', 'local'],
     queryFn: () => getPlaylistsByLibrary('local'),
   });
 
+  const activeSession = useOrganizerStore((s) => s.activeSession);
+  const setActiveSession = useOrganizerStore((s) => s.setActiveSession);
+
   const startSession = useMutation({
-    mutationFn: (playlistId: number) => createOrResumeSession(playlistId),
-    onSuccess: (session, playlistId) => {
-      router.push(`/(tabs)/organizer/${session.id}?playlistId=${playlistId}`);
+    mutationFn: (playlist: Playlist) => createOrResumeSession(playlist.id),
+    onSuccess: (session, playlist) => {
+      const active = { sessionId: session.id, playlistId: playlist.id, playlistName: playlist.name };
+      setActiveSession(active);
+      openSession(active);
     },
     onError: (err) => {
       Toast.show({
@@ -59,6 +79,22 @@ export default function OrganizerPickerScreen() {
         </Text>
       </View>
 
+      {activeSession && (
+        <Pressable
+          testID="organizer-resume-btn"
+          className="mx-4 mb-4 bg-primary rounded-lg px-4 py-4 flex-row items-center active:opacity-80"
+          onPress={() => openSession(activeSession)}
+        >
+          <View className="flex-1 mr-4">
+            <Text className="text-white text-xs uppercase opacity-80">Resume</Text>
+            <Text className="text-white text-base font-bold" numberOfLines={1}>
+              {activeSession.playlistName}
+            </Text>
+          </View>
+          <Text className="text-white text-lg">→</Text>
+        </Pressable>
+      )}
+
       <FlatList
         data={playlists?.filter((p: Playlist) => p.track_count > 0) ?? []}
         keyExtractor={(item) => item.id.toString()}
@@ -67,7 +103,7 @@ export default function OrganizerPickerScreen() {
           <Pressable
             testID={index === 0 ? 'organizer-playlist-option' : undefined}
             className="bg-surface rounded-lg px-4 py-4 mb-2 flex-row justify-between items-center active:opacity-70"
-            onPress={() => startSession.mutate(item.id)}
+            onPress={() => startSession.mutate(item)}
             disabled={startSession.isPending}
           >
             <View className="flex-1 mr-4">
@@ -78,7 +114,7 @@ export default function OrganizerPickerScreen() {
                 {item.type === 'smart' ? 'Smart' : 'Manual'} · {item.track_count} tracks
               </Text>
             </View>
-            {startSession.isPending && startSession.variables === item.id && (
+            {startSession.isPending && startSession.variables?.id === item.id && (
               <ActivityIndicator size="small" color="#7C4DFF" />
             )}
           </Pressable>

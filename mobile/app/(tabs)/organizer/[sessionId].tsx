@@ -1,64 +1,84 @@
 /**
  * Bucket session view — manage buckets and assign tracks.
+ *
+ * Tapping an unassigned track opens a bucket picker; nothing is assigned until
+ * a bucket is chosen, and every assignment shows a toast with Undo (which calls
+ * the regular unassign API, so linked playlists stay in sync).
  */
 import { useState, useCallback, useMemo, useRef } from 'react';
-import {
-  View,
-  Text,
-  Pressable,
-  TextInput,
-  Alert,
-  ActivityIndicator,
-  ScrollView,
-} from 'react-native';
+import { View, Text, Pressable, TextInput, Alert, ActivityIndicator, FlatList } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import Toast from 'react-native-toast-message';
-import { getSession, getPlaylistTracks } from '@music-minion/shared';
+import { getSession, getPlaylistsByLibrary, lookupTracks } from '@music-minion/shared';
+import type { Bucket, Playlist } from '@music-minion/shared';
 import { usePlaylistOrganizer } from '../../../hooks/usePlaylistOrganizer';
 import { BucketCard } from '../../../components/organizer/BucketCard';
+import { BucketPickerSheet } from '../../../components/organizer/BucketPickerSheet';
+import { SessionHeader } from '../../../components/organizer/SessionHeader';
+import { SessionFooter } from '../../../components/organizer/SessionFooter';
+import { useOrganizerStore } from '../../../stores/organizerStore';
+import {
+  buildTrackLabels,
+  sessionCounts,
+  sessionTrackIds,
+  trackLabel,
+} from '../../../features/organizer/organizerState';
 
-export default function SessionScreen() {
-  const { sessionId, playlistId: playlistIdParam } = useLocalSearchParams<{
-    sessionId: string;
-    playlistId?: string;
-  }>();
+const PICKER_HREF = '/(tabs)/organizer';
+
+/** Leave the session for the picker without stacking screens. */
+function backToPicker(): void {
+  router.dismissTo(PICKER_HREF);
+}
+
+function usePlaylistName(playlistId: number, paramName: string | undefined): string {
+  const { data: playlists } = useQuery({
+    queryKey: ['playlists', 'local'],
+    queryFn: () => getPlaylistsByLibrary('local'),
+    enabled: !paramName && !!playlistId,
+  });
+  if (paramName) return paramName;
+  return playlists?.find((p: Playlist) => p.id === playlistId)?.name ?? 'Playlist';
+}
+
+export default function SessionScreen(): React.JSX.Element {
+  const params = useLocalSearchParams<{ sessionId: string; playlistId?: string; playlistName?: string }>();
+  const { sessionId } = params;
+  const paramPlaylistId = params.playlistId ? Number(params.playlistId) : 0;
   const [newBucketName, setNewBucketName] = useState('');
+  const [pickingTrackId, setPickingTrackId] = useState<number | null>(null);
+  const clearActiveSession = useOrganizerStore((s) => s.clearActiveSession);
 
-  // playlistId may arrive via navigation param (preferred, avoids a fetch).
-  // Fall back to fetching the session by id when it is not passed through.
-  const paramPlaylistId = playlistIdParam ? Number(playlistIdParam) : 0;
-
+  // playlistId normally arrives as a param; fall back to fetching the session.
   const { data: sessionData, isLoading: sessionLoading } = useQuery({
     queryKey: ['organizer', 'session-raw', sessionId],
     queryFn: () => getSession(sessionId),
     enabled: !!sessionId && !paramPlaylistId,
   });
-
   const playlistId = paramPlaylistId || (sessionData?.playlist_id ?? 0);
+  const playlistName = usePlaylistName(playlistId, params.playlistName);
+  const organizer = usePlaylistOrganizer({ playlistId, enabled: !!playlistId });
 
-  const organizer = usePlaylistOrganizer({
-    playlistId,
-    enabled: !!playlistId,
+  // Resolve names for every track in the session (unassigned + bucket tracks).
+  // The id union doesn't change on assign/unassign, so this rarely refetches.
+  const allTrackIds = useMemo(() => sessionTrackIds(organizer.session), [organizer.session]);
+  const { data: trackNames, isSuccess: namesLoaded } = useQuery({
+    queryKey: ['track-names', allTrackIds],
+    queryFn: () => lookupTracks(allTrackIds),
+    enabled: allTrackIds.length > 0,
+    placeholderData: keepPreviousData,
+    staleTime: 10 * 60 * 1000,
   });
+  const labels = useMemo(() => buildTrackLabels(trackNames), [trackNames]);
+  const getTrackLabel = useCallback(
+    (trackId: number): string => trackLabel(labels, trackId, namesLoaded),
+    [labels, namesLoaded]
+  );
+  const counts = sessionCounts(organizer.session);
 
-  // Fetch track titles for display
-  const { data: trackData } = useQuery({
-    queryKey: ['playlist-tracks', playlistId],
-    queryFn: () => getPlaylistTracks(playlistId),
-    enabled: !!playlistId,
-  });
-
-  const trackTitles = useMemo(() => {
-    const map = new Map<number, string>();
-    trackData?.tracks?.forEach((t) => {
-      map.set(t.id, `${t.artist ?? 'Unknown'} — ${t.title}`);
-    });
-    return map;
-  }, [trackData]);
-
-  const handleCreateBucket = useCallback(async () => {
+  const handleCreateBucket = useCallback(async (): Promise<void> => {
     const name = newBucketName.trim();
     if (!name) return;
     try {
@@ -70,7 +90,7 @@ export default function SessionScreen() {
     }
   }, [newBucketName, organizer]);
 
-  const handleApply = useCallback(async () => {
+  const handleApply = useCallback(async (): Promise<void> => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       await organizer.applyOrder();
@@ -80,60 +100,87 @@ export default function SessionScreen() {
     }
   }, [organizer]);
 
-  const handleDiscard = useCallback(() => {
-    Alert.alert(
-      'Discard Session',
-      'Discard all bucket assignments? This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Discard',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await organizer.discardSession();
-              router.back();
-            } catch {
-              Toast.show({ type: 'error', text1: 'Failed to discard' });
-            }
-          },
+  const handleDiscard = useCallback((): void => {
+    Alert.alert('Discard Session', 'Discard all bucket assignments? This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Discard',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await organizer.discardSession();
+            clearActiveSession();
+            backToPicker();
+          } catch {
+            Toast.show({ type: 'error', text1: 'Failed to discard' });
+          }
         },
-      ]
-    );
-  }, [organizer]);
+      },
+    ]);
+  }, [organizer, clearActiveSession]);
 
-  const handleFinalize = useCallback(async () => {
+  const handleFinalize = useCallback(async (): Promise<void> => {
     try {
       await organizer.finalizeSession();
+      clearActiveSession();
       Toast.show({ type: 'success', text1: 'Session finalized' });
-      router.back();
+      backToPicker();
     } catch {
       Toast.show({ type: 'error', text1: 'Failed to finalize' });
     }
-  }, [organizer]);
+  }, [organizer, clearActiveSession]);
 
-  // Synchronous in-flight guard. `organizer.isAssigning` is render-derived
-  // (mutation.isPending) so two taps in the same tick both read it as false
-  // and double-fire. A ref flips synchronously, before the await boundary.
+  const handleTrackPress = useCallback(
+    (trackId: number): void => {
+      if (organizer.buckets.length === 0) {
+        Toast.show({ type: 'info', text1: 'Create a bucket first' });
+        return;
+      }
+      setPickingTrackId(trackId);
+    },
+    [organizer.buckets.length]
+  );
+
+  // Synchronous in-flight guard: mutation.isPending is render-derived, so two
+  // taps in the same tick would both read it as false and double-fire.
   const assigningRef = useRef(false);
 
-  // Assign track to first available bucket on tap.
-  const handleAssignTrack = useCallback(async (trackId: number): Promise<void> => {
-    if (assigningRef.current) return;
-    if (organizer.buckets.length === 0) {
-      Toast.show({ type: 'info', text1: 'Create a bucket first' });
-      return;
-    }
-    assigningRef.current = true;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    try {
-      await organizer.assignTrack(organizer.buckets[0].id, trackId);
-    } catch {
-      Toast.show({ type: 'error', text1: 'Failed to assign' });
-    } finally {
-      assigningRef.current = false;
-    }
-  }, [organizer]);
+  const handleUndo = useCallback(
+    async (bucketId: string, trackId: number): Promise<void> => {
+      Toast.hide();
+      try {
+        await organizer.unassignTrack(bucketId, trackId);
+      } catch {
+        Toast.show({ type: 'error', text1: 'Undo failed' });
+      }
+    },
+    [organizer]
+  );
+
+  const handlePickBucket = useCallback(
+    async (bucket: Bucket): Promise<void> => {
+      const trackId = pickingTrackId;
+      setPickingTrackId(null);
+      if (trackId === null || assigningRef.current) return;
+      assigningRef.current = true;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      try {
+        await organizer.assignTrack(bucket.id, trackId);
+        Toast.show({
+          type: 'success',
+          text1: `Added to ${bucket.name}`,
+          text2: 'Tap to undo',
+          visibilityTime: 5000,
+          onPress: () => void handleUndo(bucket.id, trackId),
+        });
+      } catch {
+        Toast.show({ type: 'error', text1: 'Failed to assign' });
+      } finally {
+        assigningRef.current = false;
+      }
+    },
+    [organizer, pickingTrackId, handleUndo]
+  );
 
   if (sessionLoading || organizer.isLoading) {
     return (
@@ -144,22 +191,9 @@ export default function SessionScreen() {
     );
   }
 
-  return (
-    <ScrollView className="flex-1 bg-background" contentContainerStyle={{ paddingBottom: 120 }}>
-      {/* Header */}
-      <View className="px-4 pt-4 pb-4">
-        <View className="flex-row items-center justify-between mb-2">
-          <Pressable onPress={() => router.back()}>
-            <Text className="text-primary text-base">← Back</Text>
-          </Pressable>
-          <Text className="text-text-secondary text-sm">
-            {organizer.buckets.length} buckets · {organizer.unassignedTrackIds.length} unassigned
-          </Text>
-        </View>
-      </View>
-
-      {/* Create bucket input */}
-      <View className="px-4 flex-row gap-2 mb-4">
+  const listHeader = (
+    <View>
+      <View className="px-4 flex-row gap-2 mb-4 mt-2">
         <TextInput
           testID="bucket-name-input"
           className="flex-1 bg-surface text-text-primary rounded-lg px-4 py-2 border border-neutral-700"
@@ -170,22 +204,17 @@ export default function SessionScreen() {
           onSubmitEditing={handleCreateBucket}
           returnKeyType="done"
         />
-        <Pressable
-          testID="create-bucket-btn"
-          className="bg-primary rounded-lg px-4 justify-center"
-          onPress={handleCreateBucket}
-        >
+        <Pressable testID="create-bucket-btn" className="bg-primary rounded-lg px-4 justify-center" onPress={handleCreateBucket}>
           <Text className="text-white font-semibold">+ Add</Text>
         </Pressable>
       </View>
 
-      {/* Bucket list */}
       <View className="px-4">
         {organizer.buckets.map((bucket, index) => (
           <BucketCard
             key={bucket.id}
             bucket={bucket}
-            trackTitles={trackTitles}
+            getTrackLabel={getTrackLabel}
             onUnassignTrack={organizer.unassignTrack}
             onMoveBucket={organizer.moveBucket}
             onShuffleBucket={organizer.shuffleBucket}
@@ -194,75 +223,54 @@ export default function SessionScreen() {
             isLast={index === organizer.buckets.length - 1}
           />
         ))}
-
         {organizer.buckets.length === 0 && (
-          <Text className="text-text-secondary text-center py-8">
-            No buckets yet. Tap + Add to create one.
-          </Text>
+          <Text className="text-text-secondary text-center py-8">No buckets yet. Tap + Add to create one.</Text>
         )}
       </View>
 
-      {/* Unassigned tracks */}
-      {organizer.unassignedTrackIds.length > 0 && (
-        <View className="px-4 mt-6">
-          <Text className="text-text-primary text-lg font-bold mb-2">
-            Unassigned ({organizer.unassignedTrackIds.length})
-          </Text>
-          <Text className="text-text-secondary text-xs mb-3">
-            Tap a track to assign it to the first bucket
-          </Text>
-          {organizer.unassignedTrackIds.slice(0, 50).map((trackId, index) => (
-            <Pressable
-              key={trackId}
-              testID={index === 0 ? 'track-row' : undefined}
-              className="bg-surface rounded-lg px-4 py-3 mb-1 active:opacity-70"
-              onPress={() => handleAssignTrack(trackId)}
-              disabled={organizer.isAssigning}
-            >
-              <Text className="text-text-primary text-sm" numberOfLines={1}>
-                {trackTitles.get(trackId) ?? `Track #${trackId}`}
-              </Text>
-            </Pressable>
-          ))}
-          {organizer.unassignedTrackIds.length > 50 && (
-            <Text className="text-text-secondary text-center py-2 text-xs">
-              + {organizer.unassignedTrackIds.length - 50} more tracks
-            </Text>
-          )}
+      {counts.unassigned > 0 && (
+        <View className="px-4 mt-6 mb-2">
+          <Text className="text-text-primary text-lg font-bold">Unassigned ({counts.unassigned})</Text>
+          <Text className="text-text-secondary text-xs mt-1">Tap a track to choose its bucket</Text>
         </View>
       )}
+    </View>
+  );
 
-      {/* Session controls */}
-      <View className="px-4 mt-8 gap-3">
-        <Pressable
-          className="bg-primary rounded-lg py-4 items-center"
-          onPress={handleApply}
-          disabled={organizer.isApplying}
-        >
-          {organizer.isApplying ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text className="text-white text-base font-bold">Apply Order</Text>
-          )}
-        </Pressable>
-
-        <View className="flex-row gap-3">
+  return (
+    <View className="flex-1 bg-background">
+      <SessionHeader playlistName={playlistName} counts={counts} onBack={backToPicker} />
+      <FlatList
+        data={organizer.unassignedTrackIds}
+        keyExtractor={(id) => id.toString()}
+        ListHeaderComponent={listHeader}
+        contentContainerStyle={{ paddingBottom: 24 }}
+        renderItem={({ item: trackId, index }) => (
           <Pressable
-            className="flex-1 bg-surface rounded-lg py-3 items-center border border-neutral-700"
-            onPress={handleFinalize}
-            disabled={organizer.isFinalizing}
+            testID={index === 0 ? 'track-row' : undefined}
+            className="bg-surface rounded-lg px-4 py-3 mb-1 mx-4 active:opacity-70"
+            onPress={() => handleTrackPress(trackId)}
           >
-            <Text className="text-text-primary text-sm font-medium">Finalize</Text>
+            <Text className="text-text-primary text-sm" numberOfLines={1}>
+              {getTrackLabel(trackId)}
+            </Text>
           </Pressable>
-
-          <Pressable
-            className="flex-1 bg-surface rounded-lg py-3 items-center border border-red-900"
-            onPress={handleDiscard}
-          >
-            <Text className="text-error text-sm font-medium">Discard</Text>
-          </Pressable>
-        </View>
-      </View>
-    </ScrollView>
+        )}
+      />
+      <SessionFooter
+        onApply={handleApply}
+        onFinalize={handleFinalize}
+        onDiscard={handleDiscard}
+        isApplying={organizer.isApplying}
+        isFinalizing={organizer.isFinalizing}
+      />
+      <BucketPickerSheet
+        visible={pickingTrackId !== null}
+        trackLabel={pickingTrackId === null ? '' : getTrackLabel(pickingTrackId)}
+        buckets={organizer.buckets}
+        onPick={handlePickBucket}
+        onClose={() => setPickingTrackId(null)}
+      />
+    </View>
   );
 }
