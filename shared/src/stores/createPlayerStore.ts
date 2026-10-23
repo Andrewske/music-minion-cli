@@ -100,9 +100,12 @@ export interface PlayerState {
   lastSeekAt: number;
   /**
    * True between a local (client-side) queue advance — gapless advanceLocal()
-   * on `ended` OR an optimistic button-next — and the next playback:state
-   * broadcast. While set, duplicate advance triggers (a second `ended`, a
-   * second optimistic next) must be suppressed.
+   * on `ended` OR an optimistic button-next — and server confirmation: the
+   * POST /next settling or the next playback:state broadcast, whichever comes
+   * first. While set, duplicate advance triggers (a second `ended`, a second
+   * optimistic next) must be suppressed. The POST settling matters: a
+   * backgrounded Android tab loses its WebSocket, so waiting on the broadcast
+   * alone left the flag stuck and every later `ended` was swallowed.
    */
   pendingLocalAdvance: boolean;
   /**
@@ -127,7 +130,7 @@ export interface PlayerActions {
    * server. Used for gapless playback on `ended`: the caller starts the
    * preloaded audio locally, then fires next() to reconcile with the server.
    * No-op if the queue is exhausted. Sets pendingLocalAdvance, which is
-   * cleared by the first syncState after the advance — and which tells the
+   * cleared once next() settles or the first syncState arrives — and which tells the
    * subsequent next() call NOT to apply its own optimistic advance (plain
    * button-next, called without a prior advanceLocal, advances itself).
    */
@@ -469,6 +472,9 @@ export const createPlayerStore = (deps: PlatformDeps) => {
       try {
         const response = await fetch(`${getApiBase()}/player/next`, { method: 'POST' });
         if (!response.ok) throw new Error('Failed to skip to next track');
+        // Server has advanced: the pending window is over even if the
+        // reconcile broadcast never arrives (dead socket in a background tab).
+        set({ pendingLocalAdvance: false });
       } catch (error) {
         // POST failed → no reconcile broadcast is coming. Roll back our own
         // optimistic advance (no-op if a broadcast superseded it), and always
