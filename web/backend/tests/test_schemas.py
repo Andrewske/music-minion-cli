@@ -115,7 +115,15 @@ def _track_info_with_bpm(bpm: float | None) -> TrackInfo:
 
 @pytest.mark.parametrize(
     ("raw", "expected"),
-    [(130.01, 130), (129.99, 130), (77.4, 77), (128, 128), (None, None)],
+    [
+        (130.01, 130),
+        (129.99, 130),
+        (77.4, 77),
+        (72.5, 73),
+        (77.5, 78),
+        (128, 128),
+        (None, None),
+    ],
 )
 def test_track_info_rounds_fractional_bpm(
     raw: float | None, expected: int | None

@@ -1,3 +1,5 @@
+import math
+
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 from typing import Optional, Literal
@@ -34,8 +36,10 @@ class TrackInfo(BaseModel):
 
         Rounding happens only at the API boundary; tracks.bpm keeps the exact
         value because Serato owns BPM and MM writes it back into file tags.
+        Half-up (not banker's) rounding so 72.5 -> 73 and 77.5 -> 78; BPM is
+        always positive, so floor(v + 0.5) is enough.
         """
-        return None if v is None else round(v)
+        return None if v is None else math.floor(v + 0.5)
 
 
 class ComparisonPair(BaseModel):

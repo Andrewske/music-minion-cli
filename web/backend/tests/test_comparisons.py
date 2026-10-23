@@ -46,7 +46,7 @@ def _stored_bpms(track_ids: list[int]) -> list[float]:
 
 
 def _assert_rounded_pair(pair: dict) -> None:
-    expected = {round(bpm) for bpm in FRACTIONAL_BPMS}
+    expected = {130, 73}  # half-up: 130.01/129.99 -> 130, 72.5 -> 73
     for side in ("track_a", "track_b"):
         assert isinstance(pair[side]["bpm"], int)
         assert pair[side]["bpm"] in expected
