@@ -17,6 +17,18 @@ appId: com.musicminion.app
     visible:
       id: "comparison-playlist-option"
     timeout: 30000
+# Shared PlaylistPicker: a query that matches nothing shows the no-match
+# copy, clearing it brings the list back.
+- tapOn:
+    id: "playlist-search"
+- inputText: "zzqx-no-such-playlist"
+- assertVisible:
+    text: "No playlists match.*"
+- tapOn:
+    id: "playlist-search-clear"
+- hideKeyboard
+- tapOn:
+    id: "playlist-sort-size"
 - tapOn:
     id: "comparison-playlist-option"
 - extendedWaitUntil:

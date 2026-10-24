@@ -1,17 +1,24 @@
 /**
- * Expandable bucket card — shows name, emoji, track count.
- * Tap to expand/collapse track list; each track has a remove button.
+ * Expandable bucket card: name, linked playlist, track count.
+ * Tap to expand; the expanded card has move / shuffle / delete actions and
+ * the track list, where each row swipes left to remove (see TrackRow).
  */
 import { useState, useCallback } from 'react';
+import type { ReactElement } from 'react';
 import { View, Text, Pressable, StyleSheet, Alert } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, ListMusic, Shuffle, Trash2 } from 'lucide-react-native';
+import type { LucideIcon } from 'lucide-react-native';
 import type { Bucket } from '@music-minion/shared';
 import { TrackRow } from './TrackRow';
+
+const MUTED = '#9E9E9E';
+const DANGER = '#CF6679';
 
 interface BucketCardProps {
   bucket: Bucket;
   getTrackLabel: (trackId: number) => string;
-  onUnassignTrack: (bucketId: string, trackId: number) => void;
+  onRemoveTrack: (bucket: Bucket, trackId: number) => void;
   onMoveBucket: (bucketId: string, direction: 'up' | 'down') => void;
   onShuffleBucket: (bucketId: string) => void;
   onDeleteBucket: (bucketId: string) => void;
@@ -19,116 +26,122 @@ interface BucketCardProps {
   isLast: boolean;
 }
 
-export function BucketCard({
-  bucket,
-  getTrackLabel,
-  onUnassignTrack,
-  onMoveBucket,
-  onShuffleBucket,
-  onDeleteBucket,
-  isFirst,
-  isLast,
-}: BucketCardProps): React.JSX.Element {
+export function BucketCard(props: BucketCardProps): ReactElement {
   const [expanded, setExpanded] = useState(false);
 
-  const handleToggle = useCallback(() => {
+  const handleToggle = useCallback((): void => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setExpanded((prev) => !prev);
   }, []);
 
-  const handleDelete = useCallback(() => {
-    Alert.alert(
-      'Delete Bucket',
-      `Delete "${bucket.name}"? Tracks will become unassigned.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => onDeleteBucket(bucket.id),
-        },
-      ]
-    );
-  }, [bucket.id, bucket.name, onDeleteBucket]);
-
-  const handleShuffle = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onShuffleBucket(bucket.id);
-  }, [bucket.id, onShuffleBucket]);
-
   return (
     <View style={styles.card}>
-      {/* Header */}
-      <Pressable testID="bucket-card-header" style={styles.header} onPress={handleToggle}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.emoji}>
-            {bucket.emoji_id ?? '📁'}
-          </Text>
-          <View style={styles.headerInfo}>
-            <Text style={styles.name} numberOfLines={1}>
-              {bucket.name}
-            </Text>
-            {bucket.linked_playlist_name && (
-              <Text style={styles.linkedPlaylist} numberOfLines={1}>
-                → {bucket.linked_playlist_name}
-              </Text>
-            )}
-          </View>
-        </View>
-        <View style={styles.headerRight}>
-          <Text style={styles.trackCount}>
-            {bucket.track_ids.length}
-          </Text>
-          <Text style={styles.chevron}>
-            {expanded ? '▼' : '▶'}
-          </Text>
-        </View>
-      </Pressable>
-
-      {/* Expanded content */}
+      <BucketHeader bucket={props.bucket} expanded={expanded} onToggle={handleToggle} />
       {expanded && (
         <View style={styles.expandedContent}>
-          {/* Actions row */}
-          <View style={styles.actions}>
-            <Pressable
-              style={[styles.actionBtn, isFirst && styles.actionDisabled]}
-              onPress={() => onMoveBucket(bucket.id, 'up')}
-              disabled={isFirst}
-            >
-              <Text style={styles.actionText}>↑ Up</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.actionBtn, isLast && styles.actionDisabled]}
-              onPress={() => onMoveBucket(bucket.id, 'down')}
-              disabled={isLast}
-            >
-              <Text style={styles.actionText}>↓ Down</Text>
-            </Pressable>
-            <Pressable style={styles.actionBtn} onPress={handleShuffle}>
-              <Text style={styles.actionText}>🔀 Shuffle</Text>
-            </Pressable>
-            <Pressable style={[styles.actionBtn, styles.deleteBtn]} onPress={handleDelete}>
-              <Text style={[styles.actionText, styles.deleteText]}>🗑</Text>
-            </Pressable>
-          </View>
-
-          {/* Track list */}
-          {bucket.track_ids.length === 0 ? (
-            <Text style={styles.emptyText}>No tracks assigned</Text>
-          ) : (
-            // Plain map: this card renders inside the session FlatList header,
-            // and nesting a VirtualizedList there breaks virtualization.
-            bucket.track_ids.map((trackId, index) => (
-              <TrackRow
-                key={trackId}
-                testID={index === 0 ? 'bucket-track-remove' : undefined}
-                title={getTrackLabel(trackId)}
-                onUnassign={() => onUnassignTrack(bucket.id, trackId)}
-              />
-            ))
-          )}
+          <BucketActions {...props} />
+          <BucketTracks bucket={props.bucket} getTrackLabel={props.getTrackLabel} onRemoveTrack={props.onRemoveTrack} />
         </View>
       )}
+    </View>
+  );
+}
+
+function BucketHeader({ bucket, expanded, onToggle }: { bucket: Bucket; expanded: boolean; onToggle: () => void }): ReactElement {
+  const Chevron = expanded ? ChevronDown : ChevronRight;
+  return (
+    <Pressable
+      testID="bucket-card-header"
+      accessibilityRole="button"
+      accessibilityState={{ expanded }}
+      android_ripple={{ color: '#FFFFFF14' }}
+      style={styles.header}
+      onPress={onToggle}
+    >
+      <View style={styles.headerInfo}>
+        <Text style={styles.name} numberOfLines={1}>{bucket.name}</Text>
+        {bucket.linked_playlist_name ? (
+          <View style={styles.linkedRow}>
+            <ListMusic size={12} color="#B39DFF" />
+            <Text style={styles.linkedPlaylist} numberOfLines={1}>{bucket.linked_playlist_name}</Text>
+          </View>
+        ) : null}
+      </View>
+      <Text style={styles.trackCount}>{bucket.track_ids.length}</Text>
+      <Chevron size={18} color="#666" />
+    </Pressable>
+  );
+}
+
+function BucketActions({ bucket, onMoveBucket, onShuffleBucket, onDeleteBucket, isFirst, isLast }: BucketCardProps): ReactElement {
+  const handleShuffle = (): void => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onShuffleBucket(bucket.id);
+  };
+  const handleDelete = (): void => {
+    Alert.alert('Delete bucket', `Delete "${bucket.name}"? Its tracks go back to Unassigned.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => onDeleteBucket(bucket.id) },
+    ]);
+  };
+  return (
+    <View style={styles.actions}>
+      <ActionButton icon={ArrowUp} label="Up" onPress={() => onMoveBucket(bucket.id, 'up')} disabled={isFirst} />
+      <ActionButton icon={ArrowDown} label="Down" onPress={() => onMoveBucket(bucket.id, 'down')} disabled={isLast} />
+      <ActionButton icon={Shuffle} label="Shuffle" onPress={handleShuffle} />
+      <View style={styles.spacer} />
+      <ActionButton icon={Trash2} label="Delete bucket" onPress={handleDelete} danger iconOnly />
+    </View>
+  );
+}
+
+interface ActionButtonProps {
+  icon: LucideIcon;
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+  /** Show only the icon; `label` still names it for TalkBack. */
+  iconOnly?: boolean;
+}
+
+function ActionButton({ icon: Icon, label, onPress, disabled, danger, iconOnly }: ActionButtonProps): ReactElement {
+  const color = danger ? DANGER : MUTED;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: Boolean(disabled) }}
+      android_ripple={{ color: '#FFFFFF1F' }}
+      style={[styles.actionBtn, danger && styles.deleteBtn, disabled && styles.actionDisabled]}
+      onPress={onPress}
+      disabled={disabled}
+    >
+      <Icon size={16} color={color} />
+      {iconOnly ? null : <Text style={[styles.actionText, { color }]}>{label}</Text>}
+    </Pressable>
+  );
+}
+
+type BucketTracksProps = Pick<BucketCardProps, 'bucket' | 'getTrackLabel' | 'onRemoveTrack'>;
+
+function BucketTracks({ bucket, getTrackLabel, onRemoveTrack }: BucketTracksProps): ReactElement {
+  if (bucket.track_ids.length === 0) {
+    return <Text style={styles.emptyText}>No tracks yet. Tap an unassigned track to add it here.</Text>;
+  }
+  // Plain map: this card renders inside the session FlatList header,
+  // and nesting a VirtualizedList there breaks virtualization.
+  return (
+    <View>
+      <Text style={styles.hint}>Swipe a track left to remove it</Text>
+      {bucket.track_ids.map((trackId, index) => (
+        <TrackRow
+          key={trackId}
+          testID={index === 0 ? 'bucket-track-row' : undefined}
+          title={getTrackLabel(trackId)}
+          onRemove={() => onRemoveTrack(bucket, trackId)}
+        />
+      ))}
     </View>
   );
 }
@@ -145,21 +158,19 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 10,
+    minHeight: 56,
     paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    gap: 12,
-  },
-  emoji: {
-    fontSize: 24,
+    paddingVertical: 10,
   },
   headerInfo: {
     flex: 1,
+  },
+  linkedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
   },
   name: {
     color: '#E0E0E0',
@@ -167,14 +178,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   linkedPlaylist: {
-    color: '#7C4DFF',
+    color: '#B39DFF',
     fontSize: 12,
-    marginTop: 2,
-  },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    flexShrink: 1,
   },
   trackCount: {
     color: '#9E9E9E',
@@ -185,10 +191,6 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 8,
     overflow: 'hidden',
-  },
-  chevron: {
-    color: '#666',
-    fontSize: 12,
   },
   expandedContent: {
     borderTopWidth: 1,
@@ -201,29 +203,40 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 40,
+    minWidth: 40,
+    justifyContent: 'center',
     backgroundColor: '#2A2A2A',
     paddingHorizontal: 12,
-    paddingVertical: 6,
     borderRadius: 8,
+    overflow: 'hidden',
   },
   actionDisabled: {
     opacity: 0.3,
   },
   actionText: {
-    color: '#9E9E9E',
-    fontSize: 12,
+    fontSize: 13,
+  },
+  spacer: {
+    flex: 1,
   },
   deleteBtn: {
-    marginLeft: 'auto',
     backgroundColor: '#3E1E1E',
   },
-  deleteText: {
-    color: '#CF6679',
+  hint: {
+    color: '#666',
+    fontSize: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 6,
   },
   emptyText: {
     color: '#666',
     fontSize: 13,
     textAlign: 'center',
     paddingVertical: 16,
+    paddingHorizontal: 16,
   },
 });

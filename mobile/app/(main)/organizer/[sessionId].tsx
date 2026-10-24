@@ -2,14 +2,16 @@
  * Bucket session view — manage buckets and assign tracks.
  *
  * Tapping an unassigned track opens a bucket picker; nothing is assigned until
- * a bucket is chosen, and every assignment shows a toast with Undo (which calls
- * the regular unassign API, so linked playlists stay in sync).
+ * a bucket is chosen. Bucket tracks swipe left to remove. Every add or remove
+ * shows an Undo snackbar that runs the opposite regular mutation (assign or
+ * unassign), so linked playlists stay in sync.
  */
 import { useState, useCallback, useMemo, useRef } from 'react';
 import { View, Text, Pressable, TextInput, Alert, ActivityIndicator, FlatList } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
+import { Plus } from 'lucide-react-native';
 import Toast from 'react-native-toast-message';
 import { getSession, getPlaylistsByLibrary, lookupTracks } from '@music-minion/shared';
 import type { Bucket, Playlist } from '@music-minion/shared';
@@ -19,6 +21,8 @@ import { BucketPickerSheet } from '../../../components/organizer/BucketPickerShe
 import { SessionHeader } from '../../../components/organizer/SessionHeader';
 import { ScreenHeader } from '../../../components/ScreenHeader';
 import { SessionFooter } from '../../../components/organizer/SessionFooter';
+import { UndoSnackbar } from '../../../components/organizer/UndoSnackbar';
+import { useOrganizerUndo } from '../../../hooks/useOrganizerUndo';
 import { useOrganizerStore } from '../../../stores/organizerStore';
 import {
   buildTrackLabels,
@@ -61,6 +65,7 @@ export default function SessionScreen(): React.JSX.Element {
   const playlistId = paramPlaylistId || (sessionData?.playlist_id ?? 0);
   const playlistName = usePlaylistName(playlistId, params.playlistName);
   const organizer = usePlaylistOrganizer({ playlistId, enabled: !!playlistId });
+  const undo = useOrganizerUndo(organizer);
 
   // Resolve names for every track in the session (unassigned + bucket tracks).
   // The id union doesn't change on assign/unassign, so this rarely refetches.
@@ -146,16 +151,18 @@ export default function SessionScreen(): React.JSX.Element {
   // taps in the same tick would both read it as false and double-fire.
   const assigningRef = useRef(false);
 
-  const handleUndo = useCallback(
-    async (bucketId: string, trackId: number): Promise<void> => {
-      Toast.hide();
+  const { offer: offerUndo } = undo;
+
+  const handleRemoveTrack = useCallback(
+    async (bucket: Bucket, trackId: number): Promise<void> => {
       try {
-        await organizer.unassignTrack(bucketId, trackId);
+        await organizer.unassignTrack(bucket.id, trackId);
+        offerUndo({ kind: 'removed', bucketId: bucket.id, bucketName: bucket.name, trackId });
       } catch {
-        Toast.show({ type: 'error', text1: 'Undo failed' });
+        Toast.show({ type: 'error', text1: 'Failed to remove', text2: 'The track is still in the bucket' });
       }
     },
-    [organizer]
+    [organizer, offerUndo]
   );
 
   const handlePickBucket = useCallback(
@@ -167,20 +174,14 @@ export default function SessionScreen(): React.JSX.Element {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       try {
         await organizer.assignTrack(bucket.id, trackId);
-        Toast.show({
-          type: 'success',
-          text1: `Added to ${bucket.name}`,
-          text2: 'Tap to undo',
-          visibilityTime: 5000,
-          onPress: () => void handleUndo(bucket.id, trackId),
-        });
+        offerUndo({ kind: 'added', bucketId: bucket.id, bucketName: bucket.name, trackId });
       } catch {
         Toast.show({ type: 'error', text1: 'Failed to assign' });
       } finally {
         assigningRef.current = false;
       }
     },
-    [organizer, pickingTrackId, handleUndo]
+    [organizer, pickingTrackId, offerUndo]
   );
 
   if (sessionLoading || organizer.isLoading) {
@@ -208,8 +209,15 @@ export default function SessionScreen(): React.JSX.Element {
           onSubmitEditing={handleCreateBucket}
           returnKeyType="done"
         />
-        <Pressable testID="create-bucket-btn" className="bg-primary rounded-lg px-4 justify-center" onPress={handleCreateBucket}>
-          <Text className="text-white font-semibold">+ Add</Text>
+        <Pressable
+          testID="create-bucket-btn"
+          accessibilityRole="button"
+          accessibilityLabel="Add bucket"
+          className="bg-primary rounded-lg px-4 flex-row items-center gap-1"
+          onPress={handleCreateBucket}
+        >
+          <Plus size={18} color="#FFFFFF" />
+          <Text className="text-white font-semibold">Add</Text>
         </Pressable>
       </View>
 
@@ -219,7 +227,7 @@ export default function SessionScreen(): React.JSX.Element {
             key={bucket.id}
             bucket={bucket}
             getTrackLabel={getTrackLabel}
-            onUnassignTrack={organizer.unassignTrack}
+            onRemoveTrack={handleRemoveTrack}
             onMoveBucket={organizer.moveBucket}
             onShuffleBucket={organizer.shuffleBucket}
             onDeleteBucket={organizer.deleteBucket}
@@ -228,7 +236,7 @@ export default function SessionScreen(): React.JSX.Element {
           />
         ))}
         {organizer.buckets.length === 0 && (
-          <Text className="text-text-secondary text-center py-8">No buckets yet. Tap + Add to create one.</Text>
+          <Text className="text-text-secondary text-center py-8">No buckets yet. Add one above to start sorting.</Text>
         )}
       </View>
 
@@ -244,23 +252,26 @@ export default function SessionScreen(): React.JSX.Element {
   return (
     <View className="flex-1 bg-background">
       <SessionHeader playlistName={playlistName} counts={counts} onBack={backToPicker} />
-      <FlatList
-        data={organizer.unassignedTrackIds}
-        keyExtractor={(id) => id.toString()}
-        ListHeaderComponent={listHeader}
-        contentContainerStyle={{ paddingBottom: 24 }}
-        renderItem={({ item: trackId, index }) => (
-          <Pressable
-            testID={index === 0 ? 'track-row' : undefined}
-            className="bg-surface rounded-lg px-4 py-3 mb-1 mx-4 active:opacity-70"
-            onPress={() => handleTrackPress(trackId)}
-          >
-            <Text className="text-text-primary text-sm" numberOfLines={1}>
-              {getTrackLabel(trackId)}
-            </Text>
-          </Pressable>
-        )}
-      />
+      <View className="flex-1">
+        <FlatList
+          data={organizer.unassignedTrackIds}
+          keyExtractor={(id) => id.toString()}
+          ListHeaderComponent={listHeader}
+          contentContainerStyle={{ paddingBottom: 80 }}
+          renderItem={({ item: trackId, index }) => (
+            <Pressable
+              testID={index === 0 ? 'track-row' : undefined}
+              className="bg-surface rounded-lg px-4 py-3 mb-1 mx-4 active:opacity-70"
+              onPress={() => handleTrackPress(trackId)}
+            >
+              <Text className="text-text-primary text-sm" numberOfLines={1}>
+                {getTrackLabel(trackId)}
+              </Text>
+            </Pressable>
+          )}
+        />
+        <UndoSnackbar action={undo.pending} onUndo={undo.undo} />
+      </View>
       <SessionFooter
         onApply={handleApply}
         onFinalize={handleFinalize}

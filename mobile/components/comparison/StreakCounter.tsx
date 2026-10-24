@@ -13,6 +13,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+import { Flame } from 'lucide-react-native';
 
 const STREAK_TIMEOUT_MS = 5000;
 const MIN_VISIBLE_STREAK = 3;
@@ -67,7 +68,7 @@ export function StreakCounter({ voteCount }: StreakCounterProps) {
 
   return (
     <Animated.View style={[styles.container, animatedStyle]}>
-      <Text style={styles.fire}>🔥</Text>
+      <Flame size={18} color="#FF9800" fill="#FF980033" />
       <Text style={styles.count}>{displayStreak.current}</Text>
       <Text style={styles.label}>in a row!</Text>
     </Animated.View>
@@ -81,9 +82,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     paddingVertical: 8,
-  },
-  fire: {
-    fontSize: 20,
   },
   count: {
     color: '#FF9800',
