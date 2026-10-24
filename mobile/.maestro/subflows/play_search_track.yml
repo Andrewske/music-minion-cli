@@ -1,5 +1,7 @@
 # Subflow: search QUERY, play the first result, open Now Playing, and wait
 # until RNTP reports real progress (position >= 0:03 = audio is decoding).
+# The regex matches ANY position >= 0:03; the old "0:0[3-9]" was a 6s window
+# that a slow hierarchy poll could miss entirely.
 # env: QUERY (default "the"). Sets output.startIndex / output.queueLength.
 appId: com.musicminion.app
 ---
@@ -28,7 +30,7 @@ appId: com.musicminion.app
 - extendedWaitUntil:
     visible:
       id: "seek-position"
-      text: "0:0[3-9]"
+      text: "0:0[3-9]|0:[1-5][0-9]|[1-9][0-9]?:[0-5][0-9]"
     timeout: 45000
 # Record queue position. Search queues the tapped result + the rest of the
 # results, so there is always a "next" track for advance/skip flows.

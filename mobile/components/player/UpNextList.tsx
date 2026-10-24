@@ -13,7 +13,8 @@ import { TrackArtwork } from './TrackArtwork';
 import { queueInfoLabel, upNextSlice } from '../../features/player/upNext';
 import type { UpNextRow } from '../../features/player/upNext';
 
-export function UpNextList(): ReactElement {
+/** Memoized (no props): re-renders only when queue or queueIndex changes. */
+export const UpNextList = memo(function UpNextList(): ReactElement {
   const queue = usePlayerStore((s) => s.queue);
   const queueIndex = usePlayerStore((s) => s.queueIndex);
   const { rows, remaining } = upNextSlice(queue, queueIndex);
@@ -25,7 +26,7 @@ export function UpNextList(): ReactElement {
       {remaining > 0 ? <Text style={styles.more}>{remaining} more after these</Text> : null}
     </View>
   );
-}
+});
 
 function UpNextHeader({ label }: { label: string }): ReactElement {
   const shuffleEnabled = usePlayerStore((s) => s.shuffleEnabled);

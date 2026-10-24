@@ -32,8 +32,10 @@ appId: com.musicminion.app
     id: "now-playing-title"
     text: ${output.firstTitle}
 # The new track actually plays (not just a UI index bump).
+# 0:03-0:59, not just 0:03-0:09: a slow hierarchy poll can miss a 6s window.
+# Capped below 1:00 so a stale end-of-previous-track position can't match.
 - extendedWaitUntil:
     visible:
       id: "seek-position"
-      text: "0:0[3-9]"
+      text: "0:0[3-9]|0:[1-5][0-9]"
     timeout: 45000

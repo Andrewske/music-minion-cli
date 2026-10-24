@@ -4,6 +4,7 @@
  * Device opens the device sheet; Queue scrolls to the up-next list.
  * # TODO: add Like and Add to playlist once the backend has endpoints for them.
  */
+import { memo } from 'react';
 import type { ReactElement } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import * as Haptics from 'expo-haptics';
@@ -16,7 +17,8 @@ interface PlayerActionRowProps {
   onQueue: () => void;
 }
 
-export function PlayerActionRow({ onDevices, onQueue }: PlayerActionRowProps): ReactElement {
+/** Memoized: callers pass stable (useCallback) handlers. */
+export const PlayerActionRow = memo(function PlayerActionRow({ onDevices, onQueue }: PlayerActionRowProps): ReactElement {
   const isRemote = usePlayerStore((s) => !s.isThisDeviceActive);
   return (
     <View style={styles.row}>
@@ -24,7 +26,7 @@ export function PlayerActionRow({ onDevices, onQueue }: PlayerActionRowProps): R
       <ActionButton icon={ListMusic} label="Queue" testID="now-playing-queue" onPress={onQueue} />
     </View>
   );
-}
+});
 
 interface ActionButtonProps {
   icon: LucideIcon;

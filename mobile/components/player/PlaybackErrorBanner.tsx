@@ -2,7 +2,7 @@
  * Playback error banner — surfaces store.playbackError (failed control
  * POSTs while offline, dead tracks, circuit breaker) with Retry + dismiss.
  *
- * Reads the store directly (not usePlayer) so mounting it never registers
+ * Reads the store directly (not usePlaybackEngine) so mounting it never registers
  * player side-effects. Rendered above the PlayerBar and inside NowPlaying.
  */
 import type { ReactElement } from 'react';

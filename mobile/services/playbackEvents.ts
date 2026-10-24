@@ -8,10 +8,10 @@
  * when backgrounded (see @rntp/player android ReactApplicationContextExt.kt:
  * emitEvent() branches on isAppOnForeground()). So neither path can be
  * dropped: the foreground listener never fires while backgrounded and vice
- * versa. Both entry points (usePlayer's listeners and the background handler
+ * versa. Both entry points (usePlaybackEngine's listeners and the background handler
  * in services/playback.ts) therefore delegate HERE, so end/error logic exists
  * once. Module-level timestamp guards additionally collapse duplicates from
- * (a) the foreground/background transition edge and (b) multiple usePlayer
+ * (a) the foreground/background transition edge and (b) repeated usePlaybackEngine
  * mounts (PlayerBar + NowPlaying) — historically each mount registered its
  * own listeners and double-advanced on Ended.
  */
@@ -59,7 +59,7 @@ function getArtworkUrl(trackId: number): string {
 
 /**
  * New playthrough — give the incoming track its one in-place retry.
- * Called by usePlayer's load effect, which is already gated on track change.
+ * Called by usePlaybackEngine's load effect, which is already gated on track change.
  */
 export function resetRetryTracking(): void {
   retriedTrackId = null;
@@ -202,7 +202,7 @@ export function handlePlaybackEvent(event: BackgroundEvent): void {
 
 /**
  * Register app-lifetime foreground listeners exactly once, no matter how many
- * usePlayer instances mount (PlayerBar + NowPlaying both mount it). Never
+ * usePlaybackEngine mounts (hot reload, remounts). Never
  * unregistered — playback events must be handled for the app's whole life.
  */
 export function registerForegroundPlaybackListeners(): void {
