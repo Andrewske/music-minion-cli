@@ -17,7 +17,8 @@
  */
 import { useRef, useState } from 'react';
 import type { ReactElement } from 'react';
-import { View, Text, Pressable, StyleSheet, ScrollView, useWindowDimensions } from 'react-native';
+import { View, Text, Pressable, StyleSheet, ScrollView, Platform, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { Check, MonitorSpeaker, Pause, Play, SkipBack, SkipForward } from 'lucide-react-native';
 import type { Track } from '@music-minion/shared';
@@ -32,6 +33,7 @@ import { PlayerActionRow } from './PlayerActionRow';
 import { UpNextList } from './UpNextList';
 import { usePlaybackPosition } from './usePlaybackPosition';
 import { playerSecondLine } from '../../features/player/devices';
+import { fullPlayerInsets } from '../../features/player/sheetInsets';
 
 interface NowPlayingProps {
   onCollapse: () => void;
@@ -47,6 +49,8 @@ export function NowPlaying({ onCollapse }: NowPlayingProps): ReactElement | null
   const scrollRef = useRef<ScrollView>(null);
   const upNextY = useRef(0);
   const position = usePlaybackPosition(player.rntpPosition);
+  // A Modal is its own window: the root layout's safe-area padding stops here.
+  const pad = fullPlayerInsets(Platform.OS, useSafeAreaInsets());
   const track = player.currentTrack;
   if (!track) return null;
 
@@ -57,21 +61,23 @@ export function NowPlaying({ onCollapse }: NowPlayingProps): ReactElement | null
   const showQueue = (): void => scrollRef.current?.scrollTo({ y: upNextY.current, animated: true });
 
   return (
-    <ScrollView ref={scrollRef} style={styles.container} contentContainerStyle={styles.content}>
-      <Pressable style={styles.handleArea} onPress={onCollapse} accessibilityLabel="Close player">
-        <View style={styles.handle} />
-      </Pressable>
-      <View style={styles.bannerWrap}><PlaybackErrorBanner /></View>
-      <Hero track={track} onDevices={openDevices} />
-      <SeekSlider position={position} duration={track.duration ?? 0} onSeek={handleSeek} />
-      <ScrobbledSlot visible={player.scrobbledThisPlaythrough} />
-      <Transport isPlaying={player.isPlaying} onPlayPause={player.isPlaying ? player.pause : player.resume} onPrev={player.prev} onNext={player.next} />
-      <PlayerActionRow onDevices={openDevices} onQueue={showQueue} />
-      <View style={styles.fullWidth} onLayout={(e) => { upNextY.current = e.nativeEvent.layout.y; }}>
-        <UpNextList />
-      </View>
+    <View testID="now-playing" style={[styles.container, { paddingTop: pad.top }]}>
+      <ScrollView ref={scrollRef} style={styles.container} contentContainerStyle={[styles.content, { paddingBottom: 48 + pad.bottom }]}>
+        <Pressable style={styles.handleArea} onPress={onCollapse} accessibilityLabel="Close player">
+          <View style={styles.handle} />
+        </Pressable>
+        <View style={styles.bannerWrap}><PlaybackErrorBanner /></View>
+        <Hero track={track} onDevices={openDevices} />
+        <SeekSlider position={position} duration={track.duration ?? 0} onSeek={handleSeek} />
+        <ScrobbledSlot visible={player.scrobbledThisPlaythrough} />
+        <Transport isPlaying={player.isPlaying} onPlayPause={player.isPlaying ? player.pause : player.resume} onPrev={player.prev} onNext={player.next} />
+        <PlayerActionRow onDevices={openDevices} onQueue={showQueue} />
+        <View style={styles.fullWidth} onLayout={(e) => { upNextY.current = e.nativeEvent.layout.y; }}>
+          <UpNextList />
+        </View>
+      </ScrollView>
       <DeviceSheet visible={devicesOpen} onClose={() => setDevicesOpen(false)} />
-    </ScrollView>
+    </View>
   );
 }
 
@@ -156,7 +162,8 @@ function Transport({ isPlaying, onPlayPause, onPrev, onNext }: TransportProps): 
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#121212' },
-  content: { alignItems: 'center', paddingHorizontal: 20, paddingBottom: 48 },
+  // paddingBottom is set inline: 48 + the navigation bar inset
+  content: { alignItems: 'center', paddingHorizontal: 20 },
   handleArea: { width: '100%', alignItems: 'center', paddingVertical: 12 },
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#555' },
   // Parent content container centers children; these must span full width

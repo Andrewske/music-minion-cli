@@ -3,11 +3,15 @@
  *
  *   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2px progress
  *   [art]  Title                                   (▶)  ⏭
- *          Artist  |  ⊡ on Kevin laptop  (opens device sheet)
+ *          Artist
+ *          ⊡ on Kevin laptop      (remote only: opens device sheet)
  *
- * Artwork + title open the full player (NowPlaying). When another device is
- * playing, the second line names it in the accent color and opens the
- * device sheet. ⏮ lives in the full player only.
+ * The whole artwork/title/artist row opens the full player (NowPlaying).
+ * When another device is playing, a compact chip in its own row below names
+ * it and opens the device sheet. It used to be the second text line inside
+ * the expand area, and its hitSlop reached the row's vertical center, so a
+ * tap in the middle of the bar opened the sheet. ⏮ lives in the full
+ * player only.
  */
 import { useState } from 'react';
 import type { ReactElement } from 'react';
@@ -50,10 +54,21 @@ export function PlayerBar(): ReactElement {
       <PlaybackErrorBanner />
       <View testID="player-bar" style={[styles.bar, bottomPad]}>
         <ProgressLine track={player.currentTrack} localPositionSec={player.rntpPosition} />
-        <BarInfo track={player.currentTrack} onExpand={withTap(() => setExpanded(true))} onDevices={withTap(() => setDevicesOpen(true))} />
-        <BarControls isPlaying={player.isPlaying} onPlayPause={withTap(playPause)} onNext={withTap(player.next)} />
+        <View style={styles.row}>
+          <BarInfo track={player.currentTrack} onExpand={withTap(() => setExpanded(true))} />
+          <BarControls isPlaying={player.isPlaying} onPlayPause={withTap(playPause)} onNext={withTap(player.next)} />
+        </View>
+        <DeviceChip artist={player.currentTrack.artist} onPress={withTap(() => setDevicesOpen(true))} />
       </View>
-      <Modal visible={expanded} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setExpanded(false)}>
+      {/* Edge-to-edge on Android; NowPlaying pads itself by the system bar insets */}
+      <Modal
+        visible={expanded}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={() => setExpanded(false)}
+      >
         <NowPlaying onCollapse={() => setExpanded(false)} />
       </Modal>
       <DeviceSheet visible={devicesOpen} onClose={() => setDevicesOpen(false)} />
@@ -86,40 +101,45 @@ function ProgressLine({ track, localPositionSec }: { track: Track; localPosition
 interface BarInfoProps {
   track: Track;
   onExpand: () => void;
-  onDevices: () => void;
 }
 
-function BarInfo({ track, onExpand, onDevices }: BarInfoProps): ReactElement {
-  // Store selectors, not usePlayer(): every usePlayer() mount adds RNTP effects.
-  const isThisDeviceActive = usePlayerStore((s) => s.isThisDeviceActive);
-  const availableDevices = usePlayerStore((s) => s.availableDevices);
-  const activeDeviceId = usePlayerStore((s) => s.activeDeviceId);
-  const line = playerSecondLine({ isThisDeviceActive, artist: track.artist, devices: availableDevices, activeDeviceId });
+/** Artwork + title + artist: one tap target that opens the full player. */
+function BarInfo({ track, onExpand }: BarInfoProps): ReactElement {
   return (
     <Pressable testID="player-bar-expand" accessibilityLabel="Open player" style={styles.info} onPress={onExpand}>
       <TrackArtwork trackId={track.id} size={44} radius={6} />
       <View style={styles.text}>
         <Text testID="player-track-title" style={styles.title} numberOfLines={1}>{track.title}</Text>
-        {line.isRemote ? <DeviceLine text={line.text} onPress={onDevices} /> : (
-          <Text style={styles.artist} numberOfLines={1}>{line.text}</Text>
-        )}
+        <Text style={styles.artist} numberOfLines={1}>{track.artist ?? 'Unknown Artist'}</Text>
       </View>
     </Pressable>
   );
 }
 
-function DeviceLine({ text, onPress }: { text: string; onPress: () => void }): ReactElement {
+/**
+ * "⊡ on <device>" chip, only while another device plays. It sits in its own
+ * row below the expand area (not inside it), and its hitSlop never reaches up
+ * into that row, so the two tap targets can't overlap.
+ */
+function DeviceChip({ artist, onPress }: { artist: string | undefined; onPress: () => void }): ReactElement | null {
+  // Store selectors, not usePlayer(): every usePlayer() mount adds RNTP effects.
+  const isThisDeviceActive = usePlayerStore((s) => s.isThisDeviceActive);
+  const devices = usePlayerStore((s) => s.availableDevices);
+  const activeDeviceId = usePlayerStore((s) => s.activeDeviceId);
+  const line = playerSecondLine({ isThisDeviceActive, artist, devices, activeDeviceId });
+  if (!line.isRemote) return null;
   return (
     <Pressable
       testID="player-device-line"
       accessibilityRole="button"
-      accessibilityLabel={`Playing ${text}. Choose device`}
+      accessibilityLabel={`Playing ${line.text}. Choose device`}
       onPress={onPress}
-      hitSlop={{ top: 6, bottom: 10 }}
-      style={styles.deviceLine}
+      hitSlop={{ top: 0, bottom: 6, left: 8, right: 8 }}
+      android_ripple={{ color: '#7C4DFF33' }}
+      style={styles.deviceChip}
     >
-      <MonitorSpeaker size={13} color="#7C4DFF" strokeWidth={2.25} />
-      <Text style={styles.deviceText} numberOfLines={1}>{text}</Text>
+      <MonitorSpeaker size={12} color="#B39DFF" strokeWidth={2.25} />
+      <Text style={styles.deviceText} numberOfLines={1}>{line.text}</Text>
     </Pressable>
   );
 }
@@ -161,8 +181,6 @@ function BarControls({ isPlaying, onPlayPause, onNext }: BarControlsProps): Reac
 
 const styles = StyleSheet.create({
   bar: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: '#1A1A1A',
     paddingLeft: 10,
     paddingRight: 6,
@@ -179,12 +197,27 @@ const styles = StyleSheet.create({
   emptyText: { color: '#555', fontSize: 13 },
   progressTrack: { position: 'absolute', top: 0, left: 0, right: 0, height: 2, backgroundColor: '#2A2A2A' },
   progressFill: { height: 2, backgroundColor: '#7C4DFF' },
+  row: { flexDirection: 'row', alignItems: 'center' },
   info: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, marginRight: 4 },
   text: { flex: 1 },
   title: { color: '#E0E0E0', fontSize: 14, fontWeight: '600' },
   artist: { color: '#9E9E9E', fontSize: 12, marginTop: 2 },
-  deviceLine: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2, alignSelf: 'flex-start' },
-  deviceText: { color: '#7C4DFF', fontSize: 12, fontWeight: '600', flexShrink: 1 },
+  // Text lines up with the title: 44 artwork + 12 gap - 8 chip padding
+  deviceChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    alignSelf: 'flex-start',
+    maxWidth: '70%',
+    marginLeft: 48,
+    marginTop: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    backgroundColor: '#7C4DFF1F',
+    overflow: 'hidden',
+  },
+  deviceText: { color: '#B39DFF', fontSize: 12, fontWeight: '600', flexShrink: 1 },
   controls: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   playBtn: {
     width: 44,

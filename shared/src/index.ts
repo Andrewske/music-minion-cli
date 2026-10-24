@@ -113,4 +113,5 @@ export {
 export { createPlayerStore, getCurrentPosition } from './stores/createPlayerStore';
 export type { PlatformDeps, PlayerStore, PlayerState, PlayerActions, PlayContext, Device, SyncStatePayload } from './stores/createPlayerStore';
 export { createWebStorageAdapter, createMemoryStorageAdapter } from './stores/storage';
+export { defaultDeviceName, deviceIdSuffix, resolveDeviceName } from './stores/deviceName';
 export type { StorageAdapter } from './stores/storage';

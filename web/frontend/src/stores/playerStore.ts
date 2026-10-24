@@ -1,7 +1,7 @@
 /**
  * Web player store — creates shared store with web-specific deps.
  */
-import { createPlayerStore, getCurrentPosition, createWebStorageAdapter } from '@music-minion/shared';
+import { createPlayerStore, getCurrentPosition, createWebStorageAdapter, resolveDeviceName } from '@music-minion/shared';
 import type { PlayContext, PlayerStore } from '@music-minion/shared';
 import { claimAudioLeadership, startAudioLeaderElection } from '../lib/audioLeader';
 
@@ -18,11 +18,13 @@ function generateDeviceId(): string {
   return uuid;
 }
 
+/** Custom name if set, else "<platform> <browser> (<id suffix>)" via shared code. */
 function getDeviceName(): string {
   const custom = storage.getItem('music-minion-device-name');
-  if (custom) return custom;
+  return resolveDeviceName(custom, browserLabel(navigator.userAgent), generateDeviceId());
+}
 
-  const ua = navigator.userAgent;
+function browserLabel(ua: string): string {
   let platform = 'Unknown';
   let browser = 'Unknown';
 

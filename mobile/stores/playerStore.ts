@@ -1,9 +1,12 @@
 /**
  * Mobile player store — injects RN-specific deps into shared factory.
  */
-import { createPlayerStore, getCurrentPosition, getDefaultApiClient } from '@music-minion/shared';
+import { createPlayerStore, getCurrentPosition, getDefaultApiClient, resolveDeviceName } from '@music-minion/shared';
 import type { PlayContext, PlayerStore, StorageAdapter } from '@music-minion/shared';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+import { phoneLabel } from '../features/player/deviceLabel';
+import type { HardwareInfo } from '../features/player/deviceLabel';
 
 const getApiBase = (): string => {
   try {
@@ -57,10 +60,18 @@ function generateDeviceId(): string {
   return uuid;
 }
 
+function hardwareInfo(): HardwareInfo {
+  if (Platform.OS !== 'android') return {};
+  return { model: Platform.constants.Model, brand: Platform.constants.Brand };
+}
+
+/**
+ * Custom name if set, else "<model> (<id suffix>)". Reads the id from the
+ * cache, so after hydrateStorage() the suffix comes from the persisted id.
+ */
 function getDeviceName(): string {
   const custom = asyncStorageAdapter.getItem('music-minion-device-name');
-  if (custom) return custom;
-  return 'Android Phone';
+  return resolveDeviceName(custom, phoneLabel(hardwareInfo()), generateDeviceId());
 }
 
 export const usePlayerStore = createPlayerStore({

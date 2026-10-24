@@ -9,12 +9,25 @@ export interface PositionInput {
   localPositionSec: number;
   /** Store-derived position in ms (getCurrentPosition), for remote playback. */
   remotePositionMs: number;
+  /** Track duration in seconds; the position never runs past it. */
+  durationSec: number | undefined;
 }
 
-/** Seconds into the track, from RNTP here or the synced store elsewhere. */
+/**
+ * Seconds into the track, from RNTP here or the synced store elsewhere.
+ * The remote value is extrapolated from the last broadcast (positionMs +
+ * time since trackStartedAt), so it keeps growing if the playing device
+ * stalls or never reports the track change. Clamp it to the duration.
+ */
 export function playbackPositionSec(input: PositionInput): number {
   const sec = input.isThisDeviceActive ? input.localPositionSec : input.remotePositionMs / 1000;
-  return Number.isFinite(sec) && sec > 0 ? sec : 0;
+  return clampToDuration(Number.isFinite(sec) && sec > 0 ? sec : 0, input.durationSec);
+}
+
+/** Cap at the duration when it is known; unknown durations pass through. */
+export function clampToDuration(positionSec: number, durationSec: number | undefined): number {
+  if (!durationSec || durationSec <= 0 || !Number.isFinite(durationSec)) return positionSec;
+  return Math.min(positionSec, durationSec);
 }
 
 /** 0..1 fraction of the track played. 0 when the duration is unknown. */
