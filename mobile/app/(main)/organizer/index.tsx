@@ -1,12 +1,13 @@
 /**
  * Playlist Organizer — playlist picker.
- * Select a playlist to start/resume a bucket session. The last opened session
- * gets a "Resume" shortcut at the top.
+ * Select a playlist to start/resume a bucket session (shared PlaylistPicker).
+ * The last opened session gets a "Resume" shortcut above the list.
  */
 import type { ReactNode } from 'react';
-import { View, Text, Pressable, FlatList, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
 import { ScreenHeader } from '../../../components/ScreenHeader';
+import { PlaylistPicker } from '../../../components/PlaylistPicker';
 import { router } from 'expo-router';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { getPlaylistsByLibrary, createOrResumeSession } from '@music-minion/shared';
@@ -14,6 +15,7 @@ import type { Playlist } from '@music-minion/shared';
 import Toast from 'react-native-toast-message';
 import { useOrganizerStore } from '../../../stores/organizerStore';
 import type { ActiveOrganizerSession } from '../../../stores/organizerStore';
+import { organizeSubtitle, selectOrganizablePlaylists } from '../../../features/organizer/organizerState';
 
 /** Open a session. The [sessionId] screen is single-instance (see _layout), so this never stacks. */
 function openSession(active: ActiveOrganizerSession): void {
@@ -52,84 +54,41 @@ export default function OrganizerPickerScreen(): React.JSX.Element {
     },
   });
 
-  if (isLoading) {
-    return (
-      <OrganizeFrame>
-        <View className="flex-1 justify-center items-center">
-          <ActivityIndicator size="large" color="#7C4DFF" />
-        </View>
-      </OrganizeFrame>
-    );
-  }
-
-  if (error) {
-    return (
-      <OrganizeFrame>
-        <View className="flex-1 justify-center items-center px-6">
-          <Text className="text-error text-lg mb-2">Can&apos;t reach server</Text>
-          <Text className="text-text-secondary text-center">
-            Is Tailscale running?
-          </Text>
-        </View>
-      </OrganizeFrame>
-    );
-  }
-
   return (
     <OrganizeFrame>
-      <View className="px-4 mb-4">
-        <Text className="text-text-secondary text-base">
-          Pick a playlist to organize into buckets
-        </Text>
-      </View>
-
-      {activeSession && (
-        <Pressable
-          testID="organizer-resume-btn"
-          className="mx-4 mb-4 bg-primary rounded-lg px-4 py-4 flex-row items-center active:opacity-80"
-          onPress={() => openSession(activeSession)}
-        >
-          <View className="flex-1 mr-4">
-            <Text className="text-white text-xs uppercase opacity-80">Resume</Text>
-            <Text className="text-white text-base font-bold" numberOfLines={1}>
-              {activeSession.playlistName}
-            </Text>
-          </View>
-          <ChevronRight size={22} color="#FFFFFF" />
-        </Pressable>
-      )}
-
-      <FlatList
-        data={playlists?.filter((p: Playlist) => p.track_count > 0) ?? []}
-        keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
-        renderItem={({ item, index }) => (
-          <Pressable
-            testID={index === 0 ? 'organizer-playlist-option' : undefined}
-            className="bg-surface rounded-lg px-4 py-4 mb-2 flex-row justify-between items-center active:opacity-70"
-            onPress={() => startSession.mutate(item)}
-            disabled={startSession.isPending}
-          >
-            <View className="flex-1 mr-4">
-              <Text className="text-text-primary text-base font-medium">
-                {item.name}
-              </Text>
-              <Text className="text-text-secondary text-xs mt-1">
-                {item.type === 'smart' ? 'Smart' : 'Manual'} · {item.track_count} tracks
-              </Text>
-            </View>
-            {startSession.isPending && startSession.variables?.id === item.id && (
-              <ActivityIndicator size="small" color="#7C4DFF" />
-            )}
-          </Pressable>
-        )}
-        ListEmptyComponent={
-          <Text className="text-text-secondary text-center mt-8">
-            No playlists yet. Create one in the web app.
-          </Text>
-        }
+      <PlaylistPicker
+        playlists={selectOrganizablePlaylists(playlists)}
+        isLoading={isLoading}
+        error={error}
+        searchPlaceholder="Find a playlist to organize"
+        subtitle={organizeSubtitle}
+        onSelect={(playlist) => startSession.mutate(playlist)}
+        busyId={startSession.isPending ? (startSession.variables?.id ?? null) : null}
+        emptyText="No playlists yet. Create one in the web app."
+        optionTestID="organizer-playlist-option"
+        header={activeSession ? <ResumeCard session={activeSession} /> : null}
       />
     </OrganizeFrame>
+  );
+}
+
+/** Shortcut back into the last opened session. */
+function ResumeCard({ session }: { session: ActiveOrganizerSession }): React.JSX.Element {
+  return (
+    <Pressable
+      testID="organizer-resume-btn"
+      accessibilityRole="button"
+      accessibilityLabel={`Resume ${session.playlistName}`}
+      android_ripple={{ color: '#FFFFFF26' }}
+      style={styles.resume}
+      onPress={() => openSession(session)}
+    >
+      <View style={styles.resumeText}>
+        <Text style={styles.resumeLabel}>Resume</Text>
+        <Text style={styles.resumeName} numberOfLines={1}>{session.playlistName}</Text>
+      </View>
+      <ChevronRight size={22} color="#FFFFFF" />
+    </Pressable>
   );
 }
 
@@ -141,3 +100,20 @@ function OrganizeFrame({ children }: { children: ReactNode }): React.JSX.Element
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  resume: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 64,
+    marginHorizontal: 16,
+    marginBottom: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: '#7C4DFF',
+    overflow: 'hidden',
+  },
+  resumeText: { flex: 1, marginRight: 12 },
+  resumeLabel: { color: '#FFFFFFCC', fontSize: 12, fontWeight: '500' },
+  resumeName: { color: '#FFFFFF', fontSize: 16, fontWeight: '700', marginTop: 1 },
+});

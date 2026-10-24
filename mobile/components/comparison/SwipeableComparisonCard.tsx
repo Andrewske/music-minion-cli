@@ -21,6 +21,7 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+import { Music, Pause, Play } from 'lucide-react-native';
 import type { TrackInfo } from '@music-minion/shared';
 import { usePlayerStore, getCurrentPosition } from '../../stores/playerStore';
 import {
@@ -173,7 +174,11 @@ export function SwipeableComparisonCard({
         <View style={styles.content}>
           {!compact && (
             <View style={styles.artPlaceholder}>
-              <Text style={styles.artEmoji}>{track.emojis?.[0] ?? '♪'}</Text>
+              {track.emojis?.[0] ? (
+                <Text style={styles.artEmoji}>{track.emojis[0]}</Text>
+              ) : (
+                <Music size={28} color="#666" />
+              )}
             </View>
           )}
           <Text style={styles.title} numberOfLines={2}>{track.title}</Text>
@@ -235,7 +240,7 @@ interface PlayStatusProps {
 }
 
 function PlayStatus({ label, playState, playingElsewhere, fraction }: PlayStatusProps): React.JSX.Element {
-  const icon = playState === 'playing' ? '⏸' : '▶';
+  const Icon = playState === 'playing' ? Pause : Play;
   const hint =
     playState === 'idle'
       ? 'Tap to play · swipe right = winner'
@@ -248,12 +253,9 @@ function PlayStatus({ label, playState, playingElsewhere, fraction }: PlayStatus
   return (
     <View style={styles.playStatus}>
       <View style={styles.playRow}>
-        <Text
-          testID={`comparison-card-${label.toLowerCase()}-${playState}`}
-          style={[styles.playIcon, playState !== 'idle' && styles.playIconActive]}
-        >
-          {icon}
-        </Text>
+        <View testID={`comparison-card-${label.toLowerCase()}-${playState}`} style={styles.playIcon}>
+          <Icon size={16} color={playState === 'idle' ? '#9E9E9E' : '#7C4DFF'} />
+        </View>
         <Text style={styles.hint} numberOfLines={1}>{hint}</Text>
       </View>
       <View style={styles.progressTrack}>
@@ -390,13 +392,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   playIcon: {
-    color: '#9E9E9E',
-    fontSize: 16,
     width: 20,
-    textAlign: 'center',
-  },
-  playIconActive: {
-    color: '#7C4DFF',
+    alignItems: 'center',
   },
   hint: {
     color: '#777',

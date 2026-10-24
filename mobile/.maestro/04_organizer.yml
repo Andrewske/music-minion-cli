@@ -13,8 +13,19 @@ appId: com.musicminion.app
     file: subflows/nav_to.yml
     env:
       DEST: "organize"
+- extendedWaitUntil:
+    visible:
+      id: "organizer-playlist-option"
+    timeout: 30000
+# Shared PlaylistPicker: search + sort are local, nothing is written.
+- assertVisible:
+    id: "playlist-search"
+- tapOn:
+    id: "playlist-sort-name"
 - assertVisible:
     id: "organizer-playlist-option"
+- tapOn:
+    id: "playlist-sort-recent"
 - tapOn:
     id: "organizer-playlist-option"
 # Session header names the playlist.
@@ -39,7 +50,7 @@ appId: com.musicminion.app
       - assertNotVisible:
           id: "bucket-picker-sheet"
       - assertNotVisible:
-          text: "Tap to undo"
+          id: "undo-snackbar"
       - assertVisible:
           id: "track-row"
 # One tap back lands on the picker, with a Resume entry.

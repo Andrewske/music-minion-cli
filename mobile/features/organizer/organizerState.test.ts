@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { Bucket, BucketSession } from '@music-minion/shared';
-import { buildTrackLabels, sessionCounts, sessionTrackIds, trackLabel } from './organizerState';
+import type { Bucket, BucketSession, Playlist } from '@music-minion/shared';
+import {
+  buildTrackLabels,
+  organizeSubtitle,
+  selectOrganizablePlaylists,
+  sessionCounts,
+  sessionTrackIds,
+  trackLabel,
+} from './organizerState';
 
 function bucket(id: string, trackIds: number[]): Bucket {
   return {
@@ -45,5 +52,22 @@ describe('track labels', () => {
     expect(trackLabel(labels, 1, true)).toBe('Band — Song');
     expect(trackLabel(labels, 2, false)).toBe('Loading…');
     expect(trackLabel(labels, 2, true)).toBe('Missing track #2');
+  });
+});
+
+describe('organize picker helpers', () => {
+  const playlist = (id: number, type: Playlist['type'], track_count: number): Playlist => ({
+    id, name: `P${id}`, type, track_count, library: 'local', pin_order: null,
+  });
+
+  it('keeps smart and manual playlists that have tracks', () => {
+    const list = [playlist(1, 'manual', 0), playlist(2, 'smart', 3), playlist(3, 'manual', 1)];
+    expect(selectOrganizablePlaylists(list).map((p) => p.id)).toEqual([2, 3]);
+    expect(selectOrganizablePlaylists(undefined)).toEqual([]);
+  });
+
+  it('labels the type and size', () => {
+    expect(organizeSubtitle(playlist(1, 'smart', 42))).toBe('Smart · 42 tracks');
+    expect(organizeSubtitle(playlist(2, 'manual', 1))).toBe('Manual · 1 track');
   });
 });

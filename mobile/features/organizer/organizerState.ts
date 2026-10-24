@@ -1,7 +1,7 @@
 /**
  * Pure helpers for the mobile organizer session screen.
  */
-import type { BucketSession, TrackName } from '@music-minion/shared';
+import type { BucketSession, Playlist, TrackName } from '@music-minion/shared';
 import { formatTrackLabel } from '@music-minion/shared';
 
 /** Every track id the session displays (unassigned + all buckets), sorted and unique. */
@@ -36,4 +36,15 @@ export function sessionCounts(session: BucketSession | undefined): SessionCounts
   session.buckets.forEach((b) => b.track_ids.forEach((id) => assigned.add(id)));
   const unassigned = session.unassigned_track_ids.length;
   return { total: assigned.size + unassigned, assigned: assigned.size, unassigned, buckets: session.buckets.length };
+}
+
+/** Organize opens any playlist with tracks, smart or manual. */
+export function selectOrganizablePlaylists(playlists: readonly Playlist[] | undefined): Playlist[] {
+  return (playlists ?? []).filter((p) => p.track_count > 0);
+}
+
+/** Picker row subtitle, e.g. "Smart · 42 tracks". */
+export function organizeSubtitle(playlist: Playlist): string {
+  const size = playlist.track_count === 1 ? '1 track' : `${playlist.track_count} tracks`;
+  return `${playlist.type === 'smart' ? 'Smart' : 'Manual'} · ${size}`;
 }

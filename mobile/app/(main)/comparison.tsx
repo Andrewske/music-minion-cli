@@ -7,13 +7,7 @@
  * Portrait locked (handled via app.json orientation per-screen in future).
  */
 import { useState, useCallback, useRef, type ReactNode } from 'react';
-import {
-  View,
-  Text,
-  Pressable,
-  FlatList,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Toast from 'react-native-toast-message';
 import {
@@ -31,6 +25,7 @@ import { SwipeableComparisonCard } from '../../components/comparison/SwipeableCo
 import { VoteButtons } from '../../components/comparison/VoteButtons';
 import { SessionHeader } from '../../components/comparison/SessionHeader';
 import { ScreenHeader } from '../../components/ScreenHeader';
+import { PlaylistPicker } from '../../components/PlaylistPicker';
 import { PartyPopper } from 'lucide-react-native';
 import { useComparisonPlayback } from '../../hooks/useComparisonPlayback';
 import { selectComparablePlaylists } from '../../features/comparison/comparisonState';
@@ -130,80 +125,18 @@ export default function ComparisonScreen() {
 
   // === PLAYLIST PICKER ===
   if (screen.phase === 'picking') {
-    if (playlistsLoading) {
-      return (
-        <CompareFrame>
-          <View className="flex-1 justify-center items-center">
-            <ActivityIndicator size="large" color="#7C4DFF" />
-            <Text className="text-text-secondary mt-4">Loading playlists...</Text>
-          </View>
-        </CompareFrame>
-      );
-    }
-
-    if (playlistsError) {
-      return (
-        <CompareFrame>
-          <View className="flex-1 justify-center items-center px-6">
-            <Text className="text-error text-lg mb-2">Can&apos;t reach server</Text>
-            <Text className="text-text-secondary text-center mb-4">
-              {playlistsError instanceof Error ? playlistsError.message : 'Connection failed'}
-            </Text>
-            <Text className="text-text-secondary text-sm text-center">
-              Is Tailscale running?
-            </Text>
-          </View>
-        </CompareFrame>
-      );
-    }
-
-    const localPlaylists = selectComparablePlaylists(playlists);
-
     return (
       <CompareFrame>
-        <View className="px-4 mb-4">
-          <Text className="text-text-secondary text-base">
-            Pick a playlist to start ranking tracks
-          </Text>
-        </View>
-
-        {startMutation.isPending && (
-          <View className="px-4 mb-4">
-            <ActivityIndicator color="#7C4DFF" />
-          </View>
-        )}
-
-        <FlatList
-          data={localPlaylists}
-          keyExtractor={(item) => item.id.toString()}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
-          renderItem={({ item, index }) => (
-            <Pressable
-              testID={index === 0 ? 'comparison-playlist-option' : undefined}
-              className="bg-surface rounded-lg px-4 py-4 mb-2 flex-row justify-between items-center active:opacity-70"
-              onPress={() => handleSelectPlaylist(item)}
-              disabled={startMutation.isPending}
-            >
-              <View className="flex-1 mr-4">
-                <Text className="text-text-primary text-base font-medium">
-                  {item.name}
-                </Text>
-                {item.description ? (
-                  <Text className="text-text-secondary text-sm mt-1" numberOfLines={1}>
-                    {item.description}
-                  </Text>
-                ) : null}
-              </View>
-              <Text className="text-text-secondary text-sm">
-                {item.track_count} tracks
-              </Text>
-            </Pressable>
-          )}
-          ListEmptyComponent={
-            <Text className="text-text-secondary text-center mt-8">
-              No manual playlists with 2+ tracks.{'\n'}Create one in the web app.
-            </Text>
-          }
+        <PlaylistPicker
+          playlists={selectComparablePlaylists(playlists)}
+          isLoading={playlistsLoading}
+          error={playlistsError}
+          searchPlaceholder="Find a playlist to rank"
+          subtitle={compareSubtitle}
+          onSelect={handleSelectPlaylist}
+          busyId={startMutation.isPending ? (startMutation.variables?.id ?? null) : null}
+          emptyText={'No manual playlists with 2+ tracks.\nCreate one in the web app.'}
+          optionTestID="comparison-playlist-option"
         />
       </CompareFrame>
     );
@@ -258,6 +191,12 @@ export default function ComparisonScreen() {
       onExit={handleReset}
     />
   );
+}
+
+/** Picker row subtitle: size first, then the description if there is one. */
+function compareSubtitle(playlist: Playlist): string {
+  const size = `${playlist.track_count} tracks`;
+  return playlist.description ? `${size} · ${playlist.description}` : size;
 }
 
 /** Picker / loading / done states: the Compare header over the body. */

@@ -37,10 +37,13 @@ export function BucketPickerSheet({
             <Pressable
               key={bucket.id}
               testID={`bucket-option-${index}`}
-              style={({ pressed }) => [styles.option, pressed && styles.optionPressed]}
+              accessibilityRole="button"
+              accessibilityLabel={`Add to ${bucket.name}`}
+              // Static style + ripple: NativeWind's Pressable wrapper drops function styles.
+              android_ripple={{ color: '#7C4DFF40' }}
+              style={styles.option}
               onPress={() => onPick(bucket)}
             >
-              <Text style={styles.optionEmoji}>{bucket.emoji_id ?? '📁'}</Text>
               <Text style={styles.optionName} numberOfLines={1}>
                 {bucket.name}
               </Text>
@@ -48,7 +51,13 @@ export function BucketPickerSheet({
             </Pressable>
           ))}
         </ScrollView>
-        <Pressable testID="bucket-picker-cancel" style={styles.cancel} onPress={onClose}>
+        <Pressable
+          testID="bucket-picker-cancel"
+          accessibilityRole="button"
+          android_ripple={{ color: '#FFFFFF14' }}
+          style={styles.cancel}
+          onPress={onClose}
+        >
           <Text style={styles.cancelText}>Cancel</Text>
         </Pressable>
       </View>
@@ -79,9 +88,7 @@ const styles = StyleSheet.create({
   },
   heading: {
     color: '#9E9E9E',
-    fontSize: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+    fontSize: 13,
   },
   track: {
     color: '#E0E0E0',
@@ -104,12 +111,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 12,
     backgroundColor: '#2A2A2A',
-  },
-  optionPressed: {
-    backgroundColor: '#3A2F5A',
-  },
-  optionEmoji: {
-    fontSize: 22,
+    overflow: 'hidden',
   },
   optionName: {
     flex: 1,
@@ -124,6 +126,8 @@ const styles = StyleSheet.create({
   },
   cancel: {
     marginTop: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
     minHeight: 48,
     alignItems: 'center',
     justifyContent: 'center',
