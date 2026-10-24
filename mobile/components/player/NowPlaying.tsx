@@ -15,14 +15,13 @@
  * Like and Add to playlist are disabled: the shared API has no like or
  * add-to-playlist call yet (see PR for #69).
  */
-import { useRef, useState } from 'react';
+import { memo, useCallback, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { View, Text, Pressable, StyleSheet, ScrollView, Platform, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { Check, MonitorSpeaker, Pause, Play, SkipBack, SkipForward } from 'lucide-react-native';
 import type { Track } from '@music-minion/shared';
-import { usePlayer } from '../../hooks/usePlayer';
 import { usePlayerStore } from '../../stores/playerStore';
 import { SeekSlider } from './SeekSlider';
 import { armBadStream, E2E_ENABLED } from '../../services/e2eHooks';
@@ -43,23 +42,24 @@ const haptic = (style: Haptics.ImpactFeedbackStyle): void => {
   Haptics.impactAsync(style);
 };
 
+/**
+ * Render budget: the root subscribes to `currentTrack` only, so it re-renders
+ * on track change and its own state. Position ticks re-render NowPlayingSeek
+ * alone; play/pause re-renders Transport; the scrobble flag re-renders
+ * ScrobbledSlot. Hero, PlayerActionRow and UpNextList are memoized and get
+ * stable callbacks, so none of them re-render while a track plays.
+ */
 export function NowPlaying({ onCollapse }: NowPlayingProps): ReactElement | null {
-  const player = usePlayer();
+  const track = usePlayerStore((s) => s.currentTrack);
   const [devicesOpen, setDevicesOpen] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const upNextY = useRef(0);
-  const position = usePlaybackPosition(player.rntpPosition);
   // A Modal is its own window: the root layout's safe-area padding stops here.
   const pad = fullPlayerInsets(Platform.OS, useSafeAreaInsets());
-  const track = player.currentTrack;
+  const openDevices = useCallback((): void => setDevicesOpen(true), []);
+  const closeDevices = useCallback((): void => setDevicesOpen(false), []);
+  const showQueue = useCallback((): void => scrollRef.current?.scrollTo({ y: upNextY.current, animated: true }), []);
   if (!track) return null;
-
-  // seek() POSTs and sets lastSeekAt; usePlayer's lastSeekAt effect applies
-  // TrackPlayer.seekTo. Seeking locally here too would double-apply.
-  const handleSeek = (seconds: number): void => void player.seek(seconds * 1000);
-  const openDevices = (): void => setDevicesOpen(true);
-  const showQueue = (): void => scrollRef.current?.scrollTo({ y: upNextY.current, animated: true });
-
   return (
     <View testID="now-playing" style={[styles.container, { paddingTop: pad.top }]}>
       <ScrollView ref={scrollRef} style={styles.container} contentContainerStyle={[styles.content, { paddingBottom: 48 + pad.bottom }]}>
@@ -68,20 +68,30 @@ export function NowPlaying({ onCollapse }: NowPlayingProps): ReactElement | null
         </Pressable>
         <View style={styles.bannerWrap}><PlaybackErrorBanner /></View>
         <Hero track={track} onDevices={openDevices} />
-        <SeekSlider position={position} duration={track.duration ?? 0} onSeek={handleSeek} />
-        <ScrobbledSlot visible={player.scrobbledThisPlaythrough} />
-        <Transport isPlaying={player.isPlaying} onPlayPause={player.isPlaying ? player.pause : player.resume} onPrev={player.prev} onNext={player.next} />
+        <NowPlayingSeek durationSec={track.duration ?? 0} />
+        <ScrobbledSlot />
+        <Transport />
         <PlayerActionRow onDevices={openDevices} onQueue={showQueue} />
         <View style={styles.fullWidth} onLayout={(e) => { upNextY.current = e.nativeEvent.layout.y; }}>
           <UpNextList />
         </View>
       </ScrollView>
-      <DeviceSheet visible={devicesOpen} onClose={() => setDevicesOpen(false)} />
+      <DeviceSheet visible={devicesOpen} onClose={closeDevices} />
     </View>
   );
 }
 
-function Hero({ track, onDevices }: { track: Track; onDevices: () => void }): ReactElement {
+/** The only full-player component that re-renders on position ticks (1Hz). */
+function NowPlayingSeek({ durationSec }: { durationSec: number }): ReactElement {
+  const position = usePlaybackPosition();
+  const seek = usePlayerStore((s) => s.seek);
+  // seek() POSTs and sets lastSeekAt; the playback engine's lastSeekAt effect
+  // applies TrackPlayer.seekTo. Seeking locally here too would double-apply.
+  const handleSeek = useCallback((seconds: number): void => void seek(seconds * 1000), [seek]);
+  return <SeekSlider position={position} duration={durationSec} onSeek={handleSeek} />;
+}
+
+const Hero = memo(function Hero({ track, onDevices }: { track: Track; onDevices: () => void }): ReactElement {
   const { width } = useWindowDimensions();
   const isThisDeviceActive = usePlayerStore((s) => s.isThisDeviceActive);
   const devices = usePlayerStore((s) => s.availableDevices);
@@ -100,7 +110,7 @@ function Hero({ track, onDevices }: { track: Track; onDevices: () => void }): Re
       {line.isRemote ? <RemoteDeviceChip text={line.text} onPress={onDevices} /> : null}
     </>
   );
-}
+});
 
 function RemoteDeviceChip({ text, onPress }: { text: string; onPress: () => void }): ReactElement {
   return (
@@ -118,7 +128,8 @@ function RemoteDeviceChip({ text, onPress }: { text: string; onPress: () => void
   );
 }
 
-function ScrobbledSlot({ visible }: { visible: boolean }): ReactElement {
+const ScrobbledSlot = memo(function ScrobbledSlot(): ReactElement {
+  const visible = usePlayerStore((s) => s.scrobbledThisPlaythrough);
   return (
     <View style={styles.scrobbledSlot}>
       {visible ? (
@@ -129,16 +140,16 @@ function ScrobbledSlot({ visible }: { visible: boolean }): ReactElement {
       ) : null}
     </View>
   );
-}
+});
 
-interface TransportProps {
-  isPlaying: boolean;
-  onPlayPause: () => Promise<void>;
-  onPrev: () => Promise<void>;
-  onNext: () => Promise<void>;
-}
-
-function Transport({ isPlaying, onPlayPause, onPrev, onNext }: TransportProps): ReactElement {
+/** ⏮ ▶ ⏭. Owns the isPlaying subscription so the full player root doesn't. */
+const Transport = memo(function Transport(): ReactElement {
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const pause = usePlayerStore((s) => s.pause);
+  const resume = usePlayerStore((s) => s.resume);
+  const onPrev = usePlayerStore((s) => s.prev);
+  const onNext = usePlayerStore((s) => s.next);
+  const onPlayPause = isPlaying ? pause : resume;
   const PlayIcon = isPlaying ? Pause : Play;
   const press = (fn: () => Promise<void>, style: Haptics.ImpactFeedbackStyle): (() => void) => (): void => {
     haptic(style);
@@ -158,7 +169,7 @@ function Transport({ isPlaying, onPlayPause, onPrev, onNext }: TransportProps): 
       </Pressable>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#121212' },

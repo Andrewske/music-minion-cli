@@ -2,7 +2,7 @@
  * Track artwork from the backend, with a lucide note on a dark tile when the
  * image is missing or fails to load.
  */
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import type { ReactElement } from 'react';
 import { View, Image, StyleSheet } from 'react-native';
 import { Music } from 'lucide-react-native';
@@ -20,7 +20,11 @@ interface TrackArtworkProps {
   label?: string;
 }
 
-export function TrackArtwork({ trackId, size, radius, label }: TrackArtworkProps): ReactElement {
+/**
+ * Memoized: props are primitives, so a parent re-render (e.g. a player
+ * state change) doesn't rebuild the Image or its fresh `source` object.
+ */
+export const TrackArtwork = memo(function TrackArtwork({ trackId, size, radius, label }: TrackArtworkProps): ReactElement {
   const [failedId, setFailedId] = useState<number | null>(null);
   const box = { width: size, height: size, borderRadius: radius };
   if (failedId === trackId) {
@@ -39,7 +43,7 @@ export function TrackArtwork({ trackId, size, radius, label }: TrackArtworkProps
       onError={() => setFailedId(trackId)}
     />
   );
-}
+});
 
 const styles = StyleSheet.create({
   tile: {

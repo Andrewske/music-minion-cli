@@ -47,10 +47,11 @@ appId: com.musicminion.app
     timeout: 30000
 
 # The skipped-to track plays normally; app still alive.
+# 0:03-0:59 (a slow hierarchy poll can miss a 0:03-0:09 window).
 - extendedWaitUntil:
     visible:
       id: "seek-position"
-      text: "0:0[3-9]"
+      text: "0:0[3-9]|0:[1-5][0-9]"
     timeout: 45000
 - tapOn:
     id: "playback-error-dismiss"

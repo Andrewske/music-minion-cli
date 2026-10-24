@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampToDuration, playbackPositionSec, progressFraction } from './progress';
+import { SEEK_SETTLE_MS, clampToDuration, playbackPositionSec, progressFraction, readsStoreClock } from './progress';
 
 const base = { isThisDeviceActive: false, localPositionSec: 0, remotePositionMs: 0, durationSec: 300 };
 
@@ -29,6 +29,22 @@ describe('playbackPositionSec', () => {
   it('passes the position through when the duration is unknown', () => {
     expect(playbackPositionSec({ ...base, remotePositionMs: 939_000, durationSec: undefined })).toBe(939);
     expect(playbackPositionSec({ ...base, remotePositionMs: 939_000, durationSec: 0 })).toBe(939);
+  });
+});
+
+describe('readsStoreClock', () => {
+  it('always reads the store for a remote device', () => {
+    expect(readsStoreClock(false, 60_000)).toBe(true);
+  });
+
+  it('reads the store locally only just after a seek', () => {
+    expect(readsStoreClock(true, 200)).toBe(true);
+    expect(readsStoreClock(true, SEEK_SETTLE_MS)).toBe(false);
+    expect(readsStoreClock(true, 60_000)).toBe(false);
+  });
+
+  it('ignores a seek stamp from the future (clock skew)', () => {
+    expect(readsStoreClock(true, -50)).toBe(false);
   });
 });
 

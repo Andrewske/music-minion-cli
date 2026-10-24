@@ -1,9 +1,5 @@
 import { useEffect, useRef } from 'react';
-import TrackPlayer, {
-  PlayerCommand,
-  useProgress,
-  usePlaybackState,
-} from '@rntp/player';
+import TrackPlayer, { PlayerCommand } from '@rntp/player';
 import { usePlayerStore, getCurrentPosition } from '../stores/playerStore';
 import { getDefaultApiClient } from '@music-minion/shared';
 import { resolveStreamUrl } from '../services/e2eHooks';
@@ -44,18 +40,27 @@ function setupPlayer(): void {
   }
 }
 
-export function usePlayer() {
+/**
+ * Drives RNTP from the player store: load, play/pause, volume, seeks and
+ * scrobble timing. Mount it ONCE, via <PlaybackEngine /> (renders null).
+ *
+ * It subscribes to the whole store, so it must not live in a component that
+ * renders UI: every store change would re-render that tree. It also holds no
+ * position state. UI reads position through usePlaybackPosition in leaf
+ * components only. (Before, this hook was usePlayer(): it polled RNTP at 4Hz
+ * and was called by PlayerBar and NowPlaying, so both re-rendered their whole
+ * trees 4x a second, paused or not. A second mount in NowPlaying also had its
+ * own lastLoadedTrackIdRef and re-ran setMediaItem when the player opened.)
+ */
+export function usePlaybackEngine(): void {
   const store = usePlayerStore();
-  const { position } = useProgress(0.25);
-  const playbackState = usePlaybackState();
   const lastLoadedTrackIdRef = useRef<number | null>(null);
   const scrobbleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setupPlayer();
     // End/error handling lives in services/playbackEvents.ts (shared with the
-    // background headless handler); registration is module-guarded so multiple
-    // usePlayer mounts (PlayerBar + NowPlaying) register listeners only once.
+    // background headless handler); registration is module-guarded.
     registerForegroundPlaybackListeners();
   }, []);
 
@@ -160,11 +165,4 @@ export function usePlayer() {
       if (scrobbleTimerRef.current) clearTimeout(scrobbleTimerRef.current);
     };
   }, [store.currentTrack?.id, store.isPlaying, store.scrobbledThisPlaythrough]);
-
-  return {
-    ...store,
-    rntpPosition: position,
-    rntpState: playbackState,
-    isPlayerReady: isSetup,
-  };
 }

@@ -24,6 +24,18 @@ export function playbackPositionSec(input: PositionInput): number {
   return clampToDuration(Number.isFinite(sec) && sec > 0 ? sec : 0, input.durationSec);
 }
 
+/** How long after a seek the store's optimistic position beats RNTP's poll. */
+export const SEEK_SETTLE_MS = 1500;
+
+/**
+ * Whether to read the store clock instead of RNTP. Always for a remote
+ * device; locally only right after a seek, before RNTP's 1Hz poll catches
+ * up (otherwise the slider thumb would snap back for up to a second).
+ */
+export function readsStoreClock(isThisDeviceActive: boolean, msSinceSeek: number): boolean {
+  return !isThisDeviceActive || (msSinceSeek >= 0 && msSinceSeek < SEEK_SETTLE_MS);
+}
+
 /** Cap at the duration when it is known; unknown durations pass through. */
 export function clampToDuration(positionSec: number, durationSec: number | undefined): number {
   if (!durationSec || durationSec <= 0 || !Number.isFinite(durationSec)) return positionSec;
