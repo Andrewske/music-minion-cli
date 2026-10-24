@@ -93,7 +93,8 @@ export function HeaderIconButton({ icon: Icon, label, onPress, testID, color, di
       onPress={onPress}
       disabled={disabled}
       android_ripple={{ color: '#FFFFFF1F', borderless: true, radius: 22 }}
-      style={({ pressed }) => [styles.iconButton, pressed && styles.iconButtonPressed, disabled && styles.disabled]}
+      // Static style: NativeWind's Pressable wrapper drops function styles.
+      style={[styles.iconButton, disabled && styles.disabled]}
     >
       <Icon size={24} color={color ?? '#E0E0E0'} strokeWidth={2} />
     </Pressable>
@@ -134,9 +135,6 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  iconButtonPressed: {
-    backgroundColor: '#FFFFFF14',
   },
   disabled: {
     opacity: 0.4,

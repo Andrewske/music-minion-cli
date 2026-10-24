@@ -83,7 +83,8 @@ function DrawerRow({ item, active, onPress }: DrawerRowProps): ReactElement {
       accessibilityLabel={showDot ? connectionLabel(item.label, status) : item.label}
       onPress={() => onPress(item)}
       android_ripple={{ color: '#FFFFFF14' }}
-      style={({ pressed }) => [styles.row, active && styles.rowActive, pressed && !active && styles.rowPressed]}
+      // Static style: NativeWind's Pressable wrapper drops function styles.
+      style={[styles.row, active && styles.rowActive]}
     >
       <Icon size={22} color={active ? ACTIVE_TINT : '#8A8A8A'} strokeWidth={active ? 2.25 : 2} />
       <Text style={[styles.label, active && styles.labelActive]}>{item.label}</Text>
@@ -133,9 +134,6 @@ const styles = StyleSheet.create({
   },
   rowActive: {
     backgroundColor: '#7C4DFF29',
-  },
-  rowPressed: {
-    backgroundColor: '#FFFFFF0D',
   },
   label: {
     flex: 1,

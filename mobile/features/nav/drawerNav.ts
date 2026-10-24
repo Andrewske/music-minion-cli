@@ -7,13 +7,16 @@ import type { NavStateLike } from '../organizer/organizerNav';
 
 export type NavKey = 'home' | 'feed' | 'compare' | 'organize' | 'history' | 'settings';
 
+/** URL paths of the drawer destinations (assignable to expo-router's typed Href). */
+export type NavHref = '/' | '/feed' | '/comparison' | '/organizer' | '/history' | '/settings';
+
 export interface NavItem {
   key: NavKey;
   label: string;
   /** Drawer route name (file/dir name under `app/(main)`). */
   routeName: string;
   /** URL path. The `(main)` group is invisible in URLs. */
-  href: string;
+  href: NavHref;
 }
 
 const ITEMS: Record<NavKey, NavItem> = {
@@ -45,7 +48,7 @@ export function navItemForRoute(routeName: string): NavItem | undefined {
 export type NavIntent =
   | { kind: 'close' }
   | { kind: 'navigate'; routeName: string }
-  | { kind: 'reset-organizer'; href: string };
+  | { kind: 'reset-organizer'; href: NavHref };
 
 /**
  * What a drawer tap should do. Organize with a session open always returns
