@@ -3,6 +3,7 @@
  * Liked / playlisted tracks pinned on top, then the rest by play count.
  */
 import { useCallback, useMemo } from 'react';
+import type { ReactElement } from 'react';
 import {
   View,
   Text,
@@ -18,6 +19,7 @@ import type { ArtistLibraryTrack, Track } from '@music-minion/shared';
 import { Heart, ListMusic, Music } from 'lucide-react-native';
 import { usePlayerStore } from '../../stores/playerStore';
 import { ScreenHeader } from '../../components/ScreenHeader';
+import { TrackArtwork } from '../../components/tracks/TrackArtwork';
 
 const formatDuration = (seconds: number | null): string => {
   if (seconds == null) return '-:--';
@@ -42,7 +44,7 @@ const toTrack = (t: ArtistLibraryTrack): Track => ({
 /** Saved = liked or in at least one playlist. Header count and section use this. */
 const isSaved = (t: ArtistLibraryTrack): boolean => t.is_liked || t.playlists.length > 0;
 
-export default function ArtistScreen() {
+export default function ArtistScreen(): ReactElement {
   const { id } = useLocalSearchParams<{ id: string }>();
   const artistId = Number(id);
   const play = usePlayerStore((s) => s.play);
@@ -139,7 +141,11 @@ export default function ArtistScreen() {
                   playing ? 'bg-primary/10 border border-primary/40' : 'bg-surface'
                 }`}
                 testID={`artist-track-${item.id}`}
+                android_ripple={{ color: '#FFFFFF14' }}
               >
+                <View className="mr-3">
+                  <TrackArtwork trackId={item.id} size={40} isPlaying={playing} />
+                </View>
                 <View className="flex-1 mr-2">
                   <Text
                     className={`text-sm ${playing ? 'text-primary' : 'text-text-primary'}`}
