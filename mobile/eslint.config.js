@@ -5,6 +5,7 @@ const expoConfig = require('eslint-config-expo/flat');
 module.exports = defineConfig([
   expoConfig,
   {
-    ignores: ['dist/*', 'android/*', '.expo/*'],
+    // .maestro/scripts run in Maestro's JS sandbox (output, maestro, env globals).
+    ignores: ['dist/*', 'android/*', '.expo/*', '.maestro/*'],
   },
 ]);

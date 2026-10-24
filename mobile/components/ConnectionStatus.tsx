@@ -13,6 +13,7 @@ import { useEffect, useRef, type ReactElement } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import Toast from 'react-native-toast-message';
 import type { ConnectionStatus as Status } from '../hooks/useSyncWebSocket';
+import { CONNECTION_DOT_COLORS as DOT_COLORS } from '../features/nav/connectionDot';
 
 interface ConnectionStatusProps {
   status: Status;
@@ -25,11 +26,6 @@ const LABELS: Record<Status, string> = {
   offline: 'Offline',
 };
 
-const DOT_COLORS: Record<Status, string> = {
-  connected: '#4CAF50',
-  connecting: '#FFB300',
-  offline: '#E53935',
-};
 
 export function ConnectionStatus({ status, retry }: ConnectionStatusProps): ReactElement | null {
   const wasOfflineRef = useRef(false);

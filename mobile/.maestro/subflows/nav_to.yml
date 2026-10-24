@@ -1,0 +1,9 @@
+# Subflow: open the drawer from the ScreenHeader menu button and go to DEST.
+# env: DEST = home | feed | compare | organize | history | settings
+# Only works from a top-level screen (pushed screens show a back arrow instead).
+appId: com.musicminion.app
+---
+- tapOn:
+    id: "nav-open"
+- tapOn:
+    id: "nav-${DEST}"

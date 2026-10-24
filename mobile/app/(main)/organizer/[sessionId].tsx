@@ -17,6 +17,7 @@ import { usePlaylistOrganizer } from '../../../hooks/usePlaylistOrganizer';
 import { BucketCard } from '../../../components/organizer/BucketCard';
 import { BucketPickerSheet } from '../../../components/organizer/BucketPickerSheet';
 import { SessionHeader } from '../../../components/organizer/SessionHeader';
+import { ScreenHeader } from '../../../components/ScreenHeader';
 import { SessionFooter } from '../../../components/organizer/SessionFooter';
 import { useOrganizerStore } from '../../../stores/organizerStore';
 import {
@@ -26,7 +27,7 @@ import {
   trackLabel,
 } from '../../../features/organizer/organizerState';
 
-const PICKER_HREF = '/(tabs)/organizer';
+const PICKER_HREF = '/organizer';
 
 /** Leave the session for the picker without stacking screens. */
 function backToPicker(): void {
@@ -184,9 +185,12 @@ export default function SessionScreen(): React.JSX.Element {
 
   if (sessionLoading || organizer.isLoading) {
     return (
-      <View className="flex-1 bg-background justify-center items-center">
-        <ActivityIndicator size="large" color="#7C4DFF" />
-        <Text className="text-text-secondary mt-4">Loading session...</Text>
+      <View className="flex-1 bg-background">
+        <ScreenHeader title={playlistName} onBack={backToPicker} backLabel="Back to playlists" backTestID="organizer-back-btn" />
+        <View className="flex-1 justify-center items-center">
+          <ActivityIndicator size="large" color="#7C4DFF" />
+          <Text className="text-text-secondary mt-4">Loading session...</Text>
+        </View>
       </View>
     );
   }

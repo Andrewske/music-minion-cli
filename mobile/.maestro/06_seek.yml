@@ -5,7 +5,7 @@ appId: com.musicminion.app
 - launchApp
 - extendedWaitUntil:
     visible:
-      id: "tab-home"
+      id: "nav-open"
     timeout: 30000
 - runFlow: subflows/play_search_track.yml
 

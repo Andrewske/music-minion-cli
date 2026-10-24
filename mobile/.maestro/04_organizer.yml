@@ -5,8 +5,14 @@
 appId: com.musicminion.app
 ---
 - launchApp
-- tapOn:
-    id: "tab-organize"
+- extendedWaitUntil:
+    visible:
+      id: "nav-open"
+    timeout: 30000
+- runFlow:
+    file: subflows/nav_to.yml
+    env:
+      DEST: "organize"
 - assertVisible:
     id: "organizer-playlist-option"
 - tapOn:

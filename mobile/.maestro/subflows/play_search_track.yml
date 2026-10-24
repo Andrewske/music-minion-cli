@@ -3,8 +3,10 @@
 # env: QUERY (default "the"). Sets output.startIndex / output.queueLength.
 appId: com.musicminion.app
 ---
-- tapOn:
-    id: "tab-home"
+- runFlow:
+    file: nav_to.yml
+    env:
+      DEST: "home"
 - tapOn:
     id: "home-search-input"
 - eraseText

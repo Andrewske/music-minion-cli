@@ -15,7 +15,9 @@ import { useQuery } from '@tanstack/react-query';
 import { searchTracks } from '@music-minion/shared';
 import type { Track } from '@music-minion/shared';
 import { usePlayerStore } from '../../stores/playerStore';
+import { X } from 'lucide-react-native';
 import { TrackCard } from '../../components/tracks/TrackCard';
+import { ScreenHeader } from '../../components/ScreenHeader';
 
 export default function HomeScreen() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -77,8 +79,9 @@ export default function HomeScreen() {
 
   return (
     <View className="flex-1 bg-background">
+      <ScreenHeader title="Home" />
       {/* Search bar */}
-      <View className="px-4 pt-4 pb-3">
+      <View className="px-4 pb-3">
         <View className="flex-row items-center bg-surface rounded-lg border border-neutral-700">
           <TextInput
             testID="home-search-input"
@@ -92,8 +95,14 @@ export default function HomeScreen() {
             returnKeyType="search"
           />
           {searchQuery.length > 0 && (
-            <Pressable className="px-3" onPress={clearSearch}>
-              <Text className="text-text-secondary text-lg">✕</Text>
+            <Pressable
+              className="px-3 py-3"
+              onPress={clearSearch}
+              accessibilityRole="button"
+              accessibilityLabel="Clear search"
+              hitSlop={8}
+            >
+              <X size={18} color="#9E9E9E" />
             </Pressable>
           )}
         </View>

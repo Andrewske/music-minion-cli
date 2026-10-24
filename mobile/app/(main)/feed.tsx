@@ -36,6 +36,7 @@ import {
 } from '@music-minion/shared';
 import { usePlayerStore } from '../../stores/playerStore';
 import { FeedTrackCard } from '../../components/feed/FeedTrackCard';
+import { ScreenHeader } from '../../components/ScreenHeader';
 import {
   optimisticallyDecideFeedItems,
   parseFeedScreenState,
@@ -200,8 +201,8 @@ export default function FeedScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <View className="pb-3 pt-4">
-        <Text className="mb-3 px-4 text-2xl font-bold text-text-primary">Feed</Text>
+      <ScreenHeader title="Feed" />
+      <View className="pb-3">
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2 px-4">
           {(['all', 'releases', 'reposts'] as const).map((value) => (
             <FilterChip key={value} label={value === 'all' ? 'All' : value === 'releases' ? 'Releases' : 'Reposts'} active={source === value} onPress={() => setSource(value)} testID={`feed-source-${value}`} />

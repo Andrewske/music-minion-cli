@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getHistory, getStats } from '@music-minion/shared';
 import type { HistoryEntry } from '@music-minion/shared';
 import { describeListen, formatRelativeTime } from '../../features/history/historyFormat';
+import { ScreenHeader } from '../../components/ScreenHeader';
 
 export default function HistoryScreen(): ReactElement {
   const { data: history, isLoading } = useQuery({
@@ -23,12 +24,9 @@ export default function HistoryScreen(): ReactElement {
 
   return (
     <View className="flex-1 bg-background">
-      {/* Header + stats */}
-      <View className="px-4 pt-4 pb-3">
-        <Text className="text-text-primary text-2xl font-bold mb-3">
-          History
-        </Text>
-
+      <ScreenHeader title="History" />
+      {/* Stats */}
+      <View className="px-4 pb-3">
         {stats && (
           <View className="flex-row gap-4 mb-2">
             <View className="bg-surface rounded-lg px-4 py-3 flex-1 items-center">

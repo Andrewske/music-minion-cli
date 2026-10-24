@@ -4,7 +4,7 @@
 
 | File | Asserts | Notes |
 |------|---------|-------|
-| `00_launch.yml` | cold launch → `tab-home` visible | `extendedWaitUntil` 30 s for bundle load |
+| `00_launch.yml` | cold launch → `nav-open` visible; drawer lists all `nav-*` + `nav-connection-dot`; Settings and back | `extendedWaitUntil` 30 s for bundle load |
 | `01_config_fallthrough.yml` | `clearState` → still lands Home | env URL fallback guard (gate unreachable) |
 | `02_browse_play.yml` | search "the" → tap track → `player-track-title` | exercises search + playback; `hideKeyboard` before tapping the list |
 | `03_comparison.yml` | pick playlist → picker disappears | non-destructive (no vote; avoids mutating ELO). Vote buttons sit below the scroll fold, so don't assert them |
@@ -15,6 +15,7 @@
 | `08_auto_advance.yml` | seek to 98% → queue index +1, new title, new track plays | search queues the rest of the results |
 | `09_bad_stream_skip.yml` | armed bad URL → retry → banner → auto-skip | **needs E2E build** (`EXPO_PUBLIC_E2E=1`, see below) |
 | `10_background.yml` | Home key 12s → media notification shows track → position advanced | proves the player service kept running, not audible output |
+| `subflows/nav_to.yml` | shared: tap `nav-open`, then `nav-${DEST}` | env `DEST`; top-level screens only |
 | `subflows/play_search_track.yml` | shared: search, play first result, open Now Playing, wait for 0:03 | sets `output.startIndex` / `output.queueLength` |
 | `scripts/*.js` | `clock-to-seconds`, `sleep`, `copied-as-regex` | `runScript` helpers (Maestro has no sleep; text selectors are regexes) |
 | `config.yaml` | workspace config | `flows: ["*.yml"]` |
@@ -45,14 +46,15 @@ If the installed APK wasn't built by `e2e.sh`, that flow fails at the banner wai
 
 | File | testIDs |
 |------|---------|
-| `app/(tabs)/_layout.tsx` | `tab-home`, `tab-compare`, `tab-organize`, `tab-history`, `tab-settings` (via `tabBarButtonTestID`) |
+| `components/ScreenHeader.tsx` | `nav-open` (≡, top-level screens on phone), `header-back` (← default; screens override: `artist-back`, `organizer-back-btn`, `comparison-exit`) |
+| `components/nav/AppDrawerContent.tsx` | `nav-home`, `nav-feed`, `nav-compare`, `nav-organize`, `nav-history`, `nav-settings`, `nav-connection-dot` |
 | `app/setup.tsx` | `setup-url-input`, `setup-test-btn` |
-| `app/(tabs)/index.tsx` | `home-search-input`; `track-card` (first row only) |
+| `app/(main)/index.tsx` | `home-search-input`; `track-card` (first row only) |
 | `components/tracks/TrackCard.tsx` | forwards optional `testID` prop → Pressable |
 | `components/comparison/VoteButtons.tsx` | `vote-a`, `vote-b` |
-| `app/(tabs)/comparison.tsx` | `comparison-playlist-option` (first row) |
-| `app/(tabs)/organizer/index.tsx` | `organizer-playlist-option` (first row) |
-| `app/(tabs)/organizer/[sessionId].tsx` | `bucket-name-input`, `create-bucket-btn`, `track-row` (first) |
+| `app/(main)/comparison.tsx` | `comparison-playlist-option` (first row) |
+| `app/(main)/organizer/index.tsx` | `organizer-playlist-option` (first row) |
+| `app/(main)/organizer/[sessionId].tsx` | `bucket-name-input`, `create-bucket-btn`, `track-row` (first) |
 | `components/player/PlayerBar.tsx` | `player-bar`, `player-track-title`, `player-bar-expand` (opens Now Playing), `player-play-pause` (label Play/Pause), `player-next` |
 | `components/player/NowPlaying.tsx` | `now-playing-title` (long-press = E2E seam), `now-playing-prev`, `now-playing-play-pause` (label Play/Pause), `now-playing-next`, `now-playing-queue-info` ("N / M in queue"), `now-playing-scrobbled` |
 | `components/player/SeekSlider.tsx` | `seek-slider`, `seek-position`, `seek-duration` (m:ss) |

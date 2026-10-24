@@ -1,7 +1,7 @@
 /**
  * Root layout — providers, API client init, WebSocket sync, PlayerBar.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { Stack, Redirect, usePathname, router, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -16,6 +16,7 @@ import { useServerUrl } from '../hooks/useServerUrl';
 import { useSyncWebSocket } from '../hooks/useSyncWebSocket';
 import { PlayerBar } from '../components/player/PlayerBar';
 import { ConnectionStatus } from '../components/ConnectionStatus';
+import { ConnectionStatusContext } from '../hooks/useConnectionStatus';
 import '../global.css';
 import { verifyInstallation } from 'nativewind';
 
@@ -38,6 +39,7 @@ function AppContent() {
   const { hasShareIntent } = useShareIntentContext();
   // Edge-to-edge Android draws under the status bar. Inset every screen once
   // here so scroll content clips below the status bar instead of behind it.
+  // Screens add no top padding of their own: ScreenHeader owns that spacing.
   const { top: topInset } = useSafeAreaInsets();
 
   // Init API client when server URL is available
@@ -52,12 +54,13 @@ function AppContent() {
   // ShareIntentProvider is always mounted at the root layout.
   useEffect(() => {
     if (hasShareIntent && isConfigured) {
-      router.push('/(tabs)/settings');
+      router.push('/settings');
     }
   }, [hasShareIntent, isConfigured]);
 
   // WebSocket sync for player + device state
   const { status, retry } = useSyncWebSocket({ serverUrl });
+  const connection = useMemo(() => ({ status, retry }), [status, retry]);
 
   if (isLoading) {
     return (
@@ -72,14 +75,16 @@ function AppContent() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#121212', paddingTop: topInset }}>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="setup" />
-        <Stack.Screen name="(tabs)" />
-      </Stack>
-      <ConnectionStatus status={status} retry={retry} />
-      {isConfigured && <PlayerBar />}
-    </View>
+    <ConnectionStatusContext.Provider value={connection}>
+      <View style={{ flex: 1, backgroundColor: '#121212', paddingTop: topInset }}>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="setup" />
+          <Stack.Screen name="(main)" />
+        </Stack>
+        <ConnectionStatus status={status} retry={retry} />
+        {isConfigured && <PlayerBar />}
+      </View>
+    </ConnectionStatusContext.Provider>
   );
 }
 
@@ -115,7 +120,7 @@ export default function RootLayout() {
       options={{
         debug: __DEV__,
         resetOnBackground: true,
-        onResetShareIntent: () => appRouter.replace('/(tabs)'),
+        onResetShareIntent: () => appRouter.replace('/'),
       }}
     >
       <GestureHandlerRootView style={{ flex: 1 }}>
