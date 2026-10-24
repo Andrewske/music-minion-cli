@@ -4,7 +4,6 @@ import {
   FlatList,
   Pressable,
   RefreshControl,
-  ScrollView,
   Text,
   View,
 } from 'react-native';
@@ -19,7 +18,6 @@ import Toast from 'react-native-toast-message';
 import {
   FEED_DECISION_MUTATION_KEY,
   FEED_PAGE_SIZE,
-  FEED_RANK_PRESETS,
   getFeed,
   getFeedRefetchInterval,
   isFeedSyncFailed,
@@ -36,6 +34,7 @@ import {
 } from '@music-minion/shared';
 import { usePlayerStore } from '../../stores/playerStore';
 import { FeedTrackCard } from '../../components/feed/FeedTrackCard';
+import { FeedFilterRow } from '../../components/feed/FeedFilterRow';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import {
   optimisticallyDecideFeedItems,
@@ -51,35 +50,6 @@ const toTrack = (item: FeedItem, localTrackId = item.local_track_id): Track => {
     duration: item.duration_ms / 1000,
   };
 };
-
-function FilterChip({
-  label,
-  active,
-  onPress,
-  testID,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-  testID: string;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      testID={testID}
-      accessibilityRole="button"
-      accessibilityState={{ selected: active }}
-      accessibilityLabel={`Show ${label}`}
-      className={`min-h-10 justify-center rounded-full border px-3 ${
-        active ? 'border-primary bg-primary/15' : 'border-neutral-700'
-      }`}
-    >
-      <Text className={`text-xs ${active ? 'text-primary' : 'text-text-secondary'}`}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
 
 export default function FeedScreen() {
   const params = useLocalSearchParams<{
@@ -202,20 +172,14 @@ export default function FeedScreen() {
   return (
     <View className="flex-1 bg-background">
       <ScreenHeader title="Feed" />
-      <View className="pb-3">
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2 px-4">
-          {(['all', 'releases', 'reposts'] as const).map((value) => (
-            <FilterChip key={value} label={value === 'all' ? 'All' : value === 'releases' ? 'Releases' : 'Reposts'} active={source === value} onPress={() => setSource(value)} testID={`feed-source-${value}`} />
-          ))}
-        </ScrollView>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="mt-2 gap-2 px-4" accessibilityLabel="Rank filters">
-          <FilterChip label="All ranks" active={maxRank === undefined} onPress={() => setMaxRank()} testID="feed-rank-all" />
-          {FEED_RANK_PRESETS.map((rank) => (
-            <FilterChip key={rank} label={`Top ${rank}`} active={maxRank === rank} onPress={() => setMaxRank(rank)} testID={`feed-rank-${rank}`} />
-          ))}
-          <FilterChip label="In library" active={inLibrary} onPress={toggleInLibrary} testID="feed-filter-library" />
-        </ScrollView>
-      </View>
+      <FeedFilterRow
+        source={source}
+        maxRank={maxRank}
+        inLibrary={inLibrary}
+        onSource={setSource}
+        onMaxRank={setMaxRank}
+        onToggleInLibrary={toggleInLibrary}
+      />
 
       {feedQuery.isLoading ? (
         <View className="items-center py-8" accessibilityRole="progressbar" accessibilityLabel="Loading feed"><ActivityIndicator color="#7C4DFF" /></View>

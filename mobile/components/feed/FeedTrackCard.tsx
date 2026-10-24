@@ -1,15 +1,23 @@
+import type { ReactElement } from 'react';
 import { Image, Pressable, Text, View } from 'react-native';
 import { router } from 'expo-router';
+import { CircleAlert, Clock, Music } from 'lucide-react-native';
 import {
   getFeedEventAt,
-  getFeedItemBestRank,
   getFeedItemDecision,
-  getFeedItemUploader,
   isFeedItemHearted,
   isFeedSyncFailed,
   isFeedSyncPending,
 } from '@music-minion/shared';
-import type { FeedArtist, FeedItem, FeedVerdict } from '@music-minion/shared';
+import type { FeedDecision, FeedItem, FeedVerdict } from '@music-minion/shared';
+import { VerdictButtons } from '../VerdictButtons';
+import {
+  artistName,
+  feedAttributions,
+  formatKeepScore,
+  isLikelyKeep,
+  type AttributionLine,
+} from '../../features/feed/feedFormat';
 
 const formatRelativeDate = (dateStr: string): string => {
   const date = new Date(dateStr);
@@ -26,36 +34,77 @@ const formatDuration = (ms: number): string => {
   return `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`;
 };
 
-function ArtistButton({ artist, prefix }: { artist: FeedArtist; prefix: string }) {
-  const name = artist.display_name ?? artist.slug;
-  if (artist.id === null || artist.id === undefined) {
-    return <Text className="text-xs text-text-secondary">{prefix} {name}</Text>;
-  }
+const asVerdict = (decision: FeedDecision | null): FeedVerdict | null =>
+  decision === 'hide' ? null : decision;
+
+const VERDICT_HINTS: Partial<Record<FeedVerdict, string>> = {
+  nope: 'Clear pass; counts against this recommendation',
+  not_quite: 'Close, but not a keep',
+  keep: 'Like on SoundCloud and add to the monthly playlist',
+};
+
+/** "Reposted by FESTIVILLAINZ #150 +5 others": name links to the artist, rank and count stay muted. */
+function Attribution({ line }: { line: AttributionLine }): ReactElement {
+  const { artist, prefix, rankLabel, othersLabel } = line;
+  const name = artistName(artist);
+  const linked = artist.id !== null && artist.id !== undefined;
+  const spoken = [prefix, name, rankLabel ? `rank ${rankLabel.slice(1)}` : null, othersLabel].filter(Boolean).join(' ');
   return (
     <Text
-      onPress={() => router.push(`/artist/${artist.id}`)}
-      accessibilityRole="link"
-      accessibilityLabel={`${prefix} ${name}; open artist`}
-      className="text-xs text-text-secondary underline"
+      onPress={linked ? () => router.push(`/artist/${artist.id}`) : undefined}
+      accessibilityRole={linked ? 'link' : 'text'}
+      accessibilityLabel={linked ? `${spoken}; open artist` : spoken}
+      className="text-xs text-text-secondary"
       numberOfLines={1}
     >
-      {prefix} {name}
+      {prefix}{' '}
+      <Text className={`text-text-primary ${linked ? 'underline' : ''}`}>{name}</Text>
+      {rankLabel ? <Text className="text-neutral-500">{` ${rankLabel}`}</Text> : null}
+      {othersLabel ? <Text>{` ${othersLabel}`}</Text> : null}
     </Text>
   );
 }
 
-function SyncState({ item }: { item: FeedItem }) {
+function SyncState({ item }: { item: FeedItem }): ReactElement | null {
   const state = item.action_state;
   const failed = isFeedSyncFailed(state);
   if (!failed && !isFeedSyncPending(state)) return null;
+  const Icon = failed ? CircleAlert : Clock;
   return (
-    <Text
+    <View
+      className="mt-1 flex-row items-center gap-1"
       accessibilityRole="alert"
       accessibilityLabel={failed ? `SoundCloud sync failed. ${state?.error ?? ''}` : 'SoundCloud sync pending'}
-      className={`text-xs ${failed ? 'text-red-400' : 'text-amber-300'}`}
-      numberOfLines={1}
     >
-      {failed ? '⚠ SC sync failed' : '◷ SC sync pending'}
+      <Icon size={12} color={failed ? '#F87171' : '#FCD34D'} strokeWidth={2.25} />
+      <Text className={`text-xs ${failed ? 'text-red-400' : 'text-amber-300'}`} numberOfLines={1}>
+        {failed ? 'SoundCloud sync failed' : 'SoundCloud sync pending'}
+      </Text>
+    </View>
+  );
+}
+
+function Artwork({ uri }: { uri: string | null }): ReactElement {
+  if (uri) {
+    return <Image source={{ uri }} accessibilityIgnoresInvertColors className="h-14 w-14 rounded" resizeMode="cover" />;
+  }
+  return (
+    <View className="h-14 w-14 items-center justify-center rounded bg-neutral-800">
+      <Music size={22} color="#9E9E9E" strokeWidth={2} />
+    </View>
+  );
+}
+
+function MetaLine({ item }: { item: FeedItem }): ReactElement {
+  const score = item.keep_probability;
+  return (
+    <Text className="mt-0.5 text-xs text-text-secondary" numberOfLines={1}>
+      {formatRelativeDate(getFeedEventAt(item))} · {formatDuration(item.duration_ms)}
+      {score !== null ? (
+        <Text className={isLikelyKeep(score) ? 'font-semibold text-emerald-300' : ''} testID={`feed-score-${item.soundcloud_id}`}>
+          {` · ${formatKeepScore(score)}`}
+        </Text>
+      ) : null}
     </Text>
   );
 }
@@ -68,95 +117,51 @@ interface FeedTrackCardProps {
   onDecide: (item: FeedItem, decision: FeedVerdict) => void;
 }
 
-function DecisionButton({ label, glyph, active, disabled, onPress, testID }: {
-  label: string;
-  glyph: string;
-  active: boolean;
-  disabled: boolean;
-  onPress: () => void;
-  testID: string;
-}) {
+function PlayRow({ item, isPlaying, onPlay }: Pick<FeedTrackCardProps, 'item' | 'isPlaying' | 'onPlay'>): ReactElement {
+  const playable = item.access !== 'blocked';
   return (
     <Pressable
-      onPress={onPress}
-      disabled={disabled}
+      onPress={() => playable && onPlay(item)}
+      disabled={!playable}
       accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ selected: active, disabled }}
-      hitSlop={6}
-      className={`min-h-11 min-w-11 items-center justify-center rounded ${active ? 'bg-primary/15' : ''}`}
-      testID={testID}
+      accessibilityLabel={`Play ${item.title ?? 'track'}`}
+      accessibilityState={{ disabled: !playable }}
+      className={`flex-row items-center ${playable ? '' : 'opacity-40'}`}
+      testID={`feed-play-${item.soundcloud_id}`}
     >
-      <Text className={`text-base ${active ? 'text-primary' : 'text-neutral-400'}`}>{glyph}</Text>
+      <Artwork uri={item.artwork_url} />
+      <View className="ml-3 flex-1">
+        <Text className={`text-sm font-medium ${isPlaying ? 'text-primary' : 'text-text-primary'}`} numberOfLines={1}>{item.title ?? 'Untitled'}</Text>
+        <MetaLine item={item} />
+      </View>
     </Pressable>
   );
 }
 
-export function FeedTrackCard({ item, isPlaying, isUpdating = false, onPlay, onDecide }: FeedTrackCardProps) {
+export function FeedTrackCard({ item, isPlaying, isUpdating = false, onPlay, onDecide }: FeedTrackCardProps): ReactElement {
   const decision = getFeedItemDecision(item);
-  const hearted = isFeedItemHearted(item);
-  const uploader = getFeedItemUploader(item);
-  const firstReposter = item.reposters[0];
-  const otherReposters = Math.max(0, item.reposter_count - (firstReposter ? 1 : 0));
-  const bestRank = getFeedItemBestRank(item);
-  const playable = item.access !== 'blocked';
-
+  const id = item.soundcloud_id;
   return (
     <View
-      className={`mx-3 mb-2 rounded-lg border px-3 py-2 ${isPlaying ? 'border-primary/40 bg-primary/10' : 'border-transparent bg-surface'}`}
-      testID={`feed-card-${item.soundcloud_id}`}
+      className={`mx-3 mb-2 rounded-lg border px-3 pb-3 pt-2 ${isPlaying ? 'border-primary/40 bg-primary/10' : 'border-transparent bg-surface'}`}
+      testID={`feed-card-${id}`}
       accessibilityLabel={`${item.title ?? 'Untitled'} feed item`}
     >
-      <View className="flex-row items-center">
-        <Pressable
-          onPress={() => playable && onPlay(item)}
-          disabled={!playable}
-          accessibilityRole="button"
-          accessibilityLabel={`Play ${item.title ?? 'track'}`}
-          accessibilityState={{ disabled: !playable }}
-          className={`flex-1 flex-row items-center ${playable ? '' : 'opacity-40'}`}
-          testID={`feed-play-${item.soundcloud_id}`}
-        >
-          {item.artwork_url ? (
-            <Image source={{ uri: item.artwork_url }} accessibilityIgnoresInvertColors className="h-14 w-14 rounded" resizeMode="cover" />
-          ) : (
-            <View className="h-14 w-14 items-center justify-center rounded bg-neutral-800"><Text className="text-lg text-text-secondary">♫</Text></View>
-          )}
-          <View className="ml-3 flex-1">
-            <Text className={`text-sm ${isPlaying ? 'text-primary' : 'text-text-primary'}`} numberOfLines={1}>{item.title ?? 'Untitled'}</Text>
-            <View className="mt-0.5 flex-row items-center gap-2">
-              <Text className="text-xs text-text-secondary">{formatRelativeDate(getFeedEventAt(item))} · {formatDuration(item.duration_ms)}</Text>
-              {bestRank !== null && <Text className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-text-secondary">#{bestRank}</Text>}
-              {item.keep_probability !== null && (
-                <Text
-                  className={`rounded px-1.5 py-0.5 text-xs ${item.keep_probability >= 0.7 ? 'bg-emerald-900/60 text-emerald-300' : 'bg-neutral-800 text-text-secondary'}`}
-                  testID={`feed-score-${item.soundcloud_id}`}
-                >
-                  {Math.round(item.keep_probability * 100)}%
-                </Text>
-              )}
-            </View>
-          </View>
-        </Pressable>
-      </View>
-
+      <PlayRow item={item} isPlaying={isPlaying} onPlay={onPlay} />
       <View className="mt-2 gap-0.5">
-        {item.sources.includes('release') && uploader && <ArtistButton artist={uploader} prefix="Uploaded by" />}
-        {item.sources.includes('repost') && firstReposter && (
-          <View className="flex-row items-center">
-            <ArtistButton artist={firstReposter} prefix="Reposted by" />
-            {otherReposters > 0 && <Text className="text-xs text-text-secondary"> +{otherReposters} other reposter{otherReposters === 1 ? '' : 's'}</Text>}
-          </View>
-        )}
+        {feedAttributions(item).map((line) => <Attribution key={line.prefix} line={line} />)}
       </View>
-
-      <View className="mt-1 flex-row items-center justify-between">
-        <View className="min-w-0 flex-1 pr-2"><SyncState item={item} /></View>
-        <View className="flex-row items-center" accessibilityLabel="Feed decisions">
-          <DecisionButton label="Nope; clear pass, counts against this recommendation" glyph="👎" active={decision === 'nope'} disabled={isUpdating} onPress={() => onDecide(item, 'nope')} testID={`feed-nope-${item.soundcloud_id}`} />
-          <DecisionButton label="Not quite; close but not a keep" glyph="😐" active={decision === 'not_quite'} disabled={isUpdating} onPress={() => onDecide(item, 'not_quite')} testID={`feed-not-quite-${item.soundcloud_id}`} />
-          <DecisionButton label="Keep; like on SoundCloud and add to monthly playlist" glyph={hearted ? '♥' : '♡'} active={hearted} disabled={isUpdating || decision === 'keep'} onPress={() => onDecide(item, 'keep')} testID={`feed-keep-${item.soundcloud_id}`} />
-        </View>
+      <SyncState item={item} />
+      <View className="mt-3">
+        <VerdictButtons
+          selected={asVerdict(decision)}
+          keepActive={isFeedItemHearted(item)}
+          keepLocked={decision === 'keep'}
+          disabled={isUpdating}
+          onVerdict={(verdict) => onDecide(item, verdict)}
+          testIDs={{ nope: `feed-nope-${id}`, not_quite: `feed-not-quite-${id}`, keep: `feed-keep-${id}` }}
+          accessibilityHints={VERDICT_HINTS}
+        />
       </View>
     </View>
   );
