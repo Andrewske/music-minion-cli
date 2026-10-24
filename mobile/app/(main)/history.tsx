@@ -8,6 +8,25 @@ import { getHistory, getStats } from '@music-minion/shared';
 import type { HistoryEntry } from '@music-minion/shared';
 import { describeListen, formatRelativeTime } from '../../features/history/historyFormat';
 import { ScreenHeader } from '../../components/ScreenHeader';
+import { TrackRow, trackRowText } from '../../components/tracks/TrackRow';
+
+function HistoryRow({ entry, isNewest }: { entry: HistoryEntry; isNewest: boolean }): ReactElement {
+  const listen = describeListen(entry, isNewest);
+  return (
+    <TrackRow
+      artworkId={entry.track_id}
+      title={entry.track_title}
+      subtitle={entry.track_artist || 'Unknown Artist'}
+      isPlaying={isNewest && entry.ended_at === null}
+      trailing={
+        <>
+          <Text style={trackRowText.meta}>{listen}</Text>
+          <Text style={trackRowText.metaDim}>{formatRelativeTime(entry.started_at, Date.now())}</Text>
+        </>
+      }
+    />
+  );
+}
 
 export default function HistoryScreen(): ReactElement {
   const { data: history, isLoading } = useQuery({
@@ -62,24 +81,7 @@ export default function HistoryScreen(): ReactElement {
           initialNumToRender={20}
           maxToRenderPerBatch={10}
           renderItem={({ item, index }: { item: HistoryEntry; index: number }) => (
-            <View className="px-4 py-3 border-b border-neutral-800 flex-row items-center">
-              <View className="flex-1 mr-3">
-                <Text className="text-text-primary text-sm" numberOfLines={1}>
-                  {item.track_title}
-                </Text>
-                <Text className="text-text-secondary text-xs" numberOfLines={1}>
-                  {item.track_artist}
-                </Text>
-              </View>
-              <View className="items-end">
-                <Text className="text-text-secondary text-xs font-mono">
-                  {describeListen(item, index === 0)}
-                </Text>
-                <Text className="text-neutral-600 text-xs">
-                  {formatRelativeTime(item.started_at, Date.now())}
-                </Text>
-              </View>
-            </View>
+            <HistoryRow entry={item} isNewest={index === 0} />
           )}
           ListEmptyComponent={
             <View className="items-center py-12">

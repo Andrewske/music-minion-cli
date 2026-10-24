@@ -3,6 +3,7 @@
  * FlatList with performance tuning for large libraries.
  */
 import { useState, useCallback, useMemo, useRef } from 'react';
+import type { ReactElement } from 'react';
 import {
   View,
   Text,
@@ -17,9 +18,11 @@ import type { Track } from '@music-minion/shared';
 import { usePlayerStore } from '../../stores/playerStore';
 import { X } from 'lucide-react-native';
 import { TrackCard } from '../../components/tracks/TrackCard';
+import { TrackActionSheet } from '../../components/tracks/TrackActionSheet';
+import { useTrackActions } from '../../hooks/useTrackActions';
 import { ScreenHeader } from '../../components/ScreenHeader';
 
-export default function HomeScreen() {
+export default function HomeScreen(): ReactElement {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -71,6 +74,7 @@ export default function HomeScreen() {
       play(track, { type: 'track', start_index: index });
     }
   }, [play, isSearching, displayTracks]);
+  const actions = useTrackActions(handlePlayTrack);
 
   const clearSearch = useCallback(() => {
     setSearchQuery('');
@@ -133,6 +137,7 @@ export default function HomeScreen() {
             track={item}
             isPlaying={currentTrack?.id === item.id}
             onPress={() => handlePlayTrack(item, index)}
+            onLongPress={() => actions.open(item, index)}
           />
         )}
         ListEmptyComponent={
@@ -153,6 +158,12 @@ export default function HomeScreen() {
             ) : null}
           </View>
         }
+      />
+      <TrackActionSheet
+        track={actions.sheetTrack}
+        busyKey={actions.busyKey}
+        onSelect={actions.select}
+        onClose={actions.close}
       />
     </View>
   );

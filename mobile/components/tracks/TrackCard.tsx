@@ -1,10 +1,14 @@
 /**
- * Track card — title, artist, rating, duration.
- * Tap to play, long-press for quick actions (love/unlove, add to bucket).
+ * Track card — Home row for a library Track: artwork, title, artist
+ * (album only when it isn't a month bucket), rating + duration.
+ * Tap to play, long-press opens the track action sheet.
  */
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import type { ReactElement } from 'react';
+import { Text } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import type { Track } from '@music-minion/shared';
+import { trackRowSubtitle } from '../../features/home/trackRow';
+import { TrackRow, trackRowText } from './TrackRow';
 
 interface TrackCardProps {
   track: Track;
@@ -21,103 +25,36 @@ const formatDuration = (seconds?: number): string => {
   return `${m}:${s.toString().padStart(2, '0')}`;
 };
 
-export function TrackCard({ track, isPlaying, onPress, onLongPress, testID }: TrackCardProps) {
-  const handleLongPress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    onLongPress?.();
-  };
-
+function Trailing({ track }: { track: Track }): ReactElement {
+  const tag = track.emojis?.[0];
+  const rating = track.elo_rating != null ? String(Math.round(track.elo_rating)) : null;
+  const top = [tag, rating].filter((v): v is string => Boolean(v)).join(' ');
   return (
-    <Pressable
-      testID={testID}
-      style={[styles.card, isPlaying && styles.cardPlaying]}
-      onPress={onPress}
-      onLongPress={handleLongPress}
-      android_ripple={{ color: '#ffffff10' }}
-    >
-      {/* Emoji / playing indicator */}
-      <View style={styles.leading}>
-        <Text style={styles.emoji}>
-          {isPlaying ? '▶' : (track.emojis?.[0] ?? '♪')}
-        </Text>
-      </View>
-
-      {/* Track info */}
-      <View style={styles.info}>
-        <Text style={[styles.title, isPlaying && styles.titlePlaying]} numberOfLines={1}>
-          {track.title}
-        </Text>
-        <Text style={styles.artist} numberOfLines={1}>
-          {track.artist ?? 'Unknown Artist'}
-          {track.album ? ` · ${track.album}` : ''}
-        </Text>
-      </View>
-
-      {/* Metadata */}
-      <View style={styles.trailing}>
-        {track.elo_rating != null && (
-          <Text style={styles.rating}>{Math.round(track.elo_rating)}</Text>
-        )}
-        <Text style={styles.duration}>{formatDuration(track.duration)}</Text>
-      </View>
-    </Pressable>
+    <>
+      {top ? <Text style={trackRowText.meta}>{top}</Text> : null}
+      <Text style={trackRowText.metaDim}>{formatDuration(track.duration)}</Text>
+    </>
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#1E1E1E',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#2A2A2A',
-  },
-  cardPlaying: {
-    backgroundColor: '#7C4DFF15',
-  },
-  leading: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    backgroundColor: '#2A2A2A',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  emoji: {
-    fontSize: 18,
-  },
-  info: {
-    flex: 1,
-    marginRight: 12,
-  },
-  title: {
-    color: '#E0E0E0',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  titlePlaying: {
-    color: '#7C4DFF',
-  },
-  artist: {
-    color: '#9E9E9E',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  trailing: {
-    alignItems: 'flex-end',
-    gap: 2,
-  },
-  rating: {
-    color: '#9E9E9E',
-    fontSize: 12,
-    fontFamily: 'monospace',
-  },
-  duration: {
-    color: '#666',
-    fontSize: 11,
-    fontFamily: 'monospace',
-  },
-});
+export function TrackCard({ track, isPlaying, onPress, onLongPress, testID }: TrackCardProps): ReactElement {
+  const handleLongPress = onLongPress
+    ? (): void => {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        onLongPress();
+      }
+    : undefined;
+
+  return (
+    <TrackRow
+      testID={testID}
+      artworkId={track.id}
+      title={track.title}
+      subtitle={trackRowSubtitle(track)}
+      trailing={<Trailing track={track} />}
+      isPlaying={isPlaying}
+      onPress={onPress}
+      onLongPress={handleLongPress}
+    />
+  );
+}

@@ -30,7 +30,8 @@ appId: com.musicminion.app
     id: "nav-connection-dot"
 - tapOn:
     id: "nav-settings"
-- assertVisible: "Server URL"
+- assertVisible:
+    id: "settings-connection-card"
 - runFlow:
     file: subflows/nav_to.yml
     env:
