@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import * as Dialog from '@radix-ui/react-dialog';
 import Picker from '@emoji-mart/react';
 import data from '@emoji-mart/data';
 import { useQuery } from '@tanstack/react-query';
@@ -18,11 +18,10 @@ interface EmojiMartEmoji {
 
 /**
  * Emoji picker using emoji-mart with custom emoji support.
- * Wraps emoji-mart in a modal overlay with backdrop click to close.
+ * Rendered as a Radix dialog so it stacks above (and takes focus from) any
+ * parent Radix dialog; backdrop click and Escape close it.
  */
 export function EmojiPicker({ onSelect, onClose, allowClear = false }: EmojiPickerProps): JSX.Element {
-  const pickerRef = useRef<HTMLDivElement>(null);
-
   // Fetch custom emojis from backend in emoji-mart format
   const { data: customEmojis } = useQuery({
     queryKey: ['emojis', 'custom-for-picker'],
@@ -32,18 +31,6 @@ export function EmojiPicker({ onSelect, onClose, allowClear = false }: EmojiPick
       return res.json();
     },
   });
-
-  // Close on Escape key
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
 
   const handleEmojiSelect = (emoji: EmojiMartEmoji) => {
     // For Unicode emojis, use the native character as ID
@@ -65,42 +52,42 @@ export function EmojiPicker({ onSelect, onClose, allowClear = false }: EmojiPick
     : [];
 
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-60"
-      onClick={onClose}
-    >
-      <div
-        ref={pickerRef}
-        onClick={(e) => e.stopPropagation()}
-        className="rounded-lg overflow-hidden"
-      >
-        {allowClear && (
-          <div className="bg-gray-800 p-2 border-b border-gray-700">
-            <button
-              onClick={() => {
-                onSelect(null);
-                onClose();
-              }}
-              className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-sm text-sm font-medium"
-            >
-              Clear Emoji
-            </button>
-          </div>
-        )}
-        <Picker
-          data={data}
-          custom={customCategory}
-          onEmojiSelect={handleEmojiSelect}
-          theme="dark"
-          skinTonePosition="search"
-          previewPosition="none"
-          navPosition="top"
-          perLine={10}
-          emojiSize={16}
-          emojiButtonSize={24}
-          maxFrequentRows={2}
-        />
-      </div>
-    </div>
+    <Dialog.Root open onOpenChange={(isOpen) => !isOpen && onClose()}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-60 bg-black/50" />
+        <Dialog.Content
+          aria-describedby={undefined}
+          className="fixed left-1/2 top-1/2 z-60 -translate-x-1/2 -translate-y-1/2 rounded-lg overflow-hidden"
+        >
+          <Dialog.Title className="sr-only">Choose emoji</Dialog.Title>
+            {allowClear && (
+              <div className="bg-gray-800 p-2 border-b border-gray-700">
+                <button
+                  onClick={() => {
+                    onSelect(null);
+                    onClose();
+                  }}
+                  className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-sm text-sm font-medium"
+                >
+                  Clear Emoji
+                </button>
+              </div>
+            )}
+            <Picker
+              data={data}
+              custom={customCategory}
+              onEmojiSelect={handleEmojiSelect}
+              theme="dark"
+              skinTonePosition="search"
+              previewPosition="none"
+              navPosition="top"
+              perLine={10}
+              emojiSize={16}
+              emojiButtonSize={24}
+              maxFrequentRows={2}
+            />
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
