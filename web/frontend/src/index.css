@@ -295,3 +295,12 @@
     }
   }
 }
+
+/* emoji-mart picker: match the obsidian theme (vars pierce its shadow DOM) */
+em-emoji-picker {
+  --rgb-background: 10, 10, 10;
+  --rgb-accent: 29, 185, 84;
+  --color-border: #1a1a1a;
+  --color-border-over: #2a2a2a;
+  --shadow: none;
+}

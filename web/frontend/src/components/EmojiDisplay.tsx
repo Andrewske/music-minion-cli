@@ -1,3 +1,5 @@
+import { findCustomEmojiSrc, useCustomEmojis } from '../hooks/useCustomEmojis';
+
 interface EmojiDisplayProps {
   emojiId: string;
   emojiData?: { type: string; file_path?: string | null };
@@ -13,7 +15,8 @@ const sizeClasses = {
 
 /**
  * Renders either a Unicode emoji or a custom emoji image.
- * Custom emojis are identified by type='custom' and have a file_path.
+ * Custom emojis come from emojiData (type='custom' + file_path) or, failing
+ * that, are looked up by UUID in the custom emoji list.
  */
 export function EmojiDisplay({
   emojiId,
@@ -23,23 +26,19 @@ export function EmojiDisplay({
 }: EmojiDisplayProps): JSX.Element {
   const { image: imageSizeClass, text: textSizeClass } = sizeClasses[size];
 
-  // Check if custom emoji via type field
-  const isCustom = emojiData?.type === 'custom';
+  const customEmojis = useCustomEmojis();
+  // Callers without emojiData (e.g. bucket emoji_id) get the image via the shared custom list
+  const src = emojiData?.type === 'custom' && emojiData.file_path
+    ? `/custom_emojis/${emojiData.file_path}`
+    : findCustomEmojiSrc(customEmojis, emojiId);
 
-  // Debug logging for custom emojis
-  if (emojiId.length === 36 && emojiId.split('-').length === 5) {
-    console.log('[EmojiDisplay] UUID detected:', emojiId, 'emojiData:', emojiData);
-  }
-
-  if (isCustom && emojiData?.file_path) {
+  if (src) {
     return (
       <img
-        src={`/custom_emojis/${emojiData.file_path}`}
+        src={src}
         alt={emojiId}
         className={`${imageSizeClass} object-contain ${className}`}
         onError={(e) => {
-          // Fallback if image fails to load - hide the broken image
-          console.error('[EmojiDisplay] Image failed to load:', emojiData.file_path);
           e.currentTarget.style.display = 'none';
         }}
       />

@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import Picker from '@emoji-mart/react';
 import data from '@emoji-mart/data';
-import { useQuery } from '@tanstack/react-query';
+import { useCustomEmojis } from '../hooks/useCustomEmojis';
 
 interface EmojiPickerProps {
   onSelect: (emojiId: string | null) => void;
@@ -22,15 +22,7 @@ interface EmojiMartEmoji {
  * parent Radix dialog; backdrop click and Escape close it.
  */
 export function EmojiPicker({ onSelect, onClose, allowClear = false }: EmojiPickerProps): JSX.Element {
-  // Fetch custom emojis from backend in emoji-mart format
-  const { data: customEmojis } = useQuery({
-    queryKey: ['emojis', 'custom-for-picker'],
-    queryFn: async () => {
-      const res = await fetch('/api/emojis/custom-picker');
-      if (!res.ok) return [];
-      return res.json();
-    },
-  });
+  const customEmojis = useCustomEmojis();
 
   const handleEmojiSelect = (emoji: EmojiMartEmoji) => {
     // For Unicode emojis, use the native character as ID
@@ -41,7 +33,7 @@ export function EmojiPicker({ onSelect, onClose, allowClear = false }: EmojiPick
   };
 
   // Build custom category for emoji-mart
-  const customCategory = customEmojis?.length
+  const customCategory = customEmojis.length
     ? [
         {
           id: 'custom',
@@ -57,7 +49,7 @@ export function EmojiPicker({ onSelect, onClose, allowClear = false }: EmojiPick
         <Dialog.Overlay className="fixed inset-0 z-60 bg-black/50" />
         <Dialog.Content
           aria-describedby={undefined}
-          className="fixed left-1/2 top-1/2 z-60 -translate-x-1/2 -translate-y-1/2 rounded-lg overflow-hidden"
+          className="fixed left-1/2 top-1/2 z-60 -translate-x-1/2 -translate-y-1/2 rounded-lg overflow-hidden border border-obsidian-border"
         >
           <Dialog.Title className="sr-only">Choose emoji</Dialog.Title>
             {allowClear && (
@@ -81,9 +73,9 @@ export function EmojiPicker({ onSelect, onClose, allowClear = false }: EmojiPick
               skinTonePosition="search"
               previewPosition="none"
               navPosition="top"
-              perLine={10}
-              emojiSize={16}
-              emojiButtonSize={24}
+              perLine={9}
+              emojiSize={28}
+              emojiButtonSize={40}
               maxFrequentRows={2}
             />
         </Dialog.Content>

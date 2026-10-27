@@ -1,3 +1,5 @@
+import { EmojiDisplay } from './EmojiDisplay';
+
 interface GenreTagProps {
   genre: {
     name: string;
@@ -10,7 +12,7 @@ interface GenreTagProps {
 export function GenreTag({ genre, onClick, className = '' }: GenreTagProps): JSX.Element {
   const content = (
     <>
-      {genre.emoji_id && <span className="mr-1">{genre.emoji_id}</span>}
+      {genre.emoji_id && <EmojiDisplay emojiId={genre.emoji_id} size="sm" className="mr-1" />}
       <span>{genre.name}</span>
     </>
   );
