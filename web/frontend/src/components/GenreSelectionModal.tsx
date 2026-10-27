@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import { useGenreStore } from '../stores/genreStore';
 import { updateTrackGenres, type TrackGenre } from '../api/genres';
 import type { TrackInfo } from '../types';
+import { EmojiDisplay } from './EmojiDisplay';
 
 interface GenreSelectionModalProps {
   open: boolean;
@@ -87,7 +88,7 @@ export function GenreSelectionModal({
                     <span className="text-xs bg-white/20 rounded-full w-5 h-5 flex items-center justify-center">
                       {idx + 1}
                     </span>
-                    {genre!.emoji_id && <span>{genre!.emoji_id}</span>}
+                    {genre!.emoji_id && <EmojiDisplay emojiId={genre!.emoji_id} size="sm" />}
                     <span>{genre!.name}</span>
                   </button>
                 ))}
@@ -105,7 +106,7 @@ export function GenreSelectionModal({
                   onClick={() => handleToggle(genre.id)}
                   className="flex items-center gap-1 px-3 py-1 bg-zinc-800 rounded-full hover:bg-zinc-700"
                 >
-                  {genre.emoji_id && <span>{genre.emoji_id}</span>}
+                  {genre.emoji_id && <EmojiDisplay emojiId={genre.emoji_id} size="sm" />}
                   <span>{genre.name}</span>
                   <span className="text-xs text-white/30">({genre.track_count})</span>
                 </button>

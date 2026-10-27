@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '../ui/button';
 import { EmojiPicker } from '../EmojiPicker';
+import { EmojiDisplay } from '../EmojiDisplay';
 import { getPlaylistsByLibrary } from '../../api/playlists';
 
 interface BucketEditDialogProps {
@@ -105,20 +106,20 @@ export function BucketEditDialog({
     <>
       <Dialog.Root open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
         <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-          <Dialog.Content className="fixed left-[50%] top-[50%] z-50 translate-x-[-50%] translate-y-[-50%] bg-slate-900 border border-slate-700 rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+          <Dialog.Content className="fixed left-[50%] top-[50%] z-50 translate-x-[-50%] translate-y-[-50%] bg-obsidian-surface border border-obsidian-border rounded-lg shadow-xl w-full max-w-md overflow-hidden">
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-obsidian-border">
               <Dialog.Title className="text-lg font-semibold text-white">
                 {title}
               </Dialog.Title>
               <Dialog.Close asChild>
                 <button
                   type="button"
-                  className="rounded-xs opacity-70 ring-offset-slate-950 transition-opacity hover:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:pointer-events-none"
+                  className="rounded-xs opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-obsidian-accent disabled:pointer-events-none"
                   aria-label="Close"
                 >
-                  <X className="h-5 w-5 text-slate-400" />
+                  <X className="h-5 w-5 text-white/60" />
                 </button>
               </Dialog.Close>
             </div>
@@ -140,7 +141,7 @@ export function BucketEditDialog({
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="e.g., Opening, Peak Time, Cool Down"
-                    className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-md text-white placeholder:text-slate-500 focus:outline-hidden focus:ring-2 focus:ring-obsidian-accent focus:border-transparent"
+                    className="w-full px-3 py-2 bg-black/30 border border-obsidian-border rounded-sm text-white placeholder:text-white/30 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-obsidian-accent"
                   />
                 </div>
 
@@ -155,7 +156,7 @@ export function BucketEditDialog({
                   <div className="flex items-center gap-2">
                     {emojiId ? (
                       <div className="flex items-center gap-2">
-                        <span className="text-2xl">{emojiId}</span>
+                        <EmojiDisplay emojiId={emojiId} size="md" />
                         <button
                           type="button"
                           onClick={handleRemoveEmoji}
@@ -170,7 +171,7 @@ export function BucketEditDialog({
                         variant="outline"
                         size="sm"
                         onClick={() => setShowEmojiPicker(true)}
-                        className="border-slate-600 text-slate-300 hover:text-white"
+                        className="border-obsidian-border bg-transparent text-white/70 hover:bg-white/5 hover:text-white"
                       >
                         Choose Emoji
                       </Button>
@@ -194,7 +195,7 @@ export function BucketEditDialog({
                       id="bucket-playlist-link"
                       value={selectedPlaylistId}
                       onChange={handlePlaylistChange}
-                      className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-md text-white focus:outline-hidden focus:ring-2 focus:ring-obsidian-accent focus:border-transparent"
+                      className="w-full px-3 py-2 bg-black/30 border border-obsidian-border rounded-sm text-white focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-obsidian-accent"
                     >
                       <option value="unlink">Not linked</option>
                       {availablePlaylists.map((p) => (
@@ -211,20 +212,20 @@ export function BucketEditDialog({
               </div>
 
               {/* Footer */}
-              <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-700 bg-slate-800/50">
+              <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-obsidian-border">
                 <Button
                   type="button"
                   variant="ghost"
                   onClick={onClose}
                   disabled={isSaving}
-                  className="text-slate-300 hover:text-white"
+                  className="text-white/60 hover:bg-white/5 hover:text-white"
                 >
                   Cancel
                 </Button>
                 <Button
                   type="submit"
                   disabled={!name.trim() || isSaving}
-                  className="bg-obsidian-accent hover:bg-obsidian-accent/80 disabled:opacity-50"
+                  className="bg-obsidian-accent/20 text-obsidian-accent hover:bg-obsidian-accent/30 disabled:opacity-50"
                 >
                   {isSaving ? 'Saving...' : saveLabel}
                 </Button>
