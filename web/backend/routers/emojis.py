@@ -215,6 +215,7 @@ def add_emoji_to_track(track_id: int, request: AddEmojiRequest) -> dict[str, boo
         added = add_emoji_to_track_mutation(
             track_id, emoji_id, conn, source_type="manual"
         )
+        conn.commit()
     return {"added": added}
 
 
@@ -224,6 +225,7 @@ def remove_emoji_from_track(track_id: int, emoji_id: str) -> dict[str, bool]:
     emoji_id = normalize_emoji_id(emoji_id)
     with get_db_connection() as conn:
         result = remove_emoji_from_track_mutation(track_id, emoji_id, conn)
+        conn.commit()
     return {"removed": result["success"], "protected": result["protected"]}
 
 
