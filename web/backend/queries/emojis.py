@@ -61,7 +61,11 @@ def add_emoji_to_track_mutation(
     source_type: str = "manual",
     source_id: str | None = None,
 ) -> bool:
-    """Add emoji to track atomically with use_count increment.
+    """Add emoji to track with use_count increment.
+
+    Runs inside the caller's transaction; the caller must commit. Opening or
+    committing a transaction here breaks callers that already wrote in the
+    same connection ("cannot start a transaction within a transaction").
 
     Args:
         track_id: Track database ID
@@ -76,45 +80,37 @@ def add_emoji_to_track_mutation(
     # Generate 32-char hex UUID (no hyphens, consistent with migration pattern)
     instance_id = uuid.uuid4().hex
 
-    db_conn.execute("BEGIN IMMEDIATE")
-    try:
-        # Auto-create metadata if missing
-        default_name = get_emoji_default_name(emoji_id)
-        db_conn.execute(
-            """
-            INSERT OR IGNORE INTO emoji_metadata (emoji_id, default_name, use_count)
-            VALUES (?, ?, 0)
-            """,
-            (emoji_id, default_name),
-        )
+    # Auto-create metadata if missing
+    default_name = get_emoji_default_name(emoji_id)
+    db_conn.execute(
+        """
+        INSERT OR IGNORE INTO emoji_metadata (emoji_id, default_name, use_count)
+        VALUES (?, ?, 0)
+        """,
+        (emoji_id, default_name),
+    )
 
-        # Insert association with source tracking
-        cursor = db_conn.execute(
-            """
-            INSERT OR IGNORE INTO track_emojis
-            (id, track_id, emoji_id, source_type, source_id)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (instance_id, track_id, emoji_id, source_type, source_id),
-        )
+    # Insert association with source tracking
+    cursor = db_conn.execute(
+        """
+        INSERT OR IGNORE INTO track_emojis
+        (id, track_id, emoji_id, source_type, source_id)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (instance_id, track_id, emoji_id, source_type, source_id),
+    )
+    if cursor.rowcount == 0:
+        return False
 
-        if cursor.rowcount > 0:
-            db_conn.execute(
-                """
-                UPDATE emoji_metadata
-                SET use_count = use_count + 1, last_used = CURRENT_TIMESTAMP
-                WHERE emoji_id = ?
-                """,
-                (emoji_id,),
-            )
-            db_conn.commit()
-            return True
-        else:
-            db_conn.commit()
-            return False
-    except Exception:
-        db_conn.rollback()
-        raise
+    db_conn.execute(
+        """
+        UPDATE emoji_metadata
+        SET use_count = use_count + 1, last_used = CURRENT_TIMESTAMP
+        WHERE emoji_id = ?
+        """,
+        (emoji_id,),
+    )
+    return True
 
 
 def remove_emoji_from_track_mutation(
@@ -125,6 +121,8 @@ def remove_emoji_from_track_mutation(
     force: bool = False,
 ) -> dict[str, Any]:
     """Remove emoji from track with protected emoji handling.
+
+    Runs inside the caller's transaction; the caller must commit.
 
     Args:
         track_id: Track database ID
@@ -185,7 +183,6 @@ def remove_emoji_from_track_mutation(
             (track_id, emoji_id),
         )
 
-    db_conn.commit()
     return {
         "success": True,
         "protected": False,
