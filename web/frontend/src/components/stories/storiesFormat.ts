@@ -36,3 +36,10 @@ export function formatDuration(ms: number): string {
 /** SoundCloud serves 100px "-large" artwork by default; the hero wants 500px. */
 export const largeArtwork = (url: string | null): string | null =>
   url ? url.replace(/-large(\.\w+)$/, '-t500x500$1') : null;
+
+/** Real permalink without SC's ?utm_* junk; the widget player resolves bare ids when no permalink is known. */
+export function soundCloudUrl(track: { soundcloud_id: string; permalink_url: string | null }): string {
+  if (track.permalink_url) return track.permalink_url.split('?')[0];
+  const apiUrl = encodeURIComponent(`https://api.soundcloud.com/tracks/${track.soundcloud_id}`);
+  return `https://w.soundcloud.com/player/?url=${apiUrl}`;
+}

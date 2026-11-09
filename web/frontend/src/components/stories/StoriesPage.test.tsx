@@ -94,6 +94,7 @@ describe('StoriesPage', () => {
     expect(screen.getByRole('button', { name: 'Play Na ostri noze' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Track a2 \(heard\)/ })).toHaveAttribute('data-listened', 'true');
     expect(playMock()).not.toHaveBeenCalled();
+    expect(screen.getByRole('link', { name: 'Open Na ostri noze on SoundCloud' })).toHaveAttribute('target', '_blank');
   });
 
   it('plays from the artwork as a one-track queue', async () => {
