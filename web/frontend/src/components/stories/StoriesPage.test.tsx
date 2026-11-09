@@ -10,6 +10,7 @@ import { usePlayerStore } from '../../stores/playerStore';
 import { useStoriesStore } from '../../stores/storiesStore';
 import { makeArtist, makeResponse, makeTrack } from './storiesFixtures';
 import { StoriesPage } from './StoriesPage';
+import { StoriesPlaybackBridge } from './StoriesPlaybackBridge';
 
 vi.mock('../../api/stories', () => ({
   getStories: vi.fn(),
@@ -60,14 +61,17 @@ const playMock = (): Mock => usePlayerStore.getState().play;
 const playedIds = (): number[] => playMock().mock.calls.map(([track]) => track.id);
 const artistNav = (): HTMLElement => screen.getAllByRole('navigation', { name: 'Followed artists' })[0];
 
-function renderPage(response: StoriesResponse = RESPONSE): void {
+/** The page plus the app-wide bridge; returns a function that leaves the route (unmounts the page only). */
+function renderPage(response: StoriesResponse = RESPONSE): () => void {
   (getStories as Mock).mockResolvedValue(response);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  render(
+  render(<StoriesPlaybackBridge />);
+  const page = render(
     <QueryClientProvider client={queryClient}>
       <StoriesPage />
     </QueryClientProvider>
   );
+  return page.unmount;
 }
 
 /** What the global player looks like after this page started track `id`. */
@@ -135,6 +139,18 @@ describe('StoriesPage', () => {
     expect(materializeFeedItems).toHaveBeenCalledWith(['b1']);
     expect(within(artistNav()).queryByRole('button', { name: /MIRR.IMG/ })).not.toBeInTheDocument();
     expect(within(artistNav()).getByRole('button', { name: /Subsidia/ })).toHaveAttribute('aria-current', 'true');
+  });
+
+  it('keeps advancing and reporting listens after leaving the page', async () => {
+    const leavePage = renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Track a3' }));
+    await waitFor(() => expect(playedIds()).toEqual([103]));
+    playerLoaded(103);
+    leavePage();
+    act(() => useListenStore.setState({ tallies: { 103: { listenedMs: 6_000, maxPositionMs: 6_000 } } }));
+    await waitFor(() => expect(markStoryListened).toHaveBeenCalledWith('a3'));
+    act(() => usePlayerStore.setState({ currentTrack: null, isPlaying: false }));
+    await waitFor(() => expect(playedIds()).toEqual([103, 101]));
   });
 
   it('Previous returns to the earlier artist and re-shows it', async () => {

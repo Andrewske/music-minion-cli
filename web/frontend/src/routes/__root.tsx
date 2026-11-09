@@ -13,6 +13,7 @@ import { SidebarFilters } from '../components/sidebar/SidebarFilters'
 import { SidebarQuickTag } from '../components/sidebar/SidebarQuickTag'
 import { AudioElementProvider } from '../contexts/AudioElementContext'
 import { PageChatWidget } from '../components/page-chat/PageChatWidget'
+import { StoriesPlaybackBridge } from '../components/stories/StoriesPlaybackBridge'
 
 function RootComponent(): JSX.Element {
   useSyncWebSocket() // Connect to sync WebSocket for real-time updates
@@ -50,6 +51,9 @@ function RootComponent(): JSX.Element {
 
           {/* Player bar - fixed bottom */}
           <PlayerBar />
+
+          {/* Stories session keeps advancing when the user leaves /stories */}
+          <StoriesPlaybackBridge />
 
           {/* Toast notifications */}
           <ToastContainer

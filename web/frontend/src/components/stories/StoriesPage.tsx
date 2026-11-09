@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query';
 import { Title as DialogTitle } from '@radix-ui/react-dialog';
 import { GalleryVerticalEnd, Loader2, PartyPopper, RefreshCw, Users } from 'lucide-react';
 import { getStories, type StoriesArtist, type StoriesTrack } from '../../api/stories';
-import { useStoriesAutoplay, useStoriesListenReporter, useStoriesTrackEnd } from '../../hooks/useStoriesPlayback';
 import { useStoriesVerdict } from '../../hooks/useStoriesVerdict';
 import { usePlayerStore } from '../../stores/playerStore';
 import { toast } from 'sonner';
@@ -175,9 +174,6 @@ export function StoriesPage(): JSX.Element {
   });
   const session = useStoriesStore((state) => state.session);
   const start = useStoriesStore((state) => state.start);
-  useStoriesAutoplay();
-  useStoriesTrackEnd();
-  useStoriesListenReporter();
 
   // Snapshot the first response; later refetches only replace it via Reload.
   useEffect(() => {
