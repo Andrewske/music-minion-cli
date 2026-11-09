@@ -204,7 +204,7 @@ export function FeedTrackCard({
       </div>
 
       <div className="hidden min-w-0 flex-1 md:block">
-        <FeedWaveform localTrackId={item.local_track_id} durationMs={item.duration_ms} onActivate={() => playable && onPlay(item)} />
+        <FeedWaveform localTrackId={item.local_track_id} durationMs={item.duration_ms} onActivate={playable ? () => onPlay(item) : undefined} />
       </div>
 
       <SoundCloudSyncState item={item} />

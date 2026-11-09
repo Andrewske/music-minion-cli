@@ -5,11 +5,23 @@ import type { StoriesDecision, StoriesTrack } from '../api/stories';
 import { FEED_QUERY_PREFIX } from '../components/feed/feedCache';
 import { REVIEWED_QUERY_KEY } from '../components/feed/reviewed';
 import { getListenStats } from '../stores/listenStore';
+import { usePlayerStore } from '../stores/playerStore';
 import { useStoriesStore } from '../stores/storiesStore';
 
 interface VerdictVariables {
   track: StoriesTrack;
   decision: StoriesDecision;
+}
+
+/**
+ * A verdict that advanced past the last unheard story clears `current`;
+ * stop the rated track instead of letting it play under "caught up".
+ */
+function stopIfSessionFinished(localTrackId: number | null): void {
+  const session = useStoriesStore.getState().session;
+  const player = usePlayerStore.getState();
+  if (!session || session.current !== null || localTrackId === null) return;
+  if (player.currentTrack?.id === localTrackId && player.isPlaying) void player.pause();
 }
 
 /**
@@ -35,6 +47,7 @@ export function useStoriesVerdict(): {
     },
     onMutate: ({ track, decision }) => {
       dispatch({ type: 'verdict', soundcloudId: track.soundcloud_id, decision });
+      stopIfSessionFinished(track.local_track_id);
       return { previousDecision: track.decision };
     },
     onError: (_error, { track }, context) => {

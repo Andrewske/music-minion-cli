@@ -10,6 +10,7 @@ import { usePlayerStore } from '../../stores/playerStore';
 import { useStoriesStore } from '../../stores/storiesStore';
 import { makeArtist, makeResponse, makeTrack } from './storiesFixtures';
 import { StoriesPage } from './StoriesPage';
+import { StoriesPlaybackBridge } from './StoriesPlaybackBridge';
 
 vi.mock('../../api/stories', () => ({
   getStories: vi.fn(),
@@ -60,14 +61,17 @@ const playMock = (): Mock => usePlayerStore.getState().play;
 const playedIds = (): number[] => playMock().mock.calls.map(([track]) => track.id);
 const artistNav = (): HTMLElement => screen.getAllByRole('navigation', { name: 'Followed artists' })[0];
 
-function renderPage(response: StoriesResponse = RESPONSE): void {
+/** The page plus the app-wide bridge; returns a function that leaves the route (unmounts the page only). */
+function renderPage(response: StoriesResponse = RESPONSE): () => void {
   (getStories as Mock).mockResolvedValue(response);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  render(
+  render(<StoriesPlaybackBridge />);
+  const page = render(
     <QueryClientProvider client={queryClient}>
       <StoriesPage />
     </QueryClientProvider>
   );
+  return page.unmount;
 }
 
 /** What the global player looks like after this page started track `id`. */
@@ -137,6 +141,18 @@ describe('StoriesPage', () => {
     expect(within(artistNav()).getByRole('button', { name: /Subsidia/ })).toHaveAttribute('aria-current', 'true');
   });
 
+  it('keeps advancing and reporting listens after leaving the page', async () => {
+    const leavePage = renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Track a3' }));
+    await waitFor(() => expect(playedIds()).toEqual([103]));
+    playerLoaded(103);
+    leavePage();
+    act(() => useListenStore.setState({ tallies: { 103: { listenedMs: 6_000, maxPositionMs: 6_000 } } }));
+    await waitFor(() => expect(markStoryListened).toHaveBeenCalledWith('a3'));
+    act(() => usePlayerStore.setState({ currentTrack: null, isPlaying: false }));
+    await waitFor(() => expect(playedIds()).toEqual([103, 101]));
+  });
+
   it('Previous returns to the earlier artist and re-shows it', async () => {
     renderPage(makeResponse([RESPONSE.artists[0], makeArtist(2, [makeTrack('b1', { local_track_id: 201 })], { display_name: 'Subsidia' })]));
     fireEvent.click(await screen.findByRole('button', { name: 'Track a3' }));
@@ -173,6 +189,28 @@ describe('StoriesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Pause Na ostri noze' }));
     expect(usePlayerStore.getState().pause).toHaveBeenCalled();
     expect(playMock()).toHaveBeenCalledTimes(1);
+  });
+
+  it('Reload mid-track adopts the playing story without restarting it', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Play Na ostri noze' }));
+    await waitFor(() => expect(playedIds()).toEqual([101]));
+    playerLoaded(101);
+    fireEvent.click(screen.getByRole('button', { name: 'Reload stories' }));
+    await waitFor(() => expect(getStories).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Reload stories' })).not.toBeDisabled());
+    expect(playMock()).toHaveBeenCalledTimes(1);
+    expect(useStoriesStore.getState().session?.current).toEqual({ artistId: 1, soundcloudId: 'a1' });
+  });
+
+  it('Skip on the last unheard story pauses it instead of playing on under caught-up', async () => {
+    renderPage(makeResponse([makeArtist(1, [makeTrack('a1', { local_track_id: 101 })])]));
+    fireEvent.click(await screen.findByRole('button', { name: 'Play Track a1' }));
+    await waitFor(() => expect(playedIds()).toEqual([101]));
+    playerLoaded(101);
+    fireEvent.click(screen.getByRole('button', { name: /^Skip/ }));
+    expect(await screen.findByText("You're all caught up")).toBeInTheDocument();
+    expect(usePlayerStore.getState().pause).toHaveBeenCalledTimes(1);
   });
 
   it('shows the caught-up state when nothing is unheard', async () => {

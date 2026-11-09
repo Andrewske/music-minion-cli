@@ -219,7 +219,6 @@ def get_stories(days: int = 7, now: datetime | None = None) -> dict[str, Any]:
     return {"generated_at": iso_z(moment), "artists": build_artists(rows)}
 
 
-
 def mark_listened(soundcloud_id: str, surface: str | None) -> None:
     """Idempotent: the first listen's timestamp and surface win."""
     with get_db_connection() as conn:

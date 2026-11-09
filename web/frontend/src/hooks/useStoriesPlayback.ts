@@ -1,7 +1,8 @@
 /**
  * Side-effect glue between the pure Stories session (stores/storiesStore.ts)
  * and the global player: starting tracks, noticing when they end, and
- * reporting 5-second listens. Mount once, in StoriesPage.
+ * reporting 5-second listens. Mounted once, app-wide, by
+ * components/stories/StoriesPlaybackBridge.tsx.
  */
 import { useCallback, useEffect, useRef } from 'react';
 import { toast } from 'sonner';

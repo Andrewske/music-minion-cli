@@ -18,7 +18,8 @@ interface StoriesStore {
 /** Thin Zustand shell around the pure reducer in components/stories/storiesQueue.ts. */
 export const useStoriesStore = create<StoriesStore>((set) => ({
   session: null,
-  start: (response, playingLocalTrackId = null) => set({ session: createSession(response, playingLocalTrackId) }),
+  start: (response, playingLocalTrackId = null) =>
+    set((state) => ({ session: createSession(response, playingLocalTrackId, state.session?.playNonce ?? 0) })),
   dispatch: (action) =>
     set((state) => (state.session ? { session: storiesReducer(state.session, action) } : state)),
   reset: () => set({ session: null }),

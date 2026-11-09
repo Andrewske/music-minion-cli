@@ -48,7 +48,11 @@ function drawBars(
 interface FeedWaveformProps {
   localTrackId: number | null;
   durationMs: number;
-  /** Called when the waveform is clicked while this row is NOT the playing track. */
+  /**
+   * Called when the waveform is clicked while this row is NOT the playing
+   * track. Omit it for rows that can't be played; with it, the waveform is
+   * clickable even before the row has a library track.
+   */
   onActivate?: () => void;
 }
 
@@ -73,7 +77,9 @@ export function FeedWaveform({
   );
   const seek = usePlayerStore((s) => s.seek);
 
-  const playable = localTrackId !== null;
+  // Activation can materialize a track first, so it only needs a handler;
+  // seeking needs the loaded library track.
+  const playable = localTrackId !== null || onActivate !== undefined;
 
   const handleClick = (e: MouseEvent<HTMLCanvasElement>): void => {
     if (!playable) return;

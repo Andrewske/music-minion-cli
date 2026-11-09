@@ -33,6 +33,13 @@ const current = (session: StoriesSession): string | null => session.current?.sou
 const visibleIds = (session: StoriesSession): number[] => visibleArtists(session).map((a) => a.discovery_artist_id);
 
 describe('createSession', () => {
+  it('keeps a rebuilt session\'s playNonce so autoplay does not replay the adopted track', () => {
+    const rebuilt = createSession(makeResponse([makeArtist(1, [makeTrack('a1', { local_track_id: 7 })])]), 7, 4);
+    expect(rebuilt.playNonce).toBe(4);
+    expect(rebuilt.current).toEqual({ artistId: 1, soundcloudId: 'a1' });
+  });
+
+
   it('selects the first artist and starts nothing', () => {
     const session = baseSession();
     expect(session.activeArtistId).toBe(1);
