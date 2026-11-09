@@ -114,6 +114,7 @@ from .routers import (
     feed,
     feed_filters,
     feed_agent,
+    stories,
     insights,
     cleanup,
 )
@@ -139,6 +140,7 @@ app.include_router(discovery.router)
 app.include_router(feed.router)
 app.include_router(feed_filters.router)
 app.include_router(feed_agent.router)
+app.include_router(stories.router)
 app.include_router(insights.router)
 app.include_router(cleanup.router)
 app.include_router(app_updates.router)

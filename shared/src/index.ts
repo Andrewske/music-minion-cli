@@ -91,6 +91,7 @@ export type {
   ReviewedItem, ReviewedPage, GetReviewedParams, FeedNoteResponse,
 } from './api/feed';
 export * from './api/feedFilters';
+export * from './api/stories';
 export * from './api/feedAgent';
 export * from './api/insights';
 export * from './api/cleanup';

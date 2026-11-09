@@ -18,7 +18,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 69  # feed insights: tags, agent classifications, suggestions
+SCHEMA_VERSION = 70  # stories: per-track listened ledger
 
 
 # Initial top 50 curated emojis for music reactions
@@ -532,6 +532,25 @@ def _migrate_v69_feed_insights(conn) -> None:
         CREATE INDEX IF NOT EXISTS idx_sc_track_classifications_status
         ON sc_track_classifications(status, mix_probability)
     """)
+
+
+_V70_TRACK_LISTENS_DDL = """
+    CREATE TABLE IF NOT EXISTS sc_track_listens (
+        soundcloud_id TEXT PRIMARY KEY,
+        first_listened_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        surface TEXT
+    )
+"""
+
+
+def _migrate_v70_track_listens(conn) -> None:
+    """Explicit "heard it" marks from the Stories page (>= 5s played).
+
+    One row per track, written once: a re-listen keeps the first timestamp.
+    Verdicts, library membership and radio plays also count as listened but
+    are derived at read time, so they are not copied here.
+    """
+    conn.execute(_V70_TRACK_LISTENS_DDL)
 
 
 def _migrate_v64_track_predictions(conn) -> None:
@@ -3482,6 +3501,14 @@ def migrate_database(conn, current_version: int) -> None:
         conn.execute("RELEASE SAVEPOINT migrate_feed_v69")
         conn.commit()
         logger.info("  ✓ Migration to v69 complete: tags, classifications, suggestions")
+
+    if current_version < 70:
+        logger.info("Running migration to v70: stories listened ledger...")
+        conn.execute("SAVEPOINT migrate_feed_v70")
+        _migrate_v70_track_listens(conn)
+        conn.execute("RELEASE SAVEPOINT migrate_feed_v70")
+        conn.commit()
+        logger.info("  ✓ Migration to v70 complete: sc_track_listens")
 
 
 def ensure_schema_not_newer(conn: sqlite3.Connection, db_path: Path) -> None:

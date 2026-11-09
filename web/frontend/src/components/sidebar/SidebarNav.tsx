@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { House, Clock, Trophy, ListMusic, Layers, Settings, ChevronDown, Users, Rss, Lightbulb, Tags } from 'lucide-react';
+import { House, Clock, Trophy, ListMusic, Layers, Settings, ChevronDown, Users, Rss, Lightbulb, Tags, GalleryVerticalEnd } from 'lucide-react';
 import { getPendingCleanupCount } from '../../api/cleanup';
 import { CLEANUP_COUNT_KEY } from '../cleanup/cleanupView';
 
@@ -16,6 +16,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { href: '/', label: 'Home', icon: House },
   { href: '/feed', label: 'Feed', icon: Rss },
+  { href: '/stories', label: 'Stories', icon: GalleryVerticalEnd },
   { href: '/insights', label: 'Insights', icon: Lightbulb },
   { href: '/cleanup', label: 'Tag review', icon: Tags, badge: 'cleanup' },
   { href: '/history', label: 'History', icon: Clock },
