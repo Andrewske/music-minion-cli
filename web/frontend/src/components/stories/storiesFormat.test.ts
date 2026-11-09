@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDuration, formatTimeAgo, largeArtwork } from './storiesFormat';
+import { formatDuration, formatTimeAgo, largeArtwork, soundCloudUrl } from './storiesFormat';
 
 const NOW = Date.parse('2026-11-08T20:00:00Z');
 
@@ -26,5 +26,18 @@ describe('largeArtwork', () => {
     expect(largeArtwork('https://i1.sndcdn.com/artworks-abc-large.jpg')).toBe('https://i1.sndcdn.com/artworks-abc-t500x500.jpg');
     expect(largeArtwork('https://example.com/a.png')).toBe('https://example.com/a.png');
     expect(largeArtwork(null)).toBeNull();
+  });
+});
+
+describe('soundCloudUrl', () => {
+  it('strips tracking params from the permalink', () => {
+    const permalink_url = 'https://soundcloud.com/wakaan/cracked?utm_medium=api&utm_source=id_1';
+    expect(soundCloudUrl({ soundcloud_id: '5', permalink_url })).toBe('https://soundcloud.com/wakaan/cracked');
+  });
+
+  it('falls back to the widget player when no permalink is known', () => {
+    expect(soundCloudUrl({ soundcloud_id: '5', permalink_url: null })).toBe(
+      'https://w.soundcloud.com/player/?url=https%3A%2F%2Fapi.soundcloud.com%2Ftracks%2F5'
+    );
   });
 });

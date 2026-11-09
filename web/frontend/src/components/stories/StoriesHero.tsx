@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Music, Pause, Play, Repeat2, Upload } from 'lucide-react';
 import type { StoriesArtist, StoriesTrack } from '../../api/stories';
+import { SoundCloudIcon } from '../icons/SoundCloudIcon';
 import { ArtistAvatar } from './StoriesArtistList';
-import { ACTIVITY_LABELS, formatTimeAgo, largeArtwork } from './storiesFormat';
+import { ACTIVITY_LABELS, formatTimeAgo, largeArtwork, soundCloudUrl } from './storiesFormat';
 
 /** SoundCloud-style segment bar: one dash per track, heard ones filled. */
 function TrackSegments({ tracks, focusId }: { tracks: readonly StoriesTrack[]; focusId: string }): JSX.Element {
@@ -20,6 +21,21 @@ function TrackSegments({ tracks, focusId }: { tracks: readonly StoriesTrack[]; f
   );
 }
 
+function SoundCloudLink({ track }: { track: StoriesTrack }): JSX.Element {
+  return (
+    <a
+      href={soundCloudUrl(track)}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`Open ${track.title ?? 'track'} on SoundCloud`}
+      title="Open on SoundCloud"
+      className="ml-auto flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-sm p-2 text-white/45 transition-colors hover:bg-white/10 hover:text-[#ff5500] focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-obsidian-accent"
+    >
+      <SoundCloudIcon className="h-5 w-5" />
+    </a>
+  );
+}
+
 function ArtistHeader({ artist, track }: { artist: StoriesArtist; track: StoriesTrack }): JSX.Element {
   const KindIcon = track.kind === 'repost' ? Repeat2 : Upload;
   return (
@@ -34,6 +50,7 @@ function ArtistHeader({ artist, track }: { artist: StoriesArtist; track: Stories
           </span>
         </p>
       </div>
+      <SoundCloudLink track={track} />
     </div>
   );
 }
