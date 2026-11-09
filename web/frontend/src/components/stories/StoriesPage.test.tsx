@@ -187,6 +187,16 @@ describe('StoriesPage', () => {
     expect(useStoriesStore.getState().session?.current).toEqual({ artistId: 1, soundcloudId: 'a1' });
   });
 
+  it('Skip on the last unheard story pauses it instead of playing on under caught-up', async () => {
+    renderPage(makeResponse([makeArtist(1, [makeTrack('a1', { local_track_id: 101 })])]));
+    fireEvent.click(await screen.findByRole('button', { name: 'Play Track a1' }));
+    await waitFor(() => expect(playedIds()).toEqual([101]));
+    playerLoaded(101);
+    fireEvent.click(screen.getByRole('button', { name: /^Skip/ }));
+    expect(await screen.findByText("You're all caught up")).toBeInTheDocument();
+    expect(usePlayerStore.getState().pause).toHaveBeenCalledTimes(1);
+  });
+
   it('shows the caught-up state when nothing is unheard', async () => {
     renderPage(makeResponse([]));
     expect(await screen.findByText("You're all caught up")).toBeInTheDocument();
