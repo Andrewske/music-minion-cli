@@ -54,9 +54,15 @@ function findPlayingRef(artists: readonly StoriesArtist[], localTrackId: number 
 /**
  * A fresh session. When a story is already playing (Reload mid-track), it
  * becomes `current` without bumping playNonce, so end detection and the
- * 5-second reporter keep tracking it and nothing replays.
+ * 5-second reporter keep tracking it and nothing replays. A rebuild passes
+ * the old session's playNonce on: the autoplay effect fires on any change,
+ * so resetting it to 0 would restart whatever is playing.
  */
-export function createSession(response: StoriesResponse, playingLocalTrackId: number | null = null): StoriesSession {
+export function createSession(
+  response: StoriesResponse,
+  playingLocalTrackId: number | null = null,
+  playNonce = 0
+): StoriesSession {
   const playing = findPlayingRef(response.artists, playingLocalTrackId);
   return {
     generatedAt: response.generated_at,
@@ -64,7 +70,7 @@ export function createSession(response: StoriesResponse, playingLocalTrackId: nu
     activeArtistId: playing?.artistId ?? response.artists[0]?.discovery_artist_id ?? null,
     current: playing,
     history: playing ? [playing] : [],
-    playNonce: 0,
+    playNonce,
   };
 }
 

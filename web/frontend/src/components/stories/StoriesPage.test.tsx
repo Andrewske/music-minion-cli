@@ -175,6 +175,18 @@ describe('StoriesPage', () => {
     expect(playMock()).toHaveBeenCalledTimes(1);
   });
 
+  it('Reload mid-track adopts the playing story without restarting it', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Play Na ostri noze' }));
+    await waitFor(() => expect(playedIds()).toEqual([101]));
+    playerLoaded(101);
+    fireEvent.click(screen.getByRole('button', { name: 'Reload stories' }));
+    await waitFor(() => expect(getStories).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Reload stories' })).not.toBeDisabled());
+    expect(playMock()).toHaveBeenCalledTimes(1);
+    expect(useStoriesStore.getState().session?.current).toEqual({ artistId: 1, soundcloudId: 'a1' });
+  });
+
   it('shows the caught-up state when nothing is unheard', async () => {
     renderPage(makeResponse([]));
     expect(await screen.findByText("You're all caught up")).toBeInTheDocument();
