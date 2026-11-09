@@ -165,7 +165,17 @@ function StoriesLayout({ session, onRefresh, isRefreshing }: { session: StoriesS
   );
 }
 
-export function StoriesPage(): JSX.Element {
+const playingTrackId = (): number | null => usePlayerStore.getState().currentTrack?.id ?? null;
+
+interface StoriesSessionState {
+  session: StoriesSession | null;
+  isError: boolean;
+  isFetching: boolean;
+  refresh: () => void;
+}
+
+/** Fetch once, snapshot the first response into the session, rebuild only on Reload. */
+function useStoriesSession(): StoriesSessionState {
   const query = useQuery({
     queryKey: STORIES_QUERY_KEY,
     queryFn: () => getStories(),
@@ -174,21 +184,22 @@ export function StoriesPage(): JSX.Element {
   });
   const session = useStoriesStore((state) => state.session);
   const start = useStoriesStore((state) => state.start);
-
-  // Snapshot the first response; later refetches only replace it via Reload.
   useEffect(() => {
-    if (query.data && !session) start(query.data, usePlayerStore.getState().currentTrack?.id ?? null);
+    if (query.data && !session) start(query.data, playingTrackId());
   }, [query.data, session, start]);
-
   // A failed refetch still carries the old cached data; never rebuild from it.
   const refresh = (): void => {
     void query.refetch().then((result) => {
-      if (result.isSuccess) start(result.data, usePlayerStore.getState().currentTrack?.id ?? null);
+      if (result.isSuccess) start(result.data, playingTrackId());
       else toast.error('Could not reload stories');
     });
   };
+  return { session, isError: query.isError, isFetching: query.isFetching, refresh };
+}
 
-  if (query.isError && !session) {
+export function StoriesPage(): JSX.Element {
+  const { session, isError, isFetching, refresh } = useStoriesSession();
+  if (isError && !session) {
     return (
       <StatusView role="alert">
         <span>Failed to load stories</span>
@@ -199,6 +210,6 @@ export function StoriesPage(): JSX.Element {
   if (!session) {
     return <StatusView role="status"><Loader2 className="h-6 w-6 animate-spin" aria-label="Loading stories" /></StatusView>;
   }
-  if (isCaughtUp(session)) return <CaughtUp onRefresh={refresh} isRefreshing={query.isFetching} />;
-  return <StoriesLayout session={session} onRefresh={refresh} isRefreshing={query.isFetching} />;
+  if (isCaughtUp(session)) return <CaughtUp onRefresh={refresh} isRefreshing={isFetching} />;
+  return <StoriesLayout session={session} onRefresh={refresh} isRefreshing={isFetching} />;
 }
