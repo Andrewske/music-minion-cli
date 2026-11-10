@@ -1,7 +1,39 @@
 import { useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as bucketsApi from '../api/buckets';
-import type { BucketSession, Bucket, SyncSoundCloudResponse } from '../api/buckets';
+import type {
+  BucketSession,
+  Bucket,
+  LinkBucketResult,
+  PullLinkedTracksResponse,
+  SessionSummary,
+  SyncSoundCloudResponse,
+} from '../api/buckets';
+
+/** Cache key for the session currently loaded (status 'active') for a playlist. */
+export const organizerSessionKey = (playlistId: number): readonly ['organizer', 'session', number] =>
+  ['organizer', 'session', playlistId] as const;
+
+/** Cache key for the list of non-discarded sessions for a playlist. */
+export const organizerSessionsKey = (playlistId: number): readonly ['organizer', 'sessions', number] =>
+  ['organizer', 'sessions', playlistId] as const;
+
+/**
+ * Session list for the switcher. Pass `enabled` from the dropdown's open state
+ * so the list is only fetched when the user looks at it.
+ */
+export function useOrganizerSessions(
+  playlistId: number,
+  enabled: boolean
+): { sessions: SessionSummary[]; isLoading: boolean } {
+  const { data, isLoading } = useQuery({
+    queryKey: organizerSessionsKey(playlistId),
+    queryFn: () => bucketsApi.listSessions(playlistId),
+    enabled: enabled && !!playlistId,
+    staleTime: 30 * 1000,
+  });
+  return { sessions: data ?? [], isLoading };
+}
 
 interface UsePlaylistOrganizerOptions {
   playlistId: number;
@@ -20,7 +52,9 @@ interface UsePlaylistOrganizerReturn {
   deleteBucket: (bucketId: string) => Promise<void>;
   moveBucket: (bucketId: string, direction: 'up' | 'down') => Promise<void>;
   shuffleBucket: (bucketId: string) => Promise<void>;
-  linkBucket: (bucketId: string, playlistId: number | null) => Promise<void>;
+  /** Returns tracks that could be pulled into the bucket from the linked playlist. */
+  linkBucket: (bucketId: string, playlistId: number | null) => Promise<LinkBucketResult>;
+  pullLinkedTracks: (bucketId: string) => Promise<PullLinkedTracksResponse>;
 
   // Track operations
   assignTrack: (bucketId: string, trackId: number) => Promise<void>;
@@ -30,7 +64,11 @@ interface UsePlaylistOrganizerReturn {
   // Session operations
   applyOrder: () => Promise<void>;
   finalizeSession: () => Promise<void>;
-  discardSession: () => Promise<void>;
+  newSession: (name?: string | null) => Promise<BucketSession>;
+  switchSession: (sessionId: string) => Promise<BucketSession>;
+  renameSession: (sessionId: string, name: string | null) => Promise<void>;
+  /** Discards the session (strips bucket emojis). Deleting the loaded one loads a fresh session. */
+  deleteSession: (sessionId: string) => Promise<void>;
 
   // Computed
   buckets: Bucket[];
@@ -46,6 +84,7 @@ interface UsePlaylistOrganizerReturn {
   isApplying: boolean;
   isFinalizing: boolean;
   isLinking: boolean;
+  isSwitching: boolean;
 }
 
 export function usePlaylistOrganizer(
@@ -54,7 +93,8 @@ export function usePlaylistOrganizer(
   const { playlistId, enabled = true } = options;
   const queryClient = useQueryClient();
 
-  const queryKey = ['organizer', 'session', playlistId] as const;
+  const queryKey = organizerSessionKey(playlistId);
+  const sessionsQueryKey = organizerSessionsKey(playlistId);
 
   // Main query - creates or resumes session
   const {
@@ -119,6 +159,14 @@ export function usePlaylistOrganizer(
     mutationFn: (params: { bucketId: string; playlistId: number | null }) => {
       return bucketsApi.linkBucket(params.bucketId, params.playlistId);
     },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey });
+      queryClient.invalidateQueries({ queryKey: ['playlists'] });
+    },
+  });
+
+  const pullLinkedMutation = useMutation({
+    mutationFn: (bucketId: string) => bucketsApi.pullLinkedTracks(bucketId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey });
       queryClient.invalidateQueries({ queryKey: ['playlists'] });
@@ -261,16 +309,47 @@ export function usePlaylistOrganizer(
     },
     onSuccess: () => {
       queryClient.removeQueries({ queryKey });
+      queryClient.invalidateQueries({ queryKey: sessionsQueryKey });
     },
   });
 
-  const discardSessionMutation = useMutation({
-    mutationFn: () => {
-      if (!session) throw new Error('No active session');
-      return bucketsApi.discardSession(session.id);
+  // Loading another session: write the returned session straight into the
+  // loaded-session cache (no refetch flash), then refresh the list.
+  const loadSession = (loaded: BucketSession): void => {
+    queryClient.setQueryData<BucketSession>(queryKey, loaded);
+    queryClient.invalidateQueries({ queryKey: sessionsQueryKey });
+  };
+
+  const newSessionMutation = useMutation({
+    mutationFn: (name: string | null) => bucketsApi.createNewSession(playlistId, name),
+    onSuccess: loadSession,
+  });
+
+  const switchSessionMutation = useMutation({
+    mutationFn: (sessionId: string) => bucketsApi.activateSession(sessionId),
+    onSuccess: loadSession,
+  });
+
+  const renameSessionMutation = useMutation({
+    mutationFn: (params: { sessionId: string; name: string | null }) =>
+      bucketsApi.renameSession(params.sessionId, params.name),
+    onSuccess: (_data, { sessionId, name }) => {
+      queryClient.setQueryData<BucketSession>(queryKey, (prev) =>
+        prev && prev.id === sessionId ? { ...prev, name } : prev
+      );
+      queryClient.invalidateQueries({ queryKey: sessionsQueryKey });
     },
-    onSuccess: () => {
-      queryClient.removeQueries({ queryKey });
+  });
+
+  const deleteSessionMutation = useMutation({
+    mutationFn: (sessionId: string) => bucketsApi.discardSession(sessionId),
+    onSuccess: (_data, sessionId) => {
+      const loaded = queryClient.getQueryData<BucketSession>(queryKey);
+      if (loaded?.id === sessionId) {
+        // get-or-create on refetch hands back a fresh active session
+        queryClient.invalidateQueries({ queryKey });
+      }
+      queryClient.invalidateQueries({ queryKey: sessionsQueryKey });
     },
   });
 
@@ -326,10 +405,17 @@ export function usePlaylistOrganizer(
   );
 
   const linkBucket = useCallback(
-    async (bucketId: string, playlistId: number | null): Promise<void> => {
-      await linkBucketMutation.mutateAsync({ bucketId, playlistId });
+    async (bucketId: string, playlistId: number | null): Promise<LinkBucketResult> => {
+      return linkBucketMutation.mutateAsync({ bucketId, playlistId });
     },
     [linkBucketMutation]
+  );
+
+  const pullLinkedTracks = useCallback(
+    async (bucketId: string): Promise<PullLinkedTracksResponse> => {
+      return pullLinkedMutation.mutateAsync(bucketId);
+    },
+    [pullLinkedMutation]
   );
 
   const syncBucketSoundCloud = useCallback(
@@ -376,11 +462,32 @@ export function usePlaylistOrganizer(
     [finalizeSessionMutation]
   );
 
-  const discardSession = useCallback(
-    async (): Promise<void> => {
-      await discardSessionMutation.mutateAsync();
+  const newSession = useCallback(
+    async (name: string | null = null): Promise<BucketSession> => {
+      return newSessionMutation.mutateAsync(name);
     },
-    [discardSessionMutation]
+    [newSessionMutation]
+  );
+
+  const switchSession = useCallback(
+    async (sessionId: string): Promise<BucketSession> => {
+      return switchSessionMutation.mutateAsync(sessionId);
+    },
+    [switchSessionMutation]
+  );
+
+  const renameSession = useCallback(
+    async (sessionId: string, name: string | null): Promise<void> => {
+      await renameSessionMutation.mutateAsync({ sessionId, name });
+    },
+    [renameSessionMutation]
+  );
+
+  const deleteSession = useCallback(
+    async (sessionId: string): Promise<void> => {
+      await deleteSessionMutation.mutateAsync(sessionId);
+    },
+    [deleteSessionMutation]
   );
 
   return {
@@ -396,6 +503,7 @@ export function usePlaylistOrganizer(
     moveBucket,
     shuffleBucket,
     linkBucket,
+    pullLinkedTracks,
 
     // Track operations
     assignTrack,
@@ -405,7 +513,10 @@ export function usePlaylistOrganizer(
     // Session operations
     applyOrder,
     finalizeSession,
-    discardSession,
+    newSession,
+    switchSession,
+    renameSession,
+    deleteSession,
 
     // SoundCloud sync
     syncBucketSoundCloud,
@@ -421,5 +532,6 @@ export function usePlaylistOrganizer(
     isApplying: applyOrderMutation.isPending,
     isFinalizing: finalizeSessionMutation.isPending,
     isLinking: linkBucketMutation.isPending,
+    isSwitching: newSessionMutation.isPending || switchSessionMutation.isPending,
   };
 }

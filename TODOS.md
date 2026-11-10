@@ -35,12 +35,6 @@
 **Depends on:** Discovery sync feature must be complete and stable first.
 **Added:** 2026-03-29 via /plan-ceo-review + /plan-eng-review
 
-## Discovery: Investigate stuck `active` `bucket_sessions`
-**Priority:** P2/Medium
-**Context:** During the reposts playlist nuke, found 17 `bucket_sessions` rows with `status='active'` across various playlists. The active session for the reposts playlist (id=26) was finalized via `/api/buckets/sessions/<id>/finalize`, but the other 16 likely indicate a UI flow that never auto-finalizes — sessions get created on entry to the Playlist Organizer, but never get closed on tab close, navigation away, or completion. Next refresh on any of those playlists will partial-refill (preserving unassigned tracks) instead of full-replace, which may be unexpected. Investigation: (a) when does the frontend call finalize? (b) is there an idle-timeout mechanism? (c) should the backend auto-finalize on session age?
-**Effort:** M (human) → S (CC) — investigation + fix
-**Depends on:** nothing
-**Added:** 2026-04-26 via /plan-eng-review
 
 ## Discovery: DB-only repost build path
 **Priority:** P2/Medium

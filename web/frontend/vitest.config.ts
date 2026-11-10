@@ -10,6 +10,6 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
     globals: true,
-    server: { deps: { inline: [/@react-spring\//, /@radix-ui\//] } },
+    server: { deps: { inline: [/@react-spring\//, /@radix-ui\//, /@floating-ui\//] } },
   },
 });

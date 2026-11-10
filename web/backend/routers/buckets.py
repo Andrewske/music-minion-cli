@@ -33,6 +33,19 @@ class CreateSessionBody(BaseModel):
     playlist_id: int
 
 
+class NewSessionBody(BaseModel):
+    """Request body for starting a fresh session (parks the active one)."""
+
+    playlist_id: int
+    name: str | None = None
+
+
+class RenameSessionBody(BaseModel):
+    """Request body for renaming a session (null/blank clears the name)."""
+
+    name: str | None
+
+
 class CreateBucketBody(BaseModel):
     """Request body for creating a bucket."""
 
@@ -83,9 +96,37 @@ class SessionResponse(BaseModel):
 
     id: str
     playlist_id: int
-    status: str
+    status: str  # active | parked | applied | discarded
+    name: str | None
+    created_at: str
     buckets: list[BucketResponse]
     unassigned_track_ids: list[int]
+
+
+class SessionSummary(BaseModel):
+    """Session list entry (no bucket contents)."""
+
+    id: str
+    playlist_id: int
+    name: str | None
+    status: str
+    created_at: str
+    last_opened_at: str | None
+    bucket_count: int
+    assigned_count: int
+
+
+class LinkResponse(BaseModel):
+    """Response for link/unlink; pullable ids are empty when unlinking."""
+
+    linked: bool
+    pullable_track_ids: list[int]
+
+
+class PullLinkedResponse(BaseModel):
+    """Response for pulling linked-playlist tracks into a bucket."""
+
+    assigned: int
 
 
 class ShuffleResponse(BaseModel):
@@ -112,6 +153,56 @@ class SyncSoundCloudResponse(BaseModel):
 
 
 # === Session Endpoints ===
+# Literal paths (/sessions, /sessions/new) are registered before the
+# /sessions/{session_id} routes so they are never captured as an id.
+
+
+@router.get("/sessions", response_model=list[SessionSummary])
+async def list_sessions_endpoint(playlist_id: int):
+    """List non-discarded sessions for a playlist, most recently opened first."""
+    try:
+        return bucket_queries.list_sessions(playlist_id)
+    except Exception as e:
+        logger.exception(f"Failed to list sessions for playlist {playlist_id}")
+        raise HTTPException(status_code=500, detail=f"Failed to list sessions: {e}")
+
+
+@router.post("/sessions/new", response_model=SessionResponse)
+async def create_new_session_endpoint(body: NewSessionBody):
+    """Park the active session (no discovery feedback) and start an empty one."""
+    try:
+        return bucket_queries.create_new_session(body.playlist_id, body.name)
+    except Exception as e:
+        logger.exception(f"Failed to create new session for playlist {body.playlist_id}")
+        raise HTTPException(status_code=500, detail=f"Failed to create session: {e}")
+
+
+@router.post("/sessions/{session_id}/activate", response_model=SessionResponse)
+async def activate_session_endpoint(session_id: str):
+    """Reopen a parked/applied session as the playlist's active one."""
+    try:
+        session = bucket_queries.activate_session(session_id)
+    except Exception as e:
+        logger.exception(f"Failed to activate session {session_id}")
+        raise HTTPException(status_code=500, detail=f"Failed to activate session: {e}")
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found or discarded")
+    return session
+
+
+@router.patch("/sessions/{session_id}")
+async def rename_session_endpoint(
+    session_id: str, body: RenameSessionBody
+) -> dict[str, bool]:
+    """Rename a session."""
+    try:
+        renamed = bucket_queries.rename_session(session_id, body.name)
+    except Exception as e:
+        logger.exception(f"Failed to rename session {session_id}")
+        raise HTTPException(status_code=500, detail=f"Failed to rename session: {e}")
+    if not renamed:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"renamed": True}
 
 
 @router.post("/sessions", response_model=SessionResponse)
@@ -252,11 +343,15 @@ def _update_discovery_feedback(session_id: str) -> None:
 
         for bucket in buckets:
             # Get tracks in this bucket that have soundcloud_ids
+            # Only tracks still in the playlist: bucket_tracks rows for tracks
+            # that left it are kept (hidden) since v71, not deleted on resume.
             tracks = conn.execute(
                 """SELECT t.soundcloud_id FROM bucket_tracks bt
                 JOIN tracks t ON t.id = bt.track_id
+                JOIN playlist_tracks pt
+                  ON pt.track_id = bt.track_id AND pt.playlist_id = ?
                 WHERE bt.bucket_id = ? AND t.soundcloud_id IS NOT NULL""",
-                (bucket["id"],)
+                (session["playlist_id"], bucket["id"])
             ).fetchall()
 
             sc_ids = [row["soundcloud_id"] for row in tracks]
@@ -420,9 +515,13 @@ async def shuffle_bucket_endpoint(bucket_id: str):
         )
 
 
-@router.post("/{bucket_id}/link")
-async def link_bucket_endpoint(bucket_id: str, body: LinkBucketBody) -> dict[str, bool]:
-    """Link/unlink bucket to playlist."""
+@router.post("/{bucket_id}/link", response_model=LinkResponse)
+async def link_bucket_endpoint(bucket_id: str, body: LinkBucketBody):
+    """Link/unlink bucket to playlist.
+
+    After linking (and pushing existing bucket tracks to the playlist), returns
+    the tracks the client may offer to pull in via ``/pull-linked``.
+    """
     try:
         if body.playlist_id is None:
             success = bucket_queries.unlink_bucket(bucket_id)
@@ -430,13 +529,36 @@ async def link_bucket_endpoint(bucket_id: str, body: LinkBucketBody) -> dict[str
             success = bucket_queries.link_bucket_to_playlist(bucket_id, body.playlist_id)
         if not success:
             raise HTTPException(status_code=404, detail="Bucket not found")
-        return {"linked": body.playlist_id is not None}
+        linked = body.playlist_id is not None
+        pullable = bucket_queries.get_pullable_track_ids(bucket_id) if linked else []
+        return {"linked": linked, "pullable_track_ids": pullable}
     except HTTPException:
         raise
     except Exception as e:
         logger.exception("Failed to link/unlink bucket")
         raise HTTPException(
             status_code=500, detail=f"Failed to link/unlink bucket: {str(e)}"
+        )
+
+
+@router.post("/{bucket_id}/pull-linked", response_model=PullLinkedResponse)
+async def pull_linked_endpoint(bucket_id: str):
+    """Assign unassigned session tracks that are already in the linked playlist."""
+    try:
+        assigned = bucket_queries.pull_linked_tracks(bucket_id)
+        if assigned is None:
+            raise HTTPException(status_code=404, detail="Bucket not found")
+        if assigned:
+            session_id = _get_session_id_for_bucket(bucket_id)
+            if session_id:
+                await update_organizer_queue(session_id)
+        return {"assigned": assigned}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to pull linked tracks into bucket {bucket_id}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to pull linked tracks: {e}"
         )
 
 

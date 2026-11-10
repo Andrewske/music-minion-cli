@@ -26,6 +26,8 @@ const session: BucketSession = {
   id: 's1',
   playlist_id: 1,
   status: 'active',
+  name: null,
+  created_at: '2026-11-10 12:00:00',
   buckets: [bucket('a', [5, 2]), bucket('b', [2, 9])],
   unassigned_track_ids: [7, 1],
 };

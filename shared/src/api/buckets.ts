@@ -1,12 +1,28 @@
 import { getDefaultApiClient } from './client';
 
 // Types
+export type BucketSessionStatus = 'active' | 'parked' | 'applied' | 'discarded';
+
 export interface BucketSession {
   id: string;
   playlist_id: number;
-  status: 'active' | 'applied' | 'discarded';
+  status: BucketSessionStatus;
+  name: string | null;
+  created_at: string;
   buckets: Bucket[];
   unassigned_track_ids: number[];
+}
+
+/** Lightweight row for the session switcher list (non-discarded, newest-opened first). */
+export interface SessionSummary {
+  id: string;
+  playlist_id: number;
+  name: string | null;
+  status: BucketSessionStatus;
+  created_at: string;
+  last_opened_at: string | null;
+  bucket_count: number;
+  assigned_count: number;
 }
 
 export interface Bucket {
@@ -46,6 +62,16 @@ export interface LinkBucketBody {
   playlist_id: number | null;
 }
 
+/** Result of linking: tracks in the linked playlist that are unassigned in this session. */
+export interface LinkBucketResult {
+  linked: boolean;
+  pullable_track_ids: number[];
+}
+
+export interface PullLinkedTracksResponse {
+  assigned: number;
+}
+
 export interface BucketLinkResponse {
   playlist_id: number | null;
 }
@@ -80,6 +106,49 @@ export async function createOrResumeSession(playlistId: number): Promise<BucketS
   }
 
   return response.json();
+}
+
+export async function listSessions(playlistId: number): Promise<SessionSummary[]> {
+  const response = await fetch(`${bucketsBase()}/sessions?playlist_id=${playlistId}`);
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || 'Failed to list sessions');
+  }
+  return response.json();
+}
+
+export async function createNewSession(playlistId: number, name: string | null = null): Promise<BucketSession> {
+  const response = await fetch(`${bucketsBase()}/sessions/new`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playlist_id: playlistId, name }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || 'Failed to create session');
+  }
+  return response.json();
+}
+
+export async function activateSession(sessionId: string): Promise<BucketSession> {
+  const response = await fetch(`${bucketsBase()}/sessions/${sessionId}/activate`, { method: 'POST' });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || 'Failed to activate session');
+  }
+  return response.json();
+}
+
+export async function renameSession(sessionId: string, name: string | null): Promise<void> {
+  const response = await fetch(`${bucketsBase()}/sessions/${sessionId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || 'Failed to rename session');
+  }
 }
 
 export async function getSession(sessionId: string): Promise<BucketSession> {
@@ -206,7 +275,7 @@ export async function reorderTracks(bucketId: string, trackIds: number[]): Promi
 
 // Bucket linking
 
-export async function linkBucket(bucketId: string, playlistId: number | null): Promise<void> {
+export async function linkBucket(bucketId: string, playlistId: number | null): Promise<LinkBucketResult> {
   const response = await fetch(`${bucketsBase()}/${bucketId}/link`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -217,6 +286,16 @@ export async function linkBucket(bucketId: string, playlistId: number | null): P
     const error = await response.json().catch(() => ({ detail: response.statusText }));
     throw new Error(error.detail || 'Failed to link bucket');
   }
+  return response.json();
+}
+
+export async function pullLinkedTracks(bucketId: string): Promise<PullLinkedTracksResponse> {
+  const response = await fetch(`${bucketsBase()}/${bucketId}/pull-linked`, { method: 'POST' });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || 'Failed to pull linked tracks');
+  }
+  return response.json();
 }
 
 export async function getBucketLink(bucketId: string): Promise<BucketLinkResponse> {
