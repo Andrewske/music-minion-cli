@@ -13,7 +13,7 @@ import {
 import type { FeedArtist, FeedItem, FeedVerdict } from '../../api/feed';
 import { SoundCloudIcon } from '../icons/SoundCloudIcon';
 import { ArtistHoverCard } from './ArtistHoverCard';
-import { FeedWaveform } from './FeedWaveform';
+import { Waveform } from '../waveform/Waveform';
 import { VerdictButtons } from './VerdictButtons';
 
 function formatFeedRelativeDate(dateStr: string): string {
@@ -204,7 +204,7 @@ export function FeedTrackCard({
       </div>
 
       <div className="hidden min-w-0 flex-1 md:block">
-        <FeedWaveform localTrackId={item.local_track_id} durationMs={item.duration_ms} onActivate={playable ? () => onPlay(item) : undefined} />
+        <Waveform localTrackId={item.local_track_id} durationMs={item.duration_ms} onActivate={playable ? () => onPlay(item) : undefined} />
       </div>
 
       <SoundCloudSyncState item={item} />
