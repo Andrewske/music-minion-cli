@@ -72,4 +72,21 @@ usePlayerStore.setState({
 });
 
 export { getCurrentPosition };
+
+/** Seek to `fraction` (0-1) of the current track. No-op without a track or duration. */
+export function seekToFraction(fraction: number): void {
+  const { currentTrack, seek } = usePlayerStore.getState();
+  const durationMs = (currentTrack?.duration ?? 0) * 1000;
+  if (durationMs <= 0) return;
+  void seek(Math.min(1, Math.max(0, fraction)) * durationMs);
+}
+
+/** Seek `deltaMs` from the live position, clamped to the track. Only while playing. */
+export function seekBy(deltaMs: number): void {
+  const state = usePlayerStore.getState();
+  const durationMs = (state.currentTrack?.duration ?? 0) * 1000;
+  if (!state.isPlaying || durationMs <= 0) return;
+  const target = getCurrentPosition(state) + deltaMs;
+  void state.seek(Math.min(durationMs, Math.max(0, target)));
+}
 export type { PlayContext, PlayerStore };

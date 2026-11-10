@@ -45,7 +45,7 @@ vi.mock('../../stores/playerStore', async () => {
   }));
   return { usePlayerStore, getCurrentPosition: () => 0 };
 });
-vi.mock('../feed/FeedWaveform', () => ({ FeedWaveform: () => <div data-testid="waveform" /> }));
+vi.mock('../waveform/Waveform', () => ({ Waveform: () => <div data-testid="waveform" /> }));
 vi.mock('sonner', () => ({ toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }) }));
 
 const RESPONSE: StoriesResponse = makeResponse([

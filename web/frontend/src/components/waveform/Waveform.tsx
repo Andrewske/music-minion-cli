@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, MouseEvent, RefObject } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getWaveformData } from '../../api/tracks';
+import { getWaveformData, waveformQueryKey } from '../../api/tracks';
 import { usePlayerStore, getCurrentPosition } from '../../stores/playerStore';
 import { barCountFor, downsamplePeaks, drawBars } from './waveformBars';
 
@@ -18,7 +18,7 @@ function useCanvasWidth(canvasRef: RefObject<HTMLCanvasElement>): number {
   return width;
 }
 
-interface FeedWaveformProps {
+interface WaveformProps {
   localTrackId: number | null;
   durationMs: number;
   /**
@@ -32,18 +32,18 @@ interface FeedWaveformProps {
 }
 
 /**
- * Static-canvas waveform for feed rows. Fetches peaks once per track
- * (staleTime Infinity — backend disk-caches after the first SC fetch) and
- * draws downsampled bars. When this row is the playing track, an accent
- * progress fill ticks along. NOT wavesurfer — one instance per row of that
- * would sink an infinite list.
+ * The app's one waveform: feed rows, Stories, and every WaveformPlayer.
+ * Fetches peaks once per track (staleTime Infinity — backend disk-caches
+ * after the first fetch) and draws downsampled bars on a canvas. When this
+ * is the playing track, an accent progress fill ticks along. Cheap enough to
+ * render one per row of an infinite list.
  */
-export function FeedWaveform({
+export function Waveform({
   localTrackId,
   durationMs,
   onActivate,
   height = 40,
-}: FeedWaveformProps): JSX.Element {
+}: WaveformProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cssWidth = useCanvasWidth(canvasRef);
   const [progress, setProgress] = useState(0);
@@ -89,7 +89,7 @@ export function FeedWaveform({
   };
 
   const { data } = useQuery({
-    queryKey: ['feed-waveform', localTrackId],
+    queryKey: waveformQueryKey(localTrackId),
     queryFn: () => getWaveformData(localTrackId as number),
     enabled: localTrackId !== null,
     staleTime: Infinity,

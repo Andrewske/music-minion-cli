@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useComparisonStore } from '../stores/comparisonStore';
-import { usePlayerStore } from '../stores/playerStore';
+import { usePlayerStore, seekBy } from '../stores/playerStore';
 import { useRecordComparison, useArchiveTrack } from './useComparison';
 import type { RecordComparisonRequest } from '../types';
 
@@ -125,13 +125,11 @@ export function useIPCWebSocket(handlers?: IPCWebSocketHandlers) {
         break;
 
        case 'seek-pos':
-         // Dispatch custom event for seek forward
-         window.dispatchEvent(new CustomEvent('music-minion-seek-pos'));
+         seekBy(10_000);
          break;
 
        case 'seek-neg':
-         // Dispatch custom event for seek backward
-         window.dispatchEvent(new CustomEvent('music-minion-seek-neg'));
+         seekBy(-10_000);
          break;
 
        default:

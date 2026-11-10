@@ -4,8 +4,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { FeedItem } from '../../api/feed';
 import { FeedTrackCard } from './FeedTrackCard';
 
-vi.mock('./FeedWaveform', () => ({
-  FeedWaveform: () => <div data-testid="waveform" />,
+vi.mock('../waveform/Waveform', () => ({
+  Waveform: () => <div data-testid="waveform" />,
 }));
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: ReactNode }) => <a href="/artist">{children}</a>,

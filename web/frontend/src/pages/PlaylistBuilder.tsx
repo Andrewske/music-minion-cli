@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { usePlaylistBuilder } from '../hooks/usePlaylistBuilder';
 import { useIPCWebSocket } from '../hooks/useIPCWebSocket';
-import { usePlayerStore } from '../stores/playerStore';
+import { usePlayerStore, seekToFraction } from '../stores/playerStore';
 import { builderApi } from '../api/builder';
 import type { Track } from '../api/builder';
 import { TrackQueueTable } from '../components/builder/TrackQueueTable';
@@ -110,8 +110,7 @@ export function PlaylistBuilder({ playlistId, playlistName, playlistType, soundc
     const handleKeyDown = (e: KeyboardEvent): void => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key >= '0' && e.key <= '9') {
-        const percent = parseInt(e.key) * 10;
-        window.dispatchEvent(new CustomEvent('music-minion-seek-percent', { detail: percent }));
+        seekToFraction(parseInt(e.key) / 10);
       }
       if (e.key === ' ') {
         e.preventDefault();
