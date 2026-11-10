@@ -8,6 +8,7 @@ from loguru import logger
 
 from music_minion.core.database import get_db_connection
 from web.backend.feed_filter_rules import not_flagged_sql
+from web.backend.sc_likes import liked_soundcloud_ids, sc_liked_sql
 
 Decision = Literal["keep", "not_quite", "nope"]
 FeedSource = Literal["all", "releases", "reposts"]
@@ -131,7 +132,7 @@ def _row_to_feed_item(row: Any) -> dict[str, Any]:
         "status": _legacy_status(current_decision),
         "current_decision": current_decision,
         "decided_at": row["decided_at"],
-        "in_likes": bool(row["in_likes"]),
+        "sc_liked": bool(row["sc_liked"]),
         "in_playlists": bool(row["in_playlists"]),
         "best_reposter_rank": row["best_reposter_rank"],
         "reposter_count": row["reposter_count"] or 0,
@@ -488,11 +489,7 @@ def _hydrate_feed_items(
                        WHERE t.artist_normalized = LOWER(TRIM(COALESCE(c.uploader_display_name, '')))
                          AND t.local_path IS NOT NULL
                    ) AS artist_in_library,
-                   EXISTS(
-                       SELECT 1 FROM tracks t JOIN ratings rt ON rt.track_id = t.id
-                       WHERE t.source = 'soundcloud' AND t.soundcloud_id = c.soundcloud_id
-                         AND rt.rating_type = 'like' AND rt.source = 'soundcloud'
-                   ) AS in_likes,
+                   {sc_liked_sql("c.soundcloud_id")} AS sc_liked,
                    EXISTS(
                        SELECT 1 FROM tracks t JOIN playlist_tracks pt ON pt.track_id = t.id
                        WHERE t.source = 'soundcloud' AND t.soundcloud_id = c.soundcloud_id
@@ -808,7 +805,8 @@ _REVIEWED_SQL = f"""
            COALESCE(u.permalink_url, dt.permalink_url) AS permalink_url,
            COALESCE(u.duration_ms, dt.duration_ms, 0) AS duration_ms,
            COALESCE(u.access, dt.access) AS access,
-           n.note, n.updated_at AS note_updated_at
+           n.note, n.updated_at AS note_updated_at,
+           {sc_liked_sql("d.soundcloud_id")} AS sc_liked
     FROM sc_track_decisions d
     LEFT JOIN sc_artist_uploads u ON u.soundcloud_id = d.soundcloud_id
     LEFT JOIN discovery_artists da ON da.id = u.discovery_artist_id
@@ -847,7 +845,7 @@ def get_reviewed_page(
     }
     with get_db_connection() as conn:
         rows = conn.execute(_REVIEWED_SQL, params).fetchall()
-    return [dict(row) for row in rows]
+    return [{**dict(row), "sc_liked": bool(row["sc_liked"])} for row in rows]
 
 
 def get_track_note(soundcloud_id: str) -> dict[str, Any] | None:
@@ -1041,6 +1039,12 @@ def get_contributing_artist_ids_for(soundcloud_ids: list[str]) -> list[int]:
             {"ids": json.dumps(soundcloud_ids)},
         ).fetchall()
     return [row["discovery_artist_id"] for row in rows]
+
+
+def is_sc_liked(soundcloud_id: str) -> bool:
+    """True when the track is in sc_likes (liked on SoundCloud)."""
+    with get_db_connection() as conn:
+        return bool(liked_soundcloud_ids(conn, [soundcloud_id]))
 
 
 def get_action_state(soundcloud_id: str) -> dict[str, str | None]:

@@ -38,7 +38,7 @@ def _now_utc() -> datetime:
 def _sync_sc_likes(provider_state: Any) -> int:
     """Incremental SoundCloud likes sync: import new liked tracks + like markers.
 
-    Keeps the feed's in_likes flag (red heart) fresh without a manual
+    Keeps sc_likes (the red heart everywhere) fresh without a manual
     `library sync soundcloud likes` run. Returns like markers added.
     """
     from music_minion.core.database import batch_add_soundcloud_likes
@@ -185,7 +185,7 @@ def _after_ingest(provider_state: Any) -> None:
     enqueue_feed_action_drain()
 
     # Pull likes made outside the feed (SC app/web) into the local library so
-    # the feed's in_likes flag stays accurate.
+    # sc_likes stays accurate.
     try:
         _sync_sc_likes(provider_state)
     except Exception:

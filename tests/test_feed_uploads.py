@@ -227,12 +227,14 @@ def test_db(tmp_path, monkeypatch):
         _migrate_v67_decision_verdicts,
         _migrate_v68_feed_flags,
         _migrate_v69_feed_insights,
+        _migrate_v71_sc_likes,
     )
 
     _migrate_v64_track_predictions(conn)
     _migrate_v67_decision_verdicts(conn)
     _migrate_v68_feed_flags(conn)
     _migrate_v69_feed_insights(conn)
+    _migrate_v71_sc_likes(conn)
     conn.execute("INSERT INTO sc_feed_sync_state (id) VALUES (1)")
     conn.commit()
     conn.close()

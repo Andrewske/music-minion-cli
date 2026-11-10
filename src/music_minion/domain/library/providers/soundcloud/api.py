@@ -164,6 +164,8 @@ def sync_library(
             logger.error(f"HTTP error syncing library: {e}")
             return state, []
 
+    _record_sc_likes(all_liked_ids)
+
     # Sync like markers for all matched tracks (both new and existing)
     likes_synced = 0
     try:
@@ -206,6 +208,27 @@ def sync_library(
 
     new_state = state.with_sync_time()
     return new_state, tracks
+
+
+def _record_sc_likes(liked_ids: set[str]) -> None:
+    """Upsert every fetched like into sc_likes, keyed by soundcloud_id.
+
+    Add-only: the fetch can stop early (incremental) or return partial
+    results on errors, so a missing id never means "unliked".
+    """
+    if not liked_ids:
+        return
+    import sqlite3
+
+    from music_minion.core import database
+
+    try:
+        added = database.upsert_sc_likes(liked_ids, "sync")
+        logger.info(f"sc_likes: {added} new of {len(liked_ids)} fetched likes")
+    except sqlite3.Error:
+        logger.exception(
+            f"Failed to record {len(liked_ids)} SoundCloud likes in sc_likes"
+        )
 
 
 def search(
