@@ -25,7 +25,7 @@ function stopIfSessionFinished(localTrackId: number | null): void {
 }
 
 /**
- * Like / Not quite / Skip through POST /feed/{id}/rate (surface "stories").
+ * Keep / Not quite / Skip through POST /feed/{id}/rate (surface "stories").
  * The session updates optimistically (Not quite and Skip advance at once);
  * a failed write restores the previous verdict but does not rewind playback.
  */
@@ -48,15 +48,27 @@ export function useStoriesVerdict(): {
     onMutate: ({ track, decision }) => {
       dispatch({ type: 'verdict', soundcloudId: track.soundcloud_id, decision });
       stopIfSessionFinished(track.local_track_id);
-      return { previousDecision: track.decision };
+      return { previousDecision: track.decision, previousLikeAction: track.sc_like_action };
     },
     onError: (_error, { track }, context) => {
       dispatch({ type: 'set-decision', soundcloudId: track.soundcloud_id, decision: context?.previousDecision ?? null });
+      dispatch({
+        type: 'set-sc-like',
+        soundcloudId: track.soundcloud_id,
+        scLiked: track.sc_liked,
+        likeAction: context?.previousLikeAction ?? null,
+      });
       toast.error(`Could not save the verdict for ${track.title ?? 'this track'}`);
     },
-    onSuccess: (response, { decision }) => {
-      if (isFeedSyncFailed(response.action_state)) toast.error('Liked locally; SoundCloud sync needs attention');
-      else if (decision === 'keep') toast.success('Liked: SoundCloud sync queued');
+    onSuccess: (response, { track, decision }) => {
+      dispatch({
+        type: 'set-sc-like',
+        soundcloudId: track.soundcloud_id,
+        scLiked: response.sc_liked ?? track.sc_liked,
+        likeAction: response.action_state.like,
+      });
+      if (isFeedSyncFailed(response.action_state)) toast.error('Kept locally; SoundCloud sync needs attention');
+      else if (decision === 'keep') toast.success('Kept: SoundCloud sync queued');
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: FEED_QUERY_PREFIX });

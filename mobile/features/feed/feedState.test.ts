@@ -25,6 +25,7 @@ const item = (): FeedItem => ({
   keep_probability: null,
   prediction_model_version: null,
   prediction_explanation: null,
+  sc_liked: false,
 });
 
 describe('mobile feed screen behavior', () => {

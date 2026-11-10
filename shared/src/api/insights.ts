@@ -66,6 +66,8 @@ export interface InsightTrack {
   duration_ms: number;
   access: string | null;
   note: string | null;
+  /** In the user's SoundCloud likes. */
+  sc_liked: boolean;
 }
 
 export interface InsightTracksResponse {

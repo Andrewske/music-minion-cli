@@ -5,13 +5,14 @@ import {
   getFeedEventAt,
   getFeedItemBestRank,
   getFeedItemDecision,
+  getFeedItemScLikeState,
   getFeedItemUploader,
-  isFeedItemHearted,
   isFeedSyncFailed,
   isFeedSyncPending,
 } from '../../api/feed';
 import type { FeedArtist, FeedItem, FeedVerdict } from '../../api/feed';
 import { SoundCloudIcon } from '../icons/SoundCloudIcon';
+import { ScLikeHeart } from '../ScLikeHeart';
 import { ArtistHoverCard } from './ArtistHoverCard';
 import { FeedWaveform } from './FeedWaveform';
 import { VerdictButtons } from './VerdictButtons';
@@ -159,7 +160,8 @@ export function FeedTrackCard({
 }: FeedTrackCardProps): JSX.Element {
   const [artworkFailed, setArtworkFailed] = useState(false);
   const decision = getFeedItemDecision(item);
-  const hearted = isFeedItemHearted(item);
+  // Pending / failed likes already show in SoundCloudSyncState.
+  const hearted = getFeedItemScLikeState(item) === 'liked';
   const passed = decision !== null && decision !== 'keep';
   const playable = item.access !== 'blocked';
   const eventAt = getFeedEventAt(item);
@@ -208,13 +210,13 @@ export function FeedTrackCard({
       </div>
 
       <SoundCloudSyncState item={item} />
+      <ScLikeHeart state={hearted ? 'liked' : 'none'} />
       <SoundCloudLink item={item} />
       <span className="hidden shrink-0 font-sf-mono text-xs text-white/40 sm:block">{formatDuration(item.duration_ms)}</span>
 
       {onFlag && <NotForFeedButton disabled={isUpdating} onClick={() => onFlag(item)} />}
       <VerdictButtons
         current={decision}
-        hearted={hearted}
         disabled={isUpdating}
         onDecide={(verdict) => onDecide(item, verdict)}
       />

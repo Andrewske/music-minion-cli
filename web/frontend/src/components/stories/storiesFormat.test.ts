@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { formatDuration, formatTimeAgo, largeArtwork, soundCloudUrl } from './storiesFormat';
+import { STORIES_VERDICT_LABELS, formatDuration, formatTimeAgo, largeArtwork, soundCloudUrl } from './storiesFormat';
+
+describe('STORIES_VERDICT_LABELS', () => {
+  it('calls the MM keep verdict Kept, not Liked', () => {
+    expect(STORIES_VERDICT_LABELS.keep).toBe('Kept');
+  });
+});
 
 const NOW = Date.parse('2026-11-08T20:00:00Z');
 
