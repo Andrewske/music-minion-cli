@@ -45,7 +45,7 @@ vi.mock('../../stores/playerStore', async () => {
   }));
   return { usePlayerStore, getCurrentPosition: () => 0 };
 });
-vi.mock('../feed/FeedWaveform', () => ({ FeedWaveform: () => <div data-testid="waveform" /> }));
+vi.mock('../waveform/Waveform', () => ({ Waveform: () => <div data-testid="waveform" /> }));
 vi.mock('sonner', () => ({ toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }) }));
 
 const RESPONSE: StoriesResponse = makeResponse([
@@ -115,12 +115,41 @@ describe('StoriesPage', () => {
     expect(within(screen.getByRole('list', { name: 'Artist tracks' })).getAllByText('Skipped')).toHaveLength(2);
   });
 
-  it('Like rates keep and does not advance', async () => {
+  it('Keep rates keep and does not advance', async () => {
     renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: /^Like/ }));
+    const keep = await screen.findByRole('button', { name: 'Keep; like on SoundCloud and add to monthly playlist' });
+    expect(keep).toHaveTextContent('Keep');
+    fireEvent.click(keep);
     await waitFor(() => expect(rateFeedItem).toHaveBeenCalledWith('a1', 'keep', expect.objectContaining({ surface: 'stories' })));
     expect(playMock()).not.toHaveBeenCalled();
-    expect(screen.getByText('Liked')).toBeInTheDocument();
+    expect(screen.getByText('Kept')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Like/ })).not.toBeInTheDocument();
+  });
+
+  it('shows a pending heart after Keep until the SoundCloud like lands', async () => {
+    (rateFeedItem as Mock).mockResolvedValueOnce({
+      soundcloud_id: 'a1', current_decision: 'keep', decided_at: '2026-11-08T20:00:00Z', local_track_id: null,
+      action_state: { like: 'pending', monthly_playlist: 'pending', error: null }, sc_liked: false,
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /^Keep/ }));
+    await waitFor(() => expect(rateFeedItem).toHaveBeenCalled());
+    expect((await screen.findAllByRole('img', { name: 'SoundCloud like pending' })).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('img', { name: 'Liked on SoundCloud' })).not.toBeInTheDocument();
+  });
+
+  it('hearts SoundCloud-liked tracks without marking them kept', async () => {
+    renderPage(makeResponse([
+      makeArtist(1, [
+        makeTrack('a1', { local_track_id: 101, sc_liked: true }),
+        makeTrack('a3', { local_track_id: 103 }),
+      ]),
+    ]));
+    const keep = await screen.findByRole('button', { name: /^Keep/ });
+    expect(keep).toHaveAttribute('aria-pressed', 'false');
+    // Hero + track list row.
+    expect(screen.getAllByRole('img', { name: 'Liked on SoundCloud' })).toHaveLength(2);
+    expect(screen.queryByText('Kept')).not.toBeInTheDocument();
   });
 
   it('advances on natural track end and drops the finished artist when moving on', async () => {

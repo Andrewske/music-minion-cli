@@ -29,6 +29,9 @@ _feed_lock = threading.Lock()
 
 TICK_SECONDS = 3600  # stream read every hour
 SWEEP_INTERVAL = timedelta(hours=24)  # per-artist backfill sweep
+# Full likes reconcile (drops likes undone on SoundCloud). 23h, not 24h, so
+# hourly-tick drift doesn't push it a tick later every day.
+LIKES_RECONCILE_INTERVAL = timedelta(hours=23)
 
 
 def _now_utc() -> datetime:
@@ -38,7 +41,7 @@ def _now_utc() -> datetime:
 def _sync_sc_likes(provider_state: Any) -> int:
     """Incremental SoundCloud likes sync: import new liked tracks + like markers.
 
-    Keeps the feed's in_likes flag (red heart) fresh without a manual
+    Keeps sc_likes (the red heart everywhere) fresh without a manual
     `library sync soundcloud likes` run. Returns like markers added.
     """
     from music_minion.core.database import batch_add_soundcloud_likes
@@ -185,7 +188,7 @@ def _after_ingest(provider_state: Any) -> None:
     enqueue_feed_action_drain()
 
     # Pull likes made outside the feed (SC app/web) into the local library so
-    # the feed's in_likes flag stays accurate.
+    # sc_likes stays accurate.
     try:
         _sync_sc_likes(provider_state)
     except Exception:
@@ -236,6 +239,70 @@ def _sweep_due() -> bool:
         return True
 
 
+def likes_reconcile_due(last_run_at: str | None, now: datetime) -> bool:
+    """Pure: True when no complete reconcile has run in LIKES_RECONCILE_INTERVAL."""
+    if not last_run_at:
+        return True
+    try:
+        last = datetime.fromisoformat(last_run_at)
+    except ValueError:
+        return True
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return now - last >= LIKES_RECONCILE_INTERVAL
+
+
+def _likes_reconcile_last_run_at() -> str | None:
+    with get_db_connection() as conn:
+        row = conn.execute(
+            "SELECT likes_reconcile_last_run_at FROM sc_feed_sync_state WHERE id = 1"
+        ).fetchone()
+    return row[0] if row else None
+
+
+def _record_likes_reconcile(summary_json: str, complete: bool) -> None:
+    """Store the summary; stamp last_run_at only for a complete fetch, so a
+    failed fetch retries next tick instead of waiting a day."""
+    with get_db_connection() as conn:
+        conn.execute(
+            """
+            UPDATE sc_feed_sync_state
+            SET likes_reconcile_summary = ?,
+                likes_reconcile_last_run_at = CASE WHEN ? THEN ?
+                    ELSE likes_reconcile_last_run_at END
+            WHERE id = 1
+            """,
+            (summary_json, complete, _now_utc().isoformat()),
+        )
+        conn.commit()
+
+
+def _maybe_reconcile_sc_likes() -> None:
+    """Nightly full likes reconcile from the daemon loop; never raises.
+
+    The very first run (no last_run_at yet, i.e. right after deploy) is a dry
+    run: it logs and stores what it would change, and deletes start the
+    following night, leaving time to check it with `sc-likes-reconcile`.
+    """
+    from music_minion.domain.library.providers.soundcloud.likes_reconcile import (
+        reconcile_for_provider,
+        report_json,
+    )
+
+    try:
+        last_run_at = _likes_reconcile_last_run_at()
+        if not likes_reconcile_due(last_run_at, _now_utc()):
+            return
+        provider_state = get_web_provider_state()
+        if provider_state is None:
+            return
+        report = reconcile_for_provider(provider_state, apply=last_run_at is not None)
+        if report is not None:
+            _record_likes_reconcile(report_json(report), report.complete)
+    except Exception:
+        logger.exception("feed_sync_error during sc likes reconcile (continuing)")
+
+
 def _set_sync_error(error: str) -> None:
     """Update sync state to error status."""
     try:
@@ -269,6 +336,8 @@ def start_feed_worker() -> None:
                     _fetch_feed_locked(sweep=_sweep_due())
             except Exception:
                 logger.exception("feed worker tick failed")
+            with _feed_lock:
+                _maybe_reconcile_sc_likes()
             time.sleep(TICK_SECONDS)
 
     threading.Thread(target=_loop, daemon=True, name="sc_feed_worker").start()

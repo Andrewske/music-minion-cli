@@ -5,7 +5,7 @@ import sqlite3
 
 import pytest
 
-from music_minion.core.database import _migrate_v68_feed_flags
+from music_minion.core.database import _migrate_v68_feed_flags, _migrate_v71_sc_likes
 from web.backend.queries.artists import (
     get_artist_stats,
     recompute_tier_rankings,
@@ -84,6 +84,11 @@ SCHEMA_SQL = [
         reposted_at TIMESTAMP,
         seen_at TIMESTAMP
     )""",
+    """CREATE TABLE sc_artist_uploads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        discovery_artist_id INTEGER NOT NULL,
+        soundcloud_id TEXT UNIQUE NOT NULL
+    )""",
 ]
 
 
@@ -94,6 +99,7 @@ def conn():
     for stmt in SCHEMA_SQL:
         conn.execute(stmt)
     _migrate_v68_feed_flags(conn)
+    _migrate_v71_sc_likes(conn)
     yield conn
     conn.close()
 

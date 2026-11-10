@@ -118,7 +118,7 @@ function ScHeart({ liked }: { liked: boolean }): JSX.Element {
     >
       <Heart
         className={`w-4 h-4 ${
-          liked ? 'text-orange-500 fill-orange-500 drop-shadow-[0_0_6px_rgba(255,85,0,0.5)]' : 'text-white/25'
+          liked ? 'text-red-500 fill-current' : 'text-white/25'
         }`}
       />
     </span>

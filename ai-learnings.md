@@ -283,3 +283,11 @@ sqlite3 db.db "EXPLAIN QUERY PLAN SELECT ... FROM tracks t JOIN ratings r ON t.i
 - Test imports must use `web.backend.*` (not `backend.*`); two module names meant patches missed the copy the app used.
 - `essentia` is pinned to 2.1b6.dev1389: newer dev builds only ship cp314 wheels. `openai` is held <3 until the v3 client API is checked.
 - Ruff 0.17 enables a much wider rule set here (~1800 hits); keep autofix passes scoped (`--select F`) to avoid 200-file churn.
+
+## SoundCloud likes are their own table, keyed by soundcloud_id (2026-11-09)
+
+**Problem:** SC likes lived only as `ratings` rows (`source='soundcloud'`) keyed by `tracks.id`. Feed, stories and discovery rows usually have no `tracks` row, so a liked track there looked unliked. The feed action worker also never wrote a marker after a successful keep-like, so 22 MM keeps that SoundCloud confirmed were invisible. Five surfaces each had their own "liked" (ratings markers, keep verdicts, `in_playlists`).
+
+**Fix (v71):** `sc_likes(soundcloud_id PK, liked_at, source, synced_at)`. Every API computes `sc_liked` with `web/backend/sc_likes.py::sc_liked_sql()` (one PK lookup per row, no measurable cost on the stories/feed queries). Writers: provider likes sync (every fetched id), the feed worker on like success or "already liked", CLI like/unlike. The CLI still writes the legacy ratings marker, but `has_soundcloud_like` reads `sc_likes`.
+
+**Lesson:** The incremental SC like fetch stops at the first known track and returns partial results on errors, so `sc_likes` is add-only until a complete fetch exists. Never delete likes based on it.

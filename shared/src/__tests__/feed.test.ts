@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApiClient, setDefaultApiClient } from '../api/client';
 import {
   FEED_PAGE_SIZE,
+  FEED_VERDICT_LABELS,
   applyFeedDecision,
+  getFeedItemScLikeState,
+  getScLikeState,
   getFeed,
   getReviewed,
   getFeedItemBestRank,
@@ -52,6 +55,7 @@ const item = (overrides: Partial<FeedItem> = {}): FeedItem => ({
   keep_probability: null,
   prediction_model_version: null,
   prediction_explanation: null,
+  sc_liked: false,
   ...overrides,
 });
 
@@ -231,12 +235,36 @@ describe('feed decisions', () => {
     expect(hasPendingFeedSync(undefined)).toBe(false);
   });
 
-  it('hearts kept tracks and tracks already in SoundCloud likes or playlists', () => {
+  it('hearts only tracks in SoundCloud likes, never a bare keep or playlist', () => {
     expect(isFeedItemHearted(item())).toBe(false);
-    expect(isFeedItemHearted(item({ current_decision: 'keep' }))).toBe(true);
-    expect(isFeedItemHearted(item({ in_likes: true }))).toBe(true);
-    expect(isFeedItemHearted(item({ in_playlists: true }))).toBe(true);
-    expect(isFeedItemHearted(item({ current_decision: 'nope' }))).toBe(false);
+    expect(isFeedItemHearted(item({ sc_liked: true }))).toBe(true);
+    expect(isFeedItemHearted(item({ current_decision: 'keep' }))).toBe(false);
+    expect(isFeedItemHearted(item({ in_playlists: true }))).toBe(false);
+    expect(isFeedItemHearted(item({ current_decision: 'nope', sc_liked: true }))).toBe(true);
+  });
+
+  it('derives the SoundCloud like state from sc_liked and the like job', () => {
+    expect(getScLikeState(true, 'error')).toBe('liked');
+    expect(getScLikeState(false, 'pending')).toBe('pending');
+    expect(getScLikeState(false, 'running')).toBe('pending');
+    expect(getScLikeState(false, 'error')).toBe('failed');
+    expect(getScLikeState(false, 'complete')).toBe('none');
+    expect(getScLikeState(undefined, null)).toBe('none');
+    const kept = item({ current_decision: 'keep', action_state: { like: 'pending', monthly_playlist: 'pending', error: null } });
+    expect(getFeedItemScLikeState(kept)).toBe('pending');
+  });
+
+  it('labels the keep verdict Kept', () => {
+    expect(FEED_VERDICT_LABELS.keep).toBe('Kept');
+  });
+
+  it('carries sc_liked through a decision response', () => {
+    const response = {
+      soundcloud_id: 'x', current_decision: 'keep' as const, decided_at: 'now', local_track_id: null,
+      action_state: { like: 'complete' as const, monthly_playlist: 'complete' as const, error: null }, sc_liked: true,
+    };
+    expect(mergeFeedDecisionResponse(item(), response).sc_liked).toBe(true);
+    expect(mergeFeedDecisionResponse(item({ sc_liked: true }), { ...response, sc_liked: undefined }).sc_liked).toBe(true);
   });
 
   it('polls pending sync only when no decision is in flight', () => {

@@ -16,6 +16,11 @@ export {
   getFolders,
 } from '@music-minion/shared';
 
+/** React Query key for a track's waveform peaks. */
+export function waveformQueryKey(trackId: number | null): readonly ['waveform', number | null] {
+  return ['waveform', trackId] as const;
+}
+
 // In-memory cache for prefetched waveforms (web-only)
 const waveformCache = new Map<number, Promise<WaveformData>>();
 

@@ -156,12 +156,7 @@ def handle_like_command(ctx: AppContext) -> tuple[AppContext, bool]:
 
                     if success:
                         # Add soundcloud marker to database
-                        database.add_rating(
-                            track_id,
-                            "like",
-                            "Synced to SoundCloud",
-                            source="soundcloud",
-                        )
+                        database.mark_soundcloud_liked(track_id, soundcloud_id)
                         log("   ✓ Synced like to SoundCloud", level="info")
                     else:
                         log(
@@ -403,12 +398,7 @@ def handle_unlike_command(ctx: AppContext) -> tuple[AppContext, bool]:
 
         if success:
             # Remove soundcloud marker from database
-            with database.get_db_connection() as conn:
-                conn.execute(
-                    "DELETE FROM ratings WHERE track_id = ? AND source = 'soundcloud'",
-                    (track_id,),
-                )
-                conn.commit()
+            database.clear_soundcloud_like(track_id, soundcloud_id)
 
             log(
                 f"💔 Unliked on SoundCloud: {library.get_display_name(current_track)}",

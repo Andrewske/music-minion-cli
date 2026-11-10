@@ -11,6 +11,7 @@ from music_minion.core.database import get_db_connection
 from web.backend import feed_insights
 from web.backend.feed_filter_rules import not_flagged_sql
 from web.backend.queries.feed import utc_iso
+from web.backend.sc_likes import sc_liked_sql
 from web.backend.soundcloud_metadata import parse_soundcloud_datetime, parse_tag_list
 
 _REPOSTER_SEPARATOR = "\x1f"
@@ -50,6 +51,7 @@ _REVIEWED_TRACKS_SQL = f"""
            COALESCE(u.released_at, dt.released_at, u.uploaded_at, dt.uploaded_at)
                AS released_at,
            n.note,
+           {sc_liked_sql("d.soundcloud_id")} AS sc_liked,
            ({_REPOSTER_NAMES_SQL}) AS reposter_names
     FROM sc_track_decisions d
     LEFT JOIN sc_artist_uploads u ON u.soundcloud_id = d.soundcloud_id
@@ -77,6 +79,7 @@ def _row_to_track(row: Any) -> dict[str, Any]:
     track["reposters"] = sorted(set(filter(None, names.split(_REPOSTER_SEPARATOR))))
     track["tags"] = parse_tag_list(track["tag_list"])
     track["age_days"] = _age_days(track["released_at"], track["decided_at"])
+    track["sc_liked"] = bool(track["sc_liked"])
     return track
 
 

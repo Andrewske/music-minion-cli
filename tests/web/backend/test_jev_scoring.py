@@ -13,6 +13,7 @@ from music_minion.core.database import (
     _migrate_v67_decision_verdicts,
     _migrate_v68_feed_flags,
     _migrate_v69_feed_insights,
+    _migrate_v71_sc_likes,
 )
 from web.backend import jev_client, jev_scorer
 from web.backend.jev_client import JevConfig, JevPrediction
@@ -96,7 +97,8 @@ CREATE TABLE playlist_tracks (
 CREATE TABLE sc_feed_action_jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     soundcloud_id TEXT, action_type TEXT, status TEXT,
-    last_error TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    last_error TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT, completed_at TEXT
 );
 """
 
@@ -115,6 +117,7 @@ def db_path(tmp_path, monkeypatch):
     _migrate_v68_feed_flags(conn)
     _migrate_v69_feed_insights(conn)
     _migrate_v64_track_predictions(conn)
+    _migrate_v71_sc_likes(conn)
     conn.commit()
     conn.close()
     yield path

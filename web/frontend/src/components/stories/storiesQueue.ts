@@ -6,6 +6,7 @@
  * Playback is requested by bumping `playNonce`: whenever a transition wants
  * `current` to start playing, the nonce increments and the page plays it.
  */
+import type { FeedActionStatus } from '../../api/feed';
 import type { StoriesArtist, StoriesDecision, StoriesResponse, StoriesTrack } from '../../api/stories';
 
 export const STORIES_QUERY_KEY = ['stories'] as const;
@@ -40,6 +41,7 @@ export type StoriesAction =
   | { type: 'mark-listened'; soundcloudId: string }
   | { type: 'verdict'; soundcloudId: string; decision: StoriesDecision }
   | { type: 'set-decision'; soundcloudId: string; decision: StoriesDecision | null }
+  | { type: 'set-sc-like'; soundcloudId: string; scLiked: boolean; likeAction: FeedActionStatus }
   | { type: 'materialized'; soundcloudId: string; localTrackId: number };
 
 function findPlayingRef(artists: readonly StoriesArtist[], localTrackId: number | null): StoryRef | null {
@@ -138,7 +140,7 @@ export function nextArtistWithUnheard(session: StoriesSession, fromArtistId: num
 export function updateTrack(
   session: StoriesSession,
   soundcloudId: string,
-  patch: Partial<Pick<StoriesTrack, 'listened' | 'decision' | 'local_track_id'>>
+  patch: Partial<Pick<StoriesTrack, 'listened' | 'decision' | 'local_track_id' | 'sc_liked' | 'sc_like_action'>>
 ): StoriesSession {
   const patchTracks = (tracks: StoriesTrack[]): StoriesTrack[] =>
     tracks.map((track) => (track.soundcloud_id === soundcloudId ? { ...track, ...patch } : track));
@@ -218,9 +220,14 @@ export function selectArtist(session: StoriesSession, artistId: number): Stories
   return startTrack(session, { artistId, soundcloudId: firstUnheard.soundcloud_id });
 }
 
-/** Like keeps playing; Not quite and Skip advance. Every verdict counts as listened. */
+/**
+ * Keep keeps playing; Not quite and Skip advance. Every verdict counts as
+ * listened. A keep queues the SoundCloud like, so its heart shows pending
+ * until the server says the like landed; other verdicts cancel that job.
+ */
 export function applyVerdict(session: StoriesSession, soundcloudId: string, decision: StoriesDecision): StoriesSession {
-  const rated = updateTrack(session, soundcloudId, { decision, listened: true });
+  const likeAction: FeedActionStatus = decision === 'keep' ? 'pending' : null;
+  const rated = updateTrack(session, soundcloudId, { decision, listened: true, sc_like_action: likeAction });
   return decision === 'keep' ? rated : advanceFrom(rated, soundcloudId);
 }
 
@@ -239,6 +246,8 @@ export function storiesReducer(session: StoriesSession, action: StoriesAction): 
     case 'mark-listened': return updateTrack(session, action.soundcloudId, { listened: true });
     case 'verdict': return applyVerdict(session, action.soundcloudId, action.decision);
     case 'set-decision': return updateTrack(session, action.soundcloudId, { decision: action.decision });
+    case 'set-sc-like':
+      return updateTrack(session, action.soundcloudId, { sc_liked: action.scLiked, sc_like_action: action.likeAction });
     case 'materialized': return updateTrack(session, action.soundcloudId, { local_track_id: action.localTrackId });
     default: {
       const exhaustive: never = action;

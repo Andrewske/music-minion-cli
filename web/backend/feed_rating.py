@@ -5,6 +5,7 @@ from typing import Any, Optional
 
 from loguru import logger
 
+from music_minion.core.database import upsert_sc_likes
 from music_minion.core.local_time import configured_feed_timezone, month_label
 from music_minion.domain.library.providers.soundcloud.api import (
     add_track_to_playlist,
@@ -76,6 +77,8 @@ def process_one_pending_action(state: Any) -> tuple[Any, bool]:
                 success = False
 
         if success or _already_complete(err):
+            if job["action_type"] == "like":
+                upsert_sc_likes([job["soundcloud_id"]], "mm_keep", liked_now=True)
             feed_queries.complete_action(job["id"])
         else:
             feed_queries.fail_action(

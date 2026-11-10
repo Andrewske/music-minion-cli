@@ -53,7 +53,7 @@ Keep `active` meaning "the session currently loaded for this playlist" (the uniq
 
 With this model, 10 active sessions across 10 playlists is normal, not "stuck". The TODOS item becomes a non-issue; delete it when this ships.
 
-### Schema (v71)
+### Schema (v73)
 
 ```sql
 ALTER TABLE bucket_sessions ADD COLUMN name TEXT;
@@ -162,7 +162,7 @@ Session JSON (`SessionResponse`) gains two fields:
 
 ## Tasks
 
-1. Migration v71 + `SCHEMA_VERSION` bump (`src/music_minion/core/database.py`).
+1. Migration v73 + `SCHEMA_VERSION` bump (`src/music_minion/core/database.py`).
 2. Query functions + read-time reconciliation (`web/backend/queries/buckets.py`).
 3. Endpoints + schemas (`web/backend/routers/buckets.py`).
 4. Backend tests: new file `web/backend/tests/test_bucket_sessions.py` (there are no bucket query tests today). Cover: new parks old; activate swaps and respects the unique index; activate applied session works; discarded can't be activated; list excludes discarded and orders by `last_opened_at`; tracks removed from the playlist are hidden but return when re-added; `get_or_create_session` unchanged for mobile; parking does NOT call discovery feedback.

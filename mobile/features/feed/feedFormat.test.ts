@@ -50,6 +50,7 @@ const item = (overrides: Partial<FeedItem> = {}): FeedItem => ({
   keep_probability: null,
   prediction_model_version: null,
   prediction_explanation: null,
+  sc_liked: false,
   ...overrides,
 });
 

@@ -111,6 +111,7 @@ except Exception:
 - Tests: `uv run pytest` or `uv run pytest path/to/test.py::test_case`
 - Dev against real data: `scripts/pull-db-snapshot.sh`, then `MUSIC_MINION_DB_PATH=<snapshot> uv run music-minion --web`
 - One-off tools on the live DB: `scripts/on-pi.sh music-minion <cmd>` or `scripts/on-pi.sh scripts/<x>.py`
+- SC likes reconcile (drops likes undone on SoundCloud; runs nightly in the feed worker): `scripts/on-pi.sh music-minion sc-likes-reconcile` (dry run) `[--apply] [--force]`
 - Lint: `uv run ruff check src` / `uv run ruff format src`
 
 **Web Development Workflow**:

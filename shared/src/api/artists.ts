@@ -73,7 +73,7 @@ export interface PlaylistRef {
 }
 
 export interface ArtistLibraryTrack extends LibraryTrack {
-  is_liked: boolean;
+  sc_liked: boolean;
   playlists: PlaylistRef[];
 }
 

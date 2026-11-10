@@ -6,8 +6,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from music_minion.core.database import get_db_connection
+from music_minion.core.database import get_db_connection, upsert_sc_likes
 from web.backend.queries import stories
+from web.backend.queries.feed import enqueue_keep_actions
 from web.backend.routers.stories import router as stories_router
 
 NOW = datetime(2026, 11, 8, 20, 0, 0, tzinfo=UTC)
@@ -256,6 +257,31 @@ class TestListened:
         self._play(None)
         assert self._listened(artist) is False
 
+    def test_sc_liked_counts_as_listened_without_a_verdict(self, artist: int) -> None:
+        upsert_sc_likes(["target"], "sync")
+        data = payload()
+        target = track(data, artist, "target")
+        assert target["listened"] is True
+        assert target["sc_liked"] is True
+        assert target["decision"] is None
+        assert track(data, artist, "fresh")["sc_liked"] is False
+        rows = {r["soundcloud_id"]: r for r in stories.fetch_story_rows(7, NOW)}
+        assert stories.listened_via(rows["target"]) == ("liked",)
+
+    def test_sc_liked_keeps_the_mm_verdict(self, artist: int) -> None:
+        upsert_sc_likes(["target"], "sync")
+        _exec(
+            "INSERT INTO sc_track_decisions (soundcloud_id, decision, surface) "
+            "VALUES ('target', 'not_quite', 'web_feed')"
+        )
+        assert track(payload(), artist, "target")["decision"] == "not_quite"
+
+    def test_pending_like_job_is_reported(self, artist: int) -> None:
+        enqueue_keep_actions("target", "Nov 26")
+        target = track(payload(), artist, "target")
+        assert target["sc_like_action"] == "pending"
+        assert target["sc_liked"] is False
+
     def test_listened_is_global_across_artists(self) -> None:
         first, second = add_artist("a"), add_artist("b")
         track_id = add_track("shared")
@@ -403,6 +429,8 @@ class TestShape:
             "score",
             "decision",
             "listened",
+            "sc_liked",
+            "sc_like_action",
         }
 
 

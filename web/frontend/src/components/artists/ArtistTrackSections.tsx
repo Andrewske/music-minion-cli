@@ -1,8 +1,9 @@
 import type { ReactElement } from 'react';
-import { HardDrive, Heart, ListMusic, Play } from 'lucide-react';
+import { HardDrive, ListMusic, Play } from 'lucide-react';
 import type { Track } from '@music-minion/shared';
 import type { ArtistLibraryTrack } from '../../api/artists';
 import { usePlayerStore } from '../../stores/playerStore';
+import { ScLikeHeart } from '../ScLikeHeart';
 
 /** Playlist name colors keyed by playlists.library. */
 const LIBRARY_COLORS: Record<string, string> = {
@@ -28,7 +29,7 @@ function toTrack(t: ArtistLibraryTrack): Track {
 }
 
 const isSaved = (t: ArtistLibraryTrack): boolean =>
-  t.is_liked || t.playlists.length > 0;
+  t.sc_liked || t.playlists.length > 0;
 
 interface TrackRowProps {
   track: ArtistLibraryTrack;
@@ -83,7 +84,7 @@ function TrackRow({ track, isPlaying, onPlay }: TrackRowProps): ReactElement {
           <HardDrive className="w-3.5 h-3.5 text-emerald-400" />
         </span>
       )}
-      {track.is_liked && <Heart className="w-3.5 h-3.5 shrink-0 text-red-500 fill-current" />}
+      <ScLikeHeart state={track.sc_liked ? 'liked' : 'none'} className="w-3.5 h-3.5" />
       {track.play_count > 0 && (
         <span className="text-xs text-white/30 font-sf-mono shrink-0">{track.play_count}×</span>
       )}

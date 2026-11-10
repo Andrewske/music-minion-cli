@@ -1,4 +1,5 @@
 import { getDefaultApiClient } from './client';
+import type { FeedActionStatus } from './feed';
 
 /** Rolling window the Stories page asks for, in days. */
 export const STORIES_WINDOW_DAYS = 7;
@@ -22,8 +23,14 @@ export interface StoriesTrack {
   local_track_id: number | null;
   /** Jev keep probability, null when unscored. */
   score: number | null;
+  /** The MM verdict only; a SoundCloud like is sc_liked, never a fabricated keep. */
   decision: StoriesDecision | null;
+  /** Heard, decided, in the library, played, or liked on SoundCloud. */
   listened: boolean;
+  /** In the user's SoundCloud likes. */
+  sc_liked: boolean;
+  /** Status of the keep's queued SoundCloud like job, null when there is none. */
+  sc_like_action: FeedActionStatus;
 }
 
 export interface StoriesArtist {

@@ -42,7 +42,7 @@ const toTrack = (t: ArtistLibraryTrack): Track => ({
 });
 
 /** Saved = liked or in at least one playlist. Header count and section use this. */
-const isSaved = (t: ArtistLibraryTrack): boolean => t.is_liked || t.playlists.length > 0;
+const isSaved = (t: ArtistLibraryTrack): boolean => t.sc_liked || t.playlists.length > 0;
 
 export default function ArtistScreen(): ReactElement {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -162,7 +162,7 @@ export default function ArtistScreen(): ReactElement {
                     </View>
                   )}
                 </View>
-                {item.is_liked && (
+                {item.sc_liked && (
                   <View className="mr-2" accessibilityLabel="Liked">
                     <Heart size={16} color="#7C4DFF" fill="#7C4DFF" />
                   </View>

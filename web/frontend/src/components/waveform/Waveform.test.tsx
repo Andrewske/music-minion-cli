@@ -1,25 +1,28 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
-import { FeedWaveform } from './FeedWaveform';
+import { Waveform } from './Waveform';
 import { barCountFor, downsamplePeaks } from './waveformBars';
 
-vi.mock('../../api/tracks', () => ({ getWaveformData: vi.fn(async () => ({ peaks: [] })) }));
+vi.mock('../../api/tracks', () => ({
+  getWaveformData: vi.fn(async () => ({ peaks: [] })),
+  waveformQueryKey: (id: number | null) => ['waveform', id],
+}));
 vi.mock('../../stores/playerStore', async () => {
   const { create } = await import('zustand');
   const usePlayerStore = create(() => ({ currentTrack: null, seek: vi.fn(async () => undefined) }));
   return { usePlayerStore, getCurrentPosition: () => 0 };
 });
 
-function renderWaveform(props: Parameters<typeof FeedWaveform>[0]): void {
+function renderWaveform(props: Parameters<typeof Waveform>[0]): void {
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <FeedWaveform {...props} />
+      <Waveform {...props} />
     </QueryClientProvider>
   );
 }
 
-describe('FeedWaveform', () => {
+describe('Waveform', () => {
   it('starts a track that has no library id yet', () => {
     const onActivate = vi.fn();
     renderWaveform({ localTrackId: null, durationMs: 200_000, onActivate });

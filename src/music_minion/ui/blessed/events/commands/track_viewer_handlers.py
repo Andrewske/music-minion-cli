@@ -459,12 +459,7 @@ def handle_track_viewer_like(
 
                     if success:
                         # Add soundcloud marker to database
-                        database.add_rating(
-                            track_id,
-                            "like",
-                            "Synced to SoundCloud",
-                            source="soundcloud",
-                        )
+                        database.mark_soundcloud_liked(track_id, soundcloud_id)
                         ui_state = add_history_line(
                             ui_state, "   ✓ Synced like to SoundCloud", "white"
                         )
@@ -562,12 +557,7 @@ def handle_track_viewer_unlike(
 
         if success:
             # Remove soundcloud marker from database
-            with database.get_db_connection() as conn:
-                conn.execute(
-                    "DELETE FROM ratings WHERE track_id = ? AND source = 'soundcloud'",
-                    (track_id,),
-                )
-                conn.commit()
+            database.clear_soundcloud_like(track_id, soundcloud_id)
 
             ui_state = add_history_line(
                 ui_state,

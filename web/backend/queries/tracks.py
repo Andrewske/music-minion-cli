@@ -1,6 +1,8 @@
 """Shared track query utilities."""
 
 from typing import Sequence
+
+from ..sc_likes import liked_soundcloud_ids
 from .emojis import batch_fetch_track_emojis
 
 
@@ -17,7 +19,7 @@ def batch_fetch_tracks_with_metadata(
         preserve_order: If True, returns tracks in same order as track_ids
 
     Returns:
-        List of track dicts with all columns + emojis array
+        List of track dicts with all columns + emojis array + sc_liked
     """
     if not track_ids:
         return []
@@ -34,9 +36,14 @@ def batch_fetch_tracks_with_metadata(
     # Batch-fetch emojis
     emojis_by_track = batch_fetch_track_emojis(list(tracks_by_id.keys()), db_conn)
 
-    # Add emojis to each track
+    liked = liked_soundcloud_ids(
+        db_conn, (t.get("soundcloud_id") for t in tracks_by_id.values())
+    )
+
+    # Add emojis and the SoundCloud like flag to each track
     for track_id, track in tracks_by_id.items():
         track["emojis"] = emojis_by_track.get(track_id, [])
+        track["sc_liked"] = track.get("soundcloud_id") in liked
 
     # Preserve order if requested
     if preserve_order:

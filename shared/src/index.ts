@@ -77,7 +77,7 @@ export {
   getFeedItemDecision, getFeedItemUploader, getFeedEventAt,
   getFeedItemBestRank, normalizeFeedItem, applyFeedDecision, mergeFeedDecisionResponse,
   isFeedSyncPending, isFeedSyncFailed, hasPendingFeedSync,
-  isFeedItemHearted, FEED_DECISION_MUTATION_KEY, getFeedRefetchInterval,
+  isFeedItemHearted, getScLikeState, getFeedItemScLikeState, FEED_DECISION_MUTATION_KEY, getFeedRefetchInterval,
   getFeed, rateFeedItem, materializeFeedItems, prepareFeedQueue, applyMaterializedIds,
   FEED_QUEUE_LIMIT,
   startFeedBackfill,
@@ -85,7 +85,7 @@ export {
 } from './api/feed';
 export type {
   FeedSource, FeedSort, FeedRankPreset, FeedVerdict, FeedDecision, FeedItemStatus,
-  FeedActionStatus, FeedArtist, FeedActionState, FeedItem, FeedPage,
+  FeedActionStatus, FeedArtist, FeedActionState, FeedItem, FeedPage, ScLikeState,
   GetFeedParams, RateFeedItemOptions, RateFeedItemResponse,
   MaterializeFeedItemResponse, PreparedFeedQueue,
   ReviewedItem, ReviewedPage, GetReviewedParams, FeedNoteResponse,

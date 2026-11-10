@@ -8,7 +8,7 @@ import { usePlayerStore } from '../../stores/playerStore';
 import { toast } from 'sonner';
 import { useStoriesStore } from '../../stores/storiesStore';
 import { Sheet, SheetContent } from '../ui/sheet';
-import { FeedWaveform } from '../feed/FeedWaveform';
+import { Waveform } from '../waveform/Waveform';
 import { StoriesArtistList } from './StoriesArtistList';
 import { StoriesControls } from './StoriesControls';
 import { StoriesHero } from './StoriesHero';
@@ -97,7 +97,7 @@ function StoriesStage({ session, artist, track }: StageProps): JSX.Element {
         onDecide={(decision) => decide(track, decision)}
         onPrevious={() => dispatch({ type: 'previous' })}
       />
-      <FeedWaveform localTrackId={track.local_track_id} durationMs={track.duration_ms} height={96} onActivate={() => togglePlay(track)} />
+      <Waveform localTrackId={track.local_track_id} durationMs={track.duration_ms} height={96} onActivate={() => togglePlay(track)} />
       <StoriesTrackList tracks={artist.tracks} currentId={playingStoryId(session, playerTrackId)} onPlay={togglePlay} />
     </div>
   );
