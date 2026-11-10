@@ -97,7 +97,7 @@ function StoriesStage({ session, artist, track }: StageProps): JSX.Element {
         onDecide={(decision) => decide(track, decision)}
         onPrevious={() => dispatch({ type: 'previous' })}
       />
-      <FeedWaveform localTrackId={track.local_track_id} durationMs={track.duration_ms} onActivate={() => togglePlay(track)} />
+      <FeedWaveform localTrackId={track.local_track_id} durationMs={track.duration_ms} height={96} onActivate={() => togglePlay(track)} />
       <StoriesTrackList tracks={artist.tracks} currentId={playingStoryId(session, playerTrackId)} onPlay={togglePlay} />
     </div>
   );
