@@ -1,7 +1,7 @@
 """Stories page: followed artists' recent reposts + uploads, one artist at a time.
 
 One SQL pass returns a row per (artist, track) in the window with every field
-the page needs, including the four "listened" signals. Python only groups the
+the page needs, including the "listened" signals (LISTEN_SOURCES). Python only groups the
 rows into artists, sorts, and drops artists with nothing left to hear.
 """
 
@@ -12,10 +12,17 @@ from typing import Any
 from music_minion.core.database import get_db_connection
 from web.backend.feed_filter_rules import not_flagged_sql
 from web.backend.queries.feed import DECISIONS, utc_iso
+from web.backend.sc_likes import sc_liked_sql
 
 MIN_DAYS = 1
 MAX_DAYS = 30
-LISTEN_SOURCES: tuple[str, ...] = ("explicit", "decision", "library", "played")
+LISTEN_SOURCES: tuple[str, ...] = (
+    "explicit",
+    "decision",
+    "library",
+    "played",
+    "liked",
+)
 
 _ISO_Z = "%Y-%m-%dT%H:%M:%SZ"
 
@@ -99,6 +106,11 @@ _STORIES_SQL = f"""
             FROM sc_track_predictions p
             WHERE p.soundcloud_id IN (SELECT soundcloud_id FROM window_ids)
         ) WHERE prn = 1
+    ),
+    sc_like_job AS (
+        SELECT soundcloud_id, status FROM sc_feed_action_jobs
+        WHERE action_type = 'like'
+          AND soundcloud_id IN (SELECT soundcloud_id FROM window_ids)
     )
     SELECT r.artist_id, da.display_name, da.slug, da.avatar_url,
            r.soundcloud_id, r.kind, r.latest_at AS activity_at, r.title,
@@ -110,12 +122,15 @@ _STORIES_SQL = f"""
            l.soundcloud_id IS NOT NULL AS listen_explicit,
            d.decision IS NOT NULL AS listen_decision,
            COALESCE(lib.in_library, 0) AS listen_library,
-           COALESCE(lib.played, 0) AS listen_played
+           COALESCE(lib.played, 0) AS listen_played,
+           {sc_liked_sql("r.soundcloud_id")} AS listen_liked,
+           slj.status AS sc_like_action
     FROM ranked r
     JOIN discovery_artists da ON da.id = r.artist_id
     LEFT JOIN lib ON lib.soundcloud_id = r.soundcloud_id
     LEFT JOIN pred ON pred.soundcloud_id = r.soundcloud_id
     LEFT JOIN sc_track_listens l ON l.soundcloud_id = r.soundcloud_id
+    LEFT JOIN sc_like_job slj ON slj.soundcloud_id = r.soundcloud_id
     LEFT JOIN sc_track_decisions d
       ON d.soundcloud_id = r.soundcloud_id AND d.is_current = 1
     WHERE r.rn = 1 AND {not_flagged_sql("r.soundcloud_id")}
@@ -142,7 +157,7 @@ def window_params(days: int, now: datetime) -> dict[str, str]:
 
 
 def listened_via(row: Any) -> tuple[str, ...]:
-    """Which of the four listened signals fired for one row."""
+    """Which listened signals fired for one row."""
     return tuple(src for src in LISTEN_SOURCES if row[f"listen_{src}"])
 
 
@@ -163,6 +178,8 @@ def row_to_track(row: Any) -> dict[str, Any]:
         "score": row["score"],
         "decision": decision if decision in DECISIONS else None,
         "listened": bool(listened_via(row)),
+        "sc_liked": bool(row["listen_liked"]),
+        "sc_like_action": row["sc_like_action"],
     }
 
 

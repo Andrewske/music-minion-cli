@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Heart, Meh, SkipBack, SkipForward } from 'lucide-react';
+import { Check, Meh, SkipBack, SkipForward } from 'lucide-react';
 import type { StoriesDecision, StoriesTrack } from '../../api/stories';
 
 interface ControlButtonProps {
@@ -37,13 +37,13 @@ interface StoriesControlsProps {
   onPrevious: () => void;
 }
 
-/** Like (keeps playing), Not quite and Skip (advance), Previous (history). */
+/** Keep (keeps playing), Not quite and Skip (advance), Previous (history). Active state is the MM verdict only. */
 export function StoriesControls({ track, canGoPrevious, isUpdating, onDecide, onPrevious }: StoriesControlsProps): JSX.Element {
-  const liked = track.decision === 'keep';
+  const kept = track.decision === 'keep';
   return (
     <div role="group" aria-label="Story controls" className="flex flex-wrap items-center gap-2">
-      <ControlButton label="Like; like on SoundCloud and add to monthly playlist" title="Like" active={liked} disabled={isUpdating || liked} onClick={() => onDecide('keep')}>
-        <Heart className={`h-4 w-4 ${liked ? 'fill-current' : ''}`} />
+      <ControlButton label="Keep; like on SoundCloud and add to monthly playlist" title="Keep" active={kept} disabled={isUpdating || kept} onClick={() => onDecide('keep')}>
+        <Check className="h-4 w-4" />
       </ControlButton>
       <ControlButton label="Not quite; close but not a keep, play next" title="Not quite" active={track.decision === 'not_quite'} disabled={isUpdating} onClick={() => onDecide('not_quite')}>
         <Meh className="h-4 w-4" />

@@ -5,6 +5,7 @@ import { INSIGHT_DIMENSION_LABELS, getInsightTracks, type InsightDimension, type
 import { usePlayFeedRow } from '../../hooks/usePlayFeedRow';
 import { formatFlagDuration } from '../feed/flagged';
 import { formatDecidedAt } from '../feed/reviewed';
+import { ScLikeHeart } from '../ScLikeHeart';
 import { INSIGHTS_QUERY_KEY } from './insightsView';
 
 const VERDICT_TONE: Record<InsightTrack['decision'], string> = {
@@ -27,6 +28,7 @@ export function InsightTrackRow({ track, onPlay }: { track: InsightTrack; onPlay
           {track.note && <span className="italic text-white/60"> · {track.note}</span>}
         </p>
       </div>
+      <ScLikeHeart state={track.sc_liked ? 'liked' : 'none'} className="h-3.5 w-3.5" />
       <span className={`shrink-0 text-xs ${VERDICT_TONE[track.decision]}`}>{FEED_VERDICT_LABELS[track.decision]}</span>
       <span className="hidden w-14 shrink-0 text-right text-[11px] text-white/35 sm:block">{formatDecidedAt(track.decided_at)}</span>
     </li>

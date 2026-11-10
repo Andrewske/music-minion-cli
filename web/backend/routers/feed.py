@@ -304,6 +304,7 @@ def rate_track(
         "decided_at": updated["decided_at"],
         "local_track_id": local_track_id,
         "action_state": feed_queries.get_action_state(soundcloud_id),
+        "sc_liked": feed_queries.is_sc_liked(soundcloud_id),
     }
 
 

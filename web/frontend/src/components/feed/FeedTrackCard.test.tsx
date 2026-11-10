@@ -45,6 +45,7 @@ const makeItem = (overrides: Partial<FeedItem> = {}): FeedItem => ({
   keep_probability: null,
   prediction_model_version: null,
   prediction_explanation: null,
+  sc_liked: false,
   ...overrides,
 });
 
@@ -113,14 +114,20 @@ describe('FeedTrackCard', () => {
     expect(screen.getByRole('button', { name: /Keep/ })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('fills the heart for tracks already in SoundCloud likes or a playlist', () => {
+  it('shows the red heart only for tracks in SoundCloud likes', () => {
     const { rerender } = render(
-      <FeedTrackCard item={makeItem({ in_likes: true })} isPlaying={false} onPlay={vi.fn()} onDecide={vi.fn()} />
+      <FeedTrackCard item={makeItem({ sc_liked: true })} isPlaying={false} onPlay={vi.fn()} onDecide={vi.fn()} />
     );
-    expect(screen.getByRole('button', { name: /Keep/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('img', { name: 'Liked on SoundCloud' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Keep/ })).toHaveAttribute('aria-pressed', 'false');
     rerender(
       <FeedTrackCard item={makeItem({ in_playlists: true })} isPlaying={false} onPlay={vi.fn()} onDecide={vi.fn()} />
     );
+    expect(screen.queryByRole('img', { name: 'Liked on SoundCloud' })).not.toBeInTheDocument();
+    rerender(
+      <FeedTrackCard item={makeItem({ current_decision: 'keep' })} isPlaying={false} onPlay={vi.fn()} onDecide={vi.fn()} />
+    );
+    expect(screen.queryByRole('img', { name: 'Liked on SoundCloud' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Keep/ })).toHaveAttribute('aria-pressed', 'true');
   });
 

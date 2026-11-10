@@ -40,7 +40,7 @@ function LocalArtistPage(): ReactElement {
   }
 
   const all = tracks ?? [];
-  const likedCount = all.filter((t) => t.is_liked).length;
+  const likedCount = all.filter((t) => t.sc_liked).length;
   const inPlaylistsCount = all.filter((t) => t.playlists.length > 0).length;
 
   return (

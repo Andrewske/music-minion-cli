@@ -132,11 +132,24 @@ describe('advance', () => {
 describe('verdicts', () => {
   const playing = (): StoriesSession => run(baseSession(), { type: 'play-track', artistId: 1, soundcloudId: 'a1' });
 
-  it('Like marks listened and keeps playing the same track', () => {
+  it('Keep marks listened and keeps playing the same track', () => {
     const session = run(playing(), { type: 'verdict', soundcloudId: 'a1', decision: 'keep' });
     expect(current(session)).toBe('a1');
     expect(session.playNonce).toBe(1);
     expect(focusTrack(session)).toMatchObject({ decision: 'keep', listened: true });
+  });
+
+  it('Keep queues a pending SoundCloud like without claiming the track is liked', () => {
+    const session = run(playing(), { type: 'verdict', soundcloudId: 'a1', decision: 'keep' });
+    expect(focusTrack(session)).toMatchObject({ sc_liked: false, sc_like_action: 'pending' });
+    const landed = run(session, { type: 'set-sc-like', soundcloudId: 'a1', scLiked: true, likeAction: 'complete' });
+    expect(focusTrack(landed)).toMatchObject({ decision: 'keep', sc_liked: true, sc_like_action: 'complete' });
+  });
+
+  it('a non-keep verdict clears a pending like', () => {
+    const kept = run(playing(), { type: 'verdict', soundcloudId: 'a1', decision: 'keep' });
+    const changed = run(kept, { type: 'verdict', soundcloudId: 'a1', decision: 'nope' });
+    expect(changed.artists[0].tracks[0]).toMatchObject({ decision: 'nope', sc_like_action: null });
   });
 
   it.each(['not_quite', 'nope'] as const)('%s marks listened and advances, keeping the track in the list', (decision) => {

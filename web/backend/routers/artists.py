@@ -189,7 +189,7 @@ async def get_library_tracks(discovery_artist_id: int) -> list[dict[str, Any]]:
     """Return ALL library tracks for a discovery artist.
 
     Liked/loved tracks and tracks in playlists sort to the top, then by
-    play_count. Each row carries is_liked and the list of playlist names.
+    play_count. Each row carries sc_liked and the list of playlist names.
     """
     try:
         with get_db_connection() as conn:

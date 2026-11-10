@@ -1,5 +1,7 @@
 import { Repeat2, Upload } from 'lucide-react';
+import { getScLikeState } from '../../api/feed';
 import type { StoriesTrack } from '../../api/stories';
+import { ScLikeHeart } from '../ScLikeHeart';
 import { STORIES_VERDICT_LABELS, formatDuration } from './storiesFormat';
 
 const VERDICT_TONES = {
@@ -37,6 +39,7 @@ function TrackRow({ track, index, isCurrent, onPlay }: TrackRowProps): JSX.Eleme
             <span className="truncate">{track.artist_name ?? 'Unknown artist'}</span>
           </span>
         </span>
+        <ScLikeHeart state={getScLikeState(track.sc_liked, track.sc_like_action)} className="h-3.5 w-3.5" />
         {track.decision && (
           <span className={`shrink-0 rounded-sm px-1.5 py-0.5 text-[10px] ${VERDICT_TONES[track.decision]}`}>
             {STORIES_VERDICT_LABELS[track.decision]}

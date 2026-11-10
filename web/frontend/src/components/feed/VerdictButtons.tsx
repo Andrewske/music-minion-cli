@@ -1,12 +1,12 @@
 import type { ReactNode } from 'react';
-import { Heart, Meh, ThumbsDown } from 'lucide-react';
+import { Check, Meh, ThumbsDown } from 'lucide-react';
 import type { FeedDecision, FeedVerdict } from '../../api/feed';
 
 interface VerdictSpec {
   verdict: FeedVerdict;
   title: string;
   label: string;
-  icon: (filled: boolean) => ReactNode;
+  icon: () => ReactNode;
 }
 
 const VERDICT_SPECS: readonly VerdictSpec[] = [
@@ -26,23 +26,23 @@ const VERDICT_SPECS: readonly VerdictSpec[] = [
     verdict: 'keep',
     title: 'Keep',
     label: 'Keep; like on SoundCloud and add to monthly playlist',
-    icon: (filled) => <Heart className={`h-4 w-4 ${filled ? 'fill-current' : ''}`} />,
+    icon: () => <Check className="h-4 w-4" />,
   },
 ];
 
 interface VerdictButtonsProps {
   current: FeedDecision | null;
-  /** Keep renders as active when the track is already liked elsewhere. */
-  hearted?: boolean;
   disabled?: boolean;
   showLabels?: boolean;
   onDecide: (verdict: FeedVerdict) => void;
 }
 
-/** Nope / Not quite / Keep; the current verdict is pressed and not re-sendable. */
+/**
+ * Nope / Not quite / Keep; the current verdict is pressed and not re-sendable.
+ * Keep is the MM verdict only; the SoundCloud like shows as ScLikeHeart.
+ */
 export function VerdictButtons({
   current,
-  hearted = false,
   disabled = false,
   showLabels = false,
   onDecide,
@@ -50,7 +50,7 @@ export function VerdictButtons({
   return (
     <div className="flex shrink-0 items-center gap-0.5" role="group" aria-label="Feed decisions">
       {VERDICT_SPECS.map((spec) => {
-        const active = current === spec.verdict || (spec.verdict === 'keep' && hearted);
+        const active = current === spec.verdict;
         return (
           <button
             key={spec.verdict}
@@ -64,7 +64,7 @@ export function VerdictButtons({
               active ? 'bg-obsidian-accent/15 text-obsidian-accent' : 'text-white/45 hover:bg-white/10 hover:text-white disabled:opacity-50'
             }`}
           >
-            {spec.icon(active)}
+            {spec.icon()}
             {showLabels && <span>{spec.title}</span>}
           </button>
         );

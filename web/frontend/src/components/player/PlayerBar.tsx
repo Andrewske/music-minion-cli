@@ -13,6 +13,7 @@ import { Slider } from '../ui/slider';
 import { DeviceSelector } from './DeviceSelector';
 import { WaveformPlayer } from '../WaveformPlayer';
 import { TrackArtwork } from '../TrackArtwork';
+import { ScLikeHeart } from '../ScLikeHeart';
 
 export function PlayerBar(): JSX.Element {
   const {
@@ -207,8 +208,9 @@ export function PlayerBar(): JSX.Element {
           <div className="flex-1 min-w-0">
             {currentTrack ? (
               <>
-                <div className="text-sm font-medium text-white/90 truncate">
-                  {currentTrack.title ?? 'Not playing'}
+                <div className="flex items-center gap-1.5 text-sm font-medium text-white/90">
+                  <span className="truncate">{currentTrack.title ?? 'Not playing'}</span>
+                  <ScLikeHeart state={currentTrack.sc_liked ? 'liked' : 'none'} className="h-3.5 w-3.5" />
                 </div>
                 <div className="text-xs text-white/50 truncate">{currentTrack.artist}</div>
               </>
@@ -245,8 +247,9 @@ export function PlayerBar(): JSX.Element {
             <>
               <TrackArtwork trackId={currentTrack.id} size={40} className="shrink-0" />
               <div className="truncate">
-                <div className="font-medium text-white/90 truncate">
-                  {currentTrack.title ?? 'Not playing'}
+                <div className="flex items-center gap-1.5 font-medium text-white/90">
+                  <span className="truncate">{currentTrack.title ?? 'Not playing'}</span>
+                  <ScLikeHeart state={currentTrack.sc_liked ? 'liked' : 'none'} className="h-3.5 w-3.5" />
                 </div>
                 <div className="text-sm text-white/60 truncate">{currentTrack.artist}</div>
               </div>

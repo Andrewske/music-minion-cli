@@ -12,7 +12,7 @@ export type FeedVerdict = 'keep' | 'not_quite' | 'nope';
 export type FeedDecision = FeedVerdict | 'hide';
 export const FEED_VERDICTS: readonly FeedVerdict[] = ['keep', 'not_quite', 'nope'];
 export const FEED_VERDICT_LABELS: Record<FeedDecision, string> = {
-  keep: 'Keep',
+  keep: 'Kept',
   not_quite: 'Not quite',
   nope: 'Nope',
   hide: 'Hidden (legacy)',
@@ -68,11 +68,12 @@ export interface FeedItem {
   keep_probability: number | null;
   prediction_model_version: string | null;
   prediction_explanation: string | null;
+  /** In the user's SoundCloud likes (sc_likes); the only source of the red heart. */
+  sc_liked: boolean;
+  in_playlists?: boolean;
 
   /** Compatibility fields returned by the release-only API. */
   status?: FeedItemStatus;
-  in_likes?: boolean;
-  in_playlists?: boolean;
   artist?: FeedArtist;
   decision?: FeedDecision | null;
 }
@@ -109,6 +110,8 @@ export interface RateFeedItemResponse {
   decided_at: string;
   local_track_id: number | null;
   action_state: FeedActionState;
+  /** Whether the track is in sc_likes right now (usually false until the like job finishes). */
+  sc_liked?: boolean;
   /** Compatibility with servers using the shorter field name. */
   decision?: FeedDecision;
 }
@@ -127,9 +130,28 @@ export const getFeedItemDecision = (item: FeedItem): FeedDecision | null => {
   return null;
 };
 
-/** Red heart: kept in the feed, or already in SoundCloud likes / a playlist. */
-export const isFeedItemHearted = (item: FeedItem): boolean =>
-  getFeedItemDecision(item) === 'keep' || !!item.in_likes || !!item.in_playlists;
+/**
+ * SoundCloud like state for any track: 'liked' only when sc_likes says so;
+ * a keep's queued like job shows as 'pending' (or 'failed') until then.
+ * The MM verdict never counts as a like by itself.
+ */
+export type ScLikeState = 'liked' | 'pending' | 'failed' | 'none';
+
+export const getScLikeState = (
+  scLiked: boolean | undefined,
+  likeAction: FeedActionStatus | undefined
+): ScLikeState => {
+  if (scLiked) return 'liked';
+  if (likeAction === 'pending' || likeAction === 'running') return 'pending';
+  if (likeAction === 'error') return 'failed';
+  return 'none';
+};
+
+export const getFeedItemScLikeState = (item: FeedItem): ScLikeState =>
+  getScLikeState(item.sc_liked, item.action_state?.like);
+
+/** Red heart: the track is in the user's SoundCloud likes. */
+export const isFeedItemHearted = (item: FeedItem): boolean => getFeedItemScLikeState(item) === 'liked';
 
 export const getFeedItemUploader = (item: FeedItem): FeedArtist | null =>
   item.uploader ?? item.artist ?? null;
@@ -175,6 +197,7 @@ export const normalizeFeedItem = (item: FeedItem): FeedItem => {
     current_decision: getFeedItemDecision(item),
     decided_at: item.decided_at ?? null,
     action_state: item.action_state ?? { like: null, monthly_playlist: null, error: null },
+    sc_liked: !!item.sc_liked,
     keep_probability: item.keep_probability ?? null,
     prediction_model_version: item.prediction_model_version ?? null,
     prediction_explanation: item.prediction_explanation ?? null,
@@ -203,6 +226,7 @@ export const mergeFeedDecisionResponse = (
   current_decision: response.current_decision ?? response.decision ?? item.current_decision,
   decided_at: response.decided_at,
   action_state: response.action_state,
+  sc_liked: response.sc_liked ?? item.sc_liked,
 });
 
 const SYNC_IN_FLIGHT: ReadonlySet<FeedActionStatus> = new Set(['pending', 'running']);
@@ -285,6 +309,8 @@ export interface ReviewedItem {
   access: string | null;
   note: string | null;
   note_updated_at: string | null;
+  /** In the user's SoundCloud likes. */
+  sc_liked: boolean;
 }
 
 export interface ReviewedPage {

@@ -23,6 +23,7 @@ import {
   reviewedFilterLabel,
   type ReviewedFilter,
 } from './reviewed';
+import { ScLikeHeart } from '../ScLikeHeart';
 import { VerdictButtons } from './VerdictButtons';
 
 interface ReviewedRowProps {
@@ -65,6 +66,7 @@ export function ReviewedRow({ item, isUpdating, isPlaying, onPlay, onDecide, onE
         <Pencil className="h-3.5 w-3.5 shrink-0" />
         <span className={`truncate ${item.note ? 'italic text-white/70' : ''}`}>{item.note ?? 'Add note'}</span>
       </button>
+      <ScLikeHeart state={item.sc_liked ? 'liked' : 'none'} />
       <VerdictButtons current={item.decision} disabled={isUpdating} onDecide={(verdict) => onDecide(item, verdict)} />
     </article>
   );

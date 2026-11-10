@@ -8,6 +8,9 @@ from typing import Any
 from loguru import logger
 
 from web.backend.feed_filter_rules import not_flagged_sql
+from web.backend.sc_likes import sc_liked_sql
+
+_SC_LIKED_TRACK = sc_liked_sql("t.soundcloud_id")
 
 # ---------------------------------------------------------------------------
 # Artist stats CTE query
@@ -34,6 +37,23 @@ _FEED_STATS_SQL = f"""
   FROM discovery_track_reposters dtr
   LEFT JOIN discovery_tracks dt ON dt.id = dtr.discovery_track_id
   GROUP BY dtr.discovery_artist_id
+"""
+
+# Distinct SoundCloud ids in sc_likes per discovery artist: matched library
+# tracks plus the artist's own uploads (which often have no tracks row).
+_SC_LIKED_BY_ARTIST_SQL = """
+  SELECT discovery_artist_id, COUNT(DISTINCT soundcloud_id) AS sc_liked_count
+  FROM (
+    SELECT amr.discovery_artist_id, t.soundcloud_id
+    FROM artist_match_resolved amr
+    INNER JOIN tracks t ON t.artist_normalized = amr.local_name
+    INNER JOIN sc_likes scl ON scl.soundcloud_id = t.soundcloud_id
+    UNION
+    SELECT u.discovery_artist_id, u.soundcloud_id
+    FROM sc_artist_uploads u
+    INNER JOIN sc_likes scl ON scl.soundcloud_id = u.soundcloud_id
+  )
+  GROUP BY discovery_artist_id
 """
 
 ARTISTS_STATS_SQL = f"""
@@ -78,15 +98,7 @@ avg_elo AS (
   INNER JOIN playlist_elo_ratings per ON per.track_id = t.id
   GROUP BY amr.discovery_artist_id
 ),
-sc_liked AS (
-  -- Tracks liked on SoundCloud (like markers synced from SC)
-  SELECT amr.discovery_artist_id, COUNT(DISTINCT t.id) AS sc_liked_count
-  FROM artist_match_resolved amr
-  INNER JOIN tracks t ON t.artist_normalized = amr.local_name
-  INNER JOIN ratings r ON r.track_id = t.id
-    AND r.rating_type = 'like' AND r.source = 'soundcloud'
-  GROUP BY amr.discovery_artist_id
-),
+sc_liked AS ({_SC_LIKED_BY_ARTIST_SQL}),
 playlist_counts AS (
   SELECT amr.discovery_artist_id, COUNT(DISTINCT pt.track_id) AS playlist_track_count
   FROM artist_match_resolved amr
@@ -131,11 +143,11 @@ SELECT NULL AS id, NULL, NULL, t.artist AS display_name, NULL,
        NULL, NULL, NULL, NULL,
        MAX(CASE WHEN r.rating_type = 'love' THEN r.timestamp END) AS last_loved_at,
        AVG(per.rating) AS avg_elo,
-       COUNT(DISTINCT CASE WHEN r.rating_type = 'like' AND r.source = 'soundcloud'
-                           THEN t.id END) AS sc_liked_count,
+       COUNT(DISTINCT scl.soundcloud_id) AS sc_liked_count,
        COALESCE(MAX(plc.pc), 0) AS playlist_track_count
 FROM tracks t
 LEFT JOIN ratings r ON r.track_id = t.id
+LEFT JOIN sc_likes scl ON scl.soundcloud_id = t.soundcloud_id
 LEFT JOIN playlist_elo_ratings per ON per.track_id = t.id
 LEFT JOIN (
   SELECT t2.artist_normalized AS an, COUNT(DISTINCT pt.track_id) AS pc
@@ -365,9 +377,9 @@ def _parse_playlist_refs(refs: str | None) -> list[dict[str, str]]:
 
 
 def _coerce_library_track_row(row: sqlite3.Row) -> dict[str, Any]:
-    """Coerce a library-track row: bool is_liked, playlists as {name, library}."""
+    """Coerce a library-track row: bool sc_liked, playlists as {name, library}."""
     d = dict(row)
-    d["is_liked"] = bool(d["is_liked"])
+    d["sc_liked"] = bool(d["sc_liked"])
     d["playlists"] = _parse_playlist_refs(d.pop("playlist_refs"))
     return d
 
@@ -378,7 +390,7 @@ def get_artist_library_tracks(
 ) -> list[dict[str, Any]] | None:
     """Return ALL library tracks for a discovery artist, saved-first.
 
-    Tracks the user has liked/loved or placed in a playlist sort to the top,
+    Tracks liked on SoundCloud or placed in a playlist sort to the top,
     then by play_count. Each playlist carries its library (local/soundcloud/
     spotify). Returns None if the artist does not exist.
     """
@@ -389,15 +401,13 @@ def get_artist_library_tracks(
         return None
 
     rows = conn.execute(
-        """
+        f"""
         SELECT t.id, t.title, t.artist, t.album, t.genre, t.year,
                t.duration, t.local_path,
                (SELECT COUNT(*) FROM ratings r
                 WHERE r.track_id = t.id
                   AND r.rating_type NOT IN ('archive', 'skip')) AS play_count,
-               EXISTS(SELECT 1 FROM ratings r
-                      WHERE r.track_id = t.id
-                        AND r.rating_type IN ('like', 'love')) AS is_liked,
+               {_SC_LIKED_TRACK} AS sc_liked,
                (SELECT GROUP_CONCAT(p.name || char(31) || p.library, char(30))
                 FROM playlist_tracks pt
                 JOIN playlists p ON p.id = pt.playlist_id
@@ -405,7 +415,7 @@ def get_artist_library_tracks(
         FROM artist_match_resolved amr
         JOIN tracks t ON t.artist_normalized = amr.local_name
         WHERE amr.discovery_artist_id = ?
-        ORDER BY (is_liked OR playlist_refs IS NOT NULL) DESC,
+        ORDER BY (sc_liked OR playlist_refs IS NOT NULL) DESC,
                  play_count DESC, t.title COLLATE NOCASE ASC
         """,
         (discovery_artist_id,),
@@ -424,15 +434,13 @@ def get_local_artist_library_tracks(
     artist_match_overrides. Same shape/sort as get_artist_library_tracks.
     """
     rows = conn.execute(
-        """
+        f"""
         SELECT t.id, t.title, t.artist, t.album, t.genre, t.year,
                t.duration, t.local_path,
                (SELECT COUNT(*) FROM ratings r
                 WHERE r.track_id = t.id
                   AND r.rating_type NOT IN ('archive', 'skip')) AS play_count,
-               EXISTS(SELECT 1 FROM ratings r
-                      WHERE r.track_id = t.id
-                        AND r.rating_type IN ('like', 'love')) AS is_liked,
+               {_SC_LIKED_TRACK} AS sc_liked,
                (SELECT GROUP_CONCAT(p.name || char(31) || p.library, char(30))
                 FROM playlist_tracks pt
                 JOIN playlists p ON p.id = pt.playlist_id
@@ -440,7 +448,7 @@ def get_local_artist_library_tracks(
         FROM tracks t
         WHERE t.artist_normalized =
               LOWER(TRIM(REPLACE(REPLACE(REPLACE(?, '.', ''), '!', ''), '?', '')))
-        ORDER BY (is_liked OR playlist_refs IS NOT NULL) DESC,
+        ORDER BY (sc_liked OR playlist_refs IS NOT NULL) DESC,
                  play_count DESC, t.title COLLATE NOCASE ASC
         """,
         (artist_name,),
@@ -456,21 +464,14 @@ def get_local_artist_library_tracks(
 ARTIST_TIERS: tuple[str, ...] = ("S", "A", "B", "C", "D")
 _TIER_ORDER: dict[str, int] = {t: i for i, t in enumerate(ARTIST_TIERS)}
 
-_RANKING_STATS_SQL = """
+_RANKING_STATS_SQL = f"""
 SELECT da.id, da.tier, da.ranking,
-       COALESCE(sl.liked, 0) AS liked_count,
+       COALESCE(sl.sc_liked_count, 0) AS liked_count,
        COALESCE(lc.cnt, 0) AS library_count,
        COALESCE(da.follower_count, 0) AS follower_count,
        LOWER(COALESCE(da.display_name, da.slug, '')) AS name
 FROM discovery_artists da
-LEFT JOIN (
-  SELECT amr.discovery_artist_id, COUNT(DISTINCT t.id) AS liked
-  FROM artist_match_resolved amr
-  INNER JOIN tracks t ON t.artist_normalized = amr.local_name
-  INNER JOIN ratings r ON r.track_id = t.id
-    AND r.rating_type = 'like' AND r.source = 'soundcloud'
-  GROUP BY amr.discovery_artist_id
-) sl ON sl.discovery_artist_id = da.id
+LEFT JOIN ({_SC_LIKED_BY_ARTIST_SQL}) sl ON sl.discovery_artist_id = da.id
 LEFT JOIN (
   SELECT amr.discovery_artist_id, COUNT(DISTINCT t.id) AS cnt
   FROM artist_match_resolved amr

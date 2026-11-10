@@ -159,7 +159,7 @@ export interface PlaylistTrackEntry {
   artwork_url?: string;
   /** SoundCloud permalink, or a /api/tracks/{id}/soundcloud redirect when not yet resolved; null for local-only tracks. */
   soundcloud_url?: string;
-  /** True when discovery_tracks.status = 'liked' (kept on SoundCloud). */
+  /** In the user's SoundCloud likes (sc_likes). */
   sc_liked?: boolean;
 }
 

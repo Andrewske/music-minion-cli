@@ -5,6 +5,7 @@ SQLite database operations for Music Minion CLI
 import os
 import sqlite3
 import unicodedata
+from collections.abc import Iterable
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,7 +19,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 70  # stories: per-track listened ledger
+SCHEMA_VERSION = 71  # sc_likes: SoundCloud like state keyed by soundcloud_id
 
 
 # Initial top 50 curated emojis for music reactions
@@ -551,6 +552,56 @@ def _migrate_v70_track_listens(conn) -> None:
     are derived at read time, so they are not copied here.
     """
     conn.execute(_V70_TRACK_LISTENS_DDL)
+
+
+_V71_SC_LIKES_DDL = """
+    CREATE TABLE IF NOT EXISTS sc_likes (
+        soundcloud_id TEXT PRIMARY KEY,
+        liked_at TEXT,
+        source TEXT NOT NULL,
+        synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+"""
+
+# Old SC like markers live in ratings keyed by tracks.id; one row per
+# soundcloud_id survives (the duplicates come from INSERT OR IGNORE on a
+# table with no unique key). liked_at stays NULL: a marker's timestamp is
+# when MM synced it, not when the like happened.
+_V71_BACKFILL_FROM_RATINGS = """
+    INSERT INTO sc_likes (soundcloud_id, liked_at, source)
+    SELECT t.soundcloud_id, NULL, 'backfill'
+    FROM ratings r
+    JOIN tracks t ON t.id = r.track_id
+    WHERE r.source = 'soundcloud' AND r.rating_type = 'like'
+      AND t.soundcloud_id IS NOT NULL AND t.soundcloud_id != ''
+    GROUP BY t.soundcloud_id
+    ON CONFLICT(soundcloud_id) DO NOTHING
+"""
+
+# Keeps whose SC like job finished: SoundCloud confirmed the like, but the
+# worker never wrote a marker, so these were invisible before v71.
+_V71_BACKFILL_FROM_JOBS = """
+    INSERT INTO sc_likes (soundcloud_id, liked_at, source)
+    SELECT soundcloud_id, MIN(COALESCE(completed_at, updated_at)), 'mm_keep'
+    FROM sc_feed_action_jobs
+    WHERE action_type = 'like' AND status = 'complete'
+    GROUP BY soundcloud_id
+    ON CONFLICT(soundcloud_id) DO NOTHING
+"""
+
+
+def _migrate_v71_sc_likes(conn) -> None:
+    """SoundCloud like state keyed by soundcloud_id, so tracks with no local
+    tracks row (feed, stories, discovery) can show it too.
+
+    Backfills from the SC like markers in ratings and from completed feed
+    like jobs. MM-local ('user') likes are not SoundCloud likes and stay out.
+    """
+    conn.execute(_V71_SC_LIKES_DDL)
+    if _table_exists(conn, "ratings") and _table_exists(conn, "tracks"):
+        conn.execute(_V71_BACKFILL_FROM_RATINGS)
+    if _table_exists(conn, "sc_feed_action_jobs"):
+        conn.execute(_V71_BACKFILL_FROM_JOBS)
 
 
 def _migrate_v64_track_predictions(conn) -> None:
@@ -3510,6 +3561,14 @@ def migrate_database(conn, current_version: int) -> None:
         conn.commit()
         logger.info("  ✓ Migration to v70 complete: sc_track_listens")
 
+    if current_version < 71:
+        logger.info("Running migration to v71: sc_likes...")
+        conn.execute("SAVEPOINT migrate_feed_v71")
+        _migrate_v71_sc_likes(conn)
+        conn.execute("RELEASE SAVEPOINT migrate_feed_v71")
+        conn.commit()
+        logger.info("  ✓ Migration to v71 complete: sc_likes")
+
 
 def ensure_schema_not_newer(conn: sqlite3.Connection, db_path: Path) -> None:
     """Refuse to open a DB migrated by newer code.
@@ -3807,26 +3866,80 @@ def add_rating(
         conn.commit()
 
 
-def has_soundcloud_like(track_id: int) -> bool:
-    """Check if track has a SoundCloud like marker.
+SC_LIKE_SOURCES: tuple[str, ...] = ("sync", "mm_keep", "cli", "backfill")
 
-    Args:
-        track_id: Track ID
 
-    Returns:
-        True if track has source='soundcloud' rating
+def upsert_sc_likes(
+    soundcloud_ids: Iterable[str], source: str, liked_now: bool = False
+) -> int:
+    """Record SoundCloud likes by soundcloud_id; returns how many were new.
+
+    The first writer's liked_at and source stick; a repeat only refreshes
+    synced_at. liked_now stamps liked_at for likes MM just made itself (the SC
+    likes list doesn't say when a like happened).
     """
+    if source not in SC_LIKE_SOURCES:
+        raise ValueError(
+            f"Invalid sc_likes source {source!r}; valid: {SC_LIKE_SOURCES}"
+        )
+    ids = sorted({str(sc_id) for sc_id in soundcloud_ids if sc_id})
+    if not ids:
+        return 0
     with get_db_connection() as conn:
-        cursor = conn.execute(
-            """
-            SELECT EXISTS(
-                SELECT 1 FROM ratings
-                WHERE track_id = ? AND source = 'soundcloud'
-            )
-        """,
+        before = conn.total_changes
+        conn.executemany(
+            """INSERT INTO sc_likes (soundcloud_id, liked_at, source)
+            VALUES (?, CASE WHEN ? THEN CURRENT_TIMESTAMP END, ?)
+            ON CONFLICT(soundcloud_id) DO NOTHING""",
+            [(sc_id, int(liked_now), source) for sc_id in ids],
+        )
+        inserted = conn.total_changes - before
+        conn.executemany(
+            "UPDATE sc_likes SET synced_at = CURRENT_TIMESTAMP WHERE soundcloud_id = ?",
+            [(sc_id,) for sc_id in ids],
+        )
+        conn.commit()
+    return inserted
+
+
+def delete_sc_like(soundcloud_id: str) -> None:
+    """Forget one SoundCloud like (only after SC confirmed the unlike)."""
+    with get_db_connection() as conn:
+        conn.execute(
+            "DELETE FROM sc_likes WHERE soundcloud_id = ?", (str(soundcloud_id),)
+        )
+        conn.commit()
+
+
+def has_soundcloud_like(track_id: int) -> bool:
+    """True when the track's soundcloud_id is in sc_likes."""
+    with get_db_connection() as conn:
+        row = conn.execute(
+            """SELECT EXISTS(
+                SELECT 1 FROM tracks t
+                JOIN sc_likes sl ON sl.soundcloud_id = t.soundcloud_id
+                WHERE t.id = ?
+            )""",
+            (track_id,),
+        ).fetchone()
+    return bool(row[0])
+
+
+def mark_soundcloud_liked(track_id: int, soundcloud_id: str) -> None:
+    """After a successful SC like from the CLI: legacy marker + sc_likes row."""
+    add_rating(track_id, "like", "Synced to SoundCloud", source="soundcloud")
+    upsert_sc_likes([soundcloud_id], "cli", liked_now=True)
+
+
+def clear_soundcloud_like(track_id: int, soundcloud_id: str) -> None:
+    """After a successful SC unlike from the CLI: drop marker + sc_likes row."""
+    with get_db_connection() as conn:
+        conn.execute(
+            "DELETE FROM ratings WHERE track_id = ? AND source = 'soundcloud'",
             (track_id,),
         )
-        return bool(cursor.fetchone()[0])
+        conn.commit()
+    delete_sc_like(soundcloud_id)
 
 
 def batch_add_soundcloud_likes(track_ids: list[int]) -> int:

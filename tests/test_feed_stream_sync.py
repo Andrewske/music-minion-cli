@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from music_minion.core.database import get_db_connection
+from music_minion.core.database import _migrate_v71_sc_likes, get_db_connection
 from tests.test_feed_sync import MINIMAL_SCHEMA_SQL, _auth_state, _mock_response
 from web.backend import feed_stream_sync
 from web.backend.feed_stream_sync import split_stream_items, sync_from_stream
@@ -26,6 +26,7 @@ def db(tmp_path, monkeypatch):
     for column in ("stream_checkpoint_at TEXT", "sweep_last_run_at TEXT"):
         conn.execute(f"ALTER TABLE sc_feed_sync_state ADD COLUMN {column}")
     conn.execute("ALTER TABLE tracks ADD COLUMN updated_at TIMESTAMP")
+    _migrate_v71_sc_likes(conn)
     conn.execute("INSERT INTO sc_feed_sync_state (id) VALUES (1)")
     conn.executemany(
         """INSERT INTO discovery_artists

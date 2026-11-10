@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from typing import List, Optional, Tuple
 from pydantic import BaseModel
 from time import time
+from ..sc_likes import sc_liked_sql
 from ..queries.emojis import batch_fetch_track_emojis
 from ..schemas import (
     CreatePlaylistRequest,
@@ -109,12 +110,7 @@ def get_playlist_tracks_with_ratings(
 
         repost_join = ""
         repost_col = "COALESCE(t.released_at, datetime(t.file_mtime, 'unixepoch'), t.created_at, pt.added_at)"
-        # Current canonical keep decision (feed heart or repost builder)
-        sc_liked_col = """EXISTS(
-            SELECT 1 FROM sc_track_decisions d
-            WHERE d.soundcloud_id = t.soundcloud_id
-              AND d.is_current = 1 AND d.decision = 'keep'
-        ) as sc_liked"""
+        sc_liked_col = f"{sc_liked_sql('t.soundcloud_id')} as sc_liked"
         # Direct permalink when known; tracks.source_url may hold a synthetic
         # soundcloud.com/tracks/<id> form SC won't resolve, so unknowns go through
         # the lazy-resolving redirect endpoint (which repairs source_url on click).

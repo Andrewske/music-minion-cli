@@ -22,6 +22,8 @@ export interface Track {
   local_path?: string;
   elo_rating?: number;
   emojis?: string[];
+  /** In the user's SoundCloud likes (player queue tracks). */
+  sc_liked?: boolean;
 }
 
 export interface TrackActionResponse {

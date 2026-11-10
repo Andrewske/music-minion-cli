@@ -13,6 +13,8 @@ export const makeTrack = (soundcloudId: string, overrides: Partial<StoriesTrack>
   score: null,
   decision: null,
   listened: false,
+  sc_liked: false,
+  sc_like_action: null,
   ...overrides,
 });
 
