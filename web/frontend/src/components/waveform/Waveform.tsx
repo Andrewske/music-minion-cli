@@ -6,7 +6,7 @@ import { usePlayerStore, getCurrentPosition } from '../../stores/playerStore';
 import { barCountFor, downsamplePeaks, drawBars } from './waveformBars';
 
 /** Track the canvas's CSS width so bars stay crisp and fill it at a fixed pitch. */
-function useCanvasWidth(canvasRef: RefObject<HTMLCanvasElement>): number {
+function useCanvasWidth(canvasRef: RefObject<HTMLCanvasElement | null>): number {
   const [width, setWidth] = useState(0);
   useEffect(() => {
     const canvas = canvasRef.current;
