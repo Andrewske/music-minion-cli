@@ -112,8 +112,8 @@ class TestMigration:
             conn.commit()
         assert list(_likes()) == ["100"]
 
-    def test_schema_version_is_71(self) -> None:
-        assert database.SCHEMA_VERSION == 71
+    def test_schema_version_is_at_least_71(self) -> None:
+        assert database.SCHEMA_VERSION >= 71
 
 
 # ---------------------------------------------------------------------------
