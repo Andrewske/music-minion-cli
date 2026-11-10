@@ -81,6 +81,15 @@ class SetSortRequest(BaseModel):
     direction: Literal["asc", "desc"]
 
 
+class RebindOrganizerRequest(BaseModel):
+    """Move live organizer playback to another session of the same playlist."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    from_session_id: str
+    to_session_id: str
+
+
 class DeviceInfo(BaseModel):
     """Device information."""
 
@@ -288,6 +297,83 @@ async def update_organizer_queue(session_id: str) -> None:
     )
 
 
+def _bound_to_session(context: PlayContext | None, session_id: str) -> bool:
+    """True when live playback is organizer context for this session."""
+    return (
+        context is not None
+        and context.type == "organizer"
+        and context.session_id == session_id
+    )
+
+
+def _rebound_queue(
+    current_track: dict | None, pool: list[dict]
+) -> tuple[tuple[dict, ...], int]:
+    """Queue after a session rebind: current track stays at the cursor, the new
+    session's pool follows it. Pure — no state access."""
+    if current_track is None:
+        return tuple(pool), 0
+    rest = [t for t in pool if t["id"] != current_track["id"]]
+    return (current_track, *rest), 0
+
+
+async def rebind_organizer_session(
+    from_session_id: str, to_session_id: str, db
+) -> bool:
+    """Move live organizer playback from one session to another WITHOUT
+    restarting the current track.
+
+    Swaps context.session_id (and clears bucket_id: the old bucket belongs to
+    the old session), rebuilds the upcoming queue from the new session's
+    unassigned pool, persists it, and broadcasts. No-op (False) unless live
+    playback is bound to from_session_id and the target is an active session
+    of the same playlist.
+    """
+    from ..queries.buckets import get_session_with_data
+    from ..queries.tracks import batch_fetch_tracks_with_metadata
+
+    if not _bound_to_session(get_state().current_context, from_session_id):
+        return False
+    target = get_session_with_data(to_session_id)
+    if not target or target["status"] != "active":
+        return False
+
+    async with _player_lock:
+        state = get_state()
+        context = state.current_context
+        if not _bound_to_session(context, from_session_id):
+            return False  # playback moved on while we looked up the target
+        if context.playlist_id != target["playlist_id"]:
+            return False
+
+        new_context = context.model_copy(
+            update={"session_id": to_session_id, "bucket_id": None}
+        )
+        pool_ids = initialize_queue(
+            new_context, db, shuffle=state.shuffle_enabled, sort_spec=state.sort_spec
+        )
+        pool = batch_fetch_tracks_with_metadata(pool_ids, db) if pool_ids else []
+        queue, queue_index = _rebound_queue(state.current_track, pool)
+
+        await update_state(
+            {"current_context": new_context, "queue": queue, "queue_index": queue_index}
+        )
+        save_queue_state(
+            context=new_context,
+            queue_ids=[t["id"] for t in queue],
+            queue_index=queue_index,
+            shuffle=state.shuffle_enabled,
+            sort_spec=state.sort_spec,
+            db_conn=db,
+        )
+
+    logger.info(
+        f"Rebound organizer playback {from_session_id} -> {to_session_id}: "
+        f"{len(queue)} tracks queued"
+    )
+    return True
+
+
 async def prune_track_from_live_queue(track_id: int) -> None:
     """Remove a now-dead track from the live playback queue and broadcast.
 
@@ -342,6 +428,19 @@ async def prune_track_from_live_queue(track_id: int) -> None:
             )
 
     logger.info(f"Pruned unavailable track {track_id} from live queue")
+
+
+@router.post("/organizer/rebind")
+async def rebind_organizer(request: RebindOrganizerRequest, db=Depends(get_db)) -> dict:
+    """Rebind live organizer playback after the loaded session changed.
+
+    Returns {"rebound": false} when playback isn't bound to from_session_id
+    (nothing to do), so clients can call it unconditionally.
+    """
+    rebound = await rebind_organizer_session(
+        request.from_session_id, request.to_session_id, db
+    )
+    return {"rebound": rebound}
 
 
 @router.post("/play")

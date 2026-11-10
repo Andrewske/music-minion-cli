@@ -63,12 +63,16 @@ interface UsePlaylistOrganizerReturn {
 
   // Session operations
   applyOrder: () => Promise<void>;
-  finalizeSession: () => Promise<void>;
+  /** Resolves to the fresh session that replaces the finished one. */
+  finalizeSession: () => Promise<BucketSession>;
   newSession: (name?: string | null) => Promise<BucketSession>;
   switchSession: (sessionId: string) => Promise<BucketSession>;
   renameSession: (sessionId: string, name: string | null) => Promise<void>;
-  /** Discards the session (strips bucket emojis). Deleting the loaded one loads a fresh session. */
-  deleteSession: (sessionId: string) => Promise<void>;
+  /**
+   * Discards the session (strips bucket emojis). Deleting the loaded one loads
+   * and resolves to a fresh session; deleting any other resolves to null.
+   */
+  deleteSession: (sessionId: string) => Promise<BucketSession | null>;
 
   // Computed
   buckets: Bucket[];
@@ -183,6 +187,15 @@ export function usePlaylistOrganizer(
 
   // Track operations with optimistic updates
 
+  // Restore an optimistic snapshot, but only if the same session is still
+  // loaded: a failure that lands after a switch must not resurrect the old one.
+  const rollback = (previous: BucketSession | undefined): void => {
+    if (!previous) return;
+    const loaded = queryClient.getQueryData<BucketSession>(queryKey);
+    if (loaded && loaded.id !== previous.id) return;
+    queryClient.setQueryData(queryKey, previous);
+  };
+
   const assignTrackMutation = useMutation({
     mutationFn: (params: { bucketId: string; trackId: number }) => {
       return bucketsApi.assignTrack(params.bucketId, params.trackId);
@@ -220,10 +233,7 @@ export function usePlaylistOrganizer(
     onError: (err, params, context) => {
       // Log error for debugging
       console.error('Failed to assign track:', err, params);
-      // Rollback on error
-      if (context?.previousSession) {
-        queryClient.setQueryData(queryKey, context.previousSession);
-      }
+      rollback(context?.previousSession);
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey });
@@ -270,9 +280,7 @@ export function usePlaylistOrganizer(
       return { previousSession };
     },
     onError: (_err, _params, context) => {
-      if (context?.previousSession) {
-        queryClient.setQueryData(queryKey, context.previousSession);
-      }
+      rollback(context?.previousSession);
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey });
@@ -302,31 +310,38 @@ export function usePlaylistOrganizer(
     },
   });
 
-  const finalizeSessionMutation = useMutation({
-    mutationFn: () => {
-      if (!session) throw new Error('No active session');
-      return bucketsApi.finalizeSession(session.id);
-    },
-    onSuccess: () => {
-      queryClient.removeQueries({ queryKey });
-      queryClient.invalidateQueries({ queryKey: sessionsQueryKey });
-    },
-  });
+  // Any refetch of the loaded session that started before a session change
+  // would land afterwards with the old (now parked) session. Cancel them.
+  const cancelLoadedRefetch = (): Promise<void> => queryClient.cancelQueries({ queryKey });
 
   // Loading another session: write the returned session straight into the
   // loaded-session cache (no refetch flash), then refresh the list.
-  const loadSession = (loaded: BucketSession): void => {
+  const loadSession = async (loaded: BucketSession): Promise<void> => {
+    await cancelLoadedRefetch();
     queryClient.setQueryData<BucketSession>(queryKey, loaded);
     queryClient.invalidateQueries({ queryKey: sessionsQueryKey });
   };
 
+  const finalizeSessionMutation = useMutation({
+    mutationFn: async (): Promise<BucketSession> => {
+      if (!session) throw new Error('No active session');
+      await bucketsApi.finalizeSession(session.id);
+      // get-or-create now hands back a fresh active session
+      return bucketsApi.createOrResumeSession(playlistId);
+    },
+    onMutate: cancelLoadedRefetch,
+    onSuccess: loadSession,
+  });
+
   const newSessionMutation = useMutation({
     mutationFn: (name: string | null) => bucketsApi.createNewSession(playlistId, name),
+    onMutate: cancelLoadedRefetch,
     onSuccess: loadSession,
   });
 
   const switchSessionMutation = useMutation({
     mutationFn: (sessionId: string) => bucketsApi.activateSession(sessionId),
+    onMutate: cancelLoadedRefetch,
     onSuccess: loadSession,
   });
 
@@ -342,13 +357,15 @@ export function usePlaylistOrganizer(
   });
 
   const deleteSessionMutation = useMutation({
-    mutationFn: (sessionId: string) => bucketsApi.discardSession(sessionId),
-    onSuccess: (_data, sessionId) => {
-      const loaded = queryClient.getQueryData<BucketSession>(queryKey);
-      if (loaded?.id === sessionId) {
-        // get-or-create on refetch hands back a fresh active session
-        queryClient.invalidateQueries({ queryKey });
-      }
+    // Resolves to the replacement session when the loaded one was deleted.
+    mutationFn: async (sessionId: string): Promise<BucketSession | null> => {
+      const wasLoaded = queryClient.getQueryData<BucketSession>(queryKey)?.id === sessionId;
+      if (wasLoaded) await cancelLoadedRefetch();
+      await bucketsApi.discardSession(sessionId);
+      return wasLoaded ? bucketsApi.createOrResumeSession(playlistId) : null;
+    },
+    onSuccess: async (replacement) => {
+      if (replacement) return loadSession(replacement);
       queryClient.invalidateQueries({ queryKey: sessionsQueryKey });
     },
   });
@@ -456,8 +473,8 @@ export function usePlaylistOrganizer(
   );
 
   const finalizeSession = useCallback(
-    async (): Promise<void> => {
-      await finalizeSessionMutation.mutateAsync();
+    async (): Promise<BucketSession> => {
+      return finalizeSessionMutation.mutateAsync();
     },
     [finalizeSessionMutation]
   );
@@ -484,8 +501,8 @@ export function usePlaylistOrganizer(
   );
 
   const deleteSession = useCallback(
-    async (sessionId: string): Promise<void> => {
-      await deleteSessionMutation.mutateAsync(sessionId);
+    async (sessionId: string): Promise<BucketSession | null> => {
+      return deleteSessionMutation.mutateAsync(sessionId);
     },
     [deleteSessionMutation]
   );

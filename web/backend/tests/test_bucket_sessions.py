@@ -438,3 +438,196 @@ def test_parking_does_not_run_discovery_feedback(
     client.post(f"/api/buckets/sessions/{old['id']}/activate")
 
     feedback.assert_not_called()
+
+
+# === Review fixes: shared linked-playlist membership, hidden rows, races ===
+
+
+def _in_playlist(playlist_id: int, track_id: int) -> bool:
+    with get_db_connection() as conn:
+        return (
+            conn.execute(
+                "SELECT 1 FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?",
+                (playlist_id, track_id),
+            ).fetchone()
+            is not None
+        )
+
+
+def test_unassign_keeps_linked_membership_held_by_parked_session(
+    playlist: int, tracks: list[int], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    removals: list[tuple[int, int]] = []
+    monkeypatch.setattr(
+        bq, "enqueue_sc_push_remove", lambda p, t: removals.append((p, t))
+    )
+    target = _make_playlist("Shared", [])
+    old = bq.get_or_create_session(playlist)
+    old_bucket = bq.create_bucket(old["id"], "A", None, 0)
+    bq.link_bucket_to_playlist(old_bucket["id"], target)
+    bq.assign_track_to_bucket(old_bucket["id"], tracks[0])
+
+    new = bq.create_new_session(playlist, None)
+    new_bucket = bq.create_bucket(new["id"], "B", None, 0)
+    bq.link_bucket_to_playlist(new_bucket["id"], target)
+    assert bq.pull_linked_tracks(new_bucket["id"]) == 1
+
+    assert bq.unassign_track(new_bucket["id"], tracks[0])
+
+    assert _in_playlist(target, tracks[0])
+    assert removals == []
+
+
+def test_unassign_single_session_still_removes_from_linked(
+    playlist: int, tracks: list[int], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    removals: list[tuple[int, int]] = []
+    monkeypatch.setattr(
+        bq, "enqueue_sc_push_remove", lambda p, t: removals.append((p, t))
+    )
+    target = _make_playlist("Solo", [])
+    session = bq.get_or_create_session(playlist)
+    bucket = bq.create_bucket(session["id"], "A", None, 0)
+    bq.link_bucket_to_playlist(bucket["id"], target)
+    bq.assign_track_to_bucket(bucket["id"], tracks[0])
+    assert _in_playlist(target, tracks[0])
+
+    assert bq.unassign_track(bucket["id"], tracks[0])
+
+    assert not _in_playlist(target, tracks[0])
+    assert removals == [(target, tracks[0])]
+
+
+def test_discarded_session_does_not_hold_linked_membership(
+    playlist: int, tracks: list[int]
+) -> None:
+    target = _make_playlist("Gone", [])
+    old = bq.get_or_create_session(playlist)
+    old_bucket = bq.create_bucket(old["id"], "A", None, 0)
+    bq.link_bucket_to_playlist(old_bucket["id"], target)
+    bq.assign_track_to_bucket(old_bucket["id"], tracks[0])
+    assert bq.discard_session(old["id"])
+
+    new = bq.get_or_create_session(playlist)
+    new_bucket = bq.create_bucket(new["id"], "B", None, 0)
+    bq.link_bucket_to_playlist(new_bucket["id"], target)
+    bq.pull_linked_tracks(new_bucket["id"])
+    bq.unassign_track(new_bucket["id"], tracks[0])
+
+    assert not _in_playlist(target, tracks[0])
+
+
+def test_link_does_not_push_hidden_tracks(playlist: int, tracks: list[int]) -> None:
+    target = _make_playlist("Push", [])
+    session = bq.get_or_create_session(playlist)
+    bucket = bq.create_bucket(session["id"], "A", None, 0)
+    bq.assign_track_to_bucket(bucket["id"], tracks[0])
+    bq.assign_track_to_bucket(bucket["id"], tracks[1])
+    _remove_from_playlist(playlist, tracks[0])
+
+    assert bq.link_bucket_to_playlist(bucket["id"], target)
+
+    assert not _in_playlist(target, tracks[0])
+    assert _in_playlist(target, tracks[1])
+
+
+def _bucket_positions(bucket_id: str) -> dict[int, int]:
+    with get_db_connection() as conn:
+        rows = conn.execute(
+            "SELECT track_id, position FROM bucket_tracks WHERE bucket_id = ?",
+            (bucket_id,),
+        ).fetchall()
+    return {r["track_id"]: r["position"] for r in rows}
+
+
+def test_shuffle_and_reorder_skip_hidden_rows(playlist: int, tracks: list[int]) -> None:
+    session = bq.get_or_create_session(playlist)
+    bucket = bq.create_bucket(session["id"], "A", None, 0)
+    for tid in tracks[:4]:
+        bq.assign_track_to_bucket(bucket["id"], tid)
+    _remove_from_playlist(playlist, tracks[0])
+    visible = tracks[1:4]
+
+    shuffled = bq.shuffle_bucket_tracks(bucket["id"])
+    assert sorted(shuffled) == sorted(visible)
+    assert _bucket_positions(bucket["id"])[tracks[0]] == 3
+
+    assert bq.reorder_bucket_tracks(bucket["id"], list(reversed(visible)))
+    positions = _bucket_positions(bucket["id"])
+    assert [positions[t] for t in reversed(visible)] == [0, 1, 2]
+    assert positions[tracks[0]] == 3
+
+    _add_to_playlist(playlist, tracks[0], 99)
+    data = bq.get_session_with_data(session["id"])
+    assert data is not None
+    assert data["buckets"][0]["track_ids"] == [*reversed(visible), tracks[0]]
+
+
+def test_bulk_unassign_counts_visible_only(
+    client: TestClient, playlist: int, tracks: list[int]
+) -> None:
+    session = bq.get_or_create_session(playlist)
+    bucket = bq.create_bucket(session["id"], "A", None, 0)
+    bq.assign_track_to_bucket(bucket["id"], tracks[0])
+    bq.assign_track_to_bucket(bucket["id"], tracks[1])
+    _remove_from_playlist(playlist, tracks[0])
+
+    resp = client.delete(
+        f"/api/buckets/sessions/{session['id']}/buckets/{bucket['id']}/tracks"
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["tracks_unassigned"] == 1
+    assert _bucket_positions(bucket["id"]) == {}
+
+
+def test_activate_rechecks_discard_in_final_update(
+    playlist: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A discard landing between the eligibility read and the UPDATE loses."""
+    target = bq.get_or_create_session(playlist)
+    current = bq.create_new_session(playlist, None)
+    real_park = bq._park_active_session
+
+    def park_then_discard(conn: sqlite3.Connection, playlist_id: int) -> None:
+        real_park(conn, playlist_id)
+        conn.execute(
+            "UPDATE bucket_sessions SET status = 'discarded' WHERE id = ?",
+            (target["id"],),
+        )
+
+    monkeypatch.setattr(bq, "_park_active_session", park_then_discard)
+
+    assert bq.activate_session(target["id"]) is None
+    # Whole transition rolled back: the interleaved write and the park
+    assert _status(target["id"]) == "parked"
+    assert _status(current["id"]) == "active"
+
+
+def test_activate_waits_for_concurrent_discard(playlist: int) -> None:
+    """BEGIN IMMEDIATE: activation blocks behind a writer, then sees the discard."""
+    import threading
+
+    from music_minion.core.database import get_database_path
+
+    target = bq.get_or_create_session(playlist)
+    bq.create_new_session(playlist, None)
+
+    writer = sqlite3.connect(get_database_path(), timeout=30.0, isolation_level=None)
+    writer.execute("BEGIN IMMEDIATE")
+    result: list[object] = []
+    thread = threading.Thread(
+        target=lambda: result.append(bq.activate_session(target["id"]))
+    )
+    thread.start()
+    thread.join(0.3)
+    assert thread.is_alive()  # blocked on the write lock, not reading stale state
+    writer.execute(
+        "UPDATE bucket_sessions SET status = 'discarded' WHERE id = ?", (target["id"],)
+    )
+    writer.execute("COMMIT")
+    writer.close()
+    thread.join(10)
+
+    assert result == [None]
+    assert _status(target["id"]) == "discarded"

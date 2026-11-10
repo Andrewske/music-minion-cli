@@ -51,6 +51,7 @@ def get_or_create_session(playlist_id: int) -> dict[str, Any]:
         unassigned_track_ids
     """
     with get_db_connection() as conn:
+        _begin_immediate(conn)  # concurrent creates would trip the unique index
         session = conn.execute(
             """
             SELECT id FROM bucket_sessions
@@ -61,6 +62,7 @@ def get_or_create_session(playlist_id: int) -> dict[str, Any]:
 
         if session:
             session_id = session["id"]
+            conn.rollback()
             logger.info(f"Resuming existing bucket session {session_id}")
         else:
             session_id = _insert_active_session(conn, playlist_id, None)
@@ -72,6 +74,16 @@ def get_or_create_session(playlist_id: int) -> dict[str, Any]:
     result = get_session_with_data(session_id)
     assert result is not None, f"Session {session_id} vanished after get-or-create"
     return result
+
+
+def _begin_immediate(conn: sqlite3.Connection) -> None:
+    """Take the write lock before reading state a transition depends on.
+
+    get_db_connection() uses the default deferred mode, where a read-then-write
+    can act on a stale read; BEGIN IMMEDIATE serializes session transitions.
+    The connection's context manager rolls back if the caller never commits.
+    """
+    conn.execute("BEGIN IMMEDIATE")
 
 
 def _insert_active_session(
@@ -151,6 +163,7 @@ def create_new_session(playlist_id: int, name: str | None) -> dict[str, Any]:
         The new session (no buckets, every playlist track unassigned)
     """
     with get_db_connection() as conn:
+        _begin_immediate(conn)
         _park_active_session(conn, playlist_id)
         session_id = _insert_active_session(conn, playlist_id, _normalize_name(name))
         conn.commit()
@@ -165,28 +178,36 @@ def activate_session(session_id: str) -> dict[str, Any] | None:
     """Make a parked/applied/active session the playlist's active one.
 
     Parks the current active session FIRST, otherwise the partial unique index
-    rejects the update. Discarded sessions cannot be reopened.
+    rejects the update. Discarded sessions cannot be reopened: the check runs
+    under the write lock and the final UPDATE re-checks status, so a concurrent
+    discard can never be flipped back to active.
 
     Returns:
         The activated session, or None if missing or discarded
     """
     with get_db_connection() as conn:
+        _begin_immediate(conn)
         row = conn.execute(
             "SELECT playlist_id, status FROM bucket_sessions WHERE id = ?",
             (session_id,),
         ).fetchone()
         if not row or row["status"] == "discarded":
+            conn.rollback()
             return None
 
         _park_active_session(conn, row["playlist_id"])
-        conn.execute(
+        cursor = conn.execute(
             f"""
             UPDATE bucket_sessions
             SET status = 'active', last_opened_at = {_NOW_MS}
-            WHERE id = ?
+            WHERE id = ? AND status != 'discarded'
             """,
             (session_id,),
         )
+        if cursor.rowcount == 0:
+            conn.rollback()  # un-park the previous active session too
+            logger.warning(f"Session {session_id} was discarded during activation")
+            return None
         conn.commit()
 
     logger.info(f"Activated bucket session {session_id} (was {row['status']})")
@@ -608,18 +629,25 @@ def shuffle_bucket_tracks(bucket_id: str) -> list[int]:
     Args:
         bucket_id: UUID of the bucket
 
+    Only visible tracks (still in the session playlist) are shuffled and
+    returned; hidden rows are renumbered after them.
+
     Returns:
         New list of track IDs in shuffled order (empty if bucket not found)
     """
     with get_db_connection() as conn:
-        # Get all tracks in bucket
+        playlist_id = _session_playlist_id(conn, bucket_id)
+        if playlist_id is None:
+            return []
         cursor = conn.execute(
             """
-            SELECT id, track_id FROM bucket_tracks
-            WHERE bucket_id = ?
-            ORDER BY position ASC
+            SELECT bt.id, bt.track_id FROM bucket_tracks bt
+            JOIN playlist_tracks pt
+              ON pt.track_id = bt.track_id AND pt.playlist_id = ?
+            WHERE bt.bucket_id = ?
+            ORDER BY bt.position ASC
             """,
-            (bucket_id,),
+            (playlist_id, bucket_id),
         )
         tracks = cursor.fetchall()
 
@@ -638,6 +666,7 @@ def shuffle_bucket_tracks(bucket_id: str) -> list[int]:
                 """,
                 (new_position, track_entry_id),
             )
+        _move_hidden_rows_to_end(conn, bucket_id, playlist_id, len(track_entries))
         conn.commit()
 
         new_order = [track_id for _, track_id in track_entries]
@@ -782,16 +811,15 @@ def reorder_bucket_tracks(bucket_id: str, track_ids: list[int]) -> bool:
         bucket_id: UUID of the bucket
         track_ids: List of track IDs in new order
 
+    ``track_ids`` is the visible order; hidden rows (track left the session
+    playlist) are renumbered after it so positions never collide.
+
     Returns:
         True if reordered, False if bucket not found
     """
     with get_db_connection() as conn:
-        # Verify bucket exists
-        cursor = conn.execute(
-            "SELECT id FROM buckets WHERE id = ?",
-            (bucket_id,),
-        )
-        if not cursor.fetchone():
+        playlist_id = _session_playlist_id(conn, bucket_id)
+        if playlist_id is None:
             return False
 
         # Update positions using executemany
@@ -807,6 +835,7 @@ def reorder_bucket_tracks(bucket_id: str, track_ids: list[int]) -> bool:
             """,
             position_data,
         )
+        _move_hidden_rows_to_end(conn, bucket_id, playlist_id, len(track_ids))
         conn.commit()
 
         logger.info(f"Reordered {len(track_ids)} tracks in bucket {bucket_id}")
@@ -1227,12 +1256,14 @@ def sync_existing_bucket_tracks_to_playlist(bucket_id: str, playlist_id: int) ->
         Number of tracks added to playlist
     """
     with get_db_connection() as conn:
-        # Get all track_ids in bucket
-        cursor = conn.execute(
-            "SELECT track_id FROM bucket_tracks WHERE bucket_id = ? ORDER BY position",
-            (bucket_id,),
+        # Only visible tracks: hidden rows (track left the session playlist)
+        # must not be pushed into the linked playlist / SoundCloud.
+        session_playlist_id = _session_playlist_id(conn, bucket_id)
+        if session_playlist_id is None:
+            return 0
+        bucket_track_ids = _visible_bucket_track_ids(
+            conn, bucket_id, session_playlist_id
         )
-        bucket_track_ids = [row["track_id"] for row in cursor.fetchall()]
 
         if not bucket_track_ids:
             return 0
@@ -1368,6 +1399,13 @@ def unsync_track_from_linked_playlist(bucket_id: str, track_id: int) -> bool:
 
         playlist_id = result["playlist_id"]
 
+        if _held_by_other_linked_bucket(conn, bucket_id, playlist_id, track_id):
+            logger.info(
+                f"Kept track {track_id} in linked playlist {playlist_id}: another "
+                f"bucket linked to it still holds the track (bucket {bucket_id})"
+            )
+            return True
+
         # Remove track from playlist
         conn.execute(
             """
@@ -1383,3 +1421,72 @@ def unsync_track_from_linked_playlist(bucket_id: str, track_id: int) -> bool:
         )
         enqueue_sc_push_remove(playlist_id, track_id)
         return True
+
+
+def _held_by_other_linked_bucket(
+    conn: sqlite3.Connection, bucket_id: str, playlist_id: int, track_id: int
+) -> bool:
+    """True if a different bucket (any non-discarded session, parked included)
+    that is linked to ``playlist_id`` still holds ``track_id``.
+
+    Hidden rows count too: that bucket would show the track again if it
+    returned to its session's playlist, so its membership must survive.
+    """
+    row = conn.execute(
+        """
+        SELECT 1
+        FROM bucket_tracks bt
+        JOIN buckets b ON b.id = bt.bucket_id
+        JOIN bucket_sessions s ON s.id = b.session_id
+        JOIN bucket_playlist_links bpl ON bpl.bucket_id = b.id
+        WHERE bt.track_id = ? AND bpl.playlist_id = ? AND b.id != ?
+        AND s.status != 'discarded'
+        LIMIT 1
+        """,
+        (track_id, playlist_id, bucket_id),
+    ).fetchone()
+    return row is not None
+
+
+def _session_playlist_id(conn: sqlite3.Connection, bucket_id: str) -> int | None:
+    """Playlist being organized by the bucket's session (None if no bucket)."""
+    row = conn.execute(
+        """
+        SELECT s.playlist_id FROM buckets b
+        JOIN bucket_sessions s ON s.id = b.session_id
+        WHERE b.id = ?
+        """,
+        (bucket_id,),
+    ).fetchone()
+    return row["playlist_id"] if row else None
+
+
+def _hidden_bucket_track_rows(
+    conn: sqlite3.Connection, bucket_id: str, playlist_id: int
+) -> list[str]:
+    """bucket_tracks row ids (bucket order) whose track left the session playlist."""
+    rows = conn.execute(
+        """
+        SELECT bt.id FROM bucket_tracks bt
+        WHERE bt.bucket_id = ?
+        AND bt.track_id NOT IN (
+            SELECT track_id FROM playlist_tracks WHERE playlist_id = ?
+        )
+        ORDER BY bt.position ASC
+        """,
+        (bucket_id, playlist_id),
+    ).fetchall()
+    return [row["id"] for row in rows]
+
+
+def _move_hidden_rows_to_end(
+    conn: sqlite3.Connection, bucket_id: str, playlist_id: int, start: int
+) -> None:
+    """Renumber hidden rows after the visible ones (keeping their relative
+    order) so they never collide with visible positions. Caller commits."""
+    hidden = _hidden_bucket_track_rows(conn, bucket_id, playlist_id)
+    conn.executemany(
+        "UPDATE bucket_tracks SET position = ? WHERE id = ?",
+        [(start + i, row_id) for i, row_id in enumerate(hidden)],
+    )
+

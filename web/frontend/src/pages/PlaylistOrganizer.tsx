@@ -26,6 +26,9 @@ import { BucketList } from '../components/organizer/BucketList';
 import { SessionSwitcher } from '../components/organizer/SessionSwitcher';
 import { PullLinkedPrompt } from '../components/organizer/PullLinkedPrompt';
 import type { PullPrompt } from '../components/organizer/PullLinkedPrompt';
+import { followSessionWithPlayback } from '../components/organizer/playbackRebind';
+import { sessionLabel } from '../components/organizer/sessionLabel';
+import type { BucketSession } from '../api/buckets';
 import { Button } from '../components/ui/button';
 import type { PlaylistOrganizerProps } from './PlaylistOrganizer.types';
 import type { PlaylistTrackEntry } from '../types';
@@ -519,20 +522,27 @@ export function PlaylistOrganizer({
     toast.success('Playlist order applied');
   }, [applyOrder]);
 
-  // Run a session-changing action. If organizer playback was bound to the
-  // session being left, the backend queue falls back to playlist order.
+  // Run a session-changing action. If live organizer playback was bound to
+  // the session being left, move it onto the newly loaded session (the
+  // current track keeps playing; upcoming tracks come from the new pool).
   const runSessionChange = useCallback(
-    async (action: () => Promise<unknown>, success: string | null, failure: string): Promise<void> => {
+    async (action: () => Promise<BucketSession | null>, success: string | null, failure: string): Promise<void> => {
       const leavingId = session?.id;
+      let next: BucketSession | null;
       try {
-        await action();
+        next = await action();
         if (success) toast.success(success);
-        const ctx = usePlayerStore.getState().currentContext;
-        if (ctx?.type === 'organizer' && ctx.session_id === leavingId) {
-          toast.info('Playback switched to playlist order');
-        }
       } catch (error) {
         toast.error(`${failure}: ${error instanceof Error ? error.message : String(error)}`);
+        return;
+      }
+      try {
+        const context = usePlayerStore.getState().currentContext;
+        if (next && (await followSessionWithPlayback(context, leavingId, next))) {
+          toast.info(`Playback now follows ${sessionLabel(next)}`);
+        }
+      } catch (error) {
+        toast.error(`Could not move playback to the new session: ${error instanceof Error ? error.message : String(error)}`);
       }
     },
     [session?.id]
@@ -554,20 +564,11 @@ export function PlaylistOrganizer({
     [runSessionChange, switchSession]
   );
 
+  // Deleting another session resolves to null, so no playback rebind happens.
   const handleDeleteSession = useCallback(
-    async (sessionId: string): Promise<void> => {
-      // Only the loaded session can carry playback context.
-      if (sessionId === session?.id) {
-        return runSessionChange(() => deleteSession(sessionId), 'Session deleted', 'Failed to delete session');
-      }
-      try {
-        await deleteSession(sessionId);
-        toast.success('Session deleted');
-      } catch (error) {
-        toast.error(`Failed to delete session: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    },
-    [runSessionChange, deleteSession, session?.id]
+    (sessionId: string): Promise<void> =>
+      runSessionChange(() => deleteSession(sessionId), 'Session deleted', 'Failed to delete session'),
+    [runSessionChange, deleteSession]
   );
 
   const handleRenameSession = useCallback(

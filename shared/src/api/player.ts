@@ -6,6 +6,7 @@
  * refetches the queue window through this endpoint.
  */
 import type { Track } from './builder';
+import { getDefaultApiClient } from './client';
 
 export interface QueuePage {
   /** Server queue_version this page was cut from (monotonic). */
@@ -35,4 +36,30 @@ export async function fetchPlayerQueue(
     throw new Error(`Queue fetch failed: ${response.statusText}`);
   }
   return response.json() as Promise<QueuePage>;
+}
+
+export interface RebindOrganizerResponse {
+  /** False when live playback wasn't bound to fromSessionId (nothing changed). */
+  rebound: boolean;
+}
+
+/**
+ * Move live organizer playback from one session to another of the same
+ * playlist without restarting the current track. Safe to call when playback
+ * isn't bound to fromSessionId: the server answers `{rebound: false}`.
+ */
+export async function rebindOrganizerPlayback(
+  fromSessionId: string,
+  toSessionId: string,
+): Promise<RebindOrganizerResponse> {
+  const response = await fetch(`${getDefaultApiClient().getBaseUrl()}/player/organizer/rebind`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fromSessionId, toSessionId }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || 'Failed to rebind organizer playback');
+  }
+  return response.json() as Promise<RebindOrganizerResponse>;
 }

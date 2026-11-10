@@ -794,14 +794,16 @@ async def bulk_unassign_from_bucket(
         if not bucket:
             raise HTTPException(404, f"Bucket {bucket_id} not found in session")
 
-        # Delete all assignments for this bucket
+        # Delete all assignments for this bucket, hidden rows included (an
+        # emptied bucket should not refill when a track returns to the
+        # playlist). Report only the visible tracks the user saw leave.
         with get_db_connection() as db_conn:
-            cursor = db_conn.execute(
+            db_conn.execute(
                 "DELETE FROM bucket_tracks WHERE bucket_id = ?",
                 (bucket_id,)
             )
-            deleted_count = cursor.rowcount
             db_conn.commit()
+        deleted_count = len(bucket["track_ids"])
 
         # Update queue if currently playing from this session
         await update_organizer_queue(session_id)
