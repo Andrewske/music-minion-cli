@@ -6,9 +6,58 @@ and IPC commands for hotkey integration.
 """
 
 import argparse
-import sys
 import os
+import sys
+from typing import TYPE_CHECKING
+
 from music_minion import ipc
+
+if TYPE_CHECKING:
+    from music_minion.domain.library.providers.soundcloud.likes_reconcile import (
+        ReconcileReport,
+    )
+
+
+def _format_reconcile_report(report: "ReconcileReport", apply: bool) -> list[str]:
+    """Human-readable lines for a ReconcileReport."""
+    mode = "APPLIED" if apply else "DRY RUN (pass --apply to write)"
+    lines = [
+        f"sc-likes-reconcile: {mode}",
+        f"  fetched from SoundCloud: {report.fetched}",
+        f"  complete: {report.complete} ({report.reason})",
+        f"  current sc_likes rows: {report.current}",
+        f"  to add: {report.to_add}",
+        f"  to remove: {report.to_remove}",
+        f"  protected (written mid-fetch): {report.protected}",
+        f"  guard: {report.guard or 'none'}",
+    ]
+    if apply:
+        lines.append(f"  added: {report.added}, removed: {report.removed}")
+    if report.remove_sample:
+        lines.append(f"  sample to remove ({len(report.remove_sample)}):")
+        lines.extend(f"    - {name}" for name in report.remove_sample)
+    return lines
+
+
+def run_sc_likes_reconcile(apply: bool = False, force: bool = False) -> int:
+    """Reconcile sc_likes with the full SoundCloud likes list. Dry run by default.
+
+    Returns 0 on a complete fetch, 1 when SC isn't authenticated or the fetch
+    was incomplete (nothing was deleted).
+    """
+    from music_minion.domain.library.provider import ProviderConfig
+    from music_minion.domain.library.providers import soundcloud
+    from music_minion.domain.library.providers.soundcloud.likes_reconcile import (
+        reconcile_for_provider,
+    )
+
+    state = soundcloud.init_provider(ProviderConfig(name="soundcloud"))
+    report = reconcile_for_provider(state, apply=apply, force=force)
+    if report is None:
+        print("SoundCloud not authenticated; nothing done.")
+        return 1
+    print("\n".join(_format_reconcile_report(report, apply)))
+    return 0 if report.complete else 1
 
 
 def run_locate_opus(folder: str, apply: bool = False) -> int:
@@ -217,6 +266,19 @@ def main() -> None:
         help="Actually update database (default: dry run)",
     )
 
+    reconcile_parser = subparsers.add_parser(
+        "sc-likes-reconcile",
+        help="Drop likes undone on SoundCloud from sc_likes (default: dry run)",
+    )
+    reconcile_parser.add_argument(
+        "--apply", action="store_true", help="Write changes (default: dry run)"
+    )
+    reconcile_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Override the empty-fetch and mass-delete guards (never an incomplete fetch)",
+    )
+
     # Parse arguments
     args, unknown = parser.parse_known_args()
 
@@ -273,6 +335,9 @@ def main() -> None:
         elif args.subcommand == "locate-opus":
             # Run locate-opus utility directly
             sys.exit(run_locate_opus(args.folder, apply=args.apply))
+
+        elif args.subcommand == "sc-likes-reconcile":
+            sys.exit(run_sc_likes_reconcile(apply=args.apply, force=args.force))
 
     # No subcommand - start interactive mode
     if args.dev:

@@ -19,7 +19,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 71  # sc_likes: SoundCloud like state keyed by soundcloud_id
+SCHEMA_VERSION = 72  # sc_feed_sync_state: nightly sc_likes reconcile bookkeeping
 
 
 # Initial top 50 curated emojis for music reactions
@@ -3569,6 +3569,17 @@ def migrate_database(conn, current_version: int) -> None:
         conn.commit()
         logger.info("  ✓ Migration to v71 complete: sc_likes")
 
+    if current_version < 72:
+        # Nightly full likes reconcile (drops likes undone on SoundCloud);
+        # the hourly incremental sync keeps its own bookkeeping.
+        for column_ddl in (
+            "likes_reconcile_last_run_at TEXT",
+            "likes_reconcile_summary TEXT",
+        ):
+            _add_column_if_missing(conn, "sc_feed_sync_state", column_ddl)
+        conn.commit()
+        logger.info("  ✓ Migration to v72 complete: likes reconcile state")
+
 
 def ensure_schema_not_newer(conn: sqlite3.Connection, db_path: Path) -> None:
     """Refuse to open a DB migrated by newer code.
@@ -3877,6 +3888,10 @@ def upsert_sc_likes(
     The first writer's liked_at and source stick; a repeat only refreshes
     synced_at. liked_now stamps liked_at for likes MM just made itself (the SC
     likes list doesn't say when a like happened).
+
+    synced_at doubles as "last written": the likes reconcile never deletes a
+    row whose synced_at is at or after its fetch started, so every sc_likes
+    writer must go through here (or set synced_at itself).
     """
     if source not in SC_LIKE_SOURCES:
         raise ValueError(
@@ -3909,6 +3924,81 @@ def delete_sc_like(soundcloud_id: str) -> None:
             "DELETE FROM sc_likes WHERE soundcloud_id = ?", (str(soundcloud_id),)
         )
         conn.commit()
+
+
+def sqlite_utc_now() -> str:
+    """Now in SQLite CURRENT_TIMESTAMP format, comparable to sc_likes.synced_at."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def load_sc_likes_synced_at() -> dict[str, str]:
+    """Every sc_likes row as soundcloud_id -> synced_at."""
+    with get_db_connection() as conn:
+        rows = conn.execute("SELECT soundcloud_id, synced_at FROM sc_likes").fetchall()
+    return {row[0]: row[1] for row in rows}
+
+
+_ADD_SC_LIKE_MARKER = """
+    INSERT INTO ratings (track_id, rating_type, hour_of_day, day_of_week, context, source)
+    SELECT t.id, 'like', ?, ?, 'Synced from SoundCloud', 'soundcloud'
+    FROM tracks t
+    WHERE t.soundcloud_id = ? AND NOT EXISTS (
+        SELECT 1 FROM ratings r
+        WHERE r.track_id = t.id AND r.rating_type = 'like' AND r.source = 'soundcloud'
+    )
+"""
+
+_DELETE_SC_LIKE_MARKERS = """
+    DELETE FROM ratings
+    WHERE rating_type = 'like' AND source = 'soundcloud'
+      AND track_id IN (SELECT id FROM tracks WHERE soundcloud_id = ?)
+"""
+
+
+def apply_sc_likes_reconcile(
+    to_add: Iterable[str], to_remove: Iterable[str], fetch_started_at: str
+) -> tuple[int, int]:
+    """Add/remove SC likes and their legacy ratings markers in one transaction.
+
+    Removal re-checks synced_at under the write lock: a like written at or
+    after `fetch_started_at` (an in-app like that landed mid-reconcile)
+    survives even if the planner listed it. Returns (added, removed).
+    """
+    add_ids = sorted({str(i) for i in to_add if i})
+    remove_ids = {str(i) for i in to_remove if i}
+    now = datetime.now()
+    with get_db_connection() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            stale = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT soundcloud_id FROM sc_likes WHERE synced_at < ?",
+                    (fetch_started_at,),
+                )
+            }
+            removable = sorted(remove_ids & stale)
+            before = conn.total_changes
+            conn.executemany(
+                """INSERT INTO sc_likes (soundcloud_id, liked_at, source)
+                VALUES (?, NULL, 'sync') ON CONFLICT(soundcloud_id) DO NOTHING""",
+                [(sc_id,) for sc_id in add_ids],
+            )
+            added = conn.total_changes - before
+            conn.executemany(
+                _ADD_SC_LIKE_MARKER,
+                [(now.hour, now.weekday(), sc_id) for sc_id in add_ids],
+            )
+            conn.executemany(
+                "DELETE FROM sc_likes WHERE soundcloud_id = ?",
+                [(sc_id,) for sc_id in removable],
+            )
+            conn.executemany(_DELETE_SC_LIKE_MARKERS, [(i,) for i in removable])
+            conn.commit()
+        except sqlite3.Error:
+            conn.rollback()
+            raise
+    return added, len(removable)
 
 
 def has_soundcloud_like(track_id: int) -> bool:

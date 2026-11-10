@@ -214,7 +214,8 @@ def _record_sc_likes(liked_ids: set[str]) -> None:
     """Upsert every fetched like into sc_likes, keyed by soundcloud_id.
 
     Add-only: the fetch can stop early (incremental) or return partial
-    results on errors, so a missing id never means "unliked".
+    results on errors, so a missing id never means "unliked". Unlikes are
+    dropped by the nightly full reconcile (likes_reconcile.py).
     """
     if not liked_ids:
         return
