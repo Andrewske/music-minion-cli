@@ -236,6 +236,37 @@ class TestListened:
         assert track(data, artist, "target")["listened"] is False
         assert track(data, artist, "target")["local_track_id"] == track_id
 
+    def _like(self, rating_type: str = "like") -> None:
+        track_id = add_library_track("target")
+        _exec(
+            "INSERT INTO ratings (track_id, rating_type, source)"
+            " VALUES (?, ?, 'soundcloud')",
+            (track_id, rating_type),
+        )
+
+    @pytest.mark.parametrize("rating_type", ["like", "love"])
+    def test_soundcloud_like_shows_as_liked(
+        self, artist: int, rating_type: str
+    ) -> None:
+        self._like(rating_type)
+        data = payload()
+        assert track(data, artist, "target")["listened"] is True
+        assert track(data, artist, "target")["decision"] == "keep"
+
+    def test_mm_verdict_wins_over_soundcloud_like(self, artist: int) -> None:
+        self._like()
+        _exec(
+            "INSERT INTO sc_track_decisions (soundcloud_id, decision, surface) "
+            "VALUES ('target', 'nope', 'web_feed')"
+        )
+        assert track(payload(), artist, "target")["decision"] == "nope"
+
+    def test_archive_rating_is_not_a_like(self, artist: int) -> None:
+        self._like("archive")
+        data = payload()
+        assert track(data, artist, "target")["listened"] is False
+        assert track(data, artist, "target")["decision"] is None
+
     def _play(self, position_ms: int | None) -> None:
         track_id = add_library_track("target")
         _exec(

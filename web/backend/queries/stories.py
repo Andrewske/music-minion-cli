@@ -15,7 +15,7 @@ from web.backend.queries.feed import DECISIONS, utc_iso
 
 MIN_DAYS = 1
 MAX_DAYS = 30
-LISTEN_SOURCES: tuple[str, ...] = ("explicit", "decision", "library", "played")
+LISTEN_SOURCES: tuple[str, ...] = ("explicit", "decision", "library", "liked", "played")
 
 _ISO_Z = "%Y-%m-%dT%H:%M:%SZ"
 
@@ -83,6 +83,10 @@ _STORIES_SQL = f"""
                MAX(COALESCE(t.local_path, '') != ''
                    OR EXISTS (SELECT 1 FROM playlist_tracks pt
                               WHERE pt.track_id = t.id)) AS in_library,
+               -- SoundCloud likes sync in as ratings rows.
+               MAX(EXISTS (SELECT 1 FROM ratings ra
+                           WHERE ra.track_id = t.id
+                             AND ra.rating_type IN ('like', 'love'))) AS liked,
                -- position_ms holds listen duration, written when a play ends.
                MAX(EXISTS (SELECT 1 FROM radio_history rh
                            WHERE rh.track_id = t.id
@@ -110,6 +114,7 @@ _STORIES_SQL = f"""
            l.soundcloud_id IS NOT NULL AS listen_explicit,
            d.decision IS NOT NULL AS listen_decision,
            COALESCE(lib.in_library, 0) AS listen_library,
+           COALESCE(lib.liked, 0) AS listen_liked,
            COALESCE(lib.played, 0) AS listen_played
     FROM ranked r
     JOIN discovery_artists da ON da.id = r.artist_id
@@ -146,10 +151,17 @@ def listened_via(row: Any) -> tuple[str, ...]:
     return tuple(src for src in LISTEN_SOURCES if row[f"listen_{src}"])
 
 
-def row_to_track(row: Any) -> dict[str, Any]:
-    """One contract track. Legacy 'hide' verdicts count as listened but have
-    no contract value, so they surface as decision null."""
+def contract_decision(row: Any) -> str | None:
+    """The MM verdict, else 'keep' for a track already liked on SoundCloud.
+    Legacy 'hide' verdicts count as listened but have no contract value."""
     decision = row["decision"]
+    if decision is None and row["listen_liked"]:
+        return "keep"
+    return decision if decision in DECISIONS else None
+
+
+def row_to_track(row: Any) -> dict[str, Any]:
+    """One contract track."""
     return {
         "soundcloud_id": row["soundcloud_id"],
         "title": row["title"],
@@ -161,7 +173,7 @@ def row_to_track(row: Any) -> dict[str, Any]:
         "activity_at": row["activity_at"],
         "local_track_id": row["local_track_id"],
         "score": row["score"],
-        "decision": decision if decision in DECISIONS else None,
+        "decision": contract_decision(row),
         "listened": bool(listened_via(row)),
     }
 
