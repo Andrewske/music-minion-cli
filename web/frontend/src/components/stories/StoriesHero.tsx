@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Music, Pause, Play, Repeat2, Upload } from '
 import type { StoriesArtist, StoriesTrack } from '../../api/stories';
 import { getScLikeState } from '../../api/feed';
 import { SoundCloudIcon } from '../icons/SoundCloudIcon';
+import { KeepScoreBadge } from '../KeepScoreBadge';
 import { ScLikeHeart } from '../ScLikeHeart';
 import { ArtistAvatar } from './StoriesArtistList';
 import { ACTIVITY_LABELS, formatTimeAgo, largeArtwork, soundCloudUrl } from './storiesFormat';
@@ -126,6 +127,7 @@ function Artwork({ track, isPlaying, onTogglePlay, nav }: ArtworkProps): JSX.Ele
           {isPlaying ? <Pause className="h-9 w-9 fill-current" /> : <Play className="ml-1 h-9 w-9 fill-current" />}
         </span>
       </button>
+      <KeepScoreBadge probability={track.score} variant="overlay" className="pointer-events-none absolute right-3 top-3 z-10" />
       <NavArrow side="left" disabled={!nav.canGoPrevious} onClick={nav.onPrevious} />
       <NavArrow side="right" disabled={!nav.canGoNext} onClick={nav.onNext} />
       <div className="pointer-events-none absolute bottom-3 left-3 right-3 flex flex-col items-start gap-0.5">

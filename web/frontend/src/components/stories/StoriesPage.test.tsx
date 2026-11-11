@@ -115,6 +115,14 @@ describe('StoriesPage', () => {
     expect(within(screen.getByRole('list', { name: 'Artist tracks' })).getAllByText('Nope')).toHaveLength(2);
   });
 
+  it('shows the keep score on the artwork and in the track list', async () => {
+    renderPage(makeResponse([makeArtist(1, [makeTrack('a1', { local_track_id: 101, score: 0.82 }), makeTrack('a2', { score: 0.31 })])]));
+    const list = await screen.findByRole('list', { name: 'Artist tracks' });
+    expect(within(list).getByText('82%')).toBeInTheDocument();
+    expect(within(list).getByText('31%')).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: /story$/ })).getAllByText('82%')).toHaveLength(1);
+  });
+
   it('Keep rates keep and does not advance', async () => {
     renderPage();
     const keep = await screen.findByRole('button', { name: 'Keep; like on SoundCloud and add to monthly playlist' });
