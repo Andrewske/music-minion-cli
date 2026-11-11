@@ -1,0 +1,10 @@
+[Unit]
+Description=Check music-minion main every 2 min and deploy it once CI passes
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=2min
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

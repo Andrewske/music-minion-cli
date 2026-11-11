@@ -90,7 +90,11 @@ class TestSplitStreamItems:
 
 class TestSyncFromStream:
     def test_ingests_exact_reposts_uploads_and_advances_checkpoint(self, db) -> None:
-        items = [_repost(10, "111", NEW), _upload(11, "111", NEW)]
+        # First run looks back FIRST_RUN_LOOKBACK from now, so a fixed date would rot.
+        recent = (datetime.now(timezone.utc) - timedelta(days=1)).strftime(
+            "%Y/%m/%d %H:%M:%S +0000"
+        )
+        items = [_repost(10, "111", recent), _upload(11, "111", recent)]
         with patch.object(
             feed_stream_sync,
             "get_feed_tracks",
@@ -109,7 +113,7 @@ class TestSyncFromStream:
             checkpoint = conn.execute(
                 "SELECT stream_checkpoint_at FROM sc_feed_sync_state"
             ).fetchone()[0]
-        assert tuple(row) == (NEW, "exact")
+        assert tuple(row) == (recent, "exact")
         assert upload[0] == "11"
         assert checkpoint is not None
 

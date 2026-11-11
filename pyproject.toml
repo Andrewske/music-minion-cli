@@ -52,6 +52,8 @@ dev = [
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+# scripts/ holds one-off tools (some need essentia, which is not a dependency)
+testpaths = ["tests", "web/backend/tests"]
 addopts = "--import-mode=importlib"
 
 [tool.uv]
