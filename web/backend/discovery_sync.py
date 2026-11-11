@@ -82,8 +82,10 @@ def prepare_for_sync(playlist_id: int) -> int:
             bucket_tracks = conn.execute(
                 """SELECT t.soundcloud_id FROM bucket_tracks bt
                 JOIN tracks t ON t.id = bt.track_id
+                JOIN playlist_tracks pt
+                  ON pt.track_id = bt.track_id AND pt.playlist_id = ?
                 WHERE bt.bucket_id = ? AND t.soundcloud_id IS NOT NULL""",
-                (bucket["id"],),
+                (playlist_id, bucket["id"]),
             ).fetchall()
 
             sc_ids = [row["soundcloud_id"] for row in bucket_tracks]

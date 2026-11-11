@@ -19,7 +19,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 72  # sc_feed_sync_state: nightly sc_likes reconcile bookkeeping
+SCHEMA_VERSION = 73  # organizer: multiple named sessions per playlist
 
 
 # Initial top 50 curated emojis for music reactions
@@ -602,6 +602,30 @@ def _migrate_v71_sc_likes(conn) -> None:
         conn.execute(_V71_BACKFILL_FROM_RATINGS)
     if _table_exists(conn, "sc_feed_action_jobs"):
         conn.execute(_V71_BACKFILL_FROM_JOBS)
+
+
+def _migrate_v73_bucket_session_names(conn) -> None:
+    """Multiple organizer sessions per playlist: name + last-opened ordering.
+
+    Adds nullable ``name`` and ``last_opened_at`` (backfilled from created_at),
+    plus an index for listing a playlist's sessions by status. ``status`` has
+    no CHECK constraint, so the new 'parked' value needs no table rebuild.
+    """
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(bucket_sessions)")}
+    if not columns:  # partial test schemas migrate without the bucket tables
+        return
+    if "name" not in columns:
+        conn.execute("ALTER TABLE bucket_sessions ADD COLUMN name TEXT")
+    if "last_opened_at" not in columns:
+        conn.execute("ALTER TABLE bucket_sessions ADD COLUMN last_opened_at TIMESTAMP")
+    conn.execute(
+        "UPDATE bucket_sessions SET last_opened_at = created_at "
+        "WHERE last_opened_at IS NULL"
+    )
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_bucket_sessions_playlist_status
+        ON bucket_sessions(playlist_id, status)
+    """)
 
 
 def _migrate_v64_track_predictions(conn) -> None:
@@ -3579,6 +3603,14 @@ def migrate_database(conn, current_version: int) -> None:
             _add_column_if_missing(conn, "sc_feed_sync_state", column_ddl)
         conn.commit()
         logger.info("  ✓ Migration to v72 complete: likes reconcile state")
+
+    if current_version < 73:
+        logger.info("Running migration to v73: named organizer sessions...")
+        conn.execute("SAVEPOINT migrate_v73")
+        _migrate_v73_bucket_session_names(conn)
+        conn.execute("RELEASE SAVEPOINT migrate_v73")
+        conn.commit()
+        logger.info("  ✓ Migration to v73 complete: bucket_sessions name/last_opened_at")
 
 
 def ensure_schema_not_newer(conn: sqlite3.Connection, db_path: Path) -> None:

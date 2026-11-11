@@ -13,15 +13,22 @@ import {
 } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 import { toast } from 'react-toastify';
-import { GripVertical, ChevronDown, ChevronRight, RotateCcw, Radar, Loader2 } from 'lucide-react';
+import { GripVertical, ChevronDown, ChevronRight, Radar, Loader2 } from 'lucide-react';
 import { triggerDiscoverySync, getDiscoverySyncStatus } from '../api/discovery';
 import type { DiscoverySyncStatus } from '../api/discovery';
 import { usePlayerStore } from '../stores/playerStore';
-import { usePlaylistOrganizer } from '../hooks/usePlaylistOrganizer';
+import { usePlaylistOrganizer, organizerSessionKey } from '../hooks/usePlaylistOrganizer';
 import { getPlaylistTracks } from '../api/playlists';
+import type { Playlist } from '../types';
 import { CurrentTrackBanner } from '../components/organizer/CurrentTrackBanner';
 import { UnassignedTrackTable } from '../components/organizer/UnassignedTrackTable';
 import { BucketList } from '../components/organizer/BucketList';
+import { SessionSwitcher } from '../components/organizer/SessionSwitcher';
+import { PullLinkedPrompt } from '../components/organizer/PullLinkedPrompt';
+import type { PullPrompt } from '../components/organizer/PullLinkedPrompt';
+import { followSessionWithPlayback } from '../components/organizer/playbackRebind';
+import { sessionLabel } from '../components/organizer/sessionLabel';
+import type { BucketSession } from '../api/buckets';
 import { Button } from '../components/ui/button';
 import type { PlaylistOrganizerProps } from './PlaylistOrganizer.types';
 import type { PlaylistTrackEntry } from '../types';
@@ -85,9 +92,14 @@ export function PlaylistOrganizer({
     unassignTrack,
     applyOrder,
     finalizeSession,
+    newSession,
+    switchSession,
+    renameSession,
+    deleteSession,
     getBucketByIndex,
     isApplying,
     isFinalizing,
+    isSwitching,
     createBucket,
     updateBucket,
     deleteBucket,
@@ -95,9 +107,12 @@ export function PlaylistOrganizer({
     shuffleBucket,
     reorderTracks,
     linkBucket,
+    pullLinkedTracks,
     syncBucketSoundCloud,
     syncingBucketId,
   } = usePlaylistOrganizer({ playlistId });
+  const [pullPrompt, setPullPrompt] = useState<PullPrompt | null>(null);
+  const [isPulling, setIsPulling] = useState(false);
 
   // Load full track data for all tracks in playlist (high limit for organizer)
   const { data: allTracks } = useQuery({
@@ -420,13 +435,6 @@ export function PlaylistOrganizer({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentTrack, getBucketByIndex, assignCurrentTrackToBucket]);
 
-  // Save session ID when created/resumed
-  useEffect(() => {
-    if (session && playlistId) {
-      localStorage.setItem(`organizer-session-${playlistId}`, session.id);
-    }
-  }, [session, playlistId]);
-
   // Handle playing a track from the table
   const handlePlayTrack = useCallback(
     (trackId: number): void => {
@@ -490,7 +498,7 @@ export function PlaylistOrganizer({
               (r.mixes_added > 0 ? `, ${r.mixes_added} mixes` : '') +
               (r.dry_run ? ' (dry run)' : '')
             );
-            queryClient.invalidateQueries({ queryKey: ['bucket-session'] });
+            queryClient.invalidateQueries({ queryKey: organizerSessionKey(playlistId) });
             queryClient.invalidateQueries({ queryKey: ['playlists'] });
           } else if (status.status === 'failed') {
             clearInterval(pollIntervalRef.current!);
@@ -506,7 +514,7 @@ export function PlaylistOrganizer({
       setIsSyncing(false);
       toast.error(`Failed to start sync: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }, [queryClient]);
+  }, [queryClient, playlistId]);
 
   // Handle applying the order (keeps session active)
   const handleApplyOrder = useCallback(async (): Promise<void> => {
@@ -514,12 +522,103 @@ export function PlaylistOrganizer({
     toast.success('Playlist order applied');
   }, [applyOrder]);
 
-  // Handle finalizing the session (closes organizing mode)
-  const handleFinalize = useCallback(async (): Promise<void> => {
-    await finalizeSession();
-    localStorage.removeItem(`organizer-session-${playlistId}`);
-    toast.success('Organizing session finalized');
-  }, [finalizeSession, playlistId]);
+  // Run a session-changing action. If live organizer playback was bound to
+  // the session being left, move it onto the newly loaded session (the
+  // current track keeps playing; upcoming tracks come from the new pool).
+  const runSessionChange = useCallback(
+    async (action: () => Promise<BucketSession | null>, success: string | null, failure: string): Promise<void> => {
+      const leavingId = session?.id;
+      let next: BucketSession | null;
+      try {
+        next = await action();
+        if (success) toast.success(success);
+      } catch (error) {
+        toast.error(`${failure}: ${error instanceof Error ? error.message : String(error)}`);
+        return;
+      }
+      try {
+        const context = usePlayerStore.getState().currentContext;
+        if (next && (await followSessionWithPlayback(context, leavingId, next))) {
+          toast.info(`Playback now follows ${sessionLabel(next)}`);
+        }
+      } catch (error) {
+        toast.error(`Could not move playback to the new session: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    },
+    [session?.id]
+  );
+
+  const handleFinalize = useCallback(
+    (): Promise<void> => runSessionChange(finalizeSession, 'Session finished', 'Failed to finish session'),
+    [runSessionChange, finalizeSession]
+  );
+
+  const handleNewSession = useCallback(
+    (): Promise<void> => runSessionChange(() => newSession(), null, 'Failed to start a new session'),
+    [runSessionChange, newSession]
+  );
+
+  const handleSwitchSession = useCallback(
+    (sessionId: string): Promise<void> =>
+      runSessionChange(() => switchSession(sessionId), null, 'Failed to load session'),
+    [runSessionChange, switchSession]
+  );
+
+  // Deleting another session resolves to null, so no playback rebind happens.
+  const handleDeleteSession = useCallback(
+    (sessionId: string): Promise<void> =>
+      runSessionChange(() => deleteSession(sessionId), 'Session deleted', 'Failed to delete session'),
+    [runSessionChange, deleteSession]
+  );
+
+  const handleRenameSession = useCallback(
+    async (sessionId: string, name: string | null): Promise<void> => {
+      try {
+        await renameSession(sessionId, name);
+      } catch (error) {
+        toast.error(`Failed to rename session: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    },
+    [renameSession]
+  );
+
+  // Link a bucket; if the linked playlist already shares unassigned tracks
+  // with this one, offer to pull them into the bucket.
+  const handleLinkBucket = useCallback(
+    async (bucketId: string, linkedPlaylistId: number | null): Promise<void> => {
+      let pullable: number[];
+      try {
+        pullable = (await linkBucket(bucketId, linkedPlaylistId)).pullable_track_ids;
+      } catch (error) {
+        toast.error(`Failed to link bucket: ${error instanceof Error ? error.message : String(error)}`);
+        return;
+      }
+      if (linkedPlaylistId === null || pullable.length === 0) return;
+      const cached = queryClient.getQueryData<Playlist[]>(['playlists', playlistLibrary]);
+      setPullPrompt({
+        bucketId,
+        bucketName: buckets.find((b) => b.id === bucketId)?.name ?? 'this bucket',
+        playlistName: cached?.find((p) => p.id === linkedPlaylistId)?.name ?? 'the linked playlist',
+        count: pullable.length,
+      });
+    },
+    [linkBucket, queryClient, playlistLibrary, buckets]
+  );
+
+  const handlePullLinked = useCallback(
+    async (prompt: PullPrompt): Promise<void> => {
+      setIsPulling(true);
+      try {
+        const { assigned } = await pullLinkedTracks(prompt.bucketId);
+        toast.success(`Assigned ${assigned} ${assigned === 1 ? 'track' : 'tracks'} to ${prompt.bucketName}`);
+      } catch (error) {
+        toast.error(`Failed to assign linked tracks: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        setIsPulling(false);
+      }
+    },
+    [pullLinkedTracks]
+  );
 
   // Loading state
   if (isLoading) {
@@ -557,7 +656,19 @@ export function PlaylistOrganizer({
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-lg font-medium text-white/90">{playlistName}</h1>
-              <div className="text-xs text-white/40 mt-1">
+              <div className="text-xs text-white/40 mt-1 flex flex-wrap items-center gap-x-1">
+                <SessionSwitcher
+                  playlistId={playlistId}
+                  session={session}
+                  isDiscovery={Boolean(discoverySource)}
+                  isBusy={isSwitching || isFinalizing}
+                  onNew={handleNewSession}
+                  onSwitch={handleSwitchSession}
+                  onRename={handleRenameSession}
+                  onDelete={handleDeleteSession}
+                  onFinish={handleFinalize}
+                />
+                <span>•</span>
                 {playlistType === 'manual' ? 'Manual Playlist' : 'Smart Playlist'} •{' '}
                 {unassignedTrackIds.length} unassigned
                 {dateRange && <> • {dateRange}</>}
@@ -582,15 +693,6 @@ export function PlaylistOrganizer({
                 className="bg-obsidian-accent hover:bg-obsidian-accent/80"
               >
                 {isApplying ? 'Applying...' : 'Apply Order'}
-              </Button>
-              <Button
-                onClick={handleFinalize}
-                disabled={isFinalizing}
-                variant="outline"
-                size="icon"
-                title="Reset session (close organizing mode)"
-              >
-                <RotateCcw className={`w-4 h-4 ${isFinalizing ? 'animate-spin' : ''}`} />
               </Button>
             </div>
           </div>
@@ -667,13 +769,20 @@ export function PlaylistOrganizer({
               currentTrack={currentTrack}
               parentPlaylistId={playlistId}
               parentLibrary={playlistLibrary}
-              onLinkBucket={linkBucket}
+              onLinkBucket={handleLinkBucket}
               onSyncSoundCloud={handleSyncSoundCloud}
               syncingBucketId={syncingBucketId}
             />
           </div>
         </div>
       </div>
+
+      <PullLinkedPrompt
+        prompt={pullPrompt}
+        isPulling={isPulling}
+        onAssign={handlePullLinked}
+        onDismiss={() => setPullPrompt(null)}
+      />
 
       <DragOverlay>
         {activeId && activeTrack ? (

@@ -26,8 +26,8 @@ export {
   refreshWaveform, purgeSoundcloudWaveforms, getFolders, lookupTracks, formatTrackLabel,
 } from './api/tracks';
 export type { TrackName } from './api/tracks';
-export { fetchPlayerQueue } from './api/player';
-export type { QueuePage } from './api/player';
+export { fetchPlayerQueue, rebindOrganizerPlayback } from './api/player';
+export type { QueuePage, RebindOrganizerResponse } from './api/player';
 export { getHistory, getStats, getTopTracks } from './api/history';
 export type { HistoryEntry, TopTrack, Stats, SourceFilter } from './api/history';
 export type { TrackInfo as HistoryTrackInfo } from './api/history';

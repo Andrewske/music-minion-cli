@@ -145,7 +145,7 @@ Allow buckets in playlist organizer to be linked to actual playlists. Options: c
 
 **Context**: `web/frontend/src/pages/PlaylistOrganizer.tsx`, `web/frontend/src/hooks/usePlaylistOrganizer.ts`, bucket system, playlist CRUD
 
-## 13. Multiple Organizer Sessions with Dropdown Selection - 2026-03-05
+## 13. Multiple Organizer Sessions with Dropdown Selection - 2026-03-05 (DONE 2026-11-10, see docs/organizer-sessions-plan.md)
 
 Support multiple named playlist-organizer sessions selectable via dropdown. Default session always exists, plus button to create new sessions. Each session has its own buckets and track assignments. Switch between sessions at any time.
 
