@@ -1,0 +1,40 @@
+# Tests gate deploys: the pi's autodeploy timer only ships a main commit
+# once every check run on it has succeeded (scripts/pi-autodeploy.sh).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run pytest -q
+
+  frontend:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      # Mobile is left out: its React Native deps are heavy and it ships as an APK.
+      - run: npm ci --workspace shared --workspace web/frontend --no-audit --no-fund
+      - run: npx tsc -b
+        working-directory: web/frontend
+      - run: npx vitest run
+        working-directory: web/frontend

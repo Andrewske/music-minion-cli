@@ -1,0 +1,10 @@
+[Unit]
+Description=Deploy GitHub main to music-minion-web once CI passes
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/.local/bin/music-minion-autodeploy
+# A cached build + health wait is ~1 min; a cold build can take much longer.
+TimeoutStartSec=30min
