@@ -34,7 +34,8 @@ jobs:
           cache: npm
       # Mobile is left out: its React Native deps are heavy and it ships as an APK.
       - run: npm ci --workspace shared --workspace web/frontend --no-audit --no-fund
-      - run: npx tsc -b
+      # vite generates the gitignored routeTree.gen.ts that tsc needs (same as the Dockerfile)
+      - run: npx vite build && npx tsc -b
         working-directory: web/frontend
       - run: npx vitest run
         working-directory: web/frontend
