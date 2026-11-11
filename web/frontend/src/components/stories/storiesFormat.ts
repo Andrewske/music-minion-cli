@@ -3,7 +3,7 @@ import type { StoriesDecision, StoriesTrackKind } from '../../api/stories';
 export const STORIES_VERDICT_LABELS: Record<StoriesDecision, string> = {
   keep: 'Kept',
   not_quite: 'Not quite',
-  nope: 'Skipped',
+  nope: 'Nope',
 };
 
 export const ACTIVITY_LABELS: Record<StoriesTrackKind, string> = {

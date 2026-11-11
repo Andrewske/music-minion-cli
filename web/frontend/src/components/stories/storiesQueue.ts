@@ -196,6 +196,9 @@ function previousStack(session: StoriesSession): readonly StoryRef[] {
 
 export const canGoPrevious = (session: StoriesSession): boolean => previousStack(session).length > 0;
 
+/** Whether Next has an unheard story to move to (otherwise it would land on caught-up). */
+export const canAdvance = (session: StoriesSession): boolean => advance(session).current !== null;
+
 /** Step back through the play history, switching back to that track's artist. */
 export function previous(session: StoriesSession): StoriesSession {
   const stack = previousStack(session);

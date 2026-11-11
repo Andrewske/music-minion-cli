@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Check, Meh, SkipBack, SkipForward } from 'lucide-react';
+import { Check, Meh, ThumbsDown } from 'lucide-react';
 import type { StoriesDecision, StoriesTrack } from '../../api/stories';
 
 interface ControlButtonProps {
@@ -31,14 +31,12 @@ function ControlButton({ label, title, active = false, disabled = false, onClick
 
 interface StoriesControlsProps {
   track: StoriesTrack;
-  canGoPrevious: boolean;
   isUpdating: boolean;
   onDecide: (decision: StoriesDecision) => void;
-  onPrevious: () => void;
 }
 
-/** Keep (keeps playing), Not quite and Skip (advance), Previous (history). Active state is the MM verdict only. */
-export function StoriesControls({ track, canGoPrevious, isUpdating, onDecide, onPrevious }: StoriesControlsProps): JSX.Element {
+/** Keep (keeps playing), Not quite and Nope (advance). Active state is the MM verdict only. */
+export function StoriesControls({ track, isUpdating, onDecide }: StoriesControlsProps): JSX.Element {
   const kept = track.decision === 'keep';
   return (
     <div role="group" aria-label="Story controls" className="flex flex-wrap items-center gap-2">
@@ -48,12 +46,8 @@ export function StoriesControls({ track, canGoPrevious, isUpdating, onDecide, on
       <ControlButton label="Not quite; close but not a keep, play next" title="Not quite" active={track.decision === 'not_quite'} disabled={isUpdating} onClick={() => onDecide('not_quite')}>
         <Meh className="h-4 w-4" />
       </ControlButton>
-      <ControlButton label="Skip; nope, play next" title="Skip" active={track.decision === 'nope'} disabled={isUpdating} onClick={() => onDecide('nope')}>
-        <SkipForward className="h-4 w-4" />
-      </ControlButton>
-      <span className="flex-1" />
-      <ControlButton label="Previous track" title="Previous" disabled={!canGoPrevious} onClick={onPrevious}>
-        <SkipBack className="h-4 w-4" />
+      <ControlButton label="Nope; clear pass, play next" title="Nope" active={track.decision === 'nope'} disabled={isUpdating} onClick={() => onDecide('nope')}>
+        <ThumbsDown className="h-4 w-4" />
       </ControlButton>
     </div>
   );

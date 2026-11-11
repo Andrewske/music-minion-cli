@@ -107,12 +107,12 @@ describe('StoriesPage', () => {
     );
   });
 
-  it('Skip rates nope with the stories surface and plays the next unheard track', async () => {
+  it('Nope rates nope with the stories surface and plays the next unheard track', async () => {
     renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: /^Skip/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Nope/ }));
     await waitFor(() => expect(playedIds()).toEqual([103]));
     expect(rateFeedItem).toHaveBeenCalledWith('a1', 'nope', expect.objectContaining({ surface: 'stories', listenSeconds: 0 }));
-    expect(within(screen.getByRole('list', { name: 'Artist tracks' })).getAllByText('Skipped')).toHaveLength(2);
+    expect(within(screen.getByRole('list', { name: 'Artist tracks' })).getAllByText('Nope')).toHaveLength(2);
   });
 
   it('Keep rates keep and does not advance', async () => {
@@ -183,13 +183,22 @@ describe('StoriesPage', () => {
     await waitFor(() => expect(playedIds()).toEqual([103, 101]));
   });
 
+  it('Next arrow plays the next unheard story without a verdict', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Track a3' }));
+    await waitFor(() => expect(playedIds()).toEqual([103]));
+    fireEvent.click(screen.getByRole('button', { name: 'Next track' }));
+    await waitFor(() => expect(playedIds()).toEqual([103, 101]));
+    expect(rateFeedItem).not.toHaveBeenCalled();
+  });
+
   it('Previous returns to the earlier artist and re-shows it', async () => {
     renderPage(makeResponse([RESPONSE.artists[0], makeArtist(2, [makeTrack('b1', { local_track_id: 201 })], { display_name: 'Subsidia' })]));
     fireEvent.click(await screen.findByRole('button', { name: 'Track a3' }));
     await waitFor(() => expect(playedIds()).toEqual([103]));
     fireEvent.click(screen.getByRole('button', { name: /^Not quite/ }));
     await waitFor(() => expect(playedIds()).toEqual([103, 101]));
-    fireEvent.click(screen.getByRole('button', { name: /^Skip/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Nope/ }));
     await waitFor(() => expect(playedIds()).toEqual([103, 101, 201]));
     expect(within(artistNav()).queryByRole('button', { name: /MIRR.IMG/ })).not.toBeInTheDocument();
 
@@ -233,12 +242,12 @@ describe('StoriesPage', () => {
     expect(useStoriesStore.getState().session?.current).toEqual({ artistId: 1, soundcloudId: 'a1' });
   });
 
-  it('Skip on the last unheard story pauses it instead of playing on under caught-up', async () => {
+  it('Nope on the last unheard story pauses it instead of playing on under caught-up', async () => {
     renderPage(makeResponse([makeArtist(1, [makeTrack('a1', { local_track_id: 101 })])]));
     fireEvent.click(await screen.findByRole('button', { name: 'Play Track a1' }));
     await waitFor(() => expect(playedIds()).toEqual([101]));
     playerLoaded(101);
-    fireEvent.click(screen.getByRole('button', { name: /^Skip/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Nope/ }));
     expect(await screen.findByText("You're all caught up")).toBeInTheDocument();
     expect(usePlayerStore.getState().pause).toHaveBeenCalledTimes(1);
   });

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Music, Pause, Play, Repeat2, Upload } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Music, Pause, Play, Repeat2, Upload } from 'lucide-react';
 import type { StoriesArtist, StoriesTrack } from '../../api/stories';
 import { getScLikeState } from '../../api/feed';
 import { SoundCloudIcon } from '../icons/SoundCloudIcon';
@@ -60,13 +60,46 @@ function ArtistHeader({ artist, track }: { artist: StoriesArtist; track: Stories
   );
 }
 
+/** Previous / Next with no verdict: plain navigation through the stories. */
+export interface StoriesNav {
+  canGoPrevious: boolean;
+  canGoNext: boolean;
+  onPrevious: () => void;
+  onNext: () => void;
+}
+
+interface NavArrowProps {
+  side: 'left' | 'right';
+  disabled: boolean;
+  onClick: () => void;
+}
+
+function NavArrow({ side, disabled, onClick }: NavArrowProps): JSX.Element {
+  const Icon = side === 'left' ? ChevronLeft : ChevronRight;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={side === 'left' ? 'Previous track' : 'Next track'}
+      title={side === 'left' ? 'Previous' : 'Next'}
+      className={`absolute top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/75 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-obsidian-accent disabled:pointer-events-none disabled:opacity-0 ${
+        side === 'left' ? 'left-2' : 'right-2'
+      }`}
+    >
+      <Icon className="h-6 w-6" />
+    </button>
+  );
+}
+
 interface ArtworkProps {
   track: StoriesTrack;
   isPlaying: boolean;
   onTogglePlay: () => void;
+  nav: StoriesNav;
 }
 
-function Artwork({ track, isPlaying, onTogglePlay }: ArtworkProps): JSX.Element {
+function Artwork({ track, isPlaying, onTogglePlay, nav }: ArtworkProps): JSX.Element {
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
   const src = largeArtwork(track.artwork_url);
   const title = track.title ?? 'Untitled';
@@ -93,6 +126,8 @@ function Artwork({ track, isPlaying, onTogglePlay }: ArtworkProps): JSX.Element 
           {isPlaying ? <Pause className="h-9 w-9 fill-current" /> : <Play className="ml-1 h-9 w-9 fill-current" />}
         </span>
       </button>
+      <NavArrow side="left" disabled={!nav.canGoPrevious} onClick={nav.onPrevious} />
+      <NavArrow side="right" disabled={!nav.canGoNext} onClick={nav.onNext} />
       <div className="pointer-events-none absolute bottom-3 left-3 right-3 flex flex-col items-start gap-0.5">
         <span className="max-w-full truncate bg-black/85 px-2 py-1 text-sm font-semibold text-white sm:text-base">{title}</span>
         <span className="max-w-full truncate bg-black/85 px-2 py-0.5 text-sm text-white/55">{track.artist_name ?? 'Unknown artist'}</span>
@@ -106,15 +141,16 @@ interface StoriesHeroProps {
   track: StoriesTrack;
   isPlaying: boolean;
   onTogglePlay: () => void;
+  nav: StoriesNav;
 }
 
-/** Segment bar, "<artist> reposted a track · 18 hours ago", and the big artwork. */
-export function StoriesHero({ artist, track, isPlaying, onTogglePlay }: StoriesHeroProps): JSX.Element {
+/** Segment bar, "<artist> reposted a track · 18 hours ago", and the big artwork with Previous / Next arrows. */
+export function StoriesHero({ artist, track, isPlaying, onTogglePlay, nav }: StoriesHeroProps): JSX.Element {
   return (
     <section aria-label={`${artist.display_name ?? artist.slug} story`} className="flex flex-col gap-3">
       <TrackSegments tracks={artist.tracks} focusId={track.soundcloud_id} />
       <ArtistHeader artist={artist} track={track} />
-      <Artwork track={track} isPlaying={isPlaying} onTogglePlay={onTogglePlay} />
+      <Artwork track={track} isPlaying={isPlaying} onTogglePlay={onTogglePlay} nav={nav} />
     </section>
   );
 }
