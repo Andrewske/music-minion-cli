@@ -23,15 +23,13 @@ def _isolated_env(root: Path) -> dict[str, str]:
         "XDG_DATA_HOME": str(root / "data"),
         "XDG_CONFIG_HOME": str(root / "config"),
         "HOME": str(root / "home"),
-        # Empty (not unset) so a later load_dotenv() can't inject a real URL
-        "DATABASE_URL": "",
         # Tests own their throwaway DB; the real one is only owned by the pi
         "MUSIC_MINION_DB_OWNER": "1",
         "MUSIC_MINION_DB_PATH": "",
     }
 
 
-_NON_PATH_KEYS = {"DATABASE_URL", "MUSIC_MINION_DB_OWNER", "MUSIC_MINION_DB_PATH"}
+_NON_PATH_KEYS = {"MUSIC_MINION_DB_OWNER", "MUSIC_MINION_DB_PATH"}
 
 
 def _apply_env(env: dict[str, str]) -> None:
@@ -64,7 +62,7 @@ def isolated_data_dirs(
     root = tmp_path_factory.mktemp("mm-home")
     for key, value in _isolated_env(root).items():
         monkeypatch.setenv(key, value)
-        if key != "DATABASE_URL":
+        if key not in _NON_PATH_KEYS:
             Path(value).mkdir(parents=True, exist_ok=True)
 
     import music_minion.core.config as config_module

@@ -22,17 +22,10 @@ logging.basicConfig(
 
 async def _startup() -> None:
     """Initialize database, restore player state, start background workers."""
-    from music_minion.core.db_adapter import is_postgres, init_postgres_schema
+    from music_minion.core.database import init_database
     from .routers.player import restore_player_queue_state
 
-    if is_postgres():
-        logging.info("PostgreSQL detected, initializing schema...")
-        init_postgres_schema()
-    else:
-        # SQLite - use existing init
-        from music_minion.core.database import init_database
-
-        init_database()
+    init_database()
 
     custom_emojis_dir.mkdir(parents=True, exist_ok=True)
 
