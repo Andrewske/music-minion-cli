@@ -168,17 +168,9 @@ def fetch_soundcloud_waveform(
         # Convert SoundCloud format (0-140 range) to WaveSurfer format (normalized peaks)
         # SoundCloud provides single values; WaveSurfer expects min/max pairs
         # We'll create symmetric peaks around zero
+        # Keep every sample (SC sends ~1800): the frontend averages peaks down
+        # to its bar count, and truncating here dropped the end of the track.
         normalized = [s / SOUNDCLOUD_WAVEFORM_HEIGHT for s in samples]
-
-        # Downsample to ~1000 peaks if needed (SC provides 1800)
-        target_peaks = 1000
-        if len(normalized) > target_peaks:
-            chunk_size = len(normalized) // target_peaks
-            downsampled = []
-            for i in range(0, len(normalized) - chunk_size + 1, chunk_size):
-                chunk = normalized[i : i + chunk_size]
-                downsampled.append(max(chunk))
-            normalized = downsampled[:target_peaks]
 
         # Convert to WaveSurfer min/max format (symmetric around 0)
         # Scale to 16-bit range like local waveforms
