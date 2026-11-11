@@ -278,7 +278,7 @@ sqlite3 db.db "EXPLAIN QUERY PLAN SELECT ... FROM tracks t JOIN ratings r ON t.i
 **Lesson:** When a migration synthesises a timestamp, record which rows are synthetic (here: the `surface` value) so downstream readers can tell real instants from placeholders.
 
 ## Maintenance pass (2026-10-17)
-- Tests: root `conftest.py` redirects XDG_DATA_HOME/XDG_CONFIG_HOME/HOME and blanks DATABASE_URL at import time; each test gets a copy of a migrated template DB. Never add tests that rely on the real library.
+- Tests: root `conftest.py` redirects XDG_DATA_HOME/XDG_CONFIG_HOME/HOME at import time; each test gets a copy of a migrated template DB. Never add tests that rely on the real library.
 - Fresh-DB migrations were broken (v11/v19/v37) and nobody noticed because only the long-lived DB ever migrated. The template-DB conftest now exercises the full migration chain on every test run.
 - Test imports must use `web.backend.*` (not `backend.*`); two module names meant patches missed the copy the app used.
 - `essentia` is pinned to 2.1b6.dev1389: newer dev builds only ship cp314 wheels. `openai` is held <3 until the v3 client API is checked.

@@ -11,7 +11,7 @@ from typing import Optional
 
 from loguru import logger
 
-from music_minion.core.db_adapter import get_radio_db_connection
+from music_minion.core.database import get_db_connection
 from music_minion.domain.library.models import Track
 
 # Default dedup window: consecutive plays of the same track within this many
@@ -94,7 +94,7 @@ def start_play(
             matching the naive UTC text SQLite stores in started_at.
     """
     now = now or _utc_now()
-    with get_radio_db_connection() as conn:
+    with get_db_connection() as conn:
         last_play = _get_last_play(conn, track_id)
         if last_play is not None:
             last_id, last_started_at = last_play
@@ -124,7 +124,7 @@ def end_play(history_id: int, duration_ms: int, reason: str = "skip") -> None:
         duration_ms: Total time spent listening in milliseconds (accounts for seeking)
         reason: Why playback ended - 'skip', 'completed', or 'new_play'
     """
-    with get_radio_db_connection() as conn:
+    with get_db_connection() as conn:
         conn.execute(
             """
             UPDATE radio_history
@@ -193,7 +193,7 @@ def get_history_entries(
     Returns:
         List of HistoryEntry objects, ordered by started_at DESC
     """
-    with get_radio_db_connection() as conn:
+    with get_db_connection() as conn:
         query = """
             SELECT
                 rh.id,
@@ -267,7 +267,7 @@ def get_stats(days: int = 30) -> Stats:
     Returns:
         Stats object with aggregated playback statistics
     """
-    with get_radio_db_connection() as conn:
+    with get_db_connection() as conn:
         start_date = (_utc_now() - timedelta(days=days)).date()
         cursor = conn.execute(
             """
@@ -312,7 +312,7 @@ def get_most_played_tracks(
     Returns:
         List of TrackPlayStats, ordered by play_count DESC
     """
-    with get_radio_db_connection() as conn:
+    with get_db_connection() as conn:
         start_date = (_utc_now() - timedelta(days=days)).date()
 
         query = """

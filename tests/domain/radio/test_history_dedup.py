@@ -95,14 +95,14 @@ def _make_conn(last_row) -> MagicMock:
     insert_cursor = MagicMock()
     insert_cursor.lastrowid = 999
     conn.execute.side_effect = [select_cursor, insert_cursor]
-    # Context manager protocol for `with get_radio_db_connection() as conn:`
+    # Context manager protocol for `with get_db_connection() as conn:`
     cm = MagicMock()
     cm.__enter__.return_value = conn
     cm.__exit__.return_value = False
     return cm, conn
 
 
-@patch("music_minion.domain.radio.history.get_radio_db_connection")
+@patch("music_minion.domain.radio.history.get_db_connection")
 def test_start_play_inserts_when_no_prior_play(mock_get_conn: MagicMock) -> None:
     cm, conn = _make_conn(last_row=None)
     mock_get_conn.return_value = cm
@@ -116,7 +116,7 @@ def test_start_play_inserts_when_no_prior_play(mock_get_conn: MagicMock) -> None
     assert "INSERT INTO radio_history" in conn.execute.call_args_list[1].args[0]
 
 
-@patch("music_minion.domain.radio.history.get_radio_db_connection")
+@patch("music_minion.domain.radio.history.get_db_connection")
 def test_start_play_skips_insert_within_window(mock_get_conn: MagicMock) -> None:
     last_row = {"id": 7, "started_at": BASE.isoformat()}
     cm, conn = _make_conn(last_row=last_row)
@@ -130,7 +130,7 @@ def test_start_play_skips_insert_within_window(mock_get_conn: MagicMock) -> None
     assert conn.execute.call_count == 1
 
 
-@patch("music_minion.domain.radio.history.get_radio_db_connection")
+@patch("music_minion.domain.radio.history.get_db_connection")
 def test_start_play_inserts_after_window_expires(mock_get_conn: MagicMock) -> None:
     last_row = {"id": 7, "started_at": BASE.isoformat()}
     cm, conn = _make_conn(last_row=last_row)
@@ -144,7 +144,7 @@ def test_start_play_inserts_after_window_expires(mock_get_conn: MagicMock) -> No
     assert "INSERT INTO radio_history" in conn.execute.call_args_list[1].args[0]
 
 
-@patch("music_minion.domain.radio.history.get_radio_db_connection")
+@patch("music_minion.domain.radio.history.get_db_connection")
 def test_start_play_does_not_modify_existing_rows(mock_get_conn: MagicMock) -> None:
     """Forward-only: a skipped duplicate issues no UPDATE/INSERT, only the SELECT."""
     last_row = {"id": 7, "started_at": BASE.isoformat()}
