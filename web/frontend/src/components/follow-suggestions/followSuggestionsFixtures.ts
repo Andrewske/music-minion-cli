@@ -52,6 +52,7 @@ export function makeUntiered(overrides: Partial<UntieredArtist> = {}): UntieredA
     display_name: 'New Follow',
     slug: 'new-follow',
     avatar_url: null,
+    tier: null,
     followed_at: null,
     follow_order: 1,
     rated_count: 4,

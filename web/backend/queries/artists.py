@@ -524,7 +524,7 @@ def set_artist_tier(
     Returns False if the artist does not exist.
     """
     cursor = conn.execute(
-        "UPDATE discovery_artists SET tier = ? WHERE id = ?",
+        "UPDATE discovery_artists SET tier = ?, tier_auto = 0 WHERE id = ?",
         (tier, discovery_artist_id),
     )
     if cursor.rowcount == 0:
@@ -1098,7 +1098,7 @@ def tier_new_follows(conn: sqlite3.Connection, artist_ids: list[int]) -> int:
         return 0
     placeholders = ",".join("?" * len(artist_ids))
     cursor = conn.execute(
-        f"UPDATE discovery_artists SET tier = 'C' "
+        f"UPDATE discovery_artists SET tier = 'C', tier_auto = 1 "
         f"WHERE id IN ({placeholders}) AND COALESCE(tier, '') = ''",
         artist_ids,
     )

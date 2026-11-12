@@ -5,7 +5,7 @@ SQLite database operations for Music Minion CLI
 import os
 import sqlite3
 import unicodedata
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -691,16 +691,23 @@ def _migrate_v74_follow_suggestions(conn) -> None:
 
     - discovery_artists.followed_at / follow_order: when (or in what order)
       a follow was first seen. NULL for the March 2026 bulk import.
+    - discovery_artists.tier_auto: 1 while the tier is the automatic C a new
+      follow gets; any manual tier choice clears it.
     - sc_likes uploader columns: the SC account that uploaded a liked track.
+    - sc_likes.like_order: position in the last complete likes fetch
+      (0 = newest). SC never says when a like happened, so this is the only
+      recency signal for most likes.
     - Caches: name -> SC account resolutions, per-account activity, the
       followings of top-tier artists. Dismissals are permanent.
     """
     for table, column_ddl in (
         ("discovery_artists", "followed_at TEXT"),
         ("discovery_artists", "follow_order INTEGER"),
+        ("discovery_artists", "tier_auto INTEGER NOT NULL DEFAULT 0"),
         ("sc_likes", "uploader_soundcloud_id TEXT"),
         ("sc_likes", "uploader_permalink TEXT"),
         ("sc_likes", "uploader_username TEXT"),
+        ("sc_likes", "like_order INTEGER"),
     ):
         if _table_exists(conn, table):
             _add_column_if_missing(conn, table, column_ddl)
@@ -3692,7 +3699,9 @@ def migrate_database(conn, current_version: int) -> None:
         _migrate_v73_bucket_session_names(conn)
         conn.execute("RELEASE SAVEPOINT migrate_v73")
         conn.commit()
-        logger.info("  ✓ Migration to v73 complete: bucket_sessions name/last_opened_at")
+        logger.info(
+            "  ✓ Migration to v73 complete: bucket_sessions name/last_opened_at"
+        )
 
     if current_version < 74:
         logger.info("Running migration to v74: follow suggestions...")
@@ -4121,6 +4130,23 @@ def apply_sc_likes_reconcile(
             conn.rollback()
             raise
     return added, len(removable)
+
+
+def write_sc_like_order(ordered_ids: Sequence[str]) -> int:
+    """Store each like's position in a complete likes fetch (0 = newest).
+
+    Rows missing from the fetch get NULL. Call only with a complete fetch.
+    """
+    with get_db_connection() as conn:
+        conn.execute("UPDATE sc_likes SET like_order = NULL")
+        before = conn.total_changes
+        conn.executemany(
+            "UPDATE sc_likes SET like_order = ? WHERE soundcloud_id = ?",
+            [(pos, str(sc_id)) for pos, sc_id in enumerate(ordered_ids)],
+        )
+        written = conn.total_changes - before
+        conn.commit()
+    return written
 
 
 def has_soundcloud_like(track_id: int) -> bool:

@@ -187,6 +187,14 @@ class TestFactors:
 
     def test_recency_floor(self) -> None:
         assert fs.recency_weight(None, NOW) == 0.3
+
+    def test_like_order_fallback(self) -> None:
+        assert fs.recency_weight(None, NOW, 0) == pytest.approx(1.0)
+        assert fs.recency_weight(None, NOW, 1000) == pytest.approx(0.65)
+        assert fs.recency_weight(None, NOW, 100_000) == pytest.approx(0.3, abs=1e-6)
+
+    def test_like_time_beats_like_order(self) -> None:
+        assert fs.recency_weight("2026-11-11 00:00:00", NOW, 5000) == pytest.approx(1.0)
         assert fs.recency_weight("2006-01-01 00:00:00", NOW) == pytest.approx(
             0.3, abs=0.001
         )

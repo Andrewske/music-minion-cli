@@ -55,6 +55,8 @@ export interface UntieredArtist {
   display_name: string;
   slug: string;
   avatar_url: string | null;
+  /** null when untiered; 'C' for an automatic tier on a new follow. */
+  tier: string | null;
   followed_at: string | null;
   follow_order: number | null;
   rated_count: number;
@@ -62,7 +64,7 @@ export interface UntieredArtist {
 }
 
 export interface UntieredResponse {
-  /** Newest follows still untiered. */
+  /** Newest follows that are untiered or still on their automatic tier C. */
   recent: UntieredArtist[];
   /** Untiered with >= 3 rated tracks, by keep_rate desc. */
   rated: UntieredArtist[];

@@ -448,7 +448,11 @@ def test_connections_route(client: TestClient, monkeypatch: pytest.MonkeyPatch) 
     for f in "123":
         follows(f, "60")
         follows(f, "61")
-    monkeypatch.setenv("SC_SELF_USER_ID", "61")
+    with get_db_connection() as conn:  # the nightly job dismisses Kevin's account
+        conn.execute(
+            "INSERT INTO follow_suggestion_dismissals (soundcloud_user_id) VALUES ('61')"
+        )
+        conn.commit()
 
     body = client.get("/api/follow-suggestions/connections").json()
 

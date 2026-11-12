@@ -41,6 +41,9 @@ ROLES = ("uploaded", "original", "remixer", "feat", "remixed_by_others", "kept")
 
 RECENCY_FLOOR = 0.3
 RECENCY_HALF_LIFE_MONTHS = 12.0
+# Fallback when only the like's position is known: weight halves every
+# 1,000 likes back (roughly a year of liking, a guess to tune).
+RECENCY_HALF_LIFE_LIKES = 1000.0
 ACTIVITY_UNKNOWN = 0.6
 ACTIVITY_DORMANT = 0.1
 ACTIVITY_DORMANT_DAYS = 365
@@ -79,6 +82,7 @@ class EvidenceTrack(NamedTuple):
     uploader_id: str | None
     uploader_permalink: str | None
     uploader_username: str | None
+    like_order: int | None = None  # 0 = newest like in the last full fetch
 
 
 class Account(NamedTuple):
@@ -382,13 +386,22 @@ def combine_resolutions(*sources: Mapping[str, Resolution]) -> dict[str, Resolut
 # ---------------------------------------------------------------------------
 
 
-def recency_weight(liked_at: str | None, now: datetime) -> float:
-    """0.3 + 0.7 * 0.5 ** (age_months / 12); unknown like time gets the floor."""
+def recency_weight(
+    liked_at: str | None, now: datetime, like_order: int | None = None
+) -> float:
+    """0.3 + 0.7 * decay, from the like time or else the like's position.
+
+    Decay halves every 12 months, or every 1,000 likes back when SC gave no
+    time (most likes). Neither known: the 0.3 floor.
+    """
     when = parse_time(liked_at)
-    if when is None:
+    if when is not None:
+        age_months = max(0.0, (now - when).days / 30.44)
+        decay = 0.5 ** (age_months / RECENCY_HALF_LIFE_MONTHS)
+    elif like_order is not None:
+        decay = 0.5 ** (max(0, like_order) / RECENCY_HALF_LIFE_LIKES)
+    else:
         return RECENCY_FLOOR
-    age_months = max(0.0, (now - when).days / 30.44)
-    decay = 0.5 ** (age_months / RECENCY_HALF_LIFE_MONTHS)
     return RECENCY_FLOOR + (1 - RECENCY_FLOOR) * decay
 
 
@@ -562,7 +575,10 @@ def is_excluded(
 
 
 def evidence_score(hits: list[Hit], now: datetime) -> float:
-    return sum(h.weight * recency_weight(h.track.liked_at, now) for h in hits)
+    return sum(
+        h.weight * recency_weight(h.track.liked_at, now, h.track.like_order)
+        for h in hits
+    )
 
 
 def build_suggestion(

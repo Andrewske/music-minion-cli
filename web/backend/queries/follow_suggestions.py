@@ -33,7 +33,7 @@ _TRACK_FOR = """COALESCE(
     (SELECT id FROM tracks WHERE source = 'soundcloud' AND soundcloud_id = {col}))"""
 
 _LIKED_SQL = f"""
-    SELECT l.soundcloud_id, l.liked_at,
+    SELECT l.soundcloud_id, l.liked_at, l.like_order,
            COALESCE(t.title, dt.title, u.title, '') AS title,
            COALESCE(t.artist, dt.artist_name, '') AS artist,
            t.remix_artist,
@@ -53,7 +53,7 @@ _LIKED_SQL = f"""
 """
 
 _KEPT_SQL = f"""
-    SELECT d.soundcloud_id, d.decided_at AS liked_at,
+    SELECT d.soundcloud_id, d.decided_at AS liked_at, NULL AS like_order,
            COALESCE(t.title, dt.title, u.title, '') AS title,
            COALESCE(t.artist, dt.artist_name, '') AS artist,
            t.remix_artist,
@@ -91,6 +91,7 @@ def _evidence_track(row: sqlite3.Row, liked: bool) -> EvidenceTrack:
         uploader_permalink=row["uploader_permalink"]
         or (permalink_from_url(row["track_url"]) if uploader_id else None),
         uploader_username=row["uploader_username"],
+        like_order=row["like_order"],
     )
 
 
