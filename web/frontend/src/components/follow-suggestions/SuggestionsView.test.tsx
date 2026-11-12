@@ -41,6 +41,11 @@ function renderView(): QueryClient {
 
 const row = (key: string): HTMLElement => screen.getByTestId(`account-row-${key}`);
 
+/** What the server returns from now on: mutations settle with a refetch. */
+const serverReturns = (data: ReturnType<typeof makeResponse>): void => {
+  vi.mocked(getFollowSuggestions).mockResolvedValue(data);
+};
+
 describe('SuggestionsView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -96,7 +101,10 @@ describe('SuggestionsView', () => {
   });
 
   it('dismisses permanently with an optimistic removal', async () => {
-    vi.mocked(dismissSuggestion).mockResolvedValue({ ok: true });
+    vi.mocked(dismissSuggestion).mockImplementation(async () => {
+      serverReturns(makeResponse([resolved], [label]));
+      return { ok: true };
+    });
     renderView();
     await screen.findByText('Ghost Name');
     fireEvent.click(within(row('name:ghostname')).getByRole('button', { name: 'Dismiss' }));
@@ -105,7 +113,10 @@ describe('SuggestionsView', () => {
   });
 
   it('keeps labels collapsed until opened, then offers "not a label"', async () => {
-    vi.mocked(setSuggestionLabel).mockResolvedValue({ ok: true });
+    vi.mocked(setSuggestionLabel).mockImplementation(async () => {
+      serverReturns(makeResponse([{ ...label, is_label: false }, resolved, unresolved]));
+      return { ok: true };
+    });
     renderView();
     const toggle = await screen.findByRole('button', { name: /Labels & channels \(1\)/ });
     expect(screen.queryByText('Big Label')).toBeNull();
@@ -118,7 +129,10 @@ describe('SuggestionsView', () => {
   });
 
   it('marks an artist as a label, moving it out of the main list', async () => {
-    vi.mocked(setSuggestionLabel).mockResolvedValue({ ok: true });
+    vi.mocked(setSuggestionLabel).mockImplementation(async () => {
+      serverReturns(makeResponse([unresolved], [{ ...resolved, is_label: true }, label]));
+      return { ok: true };
+    });
     renderView();
     await screen.findByText('Wooli');
     fireEvent.click(within(row('100')).getByRole('button', { name: 'This is a label' }));
@@ -144,8 +158,12 @@ describe('SuggestionsView', () => {
   });
 
   it('tiers untiered follows inline and drops the row', async () => {
-    vi.mocked(getUntieredFollows).mockResolvedValue({ recent: [makeUntiered({ discovery_artist_id: 8, display_name: 'Fresh' })], rated: [makeUntiered()] });
-    vi.mocked(updateArtist).mockResolvedValue({ id: 7, ranking: 3, tier: 'A' });
+    const fresh = makeUntiered({ discovery_artist_id: 8, display_name: 'Fresh' });
+    vi.mocked(getUntieredFollows).mockResolvedValue({ recent: [fresh], rated: [makeUntiered()] });
+    vi.mocked(updateArtist).mockImplementation(async () => {
+      vi.mocked(getUntieredFollows).mockResolvedValue({ recent: [fresh], rated: [] });
+      return { id: 7, ranking: 3, tier: 'A' };
+    });
     renderView();
     const rated = await screen.findByTestId('untiered-row-7');
     expect(within(rated).getByText('50% kept')).toBeInTheDocument();
