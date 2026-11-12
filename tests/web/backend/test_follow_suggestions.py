@@ -440,6 +440,25 @@ def _seed() -> None:
     )
 
 
+def queries_conn(write: object) -> None:
+    with get_db_connection() as conn:
+        write(conn)  # type: ignore[operator]
+
+
+class TestAccountDecisions:
+    def test_name_decisions_reach_resolved_ids(self) -> None:
+        dismissed, overrides = fs.account_decisions(
+            {"name:old", "9"},
+            {"name:b": True, "name:a": False, "7": True, "name:c": True},
+            [("old", "70"), ("a", "80"), ("b", "80"), ("c", "7"), ("miss", None)],
+        )
+        assert dismissed == {"name:old", "9", "70"}
+        # 80: aliases disagree, first by sort order (name:a) wins; 7: own wins.
+        assert overrides == {
+            "name:b": True, "name:a": False, "name:c": True, "7": True, "80": False,
+        }  # fmt: skip
+
+
 class TestQueries:
     def test_load_evidence_tracks(self) -> None:
         _seed()
@@ -455,6 +474,42 @@ class TestQueries:
         with get_db_connection() as conn:
             keys = [s["key"] for s in queries.compute_ranked(conn, NOW)]
         assert keys == ["70"]
+
+    @staticmethod
+    def _old_alias(override: bool | None = None, dismissed: bool = False) -> None:
+        """'oldalias' resolved to 70 once; no current track credits it."""
+        _exec(
+            """INSERT INTO sc_name_resolutions (name_key, soundcloud_user_id,
+            permalink, display_name, confidence, source)
+            VALUES ('oldalias', '70', 'phrva', 'Old Alias', 'medium', 'search')"""
+        )
+        if dismissed:
+            queries_conn(lambda c: queries.dismiss(c, "name:oldalias"))
+        if override is not None:
+            queries_conn(
+                lambda c: queries.set_label_override(c, "name:oldalias", override)
+            )
+
+    def test_dismissed_alias_without_current_evidence_hides_account(self) -> None:
+        _seed()
+        self._old_alias(dismissed=True)
+        with get_db_connection() as conn:
+            assert queries.compute_ranked(conn, NOW) == []
+
+    def test_alias_label_override_without_current_evidence(self) -> None:
+        _seed()
+        self._old_alias(override=True)
+        with get_db_connection() as conn:
+            (phrva,) = queries.compute_ranked(conn, NOW)
+        assert phrva["key"] == "70" and phrva["is_label"] is True
+
+    def test_override_on_the_account_beats_alias_override(self) -> None:
+        _seed()
+        self._old_alias(override=True)
+        queries_conn(lambda c: queries.set_label_override(c, "70", False))
+        with get_db_connection() as conn:
+            (phrva,) = queries.compute_ranked(conn, NOW)
+        assert phrva["is_label"] is False
 
     def test_discovery_resolutions(self) -> None:
         _seed()

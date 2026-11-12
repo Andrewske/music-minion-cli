@@ -17,6 +17,7 @@ from web.backend.follow_suggestions import (
     Context,
     EvidenceTrack,
     Resolution,
+    account_decisions,
     account_keys,
     activity_resolutions,
     combine_resolutions,
@@ -222,7 +223,10 @@ def resolved_context(
     conn: sqlite3.Connection, tracks: list[EvidenceTrack], now: datetime | None = None
 ) -> Context:
     """load_context with live sources (a) uploaders and (b) discovery_artists
-    layered over the cached resolutions (which hold the API search results)."""
+    layered over the cached resolutions (which hold the API search results).
+
+    Dismissals and label overrides on 'name:<k>' also apply to every account
+    k resolves to, in the cache or live, whether or not k is still credited."""
     ctx = load_context(conn, now)
     resolutions = combine_resolutions(
         uploader_resolutions(tracks),
@@ -230,7 +234,17 @@ def resolved_context(
         discovery_resolutions(conn),
         ctx.resolutions,
     )
-    return ctx._replace(resolutions=resolutions)
+    aliases = [
+        (k, r.soundcloud_user_id)
+        for source in (ctx.resolutions, resolutions)  # the full cache, then live
+        for k, r in source.items()
+    ]
+    dismissed, overrides = account_decisions(
+        ctx.dismissed, ctx.label_overrides, aliases
+    )
+    return ctx._replace(
+        resolutions=resolutions, dismissed=dismissed, label_overrides=overrides
+    )
 
 
 def compute_ranked(

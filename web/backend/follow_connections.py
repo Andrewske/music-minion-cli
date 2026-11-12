@@ -20,6 +20,7 @@ from loguru import logger
 from music_minion.core.database import get_db_connection
 from music_minion.domain.library.provider import ProviderState
 from music_minion.domain.library.providers.soundcloud.api import get_user_followings
+from web.backend.follow_suggestions import account_decisions
 from web.backend.queries.artists import (
     _connection_partners,
     _normalize_name,
@@ -379,8 +380,16 @@ def _load_followed(conn: sqlite3.Connection) -> dict[str, set[str]]:
 
 
 def _load_dismissed(conn: sqlite3.Connection) -> set[str]:
+    """Dismissal keys, plus the account id of every dismissed name that
+    sc_name_resolutions maps to one (whether or not it is still credited)."""
     rows = conn.execute("SELECT soundcloud_user_id FROM follow_suggestion_dismissals")
-    return {str(r[0]) for r in rows}
+    aliases = conn.execute(
+        "SELECT name_key, soundcloud_user_id FROM sc_name_resolutions"
+    ).fetchall()
+    dismissed, _overrides = account_decisions(
+        (str(r[0]) for r in rows), {}, [tuple(a) for a in aliases]
+    )
+    return set(dismissed)
 
 
 def _load_resolutions(conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:

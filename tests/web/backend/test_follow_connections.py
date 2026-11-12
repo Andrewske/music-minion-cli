@@ -284,6 +284,29 @@ def test_favorites_follow_exclusions() -> None:
     assert [c["key"] for c in results] == ["new"]
 
 
+def test_dismissed_alias_without_current_credit_hides_co_credit_account() -> None:
+    """name:oldalias resolved to 30; the partner now shows up as 'Partner'."""
+    add_artist("Alpha", "S", sc_id="1")
+    add_track("Alpha & Partner", "Song")
+    resolve("partner", "30", "Partner")
+    assert "Partner" in by_name(co_credit())
+    resolve("oldalias", "30", "Old Alias")
+    dismiss("name:oldalias")
+    assert "Partner" not in by_name(co_credit())
+
+
+def test_favorites_follow_drops_account_of_dismissed_alias() -> None:
+    for i, tier in enumerate(("S", "A", "A"), start=1):
+        add_artist(f"Fav{i}", tier, sc_id=str(i))
+        follows(str(i), "30")
+    with get_db_connection() as conn:
+        assert [c["key"] for c in fc.compute_favorites_follow(conn)] == ["30"]
+    resolve("oldalias", "30", "Old Alias")
+    dismiss("name:oldalias")
+    with get_db_connection() as conn:
+        assert fc.compute_favorites_follow(conn) == []
+
+
 def test_compute_favorites_follow_from_db() -> None:
     for sc_id, tier in [("1", "S"), ("2", "A"), ("3", "A"), ("4", "B")]:
         add_artist(f"Fav {sc_id}", tier, sc_id=sc_id)

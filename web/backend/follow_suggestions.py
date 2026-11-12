@@ -474,6 +474,33 @@ def is_followed(ref: str, keys: set[str], followed: Followed) -> bool:
     return bool(keys & followed.keys)
 
 
+def account_decisions(
+    dismissed: Iterable[str],
+    label_overrides: Mapping[str, bool],
+    aliases: Iterable[tuple[str, str | None]],
+) -> tuple[frozenset[str], dict[str, bool]]:
+    """Carry every 'name:<k>' decision to each account id that k resolves to.
+
+    `aliases` is (name_key, soundcloud_user_id) pairs, e.g. the whole
+    sc_name_resolutions table, so a decision still reaches the account after
+    the alias stops showing up in current evidence. Dismissals stay keyed as
+    stored and gain the ids. An override on the id itself beats any alias
+    override; between aliases that disagree, the first by sort order wins.
+    """
+    ids_by_ref: dict[str, set[str]] = defaultdict(set)
+    for key, sc_id in aliases:
+        if sc_id:
+            ids_by_ref[name_ref(key)].add(str(sc_id))
+    dismissed = frozenset(dismissed)
+    dismissed_ids = {i for ref in dismissed for i in ids_by_ref.get(ref, ())}
+    from_aliases = {
+        sc_id: label_overrides[ref]
+        for ref in sorted(label_overrides, reverse=True)
+        for sc_id in ids_by_ref.get(ref, ())
+    }
+    return dismissed | dismissed_ids, {**from_aliases, **label_overrides}
+
+
 def label_override(refs: frozenset[str], ref: str, ctx: Context) -> bool | None:
     """The entity's own override, else one set on any name merged into it
     (first by sort order when names disagree), else None."""
