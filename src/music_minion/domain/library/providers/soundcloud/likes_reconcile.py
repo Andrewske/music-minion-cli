@@ -19,6 +19,9 @@ from typing import Any
 from loguru import logger
 
 from music_minion.core import database
+from music_minion.domain.library.providers.soundcloud.like_uploaders import (
+    record_like_uploaders,
+)
 from music_minion.domain.library.providers.soundcloud.likes_fetch import (
     LikesSnapshot,
     fetch_all_liked_ids,
@@ -184,6 +187,7 @@ def reconcile_sc_likes(
             plan.to_add, to_remove, fetch_started_at
         )
         report = replace(report, applied=True, added=added, removed=removed)
+        record_like_uploaders(snapshot.uploaders)
     log_summary(report)
     return report
 
