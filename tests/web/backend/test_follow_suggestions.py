@@ -278,6 +278,27 @@ class TestExclusions:
         )
         assert _by_key(tracks, ctx) == {}
 
+    def test_dismissed_alias_stays_dismissed_after_resolving(self) -> None:
+        """name:oldalias was dismissed while unresolved; it later resolves to 70,
+        whose uploader hit wins every track, so dedup drops the alias hits."""
+        phrva = ("70", "phrva", "Phrva")
+        tracks = [_track(str(i), "Old Alias", uploader=phrva) for i in range(3)]
+        resolved = {"oldalias": Resolution("70", "phrva", "Phrva", "medium", "search")}
+        assert "70" in _by_key(tracks, _ctx(resolutions=resolved))
+        ctx = _ctx(resolutions=resolved, dismissed=frozenset({"name:oldalias"}))
+        assert _by_key(tracks, ctx) == {}
+
+    def test_followed_name_does_not_hide_a_distinct_account(self) -> None:
+        ds = ("69528588", "dirtysnatcha", "DirtySnatcha")
+        tracks = [_track(str(i), "x", uploader=ds) for i in range(2)]
+        followed = (Account("4", "DirtySnatcha", "dirtysnatcharecords"),)
+        assert "69528588" in _by_key(tracks, _ctx(followed=followed))
+
+    def test_followed_name_still_hides_a_name_only_entity(self) -> None:
+        tracks = [_track(str(i), "DirtySnatcha") for i in range(3)]
+        followed = (Account("4", "DirtySnatcha", "dirtysnatcharecords"),)
+        assert _by_key(tracks, _ctx(followed=followed)) == {}
+
     def test_name_only_needs_two_tracks(self) -> None:
         assert "name:solo" not in _by_key([_track("1", "Solo")])
         assert "name:duo" in _by_key([_track("1", "Duo"), _track("2", "Duo")])
@@ -342,6 +363,16 @@ class TestMergeAndLabels:
         tracks = [_track("1", "Promo"), _track("2", "Promo")]
         ctx = _ctx(label_overrides={"name:promo": True})
         assert _by_key(tracks, ctx)["name:promo"]["is_label"] is True
+
+    def test_name_label_override_survives_resolution(self) -> None:
+        promo = ("9", "promo", "Promo")
+        tracks = [_track(str(i), "Promo", uploader=promo) for i in range(3)]
+        resolved = {"promo": Resolution("9", "promo", "Promo", "medium", "search")}
+        assert _by_key(tracks, _ctx(resolutions=resolved))["9"]["is_label"] is False
+        ctx = _ctx(resolutions=resolved, label_overrides={"name:promo": True})
+        assert _by_key(tracks, ctx)["9"]["is_label"] is True
+        ctx = ctx._replace(label_overrides={"name:promo": True, "9": False})
+        assert _by_key(tracks, ctx)["9"]["is_label"] is False  # id override wins
 
     def test_combine_resolutions_order(self) -> None:
         hit_a = Resolution("1", None, None, "high", "uploader")

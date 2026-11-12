@@ -165,7 +165,8 @@ def resolve_partners(
 ) -> dict[str, dict[str, Any]]:
     """Re-key partners by SC user id when resolved, else 'name:<key>'.
 
-    Two names resolving to one account merge their links.
+    Two names resolving to one account merge their links and keep every
+    name key (``name_keys``), so a decision on any of them still applies.
     """
     resolved: dict[str, dict[str, Any]] = {}
     for key, entry in partners.items():
@@ -177,6 +178,7 @@ def resolve_partners(
         resolved[final_key] = {
             **entry,
             "name_key": key,
+            "name_keys": (prev["name_keys"] if prev else frozenset()) | {key},
             "resolution": res,
             "links": links,
         }
@@ -186,8 +188,9 @@ def resolve_partners(
 def _is_excluded(
     key: str, entry: dict[str, Any], followed: dict[str, set[str]], dismissed: set[str]
 ) -> bool:
-    """Dismissed (by either key) or followed: by id when resolved, else by name key."""
-    if key in dismissed or f"name:{entry['name_key']}" in dismissed:
+    """Dismissed (by id or any merged name key) or followed: by id when
+    resolved, else by name key."""
+    if key in dismissed or any(f"name:{k}" in dismissed for k in entry["name_keys"]):
         return True
     sc_id = entry["resolution"].get("soundcloud_user_id")
     if sc_id:

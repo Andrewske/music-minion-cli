@@ -305,6 +305,20 @@ def best_hits_by_entity(
     return dict(grouped)
 
 
+def entity_origins(
+    hits: Iterable[Hit], resolutions: Mapping[str, Resolution]
+) -> dict[str, frozenset[str]]:
+    """Final entity -> every ref that resolved into it (itself included).
+
+    Built from all hits, before the per-track dedup, so a name that only ever
+    lost to the uploader on the same track still belongs to the account."""
+    origins: dict[str, set[str]] = defaultdict(set)
+    for hit in hits:
+        ref = resolve_ref(hit.ref, resolutions)
+        origins[ref] |= {ref, hit.ref}
+    return {ref: frozenset(refs) for ref, refs in origins.items()}
+
+
 def collect_hits(tracks: Iterable[EvidenceTrack]) -> list[Hit]:
     """Dedupe tracks by soundcloud_id (liked beats kept), then credit them."""
     unique: dict[str, EvidenceTrack] = {}
@@ -451,8 +465,22 @@ def followed_index(followed: Iterable[Account]) -> Followed:
 
 
 def is_followed(ref: str, keys: set[str], followed: Followed) -> bool:
-    """By SC id first, then by any of the entity's name keys."""
-    return ref in followed.ids or bool(keys & followed.keys)
+    """An account (known SC id) by id only; a name-only entity by its keys.
+
+    Names never override a distinct id: Kevin following "DirtySnatcha
+    Records" must not hide the DirtySnatcha artist account."""
+    if not ref.startswith("name:"):
+        return ref in followed.ids
+    return bool(keys & followed.keys)
+
+
+def label_override(refs: frozenset[str], ref: str, ctx: Context) -> bool | None:
+    """The entity's own override, else one set on any name merged into it
+    (first by sort order when names disagree), else None."""
+    if ref in ctx.label_overrides:
+        return ctx.label_overrides[ref]
+    named = sorted(r for r in refs if r in ctx.label_overrides)
+    return ctx.label_overrides[named[0]] if named else None
 
 
 def explicit_credit(artist: str | None, title: str | None) -> str | None:
@@ -488,11 +516,15 @@ def credits_others(own_keys: set[str], uploads: list[tuple[str | None, str]]) ->
     return others / len(uploads) >= LABEL_OTHER_SHARE
 
 
-def is_label(ref: str, identity: "Identity", hits: list[Hit], ctx: Context) -> bool:
-    """Override wins; else a label-ish name; else uploads that credit others
-    (liked uploads here, or the account's recent uploads in the activity cache)."""
-    if ref in ctx.label_overrides:
-        return ctx.label_overrides[ref]
+def is_label(
+    ref: str, refs: frozenset[str], identity: "Identity", hits: list[Hit], ctx: Context
+) -> bool:
+    """Override (on the account or any name merged into it) wins; else a
+    label-ish name; else uploads that credit others (liked uploads here, or
+    the account's recent uploads in the activity cache)."""
+    override = label_override(refs, ref, ctx)
+    if override is not None:
+        return override
     names = (identity.display_name, identity.permalink)
     if any(n and LABEL_NAME_RE.search(n) for n in names):
         return True
@@ -576,18 +608,22 @@ def entity_identity(
     )
 
 
-def entity_keys(ref: str, hits: list[Hit], identity: Identity) -> set[str]:
-    """Every name key an entity answers to (for follow/dismiss matching)."""
+def entity_keys(
+    ref: str, hits: list[Hit], identity: Identity, refs: frozenset[str]
+) -> set[str]:
+    """Every name key an entity answers to (for follow/dismiss matching),
+    including every name that resolved into it."""
+    origin_names = {r[5:] for r in refs if r.startswith("name:")}
     if ref.startswith("name:"):
-        return {ref[5:]}
-    names = {name_key(h.display) for h in hits}
+        return origin_names
+    names = {name_key(h.display) for h in hits} | origin_names
     return (names | account_keys(identity.display_name, identity.permalink)) - {""}
 
 
 def is_excluded(
     ref: str, hits: list[Hit], keys: set[str], ctx: Context, followed: Followed
 ) -> bool:
-    """Followed, dismissed (by id or any merged name), or too thin a name."""
+    """Followed, dismissed (by id or any of its name keys), or too thin a name."""
     if is_followed(ref, keys, followed):
         return True
     if ref in ctx.dismissed or any(name_ref(k) in ctx.dismissed for k in keys):
@@ -603,7 +639,7 @@ def evidence_score(hits: list[Hit], now: datetime) -> float:
 
 
 def build_suggestion(
-    ref: str, hits: list[Hit], identity: Identity, ctx: Context
+    ref: str, refs: frozenset[str], hits: list[Hit], identity: Identity, ctx: Context
 ) -> dict[str, Any]:
     """One Suggestion in the API contract shape."""
     activity = ctx.activity.get(ref)
@@ -616,7 +652,7 @@ def build_suggestion(
         "key": ref,
         "soundcloud_user_id": None if ref.startswith("name:") else ref,
         **identity._asdict(),
-        "is_label": is_label(ref, identity, hits, ctx),
+        "is_label": is_label(ref, refs, identity, hits, ctx),
         "score": round(score, 4),
         "evidence_score": round(evidence, 4),
         "evidence": evidence_counts(hits),
@@ -640,7 +676,9 @@ def rank_entities(
     tracks: Iterable[EvidenceTrack], ctx: Context
 ) -> list[dict[str, Any]]:
     """Every surviving entity as a Suggestion, best score first."""
-    grouped = best_hits_by_entity(collect_hits(tracks), ctx.resolutions)
+    hits_all = collect_hits(tracks)
+    grouped = best_hits_by_entity(hits_all, ctx.resolutions)
+    origins = entity_origins(hits_all, ctx.resolutions)
     resolved_by_id = {
         r.soundcloud_user_id: r
         for r in ctx.resolutions.values()
@@ -650,9 +688,9 @@ def rank_entities(
     out = []
     for ref, hits in grouped.items():
         identity = entity_identity(ref, hits, ctx, resolved_by_id)
-        keys = entity_keys(ref, hits, identity)
+        keys = entity_keys(ref, hits, identity, origins[ref])
         if not is_excluded(ref, hits, keys, ctx, followed):
-            out.append(build_suggestion(ref, hits, identity, ctx))
+            out.append(build_suggestion(ref, origins[ref], hits, identity, ctx))
     return sorted(out, key=lambda s: (-s["score"], s["display_name"].lower()))
 
 

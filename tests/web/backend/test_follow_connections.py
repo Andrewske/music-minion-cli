@@ -174,6 +174,24 @@ def test_co_credit_exclusions() -> None:
     assert results[0]["soundcloud_user_id"] is None
 
 
+def test_dismissed_name_hides_merged_account_whatever_the_key_order() -> None:
+    """Two names resolve to one account; the dismissed one must win even when
+    the other name is the entry's last-seen name_key."""
+    add_artist("Alpha", "S")
+    add_track("Alpha & Old Alias", "a")
+    add_track("Alpha & New Name", "b")
+    resolve("oldalias", "950", "New Name")
+    resolve("newname", "950", "New Name")
+    assert [c["key"] for c in co_credit()] == ["950"]
+    for order in (["oldalias", "newname"], ["newname", "oldalias"]):
+        partners = {k: {"display_name": k, "links": {1: "collab"}} for k in order}
+        res = {k: {"soundcloud_user_id": "950"} for k in order}
+        merged = fc.resolve_partners(partners, res)["950"]
+        assert merged["name_keys"] == {"oldalias", "newname"}
+    dismiss("name:oldalias")
+    assert co_credit() == []
+
+
 def test_known_id_beats_name_match() -> None:
     add_artist("Alpha", "S")
     add_artist("Snatch Records", "", sc_id="10", slug="snatch")  # the label
