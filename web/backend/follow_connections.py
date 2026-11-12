@@ -488,9 +488,10 @@ def _followee_rows(
 
 
 def _replace_followings(
-    conn: sqlite3.Connection, follower_id: str, rows: list[tuple]
+    conn: sqlite3.Connection, follower_id: str, rows: list[tuple], fetched_at: str
 ) -> None:
-    """Swap one favorite's followings in a single transaction."""
+    """Swap one favorite's followings and stamp its refresh state, in a
+    single transaction. The stamp is written even when it follows nobody."""
     conn.execute(
         "DELETE FROM sc_artist_followings WHERE follower_id = ?", (follower_id,)
     )
@@ -500,19 +501,30 @@ def _replace_followings(
             followee_followers, fetched_at) VALUES (?, ?, ?, ?, ?, ?)""",
         rows,
     )
+    conn.execute(
+        """INSERT INTO sc_favorite_followings_state
+               (follower_id, fetched_at, followee_count, status)
+           VALUES (?, ?, ?, 'ok')
+           ON CONFLICT(follower_id) DO UPDATE SET fetched_at = excluded.fetched_at,
+               followee_count = excluded.followee_count, status = excluded.status""",
+        (follower_id, fetched_at, len(rows)),
+    )
     conn.commit()
 
 
 def _refresh_plan(conn: sqlite3.Connection, now: datetime) -> list[str]:
-    """Favorites to fetch this run, or [] when a batch already ran tonight."""
+    """Favorites to fetch this run, or [] when a batch already ran tonight.
+
+    Freshness comes from sc_favorite_followings_state, so a favorite that
+    follows nobody counts as fetched instead of being retried every tick."""
     (last,) = conn.execute(
-        "SELECT MAX(fetched_at) FROM sc_artist_followings"
+        "SELECT MAX(fetched_at) FROM sc_favorite_followings_state"
     ).fetchone()
     if not refresh_due(last, now):
         return []
     fetched = dict(
         conn.execute(
-            "SELECT follower_id, MIN(fetched_at) FROM sc_artist_followings GROUP BY follower_id"
+            "SELECT follower_id, fetched_at FROM sc_favorite_followings_state"
         ).fetchall()
     )
     favorites = [
@@ -541,11 +553,9 @@ def refresh_favorite_followings(
             if error:
                 logger.warning(f"favorite followings refresh stopped: {error}")
                 break
-            _replace_followings(
-                conn,
-                follower_id,
-                _followee_rows(follower_id, users, now.strftime(_TS_FORMAT)),
-            )
+            stamp = now.strftime(_TS_FORMAT)
+            rows = _followee_rows(follower_id, users, stamp)
+            _replace_followings(conn, follower_id, rows, stamp)
             refreshed += 1
     if plan:
         logger.info(f"favorite followings: refreshed {refreshed}/{len(plan)} artists")

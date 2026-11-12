@@ -74,6 +74,25 @@ def follows(
     )
 
 
+def fetched_state(follower: str, at: str, count: int = 1) -> None:
+    _exec(
+        """INSERT INTO sc_favorite_followings_state
+           (follower_id, fetched_at, followee_count) VALUES (?, ?, ?)""",
+        (follower, at, count),
+    )
+
+
+def _state_rows() -> list[tuple]:
+    with get_db_connection() as conn:
+        return [
+            tuple(r)
+            for r in conn.execute(
+                "SELECT follower_id, fetched_at, followee_count, status"
+                " FROM sc_favorite_followings_state ORDER BY follower_id"
+            )
+        ]
+
+
 def co_credit() -> list[dict[str, Any]]:
     with get_db_connection() as conn:
         return fc.compute_co_credit(conn)
@@ -460,6 +479,7 @@ def test_refresh_stops_on_first_error(monkeypatch: pytest.MonkeyPatch) -> None:
     add_artist("S2", "S", sc_id="2")
     stale = (NOW - timedelta(days=8)).strftime("%Y-%m-%d %H:%M:%S")
     follows("1", "keep-me", at=stale)
+    fetched_state("1", stale)
     fetched = _fake_followings(
         monkeypatch, fail_on="2"
     )  # "2" was never fetched -> first
@@ -468,6 +488,40 @@ def test_refresh_stops_on_first_error(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert refreshed == 0 and fetched == ["2"]
     assert [r[1] for r in _followings_rows()] == ["keep-me"]
+    assert _state_rows() == [("1", stale, 1, "ok")]  # failed fetch stamps nothing
+
+
+def test_empty_followings_count_as_fresh(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A favorite that follows nobody is stamped, so it is not refetched (and
+    does not hold a slot in the batch) until it is a week old."""
+    add_artist("S1", "S", sc_id="1")
+    fetched: list[str] = []
+
+    def nobody(state, user_id, max_pages):
+        fetched.append(user_id)
+        return state, [], None
+
+    monkeypatch.setattr(fc, "get_user_followings", nobody)
+    _s, refreshed = fc.refresh_favorite_followings(_state(), NOW)
+
+    now_s = NOW.strftime("%Y-%m-%d %H:%M:%S")
+    assert refreshed == 1 and _followings_rows() == []
+    assert _state_rows() == [("1", now_s, 0, "ok")]
+    fc.refresh_favorite_followings(_state(), NOW + timedelta(days=2))
+    assert fetched == ["1"]
+    fc.refresh_favorite_followings(_state(), NOW + timedelta(days=8))
+    assert fetched == ["1", "1"]
+
+
+def test_failed_fetch_keeps_state_stale(monkeypatch: pytest.MonkeyPatch) -> None:
+    add_artist("S1", "S", sc_id="1")
+    stale = (NOW - timedelta(days=8)).strftime("%Y-%m-%d %H:%M:%S")
+    fetched_state("1", stale, count=0)
+    _fake_followings(monkeypatch, fail_on="1")
+
+    _s, refreshed = fc.refresh_favorite_followings(_state(), NOW)
+
+    assert refreshed == 0 and _state_rows() == [("1", stale, 0, "ok")]
 
 
 # ---------------------------------------------------------------------------

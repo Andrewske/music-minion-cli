@@ -679,6 +679,14 @@ _V74_TABLES_DDL = (
         PRIMARY KEY (follower_id, followee_id)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS sc_favorite_followings_state (
+        follower_id TEXT PRIMARY KEY,
+        fetched_at TEXT NOT NULL,
+        followee_count INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'ok'
+    )
+    """,
     "CREATE INDEX IF NOT EXISTS idx_sc_artist_followings_followee"
     " ON sc_artist_followings(followee_id)",
     "CREATE INDEX IF NOT EXISTS idx_sc_likes_uploader"
@@ -699,6 +707,8 @@ def _migrate_v74_follow_suggestions(conn) -> None:
       recency signal for most likes.
     - Caches: name -> SC account resolutions, per-account activity, the
       followings of top-tier artists. Dismissals are permanent.
+    - sc_favorite_followings_state: when each favorite's followings were last
+      fetched in full (also when they follow nobody); drives staleness.
     """
     for table, column_ddl in (
         ("discovery_artists", "followed_at TEXT"),
