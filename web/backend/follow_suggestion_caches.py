@@ -7,8 +7,13 @@
    Misses are cached too and retried after 30 days.
 3. Activity (followers, avatar, recent uploads/reposts, label heuristic) is
    refreshed for up to 150 candidate accounts per run, each at most weekly.
+
+Errors: a request that failed never writes. An error about one account
+(404, other 4xx, bad JSON) skips that account or name; anything else (5xx,
+429, auth, network) means SoundCloud itself is unwell and stops the run.
 """
 
+import re
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from typing import Any, NamedTuple
@@ -48,25 +53,31 @@ MISS_RETRY_DAYS = 30
 ACTIVITY_MAX_AGE_DAYS = 7
 ACTIVITY_WINDOW_DAYS = 90
 ACTIVITY_PAGE = 50
-# HTTP 0: no usable token (_request_with_backoff raises without a response)
-_STOP_ERRORS = (
-    "HTTP 0",
-    "HTTP 401",
-    "HTTP 429",
-    "Authentication failed",
-    "Rate limited",
-)
+# Errors that are about the one account asked for; any other error stops a run.
+_ACCOUNT_ERROR_RE = re.compile(r"^(?:HTTP 4\d\d|.* not found|Invalid JSON response)$")
+# Within 4xx these are about the session, not the account.
+_SERVICE_4XX = ("HTTP 401", "HTTP 429")
 
 
 class CacheRunStats(NamedTuple):
     names_searched: int
     names_resolved: int
     activity_refreshed: int
+    stopped: str | None = None  # the service-wide error that ended the run
 
 
 # ---------------------------------------------------------------------------
 # Pure helpers
 # ---------------------------------------------------------------------------
+
+
+def is_service_error(error: str) -> bool:
+    """True unless the error is about the one account (404, other 4xx, bad JSON).
+
+    HTTP 0 (no usable token), 401, 429, 5xx, timeouts and connection errors
+    all say SoundCloud or the session is unwell, so the run should stop.
+    """
+    return error.startswith(_SERVICE_4XX) or not _ACCOUNT_ERROR_RE.match(error)
 
 
 def pick_search_match(users: list[dict[str, Any]], key: str) -> dict[str, Any] | None:
@@ -220,14 +231,16 @@ def _ranked_now(
     return rank_entities(tracks, resolved_context(conn, tracks, now))
 
 
-def dismiss_own_account(state: Any) -> Any:
-    """Kevin's own SC account is a permanent dismissal (never suggested)."""
+def dismiss_own_account(state: Any) -> tuple[Any, str | None]:
+    """Kevin's own SC account is a permanent dismissal (never suggested).
+
+    Returns (state, service error that should stop the run, or None)."""
     state, me, error = get_me(state)
     if error or not me or not me.get("id"):
         logger.warning(
             f"follow caches: /me lookup failed ({error}); own account not excluded"
         )
-        return state
+        return state, error if error and is_service_error(error) else None
     with get_db_connection() as conn:
         conn.execute(
             """INSERT INTO follow_suggestion_dismissals (soundcloud_user_id)
@@ -235,7 +248,7 @@ def dismiss_own_account(state: Any) -> Any:
             (str(me["id"]),),
         )
         conn.commit()
-    return state
+    return state, None
 
 
 def store_local_resolutions(
@@ -251,75 +264,110 @@ def store_local_resolutions(
     _store_resolutions(conn, local)
 
 
+def _search_resolution(users: list[dict[str, Any]], key: str) -> Resolution:
+    match = pick_search_match(users, key)
+    if not match:
+        return Resolution(None, None, None, "none", "search")
+    return Resolution(
+        str(match["id"]),
+        match.get("permalink"),
+        match.get("username"),
+        "medium",
+        "search",
+    )
+
+
 def search_names(
     state: Any, names: list[tuple[str, str]]
-) -> tuple[Any, dict[str, Resolution]]:
-    """SoundCloud user search per name; hits and misses both come back."""
+) -> tuple[Any, dict[str, Resolution], str | None]:
+    """SoundCloud user search per name: (state, hits and misses, stop error).
+
+    A failed search records nothing (not even a miss); a service-wide error
+    ends the loop."""
     found: dict[str, Resolution] = {}
     for key, display in names:
         state, users, error = search_users(state, display)
+        if error and is_service_error(error):
+            logger.warning(
+                f"follow caches: name search stopped at {display!r}: {error}"
+            )
+            return state, found, error
         if error:
             logger.warning(f"follow caches: search for {display!r} failed: {error}")
-            if error.startswith(_STOP_ERRORS):
-                break
             continue
-        match = pick_search_match(users, key)
-        found[key] = (
-            Resolution(
-                str(match["id"]),
-                match.get("permalink"),
-                match.get("username"),
-                "medium",
-                "search",
-            )
-            if match
-            else Resolution(None, None, None, "none", "search")
-        )
-    return state, found
+        found[key] = _search_resolution(users, key)
+    return state, found, None
+
+
+def fetch_activity(
+    state: Any, user_id: str, now: datetime
+) -> tuple[Any, dict[str, Any] | None, str | None]:
+    """(state, sc_account_activity row, error) from one profile and one page of
+    uploads and reposts. Any failed request means no row."""
+    state, user, error = get_user(state, user_id)
+    if error:
+        return state, None, error
+    state, uploads, error = get_user_tracks(
+        state, user_id, limit=ACTIVITY_PAGE, max_pages=1
+    )
+    if error:
+        return state, None, error
+    state, reposts, error = get_user_reposts(
+        state, user_id, limit=ACTIVITY_PAGE, max_pages=1
+    )
+    if error:
+        return state, None, error
+    return state, summarize_activity(user, uploads, reposts, now), None
 
 
 def refresh_activity(
     state: Any, conn: sqlite3.Connection, user_ids: list[str], now: datetime
-) -> tuple[Any, int]:
-    """One profile + one page of uploads and reposts per account."""
+) -> tuple[Any, int, str | None]:
+    """Refresh each account's activity row: (state, rows written, stop error).
+
+    An account whose fetch failed keeps its old row and is retried next run."""
     done = 0
     for user_id in user_ids:
-        state, user, error = get_user(state, user_id)
-        if error and error.startswith(_STOP_ERRORS):
+        state, row, error = fetch_activity(state, user_id, now)
+        if error and is_service_error(error):
             logger.warning(f"follow caches: activity stopped at {user_id}: {error}")
-            break
-        state, uploads, _ = get_user_tracks(
-            state, user_id, limit=ACTIVITY_PAGE, max_pages=1
-        )
-        state, reposts, _ = get_user_reposts(
-            state, user_id, limit=ACTIVITY_PAGE, max_pages=1
-        )
-        _store_activity(conn, user_id, summarize_activity(user, uploads, reposts, now))
+            return state, done, error
+        if error or row is None:
+            logger.warning(f"follow caches: activity skipped {user_id}: {error}")
+            continue
+        _store_activity(conn, user_id, row)
         done += 1
-    return state, done
+    return state, done, None
+
+
+def _search_stats(searched: dict[str, Resolution]) -> tuple[int, int]:
+    return len(searched), sum(1 for r in searched.values() if r.soundcloud_user_id)
+
+
+def _fill_caches(state: Any, conn: sqlite3.Connection, now: datetime) -> CacheRunStats:
+    tracks = load_evidence_tracks(conn)
+    store_local_resolutions(conn, tracks, resolved_context(conn, tracks, now))
+    ranked = _ranked_now(conn, tracks, now)
+    names = names_to_search(ranked, _fresh_misses(conn, now), NAME_SEARCH_LIMIT)
+    state, searched, stopped = search_names(state, names)
+    _store_resolutions(conn, searched)
+    if stopped:
+        return CacheRunStats(*_search_stats(searched), 0, stopped)
+    ranked = _ranked_now(conn, tracks, now)
+    due = accounts_to_refresh(ranked, _activity_fetched_at(conn), now, ACTIVITY_LIMIT)
+    state, refreshed, stopped = refresh_activity(state, conn, due, now)
+    return CacheRunStats(*_search_stats(searched), refreshed, stopped)
 
 
 def refresh_follow_suggestion_caches(state: Any) -> CacheRunStats:
-    """The nightly job: own account, name resolution, activity. May raise;
-    the feed worker wraps it."""
+    """The nightly job: own account, name resolution, activity. Stops at the
+    first service-wide error. May raise; the feed worker wraps it."""
     now = datetime.now(UTC)
-    state = dismiss_own_account(state)
-    with get_db_connection() as conn:
-        tracks = load_evidence_tracks(conn)
-        store_local_resolutions(conn, tracks, resolved_context(conn, tracks, now))
-        ranked = _ranked_now(conn, tracks, now)
-        names = names_to_search(ranked, _fresh_misses(conn, now), NAME_SEARCH_LIMIT)
-        state, searched = search_names(state, names)
-        _store_resolutions(conn, searched)
-        ranked = _ranked_now(conn, tracks, now)
-        due = accounts_to_refresh(
-            ranked, _activity_fetched_at(conn), now, ACTIVITY_LIMIT
-        )
-        state, refreshed = refresh_activity(state, conn, due, now)
-    stats = CacheRunStats(
-        len(searched),
-        sum(1 for r in searched.values() if r.soundcloud_user_id),
-        refreshed,
-    )
+    state, stopped = dismiss_own_account(state)
+    if stopped:
+        stats = CacheRunStats(0, 0, 0, stopped)
+    else:
+        with get_db_connection() as conn:
+            stats = _fill_caches(state, conn, now)
     logger.info(f"follow caches: {stats._asdict()}")
     return stats

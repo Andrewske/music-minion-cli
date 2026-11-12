@@ -167,8 +167,126 @@ class TestJob:
             patch.object(caches, "get_user_tracks") as tracks,
         ):
             stats = caches.refresh_follow_suggestion_caches(None)
-        assert stats == caches.CacheRunStats(0, 0, 0)
+        assert stats == caches.CacheRunStats(0, 0, 0, "HTTP 401")
         tracks.assert_not_called()
+
+
+def _refresh(user_ids: list[str]) -> tuple[int, str | None]:
+    with get_db_connection() as conn:
+        _s, done, stopped = caches.refresh_activity(None, conn, user_ids, NOW)
+    return done, stopped
+
+
+class TestServiceErrors:
+    def test_is_service_error(self) -> None:
+        service = ["HTTP 0", "HTTP 401", "HTTP 429", "HTTP 500", "HTTP 503",
+                   "Rate limited", "Authentication failed", "Request timed out",
+                   "Connection error", "ConnectionError", "ReadTimeout"]  # fmt: skip
+        account = ["HTTP 404", "HTTP 403", "HTTP 400", "User 70 not found",
+                   "Invalid JSON response"]  # fmt: skip
+        assert all(caches.is_service_error(e) for e in service)
+        assert not any(caches.is_service_error(e) for e in account)
+
+    @staticmethod
+    def _old_activity(user_id: str) -> None:
+        _exec(
+            """INSERT INTO sc_account_activity
+                (soundcloud_user_id, username, uploads_90d, reposts_90d,
+                 last_upload_at, fetched_at)
+            VALUES (?, 'Old', 7, 3, '2026-10-01T00:00:00+00:00', '2026-01-01 00:00:00')""",
+            (user_id,),
+        )
+
+    @staticmethod
+    def _activity(user_id: str) -> tuple:
+        return _rows(
+            f"""SELECT username, uploads_90d, reposts_90d, last_upload_at, fetched_at
+            FROM sc_account_activity WHERE soundcloud_user_id = '{user_id}'"""
+        )[0]
+
+    def test_failed_uploads_fetch_keeps_old_row(self) -> None:
+        self._old_activity("70")
+        before = self._activity("70")
+        with (
+            patch.object(caches, "get_user", return_value=(None, {"id": 70}, None)),
+            patch.object(caches, "get_user_tracks", return_value=(None, [], "User 70 not found")),
+            patch.object(caches, "get_user_reposts", return_value=(None, [], None)),
+        ):  # fmt: skip
+            done, stopped = _refresh(["70"])
+        assert (done, stopped) == (0, None)
+        assert self._activity("70") == before
+
+    def test_failed_reposts_fetch_skips_account_and_continues(self) -> None:
+        self._old_activity("70")
+        before = self._activity("70")
+        reposts = [(None, [], "HTTP 404"), (None, [], None)]
+        with (
+            patch.object(caches, "get_user", return_value=(None, {"id": 1}, None)),
+            patch.object(caches, "get_user_tracks", return_value=(None, [], None)),
+            patch.object(caches, "get_user_reposts", side_effect=reposts),
+        ):
+            done, stopped = _refresh(["70", "71"])
+        assert (done, stopped) == (1, None)
+        assert self._activity("70") == before
+        assert self._activity("71")[1] == 0
+
+    def test_profile_5xx_stops_the_run(self) -> None:
+        self._old_activity("70")
+        before = self._activity("70")
+        with (
+            patch.object(caches, "get_user", return_value=(None, None, "HTTP 503")) as user,
+            patch.object(caches, "get_user_tracks") as tracks,
+        ):  # fmt: skip
+            done, stopped = _refresh(["70", "71", "72"])
+        assert (done, stopped) == (0, "HTTP 503")
+        assert user.call_count == 1
+        tracks.assert_not_called()
+        assert self._activity("70") == before
+
+    def test_uploads_connection_error_stops_the_run(self) -> None:
+        with (
+            patch.object(caches, "get_user", return_value=(None, {"id": 1}, None)) as user,
+            patch.object(caches, "get_user_tracks", return_value=(None, [], "Connection error")),
+        ):  # fmt: skip
+            done, stopped = _refresh(["70", "71"])
+        assert (done, stopped) == (0, "Connection error")
+        assert user.call_count == 1
+
+    def test_search_5xx_stops_without_recording_a_miss(self) -> None:
+        with patch.object(
+            caches, "search_users", return_value=(None, [], "HTTP 503")
+        ) as search:
+            _s, found, stopped = caches.search_names(None, [("a", "A"), ("b", "B")])
+        assert (found, stopped) == ({}, "HTTP 503")
+        assert search.call_count == 1
+
+    def test_search_account_error_records_nothing_and_continues(self) -> None:
+        results = [(None, [], "HTTP 400"), (None, [{"id": 5, "username": "B"}], None)]
+        with patch.object(caches, "search_users", side_effect=results):
+            _s, found, stopped = caches.search_names(None, [("a", "A"), ("b", "B")])
+        assert stopped is None
+        assert set(found) == {"b"} and found["b"].soundcloud_user_id == "5"
+
+    def test_search_outage_skips_activity_and_caches_no_miss(self) -> None:
+        _seed_likes()
+        with (
+            patch.object(caches, "get_me", return_value=(None, {"id": 555}, None)),
+            patch.object(caches, "search_users", return_value=(None, [], "HTTP 502")),
+            patch.object(caches, "get_user") as user,
+        ):
+            stats = caches.refresh_follow_suggestion_caches(None)
+        assert stats == caches.CacheRunStats(0, 0, 0, "HTTP 502")
+        user.assert_not_called()
+        assert _rows("SELECT 1 FROM sc_name_resolutions WHERE source = 'search'") == []
+
+    def test_me_outage_stops_before_any_lookup(self) -> None:
+        with (
+            patch.object(caches, "get_me", return_value=(None, None, "HTTP 500")),
+            patch.object(caches, "search_users") as search,
+        ):
+            stats = caches.refresh_follow_suggestion_caches(None)
+        assert stats.stopped == "HTTP 500"
+        search.assert_not_called()
 
 
 class TestWorkerHook:
