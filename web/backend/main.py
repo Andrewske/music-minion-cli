@@ -110,6 +110,9 @@ from .routers import (
     stories,
     insights,
     cleanup,
+    follow_sync,
+    follow_suggestions,
+    follow_connections,
 )
 from .routers.playlists import router as playlists_router
 
@@ -137,6 +140,9 @@ app.include_router(stories.router)
 app.include_router(insights.router)
 app.include_router(cleanup.router)
 app.include_router(app_updates.router)
+app.include_router(follow_sync.router)
+app.include_router(follow_suggestions.router)
+app.include_router(follow_connections.router)
 
 
 @app.get("/health")
