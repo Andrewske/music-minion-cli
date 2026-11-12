@@ -628,14 +628,38 @@ def test_account_error_backs_off_a_day(monkeypatch: pytest.MonkeyPatch) -> None:
     assert ("1", _ts(NOW + timedelta(hours=25)), 1, "ok") in _state_rows()
 
 
-def test_all_account_errors_count_as_tonights_batch(
+def test_account_error_alone_is_not_retried_hourly(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     add_artist("S1", "S", sc_id="1")
     fetched = _fake_followings(monkeypatch, fail_on="1", error="HTTP 404")
     fc.refresh_favorite_followings(_state(), NOW)
     fc.refresh_favorite_followings(_state(), NOW + timedelta(hours=2))
-    assert fetched == ["1"]
+    assert fetched == ["1"]  # the per-favorite backoff holds it
+
+
+def test_outage_after_account_error_retries_next_tick(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An account error must not close tonight's gate: when the batch then
+    stops on an outage, the untried favorites go again on the next tick."""
+    for sc_id in "123":
+        add_artist(f"S{sc_id}", "S", sc_id=sc_id)
+    calls: list[str] = []
+    errors = {"1": "HTTP 404", "2": "HTTP 503"}
+
+    def fake(state, user_id, max_pages):
+        calls.append(user_id)
+        return state, [], errors.get(user_id)
+
+    monkeypatch.setattr(fc, "get_user_followings", fake)
+    fc.refresh_favorite_followings(_state(), NOW)
+    assert calls == ["1", "2"]
+
+    errors.pop("2")  # SoundCloud is back
+    calls.clear()
+    _s, refreshed = fc.refresh_favorite_followings(_state(), NOW + timedelta(hours=1))
+    assert sorted(calls) == ["2", "3"] and refreshed == 2
 
 
 @pytest.mark.parametrize("error", ["HTTP 503", "HTTP 429", "HTTP 0", "ReadTimeout"])

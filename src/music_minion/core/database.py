@@ -730,8 +730,6 @@ def _migrate_v74_follow_suggestions(conn) -> None:
         if "ON sc_likes" in ddl and not _table_exists(conn, "sc_likes"):
             continue
         conn.execute(ddl)
-    for column_ddl in ("last_error_at TEXT", "last_error TEXT"):
-        _add_column_if_missing(conn, "sc_favorite_followings_state", column_ddl)
 
 
 def _migrate_v64_track_predictions(conn) -> None:

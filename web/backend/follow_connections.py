@@ -569,11 +569,11 @@ def _refresh_plan(conn: sqlite3.Connection, now: datetime) -> list[str]:
 
     Freshness comes from sc_favorite_followings_state, so a favorite that
     follows nobody counts as fetched instead of being retried every tick.
-    A batch that only hit account-level failures also counts as tonight's."""
+    Only successful fetches close tonight's gate: a batch that failed (an
+    outage, or only account-level errors, which back off per favorite)
+    stays eligible next tick."""
     (last,) = conn.execute(
-        """SELECT MAX(ts) FROM (
-               SELECT fetched_at AS ts FROM sc_favorite_followings_state
-               UNION ALL SELECT last_error_at FROM sc_favorite_followings_state)"""
+        "SELECT MAX(fetched_at) FROM sc_favorite_followings_state"
     ).fetchone()
     if not refresh_due(last, now):
         return []
