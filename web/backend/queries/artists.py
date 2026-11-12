@@ -980,100 +980,223 @@ def get_pareto_artists(conn: sqlite3.Connection) -> dict[str, Any]:
     }
 
 
+# ---------------------------------------------------------------------------
+# Followings sync
+# ---------------------------------------------------------------------------
+
+# A fetch under this share of the currently followed count is treated as
+# truncated: syncing it would unfollow everything it is missing.
+FOLLOWINGS_MIN_FETCH_RATIO = 0.8
+
+
+def followings_abort_reason(fetched: int, currently_followed: int) -> str | None:
+    """Pure: why a followings fetch is unsafe to sync, or None when it is fine."""
+    if fetched == 0:
+        return "fetch returned no followings"
+    if fetched < currently_followed * FOLLOWINGS_MIN_FETCH_RATIO:
+        return (
+            f"fetch returned {fetched} followings, under "
+            f"{FOLLOWINGS_MIN_FETCH_RATIO:.0%} of the {currently_followed} followed"
+        )
+    return None
+
+
+def _following_fields(user: dict[str, Any]) -> dict[str, Any]:
+    """Map a SoundCloud user dict to discovery_artists fields.
+
+    display_name is None when SC gave no name, so updates keep the old one.
+    """
+    sc_id = str(user.get("id", "") or "")
+    return {
+        "sc_id": sc_id,
+        "username": user.get("permalink", "") or user.get("username", "") or sc_id,
+        "display_name": user.get("full_name") or user.get("username") or None,
+        "avatar_url": user.get("avatar_url"),
+        "follower_count": user.get("followers_count"),
+    }
+
+
+def _insert_following(
+    conn: sqlite3.Connection, fields: dict[str, Any], follow_order: int | None
+) -> int:
+    """Insert a followed artist at the end of the ranking; returns its id."""
+    slug = fields["username"].lower().strip()
+    taken = conn.execute(
+        "SELECT 1 FROM discovery_artists WHERE slug = ?", (slug,)
+    ).fetchone()
+    if taken:
+        slug = f"{slug}-{fields['sc_id']}"
+    next_rank: int = conn.execute(
+        "SELECT COALESCE(MAX(ranking), 0) + 1 FROM discovery_artists"
+    ).fetchone()[0]
+    cursor = conn.execute(
+        """
+        INSERT INTO discovery_artists
+            (soundcloud_user_id, slug, display_name, ranking, avatar_url,
+             follower_count, is_following, followed_at, follow_order, last_sc_sync_at)
+        VALUES (?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)
+        """,
+        (
+            fields["sc_id"],
+            slug,
+            fields["display_name"] or fields["username"],
+            next_rank,
+            fields["avatar_url"],
+            fields["follower_count"],
+            follow_order,
+        ),
+    )
+    return int(cursor.lastrowid or 0)
+
+
+def _update_following(
+    conn: sqlite3.Connection,
+    artist_id: int,
+    fields: dict[str, Any],
+    follow_order: int | None,
+    flipped: bool,
+) -> None:
+    """Mark a known artist followed; stamp followed_at only on a flip, once."""
+    conn.execute(
+        """
+        UPDATE discovery_artists
+        SET is_following = 1,
+            avatar_url = COALESCE(?, avatar_url),
+            follower_count = COALESCE(?, follower_count),
+            display_name = COALESCE(?, display_name),
+            follow_order = COALESCE(?, follow_order),
+            followed_at = CASE WHEN ? THEN COALESCE(followed_at, CURRENT_TIMESTAMP)
+                               ELSE followed_at END,
+            last_sc_sync_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (
+            fields["avatar_url"],
+            fields["follower_count"],
+            fields["display_name"],
+            follow_order,
+            flipped,
+            artist_id,
+        ),
+    )
+
+
+def _artist_id_for_sc_user(conn: sqlite3.Connection, sc_id: str) -> int | None:
+    row = conn.execute(
+        "SELECT id FROM discovery_artists WHERE soundcloud_user_id = ?", (sc_id,)
+    ).fetchone()
+    return int(row[0]) if row else None
+
+
+def tier_new_follows(conn: sqlite3.Connection, artist_ids: list[int]) -> int:
+    """Give untiered new follows tier C, then recompute rankings once.
+
+    Same effect as set_artist_tier() per row, without one full ranking pass
+    per artist. A re-follow that already has a tier keeps it. Returns rows tiered.
+    """
+    if not artist_ids:
+        return 0
+    placeholders = ",".join("?" * len(artist_ids))
+    cursor = conn.execute(
+        f"UPDATE discovery_artists SET tier = 'C' "
+        f"WHERE id IN ({placeholders}) AND COALESCE(tier, '') = ''",
+        artist_ids,
+    )
+    if cursor.rowcount:
+        recompute_tier_rankings(conn)
+    return cursor.rowcount
+
+
+def _write_followings(
+    conn: sqlite3.Connection, followings: list[dict[str, Any]], was_following: set[str]
+) -> tuple[int, list[int]]:
+    """Upsert each fetched account; returns (rows inserted, newly followed ids)."""
+    inserted = 0
+    new_ids: list[int] = []
+    for order, user in enumerate(followings):
+        fields = _following_fields(user)
+        if not fields["sc_id"]:
+            logger.warning(f"sync_followings: skipping user with no id: {user}")
+            continue
+        artist_id = _artist_id_for_sc_user(conn, fields["sc_id"])
+        if artist_id is None:
+            new_ids.append(_insert_following(conn, fields, order))
+            inserted += 1
+            continue
+        flipped = fields["sc_id"] not in was_following
+        _update_following(conn, artist_id, fields, order, flipped)
+        if flipped:
+            new_ids.append(artist_id)
+    return inserted, new_ids
+
+
+def _followed_sc_ids(conn: sqlite3.Connection) -> tuple[int, set[str]]:
+    """(followed row count, their SC user ids) before a sync."""
+    rows = conn.execute(
+        "SELECT soundcloud_user_id FROM discovery_artists WHERE is_following = 1"
+    ).fetchall()
+    return len(rows), {str(r[0]) for r in rows if r[0]}
+
+
 def sync_followings(
     conn: sqlite3.Connection,
     followings: list[dict[str, Any]],
-) -> dict[str, int]:
-    """Upsert SoundCloud followings into discovery_artists.
+) -> dict[str, Any]:
+    """Upsert SoundCloud followings into discovery_artists (caller commits).
 
-    Strategy:
-    1. Mark ALL currently is_following=1 rows as is_following=0.
-    2. For each following: UPDATE if soundcloud_user_id matches, else INSERT.
-    3. All done in a single transaction (caller must commit).
+    Rows missing from the fetch lose is_following, so an empty or truncated
+    fetch aborts without writing (see followings_abort_reason). Fetched rows
+    get follow_order = their position in the response; newly followed rows
+    get followed_at (if unset) and tier C (if untiered).
 
     Returns:
-        {followings_synced, new_artists, unfollowed_remotely}
+        {followings_synced, new_artists, unfollowed_remotely, tiered, aborted}
     """
-    # Count artists that were following before sync
-    cursor = conn.execute(
+    was_count, was_following = _followed_sc_ids(conn)
+    reason = followings_abort_reason(len(followings), was_count)
+    if reason:
+        logger.warning(f"sync_followings: aborted without writing, {reason}")
+        return {
+            "followings_synced": 0,
+            "new_artists": 0,
+            "unfollowed_remotely": 0,
+            "tiered": 0,
+            "aborted": reason,
+        }
+    conn.execute(
+        "UPDATE discovery_artists SET is_following = 0, follow_order = NULL "
+        "WHERE is_following = 1 OR follow_order IS NOT NULL"
+    )
+    inserted, new_ids = _write_followings(conn, followings, was_following)
+    tiered = tier_new_follows(conn, new_ids)
+    now_following: int = conn.execute(
         "SELECT COUNT(*) FROM discovery_artists WHERE is_following = 1"
-    )
-    was_following_count: int = cursor.fetchone()[0]
-
-    # Step 1: Reset all is_following flags
-    conn.execute("UPDATE discovery_artists SET is_following = 0 WHERE is_following = 1")
-
-    inserted = 0
-    updated = 0
-
-    for user in followings:
-        sc_id = str(user.get("id", ""))
-        username = user.get("permalink", "") or user.get("username", "") or sc_id
-        display_name = user.get("full_name", "") or user.get("username", "") or username
-        avatar_url: str | None = user.get("avatar_url")
-        follower_count: int | None = user.get("followers_count")
-
-        if not sc_id:
-            logger.warning(f"sync_followings: skipping user with no id: {user}")
-            continue
-
-        # Check if artist exists by soundcloud_user_id
-        row = conn.execute(
-            "SELECT id FROM discovery_artists WHERE soundcloud_user_id = ?",
-            (sc_id,),
-        ).fetchone()
-
-        if row:
-            conn.execute(
-                """
-                UPDATE discovery_artists
-                SET is_following = 1,
-                    avatar_url = ?,
-                    follower_count = ?,
-                    display_name = ?,
-                    last_sc_sync_at = CURRENT_TIMESTAMP
-                WHERE soundcloud_user_id = ?
-                """,
-                (avatar_url, follower_count, display_name, sc_id),
-            )
-            updated += 1
-        else:
-            # Derive slug from username (permalink is the SC slug)
-            slug = username.lower().strip()
-            # Find a unique slug — append SC id suffix if collision
-            existing_slug = conn.execute(
-                "SELECT id FROM discovery_artists WHERE slug = ?", (slug,)
-            ).fetchone()
-            if existing_slug:
-                slug = f"{slug}-{sc_id}"
-
-            # New followings get a ranking at the end of the current list
-            max_rank_row = conn.execute(
-                "SELECT COALESCE(MAX(ranking), 0) FROM discovery_artists"
-            ).fetchone()
-            next_rank: int = max_rank_row[0] + 1
-
-            conn.execute(
-                """
-                INSERT INTO discovery_artists
-                    (soundcloud_user_id, slug, display_name, ranking,
-                     avatar_url, follower_count, is_following, last_sc_sync_at)
-                VALUES (?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
-                """,
-                (sc_id, slug, display_name, next_rank, avatar_url, follower_count),
-            )
-            inserted += 1
-
-    unfollowed_remotely = max(0, was_following_count - updated)
-
-    logger.info(
-        f"sync_followings: {len(followings)} fetched, "
-        f"{updated} updated, {inserted} inserted, "
-        f"{unfollowed_remotely} newly unfollowed"
-    )
-
-    return {
-        "followings_synced": updated + inserted,
+    ).fetchone()[0]
+    kept = len(was_following & {str(u.get("id", "")) for u in followings})
+    result = {
+        "followings_synced": now_following,
         "new_artists": inserted,
-        "unfollowed_remotely": unfollowed_remotely,
+        "unfollowed_remotely": was_count - kept,
+        "tiered": tiered,
+        "aborted": None,
     }
+    logger.info(f"sync_followings: {len(followings)} fetched, {result}")
+    return result
+
+
+def record_new_follow(conn: sqlite3.Connection, sc_user: dict[str, Any]) -> int:
+    """Upsert a just-followed SC account as followed (caller commits).
+
+    Sets followed_at if unset and tier C if untiered. Returns the row id.
+    """
+    fields = _following_fields(sc_user)
+    if not fields["sc_id"]:
+        raise ValueError(f"record_new_follow: SC user has no id: {sc_user}")
+    artist_id = _artist_id_for_sc_user(conn, fields["sc_id"])
+    if artist_id is None:
+        artist_id = _insert_following(conn, fields, follow_order=None)
+    else:
+        _update_following(conn, artist_id, fields, follow_order=None, flipped=True)
+    tier_new_follows(conn, [artist_id])
+    logger.info(f"record_new_follow: sc_user={fields['sc_id']} artist={artist_id}")
+    return artist_id
