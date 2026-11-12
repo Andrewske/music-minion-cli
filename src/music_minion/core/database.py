@@ -19,7 +19,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 73  # organizer: multiple named sessions per playlist
+SCHEMA_VERSION = 74  # follow suggestions: follow dates, like uploaders, caches
 
 
 # Initial top 50 curated emojis for music reactions
@@ -626,6 +626,88 @@ def _migrate_v73_bucket_session_names(conn) -> None:
         CREATE INDEX IF NOT EXISTS idx_bucket_sessions_playlist_status
         ON bucket_sessions(playlist_id, status)
     """)
+
+
+_V74_TABLES_DDL = (
+    """
+    CREATE TABLE IF NOT EXISTS sc_name_resolutions (
+        name_key TEXT PRIMARY KEY,
+        soundcloud_user_id TEXT,
+        permalink TEXT,
+        display_name TEXT,
+        confidence TEXT NOT NULL,
+        source TEXT NOT NULL,
+        resolved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS sc_account_activity (
+        soundcloud_user_id TEXT PRIMARY KEY,
+        permalink TEXT,
+        username TEXT,
+        avatar_url TEXT,
+        followers INTEGER,
+        last_upload_at TEXT,
+        last_repost_at TEXT,
+        uploads_90d INTEGER NOT NULL DEFAULT 0,
+        reposts_90d INTEGER NOT NULL DEFAULT 0,
+        is_label INTEGER,
+        fetched_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS follow_suggestion_dismissals (
+        soundcloud_user_id TEXT PRIMARY KEY,
+        dismissed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS follow_suggestion_label_overrides (
+        soundcloud_user_id TEXT PRIMARY KEY,
+        is_label INTEGER NOT NULL CHECK (is_label IN (0, 1)),
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS sc_artist_followings (
+        follower_id TEXT NOT NULL,
+        followee_id TEXT NOT NULL,
+        followee_permalink TEXT,
+        followee_username TEXT,
+        followee_followers INTEGER,
+        fetched_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (follower_id, followee_id)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_sc_artist_followings_followee"
+    " ON sc_artist_followings(followee_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sc_likes_uploader"
+    " ON sc_likes(uploader_soundcloud_id)",
+)
+
+
+def _migrate_v74_follow_suggestions(conn) -> None:
+    """Schema for follow suggestions and the nightly followings sync.
+
+    - discovery_artists.followed_at / follow_order: when (or in what order)
+      a follow was first seen. NULL for the March 2026 bulk import.
+    - sc_likes uploader columns: the SC account that uploaded a liked track.
+    - Caches: name -> SC account resolutions, per-account activity, the
+      followings of top-tier artists. Dismissals are permanent.
+    """
+    for table, column_ddl in (
+        ("discovery_artists", "followed_at TEXT"),
+        ("discovery_artists", "follow_order INTEGER"),
+        ("sc_likes", "uploader_soundcloud_id TEXT"),
+        ("sc_likes", "uploader_permalink TEXT"),
+        ("sc_likes", "uploader_username TEXT"),
+    ):
+        if _table_exists(conn, table):
+            _add_column_if_missing(conn, table, column_ddl)
+    for ddl in _V74_TABLES_DDL:
+        if "ON sc_likes" in ddl and not _table_exists(conn, "sc_likes"):
+            continue
+        conn.execute(ddl)
 
 
 def _migrate_v64_track_predictions(conn) -> None:
@@ -3611,6 +3693,14 @@ def migrate_database(conn, current_version: int) -> None:
         conn.execute("RELEASE SAVEPOINT migrate_v73")
         conn.commit()
         logger.info("  ✓ Migration to v73 complete: bucket_sessions name/last_opened_at")
+
+    if current_version < 74:
+        logger.info("Running migration to v74: follow suggestions...")
+        conn.execute("SAVEPOINT migrate_v74")
+        _migrate_v74_follow_suggestions(conn)
+        conn.execute("RELEASE SAVEPOINT migrate_v74")
+        conn.commit()
+        logger.info("  ✓ Migration to v74 complete: follow suggestions schema")
 
 
 def ensure_schema_not_newer(conn: sqlite3.Connection, db_path: Path) -> None:
