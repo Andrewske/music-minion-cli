@@ -4,9 +4,18 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 from music_minion.core.database import get_db_connection
+from music_minion.domain.library.providers.soundcloud import api as sc_api
 from web.backend import follow_suggestion_caches as caches
 
 NOW = datetime(2026, 11, 11, tzinfo=UTC)
+
+
+class _Resp:
+    def __init__(self, data: object) -> None:
+        self._data = data
+
+    def json(self) -> object:
+        return self._data
 
 
 def _exec(sql: str, params: tuple = ()) -> None:
@@ -18,6 +27,11 @@ def _exec(sql: str, params: tuple = ()) -> None:
 def _rows(sql: str) -> list[tuple]:
     with get_db_connection() as conn:
         return [tuple(r) for r in conn.execute(sql).fetchall()]
+
+
+def _profile(_state: object, user_id: str) -> tuple[None, dict, None]:
+    """get_user stub: the profile of whichever account was asked for."""
+    return None, {"id": int(user_id), "username": f"U{user_id}"}, None
 
 
 def _sc_time(days_ago: int) -> str:
@@ -135,11 +149,10 @@ def _seed_likes() -> None:
 
 class TestJob:
     def _run(self, search_result: list[dict]) -> caches.CacheRunStats:
-        user = {"id": 70, "username": "PHRVA", "followers_count": 1000}
         with (
             patch.object(caches, "get_me", return_value=(None, {"id": 555}, None)),
             patch.object(caches, "search_users", return_value=(None, search_result, None)) as search,
-            patch.object(caches, "get_user", return_value=(None, user, None)),
+            patch.object(caches, "get_user", side_effect=_profile),
             patch.object(caches, "get_user_tracks", return_value=(None, [], None)),
             patch.object(caches, "get_user_reposts", return_value=(None, [], None)),
         ):  # fmt: skip
@@ -197,7 +210,8 @@ class TestServiceErrors:
                    "Rate limited", "Authentication failed", "Request timed out",
                    "Connection error", "ConnectionError", "ReadTimeout"]  # fmt: skip
         account = ["HTTP 404", "HTTP 403", "HTTP 400", "User 70 not found",
-                   "Invalid JSON response"]  # fmt: skip
+                   "Invalid JSON response", "Malformed response: {'errors': []}",
+                   "followings of 7 incomplete: pagination repeated x"]  # fmt: skip
         assert all(caches.is_service_error(e) for e in service)
         assert not any(caches.is_service_error(e) for e in account)
 
@@ -235,7 +249,7 @@ class TestServiceErrors:
         before = self._activity("70")
         reposts = [(None, [], "HTTP 404"), (None, [], None)]
         with (
-            patch.object(caches, "get_user", return_value=(None, {"id": 1}, None)),
+            patch.object(caches, "get_user", side_effect=_profile),
             patch.object(caches, "get_user_tracks", return_value=(None, [], None)),
             patch.object(caches, "get_user_reposts", side_effect=reposts),
         ):
@@ -243,6 +257,35 @@ class TestServiceErrors:
         assert (done, stopped) == (1, None)
         assert self._activity("70") == before
         assert self._activity("71")[1] == 0
+
+    def test_errors_body_keeps_old_row_and_continues(self) -> None:
+        """An HTTP 200 {"errors": [...]} feed is malformed, not an empty feed:
+        the account keeps its 7/3 counts and old fetched_at; the next one runs."""
+        self._old_activity("70")
+        before = self._activity("70")
+        errors_body = _Resp({"errors": [{"error_message": "nope"}]})
+        good = _Resp({"collection": [{"id": 1, "created_at": _sc_time(3)}]})
+        with (
+            patch.object(caches, "get_user", side_effect=_profile),
+            patch.object(sc_api, "_request_with_backoff",
+                         side_effect=[(None, errors_body), (None, good), (None, good)]),
+        ):  # fmt: skip
+            done, stopped = _refresh(["70", "71"])
+        assert (done, stopped) == (1, None)
+        assert self._activity("70") == before
+        assert self._activity("71")[1:3] == (1, 1)
+
+    def test_profile_for_another_account_keeps_old_row(self) -> None:
+        self._old_activity("70")
+        before = self._activity("70")
+        with (
+            patch.object(caches, "get_user", return_value=(None, {"id": 99}, None)),
+            patch.object(caches, "get_user_tracks") as tracks,
+        ):
+            done, stopped = _refresh(["70"])
+        assert (done, stopped) == (0, None)
+        assert self._activity("70") == before
+        tracks.assert_not_called()
 
     def test_profile_5xx_stops_the_run(self) -> None:
         self._old_activity("70")
@@ -259,7 +302,7 @@ class TestServiceErrors:
 
     def test_uploads_connection_error_stops_the_run(self) -> None:
         with (
-            patch.object(caches, "get_user", return_value=(None, {"id": 1}, None)) as user,
+            patch.object(caches, "get_user", side_effect=_profile) as user,
             patch.object(caches, "get_user_tracks", return_value=(None, [], "Connection error")),
         ):  # fmt: skip
             done, stopped = _refresh(["70", "71"])
@@ -311,3 +354,28 @@ class TestWorkerHook:
             caches, "refresh_follow_suggestion_caches", side_effect=RuntimeError("boom")
         ):
             sc_feed_worker._refresh_follow_suggestion_caches(None)  # no raise
+
+
+class TestTrackPageShape:
+    def test_errors_body_is_malformed_not_empty(self) -> None:
+        body = (None, _Resp({"errors": [{"error_message": "x"}]}))
+        for fetch in (sc_api.get_user_tracks, sc_api.get_user_reposts):
+            with patch.object(sc_api, "_request_with_backoff", return_value=body):
+                _s, items, error = fetch(None, "70", max_pages=1)
+            assert items == [] and error.startswith("Malformed response")
+            assert not caches.is_service_error(error)
+
+    def test_non_object_items_are_malformed(self) -> None:
+        body = (None, _Resp({"collection": [{"id": 1}, "junk"]}))
+        with patch.object(sc_api, "_request_with_backoff", return_value=body):
+            _s, items, error = sc_api.get_user_tracks(None, "70", max_pages=1)
+        assert items == [] and error.startswith("Malformed response")
+
+    def test_list_and_paged_bodies_still_parse(self) -> None:
+        pages = [
+            (None, _Resp({"collection": [{"id": 1}, None], "next_href": "https://n"})),
+            (None, _Resp([{"id": 2}])),
+        ]
+        with patch.object(sc_api, "_request_with_backoff", side_effect=pages):
+            _s, items, error = sc_api.get_user_reposts(None, "70", max_pages=3)
+        assert error is None and [t["id"] for t in items] == [1, 2]

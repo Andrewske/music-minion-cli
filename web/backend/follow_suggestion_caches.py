@@ -9,11 +9,12 @@
    refreshed for up to 150 candidate accounts per run, each at most weekly.
 
 Errors: a request that failed never writes. An error about one account
-(404, other 4xx, bad JSON) skips that account or name; anything else (5xx,
-429, auth, network) means SoundCloud itself is unwell and stops the run.
+(404, other 4xx, bad JSON, a malformed payload or a profile for some other
+account) skips that account or name and keeps its old row; anything else
+(5xx, 429, auth, network) means SoundCloud itself is unwell and stops the
+run (see sc_errors).
 """
 
-import re
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from typing import Any, NamedTuple
@@ -44,6 +45,7 @@ from web.backend.queries.follow_suggestions import (
     load_evidence_tracks,
     resolved_context,
 )
+from web.backend.sc_errors import is_service_error
 from web.backend.soundcloud_metadata import raw_repost_timestamp
 
 NAME_SEARCH_LIMIT = 100
@@ -53,10 +55,6 @@ MISS_RETRY_DAYS = 30
 ACTIVITY_MAX_AGE_DAYS = 7
 ACTIVITY_WINDOW_DAYS = 90
 ACTIVITY_PAGE = 50
-# Errors that are about the one account asked for; any other error stops a run.
-_ACCOUNT_ERROR_RE = re.compile(r"^(?:HTTP 4\d\d|.* not found|Invalid JSON response)$")
-# Within 4xx these are about the session, not the account.
-_SERVICE_4XX = ("HTTP 401", "HTTP 429")
 
 
 class CacheRunStats(NamedTuple):
@@ -69,15 +67,6 @@ class CacheRunStats(NamedTuple):
 # ---------------------------------------------------------------------------
 # Pure helpers
 # ---------------------------------------------------------------------------
-
-
-def is_service_error(error: str) -> bool:
-    """True unless the error is about the one account (404, other 4xx, bad JSON).
-
-    HTTP 0 (no usable token), 401, 429, 5xx, timeouts and connection errors
-    all say SoundCloud or the session is unwell, so the run should stop.
-    """
-    return error.startswith(_SERVICE_4XX) or not _ACCOUNT_ERROR_RE.match(error)
 
 
 def pick_search_match(users: list[dict[str, Any]], key: str) -> dict[str, Any] | None:
@@ -307,6 +296,8 @@ def fetch_activity(
     state, user, error = get_user(state, user_id)
     if error:
         return state, None, error
+    if not user or str(user.get("id")) != user_id:
+        return state, None, f"Malformed response: profile is not {user_id}"
     state, uploads, error = get_user_tracks(
         state, user_id, limit=ACTIVITY_PAGE, max_pages=1
     )

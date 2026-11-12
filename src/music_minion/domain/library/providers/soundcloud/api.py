@@ -1253,6 +1253,29 @@ def create_playlist(
 MAX_REPOSTS_PAGES = 3  # Cap pagination per artist (600 reposts max)
 
 
+def _track_page(
+    data: Any,
+) -> tuple[list[dict[str, Any]], Optional[str], Optional[str]]:
+    """One uploads/reposts page -> (tracks, next_href, error).
+
+    A bare list or a {collection: [...], next_href} page is accepted (null
+    items dropped). Anything else, e.g. an HTTP 200 {"errors": [...]} body,
+    is a "Malformed response" error, never an empty feed.
+    """
+    if isinstance(data, list):
+        items, next_href = data, None
+    elif isinstance(data, dict) and isinstance(data.get("collection"), list):
+        items, next_href = data["collection"], data.get("next_href")
+    else:
+        return [], None, f"Malformed response: {data!r:.80}"
+    items = [item for item in items if item is not None]
+    if not all(isinstance(item, dict) for item in items):
+        return [], None, "Malformed response: non-object track item"
+    if next_href is not None and not isinstance(next_href, str):
+        return [], None, f"Malformed response: next_href {next_href!r:.80}"
+    return items, next_href or None, None
+
+
 def get_user_reposts(
     state: ProviderState,
     user_id: str,
@@ -1304,13 +1327,10 @@ def get_user_reposts(
         except (json.JSONDecodeError, ValueError):
             return state, results, "Invalid JSON response"
 
-        if isinstance(data, list):
-            results.extend(data)
-            url = None
-        else:
-            results.extend(data.get("collection", []) or [])
-            url = data.get("next_href")
-
+        items, url, shape_error = _track_page(data)
+        if shape_error:
+            return state, results, shape_error
+        results.extend(items)
         params = {}  # next_href already contains pagination params
 
     logger.debug(
@@ -1420,13 +1440,10 @@ def get_user_tracks(
         except (json.JSONDecodeError, ValueError):
             return state, results, "Invalid JSON response"
 
-        if isinstance(data, list):
-            results.extend(data)
-            url = None
-        else:
-            results.extend(data.get("collection", []) or [])
-            url = data.get("next_href")
-
+        items, url, shape_error = _track_page(data)
+        if shape_error:
+            return state, results, shape_error
+        results.extend(items)
         params = {}  # next_href already contains pagination params
 
     logger.debug(
