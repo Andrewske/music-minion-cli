@@ -125,10 +125,10 @@ def accounts_to_refresh(
 
 
 def looks_like_label(username: str | None, uploads: list[dict[str, Any]]) -> bool:
-    """Most recent uploads credit someone other than the account itself."""
-    credits = [
-        f"{t.get('metadata_artist') or ''} {t.get('title') or ''}" for t in uploads
-    ]
+    """Most recent uploads explicitly credit someone other than the account.
+
+    An upload with no metadata_artist and no 'X - Title' credit is unknown."""
+    credits = [(t.get("metadata_artist"), t.get("title") or "") for t in uploads]
     return credits_others({name_key(username)}, credits)
 
 

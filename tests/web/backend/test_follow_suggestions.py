@@ -331,6 +331,13 @@ class TestMergeAndLabels:
         assert by_key["9"]["is_label"] is True
         assert by_key["8"]["is_label"] is False
 
+    def test_liked_uploads_without_credits_are_not_a_label(self) -> None:
+        eater = ("9", "eater", "Eater")
+        tracks = [_track(str(i), "", t, uploader=eater)
+                  for i, t in enumerate(("Echoes", "Orbit", "Pulse"))]  # fmt: skip
+        assert _by_key(tracks)["9"]["is_label"] is False
+        assert fs.credits_others({"eater"}, [("", "A - Song")] * 3) is True
+
     def test_override_marks_name_entry_as_label(self) -> None:
         tracks = [_track("1", "Promo"), _track("2", "Promo")]
         ctx = _ctx(label_overrides={"name:promo": True})

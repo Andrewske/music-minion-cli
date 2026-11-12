@@ -64,6 +64,7 @@ LABEL_NAME_RE = re.compile(
 )
 _SLUG_SUFFIX_RE = re.compile(r"(?:music|official|musik|dj|beats|producer)+$")
 _SLUG_PREFIX_RE = re.compile(r"^(?:dj|its|thisis|iam)")
+_TITLE_CREDIT_RE = re.compile(r"^(.+?)\s+[-–—]\s+\S")
 _IGNORED_NAME_KEYS = frozenset({"variousartists", "various", "unknown", "va"})
 
 
@@ -454,17 +455,37 @@ def is_followed(ref: str, keys: set[str], followed: Followed) -> bool:
     return ref in followed.ids or bool(keys & followed.keys)
 
 
-def credits_others(own_keys: set[str], credited: list[str]) -> bool:
-    """Most of an account's uploads credit another artist (label or channel).
+def explicit_credit(artist: str | None, title: str | None) -> str | None:
+    """The artist an upload names: its artist field, else an 'X - Title' prefix.
 
-    `credited` is each upload's full credit text (artist + title), so a remix
-    of someone else's song still counts as the remixer's own upload."""
-    own = {k for k in own_keys if len(k) >= 3}
-    if not own or len(credited) < LABEL_MIN_UPLOADS:
+    None when the upload names nobody, which is unknown, not someone else."""
+    if artist and artist.strip():
+        return artist
+    match = _TITLE_CREDIT_RE.match(title or "")
+    return match.group(1) if match else None
+
+
+def _credits_someone_else(own: set[str], artist: str | None, title: str) -> bool:
+    credit = explicit_credit(artist, title)
+    if credit is None:
         return False
-    keys = [name_key(c) for c in credited]
-    others = [k for k in keys if k and not any(o in k for o in own)]
-    return len(others) / len(keys) >= LABEL_OTHER_SHARE
+    text = name_key(f"{credit} {title}")
+    return bool(text) and not any(o in text for o in own)
+
+
+def credits_others(own_keys: set[str], uploads: list[tuple[str | None, str]]) -> bool:
+    """Most of an account's uploads explicitly credit another artist (label).
+
+    `uploads` is (artist field, full title) per upload. Only an explicit
+    credit naming someone else counts; an upload with no artist field and no
+    'X - Title' credit counts for nobody. The account's own key anywhere in
+    the credit or title makes the upload its own (a remix of someone else's
+    song is still the remixer's upload)."""
+    own = {k for k in own_keys if len(k) >= 3}
+    if not own or len(uploads) < LABEL_MIN_UPLOADS:
+        return False
+    others = sum(1 for a, t in uploads if _credits_someone_else(own, a, t))
+    return others / len(uploads) >= LABEL_OTHER_SHARE
 
 
 def is_label(ref: str, identity: "Identity", hits: list[Hit], ctx: Context) -> bool:
@@ -476,7 +497,7 @@ def is_label(ref: str, identity: "Identity", hits: list[Hit], ctx: Context) -> b
     if any(n and LABEL_NAME_RE.search(n) for n in names):
         return True
     uploads = [
-        f"{h.track.artist} {h.track.title} {h.track.remix_artist or ''}"
+        (h.track.artist, f"{h.track.title} {h.track.remix_artist or ''}")
         for h in hits
         if h.track.uploader_id == ref
     ]

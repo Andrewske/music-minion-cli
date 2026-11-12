@@ -77,6 +77,20 @@ class TestPure:
         assert caches.looks_like_label("Monstercat", label)
         assert not caches.looks_like_label("Monstercat", label[:2])  # too few
 
+    def test_uploads_without_credits_are_not_a_label(self) -> None:
+        """Eater's own tracks carry no metadata_artist and no 'X - ' credit."""
+        uploads = [{"title": t} for t in ("Echoes", "Orbit", "Pulse")]
+        assert not caches.looks_like_label("Eater", uploads)
+        uploads.append({"title": "Pulse", "metadata_artist": ""})
+        assert not caches.looks_like_label("Eater", uploads)
+
+    def test_unknown_uploads_dilute_explicit_credits(self) -> None:
+        mixed = [{"metadata_artist": "A"}, {"title": "B - Song"}] + [
+            {"title": "Untitled"}
+        ] * 2
+        assert not caches.looks_like_label("Channel", mixed)  # 2 of 4 credit others
+        assert caches.looks_like_label("Channel", mixed[:2] + [{"title": "C - X"}])
+
     def test_summarize_activity(self) -> None:
         user = {
             "username": "U",
