@@ -299,8 +299,20 @@ def _maybe_reconcile_sc_likes() -> None:
         report = reconcile_for_provider(provider_state, apply=last_run_at is not None)
         if report is not None:
             _record_likes_reconcile(report_json(report), report.complete)
+        if report is not None and report.complete:  # once a day, like the reconcile
+            _refresh_follow_suggestion_caches(provider_state)
     except Exception:
         logger.exception("feed_sync_error during sc likes reconcile (continuing)")
+
+
+def _refresh_follow_suggestion_caches(provider_state: Any) -> None:
+    """Nightly follow-suggestion caches (names, activity); never raises."""
+    from web.backend.follow_suggestion_caches import refresh_follow_suggestion_caches
+
+    try:
+        refresh_follow_suggestion_caches(provider_state)
+    except Exception:  # noqa: BLE001 - a cache failure must never stop the worker
+        logger.exception("feed_sync_error during follow suggestion caches (continuing)")
 
 
 def _set_sync_error(error: str) -> None:

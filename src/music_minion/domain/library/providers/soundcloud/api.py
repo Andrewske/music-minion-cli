@@ -20,6 +20,7 @@ from ...provider import ProviderState, TrackList
 from . import auth
 from .auth import TOKEN_URL
 from .exceptions import AuthenticationError, TrackUnavailableError
+from .like_uploaders import LikeUploader, record_like_uploaders, uploaders_by_track
 
 # SoundCloud API base URL
 API_BASE_URL = "https://api.soundcloud.com"
@@ -146,7 +147,7 @@ def sync_library(
     logger.info("Starting SoundCloud likes sync")
     log("\n🔄 Syncing SoundCloud likes...", level="info")
     try:
-        tracks, all_liked_ids = _fetch_user_likes_with_markers(
+        tracks, all_liked_ids, uploaders = _fetch_likes_with_uploaders(
             access_token, existing_ids=existing_ids, incremental=incremental
         )
         logger.info(
@@ -165,6 +166,7 @@ def sync_library(
             return state, []
 
     _record_sc_likes(all_liked_ids)
+    record_like_uploaders(uploaders)
 
     # Sync like markers for all matched tracks (both new and existing)
     likes_synced = 0
@@ -731,6 +733,16 @@ def _fetch_user_likes(
 def _fetch_user_likes_with_markers(
     access_token: str, existing_ids: Optional[set] = None, incremental: bool = True
 ) -> tuple[TrackList, set]:
+    """Fetch user's liked tracks from SoundCloud with all liked track IDs."""
+    tracks, all_liked_ids, _uploaders = _fetch_likes_with_uploaders(
+        access_token, existing_ids, incremental
+    )
+    return tracks, all_liked_ids
+
+
+def _fetch_likes_with_uploaders(
+    access_token: str, existing_ids: set | None = None, incremental: bool = True
+) -> tuple[TrackList, set, dict[str, LikeUploader]]:
     """Fetch user's liked tracks from SoundCloud with all liked track IDs.
 
     Args:
@@ -739,15 +751,17 @@ def _fetch_user_likes_with_markers(
         incremental: If True, stop fetching when encountering an existing track
 
     Returns:
-        (tracks, all_liked_ids)
+        (tracks, all_liked_ids, uploaders)
         - tracks: List of (track_id, metadata) tuples for new tracks
         - all_liked_ids: Set of ALL liked track IDs (for marker sync)
+        - uploaders: liked track id -> uploading account (sc_likes.uploader_*)
     """
     if existing_ids is None:
         existing_ids = set()
 
     tracks = []
     all_liked_ids = set()  # Track ALL liked IDs for marker sync
+    uploaders: dict[str, LikeUploader] = {}
     url = f"{API_BASE_URL}/me/likes/tracks"
     headers = {"Authorization": f"OAuth {access_token}"}
 
@@ -786,6 +800,7 @@ def _fetch_user_likes_with_markers(
 
                     track_id = str(item["id"])
                     all_liked_ids.add(track_id)  # Always track ALL liked IDs
+                    uploaders.update(uploaders_by_track([item]))
 
                     # Incremental sync: stop if we've already imported this track
                     if incremental and track_id in existing_ids:
@@ -834,7 +849,7 @@ def _fetch_user_likes_with_markers(
         log(f"  ⚠ Error fetching likes: {e}", level="warning")
 
     log(f"  ✓ Fetched {total_fetched} liked tracks", level="info")
-    return tracks, all_liked_ids
+    return tracks, all_liked_ids, uploaders
 
 
 def _normalize_soundcloud_track(track: dict[str, Any]) -> dict[str, Any]:
