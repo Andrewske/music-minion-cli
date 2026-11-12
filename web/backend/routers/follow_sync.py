@@ -7,8 +7,8 @@ from fastapi import APIRouter, HTTPException
 from loguru import logger
 
 from music_minion.core.database import get_db_connection
-from music_minion.domain.library.providers.soundcloud.api import follow_user, get_user
 from music_minion.domain.library.provider import ProviderState
+from music_minion.domain.library.providers.soundcloud.api import follow_user, get_user
 from web.backend.queries.artists import record_new_follow
 from web.backend.queries.follow_sync import get_untiered_follows
 from web.backend.soundcloud_auth import get_web_provider_state
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/follow-suggestions", tags=["follow-suggestions"]
 
 
 @router.get("/untiered")
-async def list_untiered_follows() -> dict[str, list[dict[str, Any]]]:
+def list_untiered_follows() -> dict[str, list[dict[str, Any]]]:
     """Followed artists still untiered: {recent, rated}."""
     with get_db_connection() as conn:
         return get_untiered_follows(conn)
@@ -62,7 +62,7 @@ def _sc_user_or_stub(state: ProviderState, sc_user_id: str) -> dict[str, Any]:
 
 
 @router.post("/{soundcloud_user_id}/follow")
-async def follow_account(soundcloud_user_id: str) -> dict[str, Any]:
+def follow_account(soundcloud_user_id: str) -> dict[str, Any]:
     """Follow an account on SoundCloud, then record it as followed (tier C)."""
     if not soundcloud_user_id.isdigit():
         raise HTTPException(

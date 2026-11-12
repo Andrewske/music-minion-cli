@@ -220,3 +220,17 @@ class TestAutoTierReview:
         add_artist("auto", tier="C", tier_auto=1, follow_order=0, upload_rated_count=5)
         rated = client.get("/api/follow-suggestions/untiered").json()["rated"]
         assert rated == []
+
+
+def test_follow_routes_run_in_the_thread_pool() -> None:
+    """Handlers that make blocking SC/DB calls must be plain defs, not async."""
+    import inspect
+
+    from fastapi.routing import APIRoute
+
+    from web.backend.routers import follow_connections, follow_suggestions
+
+    routers = (follow_sync.router, follow_suggestions.router, follow_connections.router)
+    routes = [r for router in routers for r in router.routes if isinstance(r, APIRoute)]
+    assert routes
+    assert not [r.path for r in routes if inspect.iscoroutinefunction(r.endpoint)]
