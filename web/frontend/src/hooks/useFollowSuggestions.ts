@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { QueryClient, UseMutationResult, UseQueryResult } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import * as api from '../api/followSuggestions';
@@ -71,13 +71,16 @@ export function findRows<L extends string, I>(
 /**
  * Puts rows back at their old positions in the current data, skipping any
  * already there. Only these rows change, so other mutations' edits survive.
+ * `exclusive` names lists a row may only be in one of (artists / labels):
+ * a row present in any of them counts as already there.
  */
 export function reinsertRows<L extends string, I, D extends Lists<L, I>>(
-  data: D, rows: readonly RemovedRow<L, I>[], same: (a: I, b: I) => boolean,
+  data: D, rows: readonly RemovedRow<L, I>[], same: (a: I, b: I) => boolean, exclusive: readonly L[] = [],
 ): D {
   return rows.reduce<D>((acc, row) => {
+    const lists = exclusive.includes(row.list) ? exclusive : [row.list];
+    if (lists.some((l) => acc[l].some((x) => same(x, row.item)))) return acc;
     const list = acc[row.list];
-    if (list.some((x) => same(x, row.item))) return acc;
     return { ...acc, [row.list]: [...list.slice(0, row.index), row.item, ...list.slice(row.index)] };
   }, data);
 }
@@ -119,9 +122,34 @@ async function removeAccountOptimistically(client: QueryClient, key: string): Pr
 function undoRemoval(client: QueryClient, removal: Removal | undefined): void {
   if (!removal) return;
   client.setQueryData<FollowSuggestionsResponse>(SUGGESTIONS_KEY, (current) =>
-    current && reinsertRows(current, removal.suggestions, sameKey));
+    current && reinsertRows(current, removal.suggestions, sameKey, SUGGESTION_LISTS));
   client.setQueryData<FollowConnectionsResponse>(CONNECTIONS_KEY, (current) =>
     current && reinsertRows(current, removal.connections, sameKey));
+}
+
+/** The account a follow / dismiss / label mutation acts on (tier changes: null). */
+export function mutationAccountKey(variables: unknown): string | null {
+  if (typeof variables === 'string') return variables;
+  if (variables && typeof variables === 'object' && 'key' in variables) {
+    const { key } = variables as { key: unknown };
+    return typeof key === 'string' ? key : null;
+  }
+  return null;
+}
+
+/**
+ * True when a mutation on the same account started after the one that owns
+ * `context` and has not failed. Its optimistic edit (or success) is newer,
+ * so rolling this one back would resurrect or duplicate the row; the
+ * refetch once everything settles puts the server state in place instead.
+ */
+function supersededByLater(client: QueryClient, context: unknown, key: string): boolean {
+  const all = client.getMutationCache().findAll({ mutationKey: FOLLOW_MUTATION_KEY });
+  const mine = all.find((m) => m.state.context === context);
+  if (!mine) return false;
+  return all.some((m) => m.mutationId > mine.mutationId
+    && m.state.status !== 'error'
+    && mutationAccountKey(m.state.variables) === key);
 }
 
 /** Once the last follow-suggestion mutation settles, the server state wins. */
@@ -151,6 +179,15 @@ export function useUntieredFollows(): UseQueryResult<UntieredResponse> {
   return useQuery({ queryKey: UNTIERED_KEY, queryFn: api.getUntieredFollows, staleTime: 60 * 1000 });
 }
 
+/** Accounts with a follow, dismiss or label change in flight; their rows wait. */
+export function usePendingAccountKeys(): ReadonlySet<string> {
+  const keys = useMutationState({
+    filters: { mutationKey: FOLLOW_MUTATION_KEY, status: 'pending' },
+    select: (m) => mutationAccountKey(m.state.variables),
+  });
+  return new Set(keys.filter((k): k is string => k != null));
+}
+
 // ---------------------------------------------------------------------------
 // Mutation hooks
 // ---------------------------------------------------------------------------
@@ -161,8 +198,8 @@ export function useFollowAccount(): UseMutationResult<FollowAccountResponse, Err
     mutationKey: FOLLOW_MUTATION_KEY,
     mutationFn: api.followAccount,
     onMutate: (id) => removeAccountOptimistically(client, id),
-    onError: (err, _id, removal) => {
-      undoRemoval(client, removal);
+    onError: (err, id, removal) => {
+      if (!supersededByLater(client, removal, id)) undoRemoval(client, removal);
       toast.error(errorText(err, 'Follow failed'));
     },
     onSuccess: () => {
@@ -180,8 +217,8 @@ export function useDismissSuggestion(): UseMutationResult<OkResponse, Error, str
     mutationKey: FOLLOW_MUTATION_KEY,
     mutationFn: api.dismissSuggestion,
     onMutate: (key) => removeAccountOptimistically(client, key),
-    onError: (err, _key, removal) => {
-      undoRemoval(client, removal);
+    onError: (err, key, removal) => {
+      if (!supersededByLater(client, removal, key)) undoRemoval(client, removal);
       toast.error(errorText(err, 'Dismiss failed'));
     },
     onSettled: () => refetchWhenIdle(client),
@@ -202,7 +239,7 @@ function undoLabel(client: QueryClient, key: string, rows: LabelRows | undefined
     if (!current) return current;
     const notMoved = (a: Suggestion): boolean => a.key !== key;
     const without = { ...current, artists: current.artists.filter(notMoved), labels: current.labels.filter(notMoved) };
-    return reinsertRows(without, rows, sameKey);
+    return reinsertRows(without, rows, sameKey, SUGGESTION_LISTS);
   });
 }
 
@@ -219,7 +256,7 @@ export function useSetSuggestionLabel(): UseMutationResult<OkResponse, Error, La
       return findRows(suggestions, SUGGESTION_LISTS, (a) => a.key === key);
     },
     onError: (err, { key }, rows) => {
-      undoLabel(client, key, rows);
+      if (!supersededByLater(client, rows, key)) undoLabel(client, key, rows);
       toast.error(errorText(err, 'Label update failed'));
     },
     onSettled: () => refetchWhenIdle(client),

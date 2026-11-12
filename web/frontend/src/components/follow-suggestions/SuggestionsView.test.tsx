@@ -140,6 +140,22 @@ describe('SuggestionsView', () => {
     expect(screen.getByRole('button', { name: /Labels & channels \(2\)/ })).toBeInTheDocument();
   });
 
+  it('holds a row\'s actions while a change to that account is in flight', async () => {
+    let finish: (v: { ok: true }) => void = () => undefined;
+    vi.mocked(setSuggestionLabel).mockReturnValue(new Promise((r) => { finish = r; }));
+    renderView();
+    await screen.findByText('Wooli');
+    fireEvent.click(within(row('name:ghostname')).getByRole('button', { name: 'This is a label' }));
+    await waitFor(() => expect(screen.queryByTestId('account-row-name:ghostname')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: /Labels & channels/ }));
+    const moved = row('name:ghostname');
+    expect(within(moved).getByRole('button', { name: 'Dismiss' })).toBeDisabled();
+    expect(within(moved).getByRole('button', { name: 'Not a label' })).toBeDisabled();
+    expect(within(row('100')).getByRole('button', { name: 'Dismiss' })).toBeEnabled();
+    await act(async () => { finish({ ok: true }); });
+    await waitFor(() => expect(within(row('name:ghostname')).getByRole('button', { name: 'Dismiss' })).toBeEnabled());
+  });
+
   it('shows connections with via chips, and hides the section when the endpoint fails', async () => {
     vi.mocked(getFollowConnections).mockResolvedValue(makeConnections({ co_credit: [makeConnection()] }));
     renderView();

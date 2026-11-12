@@ -35,17 +35,19 @@ function AccountName({ account }: { account: RowAccount }): ReactElement {
 interface FollowActionsProps {
   account: RowAccount;
   followDisabled: boolean;
+  /** A mutation on this account is in flight. */
+  busy?: boolean;
   onFollow: (soundcloudUserId: string) => void;
   onDismiss: (key: string) => void;
 }
 
 /** Follow (or a SoundCloud search link for unresolved names) plus a permanent Dismiss. */
-export function FollowActions({ account, followDisabled, onFollow, onDismiss }: FollowActionsProps): ReactElement {
+export function FollowActions({ account, followDisabled, busy = false, onFollow, onDismiss }: FollowActionsProps): ReactElement {
   const id = account.soundcloud_user_id;
   return (
     <>
       {id != null ? (
-        <Button size="sm" variant="outline" disabled={followDisabled} onClick={() => onFollow(id)}>
+        <Button size="sm" variant="outline" disabled={followDisabled || busy} onClick={() => onFollow(id)}>
           Follow
         </Button>
       ) : (
@@ -58,7 +60,7 @@ export function FollowActions({ account, followDisabled, onFollow, onDismiss }: 
           Search on SoundCloud <ExternalLink className="w-3 h-3" />
         </a>
       )}
-      <Button size="sm" variant="ghost" className="text-white/50" onClick={() => onDismiss(account.key)}>
+      <Button size="sm" variant="ghost" className="text-white/50" disabled={busy} onClick={() => onDismiss(account.key)}>
         Dismiss
       </Button>
     </>

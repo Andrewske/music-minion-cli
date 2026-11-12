@@ -11,7 +11,7 @@ import {
 } from '../components/follow-suggestions/followSuggestionsFixtures';
 import {
   CONNECTIONS_KEY, SUGGESTIONS_KEY, UNTIERED_KEY, findRows, reinsertRows, useDismissSuggestion, useFollowAccount,
-  useSetSuggestionLabel, useTierUntiered,
+  usePendingAccountKeys, useSetSuggestionLabel, useTierUntiered,
 } from './useFollowSuggestions';
 
 vi.mock('../api/followSuggestions', () => ({
@@ -54,6 +54,8 @@ function setup(): { client: QueryClient; wrapper: (p: { children: ReactNode }) =
 
 const artistKeys = (client: QueryClient): string[] =>
   client.getQueryData<FollowSuggestionsResponse>(SUGGESTIONS_KEY)?.artists.map((s) => s.key) ?? [];
+const labelKeys = (client: QueryClient): string[] =>
+  client.getQueryData<FollowSuggestionsResponse>(SUGGESTIONS_KEY)?.labels.map((s) => s.key) ?? [];
 
 describe('row-level rollback', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -115,6 +117,62 @@ describe('row-level rollback', () => {
     expect(data?.artists[1].is_label).toBe(false);
   });
 
+  it('a failed label move does not resurrect a row a later dismiss removed', async () => {
+    const { client, wrapper } = setup();
+    const labelCall = deferred<OkResponse>();
+    vi.mocked(setSuggestionLabel).mockReturnValue(labelCall.promise);
+    vi.mocked(dismissSuggestion).mockResolvedValue({ ok: true });
+    const label = renderHook(() => useSetSuggestionLabel(), { wrapper });
+    const dismiss = renderHook(() => useDismissSuggestion(), { wrapper });
+
+    act(() => label.result.current.mutate({ key: '2', isLabel: true }));
+    await waitFor(() => expect(labelKeys(client)).toEqual(['2']));
+    await act(async () => { await dismiss.result.current.mutateAsync('2'); });
+    await act(async () => { labelCall.reject(new Error('nope')); });
+    await waitFor(() => expect(label.result.current.isError).toBe(true));
+
+    expect(artistKeys(client)).toEqual(['1', '3']);
+    expect(labelKeys(client)).toEqual([]);
+  });
+
+  it.each([
+    ['label fails first', 'label', 'dismiss'],
+    ['dismiss fails first', 'dismiss', 'label'],
+  ] as const)('both failing (%s) leaves the account in exactly one list', async (_name, first, second) => {
+    const { client, wrapper } = setup();
+    const calls = { label: deferred<OkResponse>(), dismiss: deferred<OkResponse>() };
+    vi.mocked(setSuggestionLabel).mockReturnValue(calls.label.promise);
+    vi.mocked(dismissSuggestion).mockReturnValue(calls.dismiss.promise);
+    const label = renderHook(() => useSetSuggestionLabel(), { wrapper });
+    const dismiss = renderHook(() => useDismissSuggestion(), { wrapper });
+    const hooks = { label, dismiss };
+
+    act(() => label.result.current.mutate({ key: '2', isLabel: true }));
+    await waitFor(() => expect(labelKeys(client)).toEqual(['2']));
+    act(() => dismiss.result.current.mutate('2'));
+    await waitFor(() => expect(labelKeys(client)).toEqual([]));
+    for (const which of [first, second]) {
+      await act(async () => { calls[which].reject(new Error('nope')); });
+      await waitFor(() => expect(hooks[which].result.current.isError).toBe(true));
+    }
+
+    const all = [...artistKeys(client), ...labelKeys(client)];
+    expect(all.filter((k) => k === '2')).toHaveLength(1);
+  });
+
+  it('reports accounts with a mutation in flight as pending', async () => {
+    const { wrapper } = setup();
+    const labelCall = deferred<OkResponse>();
+    vi.mocked(setSuggestionLabel).mockReturnValue(labelCall.promise);
+    const label = renderHook(() => useSetSuggestionLabel(), { wrapper });
+    const pending = renderHook(() => usePendingAccountKeys(), { wrapper });
+
+    act(() => label.result.current.mutate({ key: '2', isLabel: true }));
+    await waitFor(() => expect([...pending.result.current]).toEqual(['2']));
+    await act(async () => { labelCall.resolve({ ok: true }); });
+    await waitFor(() => expect(pending.result.current.size).toBe(0));
+  });
+
   it('a failed tier update restores only its untiered row', async () => {
     const { client, wrapper } = setup();
     const seven = makeUntiered();
@@ -139,5 +197,12 @@ describe('findRows / reinsertRows', () => {
     const rows = findRows(data, ['xs', 'ys'], (v) => v === 'b' || v === 'd' || v === 'e');
     const later = { xs: ['a', 'c', 'z'], ys: ['e'] };
     expect(reinsertRows(later, rows, (p, q) => p === q)).toEqual({ xs: ['a', 'b', 'c', 'd', 'z'], ys: ['e'] });
+  });
+
+  it('skips a row present in any exclusive list', () => {
+    const rows = findRows({ xs: ['a'], ys: [] as string[] }, ['xs', 'ys'], (v) => v === 'a');
+    const moved = { xs: [] as string[], ys: ['a'] };
+    expect(reinsertRows(moved, rows, (p, q) => p === q, ['xs', 'ys'])).toEqual(moved);
+    expect(reinsertRows(moved, rows, (p, q) => p === q)).toEqual({ xs: ['a'], ys: ['a'] });
   });
 });
