@@ -1001,6 +1001,18 @@ def followings_abort_reason(fetched: int, currently_followed: int) -> str | None
     return None
 
 
+def unique_followings(followings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Pure: users with an SC id, first occurrence of each id, in fetch order."""
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for user in followings:
+        sc_id = str(user.get("id", "") or "")
+        if sc_id and sc_id not in seen:
+            seen.add(sc_id)
+            unique.append(user)
+    return unique
+
+
 def _following_fields(user: dict[str, Any]) -> dict[str, Any]:
     """Map a SoundCloud user dict to discovery_artists fields.
 
@@ -1110,14 +1122,12 @@ def tier_new_follows(conn: sqlite3.Connection, artist_ids: list[int]) -> int:
 def _write_followings(
     conn: sqlite3.Connection, followings: list[dict[str, Any]], was_following: set[str]
 ) -> tuple[int, list[int]]:
-    """Upsert each fetched account; returns (rows inserted, newly followed ids)."""
+    """Upsert each fetched account (unique, with ids); returns (rows inserted,
+    newly followed ids)."""
     inserted = 0
     new_ids: list[int] = []
     for order, user in enumerate(followings):
         fields = _following_fields(user)
-        if not fields["sc_id"]:
-            logger.warning(f"sync_followings: skipping user with no id: {user}")
-            continue
         artist_id = _artist_id_for_sc_user(conn, fields["sc_id"])
         if artist_id is None:
             new_ids.append(_insert_following(conn, fields, order))
@@ -1138,50 +1148,61 @@ def _followed_sc_ids(conn: sqlite3.Connection) -> tuple[int, set[str]]:
     return len(rows), {str(r[0]) for r in rows if r[0]}
 
 
+def _aborted_sync(reason: str) -> dict[str, Any]:
+    logger.warning(f"sync_followings: aborted without writing, {reason}")
+    return {
+        "followings_synced": 0,
+        "new_artists": 0,
+        "unfollowed_remotely": 0,
+        "tiered": 0,
+        "aborted": reason,
+    }
+
+
 def sync_followings(
     conn: sqlite3.Connection,
     followings: list[dict[str, Any]],
+    fetch_error: str | None = None,
 ) -> dict[str, Any]:
     """Upsert SoundCloud followings into discovery_artists (caller commits).
 
-    Rows missing from the fetch lose is_following, so an empty or truncated
-    fetch aborts without writing (see followings_abort_reason). Fetched rows
-    get follow_order = their position in the response; newly followed rows
+    Rows missing from the fetch lose is_following, so an incomplete fetch
+    (fetch_error set), an empty one, or one with too few distinct valid ids
+    aborts without writing (see followings_abort_reason). Fetched rows get
+    follow_order = their position among the unique ids; newly followed rows
     get followed_at (if unset) and tier C (if untiered).
 
     Returns:
         {followings_synced, new_artists, unfollowed_remotely, tiered, aborted}
     """
+    if fetch_error:
+        return _aborted_sync(f"incomplete fetch: {fetch_error}")
+    users = unique_followings(followings)
     was_count, was_following = _followed_sc_ids(conn)
-    reason = followings_abort_reason(len(followings), was_count)
+    reason = followings_abort_reason(len(users), was_count)
     if reason:
-        logger.warning(f"sync_followings: aborted without writing, {reason}")
-        return {
-            "followings_synced": 0,
-            "new_artists": 0,
-            "unfollowed_remotely": 0,
-            "tiered": 0,
-            "aborted": reason,
-        }
+        return _aborted_sync(reason)
     conn.execute(
         "UPDATE discovery_artists SET is_following = 0, follow_order = NULL "
         "WHERE is_following = 1 OR follow_order IS NOT NULL"
     )
-    inserted, new_ids = _write_followings(conn, followings, was_following)
-    tiered = tier_new_follows(conn, new_ids)
+    inserted, new_ids = _write_followings(conn, users, was_following)
     now_following: int = conn.execute(
         "SELECT COUNT(*) FROM discovery_artists WHERE is_following = 1"
     ).fetchone()[0]
-    kept = len(was_following & {str(u.get("id", "")) for u in followings})
     result = {
         "followings_synced": now_following,
         "new_artists": inserted,
-        "unfollowed_remotely": was_count - kept,
-        "tiered": tiered,
+        "unfollowed_remotely": was_count - len(was_following & _ids_of(users)),
+        "tiered": tier_new_follows(conn, new_ids),
         "aborted": None,
     }
     logger.info(f"sync_followings: {len(followings)} fetched, {result}")
     return result
+
+
+def _ids_of(users: list[dict[str, Any]]) -> set[str]:
+    return {str(u["id"]) for u in users}
 
 
 def record_new_follow(conn: sqlite3.Connection, sc_user: dict[str, Any]) -> int:

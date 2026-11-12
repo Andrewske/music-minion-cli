@@ -1064,12 +1064,12 @@ async def sync_soundcloud_followings(db=Depends(get_db)) -> dict:
         raise HTTPException(status_code=401, detail="SoundCloud not authenticated")
 
     try:
-        _state, followings = sc_get_followings(state)
+        _state, followings, fetch_error = sc_get_followings(state)
 
         if not _state.authenticated:
             raise HTTPException(status_code=401, detail="SoundCloud not authenticated")
 
-        result = sync_followings(db, followings)
+        result = sync_followings(db, followings, fetch_error)
         if result["aborted"]:
             raise HTTPException(
                 status_code=502,

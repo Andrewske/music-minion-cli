@@ -311,11 +311,14 @@ def test_get_user_followings_max_pages_and_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def endless(state, method, url, **kwargs):
-        return state, _Resp({"collection": [{"id": 1}], "next_href": "https://more"})
+        page = int(url.rsplit("/", 1)[-1]) if url[-1].isdigit() else 0
+        return state, _Resp(
+            {"collection": [{"id": page}], "next_href": f"https://more/{page + 1}"}
+        )
 
     monkeypatch.setattr(sc_api, "_request_with_backoff", endless)
     _s, users, error = sc_api.get_user_followings(_state(), "42", max_pages=3)
-    assert len(users) == 3 and error is None
+    assert len(users) == 3 and "3-page cap" in error
 
     def boom(state, method, url, **kwargs):
         raise sc_api.requests.HTTPError("503")
@@ -323,6 +326,27 @@ def test_get_user_followings_max_pages_and_error(
     monkeypatch.setattr(sc_api, "_request_with_backoff", boom)
     _s, users, error = sc_api.get_user_followings(_state(), "42")
     assert users == [] and "503" in error
+
+
+def test_get_user_followings_repeated_page_is_incomplete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def looping(state, method, url, **kwargs):
+        return state, _Resp({"collection": [{"id": 1}], "next_href": "https://same"})
+
+    monkeypatch.setattr(sc_api, "_request_with_backoff", looping)
+    _s, users, error = sc_api.get_user_followings(_state(), "42")
+    assert len(users) == 2 and "repeated" in error
+
+
+def test_get_user_followings_malformed_page_is_incomplete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        sc_api, "_request_with_backoff", lambda s, m, u, **k: (s, _Resp({"x": 1}))
+    )
+    _s, _users, error = sc_api.get_user_followings(_state(), "42")
+    assert "unexpected followings payload" in error
 
 
 # ---------------------------------------------------------------------------
