@@ -682,9 +682,11 @@ _V74_TABLES_DDL = (
     """
     CREATE TABLE IF NOT EXISTS sc_favorite_followings_state (
         follower_id TEXT PRIMARY KEY,
-        fetched_at TEXT NOT NULL,
-        followee_count INTEGER NOT NULL,
-        status TEXT NOT NULL DEFAULT 'ok'
+        fetched_at TEXT,
+        followee_count INTEGER,
+        status TEXT NOT NULL DEFAULT 'ok',
+        last_error_at TEXT,
+        last_error TEXT
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_sc_artist_followings_followee"
@@ -709,6 +711,9 @@ def _migrate_v74_follow_suggestions(conn) -> None:
       followings of top-tier artists. Dismissals are permanent.
     - sc_favorite_followings_state: when each favorite's followings were last
       fetched in full (also when they follow nobody); drives staleness.
+      fetched_at stays NULL until the first full fetch. An account-level
+      failure sets status 'error' and last_error_at, which backs that
+      favorite off for a day without touching fetched_at or its rows.
     """
     for table, column_ddl in (
         ("discovery_artists", "followed_at TEXT"),
@@ -725,6 +730,8 @@ def _migrate_v74_follow_suggestions(conn) -> None:
         if "ON sc_likes" in ddl and not _table_exists(conn, "sc_likes"):
             continue
         conn.execute(ddl)
+    for column_ddl in ("last_error_at TEXT", "last_error TEXT"):
+        _add_column_if_missing(conn, "sc_favorite_followings_state", column_ddl)
 
 
 def _migrate_v64_track_predictions(conn) -> None:

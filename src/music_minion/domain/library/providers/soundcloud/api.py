@@ -1613,6 +1613,8 @@ def _followings_page(
         return data, None, None
     if not isinstance(data, dict) or not isinstance(data.get("collection"), list):
         return [], None, f"unexpected followings payload: {data!r:.80}"
+    if not all(isinstance(u, dict) for u in data["collection"]):
+        return [], None, "unexpected non-object user in followings page"
     next_href = data.get("next_href")
     if next_href is not None and not isinstance(next_href, str):
         return [], None, f"unexpected next_href {next_href!r:.80}"
@@ -1675,14 +1677,23 @@ def get_user_followings(
     at `max_pages` returns an error, so callers keep their old rows instead
     of replacing them with a partial list.
 
+    Errors: "HTTP <status>" (0 when there was no response, e.g. no token),
+    the exception type for network failures, "Invalid JSON response", or
+    "followings of <id> incomplete: ..." for a malformed or partial list.
+
     Returns:
         (updated_state, user dicts, error_message_or_None)
     """
     url = f"{API_BASE_URL}/users/soundcloud:users:{user_id}/followings"
     try:
         state, results, error = _paginate_followings(state, url, max_pages)
-    except (requests.exceptions.RequestException, ValueError) as exc:
-        return state, [], f"followings of {user_id} failed: {exc}"
+    except HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else 0
+        return state, [], f"HTTP {status}"
+    except ValueError:  # before RequestException: requests' JSONDecodeError is both
+        return state, [], "Invalid JSON response"
+    except requests.exceptions.RequestException as exc:
+        return state, [], type(exc).__name__
     if error:
         return state, results, f"followings of {user_id} incomplete: {error}"
     logger.debug(f"Fetched {len(results)} followings of {user_id}")

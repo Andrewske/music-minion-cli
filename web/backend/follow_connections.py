@@ -25,6 +25,7 @@ from web.backend.queries.artists import (
     _normalize_name,
     _parse_track_credits,
 )
+from web.backend.sc_errors import is_service_error
 
 CO_CREDIT_TIER_WEIGHTS = {"S": 3.0, "A": 2.0, "B": 1.0}
 RELATION_WEIGHTS = {"collab": 1.0, "remix": 0.8, "feat": 0.6}
@@ -46,6 +47,8 @@ FOLLOWINGS_ARTISTS_PER_RUN = 30
 FOLLOWINGS_MAX_PAGES = 10
 # The feed worker ticks hourly; one refresh batch per ~night.
 FOLLOWINGS_RUN_INTERVAL = timedelta(hours=23)
+# A favorite whose fetch failed for account reasons waits this long to retry.
+FOLLOWINGS_ERROR_BACKOFF = timedelta(hours=24)
 
 _SLUG_SUFFIX_RE = re.compile(r"(?:music|official|musik|dj|beats|producer)$")
 _SLUG_PREFIX_RE = re.compile(r"^(?:dj|its|thisis|iam)")
@@ -453,13 +456,34 @@ def _parse_ts(value: str | None) -> datetime | None:
         return None
 
 
+def _backed_off(failed_at: dict[str, str | None], now: datetime) -> set[str]:
+    """Favorites whose last account-level failure is under a day old."""
+    retry_cutoff = now - FOLLOWINGS_ERROR_BACKOFF
+    return {
+        fid
+        for fid, value in failed_at.items()
+        if (ts := _parse_ts(value)) is not None and ts > retry_cutoff
+    }
+
+
 def stale_favorites(
-    favorite_ids: list[str], fetched_at: dict[str, str], now: datetime
+    favorite_ids: list[str],
+    fetched_at: dict[str, str | None],
+    now: datetime,
+    failed_at: dict[str, str | None] | None = None,
 ) -> list[str]:
-    """Favorites never fetched or older than 7 days: never-fetched first, capped."""
+    """Favorites never fetched or older than 7 days: never-fetched first, capped.
+
+    A favorite that failed for account reasons in the last 24h is skipped,
+    so it neither burns a call every tick nor blocks the ones behind it."""
     cutoff = now - FOLLOWINGS_MAX_AGE
+    skip = _backed_off(failed_at or {}, now)
     ages = {fid: _parse_ts(fetched_at.get(fid)) for fid in favorite_ids}
-    stale = [fid for fid, ts in ages.items() if ts is None or ts < cutoff]
+    stale = [
+        fid
+        for fid, ts in ages.items()
+        if (ts is None or ts < cutoff) and fid not in skip
+    ]
     stale.sort(key=lambda fid: ages[fid] or datetime.min)
     return stale[:FOLLOWINGS_ARTISTS_PER_RUN]
 
@@ -506,8 +530,27 @@ def _replace_followings(
                (follower_id, fetched_at, followee_count, status)
            VALUES (?, ?, ?, 'ok')
            ON CONFLICT(follower_id) DO UPDATE SET fetched_at = excluded.fetched_at,
-               followee_count = excluded.followee_count, status = excluded.status""",
+               followee_count = excluded.followee_count, status = excluded.status,
+               last_error_at = NULL, last_error = NULL""",
         (follower_id, fetched_at, len(rows)),
+    )
+    conn.commit()
+
+
+def _record_failure(
+    conn: sqlite3.Connection, follower_id: str, error: str, failed_at: str
+) -> None:
+    """Back one favorite off after an account-level failure. Its followee rows
+    and fetched_at stay as they were, so it is still stale, just not retried
+    until the backoff passes."""
+    conn.execute(
+        """INSERT INTO sc_favorite_followings_state
+               (follower_id, status, last_error_at, last_error)
+           VALUES (?, 'error', ?, ?)
+           ON CONFLICT(follower_id) DO UPDATE SET status = excluded.status,
+               last_error_at = excluded.last_error_at,
+               last_error = excluded.last_error""",
+        (follower_id, failed_at, error[:500]),
     )
     conn.commit()
 
@@ -516,23 +559,50 @@ def _refresh_plan(conn: sqlite3.Connection, now: datetime) -> list[str]:
     """Favorites to fetch this run, or [] when a batch already ran tonight.
 
     Freshness comes from sc_favorite_followings_state, so a favorite that
-    follows nobody counts as fetched instead of being retried every tick."""
+    follows nobody counts as fetched instead of being retried every tick.
+    A batch that only hit account-level failures also counts as tonight's."""
     (last,) = conn.execute(
-        "SELECT MAX(fetched_at) FROM sc_favorite_followings_state"
+        """SELECT MAX(ts) FROM (
+               SELECT fetched_at AS ts FROM sc_favorite_followings_state
+               UNION ALL SELECT last_error_at FROM sc_favorite_followings_state)"""
     ).fetchone()
     if not refresh_due(last, now):
         return []
-    fetched = dict(
-        conn.execute(
-            "SELECT follower_id, fetched_at FROM sc_favorite_followings_state"
-        ).fetchall()
-    )
+    state = conn.execute(
+        "SELECT follower_id, fetched_at, last_error_at FROM sc_favorite_followings_state"
+    ).fetchall()
     favorites = [
         str(a["soundcloud_user_id"])
         for a in _load_top_artists(conn, ("S", "A"))
         if a["soundcloud_user_id"]
     ]
-    return stale_favorites(favorites, fetched, now)
+    fetched = {r["follower_id"]: r["fetched_at"] for r in state}
+    failed = {r["follower_id"]: r["last_error_at"] for r in state}
+    return stale_favorites(favorites, fetched, now, failed)
+
+
+def _refresh_one(
+    state: ProviderState, conn: sqlite3.Connection, follower_id: str, now: datetime
+) -> tuple[ProviderState, bool, str | None]:
+    """Fetch one favorite's followings: (state, stored, service error to stop on).
+
+    An account-level error (incomplete pagination, 404 or other 4xx, a
+    malformed payload) backs this favorite off and lets the batch go on."""
+    state, users, error = get_user_followings(
+        state, follower_id, max_pages=FOLLOWINGS_MAX_PAGES
+    )
+    stamp = now.strftime(_TS_FORMAT)
+    if error and is_service_error(error):
+        logger.warning(f"favorite followings stopped at {follower_id}: {error}")
+        return state, False, error
+    if error:
+        logger.warning(f"favorite followings skipped {follower_id}: {error}")
+        _record_failure(conn, follower_id, error, stamp)
+        return state, False, None
+    _replace_followings(
+        conn, follower_id, _followee_rows(follower_id, users, stamp), stamp
+    )
+    return state, True, None
 
 
 def refresh_favorite_followings(
@@ -540,23 +610,18 @@ def refresh_favorite_followings(
 ) -> tuple[ProviderState, int]:
     """Fetch followings for up to 30 stale S/A favorites; returns artists refreshed.
 
-    Stops at the first API error so an outage costs one call, not thirty;
-    the failed artist stays stale and is retried on the next run.
+    A service-wide error (5xx, 429, auth, no token, network) stops the run so
+    an outage costs one call, not thirty; that artist is retried next tick.
+    An account-level error skips just that artist, backed off for a day.
     """
     with get_db_connection() as conn:
         plan = _refresh_plan(conn, now)
         refreshed = 0
         for follower_id in plan:
-            state, users, error = get_user_followings(
-                state, follower_id, max_pages=FOLLOWINGS_MAX_PAGES
-            )
-            if error:
-                logger.warning(f"favorite followings refresh stopped: {error}")
+            state, stored, stop = _refresh_one(state, conn, follower_id, now)
+            refreshed += stored
+            if stop:
                 break
-            stamp = now.strftime(_TS_FORMAT)
-            rows = _followee_rows(follower_id, users, stamp)
-            _replace_followings(conn, follower_id, rows, stamp)
-            refreshed += 1
     if plan:
         logger.info(f"favorite followings: refreshed {refreshed}/{len(plan)} artists")
     return state, refreshed

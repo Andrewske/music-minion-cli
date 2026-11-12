@@ -12,6 +12,7 @@ from music_minion.domain.library.provider import ProviderConfig, ProviderState
 from music_minion.domain.library.providers.soundcloud import api as sc_api
 from web.backend import follow_connections as fc
 from web.backend.routers.follow_connections import router
+from web.backend.sc_errors import is_service_error
 
 NOW = datetime(2026, 11, 11, 3, 0, 0)
 
@@ -317,6 +318,11 @@ class _Resp:
         return self._data
 
 
+class _Status:
+    def __init__(self, status_code: int) -> None:
+        self.status_code = status_code
+
+
 def _state() -> ProviderState:
     return ProviderState(config=ProviderConfig(name="soundcloud"), authenticated=True)
 
@@ -358,11 +364,34 @@ def test_get_user_followings_max_pages_and_error(
     assert len(users) == 3 and "3-page cap" in error
 
     def boom(state, method, url, **kwargs):
-        raise sc_api.requests.HTTPError("503")
+        raise sc_api.requests.HTTPError("503", response=_Status(503))
 
     monkeypatch.setattr(sc_api, "_request_with_backoff", boom)
     _s, users, error = sc_api.get_user_followings(_state(), "42")
-    assert users == [] and "503" in error
+    assert users == [] and error == "HTTP 503"
+
+
+@pytest.mark.parametrize(
+    ("exc", "expected", "service"),
+    [
+        (sc_api.requests.HTTPError("No valid token available"), "HTTP 0", True),
+        (sc_api.requests.HTTPError("429", response=_Status(429)), "HTTP 429", True),
+        (sc_api.requests.HTTPError("404", response=_Status(404)), "HTTP 404", False),
+        (sc_api.requests.exceptions.ReadTimeout("slow"), "ReadTimeout", True),
+        (sc_api.requests.exceptions.ConnectionError("down"), "ConnectionError", True),
+        (sc_api.requests.exceptions.JSONDecodeError("bad", "x", 0), "Invalid JSON response", False),
+    ],
+)  # fmt: skip
+def test_get_user_followings_errors_classify(
+    monkeypatch: pytest.MonkeyPatch, exc: Exception, expected: str, service: bool
+) -> None:
+    def raises(state, method, url, **kwargs):
+        raise exc
+
+    monkeypatch.setattr(sc_api, "_request_with_backoff", raises)
+    _s, users, error = sc_api.get_user_followings(_state(), "42")
+    assert users == [] and error == expected
+    assert is_service_error(error) is service
 
 
 def test_get_user_followings_repeated_page_is_incomplete(
@@ -384,6 +413,7 @@ def test_get_user_followings_malformed_page_is_incomplete(
     )
     _s, _users, error = sc_api.get_user_followings(_state(), "42")
     assert "unexpected followings payload" in error
+    assert not is_service_error(error)
 
 
 # ---------------------------------------------------------------------------
@@ -416,14 +446,16 @@ def test_refresh_due_once_per_night() -> None:
 
 
 def _fake_followings(
-    monkeypatch: pytest.MonkeyPatch, fail_on: str | None = None
+    monkeypatch: pytest.MonkeyPatch,
+    fail_on: str | None = None,
+    error: str = "HTTP 503",
 ) -> list[str]:
     fetched: list[str] = []
 
     def fake(state, user_id, max_pages):
         fetched.append(user_id)
         if user_id == fail_on:
-            return state, [], "boom"
+            return state, [], error
         users = [{"id": 500, "permalink": "x", "username": "X", "followers_count": 12}]
         return state, users, None
 
@@ -510,6 +542,94 @@ def test_empty_followings_count_as_fresh(monkeypatch: pytest.MonkeyPatch) -> Non
     fc.refresh_favorite_followings(_state(), NOW + timedelta(days=2))
     assert fetched == ["1"]
     fc.refresh_favorite_followings(_state(), NOW + timedelta(days=8))
+    assert fetched == ["1", "1"]
+
+
+def _error_rows() -> list[tuple]:
+    with get_db_connection() as conn:
+        return [
+            tuple(r)
+            for r in conn.execute(
+                "SELECT follower_id, fetched_at, status, last_error_at"
+                " FROM sc_favorite_followings_state WHERE status = 'error'"
+            )
+        ]
+
+
+def _ts(at: datetime) -> str:
+    return at.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def test_account_error_skips_only_that_favorite(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A favorite whose pagination never completes no longer blocks the rest."""
+    for sc_id in ("1", "2", "3"):
+        add_artist(f"S{sc_id}", "S", sc_id=sc_id)
+    stale = _ts(NOW - timedelta(days=20))
+    follows("1", "keep-me", at=stale)
+    fetched_state("1", stale)  # oldest, so first in line
+    fetched = _fake_followings(
+        monkeypatch,
+        fail_on="1",
+        error="followings of 1 incomplete: pagination repeated x",
+    )
+
+    _s, refreshed = fc.refresh_favorite_followings(_state(), NOW)
+
+    assert refreshed == 2 and sorted(fetched) == ["1", "2", "3"]
+    assert ("1", "keep-me", 1000, stale) in _followings_rows()  # old rows kept
+    assert _error_rows() == [("1", stale, "error", _ts(NOW))]  # still stale
+
+
+def test_account_error_backs_off_a_day(monkeypatch: pytest.MonkeyPatch) -> None:
+    add_artist("S1", "S", sc_id="1")
+    add_artist("S2", "S", sc_id="2")
+    fetched = _fake_followings(monkeypatch, fail_on="1", error="HTTP 404")
+    fc.refresh_favorite_followings(_state(), NOW)
+    assert _error_rows() == [("1", None, "error", _ts(NOW))]
+
+    # An hour later: the batch already ran tonight.
+    fetched.clear()
+    fc.refresh_favorite_followings(_state(), NOW + timedelta(hours=1))
+    assert fetched == []
+    # Next night but inside the 24h backoff: "1" is not retried.
+    fc.refresh_favorite_followings(_state(), NOW + timedelta(hours=23, minutes=30))
+    assert fetched == []
+    # Past the backoff it gets one more try; success clears the error.
+    monkeypatch.setattr(
+        fc, "get_user_followings", lambda s, uid, max_pages: (s, [{"id": 9}], None)
+    )
+    _s, refreshed = fc.refresh_favorite_followings(_state(), NOW + timedelta(hours=25))
+    assert refreshed == 1 and _error_rows() == []
+    assert ("1", _ts(NOW + timedelta(hours=25)), 1, "ok") in _state_rows()
+
+
+def test_all_account_errors_count_as_tonights_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    add_artist("S1", "S", sc_id="1")
+    fetched = _fake_followings(monkeypatch, fail_on="1", error="HTTP 404")
+    fc.refresh_favorite_followings(_state(), NOW)
+    fc.refresh_favorite_followings(_state(), NOW + timedelta(hours=2))
+    assert fetched == ["1"]
+
+
+@pytest.mark.parametrize("error", ["HTTP 503", "HTTP 429", "HTTP 0", "ReadTimeout"])
+def test_service_error_stops_the_run_and_records_nothing(
+    monkeypatch: pytest.MonkeyPatch, error: str
+) -> None:
+    add_artist("S1", "S", sc_id="1")
+    add_artist("S2", "S", sc_id="2")
+    fetched_state("2", _ts(NOW - timedelta(days=9)))
+    fetched = _fake_followings(monkeypatch, fail_on="1", error=error)
+
+    _s, refreshed = fc.refresh_favorite_followings(_state(), NOW)
+
+    assert refreshed == 0 and fetched == ["1"]
+    assert _error_rows() == []
+    # Not backed off: retried on the next tick.
+    fc.refresh_favorite_followings(_state(), NOW + timedelta(hours=1))
     assert fetched == ["1", "1"]
 
 
