@@ -7,6 +7,7 @@ import type { TrackReposter } from '../../types';
 import { NotesToggle, TrackNotesPanel } from './TrackNotes';
 import { GenrePicker } from './GenrePicker';
 import { PlaylistPicker } from './PlaylistPicker';
+import { formatKey } from './keyNotation';
 
 function formatTrackDate(dateStr: string | undefined): string | null {
   if (!dateStr) return null;
@@ -53,7 +54,7 @@ function TrackMetaRow({ trackId, bpm, keySignature, genre, onGenreChange }: Trac
         {bpm ? Math.round(bpm) : '–'} <span className="text-white/30">BPM</span>
       </span>
       <span title="Key">
-        <span className="text-white/30">Key</span> {keySignature || '–'}
+        <span className="text-white/30">Key</span> {formatKey(keySignature)}
       </span>
       {/* Keyed so an open picker resets when the track changes */}
       <GenrePicker key={trackId} trackId={trackId} genre={genre} onChange={onGenreChange} />
