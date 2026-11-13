@@ -26,10 +26,12 @@ def get_track_genres_query(track_id: int) -> list[dict]:
 
 
 def create_genre_mutation(name: str) -> dict:
-    """Create a new genre (normalized)."""
+    """Create a genre (normalized), or return the existing one with that name."""
     normalized = normalize_genre_name(name)
+    if not normalized:
+        raise ValueError("Genre name is empty")
     with get_db_connection() as conn:
-        conn.execute("INSERT INTO genres (name) VALUES (?)", (normalized,))
+        conn.execute("INSERT OR IGNORE INTO genres (name) VALUES (?)", (normalized,))
         conn.commit()
         row = conn.execute("SELECT * FROM genres WHERE name = ?", (normalized,)).fetchone()
         return dict(row)

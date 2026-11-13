@@ -4,4 +4,6 @@ export {
   updateSmartFilters, pinPlaylist, unpinPlaylist, reorderPinnedPlaylist,
   deletePlaylist, skipSmartPlaylistTrack, unskipSmartPlaylistTrack,
   getSmartPlaylistSkippedTracks, getSmartPlaylistTracks, getPlaylistsByLibrary,
+  getTrackPlaylists, addTrackToPlaylist, removeTrackFromPlaylist,
 } from '@music-minion/shared';
+export type { TrackPlaylistRef } from '@music-minion/shared';

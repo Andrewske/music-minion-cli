@@ -19,6 +19,13 @@ export async function listGenres(): Promise<GenreInfo[]> {
   return getDefaultApiClient().request<GenreInfo[]>('/genres');
 }
 
+export async function createGenre(name: string): Promise<GenreInfo> {
+  return getDefaultApiClient().request<GenreInfo>('/genres', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
+}
+
 export async function renameGenre(genreId: number, name: string): Promise<GenreInfo> {
   return getDefaultApiClient().request<GenreInfo>(`/genres/${genreId}`, {
     method: 'PUT',

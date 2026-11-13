@@ -20,7 +20,9 @@ export {
   updateSmartFilters, pinPlaylist, unpinPlaylist, reorderPinnedPlaylist,
   deletePlaylist, skipSmartPlaylistTrack, unskipSmartPlaylistTrack,
   getSmartPlaylistSkippedTracks, getSmartPlaylistTracks, getPlaylistsByLibrary,
+  getTrackPlaylists, addTrackToPlaylist, removeTrackFromPlaylist,
 } from './api/playlists';
+export type { TrackPlaylistRef } from './api/playlists';
 export {
   getStreamUrl, getWaveformData, checkStreamAvailable, archiveTrack,
   refreshWaveform, purgeSoundcloudWaveforms, getFolders, lookupTracks, formatTrackLabel,
@@ -33,7 +35,7 @@ export { getHistory, getStats, getTopTracks } from './api/history';
 export type { HistoryEntry, TopTrack, Stats, SourceFilter } from './api/history';
 export type { TrackInfo as HistoryTrackInfo } from './api/history';
 export {
-  listGenres, renameGenre, assignGenreEmoji, deleteGenre,
+  listGenres, createGenre, renameGenre, assignGenreEmoji, deleteGenre,
   getTrackGenres, updateTrackGenres,
 } from './api/genres';
 export type { GenreInfo, TrackGenre } from './api/genres';

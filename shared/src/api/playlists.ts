@@ -2,12 +2,13 @@ import type { Playlist, PlaylistStatsResponse, PlaylistTracksResponse } from '..
 import type { Filter, Track } from './builder';
 import { getDefaultApiClient } from './client';
 
-export async function createPlaylist(name: string, description: string = ''): Promise<Playlist> {
+/** `library` defaults to the backend's active library. */
+export async function createPlaylist(name: string, description: string = '', library?: string): Promise<Playlist> {
   const baseUrl = getDefaultApiClient().getBaseUrl();
   const response = await fetch(`${baseUrl}/playlists`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, description }),
+    body: JSON.stringify({ name, description, library }),
   });
 
   if (!response.ok) {
@@ -166,4 +167,22 @@ export async function getPlaylistsByLibrary(library: string): Promise<Playlist[]
   if (!response.ok) throw new Error('Failed to fetch playlists');
   const data = await response.json();
   return data.playlists;
+}
+
+export interface TrackPlaylistRef {
+  id: number;
+  name: string;
+}
+
+/** Manual playlists that contain the track. */
+export async function getTrackPlaylists(trackId: number): Promise<TrackPlaylistRef[]> {
+  return getDefaultApiClient().request<TrackPlaylistRef[]>(`/tracks/${trackId}/playlists`);
+}
+
+export async function addTrackToPlaylist(playlistId: number, trackId: number): Promise<void> {
+  await getDefaultApiClient().request(`/playlists/${playlistId}/tracks/${trackId}`, { method: 'POST' });
+}
+
+export async function removeTrackFromPlaylist(playlistId: number, trackId: number): Promise<void> {
+  await getDefaultApiClient().request(`/playlists/${playlistId}/tracks/${trackId}`, { method: 'DELETE' });
 }

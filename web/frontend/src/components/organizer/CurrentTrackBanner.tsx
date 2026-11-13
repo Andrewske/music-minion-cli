@@ -5,6 +5,8 @@ import { WaveformPlayer } from '../WaveformPlayer';
 import type { Bucket } from '../../api/buckets';
 import type { TrackReposter } from '../../types';
 import { NotesToggle, TrackNotesPanel } from './TrackNotes';
+import { GenrePicker } from './GenrePicker';
+import { PlaylistPicker } from './PlaylistPicker';
 
 function formatTrackDate(dateStr: string | undefined): string | null {
   if (!dateStr) return null;
@@ -34,6 +36,30 @@ function titleHue(title: string): number {
 }
 
 const MAX_VISIBLE_REPOSTERS = 5;
+
+interface TrackMetaRowProps {
+  trackId: number;
+  bpm?: number;
+  keySignature?: string;
+  genre?: string | null;
+  onGenreChange: (genre: string | null) => void;
+}
+
+/** BPM and key are read-only (Serato owns them); genre is editable. */
+function TrackMetaRow({ trackId, bpm, keySignature, genre, onGenreChange }: TrackMetaRowProps): JSX.Element {
+  return (
+    <div className="mt-1.5 flex items-center gap-3 text-xs text-white/50">
+      <span title="BPM">
+        {bpm ? Math.round(bpm) : '–'} <span className="text-white/30">BPM</span>
+      </span>
+      <span title="Key">
+        <span className="text-white/30">Key</span> {keySignature || '–'}
+      </span>
+      {/* Keyed so an open picker resets when the track changes */}
+      <GenrePicker key={trackId} trackId={trackId} genre={genre} onChange={onGenreChange} />
+    </div>
+  );
+}
 
 function ReposterLink({ reposter }: { reposter: TrackReposter }): JSX.Element {
   return (
@@ -132,15 +158,16 @@ function Backdrop({ artworkUrl, title }: { artworkUrl?: string; title: string })
     return (
       <div
         aria-hidden
-        className="absolute inset-0 pointer-events-none"
+        className="absolute inset-0 rounded-lg pointer-events-none"
         style={{
           background: `linear-gradient(120deg, hsl(${hue} 45% 13%), hsl(${(hue + 50) % 360} 40% 7%))`,
         }}
       />
     );
   }
+  // Clipped here rather than on the card so dropdowns can overflow the card
   return (
-    <>
+    <div aria-hidden className="absolute inset-0 overflow-hidden rounded-lg pointer-events-none">
       <img
         src={scArtwork(artworkUrl, 't500x500')}
         alt=""
@@ -151,7 +178,7 @@ function Backdrop({ artworkUrl, title }: { artworkUrl?: string; title: string })
         aria-hidden
         className="absolute inset-0 pointer-events-none bg-linear-to-b/srgb from-black/50 via-black/60 to-black/80"
       />
-    </>
+    </div>
   );
 }
 
@@ -183,6 +210,12 @@ interface CurrentTrackBannerProps {
   artworkUrl?: string;
   scLiked?: boolean;
   soundcloudUrl?: string;
+  bpm?: number;
+  keySignature?: string;
+  genre?: string | null;
+  onGenreChange: (trackId: number, genre: string | null) => void;
+  /** The playlist being organized; hidden from the add-to-playlist picker. */
+  playlistId: number;
 }
 
 export function CurrentTrackBanner({
@@ -192,6 +225,11 @@ export function CurrentTrackBanner({
   artworkUrl,
   scLiked,
   soundcloudUrl,
+  bpm,
+  keySignature,
+  genre,
+  onGenreChange,
+  playlistId,
 }: CurrentTrackBannerProps): JSX.Element {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
@@ -220,7 +258,7 @@ export function CurrentTrackBanner({
   const dateLabel = formatTrackDate(trackDate);
 
   return (
-    <div className="relative overflow-hidden bg-obsidian-surface border border-obsidian-border rounded-lg mb-4">
+    <div className="relative bg-obsidian-surface border border-obsidian-border rounded-lg mb-4">
       <Backdrop artworkUrl={artworkUrl} title={currentTrack.title} />
 
       <div className="relative p-4">
@@ -249,6 +287,13 @@ export function CurrentTrackBanner({
               {currentTrack.artist ?? 'Unknown Artist'}
               {dateLabel && <span className="text-white/35 ml-2">• {dateLabel}</span>}
             </div>
+            <TrackMetaRow
+              trackId={currentTrack.id}
+              bpm={bpm}
+              keySignature={keySignature}
+              genre={genre}
+              onGenreChange={(next) => onGenreChange(currentTrack.id, next)}
+            />
             {reposters && reposters.length > 0 && <ReposterStack reposters={reposters} />}
           </div>
         </div>
@@ -281,7 +326,14 @@ export function CurrentTrackBanner({
             </div>
           )}
 
-          <NotesToggle open={notesOpen} onToggle={() => setNotesOpen((prev) => !prev)} />
+          <div className="ml-auto flex items-center gap-1">
+            <PlaylistPicker
+              key={currentTrack.id}
+              trackId={currentTrack.id}
+              excludePlaylistId={playlistId}
+            />
+            <NotesToggle open={notesOpen} onToggle={() => setNotesOpen((prev) => !prev)} />
+          </div>
         </div>
 
         {notesOpen && <TrackNotesPanel trackId={currentTrack.id} />}

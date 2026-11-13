@@ -3,18 +3,19 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..queries.genres import (
+    assign_genre_emoji_mutation,
+    create_genre_mutation,
+    delete_genre_mutation,
     get_all_genres_query,
     get_track_genres_query,
     rename_genre_mutation,
-    delete_genre_mutation,
     set_track_genres_mutation,
-    assign_genre_emoji_mutation,
 )
 
 router = APIRouter(prefix="/api", tags=["genres"])
 
 
-class RenameGenreRequest(BaseModel):
+class GenreNameRequest(BaseModel):
     name: str
 
 
@@ -31,8 +32,16 @@ def list_genres() -> list[dict]:
     return get_all_genres_query()
 
 
+@router.post("/genres")
+def create_genre(request: GenreNameRequest) -> dict:
+    try:
+        return create_genre_mutation(request.name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.put("/genres/{genre_id}")
-def rename_genre(genre_id: int, request: RenameGenreRequest) -> dict:
+def rename_genre(genre_id: int, request: GenreNameRequest) -> dict:
     return rename_genre_mutation(genre_id, request.name)
 
 
