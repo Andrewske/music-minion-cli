@@ -58,6 +58,7 @@ export function SearchPicker<T>(props: SearchPickerProps<T>): JSX.Element {
   };
 
   const choose = async (option: PickerOption<T>): Promise<void> => {
+    if (busy) return; // one save at a time; a second click would race the first
     setBusy(true);
     setError(null);
     try {
@@ -74,7 +75,7 @@ export function SearchPicker<T>(props: SearchPickerProps<T>): JSX.Element {
       e.preventDefault();
       const step = e.key === 'ArrowDown' ? 1 : -1;
       setActive((i) => Math.min(Math.max(i + step, 0), Math.max(options.length - 1, 0)));
-    } else if (e.key === 'Enter' && options[active] && !busy) {
+    } else if (e.key === 'Enter' && options[active]) {
       e.preventDefault();
       void choose(options[active]);
     } else if (e.key === 'Escape') {

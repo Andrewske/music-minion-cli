@@ -48,8 +48,8 @@ def mp3_track(tmp_path: Path) -> Iterator[tuple[int, Path]]:
     )
     with get_db_connection() as conn:
         cursor = conn.execute(
-            "INSERT INTO tracks (title, local_path, source, file_mtime) VALUES ('G', ?, 'local', 0)",
-            (str(path),),
+            "INSERT INTO tracks (title, local_path, source, file_mtime) VALUES ('G', ?, 'local', ?)",
+            (str(path), path.stat().st_mtime),
         )
         conn.commit()
     yield cursor.lastrowid, path
@@ -106,3 +106,37 @@ def test_track_without_file_updates_db_only() -> None:
     )
     assert response.status_code == 200
     assert response.json()[0]["name"] == "phonk"
+
+
+def test_external_change_pending_keeps_stored_mtime(mp3_track: tuple[int, Path]) -> None:
+    track_id, _ = mp3_track
+    with get_db_connection() as conn:
+        conn.execute("UPDATE tracks SET file_mtime = 1 WHERE id = ?", (track_id,))
+        conn.commit()
+
+    client.put(f"/api/tracks/{track_id}/genres", json={"genre_ids": [_genre_id("house")]})
+
+    with get_db_connection() as conn:
+        row = conn.execute("SELECT file_mtime FROM tracks WHERE id = ?", (track_id,)).fetchone()
+    assert row["file_mtime"] == 1  # sync still imports the earlier external edit
+
+
+@pytest.mark.parametrize("bad_secondary", ["unknown", "duplicate"])
+def test_invalid_genre_ids_rejected_before_file_write(
+    mp3_track: tuple[int, Path], bad_secondary: str
+) -> None:
+    track_id, path = mp3_track
+    untouched = path.read_bytes()
+    house = _genre_id("house")
+    second = 999_999 if bad_secondary == "unknown" else house
+
+    response = client.put(f"/api/tracks/{track_id}/genres", json={"genre_ids": [house, second]})
+
+    assert response.status_code == 400
+    assert path.read_bytes() == untouched
+    assert client.get(f"/api/tracks/{track_id}/genres").json() == []
+
+
+def test_missing_track_is_404() -> None:
+    response = client.put("/api/tracks/999999/genres", json={"genre_ids": []})
+    assert response.status_code == 404

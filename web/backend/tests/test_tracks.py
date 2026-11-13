@@ -241,8 +241,9 @@ class TestTrackNotes:
         )
         with get_db_connection() as conn:
             cursor = conn.execute(
-                "INSERT INTO tracks (title, local_path, source) VALUES ('N', ?, 'local')",
-                (str(path),),
+                "INSERT INTO tracks (title, local_path, source, file_mtime)"
+                " VALUES ('N', ?, 'local', ?)",
+                (str(path), path.stat().st_mtime),
             )
             conn.commit()
         yield cursor.lastrowid
@@ -262,6 +263,17 @@ class TestTrackNotes:
                 "SELECT file_mtime FROM tracks WHERE id = ?", (notes_track,)
             ).fetchone()
         assert row["file_mtime"] is not None
+
+    def test_put_notes_keeps_pending_external_change_visible(self, notes_track: int) -> None:
+        with get_db_connection() as conn:
+            conn.execute("UPDATE tracks SET file_mtime = 1 WHERE id = ?", (notes_track,))
+            conn.commit()
+        client.put(f"/api/tracks/{notes_track}/notes", json={"notes": "edited"})
+        with get_db_connection() as conn:
+            row = conn.execute(
+                "SELECT file_mtime FROM tracks WHERE id = ?", (notes_track,)
+            ).fetchone()
+        assert row["file_mtime"] == 1  # sync still sees the file as changed
 
     def test_track_without_local_file_is_404(self) -> None:
         with get_db_connection() as conn:

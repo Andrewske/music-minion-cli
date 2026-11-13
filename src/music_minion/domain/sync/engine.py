@@ -75,6 +75,21 @@ def get_file_mtime(local_path: str) -> Optional[float]:
         return None
 
 
+def mtime_after_own_write(
+    stored: float | None, before: float | None, after: float | None
+) -> float | None:
+    """The file_mtime to store after we write a single tag to a file.
+
+    Advance to `after` only when the file was in sync beforehand (sync treats
+    current > stored as changed). If something else had already changed the
+    file, keep `stored` so the next sync still imports those changes; it reads
+    our tag back from the file too.
+    """
+    if stored is None or before is None or before > stored:
+        return stored
+    return after
+
+
 def write_tags_to_file(local_path: str, tags: list[str], config: Config) -> bool:
     """Write tags to file metadata COMMENT field using atomic writes.
 
