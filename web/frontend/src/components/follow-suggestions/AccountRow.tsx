@@ -1,5 +1,5 @@
 import type { ReactElement, ReactNode } from 'react';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, X } from 'lucide-react';
 import { Button } from '../ui/button';
 import { formatFollowers, soundcloudSearchUrl, soundcloudUrl } from './format';
 
@@ -60,8 +60,8 @@ export function FollowActions({ account, followDisabled, busy = false, onFollow,
           Search on SoundCloud <ExternalLink className="w-3 h-3" />
         </a>
       )}
-      <Button size="sm" variant="ghost" className="text-white/50" disabled={busy} onClick={() => onDismiss(account.key)}>
-        Dismiss
+      <Button size="icon" variant="ghost" aria-label="Dismiss" title="Dismiss (never suggest again)" className="h-8 w-8 text-white/50" disabled={busy} onClick={() => onDismiss(account.key)}>
+        <X className="w-4 h-4" />
       </Button>
     </>
   );
