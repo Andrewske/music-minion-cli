@@ -44,9 +44,17 @@ export interface Suggestion {
   tracks: SuggestionTrack[];
 }
 
+export interface FollowingCount {
+  /** Accounts followed on SoundCloud as of the last followings sync. */
+  count: number;
+  /** SoundCloud's cap on followings. */
+  limit: number;
+}
+
 export interface FollowSuggestionsResponse {
   artists: Suggestion[];
   labels: Suggestion[];
+  following: FollowingCount;
   generated_at: string;
 }
 

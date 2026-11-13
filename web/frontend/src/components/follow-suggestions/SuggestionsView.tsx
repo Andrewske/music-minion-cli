@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ReactElement } from 'react';
-import type { FollowSuggestionsResponse, Suggestion } from '../../api/followSuggestions';
+import type { FollowingCount, FollowSuggestionsResponse, Suggestion } from '../../api/followSuggestions';
 import {
   useDismissSuggestion, useFollowAccount, useFollowConnections, useFollowSuggestions, useLinkSuggestion,
   usePendingAccountKeys, useSetSuggestionLabel, useUntieredFollows,
@@ -11,15 +11,29 @@ import { SuggestionRow } from './SuggestionRow';
 import type { SuggestionHandlers } from './SuggestionRow';
 import { UntieredSection } from './UntieredSection';
 
-function useSuggestionHandlers(): SuggestionHandlers {
+const LOW_SLOTS = 25;
+
+/** "1,945 / 2,000 following": SoundCloud stops follows at the limit. */
+function FollowingMeter({ following }: { following: FollowingCount }): ReactElement {
+  const left = following.limit - following.count;
+  const tone = left <= 0 ? 'text-red-400' : left <= LOW_SLOTS ? 'text-amber-400' : 'text-white/50';
+  const note = left <= 0 ? 'at the limit: unfollow someone first' : `${left.toLocaleString()} left`;
+  return (
+    <p data-testid="following-meter" className={`mb-3 font-sf-mono text-xs ${tone}`}>
+      Following {following.count.toLocaleString()} / {following.limit.toLocaleString()} on SoundCloud · {note}
+    </p>
+  );
+}
+
+function useSuggestionHandlers(full: boolean): SuggestionHandlers {
   const follow = useFollowAccount();
   const dismiss = useDismissSuggestion();
   const label = useSetSuggestionLabel();
   const link = useLinkSuggestion();
   const pending = usePendingAccountKeys();
   return {
-    // One follow at a time: every Follow button waits for the request in flight.
-    followDisabled: follow.isPending,
+    // One follow at a time, and none once SoundCloud's following limit is reached.
+    followDisabled: follow.isPending || full,
     // One change per account at a time, so rollbacks never cross.
     isBusy: (a) => pending.has(a.key) || (a.soundcloud_user_id != null && pending.has(a.soundcloud_user_id)),
     onFollow: (id) => follow.mutate(id),
@@ -107,13 +121,14 @@ function ActiveView({ view, data, handlers }: { view: View; data: FollowSuggesti
 
 export function SuggestionsView(): ReactElement {
   const { data, error, refetch } = useFollowSuggestions();
-  const handlers = useSuggestionHandlers();
+  const handlers = useSuggestionHandlers(data != null && data.following.count >= data.following.limit);
   const counts = useViewCounts(data);
   const [picked, setView] = useState<View>('artists');
   // A tab whose section emptied out (all new follows tiered) falls back to artists.
   const view = counts[picked] == null ? 'artists' : picked;
   return (
     <div className="max-w-4xl mx-auto">
+      {data && <FollowingMeter following={data.following} />}
       <ViewTabs view={view} counts={counts} onChange={setView} />
       {data
         ? <ActiveView view={view} data={data} handlers={handlers} />

@@ -530,7 +530,8 @@ class TestRoutes:
     def test_get_contract(self, client: TestClient) -> None:
         _seed()
         body = client.get("/api/follow-suggestions").json()
-        assert set(body) == {"artists", "labels", "generated_at"}
+        assert set(body) == {"artists", "labels", "following", "generated_at"}
+        assert body["following"] == {"count": 1, "limit": 2000}
         (s,) = body["artists"]
         assert s["key"] == "70" and s["display_name"] == "PHRVA"
         assert s["evidence"]["uploaded"] == 2 and body["labels"] == []

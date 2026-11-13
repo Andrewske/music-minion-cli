@@ -19,6 +19,7 @@ router = APIRouter(prefix="/api/follow-suggestions", tags=["follow-suggestions"]
 
 MAX_ARTISTS = 200
 MAX_LABELS = 100
+SC_FOLLOWING_LIMIT = 2000  # SoundCloud refuses follows past this
 # An SC user id, or "name:<name_key>" for a credited name with no account yet
 _KEY_RE = re.compile(r"^(?:\d+|name:\w+)$")
 
@@ -45,10 +46,12 @@ def get_follow_suggestions() -> dict[str, Any]:
     """Top artists and labels/channels, best score first."""
     with get_db_connection() as conn:
         ranked = queries.compute_ranked(conn)
+        following = queries.following_count(conn)
     artists, labels = split_suggestions(ranked, MAX_ARTISTS, MAX_LABELS)
     return {
         "artists": artists,
         "labels": labels,
+        "following": {"count": following, "limit": SC_FOLLOWING_LIMIT},
         "generated_at": datetime.now(UTC).isoformat(),
     }
 

@@ -7,5 +7,5 @@ export type {
   SuggestionEvidence, SuggestionActivity, SuggestionRole, SuggestionTrack, Suggestion,
   FollowSuggestionsResponse, UntieredArtist, UntieredResponse, ConnectionVia,
   FollowConnection, FollowConnectionsResponse, OkResponse, FollowAccountResponse,
-  LinkSuggestionResponse,
+  LinkSuggestionResponse, FollowingCount,
 } from '@music-minion/shared';

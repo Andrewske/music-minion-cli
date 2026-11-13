@@ -113,6 +113,13 @@ def load_followed(conn: sqlite3.Connection) -> tuple[Account, ...]:
     )
 
 
+def following_count(conn: sqlite3.Connection) -> int:
+    """Accounts followed on SoundCloud, as of the last followings sync."""
+    return conn.execute(
+        "SELECT COUNT(*) FROM discovery_artists WHERE is_following = 1"
+    ).fetchone()[0]
+
+
 def load_resolutions(conn: sqlite3.Connection) -> dict[str, Resolution]:
     """Cached name -> account resolutions (misses included, id None)."""
     rows = conn.execute(

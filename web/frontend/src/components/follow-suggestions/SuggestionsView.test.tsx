@@ -113,6 +113,14 @@ describe('SuggestionsView', () => {
     expect(vi.mocked(dismissSuggestion).mock.calls[0][0]).toBe('name:ghostname');
   });
 
+  it('shows the SoundCloud following count, and blocks follows at the limit', async () => {
+    vi.mocked(getFollowSuggestions).mockResolvedValue(makeResponse([resolved], [], { count: 2000, limit: 2000 }));
+    renderView();
+    await screen.findByText('Wooli');
+    expect(screen.getByTestId('following-meter')).toHaveTextContent('Following 2,000 / 2,000 on SoundCloud · at the limit');
+    expect(within(row('100')).getByRole('button', { name: 'Follow' })).toBeDisabled();
+  });
+
   it('links an unresolved name to a pasted SoundCloud profile', async () => {
     vi.mocked(linkSuggestion).mockRejectedValueOnce(new Error('Not a SoundCloud profile link'));
     renderView();
