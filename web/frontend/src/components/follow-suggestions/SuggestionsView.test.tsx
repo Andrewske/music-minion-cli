@@ -25,7 +25,7 @@ vi.mock('../../api/followSuggestions', () => ({
   linkSuggestion: vi.fn(),
 }));
 vi.mock('../../api/artists', () => ({ updateArtist: vi.fn() }));
-vi.mock('react-toastify', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+vi.mock('react-toastify', () => ({ toast: { error: vi.fn(), success: vi.fn(), loading: vi.fn(() => 'toast-1'), update: vi.fn() } }));
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, className }: { children: ReactNode; className?: string }) => <a className={className}>{children}</a>,
 }));
@@ -85,10 +85,14 @@ describe('SuggestionsView', () => {
     fireEvent.click(within(row('100')).getByRole('button', { name: 'Follow' }));
     await waitFor(() => expect(screen.queryByTestId('account-row-100')).toBeNull());
     expect(vi.mocked(followAccount).mock.calls[0][0]).toBe('100');
+    // The count moves and a progress toast shows before SoundCloud answers.
+    expect(screen.getByTestId('following-meter')).toHaveTextContent('Following 1,901 / 2,000');
+    expect(toast.loading).toHaveBeenCalledWith('Following Wooli…');
     expect(within(row('101')).getByRole('button', { name: 'Follow' })).toBeDisabled();
 
     await act(async () => resolve({ ok: true, discovery_artist_id: 9 }));
     await waitFor(() => expect(within(row('101')).getByRole('button', { name: 'Follow' })).toBeEnabled());
+    expect(toast.update).toHaveBeenCalledWith('toast-1', expect.objectContaining({ type: 'success', render: 'Followed Wooli' }));
     expect(invalidate).toHaveBeenCalledWith({ queryKey: UNTIERED_KEY });
   });
 
@@ -97,8 +101,9 @@ describe('SuggestionsView', () => {
     renderView();
     await screen.findByText('Wooli');
     fireEvent.click(within(row('100')).getByRole('button', { name: 'Follow' }));
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('SoundCloud said no'));
+    await waitFor(() => expect(toast.update).toHaveBeenCalledWith('toast-1', expect.objectContaining({ type: 'error', render: 'SoundCloud said no' })));
     expect(row('100')).toBeInTheDocument();
+    expect(screen.getByTestId('following-meter')).toHaveTextContent('Following 1,900 / 2,000');
   });
 
   it('dismisses permanently with an optimistic removal', async () => {

@@ -1,6 +1,7 @@
 import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { QueryClient, UseMutationResult, UseQueryResult } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
+import type { Id } from 'react-toastify';
 import * as api from '../api/followSuggestions';
 import type {
   FollowAccountResponse, FollowConnection, FollowConnectionsResponse, FollowSuggestionsResponse,
@@ -44,6 +45,11 @@ export function withLabel(data: FollowSuggestionsResponse, key: string, isLabel:
   return isLabel
     ? { ...rest, labels: [...moved, ...rest.labels] }
     : { ...rest, artists: [...moved, ...rest.artists] };
+}
+
+/** The SoundCloud following count moved by `delta` (a follow in flight or undone). */
+export function withFollowingDelta(data: FollowSuggestionsResponse, delta: number): FollowSuggestionsResponse {
+  return { ...data, following: { ...data.following, count: data.following.count + delta } };
 }
 
 export function withoutUntiered(data: UntieredResponse, id: number): UntieredResponse {
@@ -192,17 +198,47 @@ export function usePendingAccountKeys(): ReadonlySet<string> {
 // Mutation hooks
 // ---------------------------------------------------------------------------
 
-export function useFollowAccount(): UseMutationResult<FollowAccountResponse, Error, string, Removal> {
+/** A follow's undo data plus its progress toast. */
+interface FollowContext extends Removal {
+  toastId: Id;
+  name: string;
+}
+
+const removedName = (removal: Removal): string =>
+  removal.suggestions[0]?.item.display_name ?? removal.connections[0]?.item.display_name ?? 'artist';
+
+function bumpFollowing(client: QueryClient, delta: number): void {
+  client.setQueryData<FollowSuggestionsResponse>(SUGGESTIONS_KEY, (current) => current && withFollowingDelta(current, delta));
+}
+
+/** Row out and count up at once; a toast covers the few seconds SoundCloud takes. */
+async function startFollow(client: QueryClient, id: string): Promise<FollowContext> {
+  const removal = await removeAccountOptimistically(client, id);
+  bumpFollowing(client, 1);
+  const name = removedName(removal);
+  return { ...removal, name, toastId: toast.loading(`Following ${name}…`) };
+}
+
+const settleToast = (id: Id, type: 'success' | 'error', render: string): void => {
+  toast.update(id, { render, type, isLoading: false, autoClose: type === 'success' ? 2500 : 5000 });
+};
+
+export function useFollowAccount(): UseMutationResult<FollowAccountResponse, Error, string, FollowContext> {
   const client = useQueryClient();
   return useMutation({
     mutationKey: FOLLOW_MUTATION_KEY,
     mutationFn: api.followAccount,
-    onMutate: (id) => removeAccountOptimistically(client, id),
-    onError: (err, id, removal) => {
-      if (!supersededByLater(client, removal, id)) undoRemoval(client, removal);
-      toast.error(errorText(err, 'Follow failed'));
+    onMutate: (id) => startFollow(client, id),
+    onError: (err, id, ctx) => {
+      if (!supersededByLater(client, ctx, id)) {
+        undoRemoval(client, ctx);
+        bumpFollowing(client, -1);
+      }
+      if (ctx) settleToast(ctx.toastId, 'error', errorText(err, 'Follow failed'));
+      else toast.error(errorText(err, 'Follow failed'));
     },
-    onSuccess: () => {
+    onSuccess: (_res, _id, ctx) => {
+      settleToast(ctx.toastId, 'success', `Followed ${ctx.name}`);
       // The new follow lands in the untiered list at tier C.
       void client.invalidateQueries({ queryKey: UNTIERED_KEY });
       void client.invalidateQueries({ queryKey: ['artists', 'list'] });
