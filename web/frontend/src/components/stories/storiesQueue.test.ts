@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeArtist, makeResponse, makeTrack } from './storiesFixtures';
 import {
+  canAdvance,
   canGoPrevious,
   createSession,
   currentLocalTrackId,
@@ -78,6 +79,16 @@ describe('advance', () => {
     const session = run(baseSession(), { type: 'play-track', artistId: 1, soundcloudId: 'a1' }, { type: 'advance' });
     expect(current(session)).toBe('a3');
     expect(session.playNonce).toBe(2);
+  });
+
+  it('canAdvance is false only when Next would land on caught-up', () => {
+    const playing = run(baseSession(), { type: 'play-track', artistId: 1, soundcloudId: 'a1' });
+    expect(canAdvance(playing)).toBe(true);
+    const lone = run(
+      createSession(makeResponse([makeArtist(1, [makeTrack('a1', { local_track_id: 101 })])])),
+      { type: 'play-track', artistId: 1, soundcloudId: 'a1' }
+    );
+    expect(canAdvance(lone)).toBe(false);
   });
 
   it('wraps to earlier unheard tracks before leaving the artist', () => {

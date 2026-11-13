@@ -51,6 +51,12 @@ const toTrack = (item: FeedItem, localTrackId = item.local_track_id): Track => {
   };
 };
 
+/** Skip to the next track when the given library track is the one playing. */
+function skipIfPlaying(localTrackId: number | null): void {
+  const player = usePlayerStore.getState();
+  if (localTrackId !== null && player.currentTrack?.id === localTrackId) void player.next();
+}
+
 export default function FeedScreen() {
   const params = useLocalSearchParams<{
     source?: string | string[];
@@ -93,7 +99,9 @@ export default function FeedScreen() {
         surface: 'mobile',
         modelVersion: item.prediction_model_version ?? undefined,
       }),
-    onMutate: async ({ item }) => {
+    onMutate: async ({ item, decision }) => {
+      // Nope and Not quite on the playing track skip it; the skip stands even if the write fails.
+      if (decision !== 'keep') skipIfPlaying(item.local_track_id);
       await queryClient.cancelQueries({ queryKey: feedQueryKey });
       const previous = queryClient.getQueryData<InfiniteData<FeedPage>>(feedQueryKey);
       queryClient.setQueryData<InfiniteData<FeedPage>>(feedQueryKey, (old) => {

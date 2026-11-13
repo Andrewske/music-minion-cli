@@ -52,6 +52,12 @@ const ROW_HEIGHT = 92;
 const NOTE_TOAST_MS = 5_000;
 const routeApi = getRouteApi('/feed');
 
+/** Skip to the next track when the given library track is the one playing. */
+function skipIfPlaying(localTrackId: number | null): void {
+  const player = usePlayerStore.getState();
+  if (localTrackId !== null && player.currentTrack?.id === localTrackId) void player.next();
+}
+
 function toTrack(item: FeedItem, localTrackId = item.local_track_id): Track {
   const artist = item.uploader ?? item.artist ?? item.reposters[0];
   return {
@@ -193,6 +199,8 @@ export function FeedPage(): JSX.Element {
         maxPositionMs: listen.maxPositionMs,
       }),
     onMutate: async ({ item, decision }) => {
+      // Nope and Not quite on the playing track skip it; the skip stands even if the write fails.
+      if (decision !== 'keep') skipIfPlaying(item.local_track_id);
       // Every verdict, keep included, moves the track to the Reviewed tab.
       const snapshot = await removeFromAllFeeds(queryClient, item.soundcloud_id);
       // Advance immediately; the note prompt never blocks the next track.

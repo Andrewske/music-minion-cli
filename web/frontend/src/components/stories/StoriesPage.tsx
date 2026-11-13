@@ -14,6 +14,7 @@ import { StoriesControls } from './StoriesControls';
 import { StoriesHero } from './StoriesHero';
 import { StoriesTrackList } from './StoriesTrackList';
 import {
+  canAdvance,
   canGoPrevious,
   findArtist,
   focusTrack,
@@ -89,14 +90,19 @@ function StoriesStage({ session, artist, track }: StageProps): JSX.Element {
 
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col gap-4 px-4 py-4 md:py-8">
-      <StoriesHero artist={artist} track={track} isPlaying={isPlaying} onTogglePlay={() => togglePlay(track)} />
-      <StoriesControls
+      <StoriesHero
+        artist={artist}
         track={track}
-        canGoPrevious={canGoPrevious(session)}
-        isUpdating={pendingId !== null}
-        onDecide={(decision) => decide(track, decision)}
-        onPrevious={() => dispatch({ type: 'previous' })}
+        isPlaying={isPlaying}
+        onTogglePlay={() => togglePlay(track)}
+        nav={{
+          canGoPrevious: canGoPrevious(session),
+          canGoNext: canAdvance(session),
+          onPrevious: () => dispatch({ type: 'previous' }),
+          onNext: () => dispatch({ type: 'advance' }),
+        }}
       />
+      <StoriesControls track={track} isUpdating={pendingId !== null} onDecide={(decision) => decide(track, decision)} />
       <Waveform localTrackId={track.local_track_id} durationMs={track.duration_ms} height={96} onActivate={() => togglePlay(track)} />
       <StoriesTrackList tracks={artist.tracks} currentId={playingStoryId(session, playerTrackId)} onPlay={togglePlay} />
     </div>
