@@ -24,6 +24,9 @@ async function savePrimaryGenre(trackId: number, choice: GenreChoice): Promise<s
 export function GenrePicker({ trackId, genre, onChange }: GenrePickerProps): JSX.Element {
   const { genres, fetchGenres } = useGenreStore();
 
+  // tracks.genre holds the file's casing ("Drum & Bass"); genre names are lowercased
+  const current = normalizeGenreName(genre ?? '');
+
   const getOptions = (query: string): PickerOption<GenreChoice>[] => {
     const name = normalizeGenreName(query);
     return [
@@ -31,7 +34,7 @@ export function GenrePicker({ trackId, genre, onChange }: GenrePickerProps): JSX
         key: String(g.id),
         label: g.name,
         value: { kind: 'existing', id: g.id, name: g.name } as const,
-        meta: g.name === genre ? '✓' : g.track_count,
+        meta: g.name === current ? '✓' : g.track_count,
       })),
       ...(canCreateGenre(genres, query)
         ? [{ key: 'create', label: `Create "${name}"`, value: { kind: 'create', name } as const, icon: <Plus className="w-3.5 h-3.5 shrink-0" /> }]
