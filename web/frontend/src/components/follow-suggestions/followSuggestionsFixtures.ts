@@ -24,8 +24,10 @@ export function makeSuggestion(overrides: Partial<Suggestion> = {}): Suggestion 
   };
 }
 
-export function makeResponse(artists: Suggestion[], labels: Suggestion[] = []): FollowSuggestionsResponse {
-  return { artists, labels, generated_at: '2026-11-11T00:00:00Z' };
+export function makeResponse(
+  artists: Suggestion[], labels: Suggestion[] = [], following = { count: 1900, limit: 2000 },
+): FollowSuggestionsResponse {
+  return { artists, labels, following, generated_at: '2026-11-11T00:00:00Z' };
 }
 
 export function makeConnection(overrides: Partial<FollowConnection> = {}): FollowConnection {

@@ -163,6 +163,21 @@ def name_ref(key: str) -> str:
     return f"name:{key}"
 
 
+_PROFILE_URL_RE = re.compile(
+    r"^(?:https?://)?(?:www\.|m\.)?soundcloud\.com/([\w-]+)(?:[/?#].*)?$", re.IGNORECASE
+)
+_BARE_SLUG_RE = re.compile(r"^[\w-]+$")
+
+
+def profile_slug(text: str) -> str | None:
+    """'https://soundcloud.com/phrva/tracks' or 'phrva' -> 'phrva'; else None."""
+    text = text.strip()
+    match = _PROFILE_URL_RE.match(text)
+    if match:
+        return match.group(1)
+    return text if _BARE_SLUG_RE.match(text) else None
+
+
 # ---------------------------------------------------------------------------
 # Credits and the duo guard
 # ---------------------------------------------------------------------------

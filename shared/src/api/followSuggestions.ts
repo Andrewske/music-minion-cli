@@ -44,9 +44,17 @@ export interface Suggestion {
   tracks: SuggestionTrack[];
 }
 
+export interface FollowingCount {
+  /** Accounts followed on SoundCloud as of the last followings sync. */
+  count: number;
+  /** SoundCloud's cap on followings. */
+  limit: number;
+}
+
 export interface FollowSuggestionsResponse {
   artists: Suggestion[];
   labels: Suggestion[];
+  following: FollowingCount;
   generated_at: string;
 }
 
@@ -97,6 +105,12 @@ export interface OkResponse {
   ok: true;
 }
 
+export interface LinkSuggestionResponse {
+  ok: true;
+  soundcloud_user_id: string;
+  display_name: string | null;
+}
+
 export interface FollowAccountResponse {
   ok: true;
   discovery_artist_id: number;
@@ -116,6 +130,11 @@ export async function dismissSuggestion(key: string): Promise<OkResponse> {
 
 export async function setSuggestionLabel(key: string, isLabel: boolean): Promise<OkResponse> {
   return getDefaultApiClient().post<OkResponse>(`${keyPath(key)}/label`, { is_label: isLabel });
+}
+
+/** Points an unresolved name ("name:<key>") at the SoundCloud profile URL pasted for it. */
+export async function linkSuggestion(key: string, url: string): Promise<LinkSuggestionResponse> {
+  return getDefaultApiClient().post<LinkSuggestionResponse>(`${keyPath(key)}/link`, { url });
 }
 
 export async function getUntieredFollows(): Promise<UntieredResponse> {
