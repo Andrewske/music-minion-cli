@@ -32,6 +32,8 @@ SWEEP_INTERVAL = timedelta(hours=24)  # per-artist backfill sweep
 # Full likes reconcile (drops likes undone on SoundCloud). 23h, not 24h, so
 # hourly-tick drift doesn't push it a tick later every day.
 LIKES_RECONCILE_INTERVAL = timedelta(hours=23)
+# Followings sync (new follows into discovery_artists). 23h for the same reason.
+FOLLOWINGS_SYNC_INTERVAL = timedelta(hours=23)
 
 
 def _now_utc() -> datetime:
@@ -239,8 +241,10 @@ def _sweep_due() -> bool:
         return True
 
 
-def likes_reconcile_due(last_run_at: str | None, now: datetime) -> bool:
-    """Pure: True when no complete reconcile has run in LIKES_RECONCILE_INTERVAL."""
+def _interval_elapsed(
+    last_run_at: str | None, now: datetime, interval: timedelta
+) -> bool:
+    """Pure: True when last_run_at is missing, unparseable, or interval old."""
     if not last_run_at:
         return True
     try:
@@ -249,7 +253,12 @@ def likes_reconcile_due(last_run_at: str | None, now: datetime) -> bool:
         return True
     if last.tzinfo is None:
         last = last.replace(tzinfo=timezone.utc)
-    return now - last >= LIKES_RECONCILE_INTERVAL
+    return now - last >= interval
+
+
+def likes_reconcile_due(last_run_at: str | None, now: datetime) -> bool:
+    """Pure: True when no complete reconcile has run in LIKES_RECONCILE_INTERVAL."""
+    return _interval_elapsed(last_run_at, now, LIKES_RECONCILE_INTERVAL)
 
 
 def _likes_reconcile_last_run_at() -> str | None:
@@ -303,6 +312,50 @@ def _maybe_reconcile_sc_likes() -> None:
         logger.exception("feed_sync_error during sc likes reconcile (continuing)")
 
 
+def _followings_last_synced_at() -> str | None:
+    """When the last full followings sync wrote, or None if one is owed.
+
+    A full sync stamps last_sc_sync_at on every row it leaves followed and
+    unfollows the rest, so the oldest stamp among followed rows is the last
+    full sync. A single follow from the app stamps one row and can't move
+    it. Any unstamped followed row means no full sync since it appeared.
+    """
+    with get_db_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT CASE WHEN COUNT(*) = COUNT(last_sc_sync_at)
+                        THEN MIN(last_sc_sync_at) END
+            FROM discovery_artists WHERE is_following = 1
+            """
+        ).fetchone()
+    return row[0] if row else None
+
+
+def _maybe_sync_followings() -> None:
+    """Nightly followings sync from the daemon loop; never raises.
+
+    sync_followings aborts without writing on an empty or truncated fetch,
+    which leaves the stamps alone, so the next tick retries.
+    """
+    from music_minion.domain.library.providers.soundcloud.api import get_followings
+    from web.backend.queries.artists import sync_followings
+
+    try:
+        if not _interval_elapsed(
+            _followings_last_synced_at(), _now_utc(), FOLLOWINGS_SYNC_INTERVAL
+        ):
+            return
+        provider_state = get_web_provider_state()
+        if provider_state is None:
+            return
+        _state, followings = get_followings(provider_state)
+        with get_db_connection() as conn:
+            if not sync_followings(conn, followings)["aborted"]:
+                conn.commit()
+    except Exception:  # noqa: BLE001 - the daemon loop must never die
+        logger.exception("feed_sync_error during followings sync (continuing)")
+
+
 def _set_sync_error(error: str) -> None:
     """Update sync state to error status."""
     try:
@@ -338,6 +391,8 @@ def start_feed_worker() -> None:
                 logger.exception("feed worker tick failed")
             with _feed_lock:
                 _maybe_reconcile_sc_likes()
+            with _feed_lock:
+                _maybe_sync_followings()
             time.sleep(TICK_SECONDS)
 
     threading.Thread(target=_loop, daemon=True, name="sc_feed_worker").start()

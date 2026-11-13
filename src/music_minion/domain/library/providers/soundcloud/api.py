@@ -1645,3 +1645,65 @@ def unfollow_user(state: ProviderState, user_id: str) -> tuple[ProviderState, bo
             return state, True
         logger.error(f"SC unfollow {user_id} failed {status}: {body}")
         raise
+
+
+def _format_user_urn(user_id: str) -> str:
+    """Format a SoundCloud user id as a URN (idempotent)."""
+    if user_id.startswith("soundcloud:users:"):
+        return user_id
+    return f"soundcloud:users:{user_id}"
+
+
+def follow_user(state: ProviderState, user_id: str) -> tuple[ProviderState, bool]:
+    """Follow a SoundCloud user.
+
+    Unlike unfollow, a 4xx is a real refusal (unknown user, blocked), so it
+    returns False instead of soft-succeeding. 5xx errors are raised.
+
+    Args:
+        state: Current provider state
+        user_id: SoundCloud user ID (numeric string or URN)
+
+    Returns:
+        (updated_state, success)
+
+    Raises:
+        requests.HTTPError: On 5xx errors
+    """
+    if not state.authenticated:
+        return state, False
+
+    url = f"{API_BASE_URL}/me/followings/{_format_user_urn(user_id)}"
+    try:
+        state, _ = _request_with_backoff(state, "PUT", url)
+        logger.info(f"Followed SC user {user_id}")
+        return state, True
+    except requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else 0
+        body = exc.response.text[:300] if exc.response is not None else ""
+        if 400 <= status < 500:
+            logger.warning(f"SC follow {user_id} refused {status} (body: {body})")
+            return state, False
+        logger.error(f"SC follow {user_id} failed {status}: {body}")
+        raise
+
+
+def get_user(
+    state: ProviderState, user_id: str
+) -> tuple[ProviderState, dict[str, Any] | None]:
+    """Fetch one SoundCloud user (GET /users/{urn}); None if SC has no such user.
+
+    Raises:
+        requests.HTTPError: On non-404 HTTP errors
+    """
+    if not state.authenticated:
+        return state, None
+
+    url = f"{API_BASE_URL}/users/{_format_user_urn(user_id)}"
+    try:
+        state, response = _request_with_backoff(state, "GET", url)
+    except requests.HTTPError as exc:
+        if exc.response is not None and exc.response.status_code == 404:
+            return state, None
+        raise
+    return state, response.json()
