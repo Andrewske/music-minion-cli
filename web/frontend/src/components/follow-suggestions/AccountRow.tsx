@@ -1,5 +1,5 @@
 import type { ReactElement, ReactNode } from 'react';
-import { ExternalLink, X } from 'lucide-react';
+import { Link2, Search, X } from 'lucide-react';
 import { Button } from '../ui/button';
 import { formatFollowers, soundcloudSearchUrl, soundcloudUrl } from './format';
 
@@ -39,10 +39,37 @@ interface FollowActionsProps {
   busy?: boolean;
   onFollow: (soundcloudUserId: string) => void;
   onDismiss: (key: string) => void;
+  /** Unresolved names only: open the paste-a-profile-link form. */
+  onStartLink?: () => void;
 }
 
-/** Follow (or a SoundCloud search link for unresolved names) plus a permanent Dismiss. */
-export function FollowActions({ account, followDisabled, busy = false, onFollow, onDismiss }: FollowActionsProps): ReactElement {
+const iconBtn = 'h-8 w-8 text-white/50';
+
+/** Unresolved name: search SoundCloud for it, then link the right profile. */
+function UnresolvedActions({ name, busy, onStartLink }: { name: string; busy: boolean; onStartLink?: () => void }): ReactElement {
+  return (
+    <>
+      <a
+        href={soundcloudSearchUrl(name)}
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Search on SoundCloud"
+        title="Search on SoundCloud"
+        className={`inline-flex items-center justify-center ${iconBtn} hover:text-white`}
+      >
+        <Search className="w-4 h-4" />
+      </a>
+      {onStartLink && (
+        <Button size="icon" variant="ghost" aria-label="Link SoundCloud profile" title="Paste the artist's SoundCloud link" className={iconBtn} disabled={busy} onClick={onStartLink}>
+          <Link2 className="w-4 h-4" />
+        </Button>
+      )}
+    </>
+  );
+}
+
+/** Follow (or search + link for unresolved names) plus a permanent Dismiss. */
+export function FollowActions({ account, followDisabled, busy = false, onFollow, onDismiss, onStartLink }: FollowActionsProps): ReactElement {
   const id = account.soundcloud_user_id;
   return (
     <>
@@ -51,16 +78,9 @@ export function FollowActions({ account, followDisabled, busy = false, onFollow,
           Follow
         </Button>
       ) : (
-        <a
-          href={soundcloudSearchUrl(account.display_name)}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1 h-8 px-3 text-xs text-white/70 border border-obsidian-border hover:text-white"
-        >
-          Search on SoundCloud <ExternalLink className="w-3 h-3" />
-        </a>
+        <UnresolvedActions name={account.display_name} busy={busy} onStartLink={onStartLink} />
       )}
-      <Button size="icon" variant="ghost" aria-label="Dismiss" title="Dismiss (never suggest again)" className="h-8 w-8 text-white/50" disabled={busy} onClick={() => onDismiss(account.key)}>
+      <Button size="icon" variant="ghost" aria-label="Dismiss" title="Dismiss (never suggest again)" className={iconBtn} disabled={busy} onClick={() => onDismiss(account.key)}>
         <X className="w-4 h-4" />
       </Button>
     </>

@@ -4,7 +4,7 @@ import { toast } from 'react-toastify';
 import * as api from '../api/followSuggestions';
 import type {
   FollowAccountResponse, FollowConnection, FollowConnectionsResponse, FollowSuggestionsResponse,
-  OkResponse, Suggestion, UntieredResponse,
+  LinkSuggestionResponse, OkResponse, Suggestion, UntieredResponse,
 } from '../api/followSuggestions';
 import { updateArtist } from '../api/artists';
 import type { ArtistTier, UpdateArtistResult } from '../api/artists';
@@ -259,6 +259,23 @@ export function useSetSuggestionLabel(): UseMutationResult<OkResponse, Error, La
       if (!supersededByLater(client, rows, key)) undoLabel(client, key, rows);
       toast.error(errorText(err, 'Label update failed'));
     },
+    onSettled: () => refetchWhenIdle(client),
+  });
+}
+
+interface LinkVars {
+  key: string;
+  url: string;
+}
+
+/** No optimistic edit: the row merges into the linked account on refetch. */
+export function useLinkSuggestion(): UseMutationResult<LinkSuggestionResponse, Error, LinkVars> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationKey: FOLLOW_MUTATION_KEY,
+    mutationFn: ({ key, url }: LinkVars) => api.linkSuggestion(key, url),
+    onSuccess: (res) => toast.success(`Linked to ${res.display_name ?? res.soundcloud_user_id}`),
+    onError: (err) => toast.error(errorText(err, 'Link failed')),
     onSettled: () => refetchWhenIdle(client),
   });
 }

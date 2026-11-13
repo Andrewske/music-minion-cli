@@ -3,7 +3,8 @@ import type { ReactElement } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { Suggestion } from '../../api/followSuggestions';
 import {
-  useDismissSuggestion, useFollowAccount, useFollowSuggestions, usePendingAccountKeys, useSetSuggestionLabel,
+  useDismissSuggestion, useFollowAccount, useFollowSuggestions, useLinkSuggestion, usePendingAccountKeys,
+  useSetSuggestionLabel,
 } from '../../hooks/useFollowSuggestions';
 import { Button } from '../ui/button';
 import { ConnectionsSection } from './ConnectionsSection';
@@ -15,6 +16,7 @@ function useSuggestionHandlers(): SuggestionHandlers {
   const follow = useFollowAccount();
   const dismiss = useDismissSuggestion();
   const label = useSetSuggestionLabel();
+  const link = useLinkSuggestion();
   const pending = usePendingAccountKeys();
   return {
     // One follow at a time: every Follow button waits for the request in flight.
@@ -24,6 +26,7 @@ function useSuggestionHandlers(): SuggestionHandlers {
     onFollow: (id) => follow.mutate(id),
     onDismiss: (key) => dismiss.mutate(key),
     onSetLabel: (key, isLabel) => label.mutate({ key, isLabel }),
+    onLink: (key, url) => link.mutateAsync({ key, url }),
   };
 }
 

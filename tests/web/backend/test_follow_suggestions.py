@@ -598,3 +598,122 @@ class TestSemicolonCredits:
         with get_db_connection() as conn:
             (track,) = queries.load_evidence_tracks(conn)
         assert (track.uploader_id, track.uploader_permalink) == ("70", "phrva")
+
+
+class TestProfileSlug:
+    @pytest.mark.parametrize(
+        ("text", "slug"),
+        [
+            ("https://soundcloud.com/eatermusic", "eatermusic"),
+            ("soundcloud.com/eatermusic/tracks", "eatermusic"),
+            ("https://m.soundcloud.com/eater-music?utm=x", "eater-music"),
+            ("  eatermusic ", "eatermusic"),
+            ("https://example.com/eatermusic", None),
+            ("eater music", None),
+        ],
+    )
+    def test_parse(self, text: str, slug: str | None) -> None:
+        assert fs.profile_slug(text) == slug
+
+
+class TestLinkName:
+    @pytest.fixture
+    def resolved(self, monkeypatch: pytest.MonkeyPatch) -> dict:
+        from music_minion.domain.library.provider import ProviderConfig, ProviderState
+        from web.backend.routers import follow_suggestions as route
+
+        user = {"kind": "user", "id": 70, "permalink": "phrva", "username": "PHRVA"}
+        auth = ProviderState(
+            config=ProviderConfig(name="soundcloud"), authenticated=True
+        )
+        monkeypatch.setattr(route, "get_web_provider_state", lambda: auth)
+        monkeypatch.setattr(
+            route, "resolve_user_by_slug", lambda s, slug: (s, user, None)
+        )
+        return user
+
+    def test_link_merges_name_into_account(
+        self, client: TestClient, resolved: dict
+    ) -> None:
+        _seed()
+        for sc_id in ("t3", "t4"):  # a name needs 2 tracks to be suggested
+            _exec(
+                """INSERT INTO tracks (title, artist, soundcloud_id, source)
+                VALUES ('Feat', 'Ghost Name', ?, 'soundcloud')""",
+                (sc_id,),
+            )
+            _exec(
+                "INSERT INTO sc_likes (soundcloud_id, source) VALUES (?, 'sync')",
+                (sc_id,),
+            )
+        keys = [
+            s["key"] for s in client.get("/api/follow-suggestions").json()["artists"]
+        ]
+        assert "name:ghostname" in keys
+        r = client.post(
+            "/api/follow-suggestions/name:ghostname/link",
+            json={"url": "https://soundcloud.com/phrva"},
+        )
+        assert r.json() == {
+            "ok": True,
+            "soundcloud_user_id": "70",
+            "display_name": "PHRVA",
+        }
+        (phrva,) = client.get("/api/follow-suggestions").json()["artists"]
+        assert phrva["key"] == "70" and len(phrva["tracks"]) == 4
+
+    def test_nightly_cache_never_overwrites_manual(
+        self, client: TestClient, resolved: dict
+    ) -> None:
+        from web.backend.follow_suggestion_caches import _store_resolutions
+
+        client.post(
+            "/api/follow-suggestions/name:ghostname/link", json={"url": "phrva"}
+        )
+        with get_db_connection() as conn:
+            _store_resolutions(
+                conn, {"ghostname": Resolution(None, None, None, "none", "search")}
+            )
+            row = queries.load_resolutions(conn)["ghostname"]
+        assert row.soundcloud_user_id == "70" and row.source == "manual"
+
+    def test_rejects_account_keys_and_bad_urls(
+        self, client: TestClient, resolved: dict
+    ) -> None:
+        assert (
+            client.post(
+                "/api/follow-suggestions/70/link", json={"url": "phrva"}
+            ).status_code
+            == 422
+        )
+        r = client.post(
+            "/api/follow-suggestions/name:x/link", json={"url": "https://x.com/a"}
+        )
+        assert r.status_code == 422
+
+    def test_short_link_is_expanded(
+        self, client: TestClient, resolved: dict, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from types import SimpleNamespace
+
+        from web.backend.routers import follow_suggestions as route
+
+        seen: list[str] = []
+
+        def head(url: str, **_kw: object) -> SimpleNamespace:
+            seen.append(url)
+            return SimpleNamespace(url="https://soundcloud.com/phrva?si=abc")
+
+        monkeypatch.setattr(route.requests, "head", head)
+        r = client.post(
+            "/api/follow-suggestions/name:x/link",
+            json={"url": "on.soundcloud.com/AbC123"},
+        )
+        assert r.status_code == 200 and seen == ["https://on.soundcloud.com/AbC123"]
+
+    def test_track_url_is_not_a_profile(
+        self, client: TestClient, resolved: dict
+    ) -> None:
+        resolved["kind"] = "track"
+        r = client.post("/api/follow-suggestions/name:x/link", json={"url": "phrva"})
+        assert r.status_code == 422

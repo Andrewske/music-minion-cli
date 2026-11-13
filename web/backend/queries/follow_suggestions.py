@@ -219,16 +219,34 @@ def set_label_override(conn: sqlite3.Connection, key: str, is_label: bool) -> No
     conn.commit()
 
 
+def link_name(conn: sqlite3.Connection, key: str, user: dict[str, Any]) -> None:
+    """Pin a credited name to an SC account by hand; the nightly job keeps it."""
+    conn.execute(
+        """INSERT INTO sc_name_resolutions
+            (name_key, soundcloud_user_id, permalink, display_name, confidence, source)
+        VALUES (?, ?, ?, ?, 'high', 'manual')
+        ON CONFLICT(name_key) DO UPDATE SET
+            soundcloud_user_id = excluded.soundcloud_user_id,
+            permalink = excluded.permalink, display_name = excluded.display_name,
+            confidence = 'high', source = 'manual', resolved_at = CURRENT_TIMESTAMP""",
+        (key, str(user["id"]), user.get("permalink"), user.get("username")),
+    )
+    conn.commit()
+
+
 def resolved_context(
     conn: sqlite3.Connection, tracks: list[EvidenceTrack], now: datetime | None = None
 ) -> Context:
     """load_context with live sources (a) uploaders and (b) discovery_artists
     layered over the cached resolutions (which hold the API search results).
+    A name Kevin linked by hand beats every other source.
 
     Dismissals and label overrides on 'name:<k>' also apply to every account
     k resolves to, in the cache or live, whether or not k is still credited."""
     ctx = load_context(conn, now)
+    manual = {k: r for k, r in ctx.resolutions.items() if r.source == "manual"}
     resolutions = combine_resolutions(
+        manual,
         uploader_resolutions(tracks),
         activity_resolutions(ctx.activity),
         discovery_resolutions(conn),

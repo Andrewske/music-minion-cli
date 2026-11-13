@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { toast } from 'react-toastify';
 import {
   dismissSuggestion, followAccount, getFollowConnections, getFollowSuggestions, getUntieredFollows,
-  setSuggestionLabel,
+  linkSuggestion, setSuggestionLabel,
 } from '../../api/followSuggestions';
 import type { FollowAccountResponse } from '../../api/followSuggestions';
 import { updateArtist } from '../../api/artists';
@@ -22,6 +22,7 @@ vi.mock('../../api/followSuggestions', () => ({
   followAccount: vi.fn(),
   dismissSuggestion: vi.fn(),
   setSuggestionLabel: vi.fn(),
+  linkSuggestion: vi.fn(),
 }));
 vi.mock('../../api/artists', () => ({ updateArtist: vi.fn() }));
 vi.mock('react-toastify', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
@@ -110,6 +111,27 @@ describe('SuggestionsView', () => {
     fireEvent.click(within(row('name:ghostname')).getByRole('button', { name: 'Dismiss' }));
     await waitFor(() => expect(screen.queryByText('Ghost Name')).toBeNull());
     expect(vi.mocked(dismissSuggestion).mock.calls[0][0]).toBe('name:ghostname');
+  });
+
+  it('links an unresolved name to a pasted SoundCloud profile', async () => {
+    vi.mocked(linkSuggestion).mockRejectedValueOnce(new Error('Not a SoundCloud profile link'));
+    renderView();
+    await screen.findByText('Ghost Name');
+    fireEvent.click(within(row('name:ghostname')).getByRole('button', { name: 'Link SoundCloud profile' }));
+    const input = within(row('name:ghostname')).getByRole('textbox', { name: 'SoundCloud link for Ghost Name' });
+    fireEvent.change(input, { target: { value: 'nope' } });
+    fireEvent.click(within(row('name:ghostname')).getByRole('button', { name: 'Link' }));
+    // A failed link keeps the form and the pasted text.
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Not a SoundCloud profile link'));
+    expect(input).toHaveValue('nope');
+
+    vi.mocked(linkSuggestion).mockResolvedValueOnce({ ok: true, soundcloud_user_id: '100', display_name: 'Wooli' });
+    serverReturns(makeResponse([resolved], [label]));
+    fireEvent.change(input, { target: { value: ' https://soundcloud.com/wooli ' } });
+    fireEvent.click(within(row('name:ghostname')).getByRole('button', { name: 'Link' }));
+    await waitFor(() => expect(screen.queryByText('Ghost Name')).not.toBeInTheDocument());
+    expect(linkSuggestion).toHaveBeenLastCalledWith('name:ghostname', 'https://soundcloud.com/wooli');
+    expect(toast.success).toHaveBeenCalledWith('Linked to Wooli');
   });
 
   it('keeps labels collapsed until opened, then offers "not a label"', async () => {

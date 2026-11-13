@@ -171,7 +171,8 @@ def _store_resolutions(conn: sqlite3.Connection, rows: dict[str, Resolution]) ->
             soundcloud_user_id = excluded.soundcloud_user_id,
             permalink = excluded.permalink, display_name = excluded.display_name,
             confidence = excluded.confidence, source = excluded.source,
-            resolved_at = CURRENT_TIMESTAMP""",
+            resolved_at = CURRENT_TIMESTAMP
+        WHERE sc_name_resolutions.source != 'manual'""",
         [(k, *r) for k, r in sorted(rows.items())],
     )
     conn.commit()
