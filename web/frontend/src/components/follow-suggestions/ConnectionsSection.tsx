@@ -46,7 +46,7 @@ export function ConnectionsSection({ handlers }: { handlers: SuggestionHandlers 
   const { data, error } = useFollowConnections();
   if (error || !data || (data.co_credit.length === 0 && data.favorites_follow.length === 0)) return null;
   return (
-    <section aria-labelledby="fs-connections" className="mt-10">
+    <section aria-labelledby="fs-connections">
       <h2 id="fs-connections" className="font-inter text-lg font-semibold text-white">Your favorites' connections</h2>
       <ConnectionList title="Works with your top artists" rows={data.co_credit} handlers={handlers} />
       <ConnectionList title="Your favorites follow" rows={data.favorites_follow} handlers={handlers} />

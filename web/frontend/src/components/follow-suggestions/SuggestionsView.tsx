@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import type { ReactElement } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
-import type { Suggestion } from '../../api/followSuggestions';
+import type { FollowSuggestionsResponse, Suggestion } from '../../api/followSuggestions';
 import {
-  useDismissSuggestion, useFollowAccount, useFollowSuggestions, useLinkSuggestion, usePendingAccountKeys,
-  useSetSuggestionLabel,
+  useDismissSuggestion, useFollowAccount, useFollowConnections, useFollowSuggestions, useLinkSuggestion,
+  usePendingAccountKeys, useSetSuggestionLabel, useUntieredFollows,
 } from '../../hooks/useFollowSuggestions';
 import { Button } from '../ui/button';
 import { ConnectionsSection } from './ConnectionsSection';
@@ -38,28 +37,54 @@ function SuggestionList({ rows, handlers }: { rows: Suggestion[]; handlers: Sugg
   );
 }
 
-function LabelsSection({ rows, handlers }: { rows: Suggestion[]; handlers: SuggestionHandlers }): ReactElement | null {
-  const [open, setOpen] = useState(false);
-  if (rows.length === 0) return null;
-  const Icon = open ? ChevronDown : ChevronRight;
+function ListSection({ id, title, rows, handlers }: { id: string; title: string; rows: Suggestion[]; handlers: SuggestionHandlers }): ReactElement {
   return (
-    <section className="mt-10">
-      <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="flex items-center gap-1 font-inter text-sm text-white/50 hover:text-white/80">
-        <Icon className="w-4 h-4" /> Labels & channels ({rows.length})
-      </button>
-      {open && <SuggestionList rows={rows} handlers={handlers} />}
-    </section>
-  );
-}
-
-function ArtistsSection({ rows, handlers }: { rows: Suggestion[]; handlers: SuggestionHandlers }): ReactElement {
-  return (
-    <section aria-labelledby="fs-artists">
-      <h2 id="fs-artists" className="font-inter text-lg font-semibold text-white">Artists to follow</h2>
+    <section aria-labelledby={id}>
+      <h2 id={id} className="font-inter text-lg font-semibold text-white">{title}</h2>
       {rows.length === 0
         ? <p className="mt-3 font-sf-mono text-sm text-white/40">No suggestions right now.</p>
         : <SuggestionList rows={rows} handlers={handlers} />}
     </section>
+  );
+}
+
+type View = 'artists' | 'labels' | 'connections' | 'untiered';
+
+/** Tab label counts; null hides a tab (its section has nothing to show). */
+function useViewCounts(data: FollowSuggestionsResponse | undefined): Record<View, number | null> {
+  const connections = useFollowConnections().data;
+  const untiered = useUntieredFollows().data;
+  const connectionCount = connections ? connections.co_credit.length + connections.favorites_follow.length : 0;
+  const untieredCount = untiered ? untiered.recent.length + untiered.rated.length : 0;
+  return {
+    artists: data?.artists.length ?? 0,
+    labels: data?.labels.length ?? 0,
+    connections: connectionCount || null,
+    untiered: untieredCount || null,
+  };
+}
+
+const VIEW_LABELS: Record<View, string> = {
+  artists: 'Artists', labels: 'Labels & channels', connections: 'Connections', untiered: 'New follows',
+};
+
+function ViewTabs({ view, counts, onChange }: { view: View; counts: Record<View, number | null>; onChange: (v: View) => void }): ReactElement {
+  const views = (Object.keys(VIEW_LABELS) as View[]).filter((v) => counts[v] != null);
+  return (
+    <div role="tablist" className="mb-4 flex flex-wrap gap-1 border-b border-obsidian-border">
+      {views.map((v) => (
+        <button
+          key={v}
+          type="button"
+          role="tab"
+          aria-selected={view === v}
+          onClick={() => onChange(v)}
+          className={`px-3 py-2 -mb-px border-b-2 font-inter text-sm ${view === v ? 'border-obsidian-accent text-white' : 'border-transparent text-white/50 hover:text-white/80'}`}
+        >
+          {VIEW_LABELS[v]} <span className="font-sf-mono text-[11px] text-white/40">{counts[v]}</span>
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -73,17 +98,26 @@ function SuggestionsStatus({ error, onRetry }: { error: Error | null; onRetry: (
   );
 }
 
+function ActiveView({ view, data, handlers }: { view: View; data: FollowSuggestionsResponse; handlers: SuggestionHandlers }): ReactElement | null {
+  if (view === 'labels') return <ListSection id="fs-labels" title="Labels & channels" rows={data.labels} handlers={handlers} />;
+  if (view === 'connections') return <ConnectionsSection handlers={handlers} />;
+  if (view === 'untiered') return <UntieredSection />;
+  return <ListSection id="fs-artists" title="Artists to follow" rows={data.artists} handlers={handlers} />;
+}
+
 export function SuggestionsView(): ReactElement {
   const { data, error, refetch } = useFollowSuggestions();
   const handlers = useSuggestionHandlers();
+  const counts = useViewCounts(data);
+  const [picked, setView] = useState<View>('artists');
+  // A tab whose section emptied out (all new follows tiered) falls back to artists.
+  const view = counts[picked] == null ? 'artists' : picked;
   return (
     <div className="max-w-4xl mx-auto">
+      <ViewTabs view={view} counts={counts} onChange={setView} />
       {data
-        ? <ArtistsSection rows={data.artists} handlers={handlers} />
+        ? <ActiveView view={view} data={data} handlers={handlers} />
         : <SuggestionsStatus error={error} onRetry={() => void refetch()} />}
-      <ConnectionsSection handlers={handlers} />
-      {data && <LabelsSection rows={data.labels} handlers={handlers} />}
-      <UntieredSection />
     </div>
   );
 }

@@ -134,18 +134,18 @@ describe('SuggestionsView', () => {
     expect(toast.success).toHaveBeenCalledWith('Linked to Wooli');
   });
 
-  it('keeps labels collapsed until opened, then offers "not a label"', async () => {
+  it('shows labels on their own tab, with "not a label" moving one back', async () => {
     vi.mocked(setSuggestionLabel).mockImplementation(async () => {
       serverReturns(makeResponse([{ ...label, is_label: false }, resolved, unresolved]));
       return { ok: true };
     });
     renderView();
-    const toggle = await screen.findByRole('button', { name: /Labels & channels \(1\)/ });
+    const tab = await screen.findByRole('tab', { name: /Labels & channels 1/ });
     expect(screen.queryByText('Big Label')).toBeNull();
-    fireEvent.click(toggle);
+    fireEvent.click(tab);
     fireEvent.click(within(row('200')).getByRole('button', { name: 'Not a label' }));
-    // Moves into the main artists list; the emptied labels section disappears.
-    await waitFor(() => expect(screen.queryByRole('button', { name: /Labels & channels/ })).toBeNull());
+    await waitFor(() => expect(screen.getByRole('tab', { name: /Labels & channels 0/ })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('tab', { name: /Artists/ }));
     expect(row('200')).toBeInTheDocument();
     expect(vi.mocked(setSuggestionLabel).mock.calls[0]).toEqual(['200', false]);
   });
@@ -159,7 +159,7 @@ describe('SuggestionsView', () => {
     await screen.findByText('Wooli');
     fireEvent.click(within(row('100')).getByRole('button', { name: 'This is a label' }));
     await waitFor(() => expect(screen.queryByTestId('account-row-100')).toBeNull());
-    expect(screen.getByRole('button', { name: /Labels & channels \(2\)/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Labels & channels 2/ })).toBeInTheDocument();
   });
 
   it('holds a row\'s actions while a change to that account is in flight', async () => {
@@ -169,19 +169,22 @@ describe('SuggestionsView', () => {
     await screen.findByText('Wooli');
     fireEvent.click(within(row('name:ghostname')).getByRole('button', { name: 'This is a label' }));
     await waitFor(() => expect(screen.queryByTestId('account-row-name:ghostname')).toBeNull());
-    fireEvent.click(screen.getByRole('button', { name: /Labels & channels/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /Labels & channels/ }));
     const moved = row('name:ghostname');
     expect(within(moved).getByRole('button', { name: 'Dismiss' })).toBeDisabled();
     expect(within(moved).getByRole('button', { name: 'Not a label' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('tab', { name: /Artists/ }));
     expect(within(row('100')).getByRole('button', { name: 'Dismiss' })).toBeEnabled();
     await act(async () => { finish({ ok: true }); });
+    // The refetch returns the server's unchanged lists: the row is back with artists.
     await waitFor(() => expect(within(row('name:ghostname')).getByRole('button', { name: 'Dismiss' })).toBeEnabled());
   });
 
   it('shows connections with via chips, and hides the section when the endpoint fails', async () => {
     vi.mocked(getFollowConnections).mockResolvedValue(makeConnections({ co_credit: [makeConnection()] }));
     renderView();
-    expect(await screen.findByText('Works with your top artists')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('tab', { name: /Connections 1/ }));
+    expect(screen.getByText('Works with your top artists')).toBeInTheDocument();
     expect(within(row('300')).getByText('Fav')).toBeInTheDocument();
     expect(screen.queryByText('Your favorites follow')).toBeNull();
   });
@@ -191,7 +194,7 @@ describe('SuggestionsView', () => {
     renderView();
     await screen.findByText('Wooli');
     await waitFor(() => expect(getFollowConnections).toHaveBeenCalled());
-    expect(screen.queryByText("Your favorites' connections")).toBeNull();
+    expect(screen.queryByRole('tab', { name: /Connections/ })).toBeNull();
     expect(screen.queryByText('boom')).toBeNull();
   });
 
@@ -203,6 +206,7 @@ describe('SuggestionsView', () => {
       return { id: 7, ranking: 3, tier: 'A' };
     });
     renderView();
+    fireEvent.click(await screen.findByRole('tab', { name: /New follows 2/ }));
     const rated = await screen.findByTestId('untiered-row-7');
     expect(within(rated).getByText('50% kept')).toBeInTheDocument();
     expect(within(rated).getByText('4 rated')).toBeInTheDocument();
@@ -217,6 +221,7 @@ describe('SuggestionsView', () => {
     vi.mocked(getUntieredFollows).mockResolvedValue({ recent: [], rated: [makeUntiered()] });
     vi.mocked(updateArtist).mockRejectedValue(new Error('nope'));
     renderView();
+    fireEvent.click(await screen.findByRole('tab', { name: /New follows 1/ }));
     fireEvent.click(within(await screen.findByTestId('untiered-row-7')).getByRole('button', { name: 'S' }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('nope'));
     expect(screen.getByTestId('untiered-row-7')).toBeInTheDocument();

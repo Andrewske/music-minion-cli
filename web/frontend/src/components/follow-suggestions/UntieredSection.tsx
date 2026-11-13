@@ -60,7 +60,7 @@ export function UntieredSection(): ReactElement | null {
   const { data } = useUntieredFollows();
   if (!data || (data.recent.length === 0 && data.rated.length === 0)) return null;
   return (
-    <section aria-labelledby="fs-untiered" className="mt-10">
+    <section aria-labelledby="fs-untiered">
       <h2 id="fs-untiered" className="font-inter text-lg font-semibold text-white">New follows to tier</h2>
       <UntieredList title="Recently followed" rows={data.recent} showRates={false} />
       <UntieredList title="Rated tracks, no tier yet" rows={data.rated} showRates />
