@@ -314,6 +314,18 @@ def _maybe_reconcile_sc_likes() -> None:
         logger.exception("feed_sync_error during sc likes reconcile (continuing)")
 
 
+def _maybe_refresh_favorite_followings() -> None:
+    """Nightly batch of S/A artists' followings (follow suggestions); never raises."""
+    from web.backend.follow_connections import refresh_favorite_followings
+
+    try:
+        provider_state = get_web_provider_state()
+        if provider_state is not None:
+            refresh_favorite_followings(provider_state, _now_utc().replace(tzinfo=None))
+    except Exception:
+        logger.exception("feed_sync_error during favorite followings refresh")
+
+
 def _refresh_follow_suggestion_caches(provider_state: Any) -> None:
     """Nightly follow-suggestion caches (names, activity); never raises."""
     from web.backend.follow_suggestion_caches import refresh_follow_suggestion_caches
@@ -407,6 +419,8 @@ def start_feed_worker() -> None:
                 _maybe_sync_followings()
             with _feed_lock:
                 _maybe_reconcile_sc_likes()
+            with _feed_lock:
+                _maybe_refresh_favorite_followings()
             time.sleep(TICK_SECONDS)
 
     threading.Thread(target=_loop, daemon=True, name="sc_feed_worker").start()

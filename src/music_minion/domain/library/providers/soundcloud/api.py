@@ -1620,6 +1620,40 @@ def get_followings(
     return state, results
 
 
+def get_user_followings(
+    state: ProviderState, user_id: str, max_pages: int = 10
+) -> tuple[ProviderState, list[dict[str, Any]], str | None]:
+    """Fetch another user's followings, paginated (200 per page).
+
+    Uses GET /users/soundcloud:users:{user_id}/followings with
+    linked_partitioning. Stops early on any error so callers can keep their
+    old rows instead of replacing them with a partial list.
+
+    Returns:
+        (updated_state, user dicts, error_message_or_None)
+    """
+    url: str | None = f"{API_BASE_URL}/users/soundcloud:users:{user_id}/followings"
+    params: dict[str, Any] = {"limit": 200, "linked_partitioning": "true"}
+    results: list[dict[str, Any]] = []
+    pages = 0
+    while url and pages < max_pages:
+        pages += 1
+        try:
+            state, response = _request_with_backoff(state, "GET", url, params=params)
+            data = response.json()
+        except (requests.exceptions.RequestException, ValueError) as exc:
+            return state, results, f"followings of {user_id} failed: {exc}"
+        if isinstance(data, list):
+            results.extend(data)
+            url = None
+        else:
+            results.extend(data.get("collection", []) or [])
+            url = data.get("next_href")
+        params = {}  # next_href already contains pagination params
+    logger.debug(f"Fetched {len(results)} followings of {user_id} ({pages} pages)")
+    return state, results, None
+
+
 def unfollow_user(state: ProviderState, user_id: str) -> tuple[ProviderState, bool]:
     """Unfollow a SoundCloud user.
 
