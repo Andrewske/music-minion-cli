@@ -4,6 +4,7 @@ import { usePlayerStore } from '../../stores/playerStore';
 import { WaveformPlayer } from '../WaveformPlayer';
 import type { Bucket } from '../../api/buckets';
 import type { TrackReposter } from '../../types';
+import { NotesToggle, TrackNotesPanel } from './TrackNotes';
 
 function formatTrackDate(dateStr: string | undefined): string | null {
   if (!dateStr) return null;
@@ -196,6 +197,7 @@ export function CurrentTrackBanner({
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const pause = usePlayerStore((s) => s.pause);
   const resume = usePlayerStore((s) => s.resume);
+  const [notesOpen, setNotesOpen] = useState(false);
 
   const handleTogglePlayPause = useCallback((): void => {
     if (isPlaying) {
@@ -278,7 +280,11 @@ export function CurrentTrackBanner({
               Create buckets first to assign tracks
             </div>
           )}
+
+          <NotesToggle open={notesOpen} onToggle={() => setNotesOpen((prev) => !prev)} />
         </div>
+
+        {notesOpen && <TrackNotesPanel trackId={currentTrack.id} />}
       </div>
     </div>
   );

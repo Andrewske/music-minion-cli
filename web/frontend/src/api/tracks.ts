@@ -14,6 +14,8 @@ export {
   archiveTrack,
   purgeSoundcloudWaveforms,
   getFolders,
+  getTrackNotes,
+  saveTrackNotes,
 } from '@music-minion/shared';
 
 /** React Query key for a track's waveform peaks. */

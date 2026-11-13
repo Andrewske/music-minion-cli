@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.concurrency import run_in_threadpool
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from mutagen import MutagenError
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from loguru import logger
 import mimetypes
@@ -15,6 +16,9 @@ from ..waveform import has_cached_waveform, generate_waveform, get_waveform_path
 from ..deps import get_db, get_config
 from ..soundcloud_auth import get_web_provider_state
 from music_minion.core.config import Config
+from music_minion.core.database import get_db_connection
+from music_minion.domain.library import track_notes
+from music_minion.domain.sync.engine import get_file_mtime
 from music_minion.domain.library.providers.soundcloud.api import (
     API_BASE_URL as SC_API_BASE_URL,
     _ensure_valid_token,
@@ -478,6 +482,60 @@ async def archive_track(track_id: int):
         raise HTTPException(
             status_code=500, detail=f"Failed to archive track: {str(e)}"
         )
+
+
+class TrackNotesBody(BaseModel):
+    notes: str = Field(max_length=10_000)
+
+
+def _notes_path(track_id: int, config: Config) -> Path:
+    """Validated local file for a track's notes, or 404 explaining why not."""
+    from music_minion.core.path_security import validate_track_path
+
+    with get_db_connection() as conn:
+        file_path = get_track_path(track_id, conn)
+    if not file_path or not file_path.exists():
+        raise HTTPException(status_code=404, detail="Track has no local file")
+    validated = validate_track_path(file_path, config.music)
+    if not validated:
+        logger.warning(f"Notes: blocked access outside library: {file_path}")
+        raise HTTPException(status_code=404, detail="Track file is outside the library")
+    if not track_notes.supports_notes(validated):
+        raise HTTPException(
+            status_code=404, detail=f"Notes unsupported for {validated.suffix} files"
+        )
+    return validated
+
+
+@router.get("/tracks/{track_id}/notes")
+def get_track_notes(track_id: int, config: Config = Depends(get_config)) -> dict:
+    """The file's COMMENT tag (Serato's Comment column)."""
+    return {"notes": track_notes.read_notes(_notes_path(track_id, config))}
+
+
+@router.put("/tracks/{track_id}/notes")
+def put_track_notes(
+    track_id: int, body: TrackNotesBody, config: Config = Depends(get_config)
+) -> dict:
+    """Overwrite the COMMENT tag. file_mtime is stored after the write so the
+    next sync doesn't treat our own edit as an external change."""
+    path = _notes_path(track_id, config)
+    old = track_notes.read_notes(path)
+    if old == body.notes:
+        return {"notes": old}
+    try:
+        track_notes.write_notes(path, body.notes)
+    except (OSError, MutagenError) as error:
+        logger.exception(f"Notes write failed for track {track_id} ({path})")
+        raise HTTPException(status_code=500, detail=f"Notes write failed: {error}")
+    logger.info(f"Notes for track {track_id} ({path.name}): {old!r} -> {body.notes!r}")
+    with get_db_connection() as conn:
+        conn.execute(
+            "UPDATE tracks SET file_mtime = ? WHERE id = ?",
+            (get_file_mtime(str(path)), track_id),
+        )
+        conn.commit()
+    return {"notes": body.notes}
 
 
 @router.get("/folders")
