@@ -20,6 +20,7 @@ from ...provider import ProviderState, TrackList
 from . import auth
 from .auth import TOKEN_URL
 from .exceptions import AuthenticationError, TrackUnavailableError
+from .like_uploaders import LikeUploader, record_like_uploaders, uploaders_by_track
 
 # SoundCloud API base URL
 API_BASE_URL = "https://api.soundcloud.com"
@@ -146,7 +147,7 @@ def sync_library(
     logger.info("Starting SoundCloud likes sync")
     log("\n🔄 Syncing SoundCloud likes...", level="info")
     try:
-        tracks, all_liked_ids = _fetch_user_likes_with_markers(
+        tracks, all_liked_ids, uploaders = _fetch_likes_with_uploaders(
             access_token, existing_ids=existing_ids, incremental=incremental
         )
         logger.info(
@@ -165,6 +166,7 @@ def sync_library(
             return state, []
 
     _record_sc_likes(all_liked_ids)
+    record_like_uploaders(uploaders)
 
     # Sync like markers for all matched tracks (both new and existing)
     likes_synced = 0
@@ -731,6 +733,16 @@ def _fetch_user_likes(
 def _fetch_user_likes_with_markers(
     access_token: str, existing_ids: Optional[set] = None, incremental: bool = True
 ) -> tuple[TrackList, set]:
+    """Fetch user's liked tracks from SoundCloud with all liked track IDs."""
+    tracks, all_liked_ids, _uploaders = _fetch_likes_with_uploaders(
+        access_token, existing_ids, incremental
+    )
+    return tracks, all_liked_ids
+
+
+def _fetch_likes_with_uploaders(
+    access_token: str, existing_ids: set | None = None, incremental: bool = True
+) -> tuple[TrackList, set, dict[str, LikeUploader]]:
     """Fetch user's liked tracks from SoundCloud with all liked track IDs.
 
     Args:
@@ -739,15 +751,17 @@ def _fetch_user_likes_with_markers(
         incremental: If True, stop fetching when encountering an existing track
 
     Returns:
-        (tracks, all_liked_ids)
+        (tracks, all_liked_ids, uploaders)
         - tracks: List of (track_id, metadata) tuples for new tracks
         - all_liked_ids: Set of ALL liked track IDs (for marker sync)
+        - uploaders: liked track id -> uploading account (sc_likes.uploader_*)
     """
     if existing_ids is None:
         existing_ids = set()
 
     tracks = []
     all_liked_ids = set()  # Track ALL liked IDs for marker sync
+    uploaders: dict[str, LikeUploader] = {}
     url = f"{API_BASE_URL}/me/likes/tracks"
     headers = {"Authorization": f"OAuth {access_token}"}
 
@@ -786,6 +800,7 @@ def _fetch_user_likes_with_markers(
 
                     track_id = str(item["id"])
                     all_liked_ids.add(track_id)  # Always track ALL liked IDs
+                    uploaders.update(uploaders_by_track([item]))
 
                     # Incremental sync: stop if we've already imported this track
                     if incremental and track_id in existing_ids:
@@ -834,7 +849,7 @@ def _fetch_user_likes_with_markers(
         log(f"  ⚠ Error fetching likes: {e}", level="warning")
 
     log(f"  ✓ Fetched {total_fetched} liked tracks", level="info")
-    return tracks, all_liked_ids
+    return tracks, all_liked_ids, uploaders
 
 
 def _normalize_soundcloud_track(track: dict[str, Any]) -> dict[str, Any]:
@@ -1238,6 +1253,29 @@ def create_playlist(
 MAX_REPOSTS_PAGES = 3  # Cap pagination per artist (600 reposts max)
 
 
+def _track_page(
+    data: Any,
+) -> tuple[list[dict[str, Any]], Optional[str], Optional[str]]:
+    """One uploads/reposts page -> (tracks, next_href, error).
+
+    A bare list or a {collection: [...], next_href} page is accepted (null
+    items dropped). Anything else, e.g. an HTTP 200 {"errors": [...]} body,
+    is a "Malformed response" error, never an empty feed.
+    """
+    if isinstance(data, list):
+        items, next_href = data, None
+    elif isinstance(data, dict) and isinstance(data.get("collection"), list):
+        items, next_href = data["collection"], data.get("next_href")
+    else:
+        return [], None, f"Malformed response: {data!r:.80}"
+    items = [item for item in items if item is not None]
+    if not all(isinstance(item, dict) for item in items):
+        return [], None, "Malformed response: non-object track item"
+    if next_href is not None and not isinstance(next_href, str):
+        return [], None, f"Malformed response: next_href {next_href!r:.80}"
+    return items, next_href or None, None
+
+
 def get_user_reposts(
     state: ProviderState,
     user_id: str,
@@ -1289,13 +1327,10 @@ def get_user_reposts(
         except (json.JSONDecodeError, ValueError):
             return state, results, "Invalid JSON response"
 
-        if isinstance(data, list):
-            results.extend(data)
-            url = None
-        else:
-            results.extend(data.get("collection", []) or [])
-            url = data.get("next_href")
-
+        items, url, shape_error = _track_page(data)
+        if shape_error:
+            return state, results, shape_error
+        results.extend(items)
         params = {}  # next_href already contains pagination params
 
     logger.debug(
@@ -1405,13 +1440,10 @@ def get_user_tracks(
         except (json.JSONDecodeError, ValueError):
             return state, results, "Invalid JSON response"
 
-        if isinstance(data, list):
-            results.extend(data)
-            url = None
-        else:
-            results.extend(data.get("collection", []) or [])
-            url = data.get("next_href")
-
+        items, url, shape_error = _track_page(data)
+        if shape_error:
+            return state, results, shape_error
+        results.extend(items)
         params = {}  # next_href already contains pagination params
 
     logger.debug(
@@ -1569,40 +1601,103 @@ def _request_with_backoff(
     return state, response  # unreachable, satisfies type checker
 
 
+FOLLOWINGS_PAGE_CAP = 100  # 20k follows at 200 per page; past this it is looping
+
+
+def _followings_page(
+    data: Any,
+) -> tuple[list[dict[str, Any]], str | None, str | None]:
+    """One followings page -> (users, next_href, error). A payload that is not
+    a user list or a {collection, next_href} page is an error, never a stop."""
+    if isinstance(data, list):
+        return data, None, None
+    if not isinstance(data, dict) or not isinstance(data.get("collection"), list):
+        return [], None, f"unexpected followings payload: {data!r:.80}"
+    if not all(isinstance(u, dict) for u in data["collection"]):
+        return [], None, "unexpected non-object user in followings page"
+    next_href = data.get("next_href")
+    if next_href is not None and not isinstance(next_href, str):
+        return [], None, f"unexpected next_href {next_href!r:.80}"
+    return data["collection"], next_href or None, None
+
+
+def _paginate_followings(
+    state: ProviderState, url: str, max_pages: int
+) -> tuple[ProviderState, list[dict[str, Any]], str | None]:
+    """Fetch every followings page from `url`; raises on HTTP errors.
+
+    The error is set whenever the list is known to be partial: a malformed
+    page, a pagination URL seen before, or more pages left at the page cap.
+    """
+    params: dict[str, Any] = {"limit": 200, "linked_partitioning": "true"}
+    results: list[dict[str, Any]] = []
+    seen = {url}
+    for _page in range(max_pages):
+        state, response = _request_with_backoff(state, "GET", url, params=params)
+        users, next_url, error = _followings_page(response.json())
+        if error:
+            return state, results, error
+        results.extend(users)
+        if next_url is None:
+            return state, results, None
+        if next_url in seen:
+            return state, results, f"pagination repeated {next_url}"
+        seen.add(next_url)
+        url, params = next_url, {}  # next_href already carries the params
+    return state, results, f"more pages left after the {max_pages}-page cap"
+
+
 def get_followings(
-    state: ProviderState, limit: int = 200
-) -> tuple[ProviderState, list[dict[str, Any]]]:
+    state: ProviderState,
+) -> tuple[ProviderState, list[dict[str, Any]], str | None]:
     """Fetch the authenticated user's followings (paginated).
 
-    Args:
-        state: Current provider state
-        limit: Page size per request (max 200, default 200)
-
     Returns:
-        (updated_state, flat list of user dicts from SC API)
+        (updated_state, user dicts, error_or_None). A non-None error means the
+        list is incomplete and must not be synced.
+
+    Raises:
+        requests.HTTPError / RequestException: on HTTP or network failure
     """
     if not state.authenticated:
-        return state, []
+        return state, [], "not authenticated"
+    url = f"{API_BASE_URL}/me/followings"
+    state, results, error = _paginate_followings(state, url, FOLLOWINGS_PAGE_CAP)
+    logger.info(f"Fetched {len(results)} followings (error: {error})")
+    return state, results, error
 
-    url: Optional[str] = f"{API_BASE_URL}/me/followings"
-    params: dict[str, Any] = {"limit": min(limit, 200), "linked_partitioning": True}
-    results: list[dict[str, Any]] = []
 
-    while url:
-        state, response = _request_with_backoff(state, "GET", url, params=params)
-        data = response.json()
+def get_user_followings(
+    state: ProviderState, user_id: str, max_pages: int = 10
+) -> tuple[ProviderState, list[dict[str, Any]], str | None]:
+    """Fetch another user's followings, paginated (200 per page).
 
-        if isinstance(data, list):
-            results.extend(data)
-            url = None
-        else:
-            results.extend(data.get("collection", []))
-            url = data.get("next_href")
+    Uses GET /users/soundcloud:users:{user_id}/followings with
+    linked_partitioning. Any error, a repeated pagination URL, or pages left
+    at `max_pages` returns an error, so callers keep their old rows instead
+    of replacing them with a partial list.
 
-        params = {}  # next_href already contains pagination params
+    Errors: "HTTP <status>" (0 when there was no response, e.g. no token),
+    the exception type for network failures, "Invalid JSON response", or
+    "followings of <id> incomplete: ..." for a malformed or partial list.
 
-    logger.info(f"Fetched {len(results)} followings")
-    return state, results
+    Returns:
+        (updated_state, user dicts, error_message_or_None)
+    """
+    url = f"{API_BASE_URL}/users/soundcloud:users:{user_id}/followings"
+    try:
+        state, results, error = _paginate_followings(state, url, max_pages)
+    except HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else 0
+        return state, [], f"HTTP {status}"
+    except ValueError:  # before RequestException: requests' JSONDecodeError is both
+        return state, [], "Invalid JSON response"
+    except requests.exceptions.RequestException as exc:
+        return state, [], type(exc).__name__
+    if error:
+        return state, results, f"followings of {user_id} incomplete: {error}"
+    logger.debug(f"Fetched {len(results)} followings of {user_id}")
+    return state, results, None
 
 
 def unfollow_user(state: ProviderState, user_id: str) -> tuple[ProviderState, bool]:
@@ -1645,3 +1740,65 @@ def unfollow_user(state: ProviderState, user_id: str) -> tuple[ProviderState, bo
             return state, True
         logger.error(f"SC unfollow {user_id} failed {status}: {body}")
         raise
+
+
+def _format_user_urn(user_id: str) -> str:
+    """Format a SoundCloud user id as a URN (idempotent)."""
+    if user_id.startswith("soundcloud:users:"):
+        return user_id
+    return f"soundcloud:users:{user_id}"
+
+
+def follow_user(state: ProviderState, user_id: str) -> tuple[ProviderState, bool]:
+    """Follow a SoundCloud user.
+
+    Unlike unfollow, a 4xx is a real refusal (unknown user, blocked), so it
+    returns False instead of soft-succeeding. 5xx errors are raised.
+
+    Args:
+        state: Current provider state
+        user_id: SoundCloud user ID (numeric string or URN)
+
+    Returns:
+        (updated_state, success)
+
+    Raises:
+        requests.HTTPError: On 5xx errors
+    """
+    if not state.authenticated:
+        return state, False
+
+    url = f"{API_BASE_URL}/me/followings/{_format_user_urn(user_id)}"
+    try:
+        state, _ = _request_with_backoff(state, "PUT", url)
+        logger.info(f"Followed SC user {user_id}")
+        return state, True
+    except requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else 0
+        body = exc.response.text[:300] if exc.response is not None else ""
+        if 400 <= status < 500:
+            logger.warning(f"SC follow {user_id} refused {status} (body: {body})")
+            return state, False
+        logger.error(f"SC follow {user_id} failed {status}: {body}")
+        raise
+
+
+def get_user(
+    state: ProviderState, user_id: str
+) -> tuple[ProviderState, dict[str, Any] | None]:
+    """Fetch one SoundCloud user (GET /users/{urn}); None if SC has no such user.
+
+    Raises:
+        requests.HTTPError: On non-404 HTTP errors
+    """
+    if not state.authenticated:
+        return state, None
+
+    url = f"{API_BASE_URL}/users/{_format_user_urn(user_id)}"
+    try:
+        state, response = _request_with_backoff(state, "GET", url)
+    except requests.HTTPError as exc:
+        if exc.response is not None and exc.response.status_code == 404:
+            return state, None
+        raise
+    return state, response.json()

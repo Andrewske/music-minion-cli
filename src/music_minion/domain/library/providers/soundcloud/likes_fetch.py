@@ -14,11 +14,17 @@ so geo-blocked and preview-only likes are listed too. Even if SoundCloud drops
 the parameter from a next_href, the endpoint default still covers all three.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from types import MappingProxyType
 from typing import Any, NamedTuple
 
 import requests
 from loguru import logger
+
+from music_minion.domain.library.providers.soundcloud.like_uploaders import (
+    LikeUploader,
+    uploaders_by_track,
+)
 
 API_BASE_URL = "https://api.soundcloud.com"
 LIKES_URL = f"{API_BASE_URL}/me/likes/tracks"
@@ -36,12 +42,15 @@ class LikesSnapshot(NamedTuple):
     complete: bool
     reason: str
     pages: int
+    uploaders: Mapping[str, LikeUploader] = MappingProxyType({})
+    ordered_ids: tuple[str, ...] = ()  # SC order, newest like first
 
 
 class _PageResult(NamedTuple):
     ids: list[str]
     next_href: str | None
     error: str | None
+    uploaders: dict[str, LikeUploader] | None = None
 
 
 def _parse_page(data: Any) -> _PageResult:
@@ -58,7 +67,9 @@ def _parse_page(data: Any) -> _PageResult:
     next_href = data.get("next_href")
     if next_href is not None and not isinstance(next_href, str):
         return _PageResult([], None, f"unexpected next_href {next_href!r:.80}")
-    return _PageResult(ids, next_href or None, None)
+    return _PageResult(
+        ids, next_href or None, None, uploaders_by_track(data["collection"])
+    )
 
 
 def _get_page(http_get: HttpGet, url: str, params: dict, token: str) -> Any:
@@ -82,6 +93,8 @@ def fetch_all_liked_ids(
 ) -> LikesSnapshot:
     """Page through every like. complete=False on any error or odd payload."""
     ids: set[str] = set()
+    ordered: list[str] = []
+    uploaders: dict[str, LikeUploader] = {}
     url: str | None = LIKES_URL
     params: dict = {
         "limit": PAGE_LIMIT,
@@ -93,7 +106,9 @@ def fetch_all_liked_ids(
 
     def incomplete(reason: str) -> LikesSnapshot:
         logger.warning(f"sc likes full fetch incomplete after {pages} pages: {reason}")
-        return LikesSnapshot(frozenset(ids), False, reason, pages)
+        return LikesSnapshot(
+            frozenset(ids), False, reason, pages, uploaders, tuple(ordered)
+        )
 
     while url:
         if pages >= MAX_PAGES or url in seen_urls:
@@ -109,8 +124,12 @@ def fetch_all_liked_ids(
         page = _parse_page(data)
         if page.error:
             return incomplete(f"{page.error} on page {pages}")
+        ordered.extend(i for i in page.ids if i not in ids)
         ids.update(page.ids)
+        uploaders.update(page.uploaders or {})
         url, params = page.next_href, {}
 
     logger.info(f"sc likes full fetch complete: {len(ids)} likes in {pages} pages")
-    return LikesSnapshot(frozenset(ids), True, "complete", pages)
+    return LikesSnapshot(
+        frozenset(ids), True, "complete", pages, uploaders, tuple(ordered)
+    )

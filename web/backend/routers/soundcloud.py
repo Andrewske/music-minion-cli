@@ -1045,6 +1045,7 @@ async def sync_soundcloud_followings(db=Depends(get_db)) -> dict:
     into discovery_artists:
     - Artists no longer followed are marked is_following=0.
     - Active followings are upserted with avatar/follower_count/display_name.
+    - An empty or truncated fetch (<80% of current follows) aborts with 502.
 
     Returns:
         followings_synced: total active followings written
@@ -1063,12 +1064,17 @@ async def sync_soundcloud_followings(db=Depends(get_db)) -> dict:
         raise HTTPException(status_code=401, detail="SoundCloud not authenticated")
 
     try:
-        _state, followings = sc_get_followings(state)
+        _state, followings, fetch_error = sc_get_followings(state)
 
         if not _state.authenticated:
             raise HTTPException(status_code=401, detail="SoundCloud not authenticated")
 
-        result = sync_followings(db, followings)
+        result = sync_followings(db, followings, fetch_error)
+        if result["aborted"]:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Followings sync aborted, nothing changed: {result['aborted']}",
+            )
         db.commit()
         return result
 

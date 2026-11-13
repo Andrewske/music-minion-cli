@@ -5,7 +5,7 @@ SQLite database operations for Music Minion CLI
 import os
 import sqlite3
 import unicodedata
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,7 +19,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 73  # organizer: multiple named sessions per playlist
+SCHEMA_VERSION = 74  # follow suggestions: follow dates, like uploaders, caches
 
 
 # Initial top 50 curated emojis for music reactions
@@ -626,6 +626,110 @@ def _migrate_v73_bucket_session_names(conn) -> None:
         CREATE INDEX IF NOT EXISTS idx_bucket_sessions_playlist_status
         ON bucket_sessions(playlist_id, status)
     """)
+
+
+_V74_TABLES_DDL = (
+    """
+    CREATE TABLE IF NOT EXISTS sc_name_resolutions (
+        name_key TEXT PRIMARY KEY,
+        soundcloud_user_id TEXT,
+        permalink TEXT,
+        display_name TEXT,
+        confidence TEXT NOT NULL,
+        source TEXT NOT NULL,
+        resolved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS sc_account_activity (
+        soundcloud_user_id TEXT PRIMARY KEY,
+        permalink TEXT,
+        username TEXT,
+        avatar_url TEXT,
+        followers INTEGER,
+        last_upload_at TEXT,
+        last_repost_at TEXT,
+        uploads_90d INTEGER NOT NULL DEFAULT 0,
+        reposts_90d INTEGER NOT NULL DEFAULT 0,
+        is_label INTEGER,
+        fetched_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS follow_suggestion_dismissals (
+        soundcloud_user_id TEXT PRIMARY KEY,
+        dismissed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS follow_suggestion_label_overrides (
+        soundcloud_user_id TEXT PRIMARY KEY,
+        is_label INTEGER NOT NULL CHECK (is_label IN (0, 1)),
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS sc_artist_followings (
+        follower_id TEXT NOT NULL,
+        followee_id TEXT NOT NULL,
+        followee_permalink TEXT,
+        followee_username TEXT,
+        followee_followers INTEGER,
+        fetched_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (follower_id, followee_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS sc_favorite_followings_state (
+        follower_id TEXT PRIMARY KEY,
+        fetched_at TEXT,
+        followee_count INTEGER,
+        status TEXT NOT NULL DEFAULT 'ok',
+        last_error_at TEXT,
+        last_error TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_sc_artist_followings_followee"
+    " ON sc_artist_followings(followee_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sc_likes_uploader"
+    " ON sc_likes(uploader_soundcloud_id)",
+)
+
+
+def _migrate_v74_follow_suggestions(conn) -> None:
+    """Schema for follow suggestions and the nightly followings sync.
+
+    - discovery_artists.followed_at / follow_order: when (or in what order)
+      a follow was first seen. NULL for the March 2026 bulk import.
+    - discovery_artists.tier_auto: 1 while the tier is the automatic C a new
+      follow gets; any manual tier choice clears it.
+    - sc_likes uploader columns: the SC account that uploaded a liked track.
+    - sc_likes.like_order: position in the last complete likes fetch
+      (0 = newest). SC never says when a like happened, so this is the only
+      recency signal for most likes.
+    - Caches: name -> SC account resolutions, per-account activity, the
+      followings of top-tier artists. Dismissals are permanent.
+    - sc_favorite_followings_state: when each favorite's followings were last
+      fetched in full (also when they follow nobody); drives staleness.
+      fetched_at stays NULL until the first full fetch. An account-level
+      failure sets status 'error' and last_error_at, which backs that
+      favorite off for a day without touching fetched_at or its rows.
+    """
+    for table, column_ddl in (
+        ("discovery_artists", "followed_at TEXT"),
+        ("discovery_artists", "follow_order INTEGER"),
+        ("discovery_artists", "tier_auto INTEGER NOT NULL DEFAULT 0"),
+        ("sc_likes", "uploader_soundcloud_id TEXT"),
+        ("sc_likes", "uploader_permalink TEXT"),
+        ("sc_likes", "uploader_username TEXT"),
+        ("sc_likes", "like_order INTEGER"),
+    ):
+        if _table_exists(conn, table):
+            _add_column_if_missing(conn, table, column_ddl)
+    for ddl in _V74_TABLES_DDL:
+        if "ON sc_likes" in ddl and not _table_exists(conn, "sc_likes"):
+            continue
+        conn.execute(ddl)
 
 
 def _migrate_v64_track_predictions(conn) -> None:
@@ -3610,7 +3714,17 @@ def migrate_database(conn, current_version: int) -> None:
         _migrate_v73_bucket_session_names(conn)
         conn.execute("RELEASE SAVEPOINT migrate_v73")
         conn.commit()
-        logger.info("  ✓ Migration to v73 complete: bucket_sessions name/last_opened_at")
+        logger.info(
+            "  ✓ Migration to v73 complete: bucket_sessions name/last_opened_at"
+        )
+
+    if current_version < 74:
+        logger.info("Running migration to v74: follow suggestions...")
+        conn.execute("SAVEPOINT migrate_v74")
+        _migrate_v74_follow_suggestions(conn)
+        conn.execute("RELEASE SAVEPOINT migrate_v74")
+        conn.commit()
+        logger.info("  ✓ Migration to v74 complete: follow suggestions schema")
 
 
 def ensure_schema_not_newer(conn: sqlite3.Connection, db_path: Path) -> None:
@@ -4031,6 +4145,23 @@ def apply_sc_likes_reconcile(
             conn.rollback()
             raise
     return added, len(removable)
+
+
+def write_sc_like_order(ordered_ids: Sequence[str]) -> int:
+    """Store each like's position in a complete likes fetch (0 = newest).
+
+    Rows missing from the fetch get NULL. Call only with a complete fetch.
+    """
+    with get_db_connection() as conn:
+        conn.execute("UPDATE sc_likes SET like_order = NULL")
+        before = conn.total_changes
+        conn.executemany(
+            "UPDATE sc_likes SET like_order = ? WHERE soundcloud_id = ?",
+            [(pos, str(sc_id)) for pos, sc_id in enumerate(ordered_ids)],
+        )
+        written = conn.total_changes - before
+        conn.commit()
+    return written
 
 
 def has_soundcloud_like(track_id: int) -> bool:

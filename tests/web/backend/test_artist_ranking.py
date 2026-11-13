@@ -24,6 +24,7 @@ SCHEMA_SQL = [
         display_name TEXT,
         ranking INTEGER,
         tier TEXT,
+        tier_auto INTEGER NOT NULL DEFAULT 0,
         hit_rate REAL,
         upload_keep_rate REAL DEFAULT 0.22,
         upload_rated_count REAL DEFAULT 0,
