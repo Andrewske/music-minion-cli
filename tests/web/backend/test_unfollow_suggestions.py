@@ -14,7 +14,7 @@ from web.backend import artist_unfollow
 from web.backend import unfollow_suggestions as us
 from web.backend.follow_suggestions import RECENCY_FLOOR
 from web.backend.queries import unfollow_suggestions as queries
-from web.backend.routers.unfollow_suggestions import router
+from web.backend.routers.unfollow_suggestions import MAX_BATCH, router
 from web.backend.unfollow_suggestions import FollowedAccount, GoodItem
 
 NOW = datetime(2026, 11, 12, tzinfo=UTC)
@@ -362,7 +362,7 @@ class TestRoutes:
         assert _following("a3") == 1
 
     def test_batch_size_limit(self, client: TestClient) -> None:
-        too_many = {"ids": list(range(1, 27))}
+        too_many = {"ids": list(range(1, MAX_BATCH + 2))}
         res = client.post("/api/unfollow-suggestions/unfollow-batch", json=too_many)
         assert res.status_code == 422
         empty = client.post(
