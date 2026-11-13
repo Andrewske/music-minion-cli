@@ -36,9 +36,10 @@ def create_playlist(
     playlist_type: str,
     description: Optional[str] = None,
     conn: Optional[Connection] = None,
+    library: Optional[str] = None,
 ) -> int:
     """
-    Create a new playlist in the current active library.
+    Create a new playlist in `library`, or the current active library when omitted.
 
     If active library is SoundCloud/Spotify, automatically creates a remote playlist
     and links it to the local playlist.
@@ -48,6 +49,7 @@ def create_playlist(
         playlist_type: 'manual' or 'smart'
         description: Optional description
         conn: Optional shared connection for the insert. If None, opens its own.
+        library: Target library; defaults to the active library.
 
     Returns:
         Playlist ID
@@ -60,8 +62,7 @@ def create_playlist(
             f"Invalid playlist type: {playlist_type}. Must be 'manual' or 'smart'"
         )
 
-    # Get active library to assign playlist to it
-    active_library = sync.get_active_library()
+    active_library = library or sync.get_active_library()
 
     if conn is not None:
         playlist_id = _insert_playlist(conn, name, playlist_type, description, active_library)

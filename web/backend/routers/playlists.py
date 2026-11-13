@@ -279,6 +279,7 @@ async def create_playlist(request: CreatePlaylistRequest):
                 playlist_type="manual",
                 description=request.description,
                 conn=conn,
+                library=request.library,
             )
             cursor = conn.execute(
                 "SELECT id, name, type, description, track_count, library FROM playlists WHERE id = ?",
@@ -570,6 +571,86 @@ async def delete_playlist_endpoint(playlist_id: int):
     if not success:
         raise HTTPException(status_code=404, detail="Playlist not found")
     return {"deleted": True, "playlist_id": playlist_id}
+
+
+@router.get("/tracks/{track_id}/playlists")
+def get_track_playlists(track_id: int) -> list[dict]:
+    """Manual playlists that contain the track."""
+    from music_minion.core.database import get_db_connection
+
+    with get_db_connection() as conn:
+        rows = conn.execute(
+            """SELECT p.id, p.name FROM playlists p
+               JOIN playlist_tracks pt ON pt.playlist_id = p.id
+               WHERE pt.track_id = ? AND p.type = 'manual'
+               ORDER BY p.name""",
+            (track_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def _require_manual_playlist(playlist_id: int) -> dict:
+    from music_minion.domain.playlists import get_playlist_by_id
+
+    playlist = get_playlist_by_id(playlist_id)
+    if not playlist:
+        raise HTTPException(status_code=404, detail=f"Playlist {playlist_id} not found")
+    if playlist["type"] != "manual":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Playlist '{playlist['name']}' is smart; tracks can't be added by hand",
+        )
+    return playlist
+
+
+def _require_local_file(playlist: dict, track_id: int) -> None:
+    """Local playlists export to M3U/Serato crates, which need a file path per track."""
+    from music_minion.core.database import get_db_connection
+
+    if playlist.get("library") != "local":
+        return
+    with get_db_connection() as conn:
+        row = conn.execute(
+            "SELECT local_path FROM tracks WHERE id = ?", (track_id,)
+        ).fetchone()
+    if row and not row["local_path"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Track {track_id} has no local file, so it can't go in local "
+            f"playlist '{playlist['name']}' (exports to M3U/Serato need a file)",
+        )
+
+
+# Sync (not async) so SoundCloud API calls run in the threadpool
+@router.post("/playlists/{playlist_id}/tracks/{track_id}")
+def add_track_endpoint(playlist_id: int, track_id: int) -> dict:
+    """Add a track to a manual playlist (syncs to SoundCloud when linked)."""
+    from music_minion.domain.playlists.crud import add_track_to_playlist
+
+    playlist = _require_manual_playlist(playlist_id)
+    _require_local_file(playlist, track_id)
+    if not add_track_to_playlist(playlist_id, track_id):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Track {track_id} not added to playlist {playlist_id}: already in it, "
+            "missing, or the SoundCloud sync failed (see server log)",
+        )
+    return {"added": True, "playlist_id": playlist_id, "track_id": track_id}
+
+
+@router.delete("/playlists/{playlist_id}/tracks/{track_id}")
+def remove_track_endpoint(playlist_id: int, track_id: int) -> dict:
+    """Remove a track from a manual playlist (syncs to SoundCloud when linked)."""
+    from music_minion.domain.playlists.crud import remove_track_from_playlist
+
+    _require_manual_playlist(playlist_id)
+    if not remove_track_from_playlist(playlist_id, track_id):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Track {track_id} not removed from playlist {playlist_id}: not in it, "
+            "or the SoundCloud sync failed (see server log)",
+        )
+    return {"removed": True, "playlist_id": playlist_id, "track_id": track_id}
 
 
 @router.post("/playlists/{playlist_id}/skip/{track_id}")

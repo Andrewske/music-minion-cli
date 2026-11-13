@@ -26,10 +26,12 @@ def get_track_genres_query(track_id: int) -> list[dict]:
 
 
 def create_genre_mutation(name: str) -> dict:
-    """Create a new genre (normalized)."""
+    """Create a genre (normalized), or return the existing one with that name."""
     normalized = normalize_genre_name(name)
+    if not normalized:
+        raise ValueError("Genre name is empty")
     with get_db_connection() as conn:
-        conn.execute("INSERT INTO genres (name) VALUES (?)", (normalized,))
+        conn.execute("INSERT OR IGNORE INTO genres (name) VALUES (?)", (normalized,))
         conn.commit()
         row = conn.execute("SELECT * FROM genres WHERE name = ?", (normalized,)).fetchone()
         return dict(row)
@@ -134,3 +136,58 @@ def assign_genre_emoji_mutation(genre_id: int, emoji_id: str | None) -> dict:
 
         conn.commit()
         return dict(conn.execute("SELECT * FROM genres WHERE id = ?", (genre_id,)).fetchone())
+
+
+def validate_track_genres_query(track_id: int, genre_ids: list[int]) -> None:
+    """Raise LookupError for a missing track, ValueError for duplicate or unknown
+    genre ids, before anything touches the file."""
+    if len(set(genre_ids)) != len(genre_ids):
+        raise ValueError(f"Duplicate genre ids in {genre_ids}")
+    with get_db_connection() as conn:
+        if not conn.execute("SELECT 1 FROM tracks WHERE id = ?", (track_id,)).fetchone():
+            raise LookupError(f"Track {track_id} not found")
+        if not genre_ids:
+            return
+        placeholders = ",".join("?" * len(genre_ids))
+        found = {
+            row["id"]
+            for row in conn.execute(f"SELECT id FROM genres WHERE id IN ({placeholders})", genre_ids)
+        }
+    missing = [gid for gid in genre_ids if gid not in found]
+    if missing:
+        raise ValueError(f"Unknown genre ids {missing}")
+
+
+def title_case_genre(name: str) -> str:
+    """Capitalize each word ("drum & bass" -> "Drum & Bass"); for genres no file spells yet."""
+    return " ".join(word[:1].upper() + word[1:] for word in name.split(" "))
+
+
+def primary_genre_display_query(genre_ids: list[int]) -> str:
+    """How the primary genre should read in file tags: the library's most common
+    cased spelling of it (genres.name is lowercased), or "" when there are none."""
+    if not genre_ids:
+        return ""
+    with get_db_connection() as conn:
+        row = conn.execute("SELECT name FROM genres WHERE id = ?", (genre_ids[0],)).fetchone()
+        if not row:
+            raise ValueError(f"Genre {genre_ids[0]} not found")
+        spelled = conn.execute(
+            """SELECT genre FROM tracks
+               WHERE LOWER(TRIM(genre)) = ? AND genre != LOWER(genre)
+               GROUP BY genre ORDER BY COUNT(*) DESC LIMIT 1""",
+            (row["name"],),
+        ).fetchone()
+    return spelled["genre"] if spelled else title_case_genre(row["name"])
+
+
+def record_written_genre_mutation(track_id: int, genre: str, file_mtime: float | None) -> None:
+    """Store the tag text written to the file as tracks.genre (the primary-genre
+    trigger leaves it lowercased) and the post-write mtime, so the next sync
+    sees no external change."""
+    with get_db_connection() as conn:
+        conn.execute(
+            "UPDATE tracks SET genre = ?, file_mtime = COALESCE(?, file_mtime) WHERE id = ?",
+            (genre or None, file_mtime, track_id),
+        )
+        conn.commit()

@@ -31,7 +31,7 @@ import { sessionLabel } from '../components/organizer/sessionLabel';
 import type { BucketSession } from '../api/buckets';
 import { Button } from '../components/ui/button';
 import type { PlaylistOrganizerProps } from './PlaylistOrganizer.types';
-import type { PlaylistTrackEntry } from '../types';
+import type { PlaylistTrackEntry, PlaylistTracksResponse } from '../types';
 
 function DragPreviewRow({ track }: { track: PlaylistTrackEntry }): JSX.Element {
   return (
@@ -435,6 +435,17 @@ export function PlaylistOrganizer({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentTrack, getBucketByIndex, assignCurrentTrackToBucket]);
 
+  // Patch the cached track list so the card shows the new genre without a refetch
+  const handleGenreChange = useCallback(
+    (trackId: number, genre: string | null): void => {
+      queryClient.setQueryData<PlaylistTracksResponse>(
+        ['playlist', playlistId, 'tracks', 'all'],
+        (prev) => prev && { ...prev, tracks: prev.tracks.map((t) => (t.id === trackId ? { ...t, genre } : t)) },
+      );
+    },
+    [queryClient, playlistId],
+  );
+
   // Handle playing a track from the table
   const handlePlayTrack = useCallback(
     (trackId: number): void => {
@@ -708,6 +719,11 @@ export function PlaylistOrganizer({
                 artworkUrl={entry?.artwork_url}
                 scLiked={entry?.sc_liked}
                 soundcloudUrl={entry?.soundcloud_url}
+                bpm={entry?.bpm}
+                keySignature={entry?.key_signature}
+                genre={entry?.genre}
+                onGenreChange={handleGenreChange}
+                playlistId={playlistId}
               />
             );
           })()}

@@ -18,7 +18,7 @@ from ..soundcloud_auth import get_web_provider_state
 from music_minion.core.config import Config
 from music_minion.core.database import get_db_connection
 from music_minion.domain.library import track_notes
-from music_minion.domain.sync.engine import get_file_mtime
+from music_minion.domain.sync.engine import get_file_mtime, mtime_after_own_write
 from music_minion.domain.library.providers.soundcloud.api import (
     API_BASE_URL as SC_API_BASE_URL,
     _ensure_valid_token,
@@ -517,12 +517,13 @@ def get_track_notes(track_id: int, config: Config = Depends(get_config)) -> dict
 def put_track_notes(
     track_id: int, body: TrackNotesBody, config: Config = Depends(get_config)
 ) -> dict:
-    """Overwrite the COMMENT tag. file_mtime is stored after the write so the
-    next sync doesn't treat our own edit as an external change."""
+    """Overwrite the COMMENT tag. file_mtime advances past our own write only when
+    the file was in sync before it, so pending external edits still get imported."""
     path = _notes_path(track_id, config)
     old = track_notes.read_notes(path)
     if old == body.notes:
         return {"notes": old}
+    before = get_file_mtime(str(path))
     try:
         track_notes.write_notes(path, body.notes)
     except (OSError, MutagenError) as error:
@@ -530,9 +531,11 @@ def put_track_notes(
         raise HTTPException(status_code=500, detail=f"Notes write failed: {error}")
     logger.info(f"Notes for track {track_id} ({path.name}): {old!r} -> {body.notes!r}")
     with get_db_connection() as conn:
+        row = conn.execute("SELECT file_mtime FROM tracks WHERE id = ?", (track_id,)).fetchone()
+        stored = row["file_mtime"] if row else None
         conn.execute(
             "UPDATE tracks SET file_mtime = ? WHERE id = ?",
-            (get_file_mtime(str(path)), track_id),
+            (mtime_after_own_write(stored, before, get_file_mtime(str(path))), track_id),
         )
         conn.commit()
     return {"notes": body.notes}

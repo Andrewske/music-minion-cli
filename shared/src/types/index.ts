@@ -147,6 +147,8 @@ export interface PlaylistTrackEntry {
   artist?: string;
   bpm?: number;
   key_signature?: string;
+  /** Primary genre (tracks.genre, mirrors track_genres position 1). */
+  genre?: string | null;
   rating: number;
   wins: number;
   losses: number;

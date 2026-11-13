@@ -228,6 +228,7 @@ class SkippedTracksResponse(BaseModel):
 class CreatePlaylistRequest(BaseModel):
     name: str
     description: Optional[str] = None
+    library: Optional[str] = None  # defaults to the active library
 
 
 # Player schemas

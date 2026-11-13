@@ -17,7 +17,7 @@ export function NotesToggle({ open, onToggle }: { open: boolean; onToggle: () =>
       type="button"
       onClick={onToggle}
       aria-expanded={open}
-      className={`ml-auto flex items-center gap-1 px-2 py-1 rounded-sm transition-colors ${
+      className={`flex items-center gap-1 px-2 py-1 rounded-sm transition-colors ${
         open ? 'text-white/80 bg-white/10' : 'text-white/40 hover:text-white/70 hover:bg-white/5'
       }`}
     >
