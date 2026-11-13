@@ -96,47 +96,76 @@ describe('UnfollowView', () => {
     expect(meter()).toContain('1,945 / 2,000');
   });
 
-  it('bulk unfollows a section in batches after confirming', async () => {
+  it('bulk unfollows only the untiered accounts in a section, after confirming', async () => {
     vi.mocked(unfollowBatch).mockImplementation(async (ids) => batchOk(ids));
     renderView();
     await screen.findByText('Artist 1');
-    vi.mocked(getUnfollowSuggestions).mockResolvedValue(makeResponse([], 1942));
-    fireEvent.click(screen.getByRole('button', { name: 'Unfollow all 3' }));
-    expect(screen.getByText('Unfollow 3 accounts?')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Unfollow 3' }));
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Unfollowed 3'));
-    expect(vi.mocked(unfollowBatch).mock.calls).toEqual([[[1, 2]], [[3]]]);
-    expect(screen.queryByText('Artist 1')).toBeNull();
-    await waitFor(() => expect(meter()).toContain('1,942 / 2,000'));
+    vi.mocked(getUnfollowSuggestions).mockResolvedValue(makeResponse([makeCandidate(1, { tier: 'B' })], 1943));
+    fireEvent.click(screen.getByRole('button', { name: 'Unfollow 2 untiered' }));
+    expect(screen.getByText('Unfollow 2 accounts?')).toBeInTheDocument();
+    expect(screen.getByText(/1 tiered artist stays listed/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Unfollow 2' }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Unfollowed 2'));
+    expect(vi.mocked(unfollowBatch).mock.calls).toEqual([[[2, 3]]]);
+    expect(row(1)).toBeInTheDocument();
+    await waitFor(() => expect(meter()).toContain('1,943 / 2,000'));
   });
 
-  it('stops a bulk run when SoundCloud fails service-wide', async () => {
-    vi.mocked(unfollowBatch).mockResolvedValue({
-      results: [{ id: 1, ok: true }, { id: 2, ok: false, status: 503, error: 'Could not reach SoundCloud' }],
-      stopped: true,
-      error: 'Could not reach SoundCloud',
+  it('offers no bulk unfollow on low yield', async () => {
+    vi.mocked(getUnfollowSuggestions).mockResolvedValue({
+      ...makeResponse([]), sections: { redundant: [], dormant: [], labels: [], low_yield: [makeCandidate(5)] },
     });
     renderView();
-    await screen.findByText('Artist 1');
-    fireEvent.click(screen.getByRole('button', { name: 'Unfollow all 3' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Unfollow 3' }));
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Stopped after 1 unfollows: Could not reach SoundCloud'));
-    expect(unfollowBatch).toHaveBeenCalledTimes(1);
+    fireEvent.click(await screen.findByRole('tab', { name: /Low yield/ }));
+    expect(row(5)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /untiered/ })).toBeNull();
   });
 
-  it('Stop finishes the batch in flight and sends no more', async () => {
-    let release: () => void = () => undefined;
-    vi.mocked(unfollowBatch).mockImplementation((ids) => new Promise((r) => { release = () => r(batchOk(ids)); }));
-    renderView();
-    await screen.findByText('Artist 1');
-    fireEvent.click(screen.getByRole('button', { name: 'Unfollow all 3' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Unfollow 3' }));
-    const progress = await screen.findByTestId('bulk-progress');
-    expect(within(row(1)).getByRole('button', { name: 'Unfollow' })).toBeDisabled();
-    fireEvent.click(within(progress).getByRole('button', { name: 'Stop' }));
-    await act(async () => release());
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Unfollowed 2'));
-    expect(unfollowBatch).toHaveBeenCalledTimes(1);
+  describe('with three untiered accounts', () => {
+    beforeEach(() => {
+      vi.mocked(getUnfollowSuggestions).mockResolvedValue(
+        makeResponse([makeCandidate(2), makeCandidate(3), makeCandidate(4)]),
+      );
+    });
+
+    it('sends batches in order', async () => {
+      vi.mocked(unfollowBatch).mockImplementation(async (ids) => batchOk(ids));
+      renderView();
+      await screen.findByText('Artist 2');
+      fireEvent.click(screen.getByRole('button', { name: 'Unfollow 3 untiered' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Unfollow 3' }));
+      await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Unfollowed 3'));
+      expect(vi.mocked(unfollowBatch).mock.calls).toEqual([[[2, 3]], [[4]]]);
+    });
+
+    it('stops a bulk run when SoundCloud fails service-wide', async () => {
+      vi.mocked(unfollowBatch).mockResolvedValue({
+        results: [{ id: 2, ok: true }, { id: 3, ok: false, status: 503, error: 'Could not reach SoundCloud' }],
+        stopped: true,
+        error: 'Could not reach SoundCloud',
+      });
+      renderView();
+      await screen.findByText('Artist 2');
+      fireEvent.click(screen.getByRole('button', { name: 'Unfollow 3 untiered' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Unfollow 3' }));
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Stopped after 1 unfollows: Could not reach SoundCloud'));
+      expect(unfollowBatch).toHaveBeenCalledTimes(1);
+    });
+
+    it('Stop finishes the batch in flight and sends no more', async () => {
+      let release: () => void = () => undefined;
+      vi.mocked(unfollowBatch).mockImplementation((ids) => new Promise((r) => { release = () => r(batchOk(ids)); }));
+      renderView();
+      await screen.findByText('Artist 2');
+      fireEvent.click(screen.getByRole('button', { name: 'Unfollow 3 untiered' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Unfollow 3' }));
+      const progress = await screen.findByTestId('bulk-progress');
+      expect(within(row(2)).getByRole('button', { name: 'Unfollow' })).toBeDisabled();
+      fireEvent.click(within(progress).getByRole('button', { name: 'Stop' }));
+      await act(async () => release());
+      await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Unfollowed 2'));
+      expect(unfollowBatch).toHaveBeenCalledTimes(1);
+    });
   });
 });
 

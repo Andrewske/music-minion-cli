@@ -5,13 +5,15 @@ import { Button } from '../ui/button';
 
 interface ConfirmProps {
   count: number;
+  /** Tiered accounts in the section, left out of the bulk run. */
+  skipped: number;
   section: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
 }
 
-export function ConfirmBulkDialog({ count, section, open, onOpenChange, onConfirm }: ConfirmProps): ReactElement {
+export function ConfirmBulkDialog({ count, skipped, section, open, onOpenChange, onConfirm }: ConfirmProps): ReactElement {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
@@ -21,8 +23,9 @@ export function ConfirmBulkDialog({ count, section, open, onOpenChange, onConfir
             Unfollow {count.toLocaleString()} accounts?
           </Dialog.Title>
           <Dialog.Description className="font-inter text-sm text-white/70 leading-relaxed">
-            Everyone in {section} gets unfollowed on SoundCloud, 25 at a time. You can stop partway.
+            Every untiered account in {section} gets unfollowed on SoundCloud, 25 at a time. You can stop partway.
             Ratings, likes and playlists stay as they are.
+            {skipped > 0 && ` ${skipped.toLocaleString()} tiered ${skipped === 1 ? 'artist stays' : 'artists stay'} listed to unfollow one by one.`}
           </Dialog.Description>
           <div className="flex justify-end gap-2 pt-2 border-t border-obsidian-border">
             <Button variant="ghost" className="text-white/60 hover:text-white" onClick={() => onOpenChange(false)}>Cancel</Button>

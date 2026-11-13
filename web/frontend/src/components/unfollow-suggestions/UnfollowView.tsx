@@ -41,21 +41,29 @@ interface SectionProps {
   bulk: BulkUnfollow;
 }
 
+/** Low yield accounts still bring finds of their own: unfollow those one by one. */
+const BULK_SECTIONS: ReadonlySet<UnfollowSection> = new Set(['redundant', 'dormant', 'labels']);
+
 function SectionHeader({ section, rows, bulk }: Omit<SectionProps, 'handlers'>): ReactElement {
   const [confirming, setConfirming] = useState(false);
+  // Tiered artists are never bulk-unfollowed; they stay listed for a one-by-one call.
+  const untiered = rows.filter((r) => !r.tier);
   const confirm = (): void => {
     setConfirming(false);
-    void bulk.run(rows.map((r) => r.discovery_artist_id));
+    void bulk.run(untiered.map((r) => r.discovery_artist_id));
   };
   return (
     <div className="mb-2 flex flex-col sm:flex-row sm:items-start gap-2 sm:justify-between">
       <p className="font-inter text-sm text-white/50">{BLURBS[section]}</p>
-      {rows.length > 0 && (
+      {BULK_SECTIONS.has(section) && untiered.length > 0 && (
         <Button size="sm" variant="destructive" className="shrink-0" disabled={bulk.progress != null} onClick={() => setConfirming(true)}>
-          Unfollow all {rows.length.toLocaleString()}
+          Unfollow {untiered.length.toLocaleString()} untiered
         </Button>
       )}
-      <ConfirmBulkDialog count={rows.length} section={LABELS[section]} open={confirming} onOpenChange={setConfirming} onConfirm={confirm} />
+      <ConfirmBulkDialog
+        count={untiered.length} skipped={rows.length - untiered.length} section={LABELS[section]}
+        open={confirming} onOpenChange={setConfirming} onConfirm={confirm}
+      />
     </div>
   );
 }
