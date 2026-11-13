@@ -113,6 +113,7 @@ from .routers import (
     follow_sync,
     follow_suggestions,
     follow_connections,
+    unfollow_suggestions,
 )
 from .routers.playlists import router as playlists_router
 
@@ -143,6 +144,7 @@ app.include_router(app_updates.router)
 app.include_router(follow_sync.router)
 app.include_router(follow_suggestions.router)
 app.include_router(follow_connections.router)
+app.include_router(unfollow_suggestions.router)
 
 
 @app.get("/health")

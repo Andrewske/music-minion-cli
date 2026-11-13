@@ -2,13 +2,12 @@
 
 from typing import Any
 
-import requests as _requests
 from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
 from pydantic import BaseModel
 
 from music_minion.core.database import get_db_connection
-from music_minion.domain.library.providers.soundcloud.api import unfollow_user
+from web.backend.artist_unfollow import unfollow_discovery_artist
 from web.backend.queries.artists import (
     ARTIST_TIERS,
     delete_match_override,
@@ -18,13 +17,10 @@ from web.backend.queries.artists import (
     get_artist_stats,
     get_local_artist_library_tracks,
     get_pareto_artists,
-    mark_artist_unfollowed,
-    remove_artist_tracks_from_reposts_playlist,
     set_artist_ranking,
     set_artist_tier,
     upsert_match_override,
 )
-from web.backend.soundcloud_auth import get_web_provider_state
 
 router = APIRouter(prefix="/api/artists", tags=["artists"])
 
@@ -225,10 +221,9 @@ async def get_connections(discovery_artist_id: int) -> list[dict[str, Any]]:
 
 
 @router.post("/{discovery_artist_id}/unfollow")
-async def unfollow_artist(discovery_artist_id: int) -> dict[str, Any]:
-    """Unfollow a discovery artist.
+def unfollow_artist(discovery_artist_id: int) -> dict[str, Any]:
+    """Unfollow a discovery artist (SC first, then local state).
 
-    If the artist has a soundcloud_user_id, calls the SC API to unfollow.
     SC 5xx / timeout → HTTP 503 with NO local state change.
     SC 403/404 (already unfollowed) → treated as success.
 
@@ -242,8 +237,9 @@ async def unfollow_artist(discovery_artist_id: int) -> dict[str, Any]:
     - Artists page hides the artist unless songs of theirs remain in likes,
       loves, or playlists (visibility filter in get_artist_stats).
     - discovery_track_reposters rows preserved (shared with hit_rate/discovery
-      analytics). feed_noise metric decays naturally since the artist is no
-      longer polled by sync_followings_reposts.
+      analytics).
+
+    Plain def: the SC request blocks, so FastAPI runs it in the threadpool.
 
     Returns:
         unfollowed: always True on success
@@ -251,63 +247,7 @@ async def unfollow_artist(discovery_artist_id: int) -> dict[str, Any]:
         feed_events_deleted: always 0 (shape preserved for frontend compat)
         reposts_removed: tracks removed from the local reposts playlist
     """
-    with get_db_connection() as conn:
-        row = conn.execute(
-            "SELECT id, soundcloud_user_id FROM discovery_artists WHERE id = ?",
-            (discovery_artist_id,),
-        ).fetchone()
-        if row is None:
-            raise HTTPException(status_code=404, detail=f"Artist {discovery_artist_id} not found")
-
-        sc_user_id: str | None = row["soundcloud_user_id"]
-
-    # No SC user ID — local-only unfollow
-    if not sc_user_id:
-        with get_db_connection() as conn:
-            feed_events_deleted = mark_artist_unfollowed(conn, discovery_artist_id)
-            reposts_removed = remove_artist_tracks_from_reposts_playlist(conn, discovery_artist_id)
-            conn.commit()
-        return {
-            "unfollowed": True,
-            "sc_called": False,
-            "feed_events_deleted": feed_events_deleted,
-            "reposts_removed": reposts_removed,
-        }
-
-    # SC unfollow — must succeed before mutating local state
-    state = get_web_provider_state()
-    if not state or not state.authenticated:
-        raise HTTPException(status_code=401, detail="SoundCloud not authenticated")
-
-    try:
-        _state, _success = unfollow_user(state, sc_user_id)
-    except _requests.HTTPError as exc:
-        status = exc.response.status_code if exc.response is not None else 0
-        logger.exception(
-            f"SC unfollow failed for artist {discovery_artist_id} (sc_id={sc_user_id}): HTTP {status}"
-        )
-        if status == 0:
-            raise HTTPException(status_code=401, detail="SoundCloud token expired — re-authenticate")
-        raise HTTPException(status_code=503, detail=f"SoundCloud returned {status} — try again")
-    except _requests.Timeout:
-        logger.exception(f"SC unfollow timeout for artist {discovery_artist_id}")
-        raise HTTPException(status_code=503, detail="SoundCloud request timed out — try again")
-    except _requests.ConnectionError:
-        logger.exception(f"SC connection error for artist {discovery_artist_id}")
-        raise HTTPException(status_code=503, detail="Could not reach SoundCloud — try again")
-
-    # SC call succeeded — update local state in single transaction
-    with get_db_connection() as conn:
-        feed_events_deleted = mark_artist_unfollowed(conn, discovery_artist_id)
-        reposts_removed = remove_artist_tracks_from_reposts_playlist(conn, discovery_artist_id)
-        conn.commit()
-
-    return {
-        "unfollowed": True,
-        "sc_called": True,
-        "feed_events_deleted": feed_events_deleted,
-        "reposts_removed": reposts_removed,
-    }
+    return unfollow_discovery_artist(discovery_artist_id)
 
 
 @router.post("/match-override")

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ReactElement } from 'react';
-import type { FollowingCount, FollowSuggestionsResponse, Suggestion } from '../../api/followSuggestions';
+import type { FollowSuggestionsResponse, Suggestion } from '../../api/followSuggestions';
 import {
   useDismissSuggestion, useFollowAccount, useFollowConnections, useFollowSuggestions, useLinkSuggestion,
   usePendingAccountKeys, useSetSuggestionLabel, useUntieredFollows,
@@ -10,20 +10,7 @@ import { ConnectionsSection } from './ConnectionsSection';
 import { SuggestionRow } from './SuggestionRow';
 import type { SuggestionHandlers } from './SuggestionRow';
 import { UntieredSection } from './UntieredSection';
-
-const LOW_SLOTS = 25;
-
-/** "1,945 / 2,000 following": SoundCloud stops follows at the limit. */
-function FollowingMeter({ following }: { following: FollowingCount }): ReactElement {
-  const left = following.limit - following.count;
-  const tone = left <= 0 ? 'text-red-400' : left <= LOW_SLOTS ? 'text-amber-400' : 'text-white/50';
-  const note = left <= 0 ? 'at the limit: unfollow someone first' : `${left.toLocaleString()} left`;
-  return (
-    <p data-testid="following-meter" className={`mb-3 font-sf-mono text-xs ${tone}`}>
-      Following {following.count.toLocaleString()} / {following.limit.toLocaleString()} on SoundCloud · {note}
-    </p>
-  );
-}
+import { FollowingMeter, ViewTabs } from './ViewTabs';
 
 function useSuggestionHandlers(full: boolean): SuggestionHandlers {
   const follow = useFollowAccount();
@@ -82,26 +69,6 @@ const VIEW_LABELS: Record<View, string> = {
   artists: 'Artists', labels: 'Labels & channels', connections: 'Connections', untiered: 'New follows',
 };
 
-function ViewTabs({ view, counts, onChange }: { view: View; counts: Record<View, number | null>; onChange: (v: View) => void }): ReactElement {
-  const views = (Object.keys(VIEW_LABELS) as View[]).filter((v) => counts[v] != null);
-  return (
-    <div role="tablist" className="mb-4 flex flex-wrap gap-1 border-b border-obsidian-border">
-      {views.map((v) => (
-        <button
-          key={v}
-          type="button"
-          role="tab"
-          aria-selected={view === v}
-          onClick={() => onChange(v)}
-          className={`px-3 py-2 -mb-px border-b-2 font-inter text-sm ${view === v ? 'border-obsidian-accent text-white' : 'border-transparent text-white/50 hover:text-white/80'}`}
-        >
-          {VIEW_LABELS[v]} <span className="font-sf-mono text-[11px] text-white/40">{counts[v]}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 function SuggestionsStatus({ error, onRetry }: { error: Error | null; onRetry: () => void }): ReactElement {
   if (!error) return <p className="font-sf-mono text-sm text-white/40">Loading suggestions…</p>;
   return (
@@ -129,7 +96,7 @@ export function SuggestionsView(): ReactElement {
   return (
     <div className="max-w-4xl mx-auto">
       {data && <FollowingMeter following={data.following} />}
-      <ViewTabs view={view} counts={counts} onChange={setView} />
+      <ViewTabs view={view} counts={counts} labels={VIEW_LABELS} onChange={setView} />
       {data
         ? <ActiveView view={view} data={data} handlers={handlers} />
         : <SuggestionsStatus error={error} onRetry={() => void refetch()} />}

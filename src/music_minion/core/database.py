@@ -19,7 +19,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 74  # follow suggestions: follow dates, like uploaders, caches
+SCHEMA_VERSION = 75  # unfollow suggestions: permanent keeps
 
 
 # Initial top 50 curated emojis for music reactions
@@ -730,6 +730,17 @@ def _migrate_v74_follow_suggestions(conn) -> None:
         if "ON sc_likes" in ddl and not _table_exists(conn, "sc_likes"):
             continue
         conn.execute(ddl)
+
+
+def _migrate_v75_unfollow_suggestions(conn) -> None:
+    """Unfollow suggestions: accounts Kevin chose to keep never come back."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS unfollow_suggestion_keeps (
+            discovery_artist_id INTEGER PRIMARY KEY
+                REFERENCES discovery_artists(id) ON DELETE CASCADE,
+            kept_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
 
 
 def _migrate_v64_track_predictions(conn) -> None:
@@ -3725,6 +3736,14 @@ def migrate_database(conn, current_version: int) -> None:
         conn.execute("RELEASE SAVEPOINT migrate_v74")
         conn.commit()
         logger.info("  ✓ Migration to v74 complete: follow suggestions schema")
+
+    if current_version < 75:
+        logger.info("Running migration to v75: unfollow suggestions...")
+        conn.execute("SAVEPOINT migrate_v75")
+        _migrate_v75_unfollow_suggestions(conn)
+        conn.execute("RELEASE SAVEPOINT migrate_v75")
+        conn.commit()
+        logger.info("  ✓ Migration to v75 complete: unfollow_suggestion_keeps")
 
 
 def ensure_schema_not_newer(conn: sqlite3.Connection, db_path: Path) -> None:
