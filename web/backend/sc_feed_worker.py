@@ -308,8 +308,20 @@ def _maybe_reconcile_sc_likes() -> None:
         report = reconcile_for_provider(provider_state, apply=last_run_at is not None)
         if report is not None:
             _record_likes_reconcile(report_json(report), report.complete)
+        if report is not None and report.complete:  # once a day, like the reconcile
+            _refresh_follow_suggestion_caches(provider_state)
     except Exception:
         logger.exception("feed_sync_error during sc likes reconcile (continuing)")
+
+
+def _refresh_follow_suggestion_caches(provider_state: Any) -> None:
+    """Nightly follow-suggestion caches (names, activity); never raises."""
+    from web.backend.follow_suggestion_caches import refresh_follow_suggestion_caches
+
+    try:
+        refresh_follow_suggestion_caches(provider_state)
+    except Exception:  # noqa: BLE001 - a cache failure must never stop the worker
+        logger.exception("feed_sync_error during follow suggestion caches (continuing)")
 
 
 def _followings_last_synced_at() -> str | None:
@@ -389,10 +401,12 @@ def start_feed_worker() -> None:
                     _fetch_feed_locked(sweep=_sweep_due())
             except Exception:
                 logger.exception("feed worker tick failed")
-            with _feed_lock:
-                _maybe_reconcile_sc_likes()
+            # Followings first: the likes reconcile refreshes the follow
+            # suggestion caches, which skip accounts already followed.
             with _feed_lock:
                 _maybe_sync_followings()
+            with _feed_lock:
+                _maybe_reconcile_sc_likes()
             time.sleep(TICK_SECONDS)
 
     threading.Thread(target=_loop, daemon=True, name="sc_feed_worker").start()
