@@ -50,6 +50,9 @@ from web.backend.soundcloud_metadata import raw_repost_timestamp
 
 NAME_SEARCH_LIMIT = 100
 ACTIVITY_LIMIT = 150
+# Only the best-evidence accounts get activity: the page shows 200 artists +
+# 100 labels, and the factors only lower a score, so deeper ones never surface.
+ACTIVITY_POOL = 400
 MIN_CREDITS_FOR_SEARCH = 3
 MISS_RETRY_DAYS = 30
 ACTIVITY_MAX_AGE_DAYS = 7
@@ -101,13 +104,17 @@ def names_to_search(
 def accounts_to_refresh(
     ranked: list[dict[str, Any]], fetched_at: dict[str, str], now: datetime, limit: int
 ) -> list[str]:
-    """Candidate account ids whose activity is missing or over a week old."""
+    """The top ACTIVITY_POOL accounts by evidence whose activity is missing or
+    over a week old, best first."""
     cutoff = now - timedelta(days=ACTIVITY_MAX_AGE_DAYS)
+    accounts = [
+        s for s in sorted(ranked, key=lambda s: -s["evidence_score"])
+        if s["soundcloud_user_id"]
+    ][:ACTIVITY_POOL]  # fmt: skip
     stale = [
         s["key"]
-        for s in sorted(ranked, key=lambda s: -s["evidence_score"])
-        if s["soundcloud_user_id"]
-        and (parse_time(fetched_at.get(s["key"])) or datetime.min.replace(tzinfo=UTC))
+        for s in accounts
+        if (parse_time(fetched_at.get(s["key"])) or datetime.min.replace(tzinfo=UTC))
         < cutoff
     ]
     return stale[:limit]

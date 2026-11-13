@@ -3,6 +3,8 @@
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
+import pytest
+
 from music_minion.core.database import get_db_connection
 from music_minion.domain.library.providers.soundcloud import api as sc_api
 from web.backend import follow_suggestion_caches as caches
@@ -79,6 +81,14 @@ class TestPure:
         fetched = {"1": "2026-11-10 00:00:00", "2": "2026-10-01 00:00:00"}
         assert caches.accounts_to_refresh(ranked, fetched, NOW, 10) == ["2", "3"]
         assert caches.accounts_to_refresh(ranked, fetched, NOW, 1) == ["2"]
+
+    def test_accounts_to_refresh_stops_at_pool(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(caches, "ACTIVITY_POOL", 2)
+        ranked = [_suggestion(k, s, 1) for k, s in (("1", 3), ("2", 2), ("3", 1))]
+        fetched = {"1": "2026-11-10 00:00:00"}  # fresh; 2 and 3 are stale
+        assert caches.accounts_to_refresh(ranked, fetched, NOW, 10) == ["2"]
 
     def test_looks_like_label(self) -> None:
         own = [{"metadata_artist": "Wooli x Trivecta"}, {"title": "Wooli - Song"}] * 2
