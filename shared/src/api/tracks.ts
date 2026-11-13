@@ -13,6 +13,22 @@ export async function getWaveformData(trackId: number): Promise<WaveformData> {
   return getDefaultApiClient().request<WaveformData>(`/tracks/${trackId}/waveform`);
 }
 
+export interface TrackNotes {
+  notes: string;
+}
+
+/** The file's COMMENT tag (Serato's Comment). 404 when the track has no local file. */
+export async function getTrackNotes(trackId: number): Promise<TrackNotes> {
+  return getDefaultApiClient().request<TrackNotes>(`/tracks/${trackId}/notes`);
+}
+
+export async function saveTrackNotes(trackId: number, notes: string): Promise<TrackNotes> {
+  return getDefaultApiClient().request<TrackNotes>(`/tracks/${trackId}/notes`, {
+    method: 'PUT',
+    body: JSON.stringify({ notes }),
+  });
+}
+
 export async function checkStreamAvailable(trackId: number): Promise<boolean> {
   try {
     const response = await fetch(`${getDefaultApiClient().getBaseUrl()}/tracks/${trackId}/stream`, { method: 'HEAD' });

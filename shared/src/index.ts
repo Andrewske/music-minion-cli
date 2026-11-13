@@ -24,8 +24,9 @@ export {
 export {
   getStreamUrl, getWaveformData, checkStreamAvailable, archiveTrack,
   refreshWaveform, purgeSoundcloudWaveforms, getFolders, lookupTracks, formatTrackLabel,
+  getTrackNotes, saveTrackNotes,
 } from './api/tracks';
-export type { TrackName } from './api/tracks';
+export type { TrackName, TrackNotes } from './api/tracks';
 export { fetchPlayerQueue, rebindOrganizerPlayback } from './api/player';
 export type { QueuePage, RebindOrganizerResponse } from './api/player';
 export { getHistory, getStats, getTopTracks } from './api/history';

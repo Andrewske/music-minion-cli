@@ -1,6 +1,7 @@
 """Tests for tracks API endpoints."""
 
 import pytest
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import Mock
 from fastapi.testclient import TestClient
@@ -219,3 +220,55 @@ class TestLookupTracks:
     def test_lookup_rejects_oversized_request(self):
         response = client.post("/api/tracks/lookup", json={"ids": list(range(5001))})
         assert response.status_code == 422
+
+
+class TestTrackNotes:
+    """GET/PUT /api/tracks/{id}/notes read and write the file's COMMENT tag."""
+
+    @pytest.fixture
+    def notes_track(self, tmp_path: Path) -> Iterator[int]:
+        from mutagen.id3 import COMM, ID3
+
+        from music_minion.core.config import Config, MusicConfig
+        from web.backend.deps import get_config
+
+        path = tmp_path / "song.mp3"
+        tags = ID3()
+        tags.add(COMM(encoding=3, lang="eng", desc="", text=["sc description"]))
+        tags.save(path)
+        app.dependency_overrides[get_config] = lambda: Config(
+            music=MusicConfig(library_paths=[str(tmp_path)])
+        )
+        with get_db_connection() as conn:
+            cursor = conn.execute(
+                "INSERT INTO tracks (title, local_path, source) VALUES ('N', ?, 'local')",
+                (str(path),),
+            )
+            conn.commit()
+        yield cursor.lastrowid
+        app.dependency_overrides.pop(get_config, None)
+
+    def test_get_and_put_notes(self, notes_track: int) -> None:
+        assert client.get(f"/api/tracks/{notes_track}/notes").json() == {
+            "notes": "sc description"
+        }
+        response = client.put(
+            f"/api/tracks/{notes_track}/notes", json={"notes": "my note"}
+        )
+        assert response.status_code == 200
+        assert client.get(f"/api/tracks/{notes_track}/notes").json()["notes"] == "my note"
+        with get_db_connection() as conn:
+            row = conn.execute(
+                "SELECT file_mtime FROM tracks WHERE id = ?", (notes_track,)
+            ).fetchone()
+        assert row["file_mtime"] is not None
+
+    def test_track_without_local_file_is_404(self) -> None:
+        with get_db_connection() as conn:
+            cursor = conn.execute(
+                "INSERT INTO tracks (title, source) VALUES ('SC only', 'soundcloud')"
+            )
+            conn.commit()
+        response = client.get(f"/api/tracks/{cursor.lastrowid}/notes")
+        assert response.status_code == 404
+        assert "no local file" in response.json()["detail"]
