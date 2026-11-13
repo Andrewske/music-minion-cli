@@ -14,7 +14,7 @@ from web.backend.routers.follow_suggestions import SC_FOLLOWING_LIMIT
 
 router = APIRouter(prefix="/api/unfollow-suggestions", tags=["unfollow-suggestions"])
 
-MAX_BATCH = 25  # keeps one request well under any proxy timeout
+MAX_BATCH = 10  # ~0.5-1s per SC unfollow: progress every few seconds
 
 
 class BatchBody(BaseModel):
@@ -53,5 +53,5 @@ def unfollow_account(discovery_artist_id: int) -> dict[str, Any]:
 
 @router.post("/unfollow-batch")
 def unfollow_accounts(body: BatchBody) -> dict[str, Any]:
-    """Unfollow up to 25 in order; stops at the first service-wide SC error."""
+    """Unfollow up to MAX_BATCH in order; stops at the first service-wide SC error."""
     return unfollow_batch(body.ids)

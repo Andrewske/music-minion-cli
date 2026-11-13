@@ -57,7 +57,7 @@ export interface UnfollowAccountResponse {
 }
 
 /** The server refuses larger batches. */
-export const UNFOLLOW_BATCH_SIZE = 25;
+export const UNFOLLOW_BATCH_SIZE = 10;
 
 const BASE = '/unfollow-suggestions';
 
@@ -74,7 +74,7 @@ export async function unfollowSuggested(id: number): Promise<UnfollowAccountResp
   return getDefaultApiClient().post<UnfollowAccountResponse>(`${BASE}/${id}/unfollow`);
 }
 
-/** Up to 25 ids, unfollowed in order on the server. */
+/** Up to UNFOLLOW_BATCH_SIZE ids, unfollowed in order on the server. */
 export async function unfollowBatch(ids: number[]): Promise<UnfollowBatchResponse> {
   return getDefaultApiClient().post<UnfollowBatchResponse>(`${BASE}/unfollow-batch`, { ids });
 }

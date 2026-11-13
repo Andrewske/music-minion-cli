@@ -23,7 +23,7 @@ export function ConfirmBulkDialog({ count, skipped, section, open, onOpenChange,
             Unfollow {count.toLocaleString()} accounts?
           </Dialog.Title>
           <Dialog.Description className="font-inter text-sm text-white/70 leading-relaxed">
-            Every untiered account in {section} gets unfollowed on SoundCloud, 25 at a time. You can stop partway.
+            Every untiered account in {section} gets unfollowed on SoundCloud, 10 at a time. You can stop partway.
             Ratings, likes and playlists stay as they are.
             {skipped > 0 && ` ${skipped.toLocaleString()} tiered ${skipped === 1 ? 'artist stays' : 'artists stay'} listed to unfollow one by one.`}
           </Dialog.Description>
