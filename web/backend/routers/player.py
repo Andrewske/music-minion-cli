@@ -64,6 +64,17 @@ def resolve_active_device(
     return next(iter(connected), None)
 
 
+def pin_track_first(queue_ids: list[int], track_id: int, window_size: int) -> list[int]:
+    """Put the clicked track at the head of a shuffled window.
+
+    A random sample of a large pool can leave the clicked track out, which
+    made play() fall back to index 0 (a random track). Pinning it first also
+    keeps a small pool's shuffle from hiding it mid-queue.
+    """
+    rest = [tid for tid in queue_ids if tid != track_id]
+    return [track_id, *rest][:window_size]
+
+
 class SeekRequest(BaseModel):
     """Request to seek to a specific position."""
 
@@ -475,6 +486,8 @@ async def play(request: PlayRequest, db=Depends(get_db)):
         shuffle=shuffle,
         sort_spec=None,
     )
+    if shuffle and queue_ids:
+        queue_ids = pin_track_first(queue_ids, request.track_id, WINDOW_SIZE)
 
     # 2. Fetch full track metadata
     queue_tracks = batch_fetch_tracks_with_metadata(queue_ids, db, preserve_order=True)
