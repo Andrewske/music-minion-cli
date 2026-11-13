@@ -13,9 +13,10 @@ import { ChipVisibilityMenu } from '../components/artists/ChipVisibilityMenu';
 import { SyncStatusHeader } from '../components/artists/SyncStatusHeader';
 import { Button } from '../components/ui/button';
 import { SuggestionsView } from '../components/follow-suggestions/SuggestionsView';
+import { UnfollowView } from '../components/unfollow-suggestions/UnfollowView';
 import { useArtistViewStore, useVisibleChips } from '../stores/artistViewStore';
 
-export type ArtistsTab = 'following' | 'suggestions';
+export type ArtistsTab = 'following' | 'suggestions' | 'unfollow';
 
 export type ArtistsSearch = {
   /** Omitted for the default following tab. */
@@ -25,7 +26,7 @@ export type ArtistsSearch = {
 export const Route = createFileRoute('/artists')({
   component: ArtistsPage,
   validateSearch: (search: Record<string, unknown>): ArtistsSearch => ({
-    tab: search.tab === 'suggestions' ? 'suggestions' : undefined,
+    tab: search.tab === 'suggestions' || search.tab === 'unfollow' ? search.tab : undefined,
   }),
 });
 
@@ -93,6 +94,7 @@ function ArtistsTabs({ tab, onChange }: { tab: ArtistsTab; onChange: (tab: Artis
       {([
         ['following', 'Following'],
         ['suggestions', 'Suggestions'],
+        ['unfollow', 'Unfollow'],
       ] as const).map(([value, label]) => (
         <button
           key={value}
@@ -127,12 +129,12 @@ function ArtistsPage(): ReactElement {
       <div className="max-w-7xl mx-auto px-6 pt-6">
         <ArtistsTabs tab={tab} onChange={setTab} />
       </div>
-      {tab === 'suggestions' ? (
-        <div className="px-6 py-6">
-          <SuggestionsView />
-        </div>
-      ) : (
+      {tab === 'following' ? (
         <FollowingView />
+      ) : (
+        <div className="px-6 py-6">
+          {tab === 'suggestions' ? <SuggestionsView /> : <UnfollowView />}
+        </div>
       )}
     </div>
   );
