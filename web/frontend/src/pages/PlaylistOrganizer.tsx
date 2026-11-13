@@ -440,7 +440,7 @@ export function PlaylistOrganizer({
     (trackId: number, genre: string | null): void => {
       queryClient.setQueryData<PlaylistTracksResponse>(
         ['playlist', playlistId, 'tracks', 'all'],
-        (prev) => prev && { ...prev, tracks: prev.tracks.map((t) => (t.id === trackId ? { ...t, genre } : t)) },
+        (prev) => prev && { ...prev, tracks: prev.tracks.map((t) => (t.id === trackId ? { ...t, genre: genre ?? undefined } : t)) },
       );
     },
     [queryClient, playlistId],
