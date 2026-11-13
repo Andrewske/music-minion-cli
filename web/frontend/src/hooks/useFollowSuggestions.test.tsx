@@ -23,7 +23,7 @@ vi.mock('../api/followSuggestions', () => ({
   setSuggestionLabel: vi.fn(),
 }));
 vi.mock('../api/artists', () => ({ updateArtist: vi.fn() }));
-vi.mock('react-toastify', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+vi.mock('react-toastify', () => ({ toast: { error: vi.fn(), success: vi.fn(), loading: vi.fn(() => 'toast-1'), update: vi.fn() } }));
 
 const a = makeSuggestion({ key: '1', soundcloud_user_id: '1', display_name: 'A' });
 const b = makeSuggestion({ key: '2', soundcloud_user_id: '2', display_name: 'B' });
