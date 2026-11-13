@@ -1253,6 +1253,29 @@ def create_playlist(
 MAX_REPOSTS_PAGES = 3  # Cap pagination per artist (600 reposts max)
 
 
+def _track_page(
+    data: Any,
+) -> tuple[list[dict[str, Any]], Optional[str], Optional[str]]:
+    """One uploads/reposts page -> (tracks, next_href, error).
+
+    A bare list or a {collection: [...], next_href} page is accepted (null
+    items dropped). Anything else, e.g. an HTTP 200 {"errors": [...]} body,
+    is a "Malformed response" error, never an empty feed.
+    """
+    if isinstance(data, list):
+        items, next_href = data, None
+    elif isinstance(data, dict) and isinstance(data.get("collection"), list):
+        items, next_href = data["collection"], data.get("next_href")
+    else:
+        return [], None, f"Malformed response: {data!r:.80}"
+    items = [item for item in items if item is not None]
+    if not all(isinstance(item, dict) for item in items):
+        return [], None, "Malformed response: non-object track item"
+    if next_href is not None and not isinstance(next_href, str):
+        return [], None, f"Malformed response: next_href {next_href!r:.80}"
+    return items, next_href or None, None
+
+
 def get_user_reposts(
     state: ProviderState,
     user_id: str,
@@ -1304,13 +1327,10 @@ def get_user_reposts(
         except (json.JSONDecodeError, ValueError):
             return state, results, "Invalid JSON response"
 
-        if isinstance(data, list):
-            results.extend(data)
-            url = None
-        else:
-            results.extend(data.get("collection", []) or [])
-            url = data.get("next_href")
-
+        items, url, shape_error = _track_page(data)
+        if shape_error:
+            return state, results, shape_error
+        results.extend(items)
         params = {}  # next_href already contains pagination params
 
     logger.debug(
@@ -1420,13 +1440,10 @@ def get_user_tracks(
         except (json.JSONDecodeError, ValueError):
             return state, results, "Invalid JSON response"
 
-        if isinstance(data, list):
-            results.extend(data)
-            url = None
-        else:
-            results.extend(data.get("collection", []) or [])
-            url = data.get("next_href")
-
+        items, url, shape_error = _track_page(data)
+        if shape_error:
+            return state, results, shape_error
+        results.extend(items)
         params = {}  # next_href already contains pagination params
 
     logger.debug(
@@ -1584,40 +1601,70 @@ def _request_with_backoff(
     return state, response  # unreachable, satisfies type checker
 
 
+FOLLOWINGS_PAGE_CAP = 100  # 20k follows at 200 per page; past this it is looping
+
+
+def _followings_page(
+    data: Any,
+) -> tuple[list[dict[str, Any]], str | None, str | None]:
+    """One followings page -> (users, next_href, error). A payload that is not
+    a user list or a {collection, next_href} page is an error, never a stop."""
+    if isinstance(data, list):
+        return data, None, None
+    if not isinstance(data, dict) or not isinstance(data.get("collection"), list):
+        return [], None, f"unexpected followings payload: {data!r:.80}"
+    if not all(isinstance(u, dict) for u in data["collection"]):
+        return [], None, "unexpected non-object user in followings page"
+    next_href = data.get("next_href")
+    if next_href is not None and not isinstance(next_href, str):
+        return [], None, f"unexpected next_href {next_href!r:.80}"
+    return data["collection"], next_href or None, None
+
+
+def _paginate_followings(
+    state: ProviderState, url: str, max_pages: int
+) -> tuple[ProviderState, list[dict[str, Any]], str | None]:
+    """Fetch every followings page from `url`; raises on HTTP errors.
+
+    The error is set whenever the list is known to be partial: a malformed
+    page, a pagination URL seen before, or more pages left at the page cap.
+    """
+    params: dict[str, Any] = {"limit": 200, "linked_partitioning": "true"}
+    results: list[dict[str, Any]] = []
+    seen = {url}
+    for _page in range(max_pages):
+        state, response = _request_with_backoff(state, "GET", url, params=params)
+        users, next_url, error = _followings_page(response.json())
+        if error:
+            return state, results, error
+        results.extend(users)
+        if next_url is None:
+            return state, results, None
+        if next_url in seen:
+            return state, results, f"pagination repeated {next_url}"
+        seen.add(next_url)
+        url, params = next_url, {}  # next_href already carries the params
+    return state, results, f"more pages left after the {max_pages}-page cap"
+
+
 def get_followings(
-    state: ProviderState, limit: int = 200
-) -> tuple[ProviderState, list[dict[str, Any]]]:
+    state: ProviderState,
+) -> tuple[ProviderState, list[dict[str, Any]], str | None]:
     """Fetch the authenticated user's followings (paginated).
 
-    Args:
-        state: Current provider state
-        limit: Page size per request (max 200, default 200)
-
     Returns:
-        (updated_state, flat list of user dicts from SC API)
+        (updated_state, user dicts, error_or_None). A non-None error means the
+        list is incomplete and must not be synced.
+
+    Raises:
+        requests.HTTPError / RequestException: on HTTP or network failure
     """
     if not state.authenticated:
-        return state, []
-
-    url: Optional[str] = f"{API_BASE_URL}/me/followings"
-    params: dict[str, Any] = {"limit": min(limit, 200), "linked_partitioning": True}
-    results: list[dict[str, Any]] = []
-
-    while url:
-        state, response = _request_with_backoff(state, "GET", url, params=params)
-        data = response.json()
-
-        if isinstance(data, list):
-            results.extend(data)
-            url = None
-        else:
-            results.extend(data.get("collection", []))
-            url = data.get("next_href")
-
-        params = {}  # next_href already contains pagination params
-
-    logger.info(f"Fetched {len(results)} followings")
-    return state, results
+        return state, [], "not authenticated"
+    url = f"{API_BASE_URL}/me/followings"
+    state, results, error = _paginate_followings(state, url, FOLLOWINGS_PAGE_CAP)
+    logger.info(f"Fetched {len(results)} followings (error: {error})")
+    return state, results, error
 
 
 def get_user_followings(
@@ -1626,31 +1673,30 @@ def get_user_followings(
     """Fetch another user's followings, paginated (200 per page).
 
     Uses GET /users/soundcloud:users:{user_id}/followings with
-    linked_partitioning. Stops early on any error so callers can keep their
-    old rows instead of replacing them with a partial list.
+    linked_partitioning. Any error, a repeated pagination URL, or pages left
+    at `max_pages` returns an error, so callers keep their old rows instead
+    of replacing them with a partial list.
+
+    Errors: "HTTP <status>" (0 when there was no response, e.g. no token),
+    the exception type for network failures, "Invalid JSON response", or
+    "followings of <id> incomplete: ..." for a malformed or partial list.
 
     Returns:
         (updated_state, user dicts, error_message_or_None)
     """
-    url: str | None = f"{API_BASE_URL}/users/soundcloud:users:{user_id}/followings"
-    params: dict[str, Any] = {"limit": 200, "linked_partitioning": "true"}
-    results: list[dict[str, Any]] = []
-    pages = 0
-    while url and pages < max_pages:
-        pages += 1
-        try:
-            state, response = _request_with_backoff(state, "GET", url, params=params)
-            data = response.json()
-        except (requests.exceptions.RequestException, ValueError) as exc:
-            return state, results, f"followings of {user_id} failed: {exc}"
-        if isinstance(data, list):
-            results.extend(data)
-            url = None
-        else:
-            results.extend(data.get("collection", []) or [])
-            url = data.get("next_href")
-        params = {}  # next_href already contains pagination params
-    logger.debug(f"Fetched {len(results)} followings of {user_id} ({pages} pages)")
+    url = f"{API_BASE_URL}/users/soundcloud:users:{user_id}/followings"
+    try:
+        state, results, error = _paginate_followings(state, url, max_pages)
+    except HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else 0
+        return state, [], f"HTTP {status}"
+    except ValueError:  # before RequestException: requests' JSONDecodeError is both
+        return state, [], "Invalid JSON response"
+    except requests.exceptions.RequestException as exc:
+        return state, [], type(exc).__name__
+    if error:
+        return state, results, f"followings of {user_id} incomplete: {error}"
+    logger.debug(f"Fetched {len(results)} followings of {user_id}")
     return state, results, None
 
 

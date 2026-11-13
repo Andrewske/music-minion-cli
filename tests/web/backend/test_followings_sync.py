@@ -92,6 +92,150 @@ class TestGuard:
                 is None
             )
 
+    def test_guard_counts_distinct_valid_ids(self) -> None:
+        """50 valid ids + 30 users without an id is 50 follows, not 80."""
+        for i in range(1, 101):
+            add_artist(str(i))
+        fetched = [user(str(i)) for i in range(1, 51)]
+        fetched += [{"username": f"ghost {i}"} for i in range(30)]
+        with get_db_connection() as conn:
+            result = sync_followings(conn, fetched)
+            conn.commit()
+        assert result["aborted"] == (
+            "fetch returned 50 followings, under 80% of the 100 followed"
+        )
+        assert row("100")["is_following"] == 1
+
+    def test_guard_ignores_duplicate_ids(self) -> None:
+        for i in range(1, 11):
+            add_artist(str(i))
+        result = run_sync(["1", "2", "3", "4", "5"] * 2)
+        assert result["aborted"]
+        assert row("10")["is_following"] == 1
+
+    def test_duplicates_write_once_in_first_position(self) -> None:
+        add_artist("1")
+        result = run_sync(["2", "1", "2"])
+        assert result["aborted"] is None
+        assert row("2")["follow_order"] == 0
+        assert row("1")["follow_order"] == 1
+        assert result["followings_synced"] == 2
+
+    def test_incomplete_fetch_writes_nothing(self) -> None:
+        add_artist("1")
+        add_artist("2")
+        with get_db_connection() as conn:
+            result = sync_followings(
+                conn, [user("1"), user("3")], fetch_error="pagination repeated x"
+            )
+            conn.commit()
+        assert result["aborted"] == "incomplete fetch: pagination repeated x"
+        assert row("2")["is_following"] == 1
+        with get_db_connection() as conn:
+            assert (
+                conn.execute(
+                    "SELECT 1 FROM discovery_artists WHERE soundcloud_user_id = '3'"
+                ).fetchone()
+                is None
+            )
+
+
+class TestGetFollowings:
+    @staticmethod
+    def _serve(monkeypatch: pytest.MonkeyPatch, pages: dict[str, Any]) -> None:
+        from unittest.mock import MagicMock
+
+        from music_minion.domain.library.providers.soundcloud import api
+
+        def fake(state: Any, method: str, url: str, **kwargs: Any) -> Any:
+            return state, MagicMock(json=MagicMock(return_value=pages[url]))
+
+        monkeypatch.setattr(api, "_request_with_backoff", fake)
+
+    @staticmethod
+    def _fetch() -> tuple[list[dict[str, Any]], str | None]:
+        from music_minion.domain.library.provider import ProviderConfig, ProviderState
+        from music_minion.domain.library.providers.soundcloud import api
+
+        state = ProviderState(
+            config=ProviderConfig(name="soundcloud"), authenticated=True
+        )
+        _state, users, error = api.get_followings(state)
+        return users, error
+
+    def test_complete_fetch_has_no_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from music_minion.domain.library.providers.soundcloud import api
+
+        first = f"{api.API_BASE_URL}/me/followings"
+        self._serve(
+            monkeypatch,
+            {
+                first: {"collection": [user("1")], "next_href": "https://p/2"},
+                "https://p/2": {"collection": [user("2")], "next_href": None},
+            },
+        )
+        users, error = self._fetch()
+        assert [u["id"] for u in users] == [1, 2] and error is None
+
+    def test_malformed_page_is_incomplete(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from music_minion.domain.library.providers.soundcloud import api
+
+        first = f"{api.API_BASE_URL}/me/followings"
+        self._serve(
+            monkeypatch,
+            {
+                first: {"collection": [user("1")], "next_href": "https://p/2"},
+                "https://p/2": {"errors": ["oops"]},
+            },
+        )
+        users, error = self._fetch()
+        assert len(users) == 1 and "unexpected followings payload" in (error or "")
+
+    def test_repeated_page_is_incomplete(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from music_minion.domain.library.providers.soundcloud import api
+
+        first = f"{api.API_BASE_URL}/me/followings"
+        self._serve(
+            monkeypatch,
+            {
+                first: {"collection": [user("1")], "next_href": "https://p/2"},
+                "https://p/2": {"collection": [user("2")], "next_href": "https://p/2"},
+            },
+        )
+        _users, error = self._fetch()
+        assert "repeated" in (error or "")
+
+
+class TestEndpoint:
+    def test_incomplete_fetch_returns_502_and_writes_nothing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from music_minion.domain.library.provider import ProviderConfig, ProviderState
+        from web.backend.routers import soundcloud as sc_router
+
+        auth = ProviderState(
+            config=ProviderConfig(name="soundcloud"), authenticated=True
+        )
+        monkeypatch.setattr(sc_router, "get_web_provider_state", lambda: auth)
+        monkeypatch.setattr(
+            sc_router,
+            "sc_get_followings",
+            lambda state: (state, [user("1"), user("3")], "more pages left"),
+        )
+        add_artist("1")
+        add_artist("2")
+        app = FastAPI()
+        app.include_router(sc_router.router, prefix="/api/soundcloud")
+        response = TestClient(app).post("/api/soundcloud/followings-sync")
+        assert response.status_code == 502
+        assert "incomplete fetch" in response.json()["detail"]
+        assert row("2")["is_following"] == 1
+
 
 class TestFollowedAt:
     def test_existing_follow_stays_null(self) -> None:
@@ -198,14 +342,20 @@ class TestRecordNewFollow:
             self._record({"username": "x"})
 
 
+fetch_error: list[str | None] = [None]
+
+
 class TestWorker:
     @pytest.fixture
     def fetched(self, monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
         from music_minion.domain.library.providers.soundcloud import api
 
         response: list[dict[str, Any]] = []
+        fetch_error[0] = None
         monkeypatch.setattr(sc_feed_worker, "get_web_provider_state", lambda: object())
-        monkeypatch.setattr(api, "get_followings", lambda state: (state, response))
+        monkeypatch.setattr(
+            api, "get_followings", lambda state: (state, response, fetch_error[0])
+        )
         return response
 
     def test_due_when_followed_row_unstamped(self) -> None:
@@ -249,4 +399,15 @@ class TestWorker:
         add_artist("1")
         sc_feed_worker._maybe_sync_followings()
         assert row("1")["is_following"] == 1
+        assert sc_feed_worker._followings_last_synced_at() is None
+
+    def test_incomplete_fetch_keeps_follows(
+        self, fetched: list[dict[str, Any]]
+    ) -> None:
+        add_artist("1")
+        add_artist("2")
+        fetched.extend([user("1"), user("3")])
+        fetch_error[0] = "more pages left after the 100-page cap"
+        sc_feed_worker._maybe_sync_followings()
+        assert row("2")["is_following"] == 1
         assert sc_feed_worker._followings_last_synced_at() is None

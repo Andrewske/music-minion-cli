@@ -7,6 +7,8 @@ import { ROLE_LABEL, ageLabel, scoreChips } from './format';
 
 export interface SuggestionHandlers {
   followDisabled: boolean;
+  /** True while a mutation on this account is in flight: its row's actions wait. */
+  isBusy: (account: { key: string; soundcloud_user_id: string | null }) => boolean;
   onFollow: (soundcloudUserId: string) => void;
   onDismiss: (key: string) => void;
   onSetLabel: (key: string, isLabel: boolean) => void;
@@ -40,6 +42,7 @@ function TracksToggle({ count, open, onToggle }: { count: number; open: boolean;
 export function SuggestionRow({ suggestion, handlers }: { suggestion: Suggestion; handlers: SuggestionHandlers }): ReactElement {
   const [open, setOpen] = useState(false);
   const labelText = suggestion.is_label ? 'Not a label' : 'This is a label';
+  const busy = handlers.isBusy(suggestion);
   const details = (
     <>
       {scoreChips(suggestion).map((c) => <Chip key={c}>{c}</Chip>)}
@@ -48,8 +51,8 @@ export function SuggestionRow({ suggestion, handlers }: { suggestion: Suggestion
   );
   const actions = (
     <>
-      <FollowActions account={suggestion} followDisabled={handlers.followDisabled} onFollow={handlers.onFollow} onDismiss={handlers.onDismiss} />
-      <button type="button" onClick={() => handlers.onSetLabel(suggestion.key, !suggestion.is_label)} className="text-[11px] text-white/40 hover:text-white/70 underline-offset-2 hover:underline">
+      <FollowActions account={suggestion} followDisabled={handlers.followDisabled} busy={busy} onFollow={handlers.onFollow} onDismiss={handlers.onDismiss} />
+      <button type="button" disabled={busy} onClick={() => handlers.onSetLabel(suggestion.key, !suggestion.is_label)} className="text-[11px] text-white/40 hover:text-white/70 underline-offset-2 hover:underline disabled:opacity-40 disabled:pointer-events-none">
         {labelText}
       </button>
     </>

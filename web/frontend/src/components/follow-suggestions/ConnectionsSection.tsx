@@ -33,7 +33,7 @@ function ConnectionList({ title, rows, handlers }: { title: string; rows: Follow
             key={c.key}
             account={c}
             details={<ViaChips connection={c} />}
-            actions={<FollowActions account={c} followDisabled={handlers.followDisabled} onFollow={handlers.onFollow} onDismiss={handlers.onDismiss} />}
+            actions={<FollowActions account={c} followDisabled={handlers.followDisabled} busy={handlers.isBusy(c)} onFollow={handlers.onFollow} onDismiss={handlers.onDismiss} />}
           />
         ))}
       </ul>

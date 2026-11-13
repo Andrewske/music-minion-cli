@@ -114,6 +114,7 @@ class TestFetch:
         snap = fetch_all_liked_ids("tok", http_get=fake_get(_three_pages(), calls))
         assert snap.complete and snap.reason == "complete"
         assert snap.ids == {"1", "2", "3", "4", "5"}
+        assert snap.ordered_ids == ("1", "2", "3", "4", "5")
         assert snap.pages == 3
         assert calls[0][1]["access"] == "playable,preview,blocked"
         assert calls[1] == (PAGE2, {})  # next_href carries its own params
@@ -437,3 +438,41 @@ class TestCli:
 
         self._patch_auth(monkeypatch, None)
         assert run_sc_likes_reconcile(apply=True) == 1
+
+
+class TestLikeOrder:
+    def _orders(self) -> dict[str, int | None]:
+        with get_db_connection() as conn:
+            rows = conn.execute("SELECT soundcloud_id, like_order FROM sc_likes")
+            return {r[0]: r[1] for r in rows}
+
+    def test_apply_stores_sc_order(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _seed_likes(["9"])
+        _patch_fetch(monkeypatch, _three_pages())
+        reconcile_sc_likes("tok", apply=True)
+        assert self._orders() == {"1": 0, "2": 1, "3": 2, "4": 3, "5": 4}
+
+    def test_incomplete_fetch_keeps_old_order(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _seed_likes(["1", "2"])
+        _exec("UPDATE sc_likes SET like_order = 7 WHERE soundcloud_id = '1'")
+        pages = _three_pages()
+        pages[PAGE2] = FakeResponse(503)
+        _patch_fetch(monkeypatch, pages)
+        reconcile_sc_likes("tok", apply=True)
+        assert self._orders()["1"] == 7
+
+    def test_dry_run_writes_no_order(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _seed_likes(["1"])
+        _patch_fetch(monkeypatch, _three_pages())
+        reconcile_sc_likes("tok")
+        assert self._orders() == {"1": None}
+
+    def test_duplicate_ids_keep_first_position(self) -> None:
+        pages = {
+            likes_fetch.LIKES_URL: FakeResponse(200, _page(["1", "2"], PAGE2)),
+            PAGE2: FakeResponse(200, _page(["2", "3"])),
+        }
+        snap = fetch_all_liked_ids("tok", http_get=fake_get(pages))
+        assert snap.ordered_ids == ("1", "2", "3")

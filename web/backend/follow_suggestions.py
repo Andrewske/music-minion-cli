@@ -41,6 +41,9 @@ ROLES = ("uploaded", "original", "remixer", "feat", "remixed_by_others", "kept")
 
 RECENCY_FLOOR = 0.3
 RECENCY_HALF_LIFE_MONTHS = 12.0
+# Fallback when only the like's position is known: weight halves every
+# 1,000 likes back (roughly a year of liking, a guess to tune).
+RECENCY_HALF_LIFE_LIKES = 1000.0
 ACTIVITY_UNKNOWN = 0.6
 ACTIVITY_DORMANT = 0.1
 ACTIVITY_DORMANT_DAYS = 365
@@ -61,6 +64,7 @@ LABEL_NAME_RE = re.compile(
 )
 _SLUG_SUFFIX_RE = re.compile(r"(?:music|official|musik|dj|beats|producer)+$")
 _SLUG_PREFIX_RE = re.compile(r"^(?:dj|its|thisis|iam)")
+_TITLE_CREDIT_RE = re.compile(r"^(.+?)\s+[-–—]\s+\S")
 _IGNORED_NAME_KEYS = frozenset({"variousartists", "various", "unknown", "va"})
 
 
@@ -79,6 +83,7 @@ class EvidenceTrack(NamedTuple):
     uploader_id: str | None
     uploader_permalink: str | None
     uploader_username: str | None
+    like_order: int | None = None  # 0 = newest like in the last full fetch
 
 
 class Account(NamedTuple):
@@ -300,6 +305,20 @@ def best_hits_by_entity(
     return dict(grouped)
 
 
+def entity_origins(
+    hits: Iterable[Hit], resolutions: Mapping[str, Resolution]
+) -> dict[str, frozenset[str]]:
+    """Final entity -> every ref that resolved into it (itself included).
+
+    Built from all hits, before the per-track dedup, so a name that only ever
+    lost to the uploader on the same track still belongs to the account."""
+    origins: dict[str, set[str]] = defaultdict(set)
+    for hit in hits:
+        ref = resolve_ref(hit.ref, resolutions)
+        origins[ref] |= {ref, hit.ref}
+    return {ref: frozenset(refs) for ref, refs in origins.items()}
+
+
 def collect_hits(tracks: Iterable[EvidenceTrack]) -> list[Hit]:
     """Dedupe tracks by soundcloud_id (liked beats kept), then credit them."""
     unique: dict[str, EvidenceTrack] = {}
@@ -382,13 +401,22 @@ def combine_resolutions(*sources: Mapping[str, Resolution]) -> dict[str, Resolut
 # ---------------------------------------------------------------------------
 
 
-def recency_weight(liked_at: str | None, now: datetime) -> float:
-    """0.3 + 0.7 * 0.5 ** (age_months / 12); unknown like time gets the floor."""
+def recency_weight(
+    liked_at: str | None, now: datetime, like_order: int | None = None
+) -> float:
+    """0.3 + 0.7 * decay, from the like time or else the like's position.
+
+    Decay halves every 12 months, or every 1,000 likes back when SC gave no
+    time (most likes). Neither known: the 0.3 floor.
+    """
     when = parse_time(liked_at)
-    if when is None:
+    if when is not None:
+        age_months = max(0.0, (now - when).days / 30.44)
+        decay = 0.5 ** (age_months / RECENCY_HALF_LIFE_MONTHS)
+    elif like_order is not None:
+        decay = 0.5 ** (max(0, like_order) / RECENCY_HALF_LIFE_LIKES)
+    else:
         return RECENCY_FLOOR
-    age_months = max(0.0, (now - when).days / 30.44)
-    decay = 0.5 ** (age_months / RECENCY_HALF_LIFE_MONTHS)
     return RECENCY_FLOOR + (1 - RECENCY_FLOOR) * decay
 
 
@@ -437,33 +465,98 @@ def followed_index(followed: Iterable[Account]) -> Followed:
 
 
 def is_followed(ref: str, keys: set[str], followed: Followed) -> bool:
-    """By SC id first, then by any of the entity's name keys."""
-    return ref in followed.ids or bool(keys & followed.keys)
+    """An account (known SC id) by id only; a name-only entity by its keys.
+
+    Names never override a distinct id: Kevin following "DirtySnatcha
+    Records" must not hide the DirtySnatcha artist account."""
+    if not ref.startswith("name:"):
+        return ref in followed.ids
+    return bool(keys & followed.keys)
 
 
-def credits_others(own_keys: set[str], credited: list[str]) -> bool:
-    """Most of an account's uploads credit another artist (label or channel).
+def account_decisions(
+    dismissed: Iterable[str],
+    label_overrides: Mapping[str, bool],
+    aliases: Iterable[tuple[str, str | None]],
+) -> tuple[frozenset[str], dict[str, bool]]:
+    """Carry every 'name:<k>' decision to each account id that k resolves to.
 
-    `credited` is each upload's full credit text (artist + title), so a remix
-    of someone else's song still counts as the remixer's own upload."""
-    own = {k for k in own_keys if len(k) >= 3}
-    if not own or len(credited) < LABEL_MIN_UPLOADS:
-        return False
-    keys = [name_key(c) for c in credited]
-    others = [k for k in keys if k and not any(o in k for o in own)]
-    return len(others) / len(keys) >= LABEL_OTHER_SHARE
+    `aliases` is (name_key, soundcloud_user_id) pairs, e.g. the whole
+    sc_name_resolutions table, so a decision still reaches the account after
+    the alias stops showing up in current evidence. Dismissals stay keyed as
+    stored and gain the ids. An override on the id itself beats any alias
+    override; between aliases that disagree, the first by sort order wins.
+    """
+    ids_by_ref: dict[str, set[str]] = defaultdict(set)
+    for key, sc_id in aliases:
+        if sc_id:
+            ids_by_ref[name_ref(key)].add(str(sc_id))
+    dismissed = frozenset(dismissed)
+    dismissed_ids = {i for ref in dismissed for i in ids_by_ref.get(ref, ())}
+    from_aliases = {
+        sc_id: label_overrides[ref]
+        for ref in sorted(label_overrides, reverse=True)
+        for sc_id in ids_by_ref.get(ref, ())
+    }
+    return dismissed | dismissed_ids, {**from_aliases, **label_overrides}
 
 
-def is_label(ref: str, identity: "Identity", hits: list[Hit], ctx: Context) -> bool:
-    """Override wins; else a label-ish name; else uploads that credit others
-    (liked uploads here, or the account's recent uploads in the activity cache)."""
+def label_override(refs: frozenset[str], ref: str, ctx: Context) -> bool | None:
+    """The entity's own override, else one set on any name merged into it
+    (first by sort order when names disagree), else None."""
     if ref in ctx.label_overrides:
         return ctx.label_overrides[ref]
+    named = sorted(r for r in refs if r in ctx.label_overrides)
+    return ctx.label_overrides[named[0]] if named else None
+
+
+def explicit_credit(artist: str | None, title: str | None) -> str | None:
+    """The artist an upload names: its artist field, else an 'X - Title' prefix.
+
+    None when the upload names nobody, which is unknown, not someone else."""
+    if artist and artist.strip():
+        return artist
+    match = _TITLE_CREDIT_RE.match(title or "")
+    return match.group(1) if match else None
+
+
+def _credits_someone_else(own: set[str], artist: str | None, title: str) -> bool:
+    credit = explicit_credit(artist, title)
+    if credit is None:
+        return False
+    text = name_key(f"{credit} {title}")
+    return bool(text) and not any(o in text for o in own)
+
+
+def credits_others(own_keys: set[str], uploads: list[tuple[str | None, str]]) -> bool:
+    """Most of an account's uploads explicitly credit another artist (label).
+
+    `uploads` is (artist field, full title) per upload. Only an explicit
+    credit naming someone else counts; an upload with no artist field and no
+    'X - Title' credit counts for nobody. The account's own key anywhere in
+    the credit or title makes the upload its own (a remix of someone else's
+    song is still the remixer's upload)."""
+    own = {k for k in own_keys if len(k) >= 3}
+    if not own or len(uploads) < LABEL_MIN_UPLOADS:
+        return False
+    others = sum(1 for a, t in uploads if _credits_someone_else(own, a, t))
+    return others / len(uploads) >= LABEL_OTHER_SHARE
+
+
+def is_label(
+    ref: str, refs: frozenset[str], identity: "Identity", hits: list[Hit], ctx: Context
+) -> bool:
+    """Override (on the account or any name merged into it) wins; else a
+    label-ish name; else uploads that credit others (liked uploads here, or
+    the account's recent uploads in the activity cache)."""
+    override = label_override(refs, ref, ctx)
+    if override is not None:
+        return override
     names = (identity.display_name, identity.permalink)
     if any(n and LABEL_NAME_RE.search(n) for n in names):
         return True
     uploads = [
-        f"{h.track.artist} {h.track.title} {h.track.remix_artist or ''}"
+        (h.track.artist, f"{h.track.title} {h.track.remix_artist or ''}")
         for h in hits
         if h.track.uploader_id == ref
     ]
@@ -542,18 +635,22 @@ def entity_identity(
     )
 
 
-def entity_keys(ref: str, hits: list[Hit], identity: Identity) -> set[str]:
-    """Every name key an entity answers to (for follow/dismiss matching)."""
+def entity_keys(
+    ref: str, hits: list[Hit], identity: Identity, refs: frozenset[str]
+) -> set[str]:
+    """Every name key an entity answers to (for follow/dismiss matching),
+    including every name that resolved into it."""
+    origin_names = {r[5:] for r in refs if r.startswith("name:")}
     if ref.startswith("name:"):
-        return {ref[5:]}
-    names = {name_key(h.display) for h in hits}
+        return origin_names
+    names = {name_key(h.display) for h in hits} | origin_names
     return (names | account_keys(identity.display_name, identity.permalink)) - {""}
 
 
 def is_excluded(
     ref: str, hits: list[Hit], keys: set[str], ctx: Context, followed: Followed
 ) -> bool:
-    """Followed, dismissed (by id or any merged name), or too thin a name."""
+    """Followed, dismissed (by id or any of its name keys), or too thin a name."""
     if is_followed(ref, keys, followed):
         return True
     if ref in ctx.dismissed or any(name_ref(k) in ctx.dismissed for k in keys):
@@ -562,11 +659,14 @@ def is_excluded(
 
 
 def evidence_score(hits: list[Hit], now: datetime) -> float:
-    return sum(h.weight * recency_weight(h.track.liked_at, now) for h in hits)
+    return sum(
+        h.weight * recency_weight(h.track.liked_at, now, h.track.like_order)
+        for h in hits
+    )
 
 
 def build_suggestion(
-    ref: str, hits: list[Hit], identity: Identity, ctx: Context
+    ref: str, refs: frozenset[str], hits: list[Hit], identity: Identity, ctx: Context
 ) -> dict[str, Any]:
     """One Suggestion in the API contract shape."""
     activity = ctx.activity.get(ref)
@@ -579,7 +679,7 @@ def build_suggestion(
         "key": ref,
         "soundcloud_user_id": None if ref.startswith("name:") else ref,
         **identity._asdict(),
-        "is_label": is_label(ref, identity, hits, ctx),
+        "is_label": is_label(ref, refs, identity, hits, ctx),
         "score": round(score, 4),
         "evidence_score": round(evidence, 4),
         "evidence": evidence_counts(hits),
@@ -603,7 +703,9 @@ def rank_entities(
     tracks: Iterable[EvidenceTrack], ctx: Context
 ) -> list[dict[str, Any]]:
     """Every surviving entity as a Suggestion, best score first."""
-    grouped = best_hits_by_entity(collect_hits(tracks), ctx.resolutions)
+    hits_all = collect_hits(tracks)
+    grouped = best_hits_by_entity(hits_all, ctx.resolutions)
+    origins = entity_origins(hits_all, ctx.resolutions)
     resolved_by_id = {
         r.soundcloud_user_id: r
         for r in ctx.resolutions.values()
@@ -613,9 +715,9 @@ def rank_entities(
     out = []
     for ref, hits in grouped.items():
         identity = entity_identity(ref, hits, ctx, resolved_by_id)
-        keys = entity_keys(ref, hits, identity)
+        keys = entity_keys(ref, hits, identity, origins[ref])
         if not is_excluded(ref, hits, keys, ctx, followed):
-            out.append(build_suggestion(ref, hits, identity, ctx))
+            out.append(build_suggestion(ref, origins[ref], hits, identity, ctx))
     return sorted(out, key=lambda s: (-s["score"], s["display_name"].lower()))
 
 

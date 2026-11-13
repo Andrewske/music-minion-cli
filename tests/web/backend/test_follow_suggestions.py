@@ -187,6 +187,14 @@ class TestFactors:
 
     def test_recency_floor(self) -> None:
         assert fs.recency_weight(None, NOW) == 0.3
+
+    def test_like_order_fallback(self) -> None:
+        assert fs.recency_weight(None, NOW, 0) == pytest.approx(1.0)
+        assert fs.recency_weight(None, NOW, 1000) == pytest.approx(0.65)
+        assert fs.recency_weight(None, NOW, 100_000) == pytest.approx(0.3, abs=1e-6)
+
+    def test_like_time_beats_like_order(self) -> None:
+        assert fs.recency_weight("2026-11-11 00:00:00", NOW, 5000) == pytest.approx(1.0)
         assert fs.recency_weight("2006-01-01 00:00:00", NOW) == pytest.approx(
             0.3, abs=0.001
         )
@@ -270,6 +278,27 @@ class TestExclusions:
         )
         assert _by_key(tracks, ctx) == {}
 
+    def test_dismissed_alias_stays_dismissed_after_resolving(self) -> None:
+        """name:oldalias was dismissed while unresolved; it later resolves to 70,
+        whose uploader hit wins every track, so dedup drops the alias hits."""
+        phrva = ("70", "phrva", "Phrva")
+        tracks = [_track(str(i), "Old Alias", uploader=phrva) for i in range(3)]
+        resolved = {"oldalias": Resolution("70", "phrva", "Phrva", "medium", "search")}
+        assert "70" in _by_key(tracks, _ctx(resolutions=resolved))
+        ctx = _ctx(resolutions=resolved, dismissed=frozenset({"name:oldalias"}))
+        assert _by_key(tracks, ctx) == {}
+
+    def test_followed_name_does_not_hide_a_distinct_account(self) -> None:
+        ds = ("69528588", "dirtysnatcha", "DirtySnatcha")
+        tracks = [_track(str(i), "x", uploader=ds) for i in range(2)]
+        followed = (Account("4", "DirtySnatcha", "dirtysnatcharecords"),)
+        assert "69528588" in _by_key(tracks, _ctx(followed=followed))
+
+    def test_followed_name_still_hides_a_name_only_entity(self) -> None:
+        tracks = [_track(str(i), "DirtySnatcha") for i in range(3)]
+        followed = (Account("4", "DirtySnatcha", "dirtysnatcharecords"),)
+        assert _by_key(tracks, _ctx(followed=followed)) == {}
+
     def test_name_only_needs_two_tracks(self) -> None:
         assert "name:solo" not in _by_key([_track("1", "Solo")])
         assert "name:duo" in _by_key([_track("1", "Duo"), _track("2", "Duo")])
@@ -323,10 +352,27 @@ class TestMergeAndLabels:
         assert by_key["9"]["is_label"] is True
         assert by_key["8"]["is_label"] is False
 
+    def test_liked_uploads_without_credits_are_not_a_label(self) -> None:
+        eater = ("9", "eater", "Eater")
+        tracks = [_track(str(i), "", t, uploader=eater)
+                  for i, t in enumerate(("Echoes", "Orbit", "Pulse"))]  # fmt: skip
+        assert _by_key(tracks)["9"]["is_label"] is False
+        assert fs.credits_others({"eater"}, [("", "A - Song")] * 3) is True
+
     def test_override_marks_name_entry_as_label(self) -> None:
         tracks = [_track("1", "Promo"), _track("2", "Promo")]
         ctx = _ctx(label_overrides={"name:promo": True})
         assert _by_key(tracks, ctx)["name:promo"]["is_label"] is True
+
+    def test_name_label_override_survives_resolution(self) -> None:
+        promo = ("9", "promo", "Promo")
+        tracks = [_track(str(i), "Promo", uploader=promo) for i in range(3)]
+        resolved = {"promo": Resolution("9", "promo", "Promo", "medium", "search")}
+        assert _by_key(tracks, _ctx(resolutions=resolved))["9"]["is_label"] is False
+        ctx = _ctx(resolutions=resolved, label_overrides={"name:promo": True})
+        assert _by_key(tracks, ctx)["9"]["is_label"] is True
+        ctx = ctx._replace(label_overrides={"name:promo": True, "9": False})
+        assert _by_key(tracks, ctx)["9"]["is_label"] is False  # id override wins
 
     def test_combine_resolutions_order(self) -> None:
         hit_a = Resolution("1", None, None, "high", "uploader")
@@ -394,6 +440,25 @@ def _seed() -> None:
     )
 
 
+def queries_conn(write: object) -> None:
+    with get_db_connection() as conn:
+        write(conn)  # type: ignore[operator]
+
+
+class TestAccountDecisions:
+    def test_name_decisions_reach_resolved_ids(self) -> None:
+        dismissed, overrides = fs.account_decisions(
+            {"name:old", "9"},
+            {"name:b": True, "name:a": False, "7": True, "name:c": True},
+            [("old", "70"), ("a", "80"), ("b", "80"), ("c", "7"), ("miss", None)],
+        )
+        assert dismissed == {"name:old", "9", "70"}
+        # 80: aliases disagree, first by sort order (name:a) wins; 7: own wins.
+        assert overrides == {
+            "name:b": True, "name:a": False, "name:c": True, "7": True, "80": False,
+        }  # fmt: skip
+
+
 class TestQueries:
     def test_load_evidence_tracks(self) -> None:
         _seed()
@@ -409,6 +474,42 @@ class TestQueries:
         with get_db_connection() as conn:
             keys = [s["key"] for s in queries.compute_ranked(conn, NOW)]
         assert keys == ["70"]
+
+    @staticmethod
+    def _old_alias(override: bool | None = None, dismissed: bool = False) -> None:
+        """'oldalias' resolved to 70 once; no current track credits it."""
+        _exec(
+            """INSERT INTO sc_name_resolutions (name_key, soundcloud_user_id,
+            permalink, display_name, confidence, source)
+            VALUES ('oldalias', '70', 'phrva', 'Old Alias', 'medium', 'search')"""
+        )
+        if dismissed:
+            queries_conn(lambda c: queries.dismiss(c, "name:oldalias"))
+        if override is not None:
+            queries_conn(
+                lambda c: queries.set_label_override(c, "name:oldalias", override)
+            )
+
+    def test_dismissed_alias_without_current_evidence_hides_account(self) -> None:
+        _seed()
+        self._old_alias(dismissed=True)
+        with get_db_connection() as conn:
+            assert queries.compute_ranked(conn, NOW) == []
+
+    def test_alias_label_override_without_current_evidence(self) -> None:
+        _seed()
+        self._old_alias(override=True)
+        with get_db_connection() as conn:
+            (phrva,) = queries.compute_ranked(conn, NOW)
+        assert phrva["key"] == "70" and phrva["is_label"] is True
+
+    def test_override_on_the_account_beats_alias_override(self) -> None:
+        _seed()
+        self._old_alias(override=True)
+        queries_conn(lambda c: queries.set_label_override(c, "70", False))
+        with get_db_connection() as conn:
+            (phrva,) = queries.compute_ranked(conn, NOW)
+        assert phrva["is_label"] is False
 
     def test_discovery_resolutions(self) -> None:
         _seed()

@@ -358,8 +358,8 @@ def _followings_last_synced_at() -> str | None:
 def _maybe_sync_followings() -> None:
     """Nightly followings sync from the daemon loop; never raises.
 
-    sync_followings aborts without writing on an empty or truncated fetch,
-    which leaves the stamps alone, so the next tick retries.
+    sync_followings aborts without writing on an incomplete, empty or
+    truncated fetch, which leaves the stamps alone, so the next tick retries.
     """
     from music_minion.domain.library.providers.soundcloud.api import get_followings
     from web.backend.queries.artists import sync_followings
@@ -372,9 +372,9 @@ def _maybe_sync_followings() -> None:
         provider_state = get_web_provider_state()
         if provider_state is None:
             return
-        _state, followings = get_followings(provider_state)
+        _state, followings, error = get_followings(provider_state)
         with get_db_connection() as conn:
-            if not sync_followings(conn, followings)["aborted"]:
+            if not sync_followings(conn, followings, error)["aborted"]:
                 conn.commit()
     except Exception:  # noqa: BLE001 - the daemon loop must never die
         logger.exception("feed_sync_error during followings sync (continuing)")

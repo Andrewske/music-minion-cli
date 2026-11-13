@@ -1,4 +1,4 @@
-"""Untiered follows review: recent follows and well-rated follows with no tier."""
+"""Tier review: recent follows to confirm, and well-rated follows with no tier."""
 
 import sqlite3
 from typing import Any
@@ -14,33 +14,40 @@ _KEEP_RATE_SQL = f"""(
   + COALESCE(repost_keep_rate, 0) * COALESCE(repost_rated_count, 0)
 ) / NULLIF({_RATED_COUNT_SQL}, 0)"""
 
-_UNTIERED_SELECT = f"""
+_REVIEW_SELECT = f"""
 SELECT id AS discovery_artist_id,
        COALESCE(display_name, slug) AS display_name,
-       slug, avatar_url, followed_at, follow_order,
+       slug, avatar_url, NULLIF(tier, '') AS tier, followed_at, follow_order,
        {_RATED_COUNT_SQL} AS rated_count,
        {_KEEP_RATE_SQL} AS keep_rate
 FROM discovery_artists
-WHERE is_following = 1 AND COALESCE(tier, '') = ''
+WHERE is_following = 1
 """
 
-_RECENT_SQL = f"""{_UNTIERED_SELECT}
+_UNTIERED = "COALESCE(tier, '') = ''"
+
+# New follows get an automatic tier C (tier_auto = 1), so "recent" lists
+# those too until Kevin picks a tier, which clears tier_auto.
+_RECENT_SQL = f"""{_REVIEW_SELECT}
+  AND ({_UNTIERED} OR tier_auto = 1)
   AND (followed_at IS NOT NULL OR follow_order IS NOT NULL)
 ORDER BY followed_at IS NULL, followed_at DESC,
          follow_order IS NULL, follow_order ASC
 LIMIT ?
 """
 
-_RATED_SQL = f"""{_UNTIERED_SELECT}
+_RATED_SQL = f"""{_REVIEW_SELECT}
+  AND {_UNTIERED}
   AND {_RATED_COUNT_SQL} >= ?
 ORDER BY keep_rate DESC, rated_count DESC, discovery_artist_id
 """
 
 
 def get_untiered_follows(conn: sqlite3.Connection) -> dict[str, list[dict[str, Any]]]:
-    """Followed artists with no tier, as {recent, rated} for quick tiering.
+    """Follows to tier, as {recent, rated}.
 
-    recent: newest follows first (followed_at, then SC response position).
+    recent: newest follows that are untiered or still on the automatic C
+    (followed_at, then SC response position).
     rated: at least MIN_RATED_COUNT rated tracks, best keep rate first.
     """
     recent = conn.execute(_RECENT_SQL, (RECENT_LIMIT,)).fetchall()

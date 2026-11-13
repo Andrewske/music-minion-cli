@@ -3,7 +3,7 @@ import type { ReactElement } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { Suggestion } from '../../api/followSuggestions';
 import {
-  useDismissSuggestion, useFollowAccount, useFollowSuggestions, useSetSuggestionLabel,
+  useDismissSuggestion, useFollowAccount, useFollowSuggestions, usePendingAccountKeys, useSetSuggestionLabel,
 } from '../../hooks/useFollowSuggestions';
 import { Button } from '../ui/button';
 import { ConnectionsSection } from './ConnectionsSection';
@@ -15,9 +15,12 @@ function useSuggestionHandlers(): SuggestionHandlers {
   const follow = useFollowAccount();
   const dismiss = useDismissSuggestion();
   const label = useSetSuggestionLabel();
+  const pending = usePendingAccountKeys();
   return {
     // One follow at a time: every Follow button waits for the request in flight.
     followDisabled: follow.isPending,
+    // One change per account at a time, so rollbacks never cross.
+    isBusy: (a) => pending.has(a.key) || (a.soundcloud_user_id != null && pending.has(a.soundcloud_user_id)),
     onFollow: (id) => follow.mutate(id),
     onDismiss: (key) => dismiss.mutate(key),
     onSetLabel: (key, isLabel) => label.mutate({ key, isLabel }),

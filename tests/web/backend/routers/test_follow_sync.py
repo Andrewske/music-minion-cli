@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from music_minion.core.database import get_db_connection
 from music_minion.domain.library.provider import ProviderConfig, ProviderState
+from web.backend.queries.artists import set_artist_tier
 from web.backend.routers import follow_sync
 
 AUTH = ProviderState(config=ProviderConfig(name="soundcloud"), authenticated=True)
@@ -176,8 +177,60 @@ class TestUntiered:
             "display_name": "X",
             "slug": "x",
             "avatar_url": "a.jpg",
+            "tier": None,
             "followed_at": None,
             "follow_order": 0,
             "rated_count": 0,
             "keep_rate": None,
         }
+
+
+class TestAutoTierReview:
+    def _recent_slugs(self, client: TestClient) -> list[str]:
+        response = client.get("/api/follow-suggestions/untiered")
+        return [r["slug"] for r in response.json()["recent"]]
+
+    def test_auto_tier_c_follow_listed_with_its_tier(
+        self, client: TestClient, sc: dict[str, Any]
+    ) -> None:
+        client.post("/api/follow-suggestions/42/follow")
+        recent = client.get("/api/follow-suggestions/untiered").json()["recent"]
+        assert [(r["tier"], r["followed_at"] is not None) for r in recent] == [
+            ("C", True)
+        ]
+
+    def test_manual_tier_clears_auto_and_drops_row(
+        self, client: TestClient, sc: dict[str, Any]
+    ) -> None:
+        artist_id = client.post("/api/follow-suggestions/42/follow").json()[
+            "discovery_artist_id"
+        ]
+        with get_db_connection() as conn:
+            assert set_artist_tier(conn, artist_id, "C")
+            conn.commit()
+        assert artist(artist_id)["tier_auto"] == 0
+        assert self._recent_slugs(client) == []
+
+    def test_manual_c_not_in_recent(self, client: TestClient) -> None:
+        add_artist("chosen", tier="C", follow_order=0)
+        add_artist("untiered", follow_order=1)
+        assert self._recent_slugs(client) == ["untiered"]
+
+    def test_auto_c_not_in_rated(self, client: TestClient) -> None:
+        add_artist("auto", tier="C", tier_auto=1, follow_order=0, upload_rated_count=5)
+        rated = client.get("/api/follow-suggestions/untiered").json()["rated"]
+        assert rated == []
+
+
+def test_follow_routes_run_in_the_thread_pool() -> None:
+    """Handlers that make blocking SC/DB calls must be plain defs, not async."""
+    import inspect
+
+    from fastapi.routing import APIRoute
+
+    from web.backend.routers import follow_connections, follow_suggestions
+
+    routers = (follow_sync.router, follow_suggestions.router, follow_connections.router)
+    routes = [r for router in routers for r in router.routes if isinstance(r, APIRoute)]
+    assert routes
+    assert not [r.path for r in routes if inspect.iscoroutinefunction(r.endpoint)]

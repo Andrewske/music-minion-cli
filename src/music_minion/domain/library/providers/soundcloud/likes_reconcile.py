@@ -12,6 +12,7 @@ on a track he still likes and nothing puts it back until he re-likes it:
 
 import json
 import math
+import sqlite3
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any
@@ -172,6 +173,15 @@ def report_json(report: ReconcileReport) -> str:
     return json.dumps({**asdict(report), "skipped_by_guard": report.skipped_by_guard})
 
 
+def _record_like_order(ordered_ids: tuple[str, ...]) -> None:
+    """Store like positions for follow-suggestion recency; logs, never raises."""
+    try:
+        written = database.write_sc_like_order(ordered_ids)
+        logger.info(f"sc_likes: stored like_order for {written} likes")
+    except sqlite3.Error:
+        logger.exception(f"Failed to store like_order for {len(ordered_ids)} likes")
+
+
 def reconcile_sc_likes(
     access_token: str, apply: bool = False, force: bool = False
 ) -> ReconcileReport:
@@ -188,6 +198,8 @@ def reconcile_sc_likes(
         )
         report = replace(report, applied=True, added=added, removed=removed)
         record_like_uploaders(snapshot.uploaders)
+        if snapshot.complete:
+            _record_like_order(snapshot.ordered_ids)
     log_summary(report)
     return report
 

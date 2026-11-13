@@ -43,6 +43,7 @@ class LikesSnapshot(NamedTuple):
     reason: str
     pages: int
     uploaders: Mapping[str, LikeUploader] = MappingProxyType({})
+    ordered_ids: tuple[str, ...] = ()  # SC order, newest like first
 
 
 class _PageResult(NamedTuple):
@@ -92,6 +93,7 @@ def fetch_all_liked_ids(
 ) -> LikesSnapshot:
     """Page through every like. complete=False on any error or odd payload."""
     ids: set[str] = set()
+    ordered: list[str] = []
     uploaders: dict[str, LikeUploader] = {}
     url: str | None = LIKES_URL
     params: dict = {
@@ -104,7 +106,9 @@ def fetch_all_liked_ids(
 
     def incomplete(reason: str) -> LikesSnapshot:
         logger.warning(f"sc likes full fetch incomplete after {pages} pages: {reason}")
-        return LikesSnapshot(frozenset(ids), False, reason, pages, uploaders)
+        return LikesSnapshot(
+            frozenset(ids), False, reason, pages, uploaders, tuple(ordered)
+        )
 
     while url:
         if pages >= MAX_PAGES or url in seen_urls:
@@ -120,9 +124,12 @@ def fetch_all_liked_ids(
         page = _parse_page(data)
         if page.error:
             return incomplete(f"{page.error} on page {pages}")
+        ordered.extend(i for i in page.ids if i not in ids)
         ids.update(page.ids)
         uploaders.update(page.uploaders or {})
         url, params = page.next_href, {}
 
     logger.info(f"sc likes full fetch complete: {len(ids)} likes in {pages} pages")
-    return LikesSnapshot(frozenset(ids), True, "complete", pages, uploaders)
+    return LikesSnapshot(
+        frozenset(ids), True, "complete", pages, uploaders, tuple(ordered)
+    )

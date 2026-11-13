@@ -13,7 +13,7 @@ function TierButtons({ artist, onTier }: { artist: UntieredArtist; onTier: (tier
   return (
     <div className="flex gap-1" role="group" aria-label={`Tier for ${artist.display_name}`}>
       {TIER_CHOICES.map((t) => (
-        <button key={t} type="button" onClick={() => onTier(t)} className={`font-sf-mono text-xs w-8 h-8 border ${TIER_COLORS[t]} hover:brightness-125`}>
+        <button key={t} type="button" onClick={() => onTier(t)} aria-pressed={artist.tier === t} className={`font-sf-mono text-xs w-8 h-8 border ${TIER_COLORS[t]} hover:brightness-125 ${artist.tier === t ? 'ring-1 ring-white/70' : ''}`}>
           {t}
         </button>
       ))}
@@ -31,6 +31,7 @@ function UntieredRow({ artist, showRates, onTier }: { artist: UntieredArtist; sh
         </Link>
         <div className="mt-0.5 flex flex-wrap gap-1.5">
           {artist.followed_at && <Chip>followed {ageLabel(artist.followed_at)}</Chip>}
+          {artist.tier && <Chip>auto tier {artist.tier}</Chip>}
           {showRates && artist.keep_rate != null && <Chip>{Math.round(artist.keep_rate * 100)}% kept</Chip>}
           {showRates && <Chip>{Number.isInteger(artist.rated_count) ? artist.rated_count : artist.rated_count.toFixed(1)} rated</Chip>}
         </div>

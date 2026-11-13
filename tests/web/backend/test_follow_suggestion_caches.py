@@ -4,9 +4,18 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 from music_minion.core.database import get_db_connection
+from music_minion.domain.library.providers.soundcloud import api as sc_api
 from web.backend import follow_suggestion_caches as caches
 
 NOW = datetime(2026, 11, 11, tzinfo=UTC)
+
+
+class _Resp:
+    def __init__(self, data: object) -> None:
+        self._data = data
+
+    def json(self) -> object:
+        return self._data
 
 
 def _exec(sql: str, params: tuple = ()) -> None:
@@ -18,6 +27,11 @@ def _exec(sql: str, params: tuple = ()) -> None:
 def _rows(sql: str) -> list[tuple]:
     with get_db_connection() as conn:
         return [tuple(r) for r in conn.execute(sql).fetchall()]
+
+
+def _profile(_state: object, user_id: str) -> tuple[None, dict, None]:
+    """get_user stub: the profile of whichever account was asked for."""
+    return None, {"id": int(user_id), "username": f"U{user_id}"}, None
 
 
 def _sc_time(days_ago: int) -> str:
@@ -77,6 +91,20 @@ class TestPure:
         assert caches.looks_like_label("Monstercat", label)
         assert not caches.looks_like_label("Monstercat", label[:2])  # too few
 
+    def test_uploads_without_credits_are_not_a_label(self) -> None:
+        """Eater's own tracks carry no metadata_artist and no 'X - ' credit."""
+        uploads = [{"title": t} for t in ("Echoes", "Orbit", "Pulse")]
+        assert not caches.looks_like_label("Eater", uploads)
+        uploads.append({"title": "Pulse", "metadata_artist": ""})
+        assert not caches.looks_like_label("Eater", uploads)
+
+    def test_unknown_uploads_dilute_explicit_credits(self) -> None:
+        mixed = [{"metadata_artist": "A"}, {"title": "B - Song"}] + [
+            {"title": "Untitled"}
+        ] * 2
+        assert not caches.looks_like_label("Channel", mixed)  # 2 of 4 credit others
+        assert caches.looks_like_label("Channel", mixed[:2] + [{"title": "C - X"}])
+
     def test_summarize_activity(self) -> None:
         user = {
             "username": "U",
@@ -121,11 +149,10 @@ def _seed_likes() -> None:
 
 class TestJob:
     def _run(self, search_result: list[dict]) -> caches.CacheRunStats:
-        user = {"id": 70, "username": "PHRVA", "followers_count": 1000}
         with (
             patch.object(caches, "get_me", return_value=(None, {"id": 555}, None)),
             patch.object(caches, "search_users", return_value=(None, search_result, None)) as search,
-            patch.object(caches, "get_user", return_value=(None, user, None)),
+            patch.object(caches, "get_user", side_effect=_profile),
             patch.object(caches, "get_user_tracks", return_value=(None, [], None)),
             patch.object(caches, "get_user_reposts", return_value=(None, [], None)),
         ):  # fmt: skip
@@ -167,8 +194,156 @@ class TestJob:
             patch.object(caches, "get_user_tracks") as tracks,
         ):
             stats = caches.refresh_follow_suggestion_caches(None)
-        assert stats == caches.CacheRunStats(0, 0, 0)
+        assert stats == caches.CacheRunStats(0, 0, 0, "HTTP 401")
         tracks.assert_not_called()
+
+
+def _refresh(user_ids: list[str]) -> tuple[int, str | None]:
+    with get_db_connection() as conn:
+        _s, done, stopped = caches.refresh_activity(None, conn, user_ids, NOW)
+    return done, stopped
+
+
+class TestServiceErrors:
+    def test_is_service_error(self) -> None:
+        service = ["HTTP 0", "HTTP 401", "HTTP 429", "HTTP 500", "HTTP 503",
+                   "Rate limited", "Authentication failed", "Request timed out",
+                   "Connection error", "ConnectionError", "ReadTimeout"]  # fmt: skip
+        account = ["HTTP 404", "HTTP 403", "HTTP 400", "User 70 not found",
+                   "Invalid JSON response", "Malformed response: {'errors': []}",
+                   "followings of 7 incomplete: pagination repeated x"]  # fmt: skip
+        assert all(caches.is_service_error(e) for e in service)
+        assert not any(caches.is_service_error(e) for e in account)
+
+    @staticmethod
+    def _old_activity(user_id: str) -> None:
+        _exec(
+            """INSERT INTO sc_account_activity
+                (soundcloud_user_id, username, uploads_90d, reposts_90d,
+                 last_upload_at, fetched_at)
+            VALUES (?, 'Old', 7, 3, '2026-10-01T00:00:00+00:00', '2026-01-01 00:00:00')""",
+            (user_id,),
+        )
+
+    @staticmethod
+    def _activity(user_id: str) -> tuple:
+        return _rows(
+            f"""SELECT username, uploads_90d, reposts_90d, last_upload_at, fetched_at
+            FROM sc_account_activity WHERE soundcloud_user_id = '{user_id}'"""
+        )[0]
+
+    def test_failed_uploads_fetch_keeps_old_row(self) -> None:
+        self._old_activity("70")
+        before = self._activity("70")
+        with (
+            patch.object(caches, "get_user", return_value=(None, {"id": 70}, None)),
+            patch.object(caches, "get_user_tracks", return_value=(None, [], "User 70 not found")),
+            patch.object(caches, "get_user_reposts", return_value=(None, [], None)),
+        ):  # fmt: skip
+            done, stopped = _refresh(["70"])
+        assert (done, stopped) == (0, None)
+        assert self._activity("70") == before
+
+    def test_failed_reposts_fetch_skips_account_and_continues(self) -> None:
+        self._old_activity("70")
+        before = self._activity("70")
+        reposts = [(None, [], "HTTP 404"), (None, [], None)]
+        with (
+            patch.object(caches, "get_user", side_effect=_profile),
+            patch.object(caches, "get_user_tracks", return_value=(None, [], None)),
+            patch.object(caches, "get_user_reposts", side_effect=reposts),
+        ):
+            done, stopped = _refresh(["70", "71"])
+        assert (done, stopped) == (1, None)
+        assert self._activity("70") == before
+        assert self._activity("71")[1] == 0
+
+    def test_errors_body_keeps_old_row_and_continues(self) -> None:
+        """An HTTP 200 {"errors": [...]} feed is malformed, not an empty feed:
+        the account keeps its 7/3 counts and old fetched_at; the next one runs."""
+        self._old_activity("70")
+        before = self._activity("70")
+        errors_body = _Resp({"errors": [{"error_message": "nope"}]})
+        good = _Resp({"collection": [{"id": 1, "created_at": _sc_time(3)}]})
+        with (
+            patch.object(caches, "get_user", side_effect=_profile),
+            patch.object(sc_api, "_request_with_backoff",
+                         side_effect=[(None, errors_body), (None, good), (None, good)]),
+        ):  # fmt: skip
+            done, stopped = _refresh(["70", "71"])
+        assert (done, stopped) == (1, None)
+        assert self._activity("70") == before
+        assert self._activity("71")[1:3] == (1, 1)
+
+    def test_profile_for_another_account_keeps_old_row(self) -> None:
+        self._old_activity("70")
+        before = self._activity("70")
+        with (
+            patch.object(caches, "get_user", return_value=(None, {"id": 99}, None)),
+            patch.object(caches, "get_user_tracks") as tracks,
+        ):
+            done, stopped = _refresh(["70"])
+        assert (done, stopped) == (0, None)
+        assert self._activity("70") == before
+        tracks.assert_not_called()
+
+    def test_profile_5xx_stops_the_run(self) -> None:
+        self._old_activity("70")
+        before = self._activity("70")
+        with (
+            patch.object(caches, "get_user", return_value=(None, None, "HTTP 503")) as user,
+            patch.object(caches, "get_user_tracks") as tracks,
+        ):  # fmt: skip
+            done, stopped = _refresh(["70", "71", "72"])
+        assert (done, stopped) == (0, "HTTP 503")
+        assert user.call_count == 1
+        tracks.assert_not_called()
+        assert self._activity("70") == before
+
+    def test_uploads_connection_error_stops_the_run(self) -> None:
+        with (
+            patch.object(caches, "get_user", side_effect=_profile) as user,
+            patch.object(caches, "get_user_tracks", return_value=(None, [], "Connection error")),
+        ):  # fmt: skip
+            done, stopped = _refresh(["70", "71"])
+        assert (done, stopped) == (0, "Connection error")
+        assert user.call_count == 1
+
+    def test_search_5xx_stops_without_recording_a_miss(self) -> None:
+        with patch.object(
+            caches, "search_users", return_value=(None, [], "HTTP 503")
+        ) as search:
+            _s, found, stopped = caches.search_names(None, [("a", "A"), ("b", "B")])
+        assert (found, stopped) == ({}, "HTTP 503")
+        assert search.call_count == 1
+
+    def test_search_account_error_records_nothing_and_continues(self) -> None:
+        results = [(None, [], "HTTP 400"), (None, [{"id": 5, "username": "B"}], None)]
+        with patch.object(caches, "search_users", side_effect=results):
+            _s, found, stopped = caches.search_names(None, [("a", "A"), ("b", "B")])
+        assert stopped is None
+        assert set(found) == {"b"} and found["b"].soundcloud_user_id == "5"
+
+    def test_search_outage_skips_activity_and_caches_no_miss(self) -> None:
+        _seed_likes()
+        with (
+            patch.object(caches, "get_me", return_value=(None, {"id": 555}, None)),
+            patch.object(caches, "search_users", return_value=(None, [], "HTTP 502")),
+            patch.object(caches, "get_user") as user,
+        ):
+            stats = caches.refresh_follow_suggestion_caches(None)
+        assert stats == caches.CacheRunStats(0, 0, 0, "HTTP 502")
+        user.assert_not_called()
+        assert _rows("SELECT 1 FROM sc_name_resolutions WHERE source = 'search'") == []
+
+    def test_me_outage_stops_before_any_lookup(self) -> None:
+        with (
+            patch.object(caches, "get_me", return_value=(None, None, "HTTP 500")),
+            patch.object(caches, "search_users") as search,
+        ):
+            stats = caches.refresh_follow_suggestion_caches(None)
+        assert stats.stopped == "HTTP 500"
+        search.assert_not_called()
 
 
 class TestWorkerHook:
@@ -179,3 +354,28 @@ class TestWorkerHook:
             caches, "refresh_follow_suggestion_caches", side_effect=RuntimeError("boom")
         ):
             sc_feed_worker._refresh_follow_suggestion_caches(None)  # no raise
+
+
+class TestTrackPageShape:
+    def test_errors_body_is_malformed_not_empty(self) -> None:
+        body = (None, _Resp({"errors": [{"error_message": "x"}]}))
+        for fetch in (sc_api.get_user_tracks, sc_api.get_user_reposts):
+            with patch.object(sc_api, "_request_with_backoff", return_value=body):
+                _s, items, error = fetch(None, "70", max_pages=1)
+            assert items == [] and error.startswith("Malformed response")
+            assert not caches.is_service_error(error)
+
+    def test_non_object_items_are_malformed(self) -> None:
+        body = (None, _Resp({"collection": [{"id": 1}, "junk"]}))
+        with patch.object(sc_api, "_request_with_backoff", return_value=body):
+            _s, items, error = sc_api.get_user_tracks(None, "70", max_pages=1)
+        assert items == [] and error.startswith("Malformed response")
+
+    def test_list_and_paged_bodies_still_parse(self) -> None:
+        pages = [
+            (None, _Resp({"collection": [{"id": 1}, None], "next_href": "https://n"})),
+            (None, _Resp([{"id": 2}])),
+        ]
+        with patch.object(sc_api, "_request_with_backoff", side_effect=pages):
+            _s, items, error = sc_api.get_user_reposts(None, "70", max_pages=3)
+        assert error is None and [t["id"] for t in items] == [1, 2]

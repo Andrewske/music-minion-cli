@@ -17,6 +17,7 @@ from web.backend.follow_suggestions import (
     Context,
     EvidenceTrack,
     Resolution,
+    account_decisions,
     account_keys,
     activity_resolutions,
     combine_resolutions,
@@ -33,7 +34,7 @@ _TRACK_FOR = """COALESCE(
     (SELECT id FROM tracks WHERE source = 'soundcloud' AND soundcloud_id = {col}))"""
 
 _LIKED_SQL = f"""
-    SELECT l.soundcloud_id, l.liked_at,
+    SELECT l.soundcloud_id, l.liked_at, l.like_order,
            COALESCE(t.title, dt.title, u.title, '') AS title,
            COALESCE(t.artist, dt.artist_name, '') AS artist,
            t.remix_artist,
@@ -53,7 +54,7 @@ _LIKED_SQL = f"""
 """
 
 _KEPT_SQL = f"""
-    SELECT d.soundcloud_id, d.decided_at AS liked_at,
+    SELECT d.soundcloud_id, d.decided_at AS liked_at, NULL AS like_order,
            COALESCE(t.title, dt.title, u.title, '') AS title,
            COALESCE(t.artist, dt.artist_name, '') AS artist,
            t.remix_artist,
@@ -91,6 +92,7 @@ def _evidence_track(row: sqlite3.Row, liked: bool) -> EvidenceTrack:
         uploader_permalink=row["uploader_permalink"]
         or (permalink_from_url(row["track_url"]) if uploader_id else None),
         uploader_username=row["uploader_username"],
+        like_order=row["like_order"],
     )
 
 
@@ -221,7 +223,10 @@ def resolved_context(
     conn: sqlite3.Connection, tracks: list[EvidenceTrack], now: datetime | None = None
 ) -> Context:
     """load_context with live sources (a) uploaders and (b) discovery_artists
-    layered over the cached resolutions (which hold the API search results)."""
+    layered over the cached resolutions (which hold the API search results).
+
+    Dismissals and label overrides on 'name:<k>' also apply to every account
+    k resolves to, in the cache or live, whether or not k is still credited."""
     ctx = load_context(conn, now)
     resolutions = combine_resolutions(
         uploader_resolutions(tracks),
@@ -229,7 +234,17 @@ def resolved_context(
         discovery_resolutions(conn),
         ctx.resolutions,
     )
-    return ctx._replace(resolutions=resolutions)
+    aliases = [
+        (k, r.soundcloud_user_id)
+        for source in (ctx.resolutions, resolutions)  # the full cache, then live
+        for k, r in source.items()
+    ]
+    dismissed, overrides = account_decisions(
+        ctx.dismissed, ctx.label_overrides, aliases
+    )
+    return ctx._replace(
+        resolutions=resolutions, dismissed=dismissed, label_overrides=overrides
+    )
 
 
 def compute_ranked(

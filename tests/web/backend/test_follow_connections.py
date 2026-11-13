@@ -12,6 +12,7 @@ from music_minion.domain.library.provider import ProviderConfig, ProviderState
 from music_minion.domain.library.providers.soundcloud import api as sc_api
 from web.backend import follow_connections as fc
 from web.backend.routers.follow_connections import router
+from web.backend.sc_errors import is_service_error
 
 NOW = datetime(2026, 11, 11, 3, 0, 0)
 
@@ -72,6 +73,25 @@ def follows(
             followee_followers, fetched_at) VALUES (?, ?, ?, ?, ?, ?)""",
         (follower, followee, f"p{followee}", f"User {followee}", followers, at),
     )
+
+
+def fetched_state(follower: str, at: str, count: int = 1) -> None:
+    _exec(
+        """INSERT INTO sc_favorite_followings_state
+           (follower_id, fetched_at, followee_count) VALUES (?, ?, ?)""",
+        (follower, at, count),
+    )
+
+
+def _state_rows() -> list[tuple]:
+    with get_db_connection() as conn:
+        return [
+            tuple(r)
+            for r in conn.execute(
+                "SELECT follower_id, fetched_at, followee_count, status"
+                " FROM sc_favorite_followings_state ORDER BY follower_id"
+            )
+        ]
 
 
 def co_credit() -> list[dict[str, Any]]:
@@ -174,6 +194,24 @@ def test_co_credit_exclusions() -> None:
     assert results[0]["soundcloud_user_id"] is None
 
 
+def test_dismissed_name_hides_merged_account_whatever_the_key_order() -> None:
+    """Two names resolve to one account; the dismissed one must win even when
+    the other name is the entry's last-seen name_key."""
+    add_artist("Alpha", "S")
+    add_track("Alpha & Old Alias", "a")
+    add_track("Alpha & New Name", "b")
+    resolve("oldalias", "950", "New Name")
+    resolve("newname", "950", "New Name")
+    assert [c["key"] for c in co_credit()] == ["950"]
+    for order in (["oldalias", "newname"], ["newname", "oldalias"]):
+        partners = {k: {"display_name": k, "links": {1: "collab"}} for k in order}
+        res = {k: {"soundcloud_user_id": "950"} for k in order}
+        merged = fc.resolve_partners(partners, res)["950"]
+        assert merged["name_keys"] == {"oldalias", "newname"}
+    dismiss("name:oldalias")
+    assert co_credit() == []
+
+
 def test_known_id_beats_name_match() -> None:
     add_artist("Alpha", "S")
     add_artist("Snatch Records", "", sc_id="10", slug="snatch")  # the label
@@ -246,6 +284,29 @@ def test_favorites_follow_exclusions() -> None:
     assert [c["key"] for c in results] == ["new"]
 
 
+def test_dismissed_alias_without_current_credit_hides_co_credit_account() -> None:
+    """name:oldalias resolved to 30; the partner now shows up as 'Partner'."""
+    add_artist("Alpha", "S", sc_id="1")
+    add_track("Alpha & Partner", "Song")
+    resolve("partner", "30", "Partner")
+    assert "Partner" in by_name(co_credit())
+    resolve("oldalias", "30", "Old Alias")
+    dismiss("name:oldalias")
+    assert "Partner" not in by_name(co_credit())
+
+
+def test_favorites_follow_drops_account_of_dismissed_alias() -> None:
+    for i, tier in enumerate(("S", "A", "A"), start=1):
+        add_artist(f"Fav{i}", tier, sc_id=str(i))
+        follows(str(i), "30")
+    with get_db_connection() as conn:
+        assert [c["key"] for c in fc.compute_favorites_follow(conn)] == ["30"]
+    resolve("oldalias", "30", "Old Alias")
+    dismiss("name:oldalias")
+    with get_db_connection() as conn:
+        assert fc.compute_favorites_follow(conn) == []
+
+
 def test_compute_favorites_follow_from_db() -> None:
     for sc_id, tier in [("1", "S"), ("2", "A"), ("3", "A"), ("4", "B")]:
         add_artist(f"Fav {sc_id}", tier, sc_id=sc_id)
@@ -280,6 +341,11 @@ class _Resp:
         return self._data
 
 
+class _Status:
+    def __init__(self, status_code: int) -> None:
+        self.status_code = status_code
+
+
 def _state() -> ProviderState:
     return ProviderState(config=ProviderConfig(name="soundcloud"), authenticated=True)
 
@@ -311,18 +377,66 @@ def test_get_user_followings_max_pages_and_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def endless(state, method, url, **kwargs):
-        return state, _Resp({"collection": [{"id": 1}], "next_href": "https://more"})
+        page = int(url.rsplit("/", 1)[-1]) if url[-1].isdigit() else 0
+        return state, _Resp(
+            {"collection": [{"id": page}], "next_href": f"https://more/{page + 1}"}
+        )
 
     monkeypatch.setattr(sc_api, "_request_with_backoff", endless)
     _s, users, error = sc_api.get_user_followings(_state(), "42", max_pages=3)
-    assert len(users) == 3 and error is None
+    assert len(users) == 3 and "3-page cap" in error
 
     def boom(state, method, url, **kwargs):
-        raise sc_api.requests.HTTPError("503")
+        raise sc_api.requests.HTTPError("503", response=_Status(503))
 
     monkeypatch.setattr(sc_api, "_request_with_backoff", boom)
     _s, users, error = sc_api.get_user_followings(_state(), "42")
-    assert users == [] and "503" in error
+    assert users == [] and error == "HTTP 503"
+
+
+@pytest.mark.parametrize(
+    ("exc", "expected", "service"),
+    [
+        (sc_api.requests.HTTPError("No valid token available"), "HTTP 0", True),
+        (sc_api.requests.HTTPError("429", response=_Status(429)), "HTTP 429", True),
+        (sc_api.requests.HTTPError("404", response=_Status(404)), "HTTP 404", False),
+        (sc_api.requests.exceptions.ReadTimeout("slow"), "ReadTimeout", True),
+        (sc_api.requests.exceptions.ConnectionError("down"), "ConnectionError", True),
+        (sc_api.requests.exceptions.JSONDecodeError("bad", "x", 0), "Invalid JSON response", False),
+    ],
+)  # fmt: skip
+def test_get_user_followings_errors_classify(
+    monkeypatch: pytest.MonkeyPatch, exc: Exception, expected: str, service: bool
+) -> None:
+    def raises(state, method, url, **kwargs):
+        raise exc
+
+    monkeypatch.setattr(sc_api, "_request_with_backoff", raises)
+    _s, users, error = sc_api.get_user_followings(_state(), "42")
+    assert users == [] and error == expected
+    assert is_service_error(error) is service
+
+
+def test_get_user_followings_repeated_page_is_incomplete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def looping(state, method, url, **kwargs):
+        return state, _Resp({"collection": [{"id": 1}], "next_href": "https://same"})
+
+    monkeypatch.setattr(sc_api, "_request_with_backoff", looping)
+    _s, users, error = sc_api.get_user_followings(_state(), "42")
+    assert len(users) == 2 and "repeated" in error
+
+
+def test_get_user_followings_malformed_page_is_incomplete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        sc_api, "_request_with_backoff", lambda s, m, u, **k: (s, _Resp({"x": 1}))
+    )
+    _s, _users, error = sc_api.get_user_followings(_state(), "42")
+    assert "unexpected followings payload" in error
+    assert not is_service_error(error)
 
 
 # ---------------------------------------------------------------------------
@@ -355,14 +469,16 @@ def test_refresh_due_once_per_night() -> None:
 
 
 def _fake_followings(
-    monkeypatch: pytest.MonkeyPatch, fail_on: str | None = None
+    monkeypatch: pytest.MonkeyPatch,
+    fail_on: str | None = None,
+    error: str = "HTTP 503",
 ) -> list[str]:
     fetched: list[str] = []
 
     def fake(state, user_id, max_pages):
         fetched.append(user_id)
         if user_id == fail_on:
-            return state, [], "boom"
+            return state, [], error
         users = [{"id": 500, "permalink": "x", "username": "X", "followers_count": 12}]
         return state, users, None
 
@@ -418,6 +534,7 @@ def test_refresh_stops_on_first_error(monkeypatch: pytest.MonkeyPatch) -> None:
     add_artist("S2", "S", sc_id="2")
     stale = (NOW - timedelta(days=8)).strftime("%Y-%m-%d %H:%M:%S")
     follows("1", "keep-me", at=stale)
+    fetched_state("1", stale)
     fetched = _fake_followings(
         monkeypatch, fail_on="2"
     )  # "2" was never fetched -> first
@@ -426,6 +543,152 @@ def test_refresh_stops_on_first_error(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert refreshed == 0 and fetched == ["2"]
     assert [r[1] for r in _followings_rows()] == ["keep-me"]
+    assert _state_rows() == [("1", stale, 1, "ok")]  # failed fetch stamps nothing
+
+
+def test_empty_followings_count_as_fresh(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A favorite that follows nobody is stamped, so it is not refetched (and
+    does not hold a slot in the batch) until it is a week old."""
+    add_artist("S1", "S", sc_id="1")
+    fetched: list[str] = []
+
+    def nobody(state, user_id, max_pages):
+        fetched.append(user_id)
+        return state, [], None
+
+    monkeypatch.setattr(fc, "get_user_followings", nobody)
+    _s, refreshed = fc.refresh_favorite_followings(_state(), NOW)
+
+    now_s = NOW.strftime("%Y-%m-%d %H:%M:%S")
+    assert refreshed == 1 and _followings_rows() == []
+    assert _state_rows() == [("1", now_s, 0, "ok")]
+    fc.refresh_favorite_followings(_state(), NOW + timedelta(days=2))
+    assert fetched == ["1"]
+    fc.refresh_favorite_followings(_state(), NOW + timedelta(days=8))
+    assert fetched == ["1", "1"]
+
+
+def _error_rows() -> list[tuple]:
+    with get_db_connection() as conn:
+        return [
+            tuple(r)
+            for r in conn.execute(
+                "SELECT follower_id, fetched_at, status, last_error_at"
+                " FROM sc_favorite_followings_state WHERE status = 'error'"
+            )
+        ]
+
+
+def _ts(at: datetime) -> str:
+    return at.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def test_account_error_skips_only_that_favorite(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A favorite whose pagination never completes no longer blocks the rest."""
+    for sc_id in ("1", "2", "3"):
+        add_artist(f"S{sc_id}", "S", sc_id=sc_id)
+    stale = _ts(NOW - timedelta(days=20))
+    follows("1", "keep-me", at=stale)
+    fetched_state("1", stale)  # oldest, so first in line
+    fetched = _fake_followings(
+        monkeypatch,
+        fail_on="1",
+        error="followings of 1 incomplete: pagination repeated x",
+    )
+
+    _s, refreshed = fc.refresh_favorite_followings(_state(), NOW)
+
+    assert refreshed == 2 and sorted(fetched) == ["1", "2", "3"]
+    assert ("1", "keep-me", 1000, stale) in _followings_rows()  # old rows kept
+    assert _error_rows() == [("1", stale, "error", _ts(NOW))]  # still stale
+
+
+def test_account_error_backs_off_a_day(monkeypatch: pytest.MonkeyPatch) -> None:
+    add_artist("S1", "S", sc_id="1")
+    add_artist("S2", "S", sc_id="2")
+    fetched = _fake_followings(monkeypatch, fail_on="1", error="HTTP 404")
+    fc.refresh_favorite_followings(_state(), NOW)
+    assert _error_rows() == [("1", None, "error", _ts(NOW))]
+
+    # An hour later: the batch already ran tonight.
+    fetched.clear()
+    fc.refresh_favorite_followings(_state(), NOW + timedelta(hours=1))
+    assert fetched == []
+    # Next night but inside the 24h backoff: "1" is not retried.
+    fc.refresh_favorite_followings(_state(), NOW + timedelta(hours=23, minutes=30))
+    assert fetched == []
+    # Past the backoff it gets one more try; success clears the error.
+    monkeypatch.setattr(
+        fc, "get_user_followings", lambda s, uid, max_pages: (s, [{"id": 9}], None)
+    )
+    _s, refreshed = fc.refresh_favorite_followings(_state(), NOW + timedelta(hours=25))
+    assert refreshed == 1 and _error_rows() == []
+    assert ("1", _ts(NOW + timedelta(hours=25)), 1, "ok") in _state_rows()
+
+
+def test_account_error_alone_is_not_retried_hourly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    add_artist("S1", "S", sc_id="1")
+    fetched = _fake_followings(monkeypatch, fail_on="1", error="HTTP 404")
+    fc.refresh_favorite_followings(_state(), NOW)
+    fc.refresh_favorite_followings(_state(), NOW + timedelta(hours=2))
+    assert fetched == ["1"]  # the per-favorite backoff holds it
+
+
+def test_outage_after_account_error_retries_next_tick(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An account error must not close tonight's gate: when the batch then
+    stops on an outage, the untried favorites go again on the next tick."""
+    for sc_id in "123":
+        add_artist(f"S{sc_id}", "S", sc_id=sc_id)
+    calls: list[str] = []
+    errors = {"1": "HTTP 404", "2": "HTTP 503"}
+
+    def fake(state, user_id, max_pages):
+        calls.append(user_id)
+        return state, [], errors.get(user_id)
+
+    monkeypatch.setattr(fc, "get_user_followings", fake)
+    fc.refresh_favorite_followings(_state(), NOW)
+    assert calls == ["1", "2"]
+
+    errors.pop("2")  # SoundCloud is back
+    calls.clear()
+    _s, refreshed = fc.refresh_favorite_followings(_state(), NOW + timedelta(hours=1))
+    assert sorted(calls) == ["2", "3"] and refreshed == 2
+
+
+@pytest.mark.parametrize("error", ["HTTP 503", "HTTP 429", "HTTP 0", "ReadTimeout"])
+def test_service_error_stops_the_run_and_records_nothing(
+    monkeypatch: pytest.MonkeyPatch, error: str
+) -> None:
+    add_artist("S1", "S", sc_id="1")
+    add_artist("S2", "S", sc_id="2")
+    fetched_state("2", _ts(NOW - timedelta(days=9)))
+    fetched = _fake_followings(monkeypatch, fail_on="1", error=error)
+
+    _s, refreshed = fc.refresh_favorite_followings(_state(), NOW)
+
+    assert refreshed == 0 and fetched == ["1"]
+    assert _error_rows() == []
+    # Not backed off: retried on the next tick.
+    fc.refresh_favorite_followings(_state(), NOW + timedelta(hours=1))
+    assert fetched == ["1", "1"]
+
+
+def test_failed_fetch_keeps_state_stale(monkeypatch: pytest.MonkeyPatch) -> None:
+    add_artist("S1", "S", sc_id="1")
+    stale = (NOW - timedelta(days=8)).strftime("%Y-%m-%d %H:%M:%S")
+    fetched_state("1", stale, count=0)
+    _fake_followings(monkeypatch, fail_on="1")
+
+    _s, refreshed = fc.refresh_favorite_followings(_state(), NOW)
+
+    assert refreshed == 0 and _state_rows() == [("1", stale, 0, "ok")]
 
 
 # ---------------------------------------------------------------------------
@@ -448,7 +711,11 @@ def test_connections_route(client: TestClient, monkeypatch: pytest.MonkeyPatch) 
     for f in "123":
         follows(f, "60")
         follows(f, "61")
-    monkeypatch.setenv("SC_SELF_USER_ID", "61")
+    with get_db_connection() as conn:  # the nightly job dismisses Kevin's account
+        conn.execute(
+            "INSERT INTO follow_suggestion_dismissals (soundcloud_user_id) VALUES ('61')"
+        )
+        conn.commit()
 
     body = client.get("/api/follow-suggestions/connections").json()
 
