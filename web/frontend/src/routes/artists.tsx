@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 import { useState, useMemo } from 'react';
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { toast } from 'react-toastify';
 import { useArtists, useFollowingsSync, useUnfollowArtist } from '../hooks/useArtists';
 import type { ArtistStats } from '../api/artists';
@@ -12,10 +12,21 @@ import { ArtistFiltersBar } from '../components/artists/ArtistFiltersBar';
 import { ChipVisibilityMenu } from '../components/artists/ChipVisibilityMenu';
 import { SyncStatusHeader } from '../components/artists/SyncStatusHeader';
 import { Button } from '../components/ui/button';
+import { SuggestionsView } from '../components/follow-suggestions/SuggestionsView';
 import { useArtistViewStore, useVisibleChips } from '../stores/artistViewStore';
+
+export type ArtistsTab = 'following' | 'suggestions';
+
+export type ArtistsSearch = {
+  /** Omitted for the default following tab. */
+  tab?: ArtistsTab;
+};
 
 export const Route = createFileRoute('/artists')({
   component: ArtistsPage,
+  validateSearch: (search: Record<string, unknown>): ArtistsSearch => ({
+    tab: search.tab === 'suggestions' ? 'suggestions' : undefined,
+  }),
 });
 
 const DISPLAY_CAP = 500;
@@ -26,7 +37,7 @@ const DISPLAY_CAP = 500;
 
 function LoadingState(): ReactElement {
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center">
+    <div className="min-h-[60vh] flex items-center justify-center">
       <span className="font-sf-mono text-sm text-white/40">Loading artists…</span>
     </div>
   );
@@ -39,7 +50,7 @@ interface ErrorStateProps {
 
 function ErrorState({ error, onRetry }: ErrorStateProps): ReactElement {
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center px-6">
+    <div className="min-h-[60vh] flex items-center justify-center px-6">
       <div className="max-w-md w-full bg-red-500/5 border border-red-500/20 px-5 py-4 space-y-3">
         <p className="font-sf-mono text-sm text-red-400">{error.message}</p>
         <Button variant="outline" size="sm" onClick={onRetry}>
@@ -54,7 +65,7 @@ function EmptyState(): ReactElement {
   const sync = useFollowingsSync();
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center px-6">
+    <div className="min-h-[60vh] flex items-center justify-center px-6">
       <div className="max-w-md w-full text-center space-y-4">
         <p className="font-sf-mono text-sm text-white/40">
           No artists found. Run a followings sync or feed sync to populate.
@@ -73,10 +84,61 @@ function EmptyState(): ReactElement {
 }
 
 // ---------------------------------------------------------------------------
+// Tabs
+// ---------------------------------------------------------------------------
+
+function ArtistsTabs({ tab, onChange }: { tab: ArtistsTab; onChange: (tab: ArtistsTab) => void }): ReactElement {
+  return (
+    <div role="tablist" aria-label="Artists view" className="inline-flex items-center rounded-full border border-obsidian-border p-0.5">
+      {([
+        ['following', 'Following'],
+        ['suggestions', 'Suggestions'],
+      ] as const).map(([value, label]) => (
+        <button
+          key={value}
+          type="button"
+          role="tab"
+          aria-selected={tab === value}
+          onClick={() => onChange(value)}
+          className={`rounded-full px-3 py-1 text-xs focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-obsidian-accent ${
+            tab === value ? 'bg-obsidian-accent/20 text-obsidian-accent' : 'text-white/60 hover:text-white'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
 function ArtistsPage(): ReactElement {
+  const { tab = 'following' } = Route.useSearch();
+  const navigate = useNavigate({ from: '/artists' });
+  const setTab = (next: ArtistsTab): void => {
+    void navigate({ search: { tab: next === 'following' ? undefined : next } });
+  };
+
+  return (
+    <div className="min-h-screen bg-black">
+      <div className="max-w-7xl mx-auto px-6 pt-6">
+        <ArtistsTabs tab={tab} onChange={setTab} />
+      </div>
+      {tab === 'suggestions' ? (
+        <div className="px-6 py-6">
+          <SuggestionsView />
+        </div>
+      ) : (
+        <FollowingView />
+      )}
+    </div>
+  );
+}
+
+function FollowingView(): ReactElement {
   // Filters/sort live in the artist view store so they survive navigating
   // to an artist page and back.
   const { search, setSearch, source, setSource, sort, setSort } = useArtistViewStore();
@@ -111,7 +173,7 @@ function ArtistsPage(): ReactElement {
     : 0;
 
   return (
-    <div className="min-h-screen bg-black px-6 py-8">
+    <div className="px-6 pt-4 pb-8">
       <header className="max-w-7xl mx-auto mb-8">
         <h1 className="font-inter text-3xl font-semibold text-white tracking-tight">Artists</h1>
         <p className="font-sf-mono text-sm text-white/50 mt-1">

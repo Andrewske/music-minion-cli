@@ -95,6 +95,7 @@ export * from './api/stories';
 export * from './api/feedAgent';
 export * from './api/insights';
 export * from './api/cleanup';
+export * from './api/followSuggestions';
 
 // Playback error policy (shared window/breaker/retry decision logic)
 export {
