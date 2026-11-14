@@ -168,14 +168,17 @@ def _refresh_locked(conn: sqlite3.Connection, playlist_id: int) -> RefreshResult
 
 
 def refresh_smart_playlist(
-    playlist_id: int, only_if_stale: bool = False
+    playlist_id: int, only_if_stale: bool = False, busy_ms: int | None = None
 ) -> RefreshResult | None:
     """Bring one smart playlist's stored tracks in line with its filters.
 
     Runs under BEGIN IMMEDIATE so no writer can change tracks between reading
     the version and stamping it. Returns None when skipped (fresh or not smart).
+    busy_ms caps the wait for the write lock (default: the connection's 30s).
     """
     with get_db_connection() as conn:
+        if busy_ms is not None:
+            conn.execute(f"PRAGMA busy_timeout = {int(busy_ms)}")
         conn.execute("BEGIN IMMEDIATE")
         try:
             skip = not _is_smart(conn, playlist_id) or (
@@ -194,31 +197,40 @@ def refresh_smart_playlist(
     return result
 
 
+# Read-path refreshes give up quickly when another writer holds the lock;
+# the caller serves the stored rows and the worker catches up later.
+READ_BUSY_MS = 500
+
+
 def refresh_playlist_if_stale(playlist_id: int) -> bool:
     """Refresh one playlist if it is a stale smart playlist. True if it changed.
 
-    Called on the read path, so a failed refresh is logged and the caller
-    reads the last stored tracks instead of erroring.
+    Called on the read path, so a failed or lock-busy refresh is logged and
+    the caller reads the last stored tracks instead of erroring.
     """
     try:
         with get_db_connection() as conn:
             if not _is_stale(conn, playlist_id):
                 return False
-        result = refresh_smart_playlist(playlist_id, only_if_stale=True)
+        result = refresh_smart_playlist(
+            playlist_id, only_if_stale=True, busy_ms=READ_BUSY_MS
+        )
     except sqlite3.Error:
         logger.exception(f"Smart playlist {playlist_id} refresh failed on read")
         return False
     return bool(result and result.changed)
 
 
-def refresh_stale_smart_playlists() -> list[RefreshResult]:
+def refresh_stale_smart_playlists(busy_ms: int | None = None) -> list[RefreshResult]:
     """Refresh every stale smart playlist. One failure doesn't stop the rest."""
     with get_db_connection() as conn:
         stale = stale_smart_playlist_ids(conn)
     results = []
     for playlist_id in stale:
         try:
-            result = refresh_smart_playlist(playlist_id, only_if_stale=True)
+            result = refresh_smart_playlist(
+                playlist_id, only_if_stale=True, busy_ms=busy_ms
+            )
         except sqlite3.Error:
             logger.exception(f"Smart playlist {playlist_id} refresh failed")
             continue

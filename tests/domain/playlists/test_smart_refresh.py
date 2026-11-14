@@ -377,3 +377,74 @@ def test_migration_backfill_claims_smart_rows_only_and_is_idempotent() -> None:
 
     assert [r["source"] for r in _rows(smart)] == ["smart"]
     assert [r["source"] for r in _rows(manual)] == [None]
+
+
+def _link_bucket_unchecked(playlist_id: int) -> str:
+    """Link a fake bucket to a playlist the way a pre-guard DB could have."""
+    with get_db_connection() as conn:
+        conn.execute("PRAGMA foreign_keys=OFF")
+        conn.execute(
+            "INSERT INTO bucket_playlist_links (id, bucket_id, playlist_id)"
+            " VALUES ('link1', 'bucket1', ?)",
+            (playlist_id,),
+        )
+        conn.commit()
+    return "bucket1"
+
+
+def test_migration_backfill_leaves_bucket_linked_smart_playlists_unowned() -> None:
+    _add_track("a")
+    smart = _smart("Dub")
+    _link_bucket_unchecked(smart)
+    _sql("UPDATE playlist_tracks SET source = NULL")
+
+    with get_db_connection() as conn:
+        _migrate_v76_smart_playlist_staleness(conn)
+        conn.commit()
+
+    assert [r["source"] for r in _rows(smart)] == [None]
+
+
+# --- bucket links --------------------------------------------------------------
+
+
+def test_buckets_cannot_link_to_smart_playlists() -> None:
+    from web.backend.queries.buckets import link_bucket_to_playlist
+
+    smart = _smart("Dub")
+    with pytest.raises(ValueError, match="smart playlist"):
+        link_bucket_to_playlist("bucket1", smart)
+
+
+def test_bucket_unassign_never_removes_smart_membership() -> None:
+    from web.backend.queries.buckets import unsync_track_from_linked_playlist
+
+    track_id = _add_track("a")
+    smart = _smart("Dub")
+    smart_refresh.refresh_stale_smart_playlists()
+    bucket_id = _link_bucket_unchecked(smart)
+
+    assert unsync_track_from_linked_playlist(bucket_id, track_id)
+    assert _member_ids(smart) == {track_id}
+
+
+# --- read path -------------------------------------------------------------------
+
+
+def test_read_refresh_gives_up_fast_when_another_writer_holds_the_lock() -> None:
+    import time
+
+    playlist_id = _smart("Dub")
+    _add_track("a")  # makes the playlist stale
+    stamped = _materialized_version(playlist_id)
+    blocker = sqlite3.connect(get_database_path(), timeout=1.0)
+    try:
+        blocker.execute("BEGIN IMMEDIATE")
+        started = time.monotonic()
+        assert smart_refresh.refresh_playlist_if_stale(playlist_id) is False
+        assert time.monotonic() - started < 5
+    finally:
+        blocker.rollback()
+        blocker.close()
+    assert _materialized_version(playlist_id) == stamped
+    assert _member_ids(playlist_id) == set()

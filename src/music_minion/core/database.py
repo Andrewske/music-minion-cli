@@ -816,11 +816,14 @@ def _migrate_v76_smart_playlist_staleness(conn) -> None:
     # NULL = written by someone else (manual add, SC sync, bucket link...);
     # 'smart' = written by the smart refresh, the only rows it may delete.
     _add_column_if_missing(conn, "playlist_tracks", "source TEXT")
-    # The old refresh wiped and rewrote smart playlists, so it owned every row.
+    # The old refresh wiped and rewrote smart playlists, so it owned every row,
+    # except in a smart playlist a bucket links to: bucket rows land there
+    # unfiltered, so their provenance is unknown and they stay unowned (kept).
     conn.execute("""
         UPDATE playlist_tracks SET source = 'smart'
         WHERE source IS NULL
           AND playlist_id IN (SELECT id FROM playlists WHERE type = 'smart')
+          AND playlist_id NOT IN (SELECT playlist_id FROM bucket_playlist_links)
     """)
     for name, body in _smart_staleness_triggers().items():
         conn.execute(f"CREATE TRIGGER IF NOT EXISTS {name} {body}")

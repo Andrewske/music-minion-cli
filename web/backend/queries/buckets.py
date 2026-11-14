@@ -1062,6 +1062,14 @@ def discard_session(session_id: str) -> bool:
         return True
 
 
+def _is_smart_playlist(conn, playlist_id: int) -> bool:
+    """True if the playlist's membership is owned by its smart filters."""
+    row = conn.execute(
+        "SELECT type FROM playlists WHERE id = ?", (playlist_id,)
+    ).fetchone()
+    return bool(row and row["type"] == "smart")
+
+
 def link_bucket_to_playlist(bucket_id: str, playlist_id: int) -> bool:
     """Link bucket to playlist. Returns False if bucket not found.
 
@@ -1071,8 +1079,16 @@ def link_bucket_to_playlist(bucket_id: str, playlist_id: int) -> bool:
 
     Returns:
         True if linked successfully, False if bucket not found
+
+    Raises:
+        ValueError: playlist is smart (its filters own membership)
     """
     with get_db_connection() as conn:
+        if _is_smart_playlist(conn, playlist_id):
+            raise ValueError(
+                f"Playlist {playlist_id} is a smart playlist; its filters own "
+                f"its tracks, so buckets can't link to it (bucket {bucket_id})"
+            )
         # Verify bucket exists
         cursor = conn.execute(
             "SELECT id FROM buckets WHERE id = ?",
@@ -1319,8 +1335,9 @@ def sync_track_to_linked_playlist(bucket_id: str, track_id: int) -> bool:
         # Get linked playlist_id
         cursor = conn.execute(
             """
-            SELECT playlist_id FROM bucket_playlist_links
-            WHERE bucket_id = ?
+            SELECT l.playlist_id FROM bucket_playlist_links l
+            JOIN playlists p ON p.id = l.playlist_id
+            WHERE l.bucket_id = ? AND p.type != 'smart'
             """,
             (bucket_id,),
         )
@@ -1386,8 +1403,9 @@ def unsync_track_from_linked_playlist(bucket_id: str, track_id: int) -> bool:
         # Get linked playlist_id
         cursor = conn.execute(
             """
-            SELECT playlist_id FROM bucket_playlist_links
-            WHERE bucket_id = ?
+            SELECT l.playlist_id FROM bucket_playlist_links l
+            JOIN playlists p ON p.id = l.playlist_id
+            WHERE l.bucket_id = ? AND p.type != 'smart'
             """,
             (bucket_id,),
         )

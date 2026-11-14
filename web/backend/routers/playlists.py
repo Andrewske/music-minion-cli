@@ -53,7 +53,10 @@ def _refresh_stale_smart_playlists(playlist_id: int | None = None) -> None:
     from music_minion.domain.playlists import smart_refresh
 
     if playlist_id is None:
-        changed = any(r.changed for r in smart_refresh.refresh_stale_smart_playlists())
+        results = smart_refresh.refresh_stale_smart_playlists(
+            busy_ms=smart_refresh.READ_BUSY_MS
+        )
+        changed = any(r.changed for r in results)
     else:
         changed = smart_refresh.refresh_playlist_if_stale(playlist_id)
     if changed:
@@ -264,8 +267,9 @@ def get_playlist_name(playlist_id: int) -> Optional[str]:
         return row["name"] if row else None
 
 
+# Plain def (threadpool): the smart refresh may wait on the SQLite write lock.
 @router.get("/playlists")
-async def get_playlists(library: Optional[str] = None):
+def get_playlists(library: Optional[str] = None):
     """Get all playlists, optionally filtered by library."""
     try:
         from music_minion.domain.playlists.crud import get_all_playlists
@@ -363,8 +367,9 @@ async def get_playlist_stats(playlist_id: int):
         )
 
 
+# Plain def (threadpool): the smart refresh may wait on the SQLite write lock.
 @router.get("/playlists/{playlist_id}/tracks")
-async def get_playlist_tracks(
+def get_playlist_tracks(
     playlist_id: int,
     limit: int = 100,
     offset: int = 0,
