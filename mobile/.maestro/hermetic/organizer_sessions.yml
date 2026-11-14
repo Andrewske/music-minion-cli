@@ -8,19 +8,36 @@
 #   maestro --device emulator-5554 test -e MM_HERMETIC_BACKEND=1 \
 #     .maestro/hermetic/organizer_sessions.yml
 #
-# It lives in hermetic/ so neither e2e.sh ([0-9]*.yml) nor config.yaml (*.yml,
-# top level only) picks it up, and the first step refuses to run without the
-# MM_HERMETIC_BACKEND=1 opt-in.
+# Guards, in order:
+# - It lives in hermetic/ so neither e2e.sh ([0-9]*.yml) nor config.yaml
+#   (*.yml, top level only) picks it up.
+# - It refuses to run without the MM_HERMETIC_BACKEND=1 opt-in.
+# - The flag alone proves nothing: useServerUrl prefers a persisted URL over
+#   EXPO_PUBLIC_API_URL. So it clears app state (drops any saved URL) and then
+#   reads the EFFECTIVE server URL from Settings. Anything other than the
+#   10.0.2.2:8642 snapshot backend fails the flow before any organizer step.
 appId: com.musicminion.app
 ---
 - assertTrue:
     condition: ${typeof MM_HERMETIC_BACKEND !== 'undefined' && MM_HERMETIC_BACKEND == '1'}
     label: "Opt-in: MM_HERMETIC_BACKEND=1 (snapshot backend only)"
-- launchApp
+- launchApp:
+    clearState: true
 - extendedWaitUntil:
     visible:
       id: "nav-open"
     timeout: 30000
+- runFlow:
+    file: ../subflows/nav_to.yml
+    env:
+      DEST: "settings"
+- tapOn:
+    id: "settings-server-toggle"
+- copyTextFrom:
+    id: "settings-server-url"
+- assertTrue:
+    condition: ${maestro.copiedText.indexOf('http://10.0.2.2:8642/') === 0}
+    label: "App talks to the snapshot backend (http://10.0.2.2:8642/), not the live pi"
 - runFlow:
     file: ../subflows/nav_to.yml
     env:

@@ -85,7 +85,13 @@ export default function SessionScreen(): React.JSX.Element {
   const { name: playlistName, isDiscovery } = usePlaylistInfo(playlistId, params.playlistName);
   const organizer = usePlaylistOrganizer({ playlistId, enabled: !!playlistId });
   const undo = useOrganizerUndo(organizer);
-  const sessions = useSessionSwitcher({ playlistId, playlistName, loadedId: organizer.session?.id, isDiscovery });
+  const sessions = useSessionSwitcher({
+    playlistId,
+    playlistName,
+    loaded: organizer.session,
+    routeSessionId: sessionId,
+    isDiscovery,
+  });
 
   // Resolve names for every track in the session (unassigned + bucket tracks).
   // The id union doesn't change on assign/unassign, so this rarely refetches.

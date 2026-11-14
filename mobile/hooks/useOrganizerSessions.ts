@@ -11,6 +11,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { QueryClient, UseMutationResult } from '@tanstack/react-query';
 import * as bucketsApi from '@music-minion/shared';
 import type { BucketSession, SessionSummary } from '@music-minion/shared';
+import { commitThenReplace } from '../features/organizer/sessionTransition';
 
 /** Cache key for the session currently loaded (status 'active') for a playlist. */
 export const organizerSessionKey = (playlistId: number): readonly ['organizer', 'session', number] =>
@@ -50,6 +51,12 @@ interface SessionCache {
   /** Cancel in-flight refetches of the loaded session: they'd land with the old one. */
   cancelRefetch: () => Promise<void>;
   load: (session: BucketSession) => Promise<void>;
+  /**
+   * The loaded session was finished/discarded but no replacement arrived:
+   * clear it (the screen shows its loader, so nothing edits a dead session)
+   * and refetch get-or-create in the background.
+   */
+  drop: () => Promise<void>;
   refreshList: () => void;
   setName: (sessionId: string, name: string | null) => void;
 }
@@ -67,6 +74,10 @@ function sessionCache(queryClient: QueryClient, playlistId: number): SessionCach
     load: async (session) => {
       await cancelRefetch();
       queryClient.setQueryData<BucketSession>(key, session);
+      refreshList();
+    },
+    drop: async () => {
+      void queryClient.resetQueries({ queryKey: key });
       refreshList();
     },
     setName: (sessionId, name) =>
@@ -108,8 +119,11 @@ function useLoadingMutations(playlistId: number, cache: SessionCache): LoadingAc
     mutationFn: async (): Promise<BucketSession> => {
       const loadedId = cache.loadedId();
       if (!loadedId) throw new Error('No active session');
-      await bucketsApi.finalizeSession(loadedId);
-      return bucketsApi.createOrResumeSession(playlistId);
+      return commitThenReplace(
+        () => bucketsApi.finalizeSession(loadedId),
+        () => bucketsApi.createOrResumeSession(playlistId),
+        cache.drop
+      );
     },
     ...loadOptions,
   });
@@ -131,9 +145,10 @@ function useDeleteMutation(
     mutationFn: async (sessionId) => {
       const wasLoaded = cache.loadedId() === sessionId;
       if (wasLoaded) await cache.cancelRefetch();
-      await bucketsApi.discardSession(sessionId);
+      const discard = (): Promise<void> => bucketsApi.discardSession(sessionId);
+      if (!wasLoaded) return discard().then(() => null);
       // get-or-create hands back a fresh active session for the playlist.
-      return wasLoaded ? bucketsApi.createOrResumeSession(playlistId) : null;
+      return commitThenReplace(discard, () => bucketsApi.createOrResumeSession(playlistId), cache.drop);
     },
     onSuccess: async (replacement) => {
       if (replacement) return cache.load(replacement);
