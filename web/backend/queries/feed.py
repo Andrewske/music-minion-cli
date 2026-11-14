@@ -196,6 +196,7 @@ def _attach_action_states(conn: Any, items: list[dict[str, Any]]) -> None:
         SELECT soundcloud_id, action_type, status, last_error, created_at, id
         FROM sc_feed_action_jobs
         WHERE soundcloud_id IN ({placeholders})
+          AND NOT (action_type = 'like' AND want_liked = 0)
         ORDER BY created_at, id
         """,
         ids,
@@ -898,57 +899,100 @@ def enqueue_keep_actions(soundcloud_id: str, playlist_name: str) -> None:
         conn.commit()
 
 
-def enqueue_like_action(soundcloud_id: str) -> None:
-    """Queue (or re-arm) the durable SC like job without a keep decision.
+def set_like_intent(soundcloud_id: str, liked: bool) -> int:
+    """Record the desired SC like state for a track; returns its new generation.
 
-    Shares the keep's row (one 'like' row per track, see the UNIQUE key): a
-    finished or failed job goes back to pending with fresh attempts, so a
-    like undone on SoundCloud can be redone. A running job is left alone.
+    The track's one 'like' job row (shared with Keep) holds the desired state
+    (want_liked) and a generation bumped on every request, in one statement,
+    so there is no read-then-write race. An idle row goes back to pending with
+    fresh attempts; a running row stays running and is re-queued by
+    settle_action when it finishes with a stale generation.
     """
     with get_db_connection() as conn:
-        conn.execute(
-            """INSERT INTO sc_feed_action_jobs (soundcloud_id, action_type, target_key)
-            VALUES (?, 'like', '')
-            ON CONFLICT(soundcloud_id, action_type, target_key) DO UPDATE SET
-                status = 'pending', attempt_count = 0, last_error = NULL,
-                completed_at = NULL, next_attempt_at = CURRENT_TIMESTAMP,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE sc_feed_action_jobs.status != 'running'""",
-            (soundcloud_id,),
-        )
-        conn.commit()
-
-
-def cancel_pending_like(soundcloud_id: str) -> int:
-    """Drop a not-yet-done like job (keep's or the player's); playlist jobs stay."""
-    with get_db_connection() as conn:
-        cursor = conn.execute(
-            """DELETE FROM sc_feed_action_jobs
-            WHERE soundcloud_id = ? AND action_type = 'like'
-              AND status IN ('pending', 'error')""",
-            (soundcloud_id,),
-        )
-        conn.commit()
-        return cursor.rowcount
-
-
-def like_job_status(soundcloud_id: str) -> str | None:
-    """Status of the track's like job, or None when it has none."""
-    with get_db_connection() as conn:
         row = conn.execute(
-            """SELECT status FROM sc_feed_action_jobs
-            WHERE soundcloud_id = ? AND action_type = 'like'""",
-            (soundcloud_id,),
+            """INSERT INTO sc_feed_action_jobs
+                (soundcloud_id, action_type, target_key, want_liked, generation)
+            VALUES (?, 'like', '', ?, 1)
+            ON CONFLICT(soundcloud_id, action_type, target_key) DO UPDATE SET
+                want_liked = excluded.want_liked,
+                generation = sc_feed_action_jobs.generation + 1,
+                status = CASE WHEN sc_feed_action_jobs.status = 'running'
+                    THEN 'running' ELSE 'pending' END,
+                attempt_count = 0, last_error = NULL, completed_at = NULL,
+                next_attempt_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            RETURNING generation""",
+            (soundcloud_id, int(liked)),
         ).fetchone()
-    return row["status"] if row else None
+        conn.commit()
+    return int(row["generation"])
+
+
+def settle_action(job: dict[str, Any], success: bool, error: str | None = None) -> bool:
+    """Finish a claimed job unless a newer request superseded it.
+
+    Returns True when the job's generation is still current (the caller may
+    then write the outcome to sc_likes). A superseded job goes back to
+    pending, so the worker runs the newest desired state next; its result,
+    retry and backoff are dropped.
+    """
+    with get_db_connection() as conn:
+        cursor = (
+            _complete_current(conn, job)
+            if success
+            else _fail_current(conn, job, error or "SoundCloud operation failed")
+        )
+        current = cursor.rowcount > 0
+        if not current:
+            conn.execute(
+                """UPDATE sc_feed_action_jobs SET status = 'pending',
+                    next_attempt_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND status = 'running'""",
+                (job["id"],),
+            )
+        conn.commit()
+    return current
+
+
+def _complete_current(conn: Any, job: dict[str, Any]) -> Any:
+    return conn.execute(
+        """UPDATE sc_feed_action_jobs SET status = 'complete', last_error = NULL,
+            completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND generation = ?""",
+        (job["id"], job.get("generation", 0)),
+    )
+
+
+def _fail_current(conn: Any, job: dict[str, Any], error: str) -> Any:
+    """Bounded exponential backoff, only for the current generation."""
+    attempt_count, max_attempts = job["attempt_count"], job["max_attempts"]
+    delay_seconds = min(3600, 2 ** max(0, attempt_count - 1) * 30)
+    return conn.execute(
+        """UPDATE sc_feed_action_jobs SET status = 'error', last_error = ?,
+            updated_at = CURRENT_TIMESTAMP,
+            next_attempt_at = CASE WHEN ? THEN next_attempt_at
+                ELSE datetime('now', '+' || ? || ' seconds') END
+        WHERE id = ? AND generation = ?""",
+        (
+            error[:2000],
+            int(attempt_count >= max_attempts),
+            delay_seconds,
+            job["id"],
+            job.get("generation", 0),
+        ),
+    )
 
 
 def cancel_pending_actions(soundcloud_id: str) -> int:
-    """Drop not-yet-done SC jobs when the current decision is no longer keep."""
+    """Drop not-yet-done SC jobs when the current decision is no longer keep.
+
+    Only Keep-created rows (generation 0): a like/unlike the user asked for
+    from the player heart outlives a verdict change.
+    """
     with get_db_connection() as conn:
         cursor = conn.execute(
             """DELETE FROM sc_feed_action_jobs
-            WHERE soundcloud_id = ? AND status IN ('pending', 'error')""",
+            WHERE soundcloud_id = ? AND status IN ('pending', 'error')
+              AND generation = 0""",
             (soundcloud_id,),
         )
         conn.commit()
@@ -991,33 +1035,6 @@ def get_next_action_delay() -> float | None:
             WHERE status IN ('pending', 'error') AND attempt_count < max_attempts"""
         ).fetchone()
     return float(row["delay"]) if row and row["delay"] is not None else None
-
-
-def complete_action(job_id: int) -> None:
-    with get_db_connection() as conn:
-        conn.execute(
-            """UPDATE sc_feed_action_jobs SET status = 'complete', last_error = NULL,
-                completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?""",
-            (job_id,),
-        )
-        conn.commit()
-
-
-def fail_action(job_id: int, error: str, attempt_count: int, max_attempts: int) -> None:
-    """Persist bounded exponential backoff; terminal failures remain visible."""
-    delay_seconds = min(3600, 2 ** max(0, attempt_count - 1) * 30)
-    terminal = attempt_count >= max_attempts
-    with get_db_connection() as conn:
-        conn.execute(
-            """UPDATE sc_feed_action_jobs SET status = 'error', last_error = ?,
-                updated_at = CURRENT_TIMESTAMP,
-                next_attempt_at = CASE WHEN ? THEN next_attempt_at
-                    ELSE datetime('now', '+' || ? || ' seconds') END
-            WHERE id = ?""",
-            (error[:2000], int(terminal), delay_seconds, job_id),
-        )
-        conn.commit()
 
 
 def recover_interrupted_actions() -> int:

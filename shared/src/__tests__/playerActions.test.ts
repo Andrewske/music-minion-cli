@@ -157,4 +157,15 @@ describe('syncState keeps the current track object', () => {
     store.getState().syncState(payload({ stateSeq: 3, queueVersion: 2, currentTrack: liked }));
     expect(store.getState().currentTrack?.sc_liked).toBe(true);
   });
+
+  it('applies a like whose queue fetch landed before its broadcast', () => {
+    const store = seed();
+    const liked = { ...track(1, '101'), sc_liked: true };
+    // The queue refetch already brought version 2 (with the like) ...
+    store.getState().set({ queue: [liked, track(2), track(3, '103')], queueVersion: 2 });
+    // ... so the slim broadcast for version 2 matches every echo field but the heart.
+    const { queue: _omit, ...slim } = payload({ stateSeq: 2, queueVersion: 2, currentTrack: liked });
+    store.getState().syncState(slim);
+    expect(store.getState().currentTrack?.sc_liked).toBe(true);
+  });
 });

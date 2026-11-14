@@ -18,7 +18,6 @@ from music_minion.domain.library.providers.soundcloud.api import (
     add_track_to_playlist,
     remove_track_from_playlist,
     reorder_playlist,
-    unlike_track,
 )
 from web.backend.soundcloud_auth import get_web_provider_state
 
@@ -55,10 +54,6 @@ class SCPushRemove(NamedTuple):
 
 class SCPushBulkSync(NamedTuple):
     playlist_id: int
-
-
-class SCPushUnlike(NamedTuple):
-    soundcloud_id: str
 
 
 class SCPushFeedActions(NamedTuple):
@@ -168,13 +163,6 @@ def enqueue_sc_push_bulk_sync(playlist_id: int) -> None:
     _queue.put(SCPushBulkSync(playlist_id))
 
 
-def enqueue_sc_unlike(soundcloud_id: str) -> None:
-    """Enqueue a SoundCloud unlike. Runs on the single writer, so it lands
-    after any like job already being drained."""
-    _ensure_worker()
-    _queue.put(SCPushUnlike(soundcloud_id))
-
-
 def enqueue_feed_action_drain() -> None:
     """Wake the single SC writer to process all currently-due feed jobs."""
     _ensure_worker()
@@ -214,8 +202,6 @@ def _dispatch(task: object) -> None:
         _run_with_retry(lambda: _handle_remove(task.playlist_id, task.track_id), "remove")
     elif isinstance(task, SCPushBulkSync):
         _run_with_retry(lambda: _handle_bulk_sync(task.playlist_id), "bulk_sync")
-    elif isinstance(task, SCPushUnlike):
-        _run_with_retry(lambda: _handle_unlike(task.soundcloud_id), "unlike")
     elif isinstance(task, SCPushFeedActions):
         _handle_feed_actions()
 
@@ -276,26 +262,6 @@ def _handle_remove(playlist_id: int, track_id: int) -> tuple[bool, str | None]:
     if success:
         logger.info(f"SC push: removed track {sc_track_id} from playlist {sc_playlist_id}")
     return success, err
-
-
-def _handle_unlike(soundcloud_id: str) -> tuple[bool, str | None]:
-    """Unlike on SoundCloud, then forget the like locally. Returns (success, err).
-
-    A 404 means SoundCloud has no such like, which is the goal state, so it
-    also clears sc_likes. sc_likes is only touched once SC agrees.
-    """
-    from music_minion.core.database import delete_sc_like
-
-    state = get_web_provider_state()
-    if state is None:
-        logger.warning(f"SC push: unlike {soundcloud_id} skipped, not authenticated")
-        return True, None
-    _, success, err = unlike_track(state, soundcloud_id)
-    if success or (err is not None and "404" in err):
-        delete_sc_like(soundcloud_id)
-        logger.info(f"SC push: unliked track {soundcloud_id}")
-        return True, None
-    return False, err
 
 
 def _handle_bulk_sync(playlist_id: int) -> tuple[bool, str | None]:

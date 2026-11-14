@@ -1371,26 +1371,25 @@ def _require_sc_id(soundcloud_id: str) -> str:
 async def like_on_soundcloud(soundcloud_id: str) -> dict:
     """Like a track on SoundCloud through the durable like job (no Keep verdict).
 
-    Returns at once; the job runs on the SC push worker and writes sc_likes on
+    Returns at once; the SC push worker runs the job and writes sc_likes on
     success. Live player copies of the track flip sc_liked and broadcast.
     """
-    from web.backend.routers.player import set_live_sc_liked
-    from web.backend.sc_like_actions import request_like
-
-    result = request_like(_require_sc_id(soundcloud_id))
-    await set_live_sc_liked(soundcloud_id, True)
-    return result
+    return await _request_like_state(soundcloud_id, True)
 
 
 @router.delete("/likes/{soundcloud_id}")
 async def unlike_on_soundcloud(soundcloud_id: str) -> dict:
-    """Unlike a track on SoundCloud; cancels a pending like (Keep's included).
+    """Unlike a track on SoundCloud; overrides a pending like (Keep's included).
 
     The Keep verdict is left alone. sc_likes clears once SoundCloud confirms.
     """
-    from web.backend.routers.player import set_live_sc_liked
-    from web.backend.sc_like_actions import request_unlike
+    return await _request_like_state(soundcloud_id, False)
 
-    result = request_unlike(_require_sc_id(soundcloud_id))
-    await set_live_sc_liked(soundcloud_id, False)
+
+async def _request_like_state(soundcloud_id: str, liked: bool) -> dict:
+    from web.backend.routers.player import set_live_sc_liked
+    from web.backend.sc_like_actions import request_like_state
+
+    result = request_like_state(_require_sc_id(soundcloud_id), liked)
+    await set_live_sc_liked(soundcloud_id, liked)
     return result

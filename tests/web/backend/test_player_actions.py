@@ -1,17 +1,16 @@
 """Player actions (#78): queue insert, jump, and like/unlike on SoundCloud.
 
 Every SoundCloud call is mocked: the SC writer thread is never started and
-unlike_track / get_web_provider_state are patched where they're used.
+like_track / unlike_track are patched where the job runner uses them.
 """
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from music_minion.core.database import get_db_connection, upsert_sc_likes
-from web.backend import sc_push_worker
 from web.backend.main import app
 from web.backend.player_state import PlaybackState, get_state, reset_state
 from web.backend.routers.player import (
@@ -32,13 +31,10 @@ def clean_player_state() -> Iterator[None]:
 
 
 @pytest.fixture
-def no_sc_writer() -> Iterator[dict[str, MagicMock]]:
-    """Stop like/unlike from waking the real SC push worker."""
-    with (
-        patch("web.backend.sc_like_actions.enqueue_feed_action_drain") as drain,
-        patch("web.backend.sc_like_actions.enqueue_sc_unlike") as unlike,
-    ):
-        yield {"drain": drain, "unlike": unlike}
+def no_sc_writer() -> Iterator[MagicMock]:
+    """Stop like/unlike requests from waking the real SC push worker."""
+    with patch("web.backend.sc_like_actions.enqueue_feed_action_drain") as drain:
+        yield drain
 
 
 def _track(title: str, sc_id: str | None = None, unavailable: bool = False) -> int:
@@ -177,6 +173,21 @@ class TestQueueInsertEndpoint:
         )
 
     @pytest.mark.asyncio
+    async def test_inserts_into_emptied_organizer_queue(self) -> None:
+        """Organizer: the last track got assigned away but keeps playing."""
+        from web.backend.player_state import update_state
+
+        playing, new = _track("playing"), _track("new")
+        await update_state(
+            {"queue": (), "queue_index": 0, "current_track": {"id": playing}},
+            broadcast=False,
+        )
+        response = client.post("/api/player/queue", json={"trackId": new})
+        assert response.status_code == 200
+        assert response.json()["index"] == 0
+        assert [t["id"] for t in get_state().queue] == [new]
+
+    @pytest.mark.asyncio
     async def test_persists_queue(self) -> None:
         a, new = _track("a"), _track("new")
         await _seed_playback([a], 0)
@@ -233,154 +244,250 @@ class TestJumpEndpoint:
 # PUT/DELETE /api/soundcloud/likes/{soundcloud_id}
 # ---------------------------------------------------------------------------
 
+SC_ID = "77"
 
-def _like_job() -> dict | None:
+
+def _like_job() -> dict:
     with get_db_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM sc_feed_action_jobs WHERE soundcloud_id = '77' AND action_type = 'like'"
+            """SELECT * FROM sc_feed_action_jobs
+            WHERE soundcloud_id = ? AND action_type = 'like'""",
+            (SC_ID,),
         ).fetchone()
-    return dict(row) if row else None
+    assert row is not None, "no like job row"
+    return dict(row)
 
 
-def _set_job_status(status: str) -> None:
+def _liked() -> bool:
     with get_db_connection() as conn:
-        conn.execute(
-            "UPDATE sc_feed_action_jobs SET status = ?, attempt_count = 5 WHERE soundcloud_id = '77'",
-            (status,),
-        )
-        conn.commit()
+        row = conn.execute(
+            "SELECT 1 FROM sc_likes WHERE soundcloud_id = ?", (SC_ID,)
+        ).fetchone()
+    return row is not None
 
 
-def _keep_playlist_job() -> None:
+def _job_count() -> int:
     with get_db_connection() as conn:
-        conn.execute(
-            """INSERT INTO sc_feed_action_jobs (soundcloud_id, action_type, target_key)
-            VALUES ('77', 'monthly_playlist', 'Nov 26')"""
-        )
-        conn.commit()
+        return conn.execute("SELECT COUNT(*) FROM sc_feed_action_jobs").fetchone()[0]
 
 
 class TestLikeEndpoints:
-    def test_like_queues_job_and_wakes_writer(self, no_sc_writer) -> None:
-        response = client.put("/api/soundcloud/likes/77")
-        assert response.status_code == 200
-        assert response.json()["like_status"] == "pending"
-        assert _like_job()["status"] == "pending"
-        no_sc_writer["drain"].assert_called_once()
+    def test_like_records_desired_state_and_wakes_writer(self, no_sc_writer) -> None:
+        body = client.put(f"/api/soundcloud/likes/{SC_ID}").json()
+        assert body["sc_liked"] is True and body["like_status"] == "pending"
+        job = _like_job()
+        assert (job["status"], job["want_liked"], job["generation"]) == (
+            "pending",
+            1,
+            1,
+        )
+        no_sc_writer.assert_called_once()
+
+    def test_unlike_flips_desired_state_on_the_same_row(self, no_sc_writer) -> None:
+        client.put(f"/api/soundcloud/likes/{SC_ID}")
+        client.delete(f"/api/soundcloud/likes/{SC_ID}")
+        job = _like_job()
+        assert (job["want_liked"], job["generation"]) == (0, 2)
+        assert _job_count() == 1
 
     def test_like_records_no_keep_side_effects(self, no_sc_writer) -> None:
-        client.put("/api/soundcloud/likes/77")
+        client.put(f"/api/soundcloud/likes/{SC_ID}")
         with get_db_connection() as conn:
-            playlist_jobs = conn.execute(
-                "SELECT COUNT(*) FROM sc_feed_action_jobs WHERE action_type != 'like'"
-            ).fetchone()[0]
             decisions = conn.execute(
                 "SELECT COUNT(*) FROM sc_track_decisions"
             ).fetchone()[0]
-        assert playlist_jobs == 0 and decisions == 0
+        assert _job_count() == 1 and decisions == 0
 
-    @pytest.mark.parametrize("status", ["complete", "error"])
-    def test_like_rearms_finished_job(self, no_sc_writer, status: str) -> None:
-        client.put("/api/soundcloud/likes/77")
-        _set_job_status(status)
-        client.put("/api/soundcloud/likes/77")
+    def test_request_while_running_keeps_it_running(self, no_sc_writer) -> None:
+        from web.backend.queries.feed import claim_due_action
+
+        client.put(f"/api/soundcloud/likes/{SC_ID}")
+        claim_due_action()
+        client.delete(f"/api/soundcloud/likes/{SC_ID}")
         job = _like_job()
-        assert job["status"] == "pending" and job["attempt_count"] == 0
-
-    def test_like_leaves_running_job_alone(self, no_sc_writer) -> None:
-        client.put("/api/soundcloud/likes/77")
-        _set_job_status("running")
-        client.put("/api/soundcloud/likes/77")
-        assert _like_job()["status"] == "running"
+        assert (job["status"], job["want_liked"], job["generation"]) == (
+            "running",
+            0,
+            2,
+        )
 
     def test_rejects_non_numeric_id(self, no_sc_writer) -> None:
         assert client.put("/api/soundcloud/likes/abc").status_code == 400
         assert client.delete("/api/soundcloud/likes/abc").status_code == 400
 
-    def test_unlike_cancels_pending_like_without_sc_call(self, no_sc_writer) -> None:
-        client.put("/api/soundcloud/likes/77")
-        _keep_playlist_job()
-        body = client.delete("/api/soundcloud/likes/77").json()
-        assert body["cancelled_pending_like"] is True
-        assert body["unlike_queued"] is False
-        assert _like_job() is None
-        no_sc_writer["unlike"].assert_not_called()
-        with get_db_connection() as conn:  # Keep's playlist job survives
-            assert (
-                conn.execute("SELECT COUNT(*) FROM sc_feed_action_jobs").fetchone()[0]
-                == 1
-            )
-
-    def test_unlike_liked_track_queues_sc_unlike(self, no_sc_writer) -> None:
-        upsert_sc_likes(["77"], "sync")
-        body = client.delete("/api/soundcloud/likes/77").json()
-        assert body["unlike_queued"] is True
-        no_sc_writer["unlike"].assert_called_once_with("77")
-
     def test_like_flips_live_player_heart(self, no_sc_writer) -> None:
+        from web.backend import player_state
+
+        track = {"id": 1, "soundcloud_id": SC_ID, "sc_liked": False}
+        player_state._state = PlaybackState(queue=(track,), current_track=track)
         with patch(
             "web.backend.routers.player.update_state", new_callable=AsyncMock
         ) as update:
-            from web.backend import player_state
-
-            track = {"id": 1, "soundcloud_id": "77", "sc_liked": False}
-            player_state._state = PlaybackState(queue=(track,), current_track=track)
-            client.put("/api/soundcloud/likes/77")
-        update.assert_awaited_once()
+            client.put(f"/api/soundcloud/likes/{SC_ID}")
         patch_fn = update.await_args.args[0]
         assert patch_fn(player_state._state).current_track["sc_liked"] is True
 
 
 # ---------------------------------------------------------------------------
-# SC push worker: unlike handler
+# Real ordering: the durable job and the worker's drain loop run for real;
+# only the SoundCloud HTTP calls are mocked. Requests are injected from
+# inside the mocked SC call, which is where a concurrent API request lands.
 # ---------------------------------------------------------------------------
 
-
-def _liked() -> bool:
-    with get_db_connection() as conn:
-        return (
-            conn.execute("SELECT 1 FROM sc_likes WHERE soundcloud_id = '77'").fetchone()
-            is not None
-        )
+ScResult = tuple[object, bool, str | None]
 
 
-class TestUnlikeHandler:
-    def _run(self, result: tuple[bool, str | None]) -> tuple[bool, str | None]:
-        state = MagicMock()
-        with (
-            patch.object(sc_push_worker, "get_web_provider_state", return_value=state),
-            patch.object(
-                sc_push_worker, "unlike_track", return_value=(state, *result)
-            ) as call,
-        ):
-            outcome = sc_push_worker._handle_unlike("77")
-        call.assert_called_once_with(state, "77")
-        return outcome
+class FakeSoundCloud:
+    """Records like/unlike calls; each `during` hook runs inside one call."""
 
-    def test_success_clears_sc_likes(self) -> None:
-        upsert_sc_likes(["77"], "mm_keep")
-        assert self._run((True, None)) == (True, None)
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self.during: list[Callable[[], None]] = []
+        self.results: list[tuple[bool, str | None]] = []
+
+    def _call(self, kind: str, state: object) -> ScResult:
+        self.calls.append(kind)
+        if self.during:
+            self.during.pop(0)()
+        success, err = self.results.pop(0) if self.results else (True, None)
+        return state, success, err
+
+    def like(self, state: object, _sc_id: str) -> ScResult:
+        return self._call("like", state)
+
+    def unlike(self, state: object, _sc_id: str) -> ScResult:
+        return self._call("unlike", state)
+
+
+@pytest.fixture
+def sc() -> Iterator[FakeSoundCloud]:
+    fake = FakeSoundCloud()
+    with (
+        patch("web.backend.feed_rating.like_track", side_effect=fake.like),
+        patch("web.backend.feed_rating.unlike_track", side_effect=fake.unlike),
+    ):
+        yield fake
+
+
+def _request(liked: bool) -> None:
+    """What the endpoint records (the worker wake-up is _drain below)."""
+    from web.backend.queries.feed import set_like_intent
+
+    set_like_intent(SC_ID, liked)
+
+
+def _drain() -> None:
+    from web.backend.feed_rating import drain_pending_feed_actions
+
+    drain_pending_feed_actions(MagicMock())
+
+
+class TestLikeOrdering:
+    def test_like_sent_while_unlike_in_flight_wins(self, sc) -> None:
+        upsert_sc_likes([SC_ID], "sync")
+        _request(False)
+        sc.during = [lambda: _request(True)]
+        _drain()
+        assert sc.calls == ["unlike", "like"]
+        assert _liked() and _like_job()["status"] == "complete"
+
+    def test_unlike_sent_while_like_in_flight_wins(self, sc) -> None:
+        _request(True)
+        sc.during = [lambda: _request(False)]
+        _drain()
+        assert sc.calls == ["like", "unlike"]
+        job = _like_job()
+        assert (job["status"], job["want_liked"]) == ("complete", 0)
         assert not _liked()
 
-    def test_404_counts_as_unliked(self) -> None:
-        upsert_sc_likes(["77"], "mm_keep")
-        assert self._run((False, "Track not found or not liked (404): 77"))[0] is True
+    def test_like_then_unlike_before_drain_sends_only_the_last(self, sc) -> None:
+        upsert_sc_likes([SC_ID], "sync")
+        _request(True)
+        _request(False)
+        _drain()
+        assert sc.calls == ["unlike"]
         assert not _liked()
 
-    def test_failure_keeps_sc_likes(self) -> None:
-        upsert_sc_likes(["77"], "mm_keep")
-        assert self._run((False, "Rate limit exceeded (429)")) == (
-            False,
-            "Rate limit exceeded (429)",
+    def test_superseded_failure_schedules_no_retry(self, sc) -> None:
+        """A failing like overtaken by an unlike must not retry the like."""
+        upsert_sc_likes([SC_ID], "sync")
+        _request(True)
+        sc.during = [lambda: _request(False)]
+        sc.results = [(False, "Network error: boom"), (True, None)]
+        _drain()
+        assert sc.calls == ["like", "unlike"]
+        job = _like_job()
+        assert (job["status"], job["want_liked"], job["last_error"]) == (
+            "complete",
+            0,
+            None,
         )
-        assert _liked()
+        assert not _liked()
 
-    def test_unauthenticated_is_a_noop(self) -> None:
-        upsert_sc_likes(["77"], "mm_keep")
-        with (
-            patch.object(sc_push_worker, "get_web_provider_state", return_value=None),
-            patch.object(sc_push_worker, "unlike_track") as call,
-        ):
-            assert sc_push_worker._handle_unlike("77") == (True, None)
-        call.assert_not_called()
-        assert _liked()
+    def test_current_failure_backs_off(self, sc) -> None:
+        _request(True)
+        sc.results = [(False, "Network error: boom")]
+        _drain()
+        job = _like_job()
+        assert job["status"] == "error" and job["last_error"] == "Network error: boom"
+        assert not _liked()
+
+    def test_unlike_404_counts_as_done(self, sc) -> None:
+        upsert_sc_likes([SC_ID], "mm_keep")
+        _request(False)
+        sc.results = [(False, "Track not found or not liked (404): 77")]
+        _drain()
+        assert _like_job()["status"] == "complete" and not _liked()
+
+    def test_like_404_is_a_failure(self, sc) -> None:
+        _request(True)
+        sc.results = [(False, "Track not found (404): 77")]
+        _drain()
+        assert _like_job()["status"] == "error"
+
+    def test_unlike_survives_restart(self, sc) -> None:
+        from web.backend.queries.feed import (
+            claim_due_action,
+            recover_interrupted_actions,
+        )
+
+        upsert_sc_likes([SC_ID], "sync")
+        _request(False)
+        claim_due_action()  # the process dies mid-call
+        recover_interrupted_actions()
+        _drain()
+        assert sc.calls == ["unlike"] and not _liked()
+
+
+class TestKeepInteraction:
+    def test_unkeep_keeps_player_requests(self) -> None:
+        from web.backend.queries.feed import cancel_pending_actions
+
+        _request(False)
+        assert cancel_pending_actions(SC_ID) == 0
+        assert _like_job()["want_liked"] == 0
+
+    def test_unkeep_still_cancels_keep_jobs(self) -> None:
+        from web.backend.queries.feed import (
+            cancel_pending_actions,
+            enqueue_keep_actions,
+        )
+
+        enqueue_keep_actions(SC_ID, "Nov 26")
+        assert cancel_pending_actions(SC_ID) == 2
+
+    def test_player_unlike_overrides_pending_keep_like(self) -> None:
+        from web.backend.queries.feed import enqueue_keep_actions
+
+        enqueue_keep_actions(SC_ID, "Nov 26")
+        _request(False)
+        assert _job_count() == 2
+        assert _like_job()["want_liked"] == 0
+
+    def test_unlike_rows_show_no_like_action_state(self) -> None:
+        from web.backend.queries.feed import get_action_state
+
+        _request(True)
+        assert get_action_state(SC_ID)["like"] == "pending"
+        _request(False)
+        assert get_action_state(SC_ID)["like"] is None

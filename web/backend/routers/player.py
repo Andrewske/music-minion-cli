@@ -559,11 +559,12 @@ async def insert_into_queue(request: QueueInsertRequest, db=Depends(get_db)) -> 
     track = _fetch_queueable_track(request.track_id, db)
     async with _player_lock:
         state = get_state()
-        if state.current_track is None or not state.queue:
+        # Only current_track matters: organizer playback can empty the queue
+        # (last track assigned) while that track keeps playing.
+        if state.current_track is None:
             raise HTTPException(400, "Nothing is playing; start playback first")
-        new_queue, at = insert_track(
-            state.queue, _upcoming_start(state), track, request.position
-        )
+        start = min(_upcoming_start(state), len(state.queue))
+        new_queue, at = insert_track(state.queue, start, track, request.position)
         await update_state({"queue": new_queue})
         _persist_queue(db)
     logger.info(f"Queued track {request.track_id} ({request.position}) at index {at}")

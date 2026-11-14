@@ -733,6 +733,9 @@ export const createPlayerStore = (deps: PlatformDeps) => {
       // Skip if state is already in sync (prevents WebSocket echo causing stutter)
       if (
         current.currentTrack?.id === state.currentTrack?.id &&
+        // A queue fetch can land a like before its broadcast does; the
+        // broadcast must still refresh currentTrack's heart.
+        Boolean(current.currentTrack?.sc_liked) === Boolean(state.currentTrack?.sc_liked) &&
         current.isPlaying === state.isPlaying &&
         current.activeDeviceId === state.activeDeviceId &&
         Math.abs((current.positionMs ?? 0) - (state.positionMs ?? 0)) < 2000 &&

@@ -98,7 +98,8 @@ CREATE TABLE sc_feed_action_jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     soundcloud_id TEXT, action_type TEXT, status TEXT,
     last_error TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT, completed_at TEXT
+    updated_at TEXT, completed_at TEXT,
+    want_liked INTEGER NOT NULL DEFAULT 1, generation INTEGER NOT NULL DEFAULT 0
 );
 """
 

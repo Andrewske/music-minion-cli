@@ -19,7 +19,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 76  # smart playlist staleness triggers + diff refresh
+SCHEMA_VERSION = 77  # sc like jobs carry the desired like state + generation
 
 
 # Initial top 50 curated emojis for music reactions
@@ -3838,6 +3838,18 @@ def migrate_database(conn, current_version: int) -> None:
         conn.execute("RELEASE SAVEPOINT migrate_v76")
         conn.commit()
         logger.info("  ✓ Migration to v76 complete: library_state + staleness triggers")
+
+    if current_version < 77:
+        # The 'like' job row becomes the track's desired SC like state:
+        # want_liked (1 like / 0 unlike) + a generation bumped on every
+        # request, so a stale in-flight job never overwrites a newer one.
+        for column_ddl in (
+            "want_liked INTEGER NOT NULL DEFAULT 1",
+            "generation INTEGER NOT NULL DEFAULT 0",
+        ):
+            _add_column_if_missing(conn, "sc_feed_action_jobs", column_ddl)
+        conn.commit()
+        logger.info("  ✓ Migration to v77 complete: sc like job desired state")
 
 
 def ensure_schema_not_newer(conn: sqlite3.Connection, db_path: Path) -> None:
