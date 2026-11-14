@@ -160,6 +160,12 @@ export async function getSmartPlaylistTracks(
   return response.json();
 }
 
+/** Every playlist across libraries (local, soundcloud, ...). */
+export async function getAllPlaylists(): Promise<Playlist[]> {
+  const data = await getDefaultApiClient().request<{ playlists: Playlist[] }>('/playlists');
+  return data.playlists;
+}
+
 export async function getPlaylistsByLibrary(library: string): Promise<Playlist[]> {
   const baseUrl = getDefaultApiClient().getBaseUrl();
   const params = new URLSearchParams({ library });

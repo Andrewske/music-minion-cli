@@ -63,3 +63,63 @@ export async function rebindOrganizerPlayback(
   }
   return response.json() as Promise<RebindOrganizerResponse>;
 }
+
+/** Where an inserted track lands: right after the current one, or after the loaded window. */
+export type QueueInsertPosition = 'next' | 'last';
+
+export interface QueueInsertResponse {
+  /** Queue index the track landed at. */
+  index: number;
+  queue_size: number;
+}
+
+/** Throws with the server's `detail` (e.g. "Nothing is playing") when the call fails. */
+async function playerRequest<T>(url: string, init: RequestInit, fallback: string): Promise<T> {
+  const response = await fetch(url, init);
+  if (!response.ok) {
+    const error: { detail?: string } = await response.json().catch(() => ({}));
+    throw new Error(error.detail ?? `${fallback}: ${response.statusText}`);
+  }
+  return response.json() as Promise<T>;
+}
+
+const jsonPost = (body: unknown): RequestInit => ({
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
+});
+
+/** Play next / add to queue without restarting playback (POST /player/queue). */
+export function insertIntoQueue(
+  apiBase: string,
+  trackId: number,
+  position: QueueInsertPosition,
+): Promise<QueueInsertResponse> {
+  return playerRequest(`${apiBase}/player/queue`, jsonPost({ trackId, position }), 'Queue insert failed');
+}
+
+/**
+ * Jump to a queue position (POST /player/jump). trackId must be the track the
+ * client sees at `index`; the server answers 409 when its queue moved on.
+ */
+export function jumpToQueueIndex(
+  apiBase: string,
+  index: number,
+  trackId: number,
+): Promise<{ queue_index: number }> {
+  return playerRequest(`${apiBase}/player/jump`, jsonPost({ index, trackId }), 'Jump failed');
+}
+
+export interface ScLikeResponse {
+  soundcloud_id: string;
+  sc_liked: boolean;
+}
+
+/**
+ * Like (PUT) or unlike (DELETE) a track on SoundCloud. Liking queues the same
+ * durable job a feed Keep does, without recording a Keep verdict.
+ */
+export function setScLike(apiBase: string, soundcloudId: string, liked: boolean): Promise<ScLikeResponse> {
+  const init: RequestInit = { method: liked ? 'PUT' : 'DELETE' };
+  return playerRequest(`${apiBase}/soundcloud/likes/${encodeURIComponent(soundcloudId)}`, init, 'Like failed');
+}

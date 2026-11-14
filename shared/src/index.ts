@@ -19,7 +19,7 @@ export {
   createPlaylist, getPlaylistStats, getPlaylistTracks, getSmartFilters,
   updateSmartFilters, pinPlaylist, unpinPlaylist, reorderPinnedPlaylist,
   deletePlaylist, skipSmartPlaylistTrack, unskipSmartPlaylistTrack,
-  getSmartPlaylistSkippedTracks, getSmartPlaylistTracks, getPlaylistsByLibrary,
+  getSmartPlaylistSkippedTracks, getSmartPlaylistTracks, getPlaylistsByLibrary, getAllPlaylists,
   getTrackPlaylists, addTrackToPlaylist, removeTrackFromPlaylist,
 } from './api/playlists';
 export type { TrackPlaylistRef } from './api/playlists';
@@ -29,8 +29,8 @@ export {
   getTrackNotes, saveTrackNotes,
 } from './api/tracks';
 export type { TrackName, TrackNotes } from './api/tracks';
-export { fetchPlayerQueue, rebindOrganizerPlayback } from './api/player';
-export type { QueuePage, RebindOrganizerResponse } from './api/player';
+export { fetchPlayerQueue, rebindOrganizerPlayback, insertIntoQueue, jumpToQueueIndex, setScLike } from './api/player';
+export type { QueuePage, RebindOrganizerResponse, QueueInsertPosition, QueueInsertResponse, ScLikeResponse } from './api/player';
 export { getHistory, getStats, getTopTracks } from './api/history';
 export type { HistoryEntry, TopTrack, Stats, SourceFilter } from './api/history';
 export type { TrackInfo as HistoryTrackInfo } from './api/history';
