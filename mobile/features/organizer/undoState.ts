@@ -46,3 +46,9 @@ export function undoMessage(action: UndoAction): string {
 export function inverseMutation(kind: UndoKind): 'assign' | 'unassign' {
   return kind === 'removed' ? 'assign' : 'unassign';
 }
+
+/** Hide an offer whose bucket isn't in the loaded session (the user switched sessions since). */
+export function undoForBuckets(pending: UndoAction | null, buckets: readonly { id: string }[]): UndoAction | null {
+  if (!pending) return null;
+  return buckets.some((b) => b.id === pending.bucketId) ? pending : null;
+}

@@ -1,0 +1,113 @@
+# Organizer sessions — rename, new session, switch back, clean up.
+#
+# WRITES DATA (renames, creates and discards bucket sessions). Never run this
+# against the live pi backend. Use the hermetic snapshot backend recipe
+# (scripts/pull-db-snapshot.sh + a local uvicorn on :8642 and an emulator APK
+# built with EXPO_PUBLIC_API_URL=http://10.0.2.2:8642/api), then:
+#
+#   maestro --device emulator-5554 test -e MM_HERMETIC_BACKEND=1 \
+#     .maestro/hermetic/organizer_sessions.yml
+#
+# It lives in hermetic/ so neither e2e.sh ([0-9]*.yml) nor config.yaml (*.yml,
+# top level only) picks it up, and the first step refuses to run without the
+# MM_HERMETIC_BACKEND=1 opt-in.
+appId: com.musicminion.app
+---
+- assertTrue:
+    condition: ${typeof MM_HERMETIC_BACKEND !== 'undefined' && MM_HERMETIC_BACKEND == '1'}
+    label: "Opt-in: MM_HERMETIC_BACKEND=1 (snapshot backend only)"
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "nav-open"
+    timeout: 30000
+- runFlow:
+    file: ../subflows/nav_to.yml
+    env:
+      DEST: "organize"
+- extendedWaitUntil:
+    visible:
+      id: "organizer-playlist-option"
+    timeout: 30000
+- tapOn:
+    id: "organizer-playlist-option"
+- extendedWaitUntil:
+    visible:
+      id: "organizer-sessions-btn"
+    timeout: 15000
+
+# 1. Name the loaded session so we can find it again.
+- tapOn:
+    id: "organizer-sessions-btn"
+- assertVisible:
+    id: "session-sheet"
+- tapOn:
+    id: "session-current"
+- tapOn:
+    id: "session-rename-input"
+- eraseText
+- inputText: "E2E original"
+- tapOn:
+    id: "session-rename-save"
+- assertVisible:
+    id: "session-current"
+    text: ".*E2E original.*"
+- tapOn:
+    id: "session-sheet-backdrop"
+- assertVisible:
+    id: "organizer-session-counts"
+    text: "E2E original · .*"
+
+# 2. New session: empty buckets, default "Session · <date>" label.
+- tapOn:
+    id: "organizer-sessions-btn"
+- tapOn:
+    id: "session-new-btn"
+- extendedWaitUntil:
+    visible:
+      id: "organizer-session-counts"
+      text: "Session · .*"
+    timeout: 10000
+- assertVisible:
+    text: "No buckets yet.*"
+
+# 3. Switch back to the named session.
+- tapOn:
+    id: "organizer-sessions-btn"
+- assertVisible:
+    text: "E2E original"
+- tapOn:
+    text: "E2E original"
+- extendedWaitUntil:
+    visible:
+      id: "organizer-session-counts"
+      text: "E2E original · .*"
+    timeout: 10000
+
+# 4. Clean up: discard the empty session (newest-opened other row), clear the name.
+- tapOn:
+    id: "organizer-sessions-btn"
+- tapOn:
+    id: "session-delete-0"
+- tapOn:
+    text: "(?i)delete"
+    index: 0
+- extendedWaitUntil:
+    visible:
+      id: "organizer-session-counts"
+      text: "E2E original · .*"
+    timeout: 10000
+- tapOn:
+    id: "organizer-sessions-btn"
+- tapOn:
+    id: "session-current"
+- tapOn:
+    id: "session-rename-input"
+- eraseText
+- tapOn:
+    id: "session-rename-save"
+- tapOn:
+    id: "session-sheet-backdrop"
+- assertVisible:
+    id: "organizer-session-counts"
+    text: "Session · .*"
