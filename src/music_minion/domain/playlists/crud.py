@@ -409,6 +409,9 @@ def get_playlist_tracks(
 ) -> list[dict[str, Any]]:
     """Get all tracks in a playlist (works for both manual and smart).
 
+    A stale smart playlist is refreshed first, unless the caller passes its
+    own connection (it may hold a transaction the refresh would wait on).
+
     Args:
         playlist_id: Playlist ID
         conn: Optional shared connection. If None, opens its own.
@@ -435,6 +438,9 @@ def get_playlist_tracks(
 
     if conn is not None:
         return _query(conn)
+    from music_minion.domain.playlists.smart_refresh import refresh_playlist_if_stale
+
+    refresh_playlist_if_stale(playlist_id)
     with get_db_connection() as c:
         return _query(c)
 

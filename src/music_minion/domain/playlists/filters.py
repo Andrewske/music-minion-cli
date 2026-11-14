@@ -7,7 +7,9 @@ This module handles filter rules for smart playlists, including:
 - Validating filter fields and operators
 """
 
+import sqlite3
 from typing import Any, Optional
+
 from music_minion.core.database import get_db_connection
 
 
@@ -140,8 +142,7 @@ def add_filter(
         conn.commit()
         filter_id = cursor.lastrowid
 
-    # Refresh materialized tracks
-    refresh_smart_playlist_tracks(playlist_id)
+    _refresh_now(playlist_id)
 
     return filter_id
 
@@ -166,9 +167,8 @@ def remove_filter(filter_id: int) -> bool:
         conn.commit()
         success = cursor.rowcount > 0
 
-    # Refresh materialized tracks
     if playlist_id:
-        refresh_smart_playlist_tracks(playlist_id)
+        _refresh_now(playlist_id)
 
     return success
 
@@ -233,32 +233,33 @@ def update_filter(
         # Get playlist_id for refresh
         playlist_id = row["playlist_id"]
 
-    # Refresh materialized tracks
-    refresh_smart_playlist_tracks(playlist_id)
+    _refresh_now(playlist_id)
 
     return True
 
 
-def get_playlist_filters(playlist_id: int) -> list[dict[str, Any]]:
+def get_playlist_filters(
+    playlist_id: int, conn: Optional[sqlite3.Connection] = None
+) -> list[dict[str, Any]]:
     """Get all filter rules for a playlist.
 
     Args:
         playlist_id: ID of the playlist
+        conn: Optional shared connection. If None, opens its own.
 
     Returns:
         List of filter dictionaries with keys: id, field, operator, value, conjunction
     """
-    with get_db_connection() as conn:
-        cursor = conn.execute(
-            """
-            SELECT id, field, operator, value, conjunction
-            FROM playlist_filters
-            WHERE playlist_id = ?
-            ORDER BY id
-            """,
-            (playlist_id,),
-        )
-        return [dict(row) for row in cursor.fetchall()]
+    query = """
+        SELECT id, field, operator, value, conjunction
+        FROM playlist_filters
+        WHERE playlist_id = ?
+        ORDER BY id
+    """
+    if conn is not None:
+        return [dict(row) for row in conn.execute(query, (playlist_id,))]
+    with get_db_connection() as c:
+        return [dict(row) for row in c.execute(query, (playlist_id,))]
 
 
 def build_filter_query(filters: list[dict[str, Any]]) -> tuple[str, list[str]]:
@@ -347,6 +348,24 @@ def build_filter_query(filters: list[dict[str, Any]]) -> tuple[str, list[str]]:
     return where_clause, params
 
 
+def smart_match_clause(
+    filters: list[dict[str, Any]], playlist_id: int
+) -> tuple[str, list[Any]]:
+    """WHERE clause (over tracks aliased `t`) selecting a smart playlist's tracks.
+
+    No filters means every track with a local file. Tracks skipped in the
+    builder for this playlist never match.
+    """
+    filter_sql, params = build_filter_query(filters)
+    prefix = f"({filter_sql}) AND " if filter_sql else ""
+    clause = (
+        f"{prefix}t.local_path IS NOT NULL AND t.local_path != ''"
+        " AND t.id NOT IN ("
+        "SELECT track_id FROM playlist_builder_skipped WHERE playlist_id = ?)"
+    )
+    return clause, [*params, playlist_id]
+
+
 def evaluate_filters(playlist_id: int) -> list[dict[str, Any]]:
     """Evaluate smart playlist filters and return matching tracks.
 
@@ -357,21 +376,12 @@ def evaluate_filters(playlist_id: int) -> list[dict[str, Any]]:
         List of track dictionaries matching the filters.
         If no filters are defined, returns all tracks with a local_path.
     """
-    # Get filters for this playlist
-    filters = get_playlist_filters(playlist_id)
-
-    # Build WHERE clause (empty string if no filters = match all tracks)
-    if filters:
-        where_clause, params = build_filter_query(filters)
-        where_clause = f"({where_clause}) AND "
-    else:
-        where_clause = ""
-        params = []
-
-    # Query tracks with ELO ratings
-    # Note: f-string is safe here because build_filter_query() validates column names
-    # via FIELD_TO_COLUMN whitelist and returns parameterized WHERE clause with ? placeholders
     with get_db_connection() as conn:
+        where, params = smart_match_clause(
+            get_playlist_filters(playlist_id, conn), playlist_id
+        )
+        # f-string is safe: build_filter_query whitelists columns via
+        # FIELD_TO_COLUMN and returns ? placeholders for every value.
         query = f"""
             SELECT
                 t.*,
@@ -382,75 +392,28 @@ def evaluate_filters(playlist_id: int) -> list[dict[str, Any]]:
                 NULL as added_at   -- Smart playlists don't have added_at timestamps
             FROM tracks t
             LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
-            WHERE {where_clause}t.local_path IS NOT NULL AND t.local_path != ''
-            AND t.id NOT IN (
-                SELECT track_id FROM playlist_builder_skipped WHERE playlist_id = ?
-            )
+            WHERE {where}
             ORDER BY artist, album, title
         """
-        cursor = conn.execute(query, (playlist_id,) + tuple(params) + (playlist_id,))
+        cursor = conn.execute(query, (playlist_id, *params))
         return [dict(row) for row in cursor.fetchall()]
 
 
-def refresh_all_smart_playlists() -> int:
-    """Refresh materialized tracks for every smart playlist.
-
-    Call after bulk track inserts (library scans, provider imports) so smart
-    playlists pick up newly added tracks without manual filter edits.
-
-    Returns:
-        Number of smart playlists refreshed.
-    """
-    from loguru import logger
-    from music_minion.domain.playlists.crud import get_all_playlists
-
-    playlists = get_all_playlists()
-    smart_playlists = [p for p in playlists if p.get("type") == "smart"]
-
-    if not smart_playlists:
-        return 0
-
-    logger.info(f"Refreshing {len(smart_playlists)} smart playlist(s)")
-    for playlist in smart_playlists:
-        try:
-            count = refresh_smart_playlist_tracks(playlist["id"])
-            logger.debug(f"Refreshed '{playlist['name']}': {count} tracks")
-        except Exception as e:
-            logger.warning(
-                f"Failed to refresh smart playlist '{playlist['name']}': {e}"
-            )
-
-    return len(smart_playlists)
+def matching_track_ids(conn: sqlite3.Connection, playlist_id: int) -> list[int]:
+    """IDs of the tracks a smart playlist's filters match, in display order."""
+    where, params = smart_match_clause(
+        get_playlist_filters(playlist_id, conn), playlist_id
+    )
+    cursor = conn.execute(
+        f"SELECT t.id FROM tracks t WHERE {where}"
+        " ORDER BY t.artist, t.album, t.title, t.id",
+        params,
+    )
+    return [row[0] for row in cursor.fetchall()]
 
 
-def refresh_smart_playlist_tracks(playlist_id: int) -> int:
-    """Re-evaluate filters and update playlist_tracks table.
+def _refresh_now(playlist_id: int) -> None:
+    """Re-materialize one smart playlist right after its filters changed."""
+    from music_minion.domain.playlists.smart_refresh import refresh_smart_playlist
 
-    Returns number of tracks after refresh.
-    """
-    # 1. Get current filter results
-    tracks = evaluate_filters(playlist_id)
-    track_ids = [t["id"] for t in tracks]
-
-    with get_db_connection() as conn:
-        # 2. Clear existing playlist_tracks for this playlist
-        conn.execute("DELETE FROM playlist_tracks WHERE playlist_id = ?", (playlist_id,))
-
-        # 3. Insert new tracks with positions (batch insert for performance)
-        conn.executemany(
-            """
-            INSERT INTO playlist_tracks (playlist_id, track_id, position, added_at)
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-            """,
-            [(playlist_id, track_id, position) for position, track_id in enumerate(track_ids)]
-        )
-
-        # 4. Update playlist track_count
-        conn.execute(
-            "UPDATE playlists SET track_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (len(track_ids), playlist_id)
-        )
-
-        conn.commit()
-
-    return len(track_ids)
+    refresh_smart_playlist(playlist_id)

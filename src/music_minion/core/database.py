@@ -19,7 +19,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 75  # unfollow suggestions: permanent keeps
+SCHEMA_VERSION = 76  # smart playlist staleness triggers + diff refresh
 
 
 # Initial top 50 curated emojis for music reactions
@@ -741,6 +741,89 @@ def _migrate_v75_unfollow_suggestions(conn) -> None:
             kept_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+
+# Columns smart playlist filters can match on (filters.FIELD_TO_COLUMN). A
+# change to any of them can move a track in or out of a smart playlist.
+_SMART_FILTER_COLUMNS = (
+    "title", "artist", "album", "genre", "year", "bpm", "key_signature", "local_path",
+)
+_SMART_STALENESS_TABLES = (
+    "tracks", "track_emojis", "playlists", "playlist_tracks",
+    "playlist_filters", "playlist_builder_skipped",
+)
+_BUMP_LIBRARY_VERSION ="UPDATE library_state SET version = version + 1 WHERE id = 1;"
+_HAS_PATH = "COALESCE({row}.local_path, '') != ''"
+# Emoji changes only matter when some smart filter uses that emoji; a filter
+# added later marks its own playlist stale through the playlist_filters trigger.
+_EMOJI_IN_FILTER = (
+    "EXISTS (SELECT 1 FROM playlist_filters f"
+    " WHERE f.field = 'emoji' AND f.value = {row}.emoji_id)"
+)
+
+
+def _smart_staleness_triggers() -> dict[str, str]:
+    """name -> trigger body, for everything that can change smart membership."""
+    changed = " OR ".join(f"OLD.{c} IS NOT NEW.{c}" for c in _SMART_FILTER_COLUMNS)
+    has_path = f"({_HAS_PATH.format(row='OLD')} OR {_HAS_PATH.format(row='NEW')})"
+    stale_new = "UPDATE playlists SET materialized_version = NULL WHERE id = NEW.playlist_id;"
+    stale_old = "UPDATE playlists SET materialized_version = NULL WHERE id = OLD.playlist_id;"
+    return {
+        "smart_stale_track_ins": f"AFTER INSERT ON tracks WHEN {_HAS_PATH.format(row='NEW')}"
+        f" BEGIN {_BUMP_LIBRARY_VERSION} END",
+        "smart_stale_track_upd": f"AFTER UPDATE OF {', '.join(_SMART_FILTER_COLUMNS)} ON tracks"
+        f" WHEN {has_path} AND ({changed}) BEGIN {_BUMP_LIBRARY_VERSION} END",
+        # Rows cascade away on their own; the bump fixes track_count, and catches
+        # orphans left by scripts that run without PRAGMA foreign_keys.
+        "smart_stale_track_del": f"AFTER DELETE ON tracks WHEN {_HAS_PATH.format(row='OLD')}"
+        f" BEGIN {_BUMP_LIBRARY_VERSION} END",
+        "smart_stale_emoji_ins": f"AFTER INSERT ON track_emojis WHEN"
+        f" {_EMOJI_IN_FILTER.format(row='NEW')} BEGIN {_BUMP_LIBRARY_VERSION} END",
+        "smart_stale_emoji_del": f"AFTER DELETE ON track_emojis WHEN"
+        f" {_EMOJI_IN_FILTER.format(row='OLD')} BEGIN {_BUMP_LIBRARY_VERSION} END",
+        "smart_stale_emoji_upd": "AFTER UPDATE OF track_id, emoji_id ON track_emojis WHEN"
+        f" {_EMOJI_IN_FILTER.format(row='OLD')} OR {_EMOJI_IN_FILTER.format(row='NEW')}"
+        f" BEGIN {_BUMP_LIBRARY_VERSION} END",
+        "smart_stale_filter_ins": f"AFTER INSERT ON playlist_filters BEGIN {stale_new} END",
+        "smart_stale_filter_upd": f"AFTER UPDATE ON playlist_filters BEGIN {stale_old} {stale_new} END",
+        "smart_stale_filter_del": f"AFTER DELETE ON playlist_filters BEGIN {stale_old} END",
+        "smart_stale_skip_ins": f"AFTER INSERT ON playlist_builder_skipped BEGIN {stale_new} END",
+        "smart_stale_skip_del": f"AFTER DELETE ON playlist_builder_skipped BEGIN {stale_old} END",
+    }
+
+
+def _migrate_v76_smart_playlist_staleness(conn) -> None:
+    """Trigger-driven smart playlist staleness (#51).
+
+    Every statement is O(1) except the ownership backfill, which touches only
+    the rows of smart playlists (~8k on the pi). ADD COLUMN never rewrites the
+    table in SQLite.
+    """
+    missing = [t for t in _SMART_STALENESS_TABLES if not _table_exists(conn, t)]
+    if missing:
+        # Only partial test schemas lack these; every real DB has had them since v34.
+        logger.warning(f"v76: skipping smart playlist staleness, missing {missing}")
+        return
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS library_state (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            version INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    conn.execute("INSERT OR IGNORE INTO library_state (id, version) VALUES (1, 1)")
+    # NULL = never materialized, so every smart playlist starts stale.
+    _add_column_if_missing(conn, "playlists", "materialized_version INTEGER")
+    # NULL = written by someone else (manual add, SC sync, bucket link...);
+    # 'smart' = written by the smart refresh, the only rows it may delete.
+    _add_column_if_missing(conn, "playlist_tracks", "source TEXT")
+    # The old refresh wiped and rewrote smart playlists, so it owned every row.
+    conn.execute("""
+        UPDATE playlist_tracks SET source = 'smart'
+        WHERE source IS NULL
+          AND playlist_id IN (SELECT id FROM playlists WHERE type = 'smart')
+    """)
+    for name, body in _smart_staleness_triggers().items():
+        conn.execute(f"CREATE TRIGGER IF NOT EXISTS {name} {body}")
 
 
 def _migrate_v64_track_predictions(conn) -> None:
@@ -3744,6 +3827,14 @@ def migrate_database(conn, current_version: int) -> None:
         conn.execute("RELEASE SAVEPOINT migrate_v75")
         conn.commit()
         logger.info("  ✓ Migration to v75 complete: unfollow_suggestion_keeps")
+
+    if current_version < 76:
+        logger.info("Running migration to v76: smart playlist staleness...")
+        conn.execute("SAVEPOINT migrate_v76")
+        _migrate_v76_smart_playlist_staleness(conn)
+        conn.execute("RELEASE SAVEPOINT migrate_v76")
+        conn.commit()
+        logger.info("  ✓ Migration to v76 complete: library_state + staleness triggers")
 
 
 def ensure_schema_not_newer(conn: sqlite3.Connection, db_path: Path) -> None:

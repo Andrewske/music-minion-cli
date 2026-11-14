@@ -37,6 +37,11 @@ async def _startup() -> None:
 
     start_feed_worker()
 
+    # Keep smart playlists in step with track/emoji changes from any writer
+    from web.backend.smart_playlist_worker import start_smart_playlist_worker
+
+    start_smart_playlist_worker()
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:

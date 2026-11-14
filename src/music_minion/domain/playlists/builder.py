@@ -338,7 +338,7 @@ def add_track(playlist_id: int, track_id: int) -> dict:
 def unskip_track(playlist_id: int, track_id: int) -> bool:
     """Remove track from skipped list.
 
-    For smart playlists: Triggers full refresh to re-add the track
+    For smart playlists: refreshes right away to re-add the track
     if it still matches filters.
 
     Args:
@@ -351,8 +351,7 @@ def unskip_track(playlist_id: int, track_id: int) -> bool:
     Raises:
         sqlite3.Error: If database operation fails
     """
-    from .crud import get_playlist_by_id
-    from .filters import refresh_smart_playlist_tracks
+    from .smart_refresh import refresh_smart_playlist
 
     with get_db_connection() as conn:
         cursor = conn.execute(
@@ -368,10 +367,8 @@ def unskip_track(playlist_id: int, track_id: int) -> bool:
 
         conn.commit()
 
-    # For smart playlists: refresh to re-add the track if it still matches filters
-    playlist = get_playlist_by_id(playlist_id)
-    if playlist and playlist["type"] == "smart":
-        refresh_smart_playlist_tracks(playlist_id)
+    # No-op for manual playlists; smart ones re-add the track if it still matches
+    refresh_smart_playlist(playlist_id)
 
     return True
 
