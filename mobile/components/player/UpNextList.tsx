@@ -1,5 +1,6 @@
 /**
  * Up next: the next tracks in the player queue, numbered by queue position.
+ * Tap a row to jump there (POST /player/jump); long-press to play it next.
  * The header carries the queue position (`now-playing-queue-info`, parsed by
  * Maestro flows) and the shuffle toggle, since shuffle reorders this list.
  */
@@ -10,6 +11,7 @@ import * as Haptics from 'expo-haptics';
 import { Shuffle } from 'lucide-react-native';
 import { usePlayerStore } from '../../stores/playerStore';
 import { TrackArtwork } from './TrackArtwork';
+import { queueTrack } from '../../hooks/useTrackActions';
 import { queueInfoLabel, upNextSlice } from '../../features/player/upNext';
 import type { UpNextRow } from '../../features/player/upNext';
 
@@ -55,15 +57,33 @@ function UpNextHeader({ label }: { label: string }): ReactElement {
 }
 
 const UpNextItem = memo(function UpNextItem({ row }: { row: UpNextRow }): ReactElement {
+  const jumpTo = usePlayerStore((s) => s.jumpTo);
+  const handlePress = (): void => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void jumpTo(row.position - 1);
+  };
+  const handleLongPress = (): void => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void queueTrack(row.track, 'next');
+  };
   return (
-    <View style={styles.item}>
+    <Pressable
+      testID={`up-next-row-${row.position}`}
+      accessibilityRole="button"
+      accessibilityLabel={`Play ${row.track.title}`}
+      accessibilityHint="Long-press to play it next"
+      onPress={handlePress}
+      onLongPress={handleLongPress}
+      android_ripple={{ color: '#FFFFFF14' }}
+      style={styles.item}
+    >
       <Text style={styles.position}>{row.position}</Text>
       <TrackArtwork trackId={row.track.id} size={40} radius={4} />
       <View style={styles.itemText}>
         <Text style={styles.itemTitle} numberOfLines={1}>{row.track.title}</Text>
         <Text style={styles.itemArtist} numberOfLines={1}>{row.track.artist ?? 'Unknown Artist'}</Text>
       </View>
-    </View>
+    </Pressable>
   );
 });
 

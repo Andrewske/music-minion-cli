@@ -161,6 +161,7 @@ export default function HomeScreen(): ReactElement {
       />
       <TrackActionSheet
         track={actions.sheetTrack}
+        canQueue={currentTrack !== null}
         busyKey={actions.busyKey}
         onSelect={actions.select}
         onClose={actions.close}

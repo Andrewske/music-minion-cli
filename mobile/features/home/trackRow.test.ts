@@ -50,6 +50,11 @@ describe('trackActions', () => {
     expect(trackActions({}).map((a) => a.key)).toEqual(['play']);
     expect(trackActions({ artist: ' ' }).map((a) => a.key)).toEqual(['play']);
   });
+
+  it('offers Play next and Add to queue only while something plays', () => {
+    expect(trackActions({ artist: 'Zomboy' }, true).map((a) => a.key)).toEqual(['play', 'next', 'queue', 'artist']);
+    expect(trackActions({}, false).map((a) => a.key)).toEqual(['play']);
+  });
 });
 
 describe('primaryArtistName', () => {

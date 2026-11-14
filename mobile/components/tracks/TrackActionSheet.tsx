@@ -5,23 +5,25 @@
 import type { ReactElement } from 'react';
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Play, UserRound } from 'lucide-react-native';
+import { ListEnd, ListStart, Play, UserRound } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
 import type { Track } from '@music-minion/shared';
 import { trackActions, trackRowSubtitle } from '../../features/home/trackRow';
 import type { TrackAction, TrackActionKey } from '../../features/home/trackRow';
 import { TrackArtwork } from './TrackArtwork';
 
-const ICONS: Record<TrackActionKey, LucideIcon> = { play: Play, artist: UserRound };
+const ICONS: Record<TrackActionKey, LucideIcon> = { play: Play, next: ListStart, queue: ListEnd, artist: UserRound };
 
 interface TrackActionSheetProps {
   track: Track | null;
+  /** Something is playing, so Play next / Add to queue apply. */
+  canQueue: boolean;
   busyKey: TrackActionKey | null;
   onSelect: (key: TrackActionKey) => void;
   onClose: () => void;
 }
 
-export function TrackActionSheet({ track, busyKey, onSelect, onClose }: TrackActionSheetProps): ReactElement {
+export function TrackActionSheet({ track, canQueue, busyKey, onSelect, onClose }: TrackActionSheetProps): ReactElement {
   const { bottom } = useSafeAreaInsets();
   return (
     <Modal visible={track !== null} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
@@ -30,7 +32,7 @@ export function TrackActionSheet({ track, busyKey, onSelect, onClose }: TrackAct
         <View style={[styles.sheet, { paddingBottom: bottom + 8 }]} testID="track-action-sheet">
           <View style={styles.grabber} />
           <SheetHeader track={track} />
-          {trackActions(track).map((action) => (
+          {trackActions(track, canQueue).map((action) => (
             <ActionRow key={action.key} action={action} busy={busyKey === action.key} onPress={() => onSelect(action.key)} />
           ))}
         </View>

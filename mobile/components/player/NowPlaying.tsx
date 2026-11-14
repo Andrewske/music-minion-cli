@@ -9,11 +9,8 @@
  *        ⏮    (▶)    ⏭
  *   ♡ Like   ≡+ Add   ⊡ Device   ≣ Queue
  *   Up next                 3 / 40 in queue  [⇄]
- *    4  [art] Track · Artist
+ *    4  [art] Track · Artist     (tap: jump, long-press: play next)
  *    5  …
- *
- * Like and Add to playlist are disabled: the shared API has no like or
- * add-to-playlist call yet (see PR for #69).
  */
 import { memo, useCallback, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
@@ -27,6 +24,7 @@ import { SeekSlider } from './SeekSlider';
 import { armBadStream, E2E_ENABLED } from '../../services/e2eHooks';
 import { PlaybackErrorBanner } from './PlaybackErrorBanner';
 import { DeviceSheet } from './DeviceSheet';
+import { AddToPlaylistSheet } from './AddToPlaylistSheet';
 import { TrackArtwork } from './TrackArtwork';
 import { PlayerActionRow } from './PlayerActionRow';
 import { UpNextList } from './UpNextList';
@@ -52,12 +50,15 @@ const haptic = (style: Haptics.ImpactFeedbackStyle): void => {
 export function NowPlaying({ onCollapse }: NowPlayingProps): ReactElement | null {
   const track = usePlayerStore((s) => s.currentTrack);
   const [devicesOpen, setDevicesOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const upNextY = useRef(0);
   // A Modal is its own window: the root layout's safe-area padding stops here.
   const pad = fullPlayerInsets(Platform.OS, useSafeAreaInsets());
   const openDevices = useCallback((): void => setDevicesOpen(true), []);
   const closeDevices = useCallback((): void => setDevicesOpen(false), []);
+  const openAdd = useCallback((): void => setAddOpen(true), []);
+  const closeAdd = useCallback((): void => setAddOpen(false), []);
   const showQueue = useCallback((): void => scrollRef.current?.scrollTo({ y: upNextY.current, animated: true }), []);
   if (!track) return null;
   return (
@@ -71,12 +72,13 @@ export function NowPlaying({ onCollapse }: NowPlayingProps): ReactElement | null
         <NowPlayingSeek durationSec={track.duration ?? 0} />
         <ScrobbledSlot />
         <Transport />
-        <PlayerActionRow onDevices={openDevices} onQueue={showQueue} />
+        <PlayerActionRow onAdd={openAdd} onDevices={openDevices} onQueue={showQueue} />
         <View style={styles.fullWidth} onLayout={(e) => { upNextY.current = e.nativeEvent.layout.y; }}>
           <UpNextList />
         </View>
       </ScrollView>
       <DeviceSheet visible={devicesOpen} onClose={closeDevices} />
+      <AddToPlaylistSheet track={track} visible={addOpen} onClose={closeAdd} />
     </View>
   );
 }
