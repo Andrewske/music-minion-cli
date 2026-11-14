@@ -898,6 +898,51 @@ def enqueue_keep_actions(soundcloud_id: str, playlist_name: str) -> None:
         conn.commit()
 
 
+def enqueue_like_action(soundcloud_id: str) -> None:
+    """Queue (or re-arm) the durable SC like job without a keep decision.
+
+    Shares the keep's row (one 'like' row per track, see the UNIQUE key): a
+    finished or failed job goes back to pending with fresh attempts, so a
+    like undone on SoundCloud can be redone. A running job is left alone.
+    """
+    with get_db_connection() as conn:
+        conn.execute(
+            """INSERT INTO sc_feed_action_jobs (soundcloud_id, action_type, target_key)
+            VALUES (?, 'like', '')
+            ON CONFLICT(soundcloud_id, action_type, target_key) DO UPDATE SET
+                status = 'pending', attempt_count = 0, last_error = NULL,
+                completed_at = NULL, next_attempt_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE sc_feed_action_jobs.status != 'running'""",
+            (soundcloud_id,),
+        )
+        conn.commit()
+
+
+def cancel_pending_like(soundcloud_id: str) -> int:
+    """Drop a not-yet-done like job (keep's or the player's); playlist jobs stay."""
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """DELETE FROM sc_feed_action_jobs
+            WHERE soundcloud_id = ? AND action_type = 'like'
+              AND status IN ('pending', 'error')""",
+            (soundcloud_id,),
+        )
+        conn.commit()
+        return cursor.rowcount
+
+
+def like_job_status(soundcloud_id: str) -> str | None:
+    """Status of the track's like job, or None when it has none."""
+    with get_db_connection() as conn:
+        row = conn.execute(
+            """SELECT status FROM sc_feed_action_jobs
+            WHERE soundcloud_id = ? AND action_type = 'like'""",
+            (soundcloud_id,),
+        ).fetchone()
+    return row["status"] if row else None
+
+
 def cancel_pending_actions(soundcloud_id: str) -> int:
     """Drop not-yet-done SC jobs when the current decision is no longer keep."""
     with get_db_connection() as conn:

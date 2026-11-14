@@ -78,6 +78,8 @@ def process_one_pending_action(state: Any) -> tuple[Any, bool]:
 
         if success or _already_complete(err):
             if job["action_type"] == "like":
+                # 'mm_keep' = liked by MM: a Keep or the player heart (both
+                # share this one job row, see sc_like_actions).
                 upsert_sc_likes([job["soundcloud_id"]], "mm_keep", liked_now=True)
             feed_queries.complete_action(job["id"])
         else:

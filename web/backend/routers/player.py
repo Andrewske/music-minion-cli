@@ -111,7 +111,8 @@ class DeviceInfo(BaseModel):
 
 
 # Serializes ALL player mutations (play/pause/resume/next/prev/seek/
-# toggle-shuffle/set-sort/transfer, organizer queue updates, dead-track prune).
+# toggle-shuffle/set-sort/transfer, queue insert/jump, organizer queue updates,
+# dead-track prune, live sc_liked patches).
 # Every mutating endpoint does an unlocked-unsafe read-compute-write on
 # player_state; this lock makes those sequences atomic w.r.t. each other.
 #
@@ -151,12 +152,7 @@ def advance_queue(s: PlaybackState, conn=None) -> PlaybackState:
         conn: Main-DB connection to reuse for the dead-track check (e.g. the
             request-scoped FastAPI dependency). Opens its own if None.
     """
-    current_in_queue = (
-        s.queue_index < len(s.queue)
-        and s.current_track is not None
-        and s.queue[s.queue_index]["id"] == s.current_track["id"]
-    )
-    new_index = s.queue_index + 1 if current_in_queue else s.queue_index
+    new_index = _upcoming_start(s)
 
     # Skip over dead upstream tracks already sitting in the live queue (built before
     # they were marked unavailable). Prevents a dead track being served as "next".
@@ -439,6 +435,184 @@ async def prune_track_from_live_queue(track_id: int) -> None:
             )
 
     logger.info(f"Pruned unavailable track {track_id} from live queue")
+
+
+def _upcoming_start(s: PlaybackState) -> int:
+    """Index of the track that plays after the current one.
+
+    Mirrors advance_queue: when the current track was displaced from the queue
+    (organizer assignment), queue_index already points at the next track.
+    """
+    current_in_queue = (
+        s.queue_index < len(s.queue)
+        and s.current_track is not None
+        and s.queue[s.queue_index]["id"] == s.current_track["id"]
+    )
+    return s.queue_index + 1 if current_in_queue else s.queue_index
+
+
+def insert_track(
+    queue: tuple[dict, ...], start: int, track: dict, position: str
+) -> tuple[tuple[dict, ...], int]:
+    """Queue with `track` placed among the upcoming tracks (index >= start).
+
+    position 'next' puts it first in line, 'last' at the end of the window.
+    Upcoming copies of the track are dropped so it plays once. Pure: returns
+    (new_queue, index the track landed at).
+    """
+    upcoming = [t for t in queue[start:] if t["id"] != track["id"]]
+    at = 0 if position == "next" else len(upcoming)
+    new_queue = (*queue[:start], *upcoming[:at], track, *upcoming[at:])
+    return new_queue, start + at
+
+
+def with_sc_liked(
+    s: PlaybackState, soundcloud_id: str, liked: bool
+) -> PlaybackState | None:
+    """State with sc_liked set on every live copy of a SoundCloud track.
+
+    None when no queued or current track has that soundcloud_id, so callers
+    skip the write (and the queue_version bump it would cause).
+    """
+
+    def patch(track: dict) -> dict:
+        if str(track.get("soundcloud_id")) != soundcloud_id:
+            return track
+        return {**track, "sc_liked": liked}
+
+    queue = tuple(patch(t) for t in s.queue)
+    current = patch(s.current_track) if s.current_track else None
+    if queue == s.queue and current == s.current_track:
+        return None
+    return s.model_copy(update={"queue": queue, "current_track": current})
+
+
+async def set_live_sc_liked(soundcloud_id: str, liked: bool) -> None:
+    """Reflect a like/unlike request in the live player and broadcast it.
+
+    The heart in every connected player flips right away; the SoundCloud call
+    itself happens later on the SC push worker.
+    """
+    async with _player_lock:
+        patched = with_sc_liked(get_state(), soundcloud_id, liked)
+        if patched is None:
+            return
+        await update_state(lambda s: with_sc_liked(s, soundcloud_id, liked) or s)
+
+
+class QueueInsertRequest(BaseModel):
+    """Insert a track into the live queue without restarting playback."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    track_id: int
+    position: Literal["next", "last"] = "next"
+
+
+class JumpRequest(BaseModel):
+    """Jump to a queue position. track_id guards against a stale index."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    index: int
+    track_id: int
+
+
+def _fetch_queueable_track(track_id: int, db) -> dict:
+    """Track row for a queue insert; 404 when missing, 400 when its source is dead."""
+    from ..queries.tracks import batch_fetch_tracks_with_metadata
+
+    tracks = batch_fetch_tracks_with_metadata([track_id], db)
+    if not tracks:
+        raise HTTPException(404, f"Track {track_id} not found")
+    if tracks[0].get("unavailable_at"):
+        raise HTTPException(400, f"Track {track_id} is unavailable upstream")
+    return tracks[0]
+
+
+def _persist_queue(db) -> None:
+    """Save the full live queue (ids, cursor, mode) after a content change."""
+    state = get_state()
+    if state.current_context is None:
+        return
+    save_queue_state(
+        context=state.current_context,
+        queue_ids=[t["id"] for t in state.queue],
+        queue_index=state.queue_index,
+        shuffle=state.shuffle_enabled,
+        sort_spec=state.sort_spec,
+        position_in_playlist=None
+        if state.shuffle_enabled
+        else state.position_in_playlist,
+        db_conn=db,
+    )
+
+
+@router.post("/queue")
+async def insert_into_queue(request: QueueInsertRequest, db=Depends(get_db)) -> dict:
+    """Play next / add to queue: insert a track without touching playback.
+
+    'next' lands right after the current track; 'last' at the end of the
+    loaded window (rolling contexts keep refilling after it). The change
+    bumps queue_version, so every device refetches the queue.
+    """
+    track = _fetch_queueable_track(request.track_id, db)
+    async with _player_lock:
+        state = get_state()
+        if state.current_track is None or not state.queue:
+            raise HTTPException(400, "Nothing is playing; start playback first")
+        new_queue, at = insert_track(
+            state.queue, _upcoming_start(state), track, request.position
+        )
+        await update_state({"queue": new_queue})
+        _persist_queue(db)
+    logger.info(f"Queued track {request.track_id} ({request.position}) at index {at}")
+    return {"index": at, "queue_size": len(new_queue)}
+
+
+def _jump_updates(state: PlaybackState, index: int) -> dict:
+    """State changes for a jump; closes the current history row, opens a new one."""
+    from music_minion.domain.radio.history import end_play, start_play
+
+    if state.current_history_id:
+        end_play(state.current_history_id, _calculate_final_duration(), reason="skip")
+    target = state.queue[index]
+    history_id = start_play(
+        track_id=target["id"], source_type=target.get("source", "local")
+    )
+    return {
+        "queue_index": index,
+        "current_track": target,
+        "position_ms": 0,
+        "track_started_at": time.time() if state.is_playing else None,
+        "duration_ms": 0,
+        "current_history_id": history_id,
+    }
+
+
+@router.post("/jump")
+async def jump_to_queue_index(request: JumpRequest, db=Depends(get_db)) -> dict:
+    """Jump to a queue position (tap an up-next row). Play/pause is preserved.
+
+    409 when queue[index] is no longer request.track_id: the client's queue
+    was stale, and it should refetch rather than play the wrong track.
+    """
+    async with _player_lock:
+        state = get_state()
+        if not 0 <= request.index < len(state.queue):
+            raise HTTPException(400, f"Queue index {request.index} out of range")
+        if state.queue[request.index]["id"] != request.track_id:
+            raise HTTPException(
+                409, f"Queue changed: index {request.index} is no longer track {request.track_id}"
+            )
+        await update_state(_jump_updates(state, request.index))
+        state = get_state()
+        update_queue_position(
+            state.queue_index,
+            None if state.shuffle_enabled else state.position_in_playlist,
+            db,
+        )
+    return {"queue_index": request.index}
 
 
 @router.post("/organizer/rebind")

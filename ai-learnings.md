@@ -291,3 +291,7 @@ sqlite3 db.db "EXPLAIN QUERY PLAN SELECT ... FROM tracks t JOIN ratings r ON t.i
 **Fix (v71):** `sc_likes(soundcloud_id PK, liked_at, source, synced_at)`. Every API computes `sc_liked` with `web/backend/sc_likes.py::sc_liked_sql()` (one PK lookup per row, no measurable cost on the stories/feed queries). Writers: provider likes sync (every fetched id), the feed worker on like success or "already liked", CLI like/unlike. The CLI still writes the legacy ratings marker, but `has_soundcloud_like` reads `sc_likes`.
 
 **Lesson:** The incremental SC like fetch stops at the first known track and returns partial results on errors, so `sc_likes` is add-only until a complete fetch exists. Never delete likes based on it.
+
+## Player like shares Keep's like job row (2026-11-14, #78)
+
+`PUT /api/soundcloud/likes/{sc_id}` re-arms the single `sc_feed_action_jobs` 'like' row (target_key '') instead of adding a second one. A second like row per track would duplicate stories rows: the stories query LEFT JOINs every 'like' job by soundcloud_id. Cost: `sc_likes.source='mm_keep'` now means "liked by MM" (Keep or player heart). Unlike runs on the SC push worker (single writer, so it stays ordered with like jobs) and clears `sc_likes` only after SC confirms (404 counts as confirmed).

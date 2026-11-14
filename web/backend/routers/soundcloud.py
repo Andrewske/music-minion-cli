@@ -1351,3 +1351,46 @@ async def get_feed_sync_status() -> dict:
     from web.backend.sc_feed_worker import get_sync_status
 
     return get_sync_status()
+
+
+# ============================================================================
+# Like / unlike (player heart)
+# ============================================================================
+
+
+def _require_sc_id(soundcloud_id: str) -> str:
+    if not soundcloud_id.isdigit():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid SoundCloud track id {soundcloud_id!r}: expected digits",
+        )
+    return soundcloud_id
+
+
+@router.put("/likes/{soundcloud_id}")
+async def like_on_soundcloud(soundcloud_id: str) -> dict:
+    """Like a track on SoundCloud through the durable like job (no Keep verdict).
+
+    Returns at once; the job runs on the SC push worker and writes sc_likes on
+    success. Live player copies of the track flip sc_liked and broadcast.
+    """
+    from web.backend.routers.player import set_live_sc_liked
+    from web.backend.sc_like_actions import request_like
+
+    result = request_like(_require_sc_id(soundcloud_id))
+    await set_live_sc_liked(soundcloud_id, True)
+    return result
+
+
+@router.delete("/likes/{soundcloud_id}")
+async def unlike_on_soundcloud(soundcloud_id: str) -> dict:
+    """Unlike a track on SoundCloud; cancels a pending like (Keep's included).
+
+    The Keep verdict is left alone. sc_likes clears once SoundCloud confirms.
+    """
+    from web.backend.routers.player import set_live_sc_liked
+    from web.backend.sc_like_actions import request_unlike
+
+    result = request_unlike(_require_sc_id(soundcloud_id))
+    await set_live_sc_liked(soundcloud_id, False)
+    return result
