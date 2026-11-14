@@ -13,7 +13,7 @@ import { Slider } from '../ui/slider';
 import { DeviceSelector } from './DeviceSelector';
 import { WaveformPlayer } from '../WaveformPlayer';
 import { TrackArtwork } from '../TrackArtwork';
-import { ScLikeHeart } from '../ScLikeHeart';
+import { LikeToggle } from './LikeToggle';
 
 export function PlayerBar(): JSX.Element {
   const {
@@ -210,7 +210,7 @@ export function PlayerBar(): JSX.Element {
               <>
                 <div className="flex items-center gap-1.5 text-sm font-medium text-white/90">
                   <span className="truncate">{currentTrack.title ?? 'Not playing'}</span>
-                  <ScLikeHeart state={currentTrack.sc_liked ? 'liked' : 'none'} className="h-3.5 w-3.5" />
+                  <LikeToggle className="h-3.5 w-3.5" />
                 </div>
                 <div className="text-xs text-white/50 truncate">{currentTrack.artist}</div>
               </>
@@ -249,7 +249,7 @@ export function PlayerBar(): JSX.Element {
               <div className="truncate">
                 <div className="flex items-center gap-1.5 font-medium text-white/90">
                   <span className="truncate">{currentTrack.title ?? 'Not playing'}</span>
-                  <ScLikeHeart state={currentTrack.sc_liked ? 'liked' : 'none'} className="h-3.5 w-3.5" />
+                  <LikeToggle className="h-3.5 w-3.5" />
                 </div>
                 <div className="text-sm text-white/60 truncate">{currentTrack.artist}</div>
               </div>
