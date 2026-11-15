@@ -127,8 +127,10 @@ def get_playlist_tracks_with_ratings(
         ).fetchone()
         is_discovery = bool(discovery_row and discovery_row["discovery_source"])
 
+        # Date shown per track: release, then SC like, then first seen by MM.
+        # file_mtime comes after created_at because any tag write bumps it.
         repost_join = ""
-        repost_col = "COALESCE(t.released_at, datetime(t.file_mtime, 'unixepoch'), t.created_at, pt.added_at)"
+        repost_col = "COALESCE(t.released_at, l.liked_at, t.created_at, datetime(t.file_mtime, 'unixepoch'), pt.added_at)"
         sc_liked_col = f"{sc_liked_sql('t.soundcloud_id')} as sc_liked"
         # Direct permalink when known; tracks.source_url may hold a synthetic
         # soundcloud.com/tracks/<id> form SC won't resolve, so unknowns go through
@@ -148,7 +150,7 @@ def get_playlist_tracks_with_ratings(
                 LEFT JOIN discovery_tracks dt ON dt.soundcloud_id = t.soundcloud_id
                 LEFT JOIN discovery_track_reposters dtr ON dtr.discovery_track_id = dt.id
             """
-            repost_col = "COALESCE(MIN(dtr.reposted_at), t.released_at, dt.released_at, datetime(t.file_mtime, 'unixepoch'), t.created_at, pt.added_at)"
+            repost_col = "COALESCE(MIN(dtr.reposted_at), t.released_at, dt.released_at, l.liked_at, t.created_at, datetime(t.file_mtime, 'unixepoch'), pt.added_at)"
 
         query = f"""
             SELECT
@@ -173,6 +175,7 @@ def get_playlist_tracks_with_ratings(
                 COUNT(*) OVER() as total_count
             FROM playlist_tracks pt
             JOIN tracks t ON pt.track_id = t.id
+            LEFT JOIN sc_likes l ON l.soundcloud_id = t.soundcloud_id
             LEFT JOIN playlist_elo_ratings per ON pt.track_id = per.track_id
                 AND per.playlist_id = pt.playlist_id
             {repost_join}

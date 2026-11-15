@@ -165,7 +165,7 @@ def sync_library(
             logger.error(f"HTTP error syncing library: {e}")
             return state, []
 
-    _record_sc_likes(all_liked_ids)
+    _record_sc_likes(all_liked_ids, seen_now=incremental)
     record_like_uploaders(uploaders)
 
     # Sync like markers for all matched tracks (both new and existing)
@@ -212,8 +212,11 @@ def sync_library(
     return new_state, tracks
 
 
-def _record_sc_likes(liked_ids: set[str]) -> None:
+def _record_sc_likes(liked_ids: set[str], seen_now: bool = False) -> None:
     """Upsert every fetched like into sc_likes, keyed by soundcloud_id.
+
+    seen_now (incremental syncs) stamps liked_at on likes not seen before:
+    an incremental fetch only reaches back to the newest known like.
 
     Add-only: the fetch can stop early (incremental) or return partial
     results on errors, so a missing id never means "unliked". Unlikes are
@@ -226,7 +229,7 @@ def _record_sc_likes(liked_ids: set[str]) -> None:
     from music_minion.core import database
 
     try:
-        added = database.upsert_sc_likes(liked_ids, "sync")
+        added = database.upsert_sc_likes(liked_ids, "sync", seen_now=seen_now)
         logger.info(f"sc_likes: {added} new of {len(liked_ids)} fetched likes")
     except sqlite3.Error:
         logger.exception(

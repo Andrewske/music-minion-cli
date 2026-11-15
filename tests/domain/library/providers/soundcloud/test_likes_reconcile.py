@@ -262,6 +262,14 @@ class TestApply:
         assert apply_sc_likes_reconcile(["7"], [], OLD) == (0, 0)
         assert _ratings(track_id) == {("like", "soundcloud")}
 
+    def test_added_like_is_stamped_once_sc_likes_has_rows(self) -> None:
+        assert apply_sc_likes_reconcile(["first"], [], OLD) == (1, 0)
+        assert apply_sc_likes_reconcile(["later"], [], OLD) == (1, 0)
+        with get_db_connection() as conn:
+            stamped = dict(conn.execute("SELECT soundcloud_id, liked_at FROM sc_likes"))
+        assert stamped["first"] is None
+        assert stamped["later"] is not None
+
 
 class TestReconcileRun:
     def test_dry_run_writes_nothing(self, monkeypatch: pytest.MonkeyPatch) -> None:
