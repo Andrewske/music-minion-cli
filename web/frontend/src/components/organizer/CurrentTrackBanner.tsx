@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ExternalLink, Heart, Music } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { WaveformPlayer } from '../WaveformPlayer';
+import { EmojiTrackActions } from '../EmojiTrackActions';
 import type { Bucket } from '../../api/buckets';
 import type { TrackReposter } from '../../types';
 import { NotesToggle, TrackNotesPanel } from './TrackNotes';
@@ -214,6 +215,8 @@ interface CurrentTrackBannerProps {
   keySignature?: string;
   genre?: string | null;
   onGenreChange: (trackId: number, genre: string | null) => void;
+  emojis?: string[];
+  onEmojisChange: (trackId: number, emojis: string[]) => void;
   /** The playlist being organized; hidden from the add-to-playlist picker. */
   playlistId: number;
 }
@@ -229,6 +232,8 @@ export function CurrentTrackBanner({
   keySignature,
   genre,
   onGenreChange,
+  emojis,
+  onEmojisChange,
   playlistId,
 }: CurrentTrackBannerProps): JSX.Element {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
@@ -293,6 +298,13 @@ export function CurrentTrackBanner({
               keySignature={keySignature}
               genre={genre}
               onGenreChange={(next) => onGenreChange(currentTrack.id, next)}
+            />
+            {/* Keyed so an open emoji picker closes when the track changes */}
+            <EmojiTrackActions
+              key={currentTrack.id}
+              track={{ id: currentTrack.id, emojis }}
+              onUpdate={(updated) => onEmojisChange(updated.id, updated.emojis ?? [])}
+              className="mt-2"
             />
             {reposters && reposters.length > 0 && <ReposterStack reposters={reposters} />}
           </div>
