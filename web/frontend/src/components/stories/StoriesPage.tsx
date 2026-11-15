@@ -151,7 +151,7 @@ function StoriesLayout({ session, onRefresh, isRefreshing }: { session: StoriesS
 
   return (
     <div className="flex h-full min-h-0">
-      <aside className="hidden w-72 shrink-0 overflow-y-auto px-4 py-6 md:block">
+      <aside className="hidden w-72 shrink-0 overflow-y-auto scrollbar-none px-4 py-6 md:block">
         <h2 className="px-2 pb-4 text-base font-semibold text-white">Latest from people you follow</h2>
         <StoriesArtistList artists={artists} activeArtistId={session.activeArtistId} onSelect={select} />
       </aside>

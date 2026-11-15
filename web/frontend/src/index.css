@@ -304,3 +304,11 @@ em-emoji-picker {
   --color-border-over: #2a2a2a;
   --shadow: none;
 }
+
+/* Hide the scrollbar but keep wheel/touch scrolling. */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
