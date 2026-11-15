@@ -60,6 +60,9 @@ export function EmojiReactions({
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
 
+  // Badges and the + share one box size, so the row height is the same with or without emojis
+  const slotSize = compact ? 'h-4 min-w-4' : 'h-8 min-w-8';
+
   return (
     <div className={`flex flex-wrap gap-2 items-center ${className}`}>
       {/* Emoji badges */}
@@ -73,7 +76,7 @@ export function EmojiReactions({
             type="button"
             onClick={() => onRemove(emojiId)}
             className={`
-              relative group ${compact ? 'text-sm' : 'text-base'}
+              relative group inline-flex items-center justify-center ${slotSize}
               leading-none hover:opacity-70 disabled:opacity-30 transition-opacity
             `}
             aria-label={`Remove emoji`}
@@ -96,7 +99,9 @@ export function EmojiReactions({
           type="button"
           onClick={onAddClick}
           disabled={isAdding}
-          className={`text-sm font-bold transition-colors ${
+          className={`inline-flex items-center justify-center rounded ${slotSize} ${
+            compact ? 'text-sm' : 'text-xl'
+          } font-bold leading-none transition-colors hover:bg-white/5 ${
             isAdding
               ? 'text-green-500 opacity-30 cursor-not-allowed'
               : 'text-green-500 hover:text-green-400'
