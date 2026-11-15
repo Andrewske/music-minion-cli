@@ -18,9 +18,13 @@ export interface UpNext {
   remaining: number;
 }
 
-/** Slice of the queue after `queueIndex`, at most `limit` rows. */
-export function upNextSlice(queue: readonly Track[], queueIndex: number, limit: number = UP_NEXT_LIMIT): UpNext {
-  const start = Math.max(0, queueIndex + 1);
+/**
+ * Slice of the queue from `upcomingStart` (the shared store's
+ * upcomingStart(): the index after the current track, or the cursor itself
+ * when the current track was displaced from the queue), at most `limit` rows.
+ */
+export function upNextSlice(queue: readonly Track[], upcomingStart: number, limit: number = UP_NEXT_LIMIT): UpNext {
+  const start = Math.max(0, upcomingStart);
   const after = queue.slice(start);
   const rows = after.slice(0, Math.max(0, limit)).map((track, i) => ({ track, position: start + i + 1 }));
   return { rows, remaining: after.length - rows.length };

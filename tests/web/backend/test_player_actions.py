@@ -491,3 +491,167 @@ class TestKeepInteraction:
         assert get_action_state(SC_ID)["like"] == "pending"
         _request(False)
         assert get_action_state(SC_ID)["like"] is None
+
+
+# ---------------------------------------------------------------------------
+# Second review: atomic mirror, Keep after unlike, reconcile tombstone,
+# final-attempt recovery.
+# ---------------------------------------------------------------------------
+
+
+class TestAtomicMirror:
+    def test_crash_while_mirroring_leaves_job_retryable(self, sc) -> None:
+        """settle + sc_likes write are one transaction: a crash in between
+        rolls both back, recovery re-runs the unlike, and sc_likes clears."""
+        import sqlite3
+
+        from web.backend.queries.feed import (
+            claim_due_action,
+            recover_interrupted_actions,
+            settle_action,
+        )
+
+        upsert_sc_likes([SC_ID], "sync")
+        _request(False)
+        job = claim_due_action()
+        with (
+            patch(
+                "web.backend.queries.feed.remove_sc_like",
+                side_effect=sqlite3.OperationalError("disk I/O error"),
+            ),
+            pytest.raises(sqlite3.OperationalError),
+        ):
+            settle_action(job, True)  # the process dies here
+        assert _like_job()["status"] == "running"
+        assert _liked()
+
+        recover_interrupted_actions()
+        _drain()
+        assert sc.calls == ["unlike"]
+        assert _like_job()["status"] == "complete" and not _liked()
+
+    def test_confirmed_unlike_stamps_tombstone(self, sc) -> None:
+        upsert_sc_likes([SC_ID], "sync")
+        _request(False)
+        _drain()
+        assert _like_job()["unliked_at"] is not None
+
+
+class TestKeepAfterUnlike:
+    def test_keep_flips_pending_unlike_back_to_like(self, sc) -> None:
+        from web.backend.queries.feed import enqueue_keep_actions
+
+        upsert_sc_likes([SC_ID], "sync")
+        _request(False)
+        enqueue_keep_actions(SC_ID, "Nov 26")
+        job = _like_job()
+        assert (job["want_liked"], job["generation"], job["requested_by"]) == (
+            1,
+            2,
+            "keep",
+        )
+        with (
+            patch(
+                "web.backend.feed_rating.add_track_to_playlist",
+                return_value=(MagicMock(), True, None),
+            ),
+            patch(
+                "web.backend.feed_rating.get_or_create_monthly_sc_playlist",
+                return_value=(MagicMock(), "pl-1", None),
+            ),
+        ):
+            _drain()
+        assert sc.calls == ["like"]
+        assert _liked()
+
+    def test_keep_after_completed_unlike_requests_a_like(self, sc) -> None:
+        from web.backend.queries.feed import enqueue_keep_actions
+
+        upsert_sc_likes([SC_ID], "sync")
+        _request(False)
+        _drain()
+        enqueue_keep_actions(SC_ID, "Nov 26")
+        job = _like_job()
+        assert (job["status"], job["want_liked"]) == ("pending", 1)
+
+    def test_keep_on_a_wanted_like_adds_no_sc_call(self) -> None:
+        from web.backend.queries.feed import enqueue_keep_actions
+
+        _request(True)
+        before = _like_job()
+        enqueue_keep_actions(SC_ID, "Nov 26")
+        after = _like_job()
+        assert after["generation"] == before["generation"]
+        assert after["requested_by"] == "player"
+
+    def test_unkeep_cancels_keeps_like_but_not_player_like(self) -> None:
+        from web.backend.queries.feed import (
+            cancel_pending_actions,
+            enqueue_keep_actions,
+        )
+
+        _request(False)
+        enqueue_keep_actions(SC_ID, "Nov 26")  # Keep now owns the like row
+        assert cancel_pending_actions(SC_ID) == 2
+        _request(True)
+        assert cancel_pending_actions(SC_ID) == 0
+
+
+class TestReconcileTombstone:
+    def _reconcile(self, fetch_started_at: str) -> tuple[int, int]:
+        from music_minion.core.database import apply_sc_likes_reconcile
+
+        return apply_sc_likes_reconcile([SC_ID], [], fetch_started_at)
+
+    def _set_unliked_at(self, value: str) -> None:
+        with get_db_connection() as conn:
+            conn.execute(
+                "UPDATE sc_feed_action_jobs SET unliked_at = ? WHERE soundcloud_id = ?",
+                (value, SC_ID),
+            )
+            conn.commit()
+
+    def test_stale_snapshot_does_not_revive_confirmed_unlike(self, sc) -> None:
+        upsert_sc_likes([SC_ID], "sync")
+        _request(False)
+        _drain()
+        self._set_unliked_at("2026-11-14 12:00:05")
+        # The fetch started before the unlike landed: its snapshot is stale.
+        assert self._reconcile("2026-11-14 12:00:00") == (0, 0)
+        assert not _liked()
+
+    def test_later_relike_on_soundcloud_is_accepted(self, sc) -> None:
+        upsert_sc_likes([SC_ID], "sync")
+        _request(False)
+        _drain()
+        self._set_unliked_at("2026-11-14 12:00:05")
+        assert self._reconcile("2026-11-14 13:00:00") == (1, 0)
+        assert _liked()
+
+    def test_tombstone_ignored_once_player_likes_again(self, sc) -> None:
+        upsert_sc_likes([SC_ID], "sync")
+        _request(False)
+        _drain()
+        self._set_unliked_at("2026-11-14 12:00:05")
+        _request(True)  # want_liked = 1 again
+        assert self._reconcile("2026-11-14 12:00:00") == (1, 0)
+
+
+class TestFinalAttemptRecovery:
+    def test_job_interrupted_on_final_attempt_runs_after_restart(self, sc) -> None:
+        from web.backend.queries.feed import (
+            claim_due_action,
+            recover_interrupted_actions,
+        )
+
+        upsert_sc_likes([SC_ID], "sync")
+        _request(False)
+        with get_db_connection() as conn:
+            conn.execute("UPDATE sc_feed_action_jobs SET attempt_count = 4")
+            conn.commit()
+        job = claim_due_action()  # final attempt: attempt_count -> 5 of 5
+        assert job["attempt_count"] == job["max_attempts"]
+        recover_interrupted_actions()  # the process died mid-call
+        assert _like_job()["attempt_count"] == 4
+        _drain()
+        assert sc.calls == ["unlike"] and not _liked()

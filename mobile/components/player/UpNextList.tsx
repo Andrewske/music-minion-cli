@@ -9,17 +9,19 @@ import type { ReactElement } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Shuffle } from 'lucide-react-native';
+import { upcomingStart } from '@music-minion/shared';
 import { usePlayerStore } from '../../stores/playerStore';
 import { TrackArtwork } from './TrackArtwork';
 import { queueTrack } from '../../hooks/useTrackActions';
 import { queueInfoLabel, upNextSlice } from '../../features/player/upNext';
 import type { UpNextRow } from '../../features/player/upNext';
 
-/** Memoized (no props): re-renders only when queue or queueIndex changes. */
+/** Memoized (no props): re-renders when the queue, cursor or current track changes. */
 export const UpNextList = memo(function UpNextList(): ReactElement {
   const queue = usePlayerStore((s) => s.queue);
   const queueIndex = usePlayerStore((s) => s.queueIndex);
-  const { rows, remaining } = upNextSlice(queue, queueIndex);
+  const start = usePlayerStore(upcomingStart);
+  const { rows, remaining } = upNextSlice(queue, start);
   return (
     <View testID="now-playing-up-next" style={styles.section}>
       <UpNextHeader label={queueInfoLabel(queueIndex, queue.length)} />

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createPlayerStore, withScLiked } from '../stores/createPlayerStore.js';
+import { createPlayerStore, upcomingStart, withScLiked } from '../stores/createPlayerStore.js';
 import type { SyncStatePayload, Track } from '../stores/createPlayerStore.js';
 import { createMemoryStorageAdapter } from '../stores/storage.js';
 
@@ -55,7 +55,9 @@ const lastCall = (): [string, RequestInit] => {
   return [String(call[0]), call[1] as RequestInit];
 };
 
-beforeEach(() => mockFetch.mockReset());
+beforeEach(() => {
+  mockFetch.mockReset();
+});
 
 describe('withScLiked', () => {
   it('patches every copy of the SoundCloud track and nothing else', () => {
@@ -109,6 +111,35 @@ describe('jumpTo', () => {
     await store.getState().jumpTo(0);
     await store.getState().jumpTo(10);
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('displaced current track (organizer queue emptied, B inserted)', () => {
+  const displaced = (): Partial<SyncStatePayload> => ({
+    currentTrack: track(1, '101'),
+    queue: [track(2)],
+    queueIndex: 0,
+  });
+
+  it('upcomingStart is the cursor itself', () => {
+    expect(upcomingStart({ queue: [track(2)], queueIndex: 0, currentTrack: track(1) })).toBe(0);
+    expect(upcomingStart({ queue: [track(1), track(2)], queueIndex: 0, currentTrack: track(1) })).toBe(1);
+  });
+
+  it('jumpTo(0) plays B instead of returning early', async () => {
+    const store = seed(displaced());
+    mockFetch.mockResolvedValueOnce(ok({ queue_index: 0 }));
+    await store.getState().jumpTo(0);
+    expect(store.getState().currentTrack?.id).toBe(2);
+    expect(JSON.parse(String(lastCall()[1].body))).toEqual({ index: 0, trackId: 2 });
+  });
+
+  it('optimistic next lands on B, matching the server', () => {
+    const store = seed(displaced());
+    mockFetch.mockReturnValue(new Promise(() => {}));
+    void store.getState().next();
+    expect(store.getState().currentTrack?.id).toBe(2);
+    expect(store.getState().queueIndex).toBe(0);
   });
 });
 

@@ -219,6 +219,17 @@ function copyField<K extends keyof PlayerState>(
 
 type RollbackFn = () => void;
 
+/**
+ * Index of the track that plays after the current one, mirroring the
+ * server's _upcoming_start: when the current track was displaced from the
+ * queue (organizer assignment), queueIndex already points at the next track.
+ */
+export function upcomingStart(state: Pick<PlayerState, 'queue' | 'queueIndex' | 'currentTrack'>): number {
+  const atCursor = state.queue[state.queueIndex];
+  const currentInQueue = atCursor !== undefined && state.currentTrack != null && atCursor.id === state.currentTrack.id;
+  return currentInQueue ? state.queueIndex + 1 : state.queueIndex;
+}
+
 type LikeFields = Pick<PlayerState, 'currentTrack' | 'queue'>;
 
 /** currentTrack + queue with sc_liked set on every copy of a SoundCloud track. Pure. */
@@ -387,11 +398,12 @@ export const createPlayerStore = (deps: PlatformDeps) => {
      * paused). Null when the local queue window has no next track.
      */
     const buildAdvanceUpdates = (state: PlayerState): Partial<PlayerState> | null => {
-      const nextTrack = state.queue[state.queueIndex + 1];
+      const nextIndex = upcomingStart(state);
+      const nextTrack = state.queue[nextIndex];
       if (!nextTrack) return null;
       return {
         currentTrack: nextTrack,
-        queueIndex: state.queueIndex + 1,
+        queueIndex: nextIndex,
         // trackStartedAt is server-clock based; approximate via clockOffset so
         // getCurrentPosition() reads ~0 until the broadcast delivers truth.
         trackStartedAt: Date.now() + state.clockOffset,
@@ -846,7 +858,9 @@ export const createPlayerStore = (deps: PlatformDeps) => {
     jumpTo: async (index: number) => {
       const state = get();
       const target = state.queue[index];
-      if (!target || index === state.queueIndex) return;
+      // No-op only when the cursor holds the current track; a displaced
+      // current track leaves queue[queueIndex] as the NEXT track, a real jump.
+      if (!target || (index === state.queueIndex && target.id === state.currentTrack?.id)) return;
       const rollback = canActOptimistically(state)
         ? applyOptimistic(buildJumpUpdates(state, index, target))
         : null;

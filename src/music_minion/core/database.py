@@ -3843,9 +3843,14 @@ def migrate_database(conn, current_version: int) -> None:
         # The 'like' job row becomes the track's desired SC like state:
         # want_liked (1 like / 0 unlike) + a generation bumped on every
         # request, so a stale in-flight job never overwrites a newer one.
+        # requested_by ('keep' | 'player') owns the latest request (un-keep
+        # cancels only Keep's); unliked_at is the confirmed-unlike tombstone
+        # the likes reconcile checks before re-adding from a stale snapshot.
         for column_ddl in (
             "want_liked INTEGER NOT NULL DEFAULT 1",
             "generation INTEGER NOT NULL DEFAULT 0",
+            "requested_by TEXT NOT NULL DEFAULT 'keep'",
+            "unliked_at TEXT",
         ):
             _add_column_if_missing(conn, "sc_feed_action_jobs", column_ddl)
         conn.commit()
@@ -4168,33 +4173,47 @@ def upsert_sc_likes(
         raise ValueError(
             f"Invalid sc_likes source {source!r}; valid: {SC_LIKE_SOURCES}"
         )
+    with get_db_connection() as conn:
+        inserted = write_sc_likes(conn, soundcloud_ids, source, liked_now)
+        conn.commit()
+    return inserted
+
+
+def write_sc_likes(
+    conn: sqlite3.Connection,
+    soundcloud_ids: Iterable[str],
+    source: str,
+    liked_now: bool = False,
+) -> int:
+    """upsert_sc_likes inside the caller's transaction (no commit)."""
     ids = sorted({str(sc_id) for sc_id in soundcloud_ids if sc_id})
     if not ids:
         return 0
-    with get_db_connection() as conn:
-        before = conn.total_changes
-        conn.executemany(
-            """INSERT INTO sc_likes (soundcloud_id, liked_at, source)
-            VALUES (?, CASE WHEN ? THEN CURRENT_TIMESTAMP END, ?)
-            ON CONFLICT(soundcloud_id) DO NOTHING""",
-            [(sc_id, int(liked_now), source) for sc_id in ids],
-        )
-        inserted = conn.total_changes - before
-        conn.executemany(
-            "UPDATE sc_likes SET synced_at = CURRENT_TIMESTAMP WHERE soundcloud_id = ?",
-            [(sc_id,) for sc_id in ids],
-        )
-        conn.commit()
+    before = conn.total_changes
+    conn.executemany(
+        """INSERT INTO sc_likes (soundcloud_id, liked_at, source)
+        VALUES (?, CASE WHEN ? THEN CURRENT_TIMESTAMP END, ?)
+        ON CONFLICT(soundcloud_id) DO NOTHING""",
+        [(sc_id, int(liked_now), source) for sc_id in ids],
+    )
+    inserted = conn.total_changes - before
+    conn.executemany(
+        "UPDATE sc_likes SET synced_at = CURRENT_TIMESTAMP WHERE soundcloud_id = ?",
+        [(sc_id,) for sc_id in ids],
+    )
     return inserted
 
 
 def delete_sc_like(soundcloud_id: str) -> None:
     """Forget one SoundCloud like (only after SC confirmed the unlike)."""
     with get_db_connection() as conn:
-        conn.execute(
-            "DELETE FROM sc_likes WHERE soundcloud_id = ?", (str(soundcloud_id),)
-        )
+        remove_sc_like(conn, soundcloud_id)
         conn.commit()
+
+
+def remove_sc_like(conn: sqlite3.Connection, soundcloud_id: str) -> None:
+    """delete_sc_like inside the caller's transaction (no commit)."""
+    conn.execute("DELETE FROM sc_likes WHERE soundcloud_id = ?", (str(soundcloud_id),))
 
 
 def sqlite_utc_now() -> str:
@@ -4233,7 +4252,10 @@ def apply_sc_likes_reconcile(
 
     Removal re-checks synced_at under the write lock: a like written at or
     after `fetch_started_at` (an in-app like that landed mid-reconcile)
-    survives even if the planner listed it. Returns (added, removed).
+    survives even if the planner listed it. Additions get the mirror check:
+    a like MM unliked at or after the fetch started (the tombstone on its
+    like job) stays unliked; a re-like on SoundCloud after the unlike is
+    picked up by the next fetch. Returns (added, removed).
     """
     add_ids = sorted({str(i) for i in to_add if i})
     remove_ids = {str(i) for i in to_remove if i}
@@ -4249,6 +4271,7 @@ def apply_sc_likes_reconcile(
                 )
             }
             removable = sorted(remove_ids & stale)
+            add_ids = _drop_unliked_since(conn, add_ids, fetch_started_at)
             before = conn.total_changes
             conn.executemany(
                 """INSERT INTO sc_likes (soundcloud_id, liked_at, source)
@@ -4270,6 +4293,25 @@ def apply_sc_likes_reconcile(
             conn.rollback()
             raise
     return added, len(removable)
+
+
+def _drop_unliked_since(
+    conn: sqlite3.Connection, ids: list[str], since: str
+) -> list[str]:
+    """ids minus those MM unliked (and SC confirmed) at or after `since`."""
+    if not ids:
+        return ids
+    placeholders = ",".join("?" * len(ids))
+    unliked = {
+        row[0]
+        for row in conn.execute(
+            f"""SELECT soundcloud_id FROM sc_feed_action_jobs
+            WHERE action_type = 'like' AND want_liked = 0 AND unliked_at >= ?
+              AND soundcloud_id IN ({placeholders})""",
+            (since, *ids),
+        )
+    }
+    return [sc_id for sc_id in ids if sc_id not in unliked]
 
 
 def write_sc_like_order(ordered_ids: Sequence[str]) -> int:

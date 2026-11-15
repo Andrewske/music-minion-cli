@@ -5,7 +5,6 @@ from typing import Any, Optional
 
 from loguru import logger
 
-from music_minion.core.database import delete_sc_like, upsert_sc_likes
 from music_minion.core.local_time import configured_feed_timezone, month_label
 from music_minion.domain.library.providers.soundcloud.api import (
     add_track_to_playlist,
@@ -80,23 +79,13 @@ def _execute_action(state: Any, job: dict[str, Any]) -> tuple[Any, bool, str | N
     return add_track_to_playlist(state, playlist_id, job["soundcloud_id"])
 
 
-def _record_like_state(job: dict[str, Any]) -> None:
-    """Mirror a confirmed like/unlike into sc_likes ('mm_keep' = liked by MM:
-    a Keep or the player heart, which share this job row)."""
-    if job["action_type"] != "like":
-        return
-    if _is_unlike(job):
-        delete_sc_like(job["soundcloud_id"])
-    else:
-        upsert_sc_likes([job["soundcloud_id"]], "mm_keep", liked_now=True)
-
-
 def process_one_pending_action(state: Any) -> tuple[Any, bool]:
     """Claim and execute one durable job. Called only by the SC push worker.
 
-    sc_likes is written only when the job's generation is still current, so a
-    like/unlike that a newer request superseded never lands. Every job runs
-    on this one thread, so a superseding job always runs after this one.
+    settle_action mirrors a confirmed like/unlike into sc_likes in the same
+    transaction that checks the generation, so a superseded result never
+    lands. Every job runs on this one thread, so a superseding job always
+    runs after this one.
     """
     job = feed_queries.claim_due_action()
     if job is None:
@@ -104,8 +93,7 @@ def process_one_pending_action(state: Any) -> tuple[Any, bool]:
     try:
         state, success, err = _execute_action(state, job)
         done = success or _already_complete(job, err)
-        if feed_queries.settle_action(job, done, None if done else err) and done:
-            _record_like_state(job)
+        feed_queries.settle_action(job, done, None if done else err)
     except Exception as exc:
         logger.exception(f"feed action {job['id']} failed")
         feed_queries.settle_action(job, False, str(exc))

@@ -1,3 +1,4 @@
+import { upcomingStart } from '@music-minion/shared';
 import { usePlayerStore } from '../stores/playerStore';
 import type { Track } from '../api/builder';
 
@@ -40,10 +41,11 @@ function UpNextTrack({ track, index, onPlay }: UpNextTrackProps): JSX.Element {
 }
 
 export function UpNext(): JSX.Element {
-  const { queue, queueIndex, jumpTo } = usePlayerStore();
-
-  // Get upcoming tracks (next 5 after current)
-  const upcoming = queue.slice(queueIndex + 1, queueIndex + 6);
+  const { queue, jumpTo } = usePlayerStore();
+  // First upcoming index; current-track aware like the server (organizer can
+  // displace the playing track from the queue).
+  const start = usePlayerStore(upcomingStart);
+  const upcoming = queue.slice(start, start + 5);
 
   return (
     <div className="bg-obsidian-surface border border-obsidian-border p-4">
@@ -53,7 +55,7 @@ export function UpNext(): JSX.Element {
       {upcoming.length > 0 ? (
         <div className="space-y-1">
           {upcoming.map((track, i) => (
-            <UpNextTrack key={track.id} track={track} index={i} onPlay={() => void jumpTo(queueIndex + 1 + i)} />
+            <UpNextTrack key={track.id} track={track} index={i} onPlay={() => void jumpTo(start + i)} />
           ))}
         </div>
       ) : (

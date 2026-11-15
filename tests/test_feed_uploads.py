@@ -209,6 +209,8 @@ MINIMAL_SCHEMA_SQL = [
         completed_at TIMESTAMP,
         want_liked INTEGER NOT NULL DEFAULT 1,
         generation INTEGER NOT NULL DEFAULT 0,
+        requested_by TEXT NOT NULL DEFAULT 'keep',
+        unliked_at TEXT,
         UNIQUE(soundcloud_id, action_type, target_key)
     )""",
 ]
