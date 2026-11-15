@@ -24,6 +24,8 @@ export interface Track {
   emojis?: string[];
   /** In the user's SoundCloud likes (player queue tracks). */
   sc_liked?: boolean;
+  /** SoundCloud track id; null/absent for local-only tracks (can't be liked on SC). */
+  soundcloud_id?: string | null;
 }
 
 export interface TrackActionResponse {

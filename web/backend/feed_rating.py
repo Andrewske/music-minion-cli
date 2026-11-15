@@ -5,13 +5,13 @@ from typing import Any, Optional
 
 from loguru import logger
 
-from music_minion.core.database import upsert_sc_likes
 from music_minion.core.local_time import configured_feed_timezone, month_label
 from music_minion.domain.library.providers.soundcloud.api import (
     add_track_to_playlist,
     create_playlist,
     get_playlists,
     like_track,
+    unlike_track,
 )
 from web.backend.queries import feed as feed_queries
 
@@ -48,50 +48,55 @@ def get_or_create_monthly_sc_playlist(
     return state, playlist_id, err
 
 
-def _already_complete(err: Optional[str]) -> bool:
-    """SoundCloud reports duplicates as errors; for an idempotent job that is success."""
+def _already_complete(job: dict[str, Any], err: str | None) -> bool:
+    """SoundCloud reports no-op mutations as errors; for an idempotent job that is success.
+
+    Like: "already liked" / "already in playlist". Unlike: a 404 means the
+    like isn't there, which is the goal state.
+    """
     if not err:
         return False
     lowered = err.lower()
+    if _is_unlike(job):
+        return "404" in lowered
     return "already liked" in lowered or "already in playlist" in lowered
 
 
+def _is_unlike(job: dict[str, Any]) -> bool:
+    return job["action_type"] == "like" and not job.get("want_liked", 1)
+
+
+def _execute_action(state: Any, job: dict[str, Any]) -> tuple[Any, bool, str | None]:
+    """Run one job against SoundCloud: like, unlike, or monthly playlist add."""
+    if job["action_type"] == "like":
+        mutate = unlike_track if _is_unlike(job) else like_track
+        return mutate(state, job["soundcloud_id"])
+    state, playlist_id, err = get_or_create_monthly_sc_playlist(
+        state, job["target_key"]
+    )
+    if not playlist_id:
+        return state, False, err
+    return add_track_to_playlist(state, playlist_id, job["soundcloud_id"])
+
+
 def process_one_pending_action(state: Any) -> tuple[Any, bool]:
-    """Claim and execute one durable job. Called only by the SC push worker."""
+    """Claim and execute one durable job. Called only by the SC push worker.
+
+    settle_action mirrors a confirmed like/unlike into sc_likes in the same
+    transaction that checks the generation, so a superseded result never
+    lands. Every job runs on this one thread, so a superseding job always
+    runs after this one.
+    """
     job = feed_queries.claim_due_action()
     if job is None:
         return state, False
-
     try:
-        if job["action_type"] == "like":
-            state, success, err = like_track(state, job["soundcloud_id"])
-        else:
-            state, playlist_id, err = get_or_create_monthly_sc_playlist(
-                state, job["target_key"]
-            )
-            if playlist_id:
-                state, success, err = add_track_to_playlist(
-                    state, playlist_id, job["soundcloud_id"]
-                )
-            else:
-                success = False
-
-        if success or _already_complete(err):
-            if job["action_type"] == "like":
-                upsert_sc_likes([job["soundcloud_id"]], "mm_keep", liked_now=True)
-            feed_queries.complete_action(job["id"])
-        else:
-            feed_queries.fail_action(
-                job["id"],
-                err or "SoundCloud operation failed",
-                job["attempt_count"],
-                job["max_attempts"],
-            )
+        state, success, err = _execute_action(state, job)
+        done = success or _already_complete(job, err)
+        feed_queries.settle_action(job, done, None if done else err)
     except Exception as exc:
         logger.exception(f"feed action {job['id']} failed")
-        feed_queries.fail_action(
-            job["id"], str(exc), job["attempt_count"], job["max_attempts"]
-        )
+        feed_queries.settle_action(job, False, str(exc))
     return state, True
 
 

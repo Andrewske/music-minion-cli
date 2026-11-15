@@ -207,6 +207,10 @@ MINIMAL_SCHEMA_SQL = [
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         completed_at TIMESTAMP,
+        want_liked INTEGER NOT NULL DEFAULT 1,
+        generation INTEGER NOT NULL DEFAULT 0,
+        requested_by TEXT NOT NULL DEFAULT 'keep',
+        unliked_at TEXT,
         UNIQUE(soundcloud_id, action_type, target_key)
     )""",
 ]
@@ -1520,13 +1524,17 @@ class TestHeartBySoundcloudId:
         from web.backend.queries.feed import (
             claim_due_action,
             enqueue_keep_actions,
-            fail_action,
+            settle_action,
         )
 
         self._seed_repost()
         enqueue_keep_actions("555", "Jul 26")
         job = claim_due_action()
-        fail_action(job["id"], "Rate limit exceeded (429)", 5, 5)
+        settle_action(
+            {**job, "attempt_count": 5, "max_attempts": 5},
+            False,
+            "Rate limit exceeded (429)",
+        )
         with get_db_connection() as conn:
             assert (
                 conn.execute(
@@ -1635,8 +1643,8 @@ class TestActionBackoff:
         from web.backend.queries.feed import (
             claim_due_action,
             enqueue_keep_actions,
-            fail_action,
             get_next_action_delay,
+            settle_action,
         )
 
         enqueue_keep_actions("t", "Jul 26")
@@ -1652,8 +1660,8 @@ class TestActionBackoff:
         }
         assert claim_due_action() is None  # both running
 
-        fail_action(first["id"], "Network error", first["attempt_count"], 2)
-        fail_action(second["id"], "Network error", second["attempt_count"], 2)
+        settle_action(first, False, "Network error")
+        settle_action(second, False, "Network error")
         assert claim_due_action() is None  # not due yet
         assert 0 < get_next_action_delay() <= 30
 
@@ -1664,7 +1672,7 @@ class TestActionBackoff:
             conn.commit()
         retry = claim_due_action()
         assert retry["attempt_count"] == 2
-        fail_action(retry["id"], "Network error", 2, 2)
+        settle_action(retry, False, "Network error")
         with get_db_connection() as conn:
             row = conn.execute(
                 "SELECT * FROM sc_feed_action_jobs WHERE id = ?", (retry["id"],)

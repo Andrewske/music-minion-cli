@@ -109,7 +109,7 @@ _STORIES_SQL = f"""
     ),
     sc_like_job AS (
         SELECT soundcloud_id, status FROM sc_feed_action_jobs
-        WHERE action_type = 'like'
+        WHERE action_type = 'like' AND want_liked = 1
           AND soundcloud_id IN (SELECT soundcloud_id FROM window_ids)
     )
     SELECT r.artist_id, da.display_name, da.slug, da.avatar_url,

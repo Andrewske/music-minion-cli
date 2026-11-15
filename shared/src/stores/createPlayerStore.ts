@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Track } from '../api/builder';
-import { fetchPlayerQueue } from '../api/player';
+import { fetchPlayerQueue, insertIntoQueue, jumpToQueueIndex, setScLike } from '../api/player';
+import type { QueueInsertPosition } from '../api/player';
 import type { StorageAdapter } from './storage';
 
 // Re-export Track for convenience
@@ -150,6 +151,25 @@ export interface PlayerActions {
   onTrackPlayed: (trackId: number, playedMs: number) => void;
   renameDevice: (name: string) => void;
   registerDevice: () => void;
+  /**
+   * Insert a track into the live queue without restarting playback: 'next'
+   * right after the current track, 'last' after the loaded window. The
+   * queue itself arrives through the queueVersion refetch. Throws on failure
+   * (e.g. nothing playing) so the caller can tell the user.
+   */
+  queueTrack: (track: Track, position: QueueInsertPosition) => Promise<void>;
+  /**
+   * Jump to queue[index] (tap an up-next row). Optimistic when the audio is
+   * local; rolled back and reported via playbackError when the server
+   * refuses (stale index → 409).
+   */
+  jumpTo: (index: number) => Promise<void>;
+  /**
+   * Like / unlike the current track on SoundCloud. Flips sc_liked on every
+   * local copy right away and rolls back + throws if the request fails.
+   * No-op for tracks without a soundcloud_id.
+   */
+  setLiked: (liked: boolean) => Promise<void>;
   set: (partial: Partial<PlayerState>) => void;
 }
 
@@ -198,6 +218,38 @@ function copyField<K extends keyof PlayerState>(
 }
 
 type RollbackFn = () => void;
+
+/**
+ * Index of the track that plays after the current one, mirroring the
+ * server's _upcoming_start: when the current track was displaced from the
+ * queue (organizer assignment), queueIndex already points at the next track.
+ */
+export function upcomingStart(state: Pick<PlayerState, 'queue' | 'queueIndex' | 'currentTrack'>): number {
+  const atCursor = state.queue[state.queueIndex];
+  const currentInQueue = atCursor !== undefined && state.currentTrack != null && atCursor.id === state.currentTrack.id;
+  return currentInQueue ? state.queueIndex + 1 : state.queueIndex;
+}
+
+type LikeFields = Pick<PlayerState, 'currentTrack' | 'queue'>;
+
+/** currentTrack + queue with sc_liked set on every copy of a SoundCloud track. Pure. */
+export function withScLiked(state: LikeFields, soundcloudId: string, liked: boolean): LikeFields {
+  const patch = (track: Track): Track =>
+    track.soundcloud_id === soundcloudId ? { ...track, sc_liked: liked } : track;
+  return {
+    currentTrack: state.currentTrack ? patch(state.currentTrack) : null,
+    queue: state.queue.map(patch),
+  };
+}
+
+/**
+ * Keep the held currentTrack object when a broadcast names the same track, so
+ * memoized views don't re-render, unless its sc_liked flag changed.
+ */
+function keepCurrentTrack(held: Track | null, incoming: Track | null): Track | null {
+  if (held == null || incoming == null || held.id !== incoming.id) return incoming;
+  return Boolean(held.sc_liked) === Boolean(incoming.sc_liked) ? held : incoming;
+}
 
 export const createPlayerStore = (deps: PlatformDeps) => {
   const { storage, apiBase, getDeviceName: getDeviceNameFn, generateDeviceId: generateDeviceIdFn } = deps;
@@ -346,11 +398,12 @@ export const createPlayerStore = (deps: PlatformDeps) => {
      * paused). Null when the local queue window has no next track.
      */
     const buildAdvanceUpdates = (state: PlayerState): Partial<PlayerState> | null => {
-      const nextTrack = state.queue[state.queueIndex + 1];
+      const nextIndex = upcomingStart(state);
+      const nextTrack = state.queue[nextIndex];
       if (!nextTrack) return null;
       return {
         currentTrack: nextTrack,
-        queueIndex: state.queueIndex + 1,
+        queueIndex: nextIndex,
         // trackStartedAt is server-clock based; approximate via clockOffset so
         // getCurrentPosition() reads ~0 until the broadcast delivers truth.
         trackStartedAt: Date.now() + state.clockOffset,
@@ -360,6 +413,15 @@ export const createPlayerStore = (deps: PlatformDeps) => {
         pendingLocalAdvance: true,
       };
     };
+
+    /** Optimistic jump, mirroring the server: position 0, isPlaying preserved. */
+    const buildJumpUpdates = (state: PlayerState, index: number, target: Track): Partial<PlayerState> => ({
+      currentTrack: target,
+      queueIndex: index,
+      positionMs: 0,
+      trackStartedAt: state.isPlaying ? Date.now() + state.clockOffset : null,
+      scrobbledThisPlaythrough: false,
+    });
 
     return {
     ...initialState,
@@ -683,6 +745,9 @@ export const createPlayerStore = (deps: PlatformDeps) => {
       // Skip if state is already in sync (prevents WebSocket echo causing stutter)
       if (
         current.currentTrack?.id === state.currentTrack?.id &&
+        // A queue fetch can land a like before its broadcast does; the
+        // broadcast must still refresh currentTrack's heart.
+        Boolean(current.currentTrack?.sc_liked) === Boolean(state.currentTrack?.sc_liked) &&
         current.isPlaying === state.isPlaying &&
         current.activeDeviceId === state.activeDeviceId &&
         Math.abs((current.positionMs ?? 0) - (state.positionMs ?? 0)) < 2000 &&
@@ -695,9 +760,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
       const prevTrackId = get().currentTrack?.id;
       const newTrackId = state.currentTrack?.id;
       const scrobbledThisPlaythrough = prevTrackId === newTrackId ? get().scrobbledThisPlaythrough : false;
-      const currentTrack = prevTrackId === newTrackId && prevTrackId != null
-        ? get().currentTrack
-        : state.currentTrack;
+      const currentTrack = keepCurrentTrack(get().currentTrack, state.currentTrack);
       const clockOffset = state.serverTime - Date.now();
       const sortField = state.sortSpec?.field ?? null;
       const sortDirection = state.sortSpec?.direction ?? null;
@@ -786,6 +849,39 @@ export const createPlayerStore = (deps: PlatformDeps) => {
 
     registerDevice: () => {
       // WebSocket connection handles the actual registration
+    },
+
+    queueTrack: async (track: Track, position: QueueInsertPosition) => {
+      await insertIntoQueue(getApiBase(), track.id, position);
+    },
+
+    jumpTo: async (index: number) => {
+      const state = get();
+      const target = state.queue[index];
+      // No-op only when the cursor holds the current track; a displaced
+      // current track leaves queue[queueIndex] as the NEXT track, a real jump.
+      if (!target || (index === state.queueIndex && target.id === state.currentTrack?.id)) return;
+      const rollback = canActOptimistically(state)
+        ? applyOptimistic(buildJumpUpdates(state, index, target))
+        : null;
+      try {
+        await jumpToQueueIndex(getApiBase(), index, target.id);
+      } catch (error) {
+        rollback?.();
+        set({ playbackError: error instanceof Error ? error.message : 'Jump failed' });
+      }
+    },
+
+    setLiked: async (liked: boolean) => {
+      const soundcloudId = get().currentTrack?.soundcloud_id;
+      if (!soundcloudId) return;
+      set(withScLiked(get(), soundcloudId, liked));
+      try {
+        await setScLike(getApiBase(), soundcloudId, liked);
+      } catch (error) {
+        set(withScLiked(get(), soundcloudId, !liked));
+        throw error;
+      }
     },
 
     set: (partial: Partial<PlayerState>) => {

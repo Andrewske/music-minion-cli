@@ -25,16 +25,22 @@ export const trackRowSubtitle = (track: Pick<Track, 'artist' | 'album'>): string
 export const artworkUrl = (baseUrl: string, trackId: number): string =>
   `${baseUrl.replace(/\/+$/, '')}/tracks/${trackId}/artwork`;
 
-export type TrackActionKey = 'play' | 'artist';
+export type TrackActionKey = 'play' | 'next' | 'queue' | 'artist';
 
 export interface TrackAction {
   key: TrackActionKey;
   label: string;
 }
 
-/** Long-press actions for a track. Only actions with an existing API. */
-export const trackActions = (track: Pick<Track, 'artist'>): TrackAction[] => {
+/**
+ * Long-press actions for a track. Play next / Add to queue only while
+ * something is playing: the server inserts into the live queue.
+ */
+export const trackActions = (track: Pick<Track, 'artist'>, isPlaying: boolean = false): TrackAction[] => {
   const actions: TrackAction[] = [{ key: 'play', label: 'Play now' }];
+  if (isPlaying) {
+    actions.push({ key: 'next', label: 'Play next' }, { key: 'queue', label: 'Add to queue' });
+  }
   if (track.artist?.trim()) actions.push({ key: 'artist', label: 'Go to artist' });
   return actions;
 };
