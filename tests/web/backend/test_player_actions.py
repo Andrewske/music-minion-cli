@@ -15,6 +15,7 @@ from web.backend.main import app
 from web.backend.player_state import PlaybackState, get_state, reset_state
 from web.backend.routers.player import (
     _upcoming_start,
+    anchor_current,
     insert_track,
     with_sc_liked,
 )
@@ -105,6 +106,21 @@ class TestUpcomingStart:
         assert _upcoming_start(s) == 1
 
 
+class TestAnchorCurrent:
+    def test_leaves_a_queue_holding_the_current_track(self) -> None:
+        s = PlaybackState(queue=_q(1, 2, 3), queue_index=1, current_track={"id": 2})
+        assert anchor_current(s) == (s.queue, 1)
+
+    def test_puts_a_displaced_current_track_back_at_the_cursor(self) -> None:
+        s = PlaybackState(queue=_q(1, 3), queue_index=1, current_track={"id": 2})
+        queue, cursor = anchor_current(s)
+        assert [t["id"] for t in queue] == [1, 2, 3] and cursor == 1
+
+    def test_emptied_queue(self) -> None:
+        s = PlaybackState(queue=(), queue_index=0, current_track={"id": 2})
+        assert anchor_current(s) == (({"id": 2},), 0)
+
+
 class TestWithScLiked:
     def test_patches_queue_and_current(self) -> None:
         track = {"id": 1, "soundcloud_id": "55", "sc_liked": False}
@@ -184,8 +200,29 @@ class TestQueueInsertEndpoint:
         )
         response = client.post("/api/player/queue", json={"trackId": new})
         assert response.status_code == 200
-        assert response.json()["index"] == 0
-        assert [t["id"] for t in get_state().queue] == [new]
+        # The playing track is re-anchored at the cursor; the insert follows it.
+        assert response.json()["index"] == 1
+        state = get_state()
+        assert [t["id"] for t in state.queue] == [playing, new]
+        assert state.queue_index == 0
+
+    @pytest.mark.asyncio
+    async def test_requeuing_the_displaced_current_track_plays_it_again(self) -> None:
+        """Queue A while displaced A plays: the new copy must not read as current."""
+        from web.backend.player_state import update_state
+
+        playing, b = _track("playing"), _track("b")
+        await update_state(
+            {"queue": ({"id": b},), "queue_index": 0, "current_track": {"id": playing}},
+            broadcast=False,
+        )
+        response = client.post(
+            "/api/player/queue", json={"trackId": playing, "position": "next"}
+        )
+        assert response.status_code == 200
+        state = get_state()
+        assert [t["id"] for t in state.queue] == [playing, playing, b]
+        assert _upcoming_start(state) == 1
 
     @pytest.mark.asyncio
     async def test_persists_queue(self) -> None:

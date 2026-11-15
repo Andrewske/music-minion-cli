@@ -451,6 +451,20 @@ def _upcoming_start(s: PlaybackState) -> int:
     return s.queue_index + 1 if current_in_queue else s.queue_index
 
 
+def anchor_current(s: PlaybackState) -> tuple[tuple[dict, ...], int]:
+    """Queue and cursor with a displaced current track put back at the cursor.
+
+    _upcoming_start tells "cursor holds the current track" from "cursor holds
+    the next track" by track id, so inserting another copy of the current
+    track into a displaced queue would read as the one already playing.
+    Re-anchoring first removes that ambiguity. Pure.
+    """
+    index = min(s.queue_index, len(s.queue))
+    if s.current_track is None or _upcoming_start(s) != s.queue_index:
+        return s.queue, index
+    return s.queue[:index] + (s.current_track,) + s.queue[index:], index
+
+
 def insert_track(
     queue: tuple[dict, ...], start: int, track: dict, position: str
 ) -> tuple[tuple[dict, ...], int]:
@@ -563,9 +577,9 @@ async def insert_into_queue(request: QueueInsertRequest, db=Depends(get_db)) -> 
         # (last track assigned) while that track keeps playing.
         if state.current_track is None:
             raise HTTPException(400, "Nothing is playing; start playback first")
-        start = min(_upcoming_start(state), len(state.queue))
-        new_queue, at = insert_track(state.queue, start, track, request.position)
-        await update_state({"queue": new_queue})
+        queue, cursor = anchor_current(state)
+        new_queue, at = insert_track(queue, cursor + 1, track, request.position)
+        await update_state({"queue": new_queue, "queue_index": cursor})
         _persist_queue(db)
     logger.info(f"Queued track {request.track_id} ({request.position}) at index {at}")
     return {"index": at, "queue_size": len(new_queue)}
