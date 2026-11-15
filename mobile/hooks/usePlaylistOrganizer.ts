@@ -6,16 +6,44 @@
 import { useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as bucketsApi from '@music-minion/shared';
-import type { BucketSession } from '@music-minion/shared';
+import type { Bucket, BucketSession } from '@music-minion/shared';
+import { organizerSessionKey } from './useOrganizerSessions';
 
 interface UsePlaylistOrganizerOptions {
   playlistId: number;
   enabled?: boolean;
 }
 
-export function usePlaylistOrganizer({ playlistId, enabled = true }: UsePlaylistOrganizerOptions) {
+export interface UsePlaylistOrganizerReturn {
+  session: BucketSession | undefined;
+  isLoading: boolean;
+  error: Error | null;
+  buckets: Bucket[];
+  unassignedTrackIds: number[];
+  createBucket: (name: string, emojiId?: string) => Promise<Bucket>;
+  updateBucket: (bucketId: string, updates: { name?: string; emoji_id?: string | null }) => Promise<Bucket>;
+  deleteBucket: (bucketId: string) => Promise<void>;
+  moveBucket: (bucketId: string, direction: 'up' | 'down') => Promise<void>;
+  shuffleBucket: (bucketId: string) => Promise<number[]>;
+  assignTrack: (bucketId: string, trackId: number) => Promise<void>;
+  unassignTrack: (bucketId: string, trackId: number) => Promise<void>;
+  reorderTracks: (bucketId: string, trackIds: number[]) => Promise<void>;
+  applyOrder: () => Promise<void>;
+  isApplying: boolean;
+}
+
+export function usePlaylistOrganizer({ playlistId, enabled = true }: UsePlaylistOrganizerOptions): UsePlaylistOrganizerReturn {
   const queryClient = useQueryClient();
-  const queryKey = ['organizer', 'session', playlistId] as const;
+  const queryKey = organizerSessionKey(playlistId);
+
+  // Restore an optimistic snapshot only if the same session is still loaded:
+  // a failure that lands after a session switch must not resurrect the old one.
+  const rollback = (prev: BucketSession | undefined): void => {
+    if (!prev) return;
+    const loaded = queryClient.getQueryData<BucketSession>(queryKey);
+    if (loaded && loaded.id !== prev.id) return;
+    queryClient.setQueryData(queryKey, prev);
+  };
 
   const { data: session, isLoading, error } = useQuery({
     queryKey,
@@ -77,9 +105,7 @@ export function usePlaylistOrganizer({ playlistId, enabled = true }: UsePlaylist
       }
       return { prev };
     },
-    onError: (_err, _params, context) => {
-      if (context?.prev) queryClient.setQueryData(queryKey, context.prev);
-    },
+    onError: (_err, _params, context) => rollback(context?.prev),
     onSettled: () => queryClient.invalidateQueries({ queryKey }),
   });
 
@@ -106,9 +132,7 @@ export function usePlaylistOrganizer({ playlistId, enabled = true }: UsePlaylist
       }
       return { prev };
     },
-    onError: (_err, _params, context) => {
-      if (context?.prev) queryClient.setQueryData(queryKey, context.prev);
-    },
+    onError: (_err, _params, context) => rollback(context?.prev),
     onSettled: () => queryClient.invalidateQueries({ queryKey }),
   });
 
@@ -129,22 +153,6 @@ export function usePlaylistOrganizer({ playlistId, enabled = true }: UsePlaylist
       queryClient.invalidateQueries({ queryKey });
       queryClient.invalidateQueries({ queryKey: ['playlists'] });
     },
-  });
-
-  const finalizeMutation = useMutation({
-    mutationFn: () => {
-      if (!session) throw new Error('No active session');
-      return bucketsApi.finalizeSession(session.id);
-    },
-    onSuccess: () => queryClient.removeQueries({ queryKey }),
-  });
-
-  const discardMutation = useMutation({
-    mutationFn: () => {
-      if (!session) throw new Error('No active session');
-      return bucketsApi.discardSession(session.id);
-    },
-    onSuccess: () => queryClient.removeQueries({ queryKey }),
   });
 
   // === Wrapper functions ===
@@ -190,10 +198,7 @@ export function usePlaylistOrganizer({ playlistId, enabled = true }: UsePlaylist
       [reorderTracksMutation]
     ),
     applyOrder: useCallback(() => applyMutation.mutateAsync(), [applyMutation]),
-    finalizeSession: useCallback(() => finalizeMutation.mutateAsync(), [finalizeMutation]),
-    discardSession: useCallback(() => discardMutation.mutateAsync(), [discardMutation]),
 
     isApplying: applyMutation.isPending,
-    isFinalizing: finalizeMutation.isPending,
   };
 }

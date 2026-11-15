@@ -1,43 +1,30 @@
 /**
  * Sticky session actions — always visible below the track list.
  * Sits above the global PlayerBar, which already pads for the bottom inset.
+ * Deleting a session lives in the session switcher sheet.
  */
 import { View, Text, Pressable, ActivityIndicator } from 'react-native';
 
 interface SessionFooterProps {
   onApply: () => void;
-  onFinalize: () => void;
-  onDiscard: () => void;
+  onFinish: () => void;
   isApplying: boolean;
-  isFinalizing: boolean;
+  isFinishing: boolean;
 }
 
-export function SessionFooter({
-  onApply,
-  onFinalize,
-  onDiscard,
-  isApplying,
-  isFinalizing,
-}: SessionFooterProps): React.JSX.Element {
+export function SessionFooter({ onApply, onFinish, isApplying, isFinishing }: SessionFooterProps): React.JSX.Element {
   return (
     <View className="flex-row gap-2 px-4 py-2 border-t border-neutral-800 bg-background">
       <Pressable
-        testID="organizer-discard-btn"
-        className="bg-surface rounded-lg px-4 py-3 items-center justify-center border border-red-900 active:opacity-70"
-        onPress={onDiscard}
-      >
-        <Text className="text-error text-sm font-medium">Discard</Text>
-      </Pressable>
-      <Pressable
         testID="organizer-finalize-btn"
         className="bg-surface rounded-lg px-4 py-3 items-center justify-center border border-neutral-700 active:opacity-70"
-        onPress={onFinalize}
-        disabled={isFinalizing}
+        onPress={onFinish}
+        disabled={isFinishing}
       >
-        {isFinalizing ? (
+        {isFinishing ? (
           <ActivityIndicator color="#E0E0E0" size="small" />
         ) : (
-          <Text className="text-text-primary text-sm font-medium">Finalize</Text>
+          <Text className="text-text-primary text-sm font-medium">Finish</Text>
         )}
       </Pressable>
       <Pressable

@@ -4,6 +4,7 @@ import {
   dismissUndo,
   inverseMutation,
   offerUndo,
+  undoForBuckets,
   undoMessage,
 } from './undoState';
 import type { UndoOffer } from './undoState';
@@ -52,5 +53,18 @@ describe('undoMessage / inverseMutation', () => {
     const action = { ...ADDED, id: 2 };
     expect(undoMessage(action)).toBe('Added to Peak');
     expect(inverseMutation(action.kind)).toBe('unassign');
+  });
+});
+
+describe('undoForBuckets', () => {
+  const pending = offerUndo(INITIAL_UNDO_STATE, REMOVED).pending;
+
+  it('keeps an offer for a bucket in the loaded session', () => {
+    expect(undoForBuckets(pending, [{ id: 'b1' }])).toBe(pending);
+  });
+
+  it('hides an offer left over from another session', () => {
+    expect(undoForBuckets(pending, [{ id: 'other' }])).toBeNull();
+    expect(undoForBuckets(null, [{ id: 'b1' }])).toBeNull();
   });
 });

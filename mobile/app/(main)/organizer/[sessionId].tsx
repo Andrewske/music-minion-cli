@@ -5,9 +5,13 @@
  * a bucket is chosen. Bucket tracks swipe left to remove. Every add or remove
  * shows an Undo snackbar that runs the opposite regular mutation (assign or
  * unassign), so linked playlists stay in sync.
+ *
+ * The header's Sessions button opens the session switcher (new / switch /
+ * rename / delete). A switch loads the other session in place and updates the
+ * route param and organizer store, so the screen never remounts.
  */
 import { useState, useCallback, useMemo, useRef } from 'react';
-import { View, Text, Pressable, TextInput, Alert, ActivityIndicator, FlatList } from 'react-native';
+import { View, Text, Pressable, TextInput, ActivityIndicator, FlatList } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
@@ -21,31 +25,46 @@ import { BucketPickerSheet } from '../../../components/organizer/BucketPickerShe
 import { SessionHeader } from '../../../components/organizer/SessionHeader';
 import { ScreenHeader } from '../../../components/ScreenHeader';
 import { SessionFooter } from '../../../components/organizer/SessionFooter';
+import { SessionSwitcherSheet } from '../../../components/organizer/SessionSwitcherSheet';
+import { useSessionSwitcher } from '../../../hooks/useSessionSwitcher';
 import { UndoSnackbar } from '../../../components/organizer/UndoSnackbar';
 import { useOrganizerUndo } from '../../../hooks/useOrganizerUndo';
-import { useOrganizerStore } from '../../../stores/organizerStore';
 import {
   buildTrackLabels,
   sessionCounts,
   sessionTrackIds,
   trackLabel,
 } from '../../../features/organizer/organizerState';
+import { undoForBuckets } from '../../../features/organizer/undoState';
 
 const PICKER_HREF = '/organizer';
+
+/** Close the sessions sheet before the action, so its toast lands on the screen. */
+function closeThen(setOpen: (open: boolean) => void, action: () => Promise<void>): void {
+  setOpen(false);
+  void action();
+}
 
 /** Leave the session for the picker without stacking screens. */
 function backToPicker(): void {
   router.dismissTo(PICKER_HREF);
 }
 
-function usePlaylistName(playlistId: number, paramName: string | undefined): string {
+interface PlaylistInfo {
+  name: string;
+  /** Discovery playlists: finishing a session likes/dismisses tracks on SoundCloud. */
+  isDiscovery: boolean;
+}
+
+/** Name + discovery flag. The picker already cached the list, so this rarely fetches. */
+function usePlaylistInfo(playlistId: number, paramName: string | undefined): PlaylistInfo {
   const { data: playlists } = useQuery({
     queryKey: ['playlists', 'local'],
     queryFn: () => getPlaylistsByLibrary('local'),
-    enabled: !paramName && !!playlistId,
+    enabled: !!playlistId,
   });
-  if (paramName) return paramName;
-  return playlists?.find((p: Playlist) => p.id === playlistId)?.name ?? 'Playlist';
+  const playlist = playlists?.find((p: Playlist) => p.id === playlistId);
+  return { name: paramName ?? playlist?.name ?? 'Playlist', isDiscovery: Boolean(playlist?.discovery_source) };
 }
 
 export default function SessionScreen(): React.JSX.Element {
@@ -54,7 +73,7 @@ export default function SessionScreen(): React.JSX.Element {
   const paramPlaylistId = params.playlistId ? Number(params.playlistId) : 0;
   const [newBucketName, setNewBucketName] = useState('');
   const [pickingTrackId, setPickingTrackId] = useState<number | null>(null);
-  const clearActiveSession = useOrganizerStore((s) => s.clearActiveSession);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
 
   // playlistId normally arrives as a param; fall back to fetching the session.
   const { data: sessionData, isLoading: sessionLoading } = useQuery({
@@ -63,9 +82,16 @@ export default function SessionScreen(): React.JSX.Element {
     enabled: !!sessionId && !paramPlaylistId,
   });
   const playlistId = paramPlaylistId || (sessionData?.playlist_id ?? 0);
-  const playlistName = usePlaylistName(playlistId, params.playlistName);
+  const { name: playlistName, isDiscovery } = usePlaylistInfo(playlistId, params.playlistName);
   const organizer = usePlaylistOrganizer({ playlistId, enabled: !!playlistId });
   const undo = useOrganizerUndo(organizer);
+  const sessions = useSessionSwitcher({
+    playlistId,
+    playlistName,
+    loaded: organizer.session,
+    routeSessionId: sessionId,
+    isDiscovery,
+  });
 
   // Resolve names for every track in the session (unassigned + bucket tracks).
   // The id union doesn't change on assign/unassign, so this rarely refetches.
@@ -105,36 +131,6 @@ export default function SessionScreen(): React.JSX.Element {
       Toast.show({ type: 'error', text1: 'Failed to apply' });
     }
   }, [organizer]);
-
-  const handleDiscard = useCallback((): void => {
-    Alert.alert('Discard Session', 'Discard all bucket assignments? This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Discard',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await organizer.discardSession();
-            clearActiveSession();
-            backToPicker();
-          } catch {
-            Toast.show({ type: 'error', text1: 'Failed to discard' });
-          }
-        },
-      },
-    ]);
-  }, [organizer, clearActiveSession]);
-
-  const handleFinalize = useCallback(async (): Promise<void> => {
-    try {
-      await organizer.finalizeSession();
-      clearActiveSession();
-      Toast.show({ type: 'success', text1: 'Session finalized' });
-      backToPicker();
-    } catch {
-      Toast.show({ type: 'error', text1: 'Failed to finalize' });
-    }
-  }, [organizer, clearActiveSession]);
 
   const handleTrackPress = useCallback(
     (trackId: number): void => {
@@ -251,7 +247,14 @@ export default function SessionScreen(): React.JSX.Element {
 
   return (
     <View className="flex-1 bg-background">
-      <SessionHeader playlistName={playlistName} counts={counts} onBack={backToPicker} />
+      <SessionHeader
+        playlistName={playlistName}
+        session={organizer.session}
+        counts={counts}
+        onBack={backToPicker}
+        onOpenSessions={organizer.session ? () => setSessionsOpen(true) : undefined}
+        sessionsDisabled={sessions.isChanging}
+      />
       <View className="flex-1">
         <FlatList
           data={organizer.unassignedTrackIds}
@@ -270,14 +273,13 @@ export default function SessionScreen(): React.JSX.Element {
             </Pressable>
           )}
         />
-        <UndoSnackbar action={undo.pending} onUndo={undo.undo} />
+        <UndoSnackbar action={undoForBuckets(undo.pending, organizer.buckets)} onUndo={undo.undo} />
       </View>
       <SessionFooter
         onApply={handleApply}
-        onFinalize={handleFinalize}
-        onDiscard={handleDiscard}
+        onFinish={sessions.confirmFinish}
         isApplying={organizer.isApplying}
-        isFinalizing={organizer.isFinalizing}
+        isFinishing={sessions.isChanging}
       />
       <BucketPickerSheet
         visible={pickingTrackId !== null}
@@ -286,6 +288,19 @@ export default function SessionScreen(): React.JSX.Element {
         onPick={handlePickBucket}
         onClose={() => setPickingTrackId(null)}
       />
+      {organizer.session ? (
+        <SessionSwitcherSheet
+          visible={sessionsOpen}
+          playlistId={playlistId}
+          session={organizer.session}
+          isBusy={sessions.isChanging}
+          onClose={() => setSessionsOpen(false)}
+          onNew={() => closeThen(setSessionsOpen, sessions.newSession)}
+          onSwitch={(id) => closeThen(setSessionsOpen, () => sessions.switchSession(id))}
+          onRename={sessions.renameSession}
+          onDelete={(id) => closeThen(setSessionsOpen, () => sessions.deleteSession(id))}
+        />
+      ) : null}
     </View>
   );
 }
