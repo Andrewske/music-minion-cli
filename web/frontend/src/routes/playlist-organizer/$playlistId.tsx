@@ -1,5 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { useEffect } from 'react';
 import { usePlaylists } from '../../hooks/usePlaylists';
+import { setLastOrganizerPlaylistId } from '../../lib/lastOrganizerPlaylist';
 import { PlaylistOrganizer } from '../../pages/PlaylistOrganizer';
 import { useLibraryStore } from '../../stores/libraryStore';
 
@@ -12,6 +14,15 @@ function PlaylistOrganizerRoute(): JSX.Element {
   const navigate = useNavigate();
   const { activeLibrary } = useLibraryStore();
   const { data: playlistsData, isLoading } = usePlaylists(activeLibrary);
+  const numericId = parseInt(playlistId, 10);
+  const playlist = playlistsData?.find((p) => p.id === numericId);
+
+  // Only remember playlists that actually resolved, so a stale or bad URL
+  // never becomes the index route's redirect target.
+  const resolvedId = playlist?.id;
+  useEffect(() => {
+    if (resolvedId !== undefined) setLastOrganizerPlaylistId(resolvedId);
+  }, [resolvedId]);
 
   if (isLoading) {
     return (
@@ -20,8 +31,6 @@ function PlaylistOrganizerRoute(): JSX.Element {
       </div>
     );
   }
-
-  const numericId = parseInt(playlistId, 10);
 
   if (isNaN(numericId)) {
     return (
@@ -38,8 +47,6 @@ function PlaylistOrganizerRoute(): JSX.Element {
       </div>
     );
   }
-
-  const playlist = playlistsData?.find((p) => p.id === numericId);
 
   if (!playlist) {
     return (
