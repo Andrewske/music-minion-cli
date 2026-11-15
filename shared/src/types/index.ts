@@ -40,6 +40,10 @@ export interface Playlist {
   pin_order: number | null;
   soundcloud_playlist_id?: string | null;
   discovery_source?: string | null;
+  // DJ-set metadata
+  soundcloud_url?: string | null;
+  recording_track_id?: number | null;
+  emoji_id?: string | null;
 }
 
 export interface ComparisonPair {

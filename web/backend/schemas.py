@@ -231,6 +231,14 @@ class CreatePlaylistRequest(BaseModel):
     library: Optional[str] = None  # defaults to the active library
 
 
+class UpdatePlaylistRequest(BaseModel):
+    """Partial update; only fields sent are written, null clears."""
+
+    soundcloud_url: str | None = None
+    recording_track_id: int | None = None
+    emoji_id: str | None = None
+
+
 # Player schemas
 
 class PlayContext(BaseModel):

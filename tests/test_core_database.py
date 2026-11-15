@@ -77,3 +77,21 @@ def test_explicit_db_path_is_allowed_without_owner_flag(
 
     assert get_database_path() == snapshot
     assert snapshot.exists()
+
+
+def test_v77_playlists_have_set_metadata_columns() -> None:
+    with get_db_connection() as conn:
+        columns = {
+            row["name"]: row for row in conn.execute("PRAGMA table_info(playlists)")
+        }
+        fks = [
+            dict(row)
+            for row in conn.execute("PRAGMA foreign_key_list(playlists)")
+            if row["from"] == "recording_track_id"
+        ]
+
+    assert columns["soundcloud_url"]["type"] == "TEXT"
+    assert columns["recording_track_id"]["type"] == "INTEGER"
+    assert columns["emoji_id"]["type"] == "TEXT"
+    assert fks[0]["table"] == "tracks"
+    assert fks[0]["on_delete"] == "SET NULL"

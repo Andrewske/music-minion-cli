@@ -48,11 +48,6 @@ def test_tick_refreshes_stale_playlists() -> None:
 
 
 def test_tracks_endpoint_refreshes_stale_playlist() -> None:
-    # The endpoint reads tracks.released_at, which the live DB has but no
-    # migration creates (pre-existing drift), so add it for this test.
-    with get_db_connection() as conn:
-        conn.execute("ALTER TABLE tracks ADD COLUMN released_at TIMESTAMP")
-        conn.commit()
     playlist_id, track_id = _setup()
     _retag(track_id)
 

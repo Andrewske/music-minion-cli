@@ -174,6 +174,36 @@ def rename_playlist(playlist_id: int, new_name: str) -> bool:
             raise
 
 
+SET_METADATA_FIELDS = ("soundcloud_url", "recording_track_id", "emoji_id")
+
+
+def update_playlist_set_metadata(
+    playlist_id: int, fields: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Set DJ-set metadata (soundcloud_url, recording_track_id, emoji_id).
+
+    Only keys present in ``fields`` are written; None clears a column.
+    Returns the updated playlist row, or None if the playlist doesn't exist.
+
+    Raises:
+        ValueError: On an unknown field name.
+        sqlite3.IntegrityError: If recording_track_id names no track.
+    """
+    unknown = set(fields) - set(SET_METADATA_FIELDS)
+    if unknown:
+        raise ValueError(f"Unknown playlist set metadata fields: {sorted(unknown)}")
+    with get_db_connection() as conn:
+        if fields:
+            assignments = ", ".join(f"{name} = ?" for name in fields)
+            conn.execute(
+                f"UPDATE playlists SET {assignments}, updated_at = CURRENT_TIMESTAMP"
+                " WHERE id = ?",
+                (*fields.values(), playlist_id),
+            )
+            conn.commit()
+        return get_playlist_by_id(playlist_id, conn=conn)
+
+
 def reorder_playlist_by_elo(playlist_id: int) -> bool:
     """
     Reorder tracks in a playlist by their playlist-specific ELO ratings.
@@ -267,7 +297,10 @@ def get_all_playlists(
                 library,
                 pin_order,
                 soundcloud_playlist_id,
-                discovery_source
+                discovery_source,
+                soundcloud_url,
+                recording_track_id,
+                emoji_id
             FROM playlists
             WHERE library = ?
             ORDER BY (pin_order IS NULL), pin_order, name

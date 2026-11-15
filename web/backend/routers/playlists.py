@@ -1,3 +1,5 @@
+import sqlite3
+
 from fastapi import APIRouter, HTTPException
 from typing import List, Optional, Tuple
 from pydantic import BaseModel
@@ -7,6 +9,7 @@ from ..queries.emojis import batch_fetch_track_emojis
 from ..schemas import (
     CreatePlaylistRequest,
     Filter,
+    UpdatePlaylistRequest,
     FilterResponse,
     SmartFiltersResponse,
     PlaylistStatsResponse,
@@ -306,7 +309,8 @@ async def create_playlist(request: CreatePlaylistRequest):
                 library=request.library,
             )
             cursor = conn.execute(
-                "SELECT id, name, type, description, track_count, library FROM playlists WHERE id = ?",
+                "SELECT id, name, type, description, track_count, library,"
+                " soundcloud_url, recording_track_id, emoji_id FROM playlists WHERE id = ?",
                 (playlist_id,),
             )
             row = cursor.fetchone()
@@ -324,6 +328,25 @@ async def create_playlist(request: CreatePlaylistRequest):
         raise HTTPException(
             status_code=500, detail=f"Failed to create playlist: {str(e)}"
         )
+
+
+@router.patch("/playlists/{playlist_id}")
+def update_playlist(playlist_id: int, request: UpdatePlaylistRequest) -> dict:
+    """Set a playlist's DJ-set metadata. Only fields present in the body change."""
+    from music_minion.domain.playlists.crud import update_playlist_set_metadata
+
+    fields = request.model_dump(exclude_unset=True)
+    try:
+        playlist = update_playlist_set_metadata(playlist_id, fields)
+    except sqlite3.IntegrityError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"recording_track_id {fields.get('recording_track_id')} "
+            f"is not a track: {e}",
+        )
+    if playlist is None:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    return playlist
 
 
 @router.get("/playlists/{playlist_id}/stats", response_model=PlaylistStatsResponse)

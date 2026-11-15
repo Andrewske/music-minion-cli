@@ -446,6 +446,17 @@ export function PlaylistOrganizer({
     [queryClient, playlistId],
   );
 
+  // Same cache patch for emojis; EmojiTrackActions handles the API call + rollback
+  const handleEmojisChange = useCallback(
+    (trackId: number, emojis: string[]): void => {
+      queryClient.setQueryData<PlaylistTracksResponse>(
+        ['playlist', playlistId, 'tracks', 'all'],
+        (prev) => prev && { ...prev, tracks: prev.tracks.map((t) => (t.id === trackId ? { ...t, emojis } : t)) },
+      );
+    },
+    [queryClient, playlistId],
+  );
+
   // Handle playing a track from the table
   const handlePlayTrack = useCallback(
     (trackId: number): void => {
@@ -723,6 +734,8 @@ export function PlaylistOrganizer({
                 keySignature={entry?.key_signature}
                 genre={entry?.genre}
                 onGenreChange={handleGenreChange}
+                emojis={entry?.emojis}
+                onEmojisChange={handleEmojisChange}
                 playlistId={playlistId}
               />
             );
