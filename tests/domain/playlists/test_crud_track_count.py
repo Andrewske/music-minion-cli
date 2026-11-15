@@ -40,7 +40,10 @@ def test_db():
                 library TEXT NOT NULL DEFAULT 'local',
                 pin_order INTEGER,
                 soundcloud_playlist_id TEXT,
-                discovery_source TEXT
+                discovery_source TEXT,
+                soundcloud_url TEXT,
+                recording_track_id INTEGER,
+                emoji_id TEXT
             )
             """
         )

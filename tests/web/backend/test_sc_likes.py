@@ -302,8 +302,6 @@ class TestApis:
         assert row["sc_liked"] is True
 
     def test_playlist_tracks_sc_liked_means_sc_likes_not_keep(self) -> None:
-        # Live DBs have tracks.released_at; the migrations never add it.
-        _exec("ALTER TABLE tracks ADD COLUMN released_at TIMESTAMP")
         liked, kept = _track("pl-liked"), _track("pl-kept")
         playlist = _exec("INSERT INTO playlists (name, type) VALUES ('p', 'manual')")
         for position, track_id in enumerate((liked, kept)):
@@ -319,7 +317,6 @@ class TestApis:
 
     def test_playlist_track_date_prefers_like_then_created_over_mtime(self) -> None:
         playlists_router._playlist_tracks_cache.clear()  # ids repeat per test DB
-        _exec("ALTER TABLE tracks ADD COLUMN released_at TIMESTAMP")
         liked, local = _track("dt-liked"), _track("dt-local", source="local")
         _exec(
             "UPDATE tracks SET created_at = '2026-05-07 16:00:02',"

@@ -19,7 +19,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 76  # smart playlist staleness triggers + diff refresh
+SCHEMA_VERSION = 77  # playlist set metadata (soundcloud_url, recording, emoji)
 
 
 # Initial top 50 curated emojis for music reactions
@@ -827,6 +827,30 @@ def _migrate_v76_smart_playlist_staleness(conn) -> None:
     """)
     for name, body in _smart_staleness_triggers().items():
         conn.execute(f"CREATE TRIGGER IF NOT EXISTS {name} {body}")
+
+
+_V77_PLAYLIST_SET_COLUMNS = (
+    "soundcloud_url TEXT",
+    "recording_track_id INTEGER REFERENCES tracks(id) ON DELETE SET NULL",
+    "emoji_id TEXT",
+)
+
+
+def _migrate_v77_playlist_set_metadata(conn) -> None:
+    """DJ-set metadata on playlists: posted mix URL, recording track, emoji badge.
+
+    All nullable; a NULL-default FK column is allowed by ADD COLUMN.
+
+    Also adds tracks.released_at: it was hand-added to the live DB (5352ef6)
+    and the playlist tracks query reads it, but no migration ever created it,
+    so fresh DBs failed that query. No-op where it already exists.
+    """
+    # Partial test schemas may lack these tables; every real DB has both.
+    if _table_exists(conn, "playlists"):
+        for column_ddl in _V77_PLAYLIST_SET_COLUMNS:
+            _add_column_if_missing(conn, "playlists", column_ddl)
+    if _table_exists(conn, "tracks"):
+        _add_column_if_missing(conn, "tracks", "released_at TIMESTAMP")
 
 
 def _migrate_v64_track_predictions(conn) -> None:
@@ -3838,6 +3862,14 @@ def migrate_database(conn, current_version: int) -> None:
         conn.execute("RELEASE SAVEPOINT migrate_v76")
         conn.commit()
         logger.info("  ✓ Migration to v76 complete: library_state + staleness triggers")
+
+    if current_version < 77:
+        logger.info("Running migration to v77: playlist set metadata...")
+        conn.execute("SAVEPOINT migrate_v77")
+        _migrate_v77_playlist_set_metadata(conn)
+        conn.execute("RELEASE SAVEPOINT migrate_v77")
+        conn.commit()
+        logger.info("  ✓ Migration to v77 complete: playlists set metadata columns")
 
 
 def ensure_schema_not_newer(conn: sqlite3.Connection, db_path: Path) -> None:
