@@ -4151,8 +4151,8 @@ def upsert_sc_likes(
     synced_at. liked_now stamps liked_at for likes MM just made itself (the SC
     likes list doesn't say when a like happened). seen_now stamps likes a
     sync is seeing for the first time, which happened since the last sync;
-    it stamps nothing while sc_likes is empty, as a first sync's likes can be
-    years old.
+    it stamps nothing until a complete likes list has been loaded (see
+    _sc_likes_baseline_loaded), as likes seen before then can be years old.
 
     synced_at doubles as "last written": the likes reconcile never deletes a
     row whose synced_at is at or after its fetch started, so every sc_likes
@@ -4166,7 +4166,7 @@ def upsert_sc_likes(
     if not ids:
         return 0
     with get_db_connection() as conn:
-        stamp = liked_now or (seen_now and _sc_likes_populated(conn))
+        stamp = liked_now or (seen_now and _sc_likes_baseline_loaded(conn))
         before = conn.total_changes
         conn.executemany(
             """INSERT INTO sc_likes (soundcloud_id, liked_at, source)
@@ -4183,9 +4183,13 @@ def upsert_sc_likes(
     return inserted
 
 
-def _sc_likes_populated(conn: sqlite3.Connection) -> bool:
-    """True once any like is recorded, so a newly seen like is a new like."""
-    return conn.execute("SELECT 1 FROM sc_likes LIMIT 1").fetchone() is not None
+def _sc_likes_baseline_loaded(conn: sqlite3.Connection) -> bool:
+    """True once a complete likes fetch has been applied, so a newly seen like
+    is a new like. like_order is written only after such a fetch."""
+    row = conn.execute(
+        "SELECT 1 FROM sc_likes WHERE like_order IS NOT NULL LIMIT 1"
+    ).fetchone()
+    return row is not None
 
 
 def delete_sc_like(soundcloud_id: str) -> None:
@@ -4232,7 +4236,7 @@ def apply_sc_likes_reconcile(
     """Add/remove SC likes and their legacy ratings markers in one transaction.
 
     Added likes are new since the last sync, so they get liked_at = now
-    (unless sc_likes was empty, as in upsert_sc_likes). Removal re-checks synced_at under the write lock: a like written at or
+    once a complete list has been loaded (as in upsert_sc_likes). Removal re-checks synced_at under the write lock: a like written at or
     after `fetch_started_at` (an in-app like that landed mid-reconcile)
     survives even if the planner listed it. Returns (added, removed).
     """
@@ -4250,7 +4254,7 @@ def apply_sc_likes_reconcile(
                 )
             }
             removable = sorted(remove_ids & stale)
-            stamp = int(_sc_likes_populated(conn))
+            stamp = int(_sc_likes_baseline_loaded(conn))
             before = conn.total_changes
             conn.executemany(
                 """INSERT INTO sc_likes (soundcloud_id, liked_at, source)

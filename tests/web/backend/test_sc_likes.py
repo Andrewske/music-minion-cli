@@ -13,6 +13,7 @@ from music_minion.core.database import (
     has_soundcloud_like,
     mark_soundcloud_liked,
     upsert_sc_likes,
+    write_sc_like_order,
 )
 from music_minion.domain.library.provider import ProviderConfig, ProviderState
 from web.backend.feed_rating import process_one_pending_action
@@ -171,18 +172,21 @@ class TestWriters:
             assert liked_soundcloud_ids(conn, ["a", "b", None]) == {"a"}
             assert liked_soundcloud_ids(conn, []) == set()
 
-    def test_seen_now_stamps_only_once_sc_likes_has_rows(self) -> None:
-        upsert_sc_likes(["old1", "old2"], "sync", seen_now=True)  # first sync
-        upsert_sc_likes(["old2", "new"], "sync", seen_now=True)
+    def test_seen_now_waits_for_a_complete_likes_list(self) -> None:
+        upsert_sc_likes(["backfill"], "sync", seen_now=True)  # partial table
+        upsert_sc_likes(["early"], "sync", seen_now=True)
+        write_sc_like_order(["early", "backfill"])  # complete fetch applied
+        upsert_sc_likes(["early", "new"], "sync", seen_now=True)
         likes = _likes()
-        assert likes["old1"]["liked_at"] is None
-        assert likes["old2"]["liked_at"] is None  # a repeat keeps NULL
+        assert likes["backfill"]["liked_at"] is None
+        assert likes["early"]["liked_at"] is None  # a repeat keeps NULL
         assert likes["new"]["liked_at"] is not None
 
     def test_incremental_provider_sync_stamps_new_likes(self) -> None:
         from music_minion.domain.library.providers.soundcloud import api
 
         upsert_sc_likes(["known"], "sync")
+        write_sc_like_order(["known"])
         api._record_sc_likes({"full"})
         api._record_sc_likes({"inc"}, seen_now=True)
         assert _likes()["full"]["liked_at"] is None

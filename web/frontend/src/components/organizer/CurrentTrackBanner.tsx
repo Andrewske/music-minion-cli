@@ -8,12 +8,11 @@ import { NotesToggle, TrackNotesPanel } from './TrackNotes';
 import { GenrePicker } from './GenrePicker';
 import { PlaylistPicker } from './PlaylistPicker';
 import { formatKey } from './keyNotation';
+import { parseTrackDate } from './trackDate';
 
 function formatTrackDate(dateStr: string | undefined): string | null {
-  if (!dateStr) return null;
-  const normalized = dateStr.replace(/\//g, '-').replace(' +0000', 'Z').replace(' ', 'T');
-  const date = new Date(normalized);
-  if (isNaN(date.getTime())) return null;
+  const date = parseTrackDate(dateStr);
+  if (!date) return null;
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
