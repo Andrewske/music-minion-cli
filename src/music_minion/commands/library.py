@@ -38,13 +38,6 @@ def _save_provider_state_to_db(provider_name: str, state: ProviderState) -> None
     database.save_provider_state(provider_name, auth_data, config_data)
 
 
-def _refresh_all_smart_playlists() -> None:
-    """Refresh materialized tracks for all smart playlists."""
-    from music_minion.domain.playlists.filters import refresh_all_smart_playlists
-
-    refresh_all_smart_playlists()
-
-
 def get_sync_state() -> Optional[dict[str, Any]]:
     """Get current sync state (thread-safe)."""
     with _sync_state_lock:
@@ -683,10 +676,6 @@ def sync_library(
         )
         log(f"  Skipped:  {stats['skipped']} (already synced)", level="info")
         log("", level="info")
-
-        # Refresh smart playlists if new tracks were added
-        if stats["created"] > 0:
-            _refresh_all_smart_playlists()
 
         # Notify completion
         if progress_callback:

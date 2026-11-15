@@ -44,6 +44,25 @@ def _set_cached_tracks(cache_key: tuple, result: Tuple[List[dict], int]) -> None
     _playlist_tracks_cache[cache_key] = (time(), result)
 
 
+def _refresh_stale_smart_playlists(playlist_id: int | None = None) -> None:
+    """Refresh stale smart playlists (one, or all) so reads see recent edits.
+
+    Drops the tracks cache when membership changed, so the 5s TTL can't serve
+    the pre-refresh list.
+    """
+    from music_minion.domain.playlists import smart_refresh
+
+    if playlist_id is None:
+        results = smart_refresh.refresh_stale_smart_playlists(
+            busy_ms=smart_refresh.READ_BUSY_MS
+        )
+        changed = any(r.changed for r in results)
+    else:
+        changed = smart_refresh.refresh_playlist_if_stale(playlist_id)
+    if changed:
+        _playlist_tracks_cache.clear()
+
+
 def get_playlist_tracks_with_ratings(
     playlist_id: int,
     sort_field: str = "artist",
@@ -57,7 +76,7 @@ def get_playlist_tracks_with_ratings(
     """Get tracks in a playlist with their ratings, wins, losses, and emojis.
 
     Works for both manual and smart playlists via the unified playlist_tracks table.
-    Smart playlists are materialized into playlist_tracks via refresh_smart_playlist_tracks().
+    Smart playlists are materialized into playlist_tracks by domain/playlists/smart_refresh.py.
 
     Args:
         playlist_id: ID of the playlist
@@ -248,12 +267,14 @@ def get_playlist_name(playlist_id: int) -> Optional[str]:
         return row["name"] if row else None
 
 
+# Plain def (threadpool): the smart refresh may wait on the SQLite write lock.
 @router.get("/playlists")
-async def get_playlists(library: Optional[str] = None):
+def get_playlists(library: Optional[str] = None):
     """Get all playlists, optionally filtered by library."""
     try:
         from music_minion.domain.playlists.crud import get_all_playlists
 
+        _refresh_stale_smart_playlists()
         playlists = get_all_playlists(library=library)
         return {"playlists": playlists}
     except Exception as e:
@@ -346,8 +367,9 @@ async def get_playlist_stats(playlist_id: int):
         )
 
 
+# Plain def (threadpool): the smart refresh may wait on the SQLite write lock.
 @router.get("/playlists/{playlist_id}/tracks")
-async def get_playlist_tracks(
+def get_playlist_tracks(
     playlist_id: int,
     limit: int = 100,
     offset: int = 0,
@@ -371,6 +393,8 @@ async def get_playlist_tracks(
         playlist_name = get_playlist_name(playlist_id)
         if not playlist_name:
             raise HTTPException(status_code=404, detail="Playlist not found")
+
+        _refresh_stale_smart_playlists(playlist_id)
 
         # Get paginated tracks with ratings (pagination pushed to DB for manual playlists)
         tracks_data, total = get_playlist_tracks_with_ratings(

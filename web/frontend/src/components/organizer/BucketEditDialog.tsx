@@ -47,9 +47,9 @@ export function BucketEditDialog({
     enabled: mode === 'edit' && !!parentLibrary && !!parentPlaylistId,
   });
 
-  // Filter: same library, exclude parent
+  // Filter: same library, exclude parent and smart playlists (filters own those)
   const availablePlaylists = playlists?.filter(
-    (p) => p.id !== parentPlaylistId
+    (p) => p.id !== parentPlaylistId && p.type !== 'smart'
   ) ?? [];
 
   // Reset form when dialog opens (adjusted during render, not in an effect)

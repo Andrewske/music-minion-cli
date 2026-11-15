@@ -58,10 +58,6 @@ def handle_sync_command(ctx: AppContext, args: list[str] = None) -> tuple[AppCon
             added, updated = database.batch_upsert_tracks(tracks)
             if added > 0:
                 log(f"Found {added} new tracks", level="info")
-                from music_minion.domain.playlists.filters import (
-                    refresh_all_smart_playlists,
-                )
-                refresh_all_smart_playlists()
 
         # Phase 2: Analyze sync status
         log("Analyzing sync status...", level="info")
@@ -143,11 +139,6 @@ def handle_sync_pull_command(ctx: AppContext, args: list[str]) -> tuple[AppConte
             if tracks and not dry_run:
                 added, updated = database.batch_upsert_tracks(tracks)
                 log(f"Found {added} new tracks, updated {updated} existing", level="info")
-                if added > 0:
-                    from music_minion.domain.playlists.filters import (
-                        refresh_all_smart_playlists,
-                    )
-                    refresh_all_smart_playlists()
             elif tracks:
                 log(f"Would add {len(tracks)} tracks", level="info")
 
@@ -319,11 +310,6 @@ def _sync_local_full(ctx: AppContext) -> tuple[AppContext, bool]:
             f"✓ Added {added} new tracks, updated {updated} existing tracks",
             level="info",
         )
-        if added > 0:
-            from music_minion.domain.playlists.filters import (
-                refresh_all_smart_playlists,
-            )
-            refresh_all_smart_playlists()
     else:
         log("✓ No new files found", level="info")
 

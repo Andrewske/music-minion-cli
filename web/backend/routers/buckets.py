@@ -526,7 +526,12 @@ async def link_bucket_endpoint(bucket_id: str, body: LinkBucketBody):
         if body.playlist_id is None:
             success = bucket_queries.unlink_bucket(bucket_id)
         else:
-            success = bucket_queries.link_bucket_to_playlist(bucket_id, body.playlist_id)
+            try:
+                success = bucket_queries.link_bucket_to_playlist(
+                    bucket_id, body.playlist_id
+                )
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
         if not success:
             raise HTTPException(status_code=404, detail="Bucket not found")
         linked = body.playlist_id is not None
