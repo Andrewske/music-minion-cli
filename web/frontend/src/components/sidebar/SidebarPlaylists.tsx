@@ -23,6 +23,7 @@ import { usePlaylists } from '../../hooks/usePlaylists';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useComparisonStore } from '../../stores/comparisonStore';
 import { SidebarSection } from './SidebarSection';
+import { EmojiDisplay } from '../EmojiDisplay';
 import type { Playlist } from '../../types';
 import { useLibraryStore } from '../../stores/libraryStore';
 
@@ -156,7 +157,11 @@ export function SidebarPlaylists({ sidebarExpanded }: SidebarPlaylistsProps): JS
             : 'text-white/60 hover:text-white hover:bg-white/5'
           }`}
       >
-        <ListMusic className="w-4 h-4 shrink-0" />
+        {playlist.emoji_id ? (
+          <EmojiDisplay emojiId={playlist.emoji_id} size="sm" className="shrink-0" />
+        ) : (
+          <ListMusic className="w-4 h-4 shrink-0" />
+        )}
         {isPinned && <Pin className="w-3 h-3 shrink-0 text-obsidian-accent" />}
         <span className="truncate text-sm">{playlist.name}</span>
         <span className="ml-auto text-xs text-white/40 flex items-center gap-1">
