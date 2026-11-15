@@ -4140,13 +4140,19 @@ SC_LIKE_SOURCES: tuple[str, ...] = ("sync", "mm_keep", "cli", "backfill")
 
 
 def upsert_sc_likes(
-    soundcloud_ids: Iterable[str], source: str, liked_now: bool = False
+    soundcloud_ids: Iterable[str],
+    source: str,
+    liked_now: bool = False,
+    seen_now: bool = False,
 ) -> int:
     """Record SoundCloud likes by soundcloud_id; returns how many were new.
 
     The first writer's liked_at and source stick; a repeat only refreshes
     synced_at. liked_now stamps liked_at for likes MM just made itself (the SC
-    likes list doesn't say when a like happened).
+    likes list doesn't say when a like happened). seen_now stamps likes a
+    sync is seeing for the first time, which happened since the last sync;
+    it stamps nothing until a complete likes list has been loaded (see
+    _sc_likes_baseline_loaded), as likes seen before then can be years old.
 
     synced_at doubles as "last written": the likes reconcile never deletes a
     row whose synced_at is at or after its fetch started, so every sc_likes
@@ -4160,12 +4166,13 @@ def upsert_sc_likes(
     if not ids:
         return 0
     with get_db_connection() as conn:
+        stamp = liked_now or (seen_now and _sc_likes_baseline_loaded(conn))
         before = conn.total_changes
         conn.executemany(
             """INSERT INTO sc_likes (soundcloud_id, liked_at, source)
             VALUES (?, CASE WHEN ? THEN CURRENT_TIMESTAMP END, ?)
             ON CONFLICT(soundcloud_id) DO NOTHING""",
-            [(sc_id, int(liked_now), source) for sc_id in ids],
+            [(sc_id, int(stamp), source) for sc_id in ids],
         )
         inserted = conn.total_changes - before
         conn.executemany(
@@ -4174,6 +4181,15 @@ def upsert_sc_likes(
         )
         conn.commit()
     return inserted
+
+
+def _sc_likes_baseline_loaded(conn: sqlite3.Connection) -> bool:
+    """True once a complete likes fetch has been applied, so a newly seen like
+    is a new like. like_order is written only after such a fetch."""
+    row = conn.execute(
+        "SELECT 1 FROM sc_likes WHERE like_order IS NOT NULL LIMIT 1"
+    ).fetchone()
+    return row is not None
 
 
 def delete_sc_like(soundcloud_id: str) -> None:
@@ -4219,7 +4235,8 @@ def apply_sc_likes_reconcile(
 ) -> tuple[int, int]:
     """Add/remove SC likes and their legacy ratings markers in one transaction.
 
-    Removal re-checks synced_at under the write lock: a like written at or
+    Added likes are new since the last sync, so they get liked_at = now
+    once a complete list has been loaded (as in upsert_sc_likes). Removal re-checks synced_at under the write lock: a like written at or
     after `fetch_started_at` (an in-app like that landed mid-reconcile)
     survives even if the planner listed it. Returns (added, removed).
     """
@@ -4237,11 +4254,13 @@ def apply_sc_likes_reconcile(
                 )
             }
             removable = sorted(remove_ids & stale)
+            stamp = int(_sc_likes_baseline_loaded(conn))
             before = conn.total_changes
             conn.executemany(
                 """INSERT INTO sc_likes (soundcloud_id, liked_at, source)
-                VALUES (?, NULL, 'sync') ON CONFLICT(soundcloud_id) DO NOTHING""",
-                [(sc_id,) for sc_id in add_ids],
+                VALUES (?, CASE WHEN ? THEN CURRENT_TIMESTAMP END, 'sync')
+                ON CONFLICT(soundcloud_id) DO NOTHING""",
+                [(sc_id, stamp) for sc_id in add_ids],
             )
             added = conn.total_changes - before
             conn.executemany(

@@ -13,6 +13,7 @@ from music_minion.core.database import (
     has_soundcloud_like,
     mark_soundcloud_liked,
     upsert_sc_likes,
+    write_sc_like_order,
 )
 from music_minion.domain.library.provider import ProviderConfig, ProviderState
 from web.backend.feed_rating import process_one_pending_action
@@ -20,6 +21,7 @@ from web.backend.queries import artists as artist_queries
 from web.backend.queries import feed as feed_queries
 from web.backend.queries import insights as insight_queries
 from web.backend.queries.tracks import batch_fetch_tracks_with_metadata
+from web.backend.routers import playlists as playlists_router
 from web.backend.routers.playlists import get_playlist_tracks_with_ratings
 from web.backend.sc_likes import liked_soundcloud_ids, sc_liked_sql
 
@@ -170,6 +172,26 @@ class TestWriters:
             assert liked_soundcloud_ids(conn, ["a", "b", None]) == {"a"}
             assert liked_soundcloud_ids(conn, []) == set()
 
+    def test_seen_now_waits_for_a_complete_likes_list(self) -> None:
+        upsert_sc_likes(["backfill"], "sync", seen_now=True)  # partial table
+        upsert_sc_likes(["early"], "sync", seen_now=True)
+        write_sc_like_order(["early", "backfill"])  # complete fetch applied
+        upsert_sc_likes(["early", "new"], "sync", seen_now=True)
+        likes = _likes()
+        assert likes["backfill"]["liked_at"] is None
+        assert likes["early"]["liked_at"] is None  # a repeat keeps NULL
+        assert likes["new"]["liked_at"] is not None
+
+    def test_incremental_provider_sync_stamps_new_likes(self) -> None:
+        from music_minion.domain.library.providers.soundcloud import api
+
+        upsert_sc_likes(["known"], "sync")
+        write_sc_like_order(["known"])
+        api._record_sc_likes({"full"})
+        api._record_sc_likes({"inc"}, seen_now=True)
+        assert _likes()["full"]["liked_at"] is None
+        assert _likes()["inc"]["liked_at"] is not None
+
     def test_provider_sync_records_every_fetched_like(self) -> None:
         from music_minion.domain.library.providers.soundcloud import api
 
@@ -294,6 +316,29 @@ class TestApis:
         tracks, _total = get_playlist_tracks_with_ratings(playlist, sort_field="title")
         by_id = {t["id"]: t["sc_liked"] for t in tracks}
         assert by_id == {liked: True, kept: False}
+
+    def test_playlist_track_date_prefers_like_then_created_over_mtime(self) -> None:
+        playlists_router._playlist_tracks_cache.clear()  # ids repeat per test DB
+        _exec("ALTER TABLE tracks ADD COLUMN released_at TIMESTAMP")
+        liked, local = _track("dt-liked"), _track("dt-local", source="local")
+        _exec(
+            "UPDATE tracks SET created_at = '2026-05-07 16:00:02',"
+            " file_mtime = strftime('%s', '2026-10-23 17:00:08') WHERE id IN (?, ?)",
+            (liked, local),
+        )
+        playlist = _exec("INSERT INTO playlists (name, type) VALUES ('d', 'manual')")
+        for position, track_id in enumerate((liked, local)):
+            _exec(
+                "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, ?)",
+                (playlist, track_id, position),
+            )
+        _exec(
+            "INSERT INTO sc_likes (soundcloud_id, liked_at, source)"
+            " VALUES ('dt-liked', '2026-05-01 12:00:00', 'mm_keep')"
+        )
+        tracks, _total = get_playlist_tracks_with_ratings(playlist, sort_field="title")
+        by_id = {t["id"]: t["added_at"] for t in tracks}
+        assert by_id == {liked: "2026-05-01 12:00:00", local: "2026-05-07 16:00:02"}
 
     def test_player_tracks_carry_sc_liked(self) -> None:
         liked, plain, local = _track("q1"), _track("q2"), _track(None, source="local")
