@@ -24,6 +24,7 @@ interface BucketListProps {
   onLinkBucket?: (bucketId: string, playlistId: number | null) => Promise<void>;
   onSyncSoundCloud?: (bucketId: string) => Promise<void>;
   syncingBucketId?: string | null;
+  reorderingBucketId?: string | null;
 }
 
 export function BucketList({
@@ -43,6 +44,7 @@ export function BucketList({
   onLinkBucket,
   onSyncSoundCloud,
   syncingBucketId,
+  reorderingBucketId,
 }: BucketListProps): JSX.Element {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
@@ -98,6 +100,7 @@ export function BucketList({
           onLink={onLinkBucket ? (playlistId) => onLinkBucket(bucket.id, playlistId) : undefined}
           onSyncSoundCloud={onSyncSoundCloud ? () => onSyncSoundCloud(bucket.id) : undefined}
           isSyncingSoundCloud={syncingBucketId === bucket.id}
+          isReordering={reorderingBucketId === bucket.id}
         />
       ))}
 

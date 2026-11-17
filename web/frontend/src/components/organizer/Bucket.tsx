@@ -6,7 +6,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { ChevronDown, ChevronRight, Loader2, MoreHorizontal, Pencil, RefreshCw, Shuffle, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, MoreHorizontal, Pencil, RefreshCw, Shuffle, Trash2, Trophy } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,6 +17,7 @@ import type { PlaylistTrackEntry } from '../../types';
 import type { Bucket } from '../../api/buckets';
 import { EmojiDisplay } from '../EmojiDisplay';
 import { BucketEditDialog } from './BucketEditDialog';
+import { ApplyRatingDialog } from './ApplyRatingDialog';
 import { getBucketColor } from '../../constants/bucketColors';
 import { TrackRow } from './TrackRow';
 
@@ -42,6 +43,7 @@ interface BucketComponentProps {
   onLink?: (playlistId: number | null) => Promise<void>;
   onSyncSoundCloud?: () => Promise<void>;
   isSyncingSoundCloud?: boolean;
+  isReordering?: boolean;
 }
 
 // Sortable track item component
@@ -110,9 +112,12 @@ export function BucketComponent({
   onLink,
   onSyncSoundCloud,
   isSyncingSoundCloud,
+  isReordering = false,
 }: BucketComponentProps): JSX.Element {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isRatingDialogOpen, setIsRatingDialogOpen] = useState(false);
+  const canRate = parentPlaylistId !== undefined && tracks.length >= 2;
 
   // Determine actual expanded state based on mobile/desktop mode
   const actuallyExpanded = isMobile ? isMobileExpanded : isExpanded;
@@ -243,6 +248,13 @@ export function BucketComponent({
             className="p-1.5 text-white/40 hover:text-white/80 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             title="Shuffle tracks"
           ><Shuffle className="w-4 h-4" /></button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setIsRatingDialogOpen(true); }}
+            disabled={!canRate}
+            className="p-1.5 text-white/40 hover:text-amber-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            title="Apply rating from bucket order"
+          ><Trophy className="w-4 h-4" /></button>
           {bucket.linked_playlist_soundcloud_id && (
             <button
               type="button"
@@ -290,6 +302,9 @@ export function BucketComponent({
               </DropdownMenuItem>
               <DropdownMenuItem disabled={tracks.length < 2} onClick={() => onShuffle()}>
                 Shuffle
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={!canRate} onClick={() => setIsRatingDialogOpen(true)}>
+                Apply rating
               </DropdownMenuItem>
               {bucket.linked_playlist_soundcloud_id && (
                 <DropdownMenuItem disabled={isSyncingSoundCloud} onClick={() => onSyncSoundCloud?.()}>
@@ -350,6 +365,18 @@ export function BucketComponent({
         linkedPlaylistId={bucket.linked_playlist_id}
         onLink={onLink}
       />
+
+      {parentPlaylistId !== undefined && (
+        <ApplyRatingDialog
+          open={isRatingDialogOpen}
+          onClose={() => setIsRatingDialogOpen(false)}
+          bucketId={bucket.id}
+          bucketName={bucket.name}
+          playlistId={parentPlaylistId}
+          tracks={tracks}
+          isReordering={isReordering}
+        />
+      )}
     </div>
   );
 }

@@ -5,9 +5,11 @@ export {
   createBucket, updateBucket, deleteBucket, moveBucket, shuffleBucket,
   assignTrack, unassignTrack, reorderTracks,
   linkBucket, pullLinkedTracks, getBucketLink, syncBucketSoundCloud,
+  previewBucketRating, applyBucketRating, undoBucketRating, isNoopRating,
 } from '@music-minion/shared';
 export type {
   BucketSession, BucketSessionStatus, SessionSummary, Bucket, CreateSessionBody, CreateBucketBody,
   UpdateBucketBody, MoveBucketBody, ReorderTracksBody, LinkBucketBody, LinkBucketResult,
   PullLinkedTracksResponse, BucketLinkResponse, SyncSoundCloudResponse,
+  BucketRatingRow, BucketRatingPreview, BucketRatingApplied, BucketRatingUndone, BucketRatingError,
 } from '@music-minion/shared';
