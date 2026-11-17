@@ -242,6 +242,68 @@ export async function shuffleBucket(bucketId: string): Promise<number[]> {
   return data.track_ids;
 }
 
+// Bulk rating ("Apply rating": bucket order -> playlist ELO)
+
+export interface BucketRatingRow {
+  track_id: number;
+  before: number;
+  after: number;
+}
+
+export interface BucketRatingPreview {
+  track_ids: number[];
+  /** 'redistribute' re-deals the bucket's ratings; 'band' spreads an unrated bucket. */
+  method: 'redistribute' | 'band';
+  rows: BucketRatingRow[];
+}
+
+export interface BucketRatingApplied extends BucketRatingPreview {
+  /** null: the order already matched, nothing was written. */
+  application_id: string | null;
+}
+
+/** True when applying would change no rating (unrated tracks preview as 1500). */
+export function isNoopRating(preview: BucketRatingPreview): boolean {
+  return preview.rows.every((r) => Math.abs(r.after - r.before) < 1e-6);
+}
+
+export interface BucketRatingUndone {
+  restored: number;
+  skipped: number;
+}
+
+/** Error carrying the HTTP status, so callers can react to 409 (stale / not newest). */
+export type BucketRatingError = Error & { status: number };
+
+async function ratingRequest<T>(path: string, init: RequestInit, action: string): Promise<T> {
+  const response = await fetch(`${bucketsBase()}${path}`, init);
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw Object.assign(new Error(error.detail || `Failed to ${action}`), { status: response.status });
+  }
+  return response.json();
+}
+
+export function previewBucketRating(bucketId: string): Promise<BucketRatingPreview> {
+  return ratingRequest(`/${bucketId}/rating/preview`, {}, 'preview rating');
+}
+
+export function applyBucketRating(bucketId: string, trackIds: number[]): Promise<BucketRatingApplied> {
+  return ratingRequest(
+    `/${bucketId}/rating/apply`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ track_ids: trackIds }),
+    },
+    'apply rating'
+  );
+}
+
+export function undoBucketRating(applicationId: string): Promise<BucketRatingUndone> {
+  return ratingRequest(`/rating-applications/${applicationId}/undo`, { method: 'POST' }, 'undo rating');
+}
+
 // Track assignment
 
 export async function assignTrack(bucketId: string, trackId: number): Promise<void> {

@@ -19,7 +19,7 @@ from ..domain.library.models import Track
 
 
 # Database schema version for migrations
-SCHEMA_VERSION = 77  # playlist set metadata (soundcloud_url, recording, emoji)
+SCHEMA_VERSION = 78  # bucket_rank_applications (organizer bulk ELO)
 
 
 # Initial top 50 curated emojis for music reactions
@@ -851,6 +851,30 @@ def _migrate_v77_playlist_set_metadata(conn) -> None:
             _add_column_if_missing(conn, "playlists", column_ddl)
     if _table_exists(conn, "tracks"):
         _add_column_if_missing(conn, "tracks", "released_at TIMESTAMP")
+
+
+def _migrate_v78_bucket_rank_applications(conn) -> None:
+    """One row per organizer "Apply rating" click.
+
+    snapshot is JSON [{track_id, before, after, had_row, comparison_count}] in
+    rank order: it drives undo and doubles as the stored ranking.
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS bucket_rank_applications (
+            id TEXT PRIMARY KEY,
+            bucket_id TEXT REFERENCES buckets(id) ON DELETE SET NULL,
+            playlist_id INTEGER NOT NULL
+                REFERENCES playlists(id) ON DELETE CASCADE,
+            method TEXT NOT NULL,
+            snapshot TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            undone_at TIMESTAMP
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_bucket_rank_apps_playlist
+        ON bucket_rank_applications(playlist_id, created_at DESC)
+    """)
 
 
 def _migrate_v64_track_predictions(conn) -> None:
@@ -3870,6 +3894,14 @@ def migrate_database(conn, current_version: int) -> None:
         conn.execute("RELEASE SAVEPOINT migrate_v77")
         conn.commit()
         logger.info("  ✓ Migration to v77 complete: playlists set metadata columns")
+
+    if current_version < 78:
+        logger.info("Running migration to v78: bucket rank applications...")
+        conn.execute("SAVEPOINT migrate_v78")
+        _migrate_v78_bucket_rank_applications(conn)
+        conn.execute("RELEASE SAVEPOINT migrate_v78")
+        conn.commit()
+        logger.info("  ✓ Migration to v78 complete: bucket_rank_applications")
 
 
 def ensure_schema_not_newer(conn: sqlite3.Connection, db_path: Path) -> None:

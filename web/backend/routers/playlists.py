@@ -47,6 +47,14 @@ def _set_cached_tracks(cache_key: tuple, result: Tuple[List[dict], int]) -> None
     _playlist_tracks_cache[cache_key] = (time(), result)
 
 
+def clear_playlist_tracks_cache() -> None:
+    """Drop cached track lists after a write to ratings or membership.
+
+    Without this, a refetch inside the 5s TTL serves the pre-write list.
+    """
+    _playlist_tracks_cache.clear()
+
+
 def _refresh_stale_smart_playlists(playlist_id: int | None = None) -> None:
     """Refresh stale smart playlists (one, or all) so reads see recent edits.
 

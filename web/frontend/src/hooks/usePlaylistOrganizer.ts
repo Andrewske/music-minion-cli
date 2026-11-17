@@ -83,6 +83,9 @@ interface UsePlaylistOrganizerReturn {
   syncBucketSoundCloud: (bucketId: string) => Promise<SyncSoundCloudResponse>;
   syncingBucketId: string | null;
 
+  /** Bucket whose reorder is still saving (Apply rating waits for it). */
+  reorderingBucketId: string | null;
+
   // Loading states (for UI feedback)
   isAssigning: boolean;
   isApplying: boolean;
@@ -443,6 +446,7 @@ export function usePlaylistOrganizer(
   );
 
   const syncingBucketId = syncSoundCloudMutation.isPending ? (syncSoundCloudMutation.variables ?? null) : null;
+  const reorderingBucketId = reorderTracksMutation.isPending ? (reorderTracksMutation.variables?.bucketId ?? null) : null;
 
   const assignTrack = useCallback(
     async (bucketId: string, trackId: number): Promise<void> => {
@@ -538,6 +542,7 @@ export function usePlaylistOrganizer(
     // SoundCloud sync
     syncBucketSoundCloud,
     syncingBucketId,
+    reorderingBucketId,
 
     // Computed
     buckets,

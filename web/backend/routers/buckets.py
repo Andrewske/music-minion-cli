@@ -17,8 +17,10 @@ from music_minion.domain.library.providers.soundcloud.api import (
     get_playlist_tracks as sc_get_playlist_tracks,
 )
 
+from ..queries import bucket_rank
 from ..queries import buckets as bucket_queries
 from .player import update_organizer_queue
+from .playlists import clear_playlist_tracks_cache
 
 
 router = APIRouter(prefix="/api/buckets", tags=["buckets"])
@@ -492,6 +494,73 @@ async def move_bucket_endpoint(bucket_id: str, body: MoveBucketBody) -> dict[str
     except Exception as e:
         logger.exception("Failed to move bucket")
         raise HTTPException(status_code=500, detail=f"Failed to move bucket: {str(e)}")
+
+
+class RatingRow(BaseModel):
+    track_id: int
+    before: float
+    after: float
+
+
+class RatingPreviewResponse(BaseModel):
+    track_ids: list[int]
+    method: str  # 'redistribute' | 'band'
+    rows: list[RatingRow]
+
+
+class RatingApplyResponse(RatingPreviewResponse):
+    application_id: str | None  # None: order already matched, nothing written
+
+
+class RatingUndoResponse(BaseModel):
+    restored: int
+    skipped: int
+
+
+def _rank_http_error(e: Exception, action: str) -> HTTPException:
+    """Map bucket_rank errors to HTTP status (500 for anything unexpected)."""
+    status = {
+        LookupError: 404,
+        ValueError: 400,
+        bucket_rank.RankConflictError: 409,
+    }.get(type(e))
+    if status is None:
+        logger.exception(f"Failed to {action}")
+        return HTTPException(status_code=500, detail=f"Failed to {action}: {e}")
+    return HTTPException(status_code=status, detail=str(e))
+
+
+@router.get("/{bucket_id}/rating/preview", response_model=RatingPreviewResponse)
+async def preview_rating_endpoint(bucket_id: str):
+    """Ratings the bucket's current order would produce (no writes)."""
+    try:
+        return bucket_rank.preview_bucket_rating(bucket_id)
+    except Exception as e:
+        raise _rank_http_error(e, "preview bucket rating")
+
+
+@router.post("/{bucket_id}/rating/apply", response_model=RatingApplyResponse)
+async def apply_rating_endpoint(bucket_id: str, body: ReorderBody):
+    """Write rank ratings for the previewed order (409 if it changed since)."""
+    try:
+        result = bucket_rank.apply_bucket_rating(bucket_id, body.track_ids)
+        clear_playlist_tracks_cache()
+        return result
+    except Exception as e:
+        raise _rank_http_error(e, "apply bucket rating")
+
+
+@router.post(
+    "/rating-applications/{application_id}/undo", response_model=RatingUndoResponse
+)
+async def undo_rating_endpoint(application_id: str):
+    """Undo the newest rating application on its playlist."""
+    try:
+        result = bucket_rank.undo_bucket_rating(application_id)
+        clear_playlist_tracks_cache()
+        return result
+    except Exception as e:
+        raise _rank_http_error(e, "undo bucket rating")
 
 
 @router.post("/{bucket_id}/shuffle", response_model=ShuffleResponse)

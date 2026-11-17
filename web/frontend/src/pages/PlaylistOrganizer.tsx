@@ -85,6 +85,7 @@ export function PlaylistOrganizer({
     pullLinkedTracks,
     syncBucketSoundCloud,
     syncingBucketId,
+    reorderingBucketId,
   } = usePlaylistOrganizer({ playlistId });
   const [pullPrompt, setPullPrompt] = useState<PullPrompt | null>(null);
   const [isPulling, setIsPulling] = useState(false);
@@ -777,6 +778,7 @@ export function PlaylistOrganizer({
               onLinkBucket={handleLinkBucket}
               onSyncSoundCloud={handleSyncSoundCloud}
               syncingBucketId={syncingBucketId}
+              reorderingBucketId={reorderingBucketId}
             />
           </div>
         </div>
