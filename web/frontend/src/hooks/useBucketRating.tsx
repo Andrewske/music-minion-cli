@@ -23,17 +23,23 @@ interface UseBucketRatingReturn {
 }
 
 /**
- * "Apply rating" for one bucket: preview (fetched while `open`), apply, and an
- * undo toast. Ratings land in the organized playlist, so its track caches are
- * invalidated after apply and undo.
+ * "Apply rating" for one bucket: preview, apply, and an undo toast. Ratings land
+ * in the organized playlist, so its track caches are invalidated after apply and
+ * undo. The preview waits while a reorder is saving (it would read the old
+ * order), then fetches once the save lands.
  */
-export function useBucketRating(bucketId: string, playlistId: number, open: boolean): UseBucketRatingReturn {
+export function useBucketRating(
+  bucketId: string,
+  playlistId: number,
+  open: boolean,
+  isReordering: boolean
+): UseBucketRatingReturn {
   const queryClient = useQueryClient();
 
   const previewQuery = useQuery({
     queryKey: previewKey(bucketId),
     queryFn: () => bucketsApi.previewBucketRating(bucketId),
-    enabled: open,
+    enabled: open && !isReordering,
     staleTime: 0,
     gcTime: 0,
   });
@@ -43,14 +49,17 @@ export function useBucketRating(bucketId: string, playlistId: number, open: bool
     queryClient.invalidateQueries({ queryKey: ['playlist-tracks', playlistId] });
   };
 
-  const undo = async (applicationId: string): Promise<void> => {
+  /** Resolves true when undone; on failure the toast stays so Undo can be retried. */
+  const undo = async (applicationId: string): Promise<boolean> => {
     try {
       const { restored, skipped } = await bucketsApi.undoBucketRating(applicationId);
       refreshRatings();
       const note = skipped > 0 ? ` (${skipped} kept: compared since)` : '';
       toast.info(`Rating undone for ${restored} tracks${note}`);
+      return true;
     } catch (error) {
       toast.error(`Undo failed: ${errorMessage(error)}`);
+      return false;
     }
   };
 
@@ -64,13 +73,12 @@ export function useBucketRating(bucketId: string, playlistId: number, open: bool
       }
       refreshRatings();
       toast.success(
-        ({ closeToast }) => (
+        ({ closeToast, toastProps }) => (
           <AppliedRatingToast
             count={result.rows.length}
-            onUndo={() => {
-              closeToast();
-              void undo(applicationId);
-            }}
+            onUndo={() => undo(applicationId)}
+            onUndone={closeToast}
+            onUndoFailed={() => toast.update(toastProps.toastId, { autoClose: false })}
           />
         ),
         { autoClose: 10000 }

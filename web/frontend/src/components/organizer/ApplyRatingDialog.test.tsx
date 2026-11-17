@@ -27,9 +27,10 @@ const preview = {
   ],
 };
 
-function renderDialog(onClose = vi.fn(), isReordering = false): void {
+/** Renders the dialog; the returned function re-renders with a new isReordering. */
+function renderDialog(onClose = vi.fn(), isReordering = false): (isReordering: boolean) => void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  render(
+  const tree = (reordering: boolean): JSX.Element => (
     <QueryClientProvider client={client}>
       <ApplyRatingDialog
         open
@@ -38,10 +39,12 @@ function renderDialog(onClose = vi.fn(), isReordering = false): void {
         bucketName="Openers"
         playlistId={7}
         tracks={[track(11, 'First Light'), track(12, 'Second Wind')]}
-        isReordering={isReordering}
+        isReordering={reordering}
       />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const { rerender } = render(tree(isReordering));
+  return (reordering) => rerender(tree(reordering));
 }
 
 describe('ApplyRatingDialog', () => {
@@ -87,10 +90,17 @@ describe('ApplyRatingDialog', () => {
     expect(screen.getByRole('button', { name: 'Apply rating' }).hasAttribute('disabled')).toBe(true);
   });
 
-  it('blocks apply while a reorder is still saving', async () => {
-    renderDialog(vi.fn(), true);
-    await screen.findByText('Artist - First Light');
+  it('waits for a pending reorder, then previews the saved order', async () => {
+    vi.mocked(bucketsApi.previewBucketRating).mockClear();
+    const setReordering = renderDialog(vi.fn(), true);
+    expect(await screen.findByText('Saving order…')).toBeTruthy();
+    expect(bucketsApi.previewBucketRating).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Apply rating' }).hasAttribute('disabled')).toBe(true);
+
+    setReordering(false);
+    expect(await screen.findByText('Artist - First Light')).toBeTruthy();
+    expect(bucketsApi.previewBucketRating).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Apply rating' }).hasAttribute('disabled')).toBe(false);
   });
 });
 

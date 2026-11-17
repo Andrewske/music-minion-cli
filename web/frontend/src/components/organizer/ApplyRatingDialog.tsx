@@ -28,7 +28,7 @@ export function ApplyRatingDialog({
   tracks,
   isReordering,
 }: ApplyRatingDialogProps): JSX.Element {
-  const { preview, isPreviewLoading, previewError, apply, isApplying } = useBucketRating(bucketId, playlistId, open);
+  const { preview, isPreviewLoading, previewError, apply, isApplying } = useBucketRating(bucketId, playlistId, open, isReordering);
   const trackById = new Map(tracks.map((t) => [t.id, t]));
   const isNoop = !!preview && isNoopRating(preview);
   const canApply = !!preview && !isNoop && !isPreviewLoading && !isApplying && !isReordering;
