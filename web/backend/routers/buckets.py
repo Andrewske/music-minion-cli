@@ -734,7 +734,7 @@ def _get_session_id_for_bucket(bucket_id: str) -> str | None:
 # === Track Assignment Endpoints ===
 
 
-@router.post("/{bucket_id}/tracks/{track_id}", response_model=AssignResponse)
+@router.post("/{bucket_id}/tracks/{track_id:int}", response_model=AssignResponse)
 async def assign_track_endpoint(bucket_id: str, track_id: int):
     """Assign track to bucket."""
     try:
@@ -755,7 +755,7 @@ async def assign_track_endpoint(bucket_id: str, track_id: int):
         raise HTTPException(status_code=500, detail=f"Failed to assign track: {str(e)}")
 
 
-@router.delete("/{bucket_id}/tracks/{track_id}")
+@router.delete("/{bucket_id}/tracks/{track_id:int}")
 async def unassign_track_endpoint(bucket_id: str, track_id: int) -> dict[str, bool]:
     """Unassign track from bucket."""
     try:

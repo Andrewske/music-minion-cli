@@ -631,3 +631,26 @@ def test_activate_waits_for_concurrent_discard(playlist: int) -> None:
 
     assert result == [None]
     assert _status(target["id"]) == "discarded"
+
+
+def test_router_reorder_and_assign_routes(
+    client: TestClient, playlist: int, tracks: list[int]
+) -> None:
+    """`/tracks/reorder` must not be swallowed by `/tracks/{track_id}` (was a 422)."""
+    session = bq.get_or_create_session(playlist)
+    bucket = bq.create_bucket(session["id"], "Keep", None, 0)
+    base = f"/api/buckets/{bucket['id']}/tracks"
+    for tid in tracks[:3]:
+        assert client.post(f"{base}/{tid}").status_code == 200
+
+    reordered = [tracks[2], tracks[0], tracks[1]]
+    resp = client.post(f"{base}/reorder", json={"track_ids": reordered})
+    assert resp.status_code == 200, resp.text
+
+    refreshed = bq.get_session_with_data(session["id"])
+    assert refreshed is not None
+    assert (
+        next(b for b in refreshed["buckets"] if b["id"] == bucket["id"])["track_ids"]
+        == reordered
+    )
+    assert client.delete(f"{base}/{tracks[0]}").status_code == 200
