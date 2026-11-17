@@ -6,7 +6,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { ChevronDown, ChevronRight, GripVertical, Loader2, MoreHorizontal, Pencil, RefreshCw, Shuffle, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, MoreHorizontal, Pencil, RefreshCw, Shuffle, Trash2 } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,6 +18,7 @@ import type { Bucket } from '../../api/buckets';
 import { EmojiDisplay } from '../EmojiDisplay';
 import { BucketEditDialog } from './BucketEditDialog';
 import { getBucketColor } from '../../constants/bucketColors';
+import { TrackRow } from './TrackRow';
 
 interface BucketComponentProps {
   bucket: Bucket;
@@ -67,45 +68,23 @@ function SortableTrack({ track, bucketId, isPlaying, onTrackClick }: SortableTra
     },
   });
 
-  const unavailable = track.available === false;
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : unavailable ? 0.5 : 1,
-  };
-
   return (
-    <div
+    <TrackRow
       ref={setNodeRef}
-      style={style}
-      className={`flex items-center gap-2 px-3 py-2 border-b border-obsidian-border/50 last:border-b-0 cursor-pointer ${
-        isPlaying
-          ? 'bg-obsidian-accent/10 border-l-2 border-l-obsidian-accent'
-          : 'bg-obsidian-surface hover:bg-white/5'
-      }`}
-      onClick={() => onTrackClick(track.id)}
-    >
-      <div
-        {...attributes}
-        {...listeners}
-        className="cursor-grab active:cursor-grabbing text-white/30 hover:text-white/60"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <GripVertical className="w-4 h-4" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className={`text-sm truncate ${isPlaying ? 'text-obsidian-accent font-medium' : 'text-white/90'}`}>
-          {track.title}
-        </div>
-        <div className="text-xs text-white/50 truncate">{track.artist ?? 'Unknown Artist'}</div>
-      </div>
-      {unavailable && (
-        <span className="shrink-0 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded-sm bg-red-500/15 text-red-400 border border-red-500/30">
-          Unavailable
-        </span>
-      )}
-    </div>
+      {...attributes}
+      {...listeners}
+      aria-label={`${track.title}: click to play, drag to reorder or move`}
+      track={track}
+      isPlaying={isPlaying}
+      onPlay={() => onTrackClick(track.id)}
+      className="last:border-b-0"
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        // Faded placeholder marks the landing spot; DragOverlay draws the moving row
+        opacity: isDragging ? 0.4 : undefined,
+      }}
+    />
   );
 }
 

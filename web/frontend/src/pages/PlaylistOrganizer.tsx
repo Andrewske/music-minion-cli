@@ -3,17 +3,20 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   DndContext,
   DragOverlay,
+  closestCenter,
   pointerWithin,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type CollisionDetection,
   type DragStartEvent,
 } from '@dnd-kit/core';
-import { arrayMove } from '@dnd-kit/sortable';
+import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { toast } from 'react-toastify';
-import { GripVertical, ChevronDown, ChevronRight, Radar, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Radar, Loader2 } from 'lucide-react';
 import { triggerDiscoverySync, getDiscoverySyncStatus } from '../api/discovery';
 import type { DiscoverySyncStatus } from '../api/discovery';
 import { usePlayerStore } from '../stores/playerStore';
@@ -22,6 +25,7 @@ import { getPlaylistTracks } from '../api/playlists';
 import type { Playlist } from '../types';
 import { CurrentTrackBanner } from '../components/organizer/CurrentTrackBanner';
 import { UnassignedTrackTable } from '../components/organizer/UnassignedTrackTable';
+import { TrackRow } from '../components/organizer/TrackRow';
 import { BucketList } from '../components/organizer/BucketList';
 import { SessionSwitcher } from '../components/organizer/SessionSwitcher';
 import { PullLinkedPrompt } from '../components/organizer/PullLinkedPrompt';
@@ -33,43 +37,14 @@ import { Button } from '../components/ui/button';
 import type { PlaylistOrganizerProps } from './PlaylistOrganizer.types';
 import type { PlaylistTrackEntry, PlaylistTracksResponse } from '../types';
 
-function DragPreviewRow({ track }: { track: PlaylistTrackEntry }): JSX.Element {
-  return (
-    <div className="bg-obsidian-surface border-2 border-obsidian-accent rounded-sm shadow-2xl cursor-grabbing transform scale-105 opacity-95">
-      <div className="flex items-center w-full px-3 py-2 text-sm">
-        {/* Drag handle icon */}
-        <div className="flex-none w-10 text-white/30">
-          <GripVertical className="w-4 h-4" />
-        </div>
+// Pointer drags hit whatever is under the cursor (dropping on empty space
+// unassigns). Keyboard drags have no pointer, so pointerWithin would find
+// nothing and every keyboard drop would unassign; snap to the nearest target.
+const organizerCollision: CollisionDetection = (args) =>
+  args.pointerCoordinates ? pointerWithin(args) : closestCenter(args);
 
-        {/* Title - flex 3 */}
-        <div className="flex-3 min-w-0 px-2 text-white/90 truncate">
-          {track.title}
-        </div>
-
-        {/* Artist - flex 2 */}
-        <div className="flex-2 min-w-0 px-2 text-white/70 truncate">
-          {track.artist ?? '-'}
-        </div>
-
-        {/* BPM - fixed 50px */}
-        <div className="flex-none w-[50px] px-2 text-white/60 text-center">
-          {track.bpm ? Math.round(track.bpm) : '-'}
-        </div>
-
-        {/* Key - fixed 60px */}
-        <div className="flex-none w-[60px] px-2 text-white/60 text-center">
-          {track.key_signature ?? '-'}
-        </div>
-
-        {/* Rating - fixed 70px */}
-        <div className="flex-none w-[70px] px-2 text-white/60 text-center">
-          {track.rating ? Math.round(track.rating) : '-'}
-        </div>
-      </div>
-    </div>
-  );
-}
+// Space drags; Enter is left free so a focused row can play its track.
+const keyboardCodes = { start: ['Space'], cancel: ['Escape'], end: ['Space'] };
 
 export function PlaylistOrganizer({
   playlistId,
@@ -163,10 +138,11 @@ export function PlaylistOrganizer({
 
   // Configure drag-and-drop sensors
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 }, // Prevents accidental drags
-    }),
-    useSensor(KeyboardSensor)
+    // Whole rows are drag handles: mouse drags after 8px so a plain click plays,
+    // touch needs a long-press so swiping still scrolls the list
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates, keyboardCodes })
   );
 
   const [activeId, setActiveId] = useState<number | null>(null);
@@ -667,7 +643,7 @@ export function PlaylistOrganizer({
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={pointerWithin}
+      collisionDetection={organizerCollision}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
@@ -815,7 +791,10 @@ export function PlaylistOrganizer({
 
       <DragOverlay>
         {activeId && activeTrack ? (
-          <DragPreviewRow track={activeTrack} />
+          <TrackRow
+            track={activeTrack}
+            className="border-2 border-obsidian-accent rounded-sm shadow-2xl cursor-grabbing opacity-95"
+          />
         ) : null}
       </DragOverlay>
     </DndContext>
