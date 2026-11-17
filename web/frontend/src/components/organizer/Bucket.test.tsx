@@ -12,7 +12,7 @@ const bucket: Bucket = {
 };
 
 const track = (id: number, title: string): PlaylistTrackEntry => ({
-  id, title, artist: 'Artist', bpm: 140.4, key_signature: '8A', rating: 1512,
+  id, title, artist: 'Artist', bpm: 140.4, key_signature: 'Am', rating: 1512,
   wins: 0, losses: 0, comparison_count: 0,
 });
 
@@ -60,6 +60,7 @@ describe('BucketComponent track rows', () => {
     const row = screen.getByLabelText(/Second Wind: click to play/);
     expect(row.textContent).toContain('140');
     expect(row.textContent).toContain('8A');
+    expect(row.querySelector('[title="Am / 8A"]')).not.toBeNull();
     expect(row.textContent).toContain('1512');
   });
 });

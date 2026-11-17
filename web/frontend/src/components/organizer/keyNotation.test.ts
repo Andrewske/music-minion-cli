@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatKey, fromCamelot, toCamelot } from './keyNotation';
+import { camelotCode, formatKey, fromCamelot, toCamelot } from './keyNotation';
 
 describe('toCamelot', () => {
   it.each([
@@ -47,5 +47,13 @@ describe('formatKey', () => {
   it('falls back to the raw value or a dash', () => {
     expect(formatKey('weird')).toBe('weird');
     expect(formatKey(undefined)).toBe('–');
+  });
+});
+
+describe('camelotCode', () => {
+  it.each([
+    ['Ebm', '2A'], ['C#', '3B'], [' 8a ', '8A'], ['11B', '11B'], ['weird', 'weird'], ['', '-'], [undefined, '-'],
+  ])('%s -> %s', (key, code) => {
+    expect(camelotCode(key)).toBe(code);
   });
 });
