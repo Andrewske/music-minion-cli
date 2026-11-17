@@ -109,9 +109,20 @@ def extract_track_metadata(local_path: str) -> Track:
         genre = get_tag_value(audio_file, ["TCON", "\xa9gen", "GENRE", "genre"])
 
         # Extract DJ metadata (ID3, MP4, Vorbis/Opus)
-        # Note: M4A uses "----:com.apple.iTunes:INITIALKEY" and "tmpo"
+        # Note: M4A freeform atoms are case-sensitive; Serato writes lowercase
+        # "----:com.apple.iTunes:initialkey". BPM lives in "tmpo".
         key = get_tag_value(
-            audio_file, ["TKEY", "KEY", "INITIALKEY", "initialkey", "\xa9key", "key", "----:com.apple.iTunes:INITIALKEY"]
+            audio_file,
+            [
+                "TKEY",
+                "KEY",
+                "INITIALKEY",
+                "initialkey",
+                "\xa9key",
+                "key",
+                "----:com.apple.iTunes:initialkey",
+                "----:com.apple.iTunes:INITIALKEY",
+            ],
         )
         bpm_str = get_tag_value(
             audio_file, ["TBPM", "BPM", "BEATS_PER_MINUTE", "\xa9bpm", "bpm", "tmpo"]
