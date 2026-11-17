@@ -1,40 +1,9 @@
-import { useRef, useMemo, useCallback } from 'react';
-import {
-  useReactTable,
-  getCoreRowModel,
-  flexRender,
-  type ColumnDef,
-  type Column,
-  type Row,
-} from '@tanstack/react-table';
+import { useRef, useCallback, useEffect } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useDraggable } from '@dnd-kit/core';
-import { GripVertical } from 'lucide-react';
 import type { PlaylistTrackEntry } from '../../types';
-
-function formatRelativeDate(dateStr: string | undefined): string {
-  if (!dateStr) return '-';
-  // Handle SC format "2026/04/08 20:31:19 +0000" and ISO format
-  const normalized = dateStr.replace(/\//g, '-').replace(' +0000', 'Z').replace(' ', 'T');
-  const date = new Date(normalized);
-  if (isNaN(date.getTime())) return '-';
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  if (days < 1) return '<1d';
-  if (days < 7) return `${days}d`;
-  if (days < 30) return `${Math.floor(days / 7)}w`;
-  if (days < 365) return `${Math.floor(days / 30)}mo`;
-  return `${Math.floor(days / 365)}y`;
-}
-
-function formatFullDate(dateStr: string | undefined): string {
-  if (!dateStr) return '';
-  const normalized = dateStr.replace(/\//g, '-').replace(' +0000', 'Z').replace(' ', 'T');
-  const date = new Date(normalized);
-  if (isNaN(date.getTime())) return '';
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
+import { useIsMobile } from '../../hooks/useIsMobile';
+import { TrackRow, TrackRowHeader, TRACK_ROW_HEIGHT } from './TrackRow';
 
 interface UnassignedTrackTableProps {
   tracks: PlaylistTrackEntry[];
@@ -42,6 +11,41 @@ interface UnassignedTrackTableProps {
   onTrackClick: (trackId: number) => void;
   isDragging?: boolean;
   noBorder?: boolean;
+}
+
+interface DraggableRowProps {
+  track: PlaylistTrackEntry;
+  start: number;
+  isPlaying: boolean;
+  onTrackClick: (trackId: number) => void;
+}
+
+function DraggableRow({ track, start, isPlaying, onTrackClick }: DraggableRowProps): JSX.Element {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: track.id,
+    data: { type: 'unassigned-track' },
+  });
+
+  // Only the virtual-scroll transform; drag visuals are handled by DragOverlay
+  return (
+    <TrackRow
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      aria-label={`${track.title}: click to play, drag to assign to a bucket`}
+      track={track}
+      isPlaying={isPlaying}
+      onPlay={() => onTrackClick(track.id)}
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        transform: `translateY(${start}px)`,
+        opacity: isDragging ? 0 : undefined,
+      }}
+    />
+  );
 }
 
 export function UnassignedTrackTable({
@@ -52,127 +56,12 @@ export function UnassignedTrackTable({
   noBorder = false,
 }: UnassignedTrackTableProps): JSX.Element {
   const parentRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
+  const rowHeight = isMobile ? TRACK_ROW_HEIGHT.mobile : TRACK_ROW_HEIGHT.desktop;
 
-  // Column definitions - memoized to prevent table recalculation on every render
-  const columns: ColumnDef<PlaylistTrackEntry>[] = useMemo(() => [
-    {
-      id: 'drag',
-      header: '',
-      cell: () => null, // Rendered separately in DraggableRow
-      size: 40,
-      meta: { fixed: true },
-    },
-    {
-      id: 'title',
-      accessorKey: 'title',
-      header: 'Title',
-      cell: (info) => info.getValue() ?? '-',
-      size: 3,
-      meta: { flexible: true },
-    },
-    {
-      id: 'artist',
-      accessorKey: 'artist',
-      header: 'Artist',
-      cell: (info) => {
-        const track = info.row.original;
-        const reposters = track.reposters;
-        return (
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span className="truncate">{info.getValue() as string ?? '-'}</span>
-            {reposters && reposters.length > 0 && (
-              <div className="flex -space-x-1.5 shrink-0">
-                {reposters.slice(0, 4).map((r) => (
-                  <img
-                    key={r.slug}
-                    src={r.avatar_url?.replace('-large', '-small') ?? ''}
-                    alt={r.name}
-                    title={r.name}
-                    className="w-4 h-4 rounded-full ring-1 ring-black"
-                  />
-                ))}
-                {reposters.length > 4 && (
-                  <span className="text-[10px] text-white/30 pl-1">+{reposters.length - 4}</span>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      },
-      size: 2,
-      meta: { flexible: true },
-    },
-    {
-      id: 'bpm',
-      accessorKey: 'bpm',
-      header: 'BPM',
-      cell: (info) => {
-        const val = info.getValue() as number | undefined;
-        return val ? Math.round(val) : '-';
-      },
-      size: 50,
-      meta: { fixed: true },
-    },
-    {
-      id: 'key_signature',
-      accessorKey: 'key_signature',
-      header: 'Key',
-      cell: (info) => info.getValue() ?? '-',
-      size: 60,
-      meta: { fixed: true },
-    },
-    {
-      id: 'rating',
-      accessorKey: 'rating',
-      header: 'Rating',
-      cell: (info) => {
-        const val = info.getValue() as number | undefined;
-        return val ? Math.round(val) : '-';
-      },
-      size: 70,
-      meta: { fixed: true },
-    },
-    {
-      id: 'added_at',
-      accessorKey: 'added_at',
-      header: 'Date',
-      cell: (info) => {
-        const val = info.getValue() as string | undefined;
-        return (
-          <span title={formatFullDate(val)}>
-            {formatRelativeDate(val)}
-          </span>
-        );
-      },
-      size: 50,
-      meta: { fixed: true },
-    },
-  ], []); // Empty deps - columns definition never changes
-
-  // Helper to get flex style for fixed vs flexible columns - memoized to prevent re-creation
-  const getColumnFlex = useCallback((column: Column<PlaylistTrackEntry>): React.CSSProperties => {
-    const meta = column.columnDef.meta as { fixed?: boolean; flexible?: boolean } | undefined;
-    const size = column.getSize();
-
-    if (meta?.fixed) {
-      return { flex: `0 0 ${size}px`, minWidth: 0 };
-    }
-    return { flex: `${size} 1 0`, minWidth: 0 };
-  }, []); // Empty deps - logic never changes
-
-  // TanStack Table setup
-  const table = useReactTable({
-    data: tracks,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    enableSorting: false,
-  });
-
-  // Stabilize virtualizer callbacks to prevent recalculation on every render
   const getScrollElement = useCallback(() => parentRef.current, []);
-  const estimateSize = useCallback(() => 40, []);
+  const estimateSize = useCallback(() => rowHeight, [rowHeight]);
 
-  // Virtual scrolling setup
   const virtualizer = useVirtualizer({
     count: tracks.length,
     getScrollElement,
@@ -180,84 +69,10 @@ export function UnassignedTrackTable({
     overscan: 5,
   });
 
-  interface DraggableRowProps {
-    track: PlaylistTrackEntry;
-    virtualRow: { start: number; size: number };
-    row: Row<PlaylistTrackEntry>;
-    isPlaying: boolean;
-    onTrackClick: (trackId: number) => void;
-    getColumnFlex: (column: Column<PlaylistTrackEntry>) => React.CSSProperties;
-  }
-
-  function DraggableRow({ track, virtualRow, row, isPlaying, onTrackClick, getColumnFlex }: DraggableRowProps): JSX.Element {
-    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-      id: track.id,
-      data: { type: 'unassigned-track' },
-    });
-
-    // ONLY virtual scrolling transform - drag visuals handled by DragOverlay
-    const virtualTransform = `translateY(${virtualRow.start}px)`;
-
-    const unavailable = track.available === false;
-
-    const rowClasses = `cursor-pointer hover:bg-white/5 transition-colors ${
-      isPlaying ? 'bg-obsidian-accent/10 border-l-2 border-l-obsidian-accent' : ''
-    }`;
-
-    return (
-      <tr
-        ref={setNodeRef}
-        className={rowClasses}
-        onClick={() => onTrackClick(track.id)}
-        style={{
-          display: 'flex',
-          position: 'absolute',
-          transform: virtualTransform,
-          width: '100%',
-          height: `${virtualRow.size}px`,
-          opacity: isDragging ? 0 : unavailable ? 0.5 : 1,
-        }}
-      >
-        {unavailable && (
-          <span className="absolute right-2 top-1/2 -translate-y-1/2 z-10 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded-sm bg-red-500/15 text-red-400 border border-red-500/30">
-            Unavailable
-          </span>
-        )}
-        {/* Drag handle */}
-        <td
-          className="px-3 py-2 border-b border-obsidian-border/50"
-          style={{ flex: '0 0 40px', minWidth: 0 }}
-        >
-          <div
-            {...attributes}
-            {...listeners}
-            className="cursor-grab active:cursor-grabbing text-white/30 hover:text-white/60 focus:outline-hidden focus:ring-2 focus:ring-obsidian-accent"
-            onClick={(e) => e.stopPropagation()} // Prevent row click when grabbing
-            tabIndex={0}
-            role="button"
-            aria-label={`Drag ${track.title} to assign to bucket`}
-          >
-            <GripVertical className="w-4 h-4" />
-          </div>
-        </td>
-
-        {/* Existing cells (filter out drag column by ID, not position) */}
-        {row.getVisibleCells()
-          .filter(cell => cell.column.id !== 'drag')
-          .map((cell) => (
-          <td
-            key={cell.id}
-            className="px-3 py-2 border-b border-obsidian-border/50 overflow-hidden text-white/50"
-            style={getColumnFlex(cell.column)}
-          >
-            <div className="truncate" title={String(cell.getValue() ?? '')}>
-              {flexRender(cell.column.columnDef.cell, cell.getContext())}
-            </div>
-          </td>
-        ))}
-      </tr>
-    );
-  }
+  // Row height changes across the mobile breakpoint; drop cached measurements
+  useEffect(() => {
+    virtualizer.measure();
+  }, [virtualizer, rowHeight]);
 
   if (tracks.length === 0) {
     return (
@@ -270,87 +85,30 @@ export function UnassignedTrackTable({
   }
 
   return (
-    <div
-      className={`overflow-hidden ${noBorder ? '' : 'border border-obsidian-border rounded-lg'}`}
-    >
-      {/* Desktop: Table view */}
-      <div className="hidden md:block">
-        <div
-          ref={parentRef}
-          className="overflow-auto"
-          style={{
-            maxHeight: '40vh',
-            overflow: isDragging ? 'hidden' : 'auto',
-          }}
-        >
-          <table className="w-full text-sm" style={{ display: 'grid' }}>
-            <thead
-              className="border-b border-obsidian-border bg-obsidian-surface"
-              style={{ display: 'grid', position: 'sticky', top: 0, zIndex: 1 }}
-            >
-              {table.getHeaderGroups().map((headerGroup) => (
-                <tr key={headerGroup.id} style={{ display: 'flex', width: '100%' }}>
-                  {headerGroup.headers.map((header) => (
-                    <th
-                      key={header.id}
-                      className="px-3 py-2 text-left text-xs tracking-wider uppercase text-white/30"
-                      style={getColumnFlex(header.column)}
-                    >
-                      {flexRender(
-                        header.column.columnDef.header,
-                        header.getContext()
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
-            <tbody
-              style={{
-                display: 'grid',
-                height: `${virtualizer.getTotalSize()}px`,
-                position: 'relative',
-              }}
-            >
-              {virtualizer.getVirtualItems().map((virtualRow) => {
-                const row = table.getRowModel().rows[virtualRow.index];
-                const track = tracks[virtualRow.index];
-
-                return (
-                  <DraggableRow
-                    key={row.id}
-                    track={track}
-                    virtualRow={virtualRow}
-                    row={row}
-                    isPlaying={track.id === currentTrackId}
-                    onTrackClick={onTrackClick}
-                    getColumnFlex={getColumnFlex}
-                  />
-                );
-              })}
-            </tbody>
-          </table>
+    <div className={`overflow-hidden ${noBorder ? '' : 'border border-obsidian-border rounded-lg'}`}>
+      <div
+        ref={parentRef}
+        style={{ maxHeight: '40vh', overflow: isDragging ? 'hidden' : 'auto' }}
+      >
+        <div className="sticky top-0 z-20">
+          <TrackRowHeader />
+        </div>
+        <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const track = tracks[virtualRow.index];
+            return (
+              <DraggableRow
+                key={track.id}
+                track={track}
+                start={virtualRow.start}
+                isPlaying={track.id === currentTrackId}
+                onTrackClick={onTrackClick}
+              />
+            );
+          })}
         </div>
       </div>
 
-      {/* Mobile: Card view */}
-      <div className="md:hidden max-h-[40vh] overflow-y-auto">
-        {tracks.map((track) => (
-          <button
-            type="button"
-            key={track.id}
-            className={`w-full text-left px-4 py-3 border-b border-obsidian-border/50 cursor-pointer hover:bg-white/5 ${
-              track.id === currentTrackId ? 'bg-obsidian-accent/10' : ''
-            }`}
-            onClick={() => onTrackClick(track.id)}
-          >
-            <div className="font-medium text-white/90 truncate">{track.title}</div>
-            <div className="text-sm text-white/60 truncate">{track.artist ?? 'Unknown Artist'}</div>
-          </button>
-        ))}
-      </div>
-
-      {/* Track count */}
       <div className="px-3 py-2 border-t border-obsidian-border bg-obsidian-surface text-xs text-white/40">
         {tracks.length} unassigned track{tracks.length !== 1 ? 's' : ''}
       </div>
