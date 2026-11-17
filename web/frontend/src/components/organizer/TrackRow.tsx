@@ -2,6 +2,7 @@ import { forwardRef } from 'react';
 import type { CSSProperties, HTMLAttributes, KeyboardEvent } from 'react';
 import { GripVertical } from 'lucide-react';
 import type { PlaylistTrackEntry } from '../../types';
+import { camelotCode, formatKey } from './keyNotation';
 import { formatFullDate, formatRelativeDate } from './trackDate';
 
 /** Row height for virtualized lists: compact table row on desktop, stacked card on mobile. */
@@ -65,7 +66,9 @@ function TrackMetaCells({ track }: { track: PlaylistTrackEntry }): JSX.Element {
         <Reposters track={track} />
       </div>
       <div className={`${COL.bpm} text-white/50`}>{formatNumber(track.bpm)}</div>
-      <div className={`${COL.key} text-white/50 truncate`}>{track.key_signature ?? '-'}</div>
+      <div className={`${COL.key} text-white/50 truncate`} title={formatKey(track.key_signature)}>
+        {camelotCode(track.key_signature)}
+      </div>
       <div className={`${COL.rating} text-white/50`}>{formatNumber(track.rating)}</div>
       <div className={`${COL.date} text-white/50`} title={formatFullDate(track.added_at)}>
         {formatRelativeDate(track.added_at)}

@@ -34,3 +34,10 @@ export function formatKey(key: string | undefined): string {
   const musical = fromCamelot(key);
   return musical ? `${musical} / ${key.trim().toUpperCase()}` : key;
 }
+
+/** Camelot code ("3B") from either notation, for tight columns; unrecognized keys as stored. */
+export function camelotCode(key: string | undefined): string {
+  if (!key?.trim()) return '-';
+  const musical = fromCamelot(key);
+  return musical ? key.trim().toUpperCase() : toCamelot(key) ?? key;
+}
