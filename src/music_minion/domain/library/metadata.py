@@ -458,9 +458,23 @@ def _write_elo_id3(
     )
 
     if update_comment:
-        existing_comment = str(tags["COMM"]) if "COMM" in tags else None
-        new_comment = format_comment_with_elo(playlist_elo, existing_comment)
-        tags["COMM"] = COMM(encoding=3, lang="eng", desc="", text=new_comment)
+        comments = [f for f in tags.getall("COMM") if f.desc == ""]
+        others = [f for f in tags.getall("COMM") if f.desc != ""]
+        new_comment = format_comment_with_elo(playlist_elo, _id3_comment(comments))
+        new_frame = COMM(encoding=3, lang="eng", desc="", text=new_comment)
+        tags.setall("COMM", [*others, new_frame])
+
+
+def _id3_comment(frames: list[COMM]) -> str | None:
+    """Text of the first plain comment frame, minus bare ELO values.
+
+    Older ELO writes missed the frame (it's keyed "COMM::eng", not "COMM") and
+    pushed each rating in as an extra value: ["1700", "1623", "S3 opener"].
+    Dropping the bare four-digit values repairs those frames.
+    """
+    values = frames[0].text if frames else []
+    kept = [v for v in values if not re.fullmatch(r"\d{4}", v.strip())]
+    return " - ".join(kept) or None
 
 
 def _write_elo_mp4(audio: MP4, playlist_elo: float, update_comment: bool) -> None:
