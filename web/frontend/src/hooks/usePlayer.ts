@@ -164,6 +164,21 @@ function tryGaplessSwap(
   return true;
 }
 
+/**
+ * The track to warm on the inactive element: the queue's next track, or in
+ * comparison the pair's other deck (either direction), so an A/B flip swaps
+ * to a loaded element. Comparison never auto-advances (see mayAdvance), so a
+ * preloaded deck only plays when the user flips to it.
+ */
+export function preloadTarget(
+  queue: readonly Track[],
+  queueIndex: number,
+  contextType: string | undefined,
+): Track | undefined {
+  if (contextType !== 'comparison') return queue[queueIndex + 1];
+  return queue.slice(0, 2).find((_, i) => i !== queueIndex);
+}
+
 function bindPreload(
   inactive: HTMLAudioElement,
   track: Track,
@@ -382,10 +397,9 @@ export function usePlayer() {
   useEffect(() => {
     if (!isAudioOwner) return;
     if (!store.currentTrack) return;
-    if (store.currentContext?.type === 'comparison') return;
     if (!audioA || !audioB) return;
 
-    const nextTrack = store.queue[store.queueIndex + 1];
+    const nextTrack = preloadTarget(store.queue, store.queueIndex, store.currentContext?.type);
     if (!nextTrack) return;
 
     const controller = new AbortController();

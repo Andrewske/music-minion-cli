@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { type JSX, type ReactNode } from 'react';
-import { usePlayer } from './usePlayer';
+import { preloadTarget, usePlayer } from './usePlayer';
 import { usePlayerStore } from '../stores/playerStore';
 import { AudioElementProvider } from '../contexts/AudioElementContext';
 
@@ -235,29 +235,31 @@ describe('usePlayer dual-element swap', () => {
     expect(a.getAttribute('src')).toContain(`/api/tracks/${TRACK_B.id}/stream`);
   });
 
-  it('5. preload skipped in comparison mode (no preload of next-track)', () => {
+  it('5. comparison preloads the other deck after the first one swaps in', () => {
     vi.useFakeTimers();
-    const { result } = renderHook(() => usePlayer(), { wrapper });
-    void result;
+    renderHook(() => usePlayer(), { wrapper });
 
-    const [, b] = getAudioElements();
+    const [a, b] = getAudioElements();
 
     act(() => {
       usePlayerStore.setState({
-        currentTrack: TRACK_A,
-        queue: [TRACK_A, TRACK_B, TRACK_C],
-        queueIndex: 0,
+        currentTrack: TRACK_B,
+        queue: [TRACK_A, TRACK_B],
+        queueIndex: 1,
+        isPlaying: true,
         currentContext: { type: 'comparison' },
       });
     });
-
+    act(() => {
+      b.dispatchEvent(new Event('canplay'));
+    });
     act(() => {
       vi.advanceTimersByTime(600);
     });
 
-    // Track-change handler may have set b.dataset.trackId to TRACK_A.id during initial swap,
-    // but the preload effect must NOT have bound it to TRACK_B.id (the queue's next track).
-    expect(b.dataset.trackId).not.toBe(String(TRACK_B.id));
+    // Deck B is the last queue entry, so "next" is nothing; comparison warms deck A
+    expect(a.dataset.trackId).toBe(String(TRACK_A.id));
+    expect(a.getAttribute('src')).toContain(`/api/tracks/${TRACK_A.id}/stream`);
   });
 
   it('6. preload debounce: rapid currentTrack changes fire single preload binding', () => {
@@ -636,5 +638,19 @@ describe('usePlayer start position', () => {
     });
 
     expect(writes.at(-1)).toBe(0);
+  });
+});
+
+describe('preloadTarget', () => {
+  const queue = [TRACK_A, TRACK_B, TRACK_C];
+
+  it('is the next queue track outside comparison', () => {
+    expect(preloadTarget(queue, 0, 'playlist')).toBe(TRACK_B);
+    expect(preloadTarget(queue, 2, undefined)).toBeUndefined();
+  });
+
+  it('is the other deck in comparison, in either direction', () => {
+    expect(preloadTarget([TRACK_A, TRACK_B], 0, 'comparison')).toBe(TRACK_B);
+    expect(preloadTarget([TRACK_A, TRACK_B], 1, 'comparison')).toBe(TRACK_A);
   });
 });
