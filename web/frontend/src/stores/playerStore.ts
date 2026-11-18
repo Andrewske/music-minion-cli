@@ -57,9 +57,9 @@ startAudioLeaderElection((isLeader) => usePlayerStore.setState({ isAudioLeader: 
 // audio lock before play/resume/"play here" (no-op without a user gesture).
 const { play, resume, setActiveDevice } = usePlayerStore.getState();
 usePlayerStore.setState({
-  play: (track, context): Promise<void> => {
+  play: (track, context, options): Promise<void> => {
     claimAudioLeadership();
-    return play(track, context);
+    return play(track, context, options);
   },
   resume: (): Promise<void> => {
     claimAudioLeadership();
@@ -91,36 +91,13 @@ export function seekBy(deltaMs: number): void {
 }
 export type { PlayContext, PlayerStore };
 
-/** Resolve true once the store's current track is `trackId`, false after `timeoutMs`. */
-function waitForCurrentTrack(trackId: number, timeoutMs: number): Promise<boolean> {
-  if (usePlayerStore.getState().currentTrack?.id === trackId) return Promise.resolve(true);
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      unsubscribe();
-      resolve(false);
-    }, timeoutMs);
-    const unsubscribe = usePlayerStore.subscribe((state) => {
-      if (state.currentTrack?.id !== trackId) return;
-      clearTimeout(timer);
-      unsubscribe();
-      resolve(true);
-    });
-  });
-}
-
-const TRACK_SWITCH_TIMEOUT_MS = 5000;
-
 /**
- * Play `track` starting at `positionMs` (clamped to its duration). The new
- * track arrives over the WebSocket after play() resolves, so the seek waits
- * for it; seeking earlier would move the old track. The audio engine applies
- * the seek once the new element is ready.
+ * Play `track` starting at `positionMs` (clamped to its duration). The server
+ * starts the track at that position, and whichever device owns the audio
+ * starts the new element there, so there is no follow-up seek to race.
  */
-export async function playFromPosition(track: Track, context: PlayContext, positionMs: number): Promise<void> {
-  await usePlayerStore.getState().play(track, context);
+export function playFromPosition(track: Track, context: PlayContext, positionMs: number): Promise<void> {
   const durationMs = (track.duration ?? 0) * 1000;
-  const target = Math.min(positionMs, durationMs - 1000);
-  if (target <= 0) return;
-  if (!(await waitForCurrentTrack(track.id, TRACK_SWITCH_TIMEOUT_MS))) return;
-  await usePlayerStore.getState().seek(target);
+  const startPositionMs = Math.max(0, Math.min(positionMs, durationMs - 1000));
+  return usePlayerStore.getState().play(track, context, { startPositionMs });
 }

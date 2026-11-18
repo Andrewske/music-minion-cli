@@ -3,6 +3,8 @@ import type { ComparisonPair, ComparisonProgress, TrackInfo } from '../types';
 
 /** One recorded pick, newest first in `history`; the head is what Undo rewinds. */
 export interface ComparisonHistoryEntry {
+  /** History row id from /record; what Undo deletes. */
+  comparisonId: number;
   trackAId: number;
   trackBId: number;
   winnerTitle: string;
@@ -32,6 +34,8 @@ interface ComparisonActions {
   replacePair: (pair: ComparisonPair | null, progress: ComparisonProgress) => void;
   /** Put the undone pair back and drop the newest history entry. */
   undoComparison: (pair: ComparisonPair | null, progress: ComparisonProgress) => void;
+  /** Forget the newest pick without restoring it (the server refused to undo it). */
+  discardLatestPick: () => void;
   reset: () => void;
   setPriorityPath: (priorityPathPrefix: string | null) => void;
   setAutoplay: (enabled: boolean) => void;
@@ -89,6 +93,10 @@ export const useComparisonStore = create<ComparisonStore>((set, get) => ({
       isComparisonMode: pair !== null,
       history: get().history.slice(1),
     });
+  },
+
+  discardLatestPick: () => {
+    set({ history: get().history.slice(1) });
   },
 
   reset: () => {

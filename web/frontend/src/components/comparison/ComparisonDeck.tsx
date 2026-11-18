@@ -25,7 +25,8 @@ export interface ComparisonDeckProps {
   onTogglePlay: () => void;
   onPick: () => void;
   onSkip: () => void;
-  onRemove: () => void;
+  /** Omitted when the playlist can't drop tracks (smart playlists). */
+  onRemove?: () => void;
   onTrackUpdate: (track: TrackInfo) => void;
 }
 
@@ -48,7 +49,7 @@ function RatingLine({ track }: { track: TrackInfo }): JSX.Element {
 
 interface DeckMenuProps {
   onSkip: () => void;
-  onRemove: () => void;
+  onRemove?: () => void;
   disabled: boolean;
 }
 
@@ -68,14 +69,18 @@ function DeckMenu({ onSkip, onRemove, disabled }: DeckMenuProps): JSX.Element {
           <SkipForward className="w-3.5 h-3.5 mr-2 text-white/50" /> Skip this pair
           <kbd className="ml-auto px-1.5 rounded-sm bg-white/10 text-[10px] text-white/60">S</kbd>
         </DropdownMenuItem>
-        <DropdownMenuSeparator className="bg-obsidian-border" />
-        <DropdownMenuItem
-          className={`${menuItemClass} text-rose-400 focus:text-rose-300`}
-          onSelect={onRemove}
-          disabled={disabled}
-        >
-          <Trash2 className="w-3.5 h-3.5 mr-2" /> Remove from playlist
-        </DropdownMenuItem>
+        {onRemove && (
+          <>
+            <DropdownMenuSeparator className="bg-obsidian-border" />
+            <DropdownMenuItem
+              className={`${menuItemClass} text-rose-400 focus:text-rose-300`}
+              onSelect={onRemove}
+              disabled={disabled}
+            >
+              <Trash2 className="w-3.5 h-3.5 mr-2" /> Remove from playlist
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

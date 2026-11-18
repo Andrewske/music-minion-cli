@@ -600,3 +600,41 @@ describe('usePlayer dual-element swap', () => {
     });
   });
 });
+
+describe('usePlayer start position', () => {
+  /** Record every currentTime write on `el` (jsdom doesn't keep the value). */
+  function trackCurrentTime(el: HTMLAudioElement): number[] {
+    const writes: number[] = [];
+    let value = 0;
+    Object.defineProperty(el, 'currentTime', {
+      configurable: true,
+      get: () => value,
+      set: (v: number) => { value = v; writes.push(v); },
+    });
+    return writes;
+  }
+
+  it('starts a switched-to track at the server position (comparison flip)', () => {
+    renderHook(() => usePlayer(), { wrapper });
+    const [, b] = getAudioElements();
+    const writes = trackCurrentTime(b);
+
+    act(() => {
+      usePlayerStore.setState({ currentTrack: TRACK_B, isPlaying: true, positionMs: 90_000, trackStartedAt: Date.now() });
+    });
+
+    expect(writes.at(-1)).toBe(90);
+  });
+
+  it('starts ordinary plays at zero', () => {
+    renderHook(() => usePlayer(), { wrapper });
+    const [, b] = getAudioElements();
+    const writes = trackCurrentTime(b);
+
+    act(() => {
+      usePlayerStore.setState({ currentTrack: TRACK_B, isPlaying: true, positionMs: 0 });
+    });
+
+    expect(writes.at(-1)).toBe(0);
+  });
+});

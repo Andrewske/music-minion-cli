@@ -33,18 +33,22 @@ export function shortcutFor(event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'meta
 
 /**
  * Page shortcuts: 1/2 pick, Tab flips decks at the same position, S skips,
- * Z undoes. Space and ←/→ stay with PlayerBar.
+ * Z undoes. Space and ←/→ stay with PlayerBar. `enabled` is false when
+ * there's no pair on screen or an overlay (Stats) is open, which also gives
+ * Tab back to focus navigation.
  */
-export function useComparisonShortcuts(handlers: ComparisonShortcutHandlers): void {
-  // Ref so the listener binds once and always calls the latest handlers
+export function useComparisonShortcuts(handlers: ComparisonShortcutHandlers, enabled: boolean): void {
+  // Refs so the listener binds once and always sees the latest values
   const handlersRef = useRef(handlers);
+  const enabledRef = useRef(enabled);
   useEffect(() => {
     handlersRef.current = handlers;
-  }, [handlers]);
+    enabledRef.current = enabled;
+  }, [handlers, enabled]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.repeat || isTypingOrInOverlay(event.target)) return;
+      if (!enabledRef.current || event.repeat || isTypingOrInOverlay(event.target)) return;
       const action = shortcutFor(event);
       if (!action) return;
       event.preventDefault();

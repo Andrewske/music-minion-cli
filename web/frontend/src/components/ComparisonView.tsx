@@ -43,13 +43,16 @@ export function ComparisonView({ playlistId }: ComparisonViewProps = {}): JSX.El
 
   // Connect to IPC WebSocket for remote control
   useIPCWebSocket();
-  useComparisonShortcuts({ onPick: decks.pick, onFlip: decks.flip, onSkip: decks.skip, onUndo: decks.undo });
 
   const playlistsQuery = usePlaylists();
   const playlists = playlistsQuery.data;
-  const playlistName = playlists?.find((p) => p.id === selectedPlaylistId)?.name;
+  const playlist = playlists?.find((p) => p.id === selectedPlaylistId);
 
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
+  useComparisonShortcuts(
+    { onPick: decks.pick, onFlip: decks.flip, onSkip: decks.skip, onUndo: decks.undo },
+    currentPair !== null && !isStatsModalOpen,
+  );
 
   // Start (or restore) the comparison session for the playlist in the URL.
   // Runs on direct navigation to /comparison/$playlistId and on reload, so the
@@ -166,7 +169,7 @@ export function ComparisonView({ playlistId }: ComparisonViewProps = {}): JSX.El
     <div className="min-h-screen bg-black text-white/90 overflow-x-hidden">
       <div className="max-w-5xl mx-auto w-full px-4 py-4">
         <ComparisonHeader
-          playlistName={playlistName}
+          playlistName={playlist?.name}
           progress={progress}
           sessionCount={comparisonsCompleted}
           canUndo={history.length > 0 && !decks.isBusy}
@@ -179,7 +182,7 @@ export function ComparisonView({ playlistId }: ComparisonViewProps = {}): JSX.El
             <ErrorBoundary key={track.id}>
               <ComparisonDeck
                 track={track}
-                playlistId={currentPair && selectedPlaylistId ? selectedPlaylistId : 0}
+                playlistId={selectedPlaylistId ?? 0}
                 shortcut={shortcut}
                 isLive={currentTrackId === track.id}
                 isPlaying={isPlaying && currentTrackId === track.id}
@@ -187,7 +190,8 @@ export function ComparisonView({ playlistId }: ComparisonViewProps = {}): JSX.El
                 onTogglePlay={() => decks.togglePlay(track)}
                 onPick={() => decks.pick(slot)}
                 onSkip={decks.skip}
-                onRemove={() => decks.remove(track)}
+                // Smart playlists are rule-based; the DELETE route only serves manual ones
+                onRemove={playlist?.type === 'manual' ? () => decks.remove(track) : undefined}
                 onTrackUpdate={updateTrackInPair}
               />
             </ErrorBoundary>

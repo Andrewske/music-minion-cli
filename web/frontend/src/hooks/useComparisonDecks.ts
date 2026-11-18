@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { useComparisonStore } from '../stores/comparisonStore';
 import { usePlayerStore, getCurrentPosition, playFromPosition, type PlayContext } from '../stores/playerStore';
 import type { ComparisonPair, TrackInfo } from '../types';
@@ -53,6 +53,15 @@ export function useComparisonDecks(): ComparisonDeckActions {
   const undoPick = useUndoComparison();
   const isBusy = record.isPending || skipPair.isPending || removeTrack.isPending || undoPick.isPending;
 
+  // isPending only updates on re-render; this ref blocks a second key press
+  // that lands before it, so one pair can't be submitted twice.
+  const inFlight = useRef(false);
+  const guarded = useCallback((run: (done: () => void) => void): void => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    run(() => { inFlight.current = false; });
+  }, []);
+
   // Fresh store reads so keyboard handlers never act on a stale pair
   const session = (): { pair: ComparisonPair; playlistId: number } | null => {
     const { currentPair, selectedPlaylistId } = useComparisonStore.getState();
@@ -61,27 +70,30 @@ export function useComparisonDecks(): ComparisonDeckActions {
 
   const pick = useCallback((slot: 'a' | 'b'): void => {
     const s = session();
-    if (!s || isBusy) return;
+    if (!s) return;
     const winner = slot === 'a' ? s.pair.track_a : s.pair.track_b;
-    record.mutate({ playlistId: s.playlistId, pair: s.pair, winnerId: winner.id });
-  }, [isBusy, record]);
+    guarded((done) => record.mutate({ playlistId: s.playlistId, pair: s.pair, winnerId: winner.id }, { onSettled: done }));
+  }, [guarded, record]);
 
   const skip = useCallback((): void => {
     const s = session();
-    if (s && !isBusy) skipPair.mutate(s);
-  }, [isBusy, skipPair]);
+    if (s) guarded((done) => skipPair.mutate(s, { onSettled: done }));
+  }, [guarded, skipPair]);
 
   const remove = useCallback((track: TrackInfo): void => {
     const s = session();
-    if (s && !isBusy) removeTrack.mutate({ playlistId: s.playlistId, trackId: track.id, title: track.title });
-  }, [isBusy, removeTrack]);
+    if (!s) return;
+    const input = { playlistId: s.playlistId, trackId: track.id, title: track.title };
+    guarded((done) => removeTrack.mutate(input, { onSettled: done }));
+  }, [guarded, removeTrack]);
 
   const undo = useCallback((): void => {
     const { history, selectedPlaylistId } = useComparisonStore.getState();
     const last = history[0];
-    if (!last || !selectedPlaylistId || isBusy) return;
-    undoPick.mutate({ playlistId: selectedPlaylistId, trackAId: last.trackAId, trackBId: last.trackBId });
-  }, [isBusy, undoPick]);
+    if (!last || !selectedPlaylistId) return;
+    const input = { playlistId: selectedPlaylistId, comparisonId: last.comparisonId };
+    guarded((done) => undoPick.mutate(input, { onSettled: done }));
+  }, [guarded, undoPick]);
 
   const togglePlay = useCallback((track: TrackInfo): void => {
     const s = session();

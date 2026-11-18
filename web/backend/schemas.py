@@ -73,8 +73,7 @@ class RecordComparisonRequest(BaseModel):
 
 class UndoComparisonRequest(BaseModel):
     playlist_id: int
-    track_a_id: int
-    track_b_id: int
+    comparison_id: int
 
 
 class ComparisonProgress(BaseModel):
@@ -87,7 +86,8 @@ class ComparisonResponse(BaseModel):
     """Unified response schema for comparison operations."""
     pair: Optional[ComparisonPair]  # None when ranking complete
     progress: ComparisonProgress
-    # Winner's playlist rating change from the comparison just recorded
+    # Set by /record: the stored comparison (for undo) and the winner's rating change
+    comparison_id: Optional[int] = None
     rating_delta: Optional[float] = None
 
 

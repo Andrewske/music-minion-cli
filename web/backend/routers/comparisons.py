@@ -162,7 +162,7 @@ async def record_comparison(
             rating_delta = track_b_new - track_b_rating
 
         # Record comparison (no session_id, single transaction)
-        record_playlist_comparison(
+        comparison_id = record_playlist_comparison(
             playlist_id=request.playlist_id,
             track_a_id=request.track_a_id,
             track_b_id=request.track_b_id,
@@ -184,7 +184,10 @@ async def record_comparison(
         )
 
         return ComparisonResponse(
-            pair=next_pair, progress=progress, rating_delta=rating_delta
+            pair=next_pair,
+            progress=progress,
+            comparison_id=comparison_id,
+            rating_delta=rating_delta,
         )
 
     except Exception as e:
@@ -194,38 +197,42 @@ async def record_comparison(
 
 @router.post("/comparisons/undo")
 async def undo_comparison(request: UndoComparisonRequest) -> ComparisonResponse:
-    """Delete the latest comparison of a pair, restore ratings, and return that pair.
+    """Delete one recorded comparison, restore both ratings, and return that pair.
 
-    409 when the pair has no comparison in this playlist, or either track was
-    compared again since (undo only rewinds the most recent picks).
+    409 when the comparison isn't in this playlist, a later comparison
+    involves either track, or either rating changed since (e.g. organizer
+    "Apply rating"). If a track has left the playlist, returns the next pair.
     """
     import logging
     logger = logging.getLogger(__name__)
 
     try:
-        undone = undo_playlist_comparison(
-            request.playlist_id, request.track_a_id, request.track_b_id
-        )
+        undone = undo_playlist_comparison(request.playlist_id, request.comparison_id)
     except Exception as e:
         logger.exception(f"Failed to undo comparison {request}")
         raise HTTPException(status_code=500, detail=str(e))
-    if not undone:
+    if undone is None:
         raise HTTPException(
             status_code=409,
-            detail=f"Cannot undo {request.track_a_id} vs {request.track_b_id} in playlist "
-            f"{request.playlist_id}: no such comparison, or a later one involves these tracks",
+            detail=f"Cannot undo comparison {request.comparison_id} in playlist "
+            f"{request.playlist_id}: not found, or a later comparison or rating "
+            "change involves these tracks",
         )
     clear_playlist_tracks_cache()
-    track_a, track_b = get_playlist_pair(
-        request.playlist_id, request.track_a_id, request.track_b_id
-    )
+    restored = get_playlist_pair(request.playlist_id, *undone)
+    try:
+        pair = (
+            _make_pair(*restored, request.playlist_id)
+            if restored
+            else _next_pair(request.playlist_id)
+        )
+    except ValueError:  # fewer than two tracks left in the playlist
+        pair = None
     progress = _progress(request.playlist_id)
     await sync_manager.broadcast_comparison_update(
         request.playlist_id, progress.model_dump()
     )
-    return ComparisonResponse(
-        pair=_make_pair(track_a, track_b, request.playlist_id), progress=progress
-    )
+    return ComparisonResponse(pair=pair, progress=progress)
 
 
 # Context Activation Endpoints

@@ -76,14 +76,14 @@ export interface RecordComparisonRequest {
 
 export interface UndoComparisonRequest {
   playlist_id: number;
-  track_a_id: number;
-  track_b_id: number;
+  comparison_id: number;
 }
 
 export interface ComparisonResponse {
   pair: ComparisonPair | null;
   progress: ComparisonProgress;
-  /** Winner's playlist rating change; set only by /comparisons/record. */
+  /** Set only by /comparisons/record: the stored comparison (for undo) and the winner's rating change. */
+  comparison_id?: number | null;
   rating_delta?: number | null;
 }
 

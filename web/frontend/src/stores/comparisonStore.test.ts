@@ -8,7 +8,7 @@ const track = (id: number): TrackInfo => ({
 const pair = (a: number, b: number): ComparisonPair => ({ track_a: track(a), track_b: track(b) });
 const progress: ComparisonProgress = { compared: 1, total: 10, percentage: 10 };
 const entry = (a: number, b: number): ComparisonHistoryEntry => ({
-  trackAId: a, trackBId: b, winnerTitle: `T${a}`, loserTitle: `T${b}`, ratingDelta: 16,
+  comparisonId: a * 100 + b, trackAId: a, trackBId: b, winnerTitle: `T${a}`, loserTitle: `T${b}`, ratingDelta: 16,
 });
 
 describe('comparisonStore history', () => {
