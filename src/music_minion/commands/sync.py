@@ -321,12 +321,7 @@ def _sync_local_full(ctx: AppContext) -> tuple[AppContext, bool]:
         level="info",
     )
 
-    # Phase 3: Export ELO ratings to files
-    log("Exporting ELO ratings to files...", level="info")
-    elo_result = sync.sync_elo_export(show_progress=True)
-    log(f"✓ Exported ELO to {elo_result.get('success', 0)} files", level="info")
-
-    # Phase 4: Cleanup: Detect and handle missing/moved files
+    # Phase 3: Cleanup: Detect and handle missing/moved files
     cleanup_result = sync.detect_missing_and_moved_files(ctx.config)
     if cleanup_result['relocated'] > 0:
         log(f"✓ Relocated {cleanup_result['relocated']} moved files", level="info")

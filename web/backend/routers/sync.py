@@ -99,7 +99,7 @@ def _run_sync() -> None:
 
 
 def _export_to_files(cfg: config.Config) -> None:
-    """Write DB metadata and ELO back into audio files, if enabled.
+    """Write DB metadata back into audio files, if enabled.
 
     Off on the pi: Serato also rewrites these files, and Syncthing keeps
     whichever copy changed last, so two writers lose each other's edits.
@@ -111,10 +111,6 @@ def _export_to_files(cfg: config.Config) -> None:
     logger.info("Exporting metadata to files")
     export_result = sync.sync_metadata_export(show_progress=False)
     logger.info(f"Exported to {export_result.get('success', 0)} files")
-
-    logger.info("Exporting ELO ratings")
-    elo_result = sync.sync_elo_export(show_progress=False)
-    logger.info(f"Exported ELO to {elo_result.get('success', 0)} files")
 
 
 def _run_full_sync() -> None:
