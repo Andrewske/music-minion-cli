@@ -6,6 +6,12 @@ from pydantic import BaseModel
 from time import time
 from ..sc_likes import sc_liked_sql
 from ..queries.emojis import batch_fetch_track_emojis
+from ..queries.track_details import (
+    SC_URL_SQL,
+    TRACK_DATE_SQL,
+    clean_sc_url,
+    fetch_reposters,
+)
 from ..schemas import (
     CreatePlaylistRequest,
     Filter,
@@ -138,24 +144,10 @@ def get_playlist_tracks_with_ratings(
         ).fetchone()
         is_discovery = bool(discovery_row and discovery_row["discovery_source"])
 
-        # Date shown per track: release, then SC like, then first seen by MM.
-        # file_mtime comes after created_at because any tag write bumps it.
         repost_join = ""
-        repost_col = "COALESCE(t.released_at, l.liked_at, t.created_at, datetime(t.file_mtime, 'unixepoch'), pt.added_at)"
+        repost_col = TRACK_DATE_SQL
         sc_liked_col = f"{sc_liked_sql('t.soundcloud_id')} as sc_liked"
-        # Direct permalink when known; tracks.source_url may hold a synthetic
-        # soundcloud.com/tracks/<id> form SC won't resolve, so unknowns go through
-        # the lazy-resolving redirect endpoint (which repairs source_url on click).
-        sc_url_col = """COALESCE(
-            CASE WHEN t.source_url IS NOT NULL
-                  AND t.source_url NOT LIKE 'https://soundcloud.com/tracks/%'
-                 THEN t.source_url END,
-            (SELECT sau.permalink_url FROM sc_artist_uploads sau
-             WHERE sau.soundcloud_id = t.soundcloud_id),
-            CASE WHEN t.soundcloud_id IS NOT NULL THEN
-                '/api/tracks/' || t.id || '/soundcloud'
-            END
-        ) as soundcloud_url"""
+        sc_url_col = f"{SC_URL_SQL} as soundcloud_url"
         if is_discovery:
             repost_join = """
                 LEFT JOIN discovery_tracks dt ON dt.soundcloud_id = t.soundcloud_id
@@ -207,11 +199,7 @@ def get_playlist_tracks_with_ratings(
         for track in tracks:
             track["available"] = bool(track.get("available", 1))
             track["sc_liked"] = bool(track.get("sc_liked") or 0)
-            # Permalinks from the SC API carry utm tracking junk; widget URLs need
-            # their query string, so only strip when tracking params are present
-            sc_url = track.get("soundcloud_url")
-            if sc_url and "utm_" in sc_url:
-                track["soundcloud_url"] = sc_url.split("?", 1)[0]
+            track["soundcloud_url"] = clean_sc_url(track.get("soundcloud_url"))
 
         # Batch-fetch emojis for paginated tracks only
         if tracks:
@@ -222,46 +210,9 @@ def get_playlist_tracks_with_ratings(
 
         # Batch-fetch reposters for discovery playlists
         if is_discovery and tracks:
-            sc_rows = conn.execute(
-                f"SELECT id, soundcloud_id FROM tracks WHERE id IN ({','.join('?' * len(track_ids))})",
-                track_ids,
-            ).fetchall()
-            sc_id_to_track_id = {}
-            for row in sc_rows:
-                if row["soundcloud_id"]:
-                    sc_id_to_track_id[row["soundcloud_id"]] = row["id"]
-
-            if sc_id_to_track_id:
-                placeholders = ",".join("?" * len(sc_id_to_track_id))
-                reposter_rows = conn.execute(
-                    f"""SELECT dt.soundcloud_id as track_sc_id,
-                           da.slug, da.display_name, da.avatar_url, da.ranking
-                    FROM discovery_track_reposters dtr
-                    JOIN discovery_tracks dt ON dt.id = dtr.discovery_track_id
-                    JOIN discovery_artists da ON da.id = dtr.discovery_artist_id
-                    WHERE dt.soundcloud_id IN ({placeholders})
-                      AND da.ranking <= 200
-                    ORDER BY da.ranking ASC""",
-                    list(sc_id_to_track_id.keys()),
-                ).fetchall()
-
-                reposters_map: dict[int, list[dict]] = {}
-                for row in reposter_rows:
-                    tid = sc_id_to_track_id.get(row["track_sc_id"])
-                    if tid is None:
-                        continue
-                    if tid not in reposters_map:
-                        reposters_map[tid] = []
-                    reposters_map[tid].append(
-                        {
-                            "slug": row["slug"],
-                            "name": row["display_name"] or row["slug"],
-                            "avatar_url": row["avatar_url"],
-                        }
-                    )
-
-                for track in tracks:
-                    track["reposters"] = reposters_map.get(track["id"], [])
+            reposters_map = fetch_reposters(conn, track_ids)
+            for track in tracks:
+                track["reposters"] = reposters_map.get(track["id"], [])
 
         result = (tracks, total)
         _set_cached_tracks(cache_key, result)

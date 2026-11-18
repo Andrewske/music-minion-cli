@@ -5,7 +5,7 @@ export type { ApiClient } from './api/client';
 // Types
 export type {
   TrackInfo, Playlist, ComparisonPair, ComparisonProgress,
-  ComparisonRequest, RecordComparisonRequest, ComparisonResponse,
+  ComparisonRequest, RecordComparisonRequest, UndoComparisonRequest, ComparisonResponse,
   WaveformData, GenreStat, FoldersResponse,
   PlaylistBasicStats, PlaylistEloAnalysis, PlaylistQualityMetrics,
   ArtistStat, GenreDistribution, PlaylistTrackEntry, TrackReposter,
@@ -14,7 +14,7 @@ export type {
 export type { DimensionPair, TrackDimensionVote } from './types/quicktag';
 
 // API modules — re-export selectively to avoid name collisions
-export { startComparison, recordComparison, activateComparisonMode, deactivateComparisonMode } from './api/comparisons';
+export { startComparison, recordComparison, undoComparison, activateComparisonMode, deactivateComparisonMode } from './api/comparisons';
 export {
   createPlaylist, getPlaylistStats, getPlaylistTracks, getSmartFilters,
   updateSmartFilters, pinPlaylist, unpinPlaylist, reorderPinnedPlaylist,
@@ -24,7 +24,7 @@ export {
 } from './api/playlists';
 export type { TrackPlaylistRef } from './api/playlists';
 export {
-  getStreamUrl, getWaveformData, checkStreamAvailable, archiveTrack,
+  getStreamUrl, getWaveformData, checkStreamAvailable,
   refreshWaveform, purgeSoundcloudWaveforms, getFolders, lookupTracks, formatTrackLabel,
   getTrackNotes, saveTrackNotes,
 } from './api/tracks';

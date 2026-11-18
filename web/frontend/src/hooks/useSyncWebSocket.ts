@@ -41,7 +41,7 @@ export function useSyncWebSocket() {
         case 'comparison:advanced':
           // Another device recorded a comparison
           if (data.pair !== undefined && data.progress) {
-            useComparisonStore.getState().recordComparison(data.pair, data.progress);
+            useComparisonStore.getState().replacePair(data.pair, data.progress);
           }
           break;
 

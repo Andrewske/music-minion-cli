@@ -38,16 +38,6 @@ export async function checkStreamAvailable(trackId: number): Promise<boolean> {
   }
 }
 
-export async function archiveTrack(trackId: number): Promise<void> {
-  const baseUrl = getDefaultApiClient().getBaseUrl();
-  const response = await fetch(`${baseUrl}/tracks/${trackId}/archive`, {
-    method: 'POST',
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to archive track: ${response.statusText}`);
-  }
-}
-
 export async function refreshWaveform(trackId: number): Promise<WaveformData> {
   const baseUrl = getDefaultApiClient().getBaseUrl();
   await fetch(`${baseUrl}/tracks/${trackId}/waveform`, { method: 'DELETE' });

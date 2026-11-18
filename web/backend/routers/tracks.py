@@ -464,26 +464,6 @@ async def purge_soundcloud_waveforms() -> dict[str, int]:
     return {"purged": count}
 
 
-@router.post("/tracks/{track_id}/archive")
-async def archive_track(track_id: int):
-    """Archive a track from comparisons."""
-    try:
-        # Import the database function for adding ratings
-        from music_minion.core.database import add_rating
-
-        # Archive the track by adding an 'archive' rating
-        add_rating(track_id, "archive", "Archived from web UI comparison")
-
-        logger.info(f"Track {track_id} archived successfully")
-        return {"success": True, "message": "Track archived successfully"}
-
-    except Exception as e:
-        logger.exception(f"Failed to archive track {track_id}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to archive track: {str(e)}"
-        )
-
-
 class TrackNotesBody(BaseModel):
     notes: str = Field(max_length=10_000)
 

@@ -28,6 +28,12 @@ export interface TrackInfo {
   source?: string;
   local_path?: string;
   artwork_url?: string;
+  // Banner details (comparison pairs)
+  key_signature?: string;
+  added_at?: string;
+  sc_liked?: boolean;
+  soundcloud_url?: string;
+  reposters?: TrackReposter[];
 }
 
 export interface Playlist {
@@ -68,9 +74,17 @@ export interface RecordComparisonRequest {
   winner_id: number;
 }
 
+export interface UndoComparisonRequest {
+  playlist_id: number;
+  track_a_id: number;
+  track_b_id: number;
+}
+
 export interface ComparisonResponse {
   pair: ComparisonPair | null;
   progress: ComparisonProgress;
+  /** Winner's playlist rating change; set only by /comparisons/record. */
+  rating_delta?: number | null;
 }
 
 export interface WaveformData {

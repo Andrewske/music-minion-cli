@@ -6,16 +6,21 @@ from ..schemas import (
     ComparisonRequest,
     ComparisonResponse,
     RecordComparisonRequest,
+    UndoComparisonRequest,
     ComparisonPair,
     ComparisonProgress,
     TrackInfo,
 )
 from ..queries.emojis import batch_fetch_track_emojis
+from ..queries.track_details import fetch_banner_details
+from .playlists import clear_playlist_tracks_cache
 from music_minion.domain.rating.database import (
     get_next_playlist_pair,
+    get_playlist_pair,
     get_playlist_comparison_progress,
     get_playlist_elo_rating,
     record_playlist_comparison,
+    undo_playlist_comparison,
     RankingComplete,
 )
 from music_minion.domain.rating.elo import update_ratings
@@ -23,12 +28,15 @@ from music_minion.domain.rating.elo import update_ratings
 router = APIRouter()
 
 
-def _track_to_info(track: dict, emojis: list[str] | None = None) -> TrackInfo:
+def _track_to_info(
+    track: dict, emojis: list[str] | None = None, details: dict | None = None
+) -> TrackInfo:
     """Convert a track dict to TrackInfo schema.
 
     Args:
         track: Track dictionary from database
         emojis: Pre-fetched emojis (use batch_fetch_track_emojis for efficiency)
+        details: Banner details from fetch_banner_details (key, date, SC link...)
     """
     import logging
 
@@ -57,6 +65,7 @@ def _track_to_info(track: dict, emojis: list[str] | None = None) -> TrackInfo:
             source=track.get("source"),
             local_path=track.get("local_path"),
             artwork_url=track.get("artwork_url"),
+            **(details or {}),
         )
         logger.debug(f"Converted track {track['id']} to TrackInfo")
         return track_info
@@ -65,24 +74,37 @@ def _track_to_info(track: dict, emojis: list[str] | None = None) -> TrackInfo:
         raise
 
 
-def _make_pair(track_a: dict, track_b: dict) -> ComparisonPair:
-    """Create a ComparisonPair with batch-fetched emojis.
-
-    Args:
-        track_a: First track dictionary
-        track_b: Second track dictionary
-
-    Returns:
-        ComparisonPair with emojis populated for both tracks
-    """
+def _make_pair(track_a: dict, track_b: dict, playlist_id: int) -> ComparisonPair:
+    """Create a ComparisonPair with batch-fetched emojis and banner details."""
     from music_minion.core.database import get_db_connection
 
+    ids = [track_a["id"], track_b["id"]]
     with get_db_connection() as conn:
-        emojis_map = batch_fetch_track_emojis([track_a["id"], track_b["id"]], conn)
+        emojis_map = batch_fetch_track_emojis(ids, conn)
+        details_map = fetch_banner_details(conn, playlist_id, ids)
 
-    return ComparisonPair(
-        track_a=_track_to_info(track_a, emojis_map.get(track_a["id"], [])),
-        track_b=_track_to_info(track_b, emojis_map.get(track_b["id"], [])),
+    def info(track: dict) -> TrackInfo:
+        tid = track["id"]
+        return _track_to_info(track, emojis_map.get(tid, []), details_map.get(tid))
+
+    return ComparisonPair(track_a=info(track_a), track_b=info(track_b))
+
+
+def _next_pair(playlist_id: int) -> ComparisonPair | None:
+    """The next pair to compare, or None when ranking is complete."""
+    try:
+        track_a, track_b = get_next_playlist_pair(playlist_id)
+    except RankingComplete:
+        return None
+    return _make_pair(track_a, track_b, playlist_id)
+
+
+def _progress(playlist_id: int) -> ComparisonProgress:
+    progress_dict = get_playlist_comparison_progress(playlist_id)
+    return ComparisonProgress(
+        compared=progress_dict["compared"],
+        total=progress_dict["total"],
+        percentage=progress_dict["percentage"],
     )
 
 
@@ -94,37 +116,16 @@ async def start_comparison(
     """Start comparison mode for a playlist (stateless).
 
     No session creation, no caching - just queries next uncompared pair.
-    Returns current pair + progress.
+    Returns current pair (None when ranking is complete) + progress.
     """
     import logging
     logger = logging.getLogger(__name__)
 
     try:
-        # Query for next pair (stateless, no cache check)
-        try:
-            track_a, track_b = get_next_playlist_pair(request.playlist_id)
-            pair = _make_pair(track_a, track_b)
-        except RankingComplete:
-            # Not an error - return response with null pair to indicate completion
-            pair = None
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-
-        # Get progress
-        progress_dict = get_playlist_comparison_progress(request.playlist_id)
-        progress = ComparisonProgress(
-            compared=progress_dict["compared"],
-            total=progress_dict["total"],
-            percentage=progress_dict["percentage"]
-        )
-
-        return ComparisonResponse(
-            pair=pair,
-            progress=progress,
-        )
-
-    except HTTPException:
-        raise
+        pair = _next_pair(request.playlist_id)
+        return ComparisonResponse(pair=pair, progress=_progress(request.playlist_id))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.exception(f"Failed to start comparison for playlist {request.playlist_id}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -153,10 +154,12 @@ async def record_comparison(
             track_a_new, track_b_new = update_ratings(
                 track_a_rating, track_b_rating, k_factor
             )
+            rating_delta = track_a_new - track_a_rating
         else:
             track_b_new, track_a_new = update_ratings(
                 track_b_rating, track_a_rating, k_factor
             )
+            rating_delta = track_b_new - track_b_rating
 
         # Record comparison (no session_id, single transaction)
         record_playlist_comparison(
@@ -170,35 +173,59 @@ async def record_comparison(
             track_b_rating_after=track_b_new,
             session_id="",  # Empty string for sessionless
         )
+        clear_playlist_tracks_cache()
 
-        # Get next pair (stateless)
-        try:
-            track_a, track_b = get_next_playlist_pair(request.playlist_id)
-            next_pair = _make_pair(track_a, track_b)
-        except RankingComplete:
-            next_pair = None  # Ranking complete
-
-        progress_dict = get_playlist_comparison_progress(request.playlist_id)
-        progress = ComparisonProgress(
-            compared=progress_dict["compared"],
-            total=progress_dict["total"],
-            percentage=progress_dict["percentage"]
-        )
+        next_pair = _next_pair(request.playlist_id)
+        progress = _progress(request.playlist_id)
 
         # Broadcast update to all connected devices
         await sync_manager.broadcast_comparison_update(
-            request.playlist_id,
-            progress_dict
+            request.playlist_id, progress.model_dump()
         )
 
         return ComparisonResponse(
-            pair=next_pair,
-            progress=progress,
+            pair=next_pair, progress=progress, rating_delta=rating_delta
         )
 
     except Exception as e:
         logger.exception("Failed to record comparison")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/comparisons/undo")
+async def undo_comparison(request: UndoComparisonRequest) -> ComparisonResponse:
+    """Delete the latest comparison of a pair, restore ratings, and return that pair.
+
+    409 when the pair has no comparison in this playlist, or either track was
+    compared again since (undo only rewinds the most recent picks).
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    try:
+        undone = undo_playlist_comparison(
+            request.playlist_id, request.track_a_id, request.track_b_id
+        )
+    except Exception as e:
+        logger.exception(f"Failed to undo comparison {request}")
+        raise HTTPException(status_code=500, detail=str(e))
+    if not undone:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot undo {request.track_a_id} vs {request.track_b_id} in playlist "
+            f"{request.playlist_id}: no such comparison, or a later one involves these tracks",
+        )
+    clear_playlist_tracks_cache()
+    track_a, track_b = get_playlist_pair(
+        request.playlist_id, request.track_a_id, request.track_b_id
+    )
+    progress = _progress(request.playlist_id)
+    await sync_manager.broadcast_comparison_update(
+        request.playlist_id, progress.model_dump()
+    )
+    return ComparisonResponse(
+        pair=_make_pair(track_a, track_b, request.playlist_id), progress=progress
+    )
 
 
 # Context Activation Endpoints
