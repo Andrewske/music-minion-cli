@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useComparisonStore } from '../stores/comparisonStore';
 import { usePlayerStore, seekBy } from '../stores/playerStore';
-import { useRecordComparison, useArchiveTrack } from './useComparison';
-import type { RecordComparisonRequest } from '../types';
+import { useRecordComparison, useRemoveFromPlaylist } from './useComparison';
 
 interface IPCWebSocketHandlers {
   onBuilderAdd?: () => void;
@@ -16,7 +15,7 @@ const IPC_ENABLED = import.meta.env.DEV || import.meta.env.VITE_IPC_ENABLED === 
 export function useIPCWebSocket(handlers?: IPCWebSocketHandlers) {
   // Mutation hooks are stable references from React Query
   const recordComparison = useRecordComparison();
-  const archiveTrack = useArchiveTrack();
+  const removeFromPlaylist = useRemoveFromPlaylist();
 
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
@@ -93,14 +92,7 @@ export function useIPCWebSocket(handlers?: IPCWebSocketHandlers) {
             return;
           }
 
-          const request: RecordComparisonRequest = {
-            playlist_id: selectedPlaylistId,
-            track_a_id: currentPair.track_a.id,
-            track_b_id: currentPair.track_b.id,
-            winner_id: winnerId,
-          };
-
-          recordComparison.mutate(request);
+          recordComparison.mutate({ playlistId: selectedPlaylistId, pair: currentPair, winnerId });
         } else {
           console.log('Winner command received but no active comparison');
         }
@@ -108,17 +100,19 @@ export function useIPCWebSocket(handlers?: IPCWebSocketHandlers) {
 
       case 'archive':
         if (currentPair) {
-          // Archive the loser (track NOT currently playing)
-          let loserId: number;
+          // Remove the loser (track NOT currently playing) from the playlist
+          const { selectedPlaylistId } = useComparisonStore.getState();
+          let loser;
           if (currentTrack?.id === currentPair.track_a.id) {
-            loserId = currentPair.track_b.id;  // A is playing, archive B
+            loser = currentPair.track_b;  // A is playing, remove B
           } else if (currentTrack?.id === currentPair.track_b.id) {
-            loserId = currentPair.track_a.id;  // B is playing, archive A
+            loser = currentPair.track_a;  // B is playing, remove A
           } else {
             console.log('Archive command: no comparison track is currently playing');
             return;
           }
-          archiveTrack.mutate(loserId);
+          if (!selectedPlaylistId) return;
+          removeFromPlaylist.mutate({ playlistId: selectedPlaylistId, trackId: loser.id, title: loser.title });
         } else {
           console.log('Archive command received but no active comparison');
         }
@@ -135,7 +129,7 @@ export function useIPCWebSocket(handlers?: IPCWebSocketHandlers) {
        default:
          console.log('Unknown IPC command:', command);
     }
-  }, [recordComparison, archiveTrack]);
+  }, [recordComparison, removeFromPlaylist]);
 
   const connect = useCallback(() => {
     // Skip WebSocket in standalone web mode (production)

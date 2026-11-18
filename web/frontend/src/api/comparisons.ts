@@ -2,6 +2,7 @@
 export {
   startComparison,
   recordComparison,
+  undoComparison,
   activateComparisonMode,
   deactivateComparisonMode,
 } from '@music-minion/shared';

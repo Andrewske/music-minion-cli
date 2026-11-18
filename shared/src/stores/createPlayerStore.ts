@@ -12,6 +12,10 @@ export interface Device {
   connected_at: string;
 }
 
+export interface PlayOptions {
+  startPositionMs?: number;
+}
+
 export interface PlayContext {
   type: 'playlist' | 'track' | 'builder' | 'search' | 'comparison' | 'organizer' | 'feed';
   track_ids?: number[];
@@ -121,7 +125,8 @@ export interface PlayerState {
 }
 
 export interface PlayerActions {
-  play: (track: Track, context: PlayContext) => Promise<void>;
+  /** `startPositionMs` starts mid-track (comparison A/B flips keep the position). */
+  play: (track: Track, context: PlayContext, options?: PlayOptions) => Promise<void>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
   next: () => Promise<void>;
@@ -364,7 +369,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
     return {
     ...initialState,
 
-    play: async (track: Track, context: PlayContext) => {
+    play: async (track: Track, context: PlayContext, options?: PlayOptions) => {
       const { shuffleEnabled, thisDeviceId, activeDeviceId, availableDevices } = get();
       set({ playbackError: null });
 
@@ -383,6 +388,7 @@ export const createPlayerStore = (deps: PlatformDeps) => {
             context: { ...context, shuffle: context.shuffle ?? shuffleEnabled },
             targetDeviceId: activeIsConnected ? activeDeviceId : thisDeviceId,
             sourceDeviceId: thisDeviceId,
+            startPositionMs: Math.max(0, Math.round(options?.startPositionMs ?? 0)),
           }),
         });
 

@@ -1,7 +1,7 @@
 // Re-export all types from shared package
 export type {
   TrackInfo, Playlist, ComparisonPair, ComparisonProgress,
-  ComparisonRequest, RecordComparisonRequest, ComparisonResponse,
+  ComparisonRequest, RecordComparisonRequest, UndoComparisonRequest, ComparisonResponse,
   WaveformData, GenreStat, FoldersResponse,
   PlaylistBasicStats, PlaylistEloAnalysis, PlaylistQualityMetrics,
   ArtistStat, GenreDistribution, PlaylistTrackEntry, TrackReposter,

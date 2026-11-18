@@ -39,6 +39,14 @@ const HANDOFF_LEAD_S = 0.5;
 
 type PlayErrorHandler = (err: Error) => void;
 
+/**
+ * Where a freshly switched-to track starts, in seconds: the server's base
+ * position for it. 0 for ordinary plays; mid-track for comparison A/B flips.
+ */
+function trackStartSeconds(): number {
+  return usePlayerStore.getState().positionMs / 1000;
+}
+
 function swapToReadyInactive(
   inactive: HTMLAudioElement,
   setActiveKey: (k: AudioKey) => void,
@@ -46,7 +54,7 @@ function swapToReadyInactive(
   handlePlayError: PlayErrorHandler,
 ): void {
   setActiveKey(opposite);
-  inactive.currentTime = 0;
+  inactive.currentTime = trackStartSeconds();
   if (usePlayerStore.getState().isPlaying) {
     inactive.play().catch(handlePlayError);
   }
@@ -63,9 +71,14 @@ function loadAndSwap(
   opposite: AudioKey,
   handlePlayError: PlayErrorHandler,
 ): void {
+  const startAt = trackStartSeconds();
   inactive.addEventListener(
     'canplay',
     () => {
+      // currentTime set before metadata loads isn't honored by every browser
+      if (startAt > 0 && Math.abs(inactive.currentTime - startAt) > 0.5) {
+        inactive.currentTime = startAt;
+      }
       setActiveKey(opposite);
       // Read isPlaying at fire time, not effect-run time. canplay can fire
       // 200-400ms after binding; user may have hit pause in that window.
@@ -81,7 +94,7 @@ function loadAndSwap(
   bindTrackSource(inactive, track);
   inactive.dataset.trackId = String(track.id);
   inactive.dataset.srcBoundAt = String(Date.now());
-  inactive.currentTime = 0;
+  inactive.currentTime = startAt;
 }
 
 /**

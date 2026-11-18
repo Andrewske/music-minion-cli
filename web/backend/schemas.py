@@ -5,6 +5,12 @@ from pydantic.alias_generators import to_camel
 from typing import Optional, Literal
 
 
+class TrackReposter(BaseModel):
+    slug: str
+    name: str
+    avatar_url: Optional[str] = None
+
+
 class TrackInfo(BaseModel):
     id: int
     title: str
@@ -28,6 +34,12 @@ class TrackInfo(BaseModel):
     source: Optional[str] = None
     local_path: Optional[str] = None
     artwork_url: Optional[str] = None
+    # Banner details (comparison decks)
+    key_signature: Optional[str] = None
+    added_at: Optional[str] = None
+    sc_liked: bool = False
+    soundcloud_url: Optional[str] = None
+    reposters: list[TrackReposter] = []
 
     @field_validator("bpm", mode="before")
     @classmethod
@@ -59,6 +71,11 @@ class RecordComparisonRequest(BaseModel):
     winner_id: int
 
 
+class UndoComparisonRequest(BaseModel):
+    playlist_id: int
+    comparison_id: int
+
+
 class ComparisonProgress(BaseModel):
     compared: int
     total: int
@@ -69,6 +86,9 @@ class ComparisonResponse(BaseModel):
     """Unified response schema for comparison operations."""
     pair: Optional[ComparisonPair]  # None when ranking complete
     progress: ComparisonProgress
+    # Set by /record: the stored comparison (for undo) and the winner's rating change
+    comparison_id: Optional[int] = None
+    rating_delta: Optional[float] = None
 
 
 class WaveformData(BaseModel):

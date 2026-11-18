@@ -11,7 +11,6 @@ import type { WaveformData } from '@music-minion/shared';
 // Re-export portable functions
 export {
   checkStreamAvailable,
-  archiveTrack,
   purgeSoundcloudWaveforms,
   getFolders,
   getTrackNotes,

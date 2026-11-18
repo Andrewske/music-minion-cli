@@ -4,7 +4,7 @@ import time
 from asyncio import Lock
 from typing import Optional, Literal
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 from loguru import logger
 
@@ -46,6 +46,8 @@ class PlayRequest(BaseModel):
     # registered yet (a phone resuming from background taps play before its
     # socket reconnects).
     source_device_id: str | None = None
+    # Start mid-track (comparison flips keep the position across A/B)
+    start_position_ms: int = Field(default=0, ge=0)
 
 
 def resolve_active_device(
@@ -534,7 +536,7 @@ async def play(request: PlayRequest, db=Depends(get_db)):
                 "current_track": queue_tracks[queue_index],
                 "queue": tuple(queue_tracks),
                 "queue_index": queue_index,
-                "position_ms": 0,
+                "position_ms": request.start_position_ms,
                 "track_started_at": now,
                 "is_playing": True,
                 "active_device_id": active_device_id,

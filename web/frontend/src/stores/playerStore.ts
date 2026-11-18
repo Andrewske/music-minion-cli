@@ -2,7 +2,7 @@
  * Web player store — creates shared store with web-specific deps.
  */
 import { createPlayerStore, getCurrentPosition, createWebStorageAdapter, resolveDeviceName } from '@music-minion/shared';
-import type { PlayContext, PlayerStore } from '@music-minion/shared';
+import type { PlayContext, PlayerStore, Track } from '@music-minion/shared';
 import { claimAudioLeadership, startAudioLeaderElection } from '../lib/audioLeader';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
@@ -57,9 +57,9 @@ startAudioLeaderElection((isLeader) => usePlayerStore.setState({ isAudioLeader: 
 // audio lock before play/resume/"play here" (no-op without a user gesture).
 const { play, resume, setActiveDevice } = usePlayerStore.getState();
 usePlayerStore.setState({
-  play: (track, context): Promise<void> => {
+  play: (track, context, options): Promise<void> => {
     claimAudioLeadership();
-    return play(track, context);
+    return play(track, context, options);
   },
   resume: (): Promise<void> => {
     claimAudioLeadership();
@@ -90,3 +90,14 @@ export function seekBy(deltaMs: number): void {
   void state.seek(Math.min(durationMs, Math.max(0, target)));
 }
 export type { PlayContext, PlayerStore };
+
+/**
+ * Play `track` starting at `positionMs` (clamped to its duration). The server
+ * starts the track at that position, and whichever device owns the audio
+ * starts the new element there, so there is no follow-up seek to race.
+ */
+export function playFromPosition(track: Track, context: PlayContext, positionMs: number): Promise<void> {
+  const durationMs = (track.duration ?? 0) * 1000;
+  const startPositionMs = Math.max(0, Math.min(positionMs, durationMs - 1000));
+  return usePlayerStore.getState().play(track, context, { startPositionMs });
+}

@@ -3,6 +3,7 @@ import type {
   ComparisonRequest,
   ComparisonResponse,
   RecordComparisonRequest,
+  UndoComparisonRequest,
 } from '../types/index';
 
 export async function startComparison(playlistId: number): Promise<ComparisonResponse> {
@@ -16,6 +17,15 @@ export async function recordComparison(
   request: RecordComparisonRequest
 ): Promise<ComparisonResponse> {
   return getDefaultApiClient().request('/comparisons/record', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+export async function undoComparison(
+  request: UndoComparisonRequest
+): Promise<ComparisonResponse> {
+  return getDefaultApiClient().request('/comparisons/undo', {
     method: 'POST',
     body: JSON.stringify(request),
   });

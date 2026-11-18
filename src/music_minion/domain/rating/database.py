@@ -209,8 +209,8 @@ def record_playlist_comparison(
     track_a_rating_after: float,
     track_b_rating_after: float,
     session_id: str = "",
-) -> None:
-    """Record a playlist comparison with ELO updates.
+) -> int:
+    """Record a playlist comparison with ELO updates; returns the history row id.
 
     Records the comparison to the global history and updates playlist-specific
     ratings. No propagation to other playlists — the global comparison graph
@@ -232,7 +232,7 @@ def record_playlist_comparison(
 
     with get_db_connection() as conn:
         try:
-            conn.execute(
+            cursor = conn.execute(
                 """
                 INSERT INTO playlist_comparison_history (
                     playlist_id, track_a_id, track_b_id, winner_id,
@@ -261,11 +261,108 @@ def record_playlist_comparison(
             _update_playlist_rating(conn, track_b_id, playlist_id, track_b_rating_after, winner_id == track_b_id)
 
             conn.commit()
+            return cursor.lastrowid
 
         except Exception:
             logger.exception("Failed to record playlist comparison")
             conn.rollback()
             raise
+
+
+def _revert_playlist_rating(
+    conn, track_id: int, playlist_id: int, rating_before: float, was_winner: bool
+) -> None:
+    """Undo one _update_playlist_rating call.
+
+    The row is kept even at zero comparisons: the organizer writes ratings
+    without comparisons, so "no comparisons" doesn't mean "no rating".
+    """
+    conn.execute(
+        """
+        UPDATE playlist_elo_ratings SET
+            rating = ?,
+            comparison_count = MAX(comparison_count - 1, 0),
+            wins = MAX(wins - ?, 0),
+            losses = MAX(losses - ?, 0)
+        WHERE track_id = ? AND playlist_id = ?
+        """,
+        (rating_before, int(was_winner), int(not was_winner), track_id, playlist_id),
+    )
+
+
+_RATING_MATCH_TOLERANCE = 1e-6
+
+
+def _ratings_unchanged_since(conn, playlist_id: int, row) -> bool:
+    """Both tracks still hold the ratings this comparison wrote.
+
+    Catches any later write the history table doesn't record (organizer
+    "Apply rating", a later comparison), so undo never clobbers newer data.
+    """
+    expected = (
+        (row["track_a_id"], row["track_a_playlist_rating_after"]),
+        (row["track_b_id"], row["track_b_playlist_rating_after"]),
+    )
+    for track_id, rating_after in expected:
+        current = conn.execute(
+            "SELECT rating FROM playlist_elo_ratings WHERE track_id = ? AND playlist_id = ?",
+            (int(track_id), playlist_id),
+        ).fetchone()
+        if current is None or abs(current["rating"] - rating_after) > _RATING_MATCH_TOLERANCE:
+            return False
+    return True
+
+
+def _has_later_comparison(conn, playlist_id: int, row) -> bool:
+    ids = (row["track_a_id"], row["track_b_id"])
+    later = conn.execute(
+        """
+        SELECT 1 FROM playlist_comparison_history
+        WHERE playlist_id = ? AND id > ?
+          AND (track_a_id IN (?, ?) OR track_b_id IN (?, ?))
+        LIMIT 1
+        """,
+        (playlist_id, row["id"], *ids, *ids),
+    ).fetchone()
+    return later is not None
+
+
+def undo_playlist_comparison(playlist_id: int, comparison_id: int) -> tuple[int, int] | None:
+    """Delete one comparison and restore both tracks' ratings.
+
+    Returns the pair's track ids, or None when refused: no such comparison in
+    this playlist, a later comparison involves either track, or either rating
+    changed since. Runs under BEGIN IMMEDIATE so no writer slips in between
+    the checks and the restore. History stores ids as TEXT.
+    """
+    with get_db_connection() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute(
+                """
+                SELECT id, track_a_id, track_b_id, winner_id,
+                       track_a_playlist_rating_before, track_b_playlist_rating_before,
+                       track_a_playlist_rating_after, track_b_playlist_rating_after
+                FROM playlist_comparison_history
+                WHERE id = ? AND playlist_id = ?
+                """,
+                (comparison_id, playlist_id),
+            ).fetchone()
+            if not row or _has_later_comparison(conn, playlist_id, row) or not _ratings_unchanged_since(conn, playlist_id, row):
+                conn.rollback()
+                return None
+            winner = str(row["winner_id"])
+            for side in ("a", "b"):
+                track_id = int(row[f"track_{side}_id"])
+                before = row[f"track_{side}_playlist_rating_before"]
+                _revert_playlist_rating(conn, track_id, playlist_id, before, winner == str(track_id))
+            conn.execute("DELETE FROM playlist_comparison_history WHERE id = ?", (comparison_id,))
+            conn.commit()
+        except Exception:
+            logger.exception(f"Failed to undo comparison {comparison_id} in playlist {playlist_id}")
+            conn.rollback()
+            raise
+    return int(row["track_a_id"]), int(row["track_b_id"])
 
 
 class RankingComplete(Exception):
@@ -359,36 +456,52 @@ def get_next_playlist_pair(playlist_id: int) -> tuple[dict, dict]:
                 f"Track {track_a_id} has been compared to all other tracks"
             )
 
-        # Get full track_a data
-        cursor = conn.execute(
-            """
-            SELECT t.*,
-                   COALESCE(per.rating, 1500.0) as rating,
-                   COALESCE(per.comparison_count, 0) as comparison_count,
-                   COALESCE(per.wins, 0) as wins
-            FROM tracks t
-            LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
-            WHERE t.id = ?
-            """,
-            (playlist_id, track_a_id),
-        )
-        track_a_row = cursor.fetchone()
-
-        track_b_id = track_b_row["id"]
-
-        # Inject contextual stats (wins/losses against opponents in this playlist)
-        a_wins, a_losses = get_contextual_track_stats(track_a_id, playlist_id)
-        b_wins, b_losses = get_contextual_track_stats(track_b_id, playlist_id)
-
-        track_a = dict(track_a_row)
-        track_b = dict(track_b_row)
-
-        track_a["wins"] = a_wins
-        track_a["comparison_count"] = a_wins + a_losses
-        track_b["wins"] = b_wins
-        track_b["comparison_count"] = b_wins + b_losses
-
+        track_a = _fetch_playlist_track(conn, playlist_id, track_a_id)
+        track_b = _with_contextual_stats(dict(track_b_row), playlist_id)
         return (track_a, track_b)
+
+
+def _with_contextual_stats(track: dict, playlist_id: int) -> dict:
+    """Wins/losses against opponents in this playlist, not raw rating-row counts."""
+    wins, losses = get_contextual_track_stats(track["id"], playlist_id)
+    return {**track, "wins": wins, "comparison_count": wins + losses}
+
+
+def _fetch_playlist_track(conn, playlist_id: int, track_id: int) -> dict:
+    """A track row plus its playlist rating, shaped like get_next_playlist_pair's."""
+    row = conn.execute(
+        """
+        SELECT t.*,
+               COALESCE(per.rating, 1500.0) as rating,
+               COALESCE(per.comparison_count, 0) as comparison_count,
+               COALESCE(per.wins, 0) as wins
+        FROM tracks t
+        LEFT JOIN playlist_elo_ratings per ON t.id = per.track_id AND per.playlist_id = ?
+        WHERE t.id = ?
+        """,
+        (playlist_id, track_id),
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"Track {track_id} not found (playlist {playlist_id})")
+    return _with_contextual_stats(dict(row), playlist_id)
+
+
+def get_playlist_pair(playlist_id: int, track_a_id: int, track_b_id: int) -> tuple[dict, dict] | None:
+    """A specific pair, shaped like get_next_playlist_pair (used to restore after undo).
+
+    None when either track has left the playlist since.
+    """
+    with get_db_connection() as conn:
+        members = conn.execute(
+            "SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = ? AND track_id IN (?, ?)",
+            (playlist_id, track_a_id, track_b_id),
+        ).fetchone()[0]
+        if members < 2:
+            return None
+        return (
+            _fetch_playlist_track(conn, playlist_id, track_a_id),
+            _fetch_playlist_track(conn, playlist_id, track_b_id),
+        )
 
 
 def get_playlist_comparison_progress(playlist_id: int) -> dict:
