@@ -445,111 +445,62 @@ def format_comment_with_elo(elo: float, existing_comment: str | None) -> str:
 
 
 def _write_elo_id3(
-    audio: MutagenFile,
-    global_elo: float | None,
-    playlist_elo: float | None,
-    update_comment: bool,
+    audio: MutagenFile, playlist_elo: float, update_comment: bool
 ) -> None:
-    """Write ELO ratings to ID3 tags (MP3)."""
+    """Write the playlist ELO rating to ID3 tags (MP3)."""
     # Ensure tags exist
     if audio.tags is None:
         audio.add_tags()
 
     tags = audio.tags
-
-    if global_elo is not None:
-        tags["TXXX:GLOBAL_ELO"] = TXXX(
-            encoding=3, desc="GLOBAL_ELO", text=str(global_elo)
-        )
-    if playlist_elo is not None:
-        tags["TXXX:PLAYLIST_ELO"] = TXXX(
-            encoding=3, desc="PLAYLIST_ELO", text=str(playlist_elo)
-        )
+    tags["TXXX:PLAYLIST_ELO"] = TXXX(
+        encoding=3, desc="PLAYLIST_ELO", text=str(playlist_elo)
+    )
 
     if update_comment:
-        # Get existing comment
-        existing_comment = None
-        if "COMM" in tags:
-            existing_comment = str(tags["COMM"])
-
-        # Format with ELO (use global_elo if available, else playlist_elo)
-        elo_to_use = global_elo if global_elo is not None else playlist_elo
-        if elo_to_use is not None:
-            new_comment = format_comment_with_elo(elo_to_use, existing_comment)
-            tags["COMM"] = COMM(encoding=3, lang="eng", desc="", text=new_comment)
+        existing_comment = str(tags["COMM"]) if "COMM" in tags else None
+        new_comment = format_comment_with_elo(playlist_elo, existing_comment)
+        tags["COMM"] = COMM(encoding=3, lang="eng", desc="", text=new_comment)
 
 
-def _write_elo_mp4(
-    audio: MP4,
-    global_elo: float | None,
-    playlist_elo: float | None,
-    update_comment: bool,
-) -> None:
-    """Write ELO ratings to MP4 tags."""
-    if global_elo is not None:
-        audio["----:com.apple.iTunes:GLOBAL_ELO"] = str(global_elo).encode("utf-8")
-    if playlist_elo is not None:
-        audio["----:com.apple.iTunes:PLAYLIST_ELO"] = str(playlist_elo).encode("utf-8")
+def _write_elo_mp4(audio: MP4, playlist_elo: float, update_comment: bool) -> None:
+    """Write the playlist ELO rating to MP4 tags."""
+    audio["----:com.apple.iTunes:PLAYLIST_ELO"] = str(playlist_elo).encode("utf-8")
 
     if update_comment:
-        # Get existing comment
-        existing_comment = None
-        if "\xa9cmt" in audio:
-            existing_comment = str(audio["\xa9cmt"][0])
-
-        # Format with ELO (use global_elo if available, else playlist_elo)
-        elo_to_use = global_elo if global_elo is not None else playlist_elo
-        if elo_to_use is not None:
-            new_comment = format_comment_with_elo(elo_to_use, existing_comment)
-            audio["\xa9cmt"] = [new_comment]
+        existing_comment = str(audio["\xa9cmt"][0]) if "\xa9cmt" in audio else None
+        audio["\xa9cmt"] = [format_comment_with_elo(playlist_elo, existing_comment)]
 
 
 def _write_elo_vorbis(
-    audio: MutagenFile,
-    global_elo: float | None,
-    playlist_elo: float | None,
-    update_comment: bool,
+    audio: MutagenFile, playlist_elo: float, update_comment: bool
 ) -> None:
-    """Write ELO ratings to Vorbis comments (Opus, OGG)."""
-    if global_elo is not None:
-        audio["GLOBAL_ELO"] = str(global_elo)
-    if playlist_elo is not None:
-        audio["PLAYLIST_ELO"] = str(playlist_elo)
+    """Write the playlist ELO rating to Vorbis comments (Opus, OGG, FLAC)."""
+    audio["PLAYLIST_ELO"] = str(playlist_elo)
 
     if update_comment:
-        # Get existing comment
         existing_comment = audio.get("COMMENT", [""])[0]
-
-        # Format with ELO (use global_elo if available, else playlist_elo)
-        elo_to_use = global_elo if global_elo is not None else playlist_elo
-        if elo_to_use is not None:
-            new_comment = format_comment_with_elo(elo_to_use, existing_comment)
-            audio["COMMENT"] = new_comment
+        audio["COMMENT"] = format_comment_with_elo(playlist_elo, existing_comment)
 
 
 def write_elo_to_file(
     local_path: str,
-    global_elo: float | None = None,
     playlist_elo: float | None = None,
     update_comment: bool = False,
 ) -> bool:
-    """Write ELO ratings to audio file metadata using atomic writes.
+    """Write a playlist ELO rating to audio file metadata using atomic writes.
 
-    Skips writing if ELO values are None or 1500 (unrated default).
+    Skips writing if the rating is None or 1500 (unrated default).
 
     Args:
         local_path: Path to the audio file
-        global_elo: Global ELO rating
         playlist_elo: Playlist-specific ELO rating
         update_comment: Whether to update comment field with ELO prefix
 
     Returns:
         True if successful, False otherwise
     """
-    # Skip if no ELO values provided or both are unrated (1500)
-    if (global_elo is None or global_elo == 1500) and (
-        playlist_elo is None or playlist_elo == 1500
-    ):
+    if playlist_elo is None or playlist_elo == 1500:
         return True  # Not an error, just nothing to do
 
     if not os.path.exists(local_path):
@@ -573,11 +524,11 @@ def write_elo_to_file(
 
         # Determine format and write ELO tags
         if isinstance(audio.tags, ID3) or hasattr(audio, "ID3"):
-            _write_elo_id3(audio, global_elo, playlist_elo, update_comment)
+            _write_elo_id3(audio, playlist_elo, update_comment)
         elif isinstance(audio, MP4):
-            _write_elo_mp4(audio, global_elo, playlist_elo, update_comment)
+            _write_elo_mp4(audio, playlist_elo, update_comment)
         elif isinstance(audio, (OggOpus, OggVorbis, FLAC)):
-            _write_elo_vorbis(audio, global_elo, playlist_elo, update_comment)
+            _write_elo_vorbis(audio, playlist_elo, update_comment)
         else:
             logger.warning(f"Unsupported format for ELO writing: {local_path}")
             if os.path.exists(temp_path):
