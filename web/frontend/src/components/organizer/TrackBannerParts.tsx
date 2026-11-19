@@ -34,9 +34,14 @@ function useArtworkSrc(
   size: 't200x200' | 't500x500',
 ): { src: string | undefined; onError: () => void } {
   const src = artworkUrl ? scArtwork(artworkUrl, size) : `/api/tracks/${trackId}/artwork`;
-  // Keyed by src so a new track retries instead of inheriting the last failure
-  const [failedSrc, setFailedSrc] = useState<string>();
-  return { src: failedSrc === src ? undefined : src, onError: () => setFailedSrc(src) };
+  const [failed, setFailed] = useState(false);
+  const [prevSrc, setPrevSrc] = useState(src);
+  // Reset during render so every track change (including back to an old one) retries
+  if (prevSrc !== src) {
+    setPrevSrc(src);
+    setFailed(false);
+  }
+  return { src: failed ? undefined : src, onError: () => setFailed(true) };
 }
 
 /** Deterministic hue from the title so artless tracks still get a moody wash. */
