@@ -12,7 +12,8 @@ vi.mock('../stores/playerStore', () => ({
   playFromPosition: player.playFromPosition,
 }));
 
-const { toggleDeck, otherDeck } = await import('./useComparisonDecks');
+const { toggleDeck, otherDeck, finishDeck } = await import('./useComparisonDecks');
+const { useComparisonStore } = await import('../stores/comparisonStore');
 
 const track = (id: number): TrackInfo => ({
   id, title: `T${id}`, rating: 1500, comparison_count: 0, wins: 0, losses: 0, has_waveform: false,
@@ -59,5 +60,25 @@ describe('otherDeck', () => {
     expect(otherDeck(pair).id).toBe(1);
     player.state.currentTrack = null;
     expect(otherDeck(pair).id).toBe(1);
+  });
+});
+
+describe('finishDeck', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('plays the other deck from the top when autoplay is on, both directions', () => {
+    useComparisonStore.setState({ autoplay: true });
+    finishDeck(pair, pair.track_a);
+    expect(player.playFromPosition).toHaveBeenLastCalledWith(pair.track_b, context, 0);
+    finishDeck(pair, pair.track_b);
+    expect(player.playFromPosition).toHaveBeenLastCalledWith(pair.track_a, context, 0);
+  });
+
+  it('stops when autoplay is off', () => {
+    useComparisonStore.setState({ autoplay: false });
+    finishDeck(pair, pair.track_a);
+    expect(player.playFromPosition).not.toHaveBeenCalled();
   });
 });

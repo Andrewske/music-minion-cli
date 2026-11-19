@@ -188,6 +188,7 @@ export function ComparisonView({ playlistId }: ComparisonViewProps = {}): JSX.El
                 isPlaying={isPlaying && currentTrackId === track.id}
                 isBusy={decks.isBusy}
                 onTogglePlay={() => decks.togglePlay(track)}
+                onFinish={() => decks.finish(track)}
                 onPick={() => decks.pick(slot)}
                 onSkip={decks.skip}
                 // Smart playlists are rule-based; the DELETE route only serves manual ones

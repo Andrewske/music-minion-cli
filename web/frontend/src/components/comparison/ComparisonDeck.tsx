@@ -23,6 +23,8 @@ export interface ComparisonDeckProps {
   isPlaying: boolean;
   isBusy: boolean;
   onTogglePlay: () => void;
+  /** This deck's track played to the end. */
+  onFinish: () => void;
   onPick: () => void;
   onSkip: () => void;
   /** Omitted when the playlist can't drop tracks (smart playlists). */
@@ -142,7 +144,12 @@ export function ComparisonDeck(props: ComparisonDeckProps): JSX.Element {
           titleAccessory={<DeckMenu onSkip={props.onSkip} onRemove={props.onRemove} disabled={isBusy} />}
         />
         <div className="h-16 my-3">
-          <WaveformPlayer track={track} isPlaying={props.isPlaying} onTogglePlayPause={props.onTogglePlay} />
+          <WaveformPlayer
+            track={track}
+            isPlaying={props.isPlaying}
+            onTogglePlayPause={props.onTogglePlay}
+            onFinish={props.onFinish}
+          />
         </div>
         <div className="flex items-center gap-1 text-xs">
           <RatingLine track={track} />
