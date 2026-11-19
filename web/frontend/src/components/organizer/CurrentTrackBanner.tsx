@@ -65,7 +65,7 @@ export function CurrentTrackBanner({
 
   return (
     <div className="relative bg-obsidian-surface border border-obsidian-border rounded-lg mb-4">
-      <Backdrop artworkUrl={artworkUrl} title={currentTrack.title} />
+      <Backdrop trackId={currentTrack.id} artworkUrl={artworkUrl} title={currentTrack.title} />
 
       <div className="relative p-4">
         <div className="mb-3">
