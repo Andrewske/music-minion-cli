@@ -29,6 +29,16 @@ export function toggleDeck(pair: ComparisonPair, track: TrackInfo): void {
   void playFromPosition(track, comparisonContext(pair), positionMs);
 }
 
+/**
+ * `ended` finished playing. With autoplay on, the other deck plays from the
+ * top, so an unattended pair loops A, B, A, ...; with it off, playback stops.
+ */
+export function finishDeck(pair: ComparisonPair, ended: TrackInfo): void {
+  if (!useComparisonStore.getState().autoplay) return;
+  const other = ended.id === pair.track_a.id ? pair.track_b : pair.track_a;
+  void playFromPosition(other, comparisonContext(pair), 0);
+}
+
 /** The pair track that isn't playing; track A when neither is. */
 export function otherDeck(pair: ComparisonPair): TrackInfo {
   const currentId = usePlayerStore.getState().currentTrack?.id;
@@ -38,6 +48,7 @@ export function otherDeck(pair: ComparisonPair): TrackInfo {
 export interface ComparisonDeckActions {
   isBusy: boolean;
   togglePlay: (track: TrackInfo) => void;
+  finish: (track: TrackInfo) => void;
   flip: () => void;
   pick: (slot: 'a' | 'b') => void;
   skip: () => void;
@@ -100,10 +111,15 @@ export function useComparisonDecks(): ComparisonDeckActions {
     if (s) toggleDeck(s.pair, track);
   }, []);
 
+  const finish = useCallback((track: TrackInfo): void => {
+    const s = session();
+    if (s) finishDeck(s.pair, track);
+  }, []);
+
   const flip = useCallback((): void => {
     const s = session();
     if (s) toggleDeck(s.pair, otherDeck(s.pair));
   }, []);
 
-  return { isBusy, togglePlay, flip, pick, skip, remove, undo };
+  return { isBusy, togglePlay, finish, flip, pick, skip, remove, undo };
 }

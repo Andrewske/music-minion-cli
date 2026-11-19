@@ -1,17 +1,14 @@
-import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Shuffle } from 'lucide-react';
-import { useRouterState } from '@tanstack/react-router';
 import { SOUNDCLOUD_REAUTH_MESSAGE } from '@music-minion/shared';
 import { usePlayer } from '../../hooks/usePlayer';
 import { useMediaSession } from '../../hooks/useMediaSession';
 import { getCurrentPosition } from '../../stores/playerStore';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useActiveAudioElement } from '../../contexts/AudioElementContext';
-import { useComparisonStore } from '../../stores/comparisonStore';
 import { Button } from '../ui/button';
 import { Slider } from '../ui/slider';
 import { DeviceSelector } from './DeviceSelector';
-import { WaveformPlayer } from '../WaveformPlayer';
 import { TrackArtwork } from '../TrackArtwork';
 import { ScLikeHeart } from '../ScLikeHeart';
 
@@ -37,14 +34,6 @@ export function PlayerBar(): JSX.Element {
     activeDeviceId,
   } = usePlayer();
 
-  // Route detection for comparison mode waveform
-  const routerState = useRouterState();
-  const isComparisonRoute = routerState.location.pathname === '/comparison';
-
-  // Comparison mode state for track auto-switching
-  const { currentPair, isComparisonMode } = useComparisonStore();
-  const { play } = usePlayerStore();
-
   // Media Session: expose track metadata + transport controls to the browser
   // notification (e.g. Android Chrome). Memoize actions so the handler effect
   // doesn't re-bind on every render.
@@ -53,24 +42,6 @@ export function PlayerBar(): JSX.Element {
     [resume, pause, next, prev],
   );
   useMediaSession(currentTrack, isPlaying, mediaSessionActions);
-
-  // Ref for currentTrack to avoid stale closure in handleTrackFinish
-  const currentTrackRef = useRef(currentTrack);
-  useEffect(() => {
-    currentTrackRef.current = currentTrack;
-  }, [currentTrack]);
-
-  // Handle track finish for comparison mode A/B auto-switching
-  const handleTrackFinish = useCallback(() => {
-    if (!currentPair || !currentTrackRef.current || !isComparisonMode) return;
-
-    const otherTrack = currentTrackRef.current.id === currentPair.track_a.id
-      ? currentPair.track_b
-      : currentPair.track_a;
-
-    const trackIds = [currentPair.track_a.id, currentPair.track_b.id];
-    play(otherTrack, { type: 'comparison', track_ids: trackIds, shuffle: false });
-  }, [currentPair, isComparisonMode, play]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -168,27 +139,12 @@ export function PlayerBar(): JSX.Element {
     return () => clearTimeout(timer);
   }, [playbackError]);
 
-  // Dynamic height: h-16 (64px) normally, md:h-36 on comparison route (desktop only, mobile stays h-16)
-  const barHeight = isComparisonRoute ? 'h-16 md:h-36' : 'h-16';
-
   return (
-    <div className={`fixed bottom-0 left-0 right-0 ${barHeight} bg-obsidian-surface border-t border-obsidian-border flex flex-col z-50 pb-[env(safe-area-inset-bottom)]`}>
-      {/* Waveform section - only on comparison route, hidden on mobile */}
-      {isComparisonRoute && currentTrack && (
-        <div className="hidden md:block h-20 w-full border-b border-obsidian-border py-2 px-4">
-          <WaveformPlayer
-            track={currentTrack}
-            isPlaying={isPlaying}
-            onTogglePlayPause={() => isPlaying ? pause() : resume()}
-            onFinish={handleTrackFinish}
-          />
-        </div>
-      )}
-
+    <div className="fixed bottom-0 left-0 right-0 h-16 bg-obsidian-surface border-t border-obsidian-border flex flex-col z-50 pb-[env(safe-area-inset-bottom)]">
       {/* Mobile compact layout */}
       <div className="md:hidden flex flex-col flex-1">
         {/* Thin progress bar at top */}
-        {currentTrack && !isComparisonRoute && (
+        {currentTrack && (
           <Slider
             value={[progress]}
             max={100}
@@ -278,8 +234,8 @@ export function PlayerBar(): JSX.Element {
               <SkipForward className="h-4 w-4" />
             </Button>
           </div>
-          {/* Progress bar - hide on comparison route since waveform shows progress */}
-          {currentTrack && !isComparisonRoute && (
+          {/* Progress bar */}
+          {currentTrack && (
             <Slider
               value={[progress]}
               max={100}

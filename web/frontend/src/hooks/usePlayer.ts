@@ -572,7 +572,7 @@ export function usePlayer() {
   }, [activeAudio, handlePlayError]);
 
   // Track handoff: advance to the next track (unless in comparison mode, which
-  // handles its own A/B switching via onFinish callback in ComparisonView).
+  // handles its own A/B switching via finishDeck in useComparisonDecks).
   // Gapless fast-path: when the inactive element has the next track preloaded
   // and ready, start it HANDOFF_LEAD_S before the current track ends (no audio
   // gap, see HANDOFF_LEAD_S), optimistically advance the store, then POST
