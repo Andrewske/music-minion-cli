@@ -124,7 +124,7 @@ export function ComparisonDeck(props: ComparisonDeckProps): JSX.Element {
         isLive ? 'border-obsidian-accent/45' : 'border-obsidian-border'
       }`}
     >
-      <Backdrop artworkUrl={track.artwork_url} title={track.title} />
+      <Backdrop trackId={track.id} artworkUrl={track.artwork_url} title={track.title} />
       <div className="relative flex-1 min-w-0 p-4">
         <TrackBannerInfo
           trackId={track.id}

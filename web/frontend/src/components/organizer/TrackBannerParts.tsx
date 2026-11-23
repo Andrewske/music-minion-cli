@@ -20,8 +20,28 @@ function formatTrackDate(dateStr: string | undefined): string | null {
 }
 
 /** SoundCloud CDN stores artwork as `-large.` (100px); swap for a bigger crop. */
-function scArtwork(url: string | undefined, size: 't200x200' | 't500x500'): string | undefined {
-  return url?.replace('-large.', `-${size}.`);
+function scArtwork(url: string, size: 't200x200' | 't500x500'): string {
+  return url.replace('-large.', `-${size}.`);
+}
+
+/**
+ * Stored SoundCloud artwork when present, else the endpoint that pulls art embedded
+ * in the local file. Returns undefined once the image fails so callers show a placeholder.
+ */
+function useArtworkSrc(
+  trackId: number,
+  artworkUrl: string | undefined,
+  size: 't200x200' | 't500x500',
+): { src: string | undefined; onError: () => void } {
+  const src = artworkUrl ? scArtwork(artworkUrl, size) : `/api/tracks/${trackId}/artwork`;
+  const [failed, setFailed] = useState(false);
+  const [prevSrc, setPrevSrc] = useState(src);
+  // Reset during render so every track change (including back to an old one) retries
+  if (prevSrc !== src) {
+    setPrevSrc(src);
+    setFailed(false);
+  }
+  return { src: failed ? undefined : src, onError: () => setFailed(true) };
 }
 
 /** Deterministic hue from the title so artless tracks still get a moody wash. */
@@ -148,9 +168,16 @@ function ScHeart({ liked }: { liked: boolean }): JSX.Element {
   );
 }
 
-export function Backdrop({ artworkUrl, title }: { artworkUrl?: string; title: string }): JSX.Element {
+interface ArtworkProps {
+  trackId: number;
+  artworkUrl?: string;
+  title: string;
+}
+
+export function Backdrop({ trackId, artworkUrl, title }: ArtworkProps): JSX.Element {
   const hue = titleHue(title);
-  if (!artworkUrl) {
+  const { src, onError } = useArtworkSrc(trackId, artworkUrl, 't500x500');
+  if (!src) {
     return (
       <div
         aria-hidden
@@ -165,9 +192,10 @@ export function Backdrop({ artworkUrl, title }: { artworkUrl?: string; title: st
   return (
     <div aria-hidden className="absolute inset-0 overflow-hidden rounded-lg pointer-events-none">
       <img
-        src={scArtwork(artworkUrl, 't500x500')}
+        src={src}
         alt=""
         aria-hidden
+        onError={onError}
         className="absolute inset-0 w-full h-full object-cover scale-125 blur-2xl saturate-150 opacity-30 pointer-events-none"
       />
       <div
@@ -178,8 +206,9 @@ export function Backdrop({ artworkUrl, title }: { artworkUrl?: string; title: st
   );
 }
 
-function ArtThumbnail({ artworkUrl, title }: { artworkUrl?: string; title: string }): JSX.Element {
-  if (!artworkUrl) {
+function ArtThumbnail({ trackId, artworkUrl, title }: ArtworkProps): JSX.Element {
+  const { src, onError } = useArtworkSrc(trackId, artworkUrl, 't200x200');
+  if (!src) {
     const hue = titleHue(title);
     return (
       <div
@@ -192,8 +221,9 @@ function ArtThumbnail({ artworkUrl, title }: { artworkUrl?: string; title: strin
   }
   return (
     <img
-      src={scArtwork(artworkUrl, 't200x200')}
+      src={src}
       alt={title}
+      onError={onError}
       className="w-16 h-16 shrink-0 rounded-md object-cover ring-1 ring-white/10 shadow-lg"
     />
   );
@@ -239,7 +269,7 @@ export function TrackBannerInfo({
   const dateLabel = formatTrackDate(trackDate);
   return (
     <div className="flex items-start gap-3">
-      <ArtThumbnail artworkUrl={artworkUrl} title={title} />
+      <ArtThumbnail trackId={trackId} artworkUrl={artworkUrl} title={title} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="font-medium text-white/95 truncate drop-shadow-xs">{title}</span>
